@@ -83,6 +83,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         passwordHash,
       } as any);
 
+      // Auto-create a default company for this user
+      const companyName = `${validated.name}'s Company`;
+      const company = await storage.createCompany({
+        name: companyName,
+        baseCurrency: 'AED',
+        locale: 'en',
+      });
+
+      // Associate user with company as owner
+      await storage.createCompanyUser({
+        companyId: company.id,
+        userId: user.id,
+        role: 'owner',
+      });
+
+      // Seed Chart of Accounts for new company
+      await seedChartOfAccounts(company.id);
+
       // Generate token
       const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
       
@@ -92,6 +110,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: user.id,
           email: user.email,
           name: user.name,
+        },
+        company: {
+          id: company.id,
+          name: company.name,
         },
       });
     } catch (error: any) {

@@ -14,13 +14,13 @@ import NotFound from '@/pages/not-found';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import Dashboard from '@/pages/Dashboard';
-import Companies from '@/pages/Companies';
 import Accounts from '@/pages/Accounts';
 import Invoices from '@/pages/Invoices';
 import Journal from '@/pages/Journal';
 import Reports from '@/pages/Reports';
 import AICategorize from '@/pages/AICategorize';
 import Receipts from '@/pages/Receipts';
+import Landing from '@/pages/Landing';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -46,7 +46,25 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 }
 
 function Router() {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  const token = localStorage.getItem('token');
+  
+  // Redirect authenticated users from landing to dashboard
+  useEffect(() => {
+    if (location === '/' && token) {
+      setLocation('/dashboard');
+    }
+  }, [location, token, setLocation]);
+  
+  // Guard: authenticated users at root - wait for redirect
+  if (location === '/' && token) {
+    return null;
+  }
+  
+  // Landing page (public only)
+  if (location === '/' && !token) {
+    return <Landing />;
+  }
   
   // Public routes (no sidebar)
   if (location === '/login' || location === '/register') {
@@ -63,8 +81,7 @@ function Router() {
     <ProtectedRoute>
       <ProtectedLayout>
         <Switch>
-          <Route path="/" component={Dashboard} />
-          <Route path="/companies" component={Companies} />
+          <Route path="/dashboard" component={Dashboard} />
           <Route path="/accounts" component={Accounts} />
           <Route path="/invoices" component={Invoices} />
           <Route path="/journal" component={Journal} />

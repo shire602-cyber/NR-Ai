@@ -1,6 +1,5 @@
 import { 
   LayoutDashboard, 
-  Building2, 
   BookOpen, 
   FileText, 
   BookMarked, 
@@ -37,12 +36,7 @@ const navigationItems = [
   {
     title: 'dashboard',
     icon: LayoutDashboard,
-    url: '/',
-  },
-  {
-    title: 'companies',
-    icon: Building2,
-    url: '/companies',
+    url: '/dashboard',
   },
   {
     title: 'accounts',
