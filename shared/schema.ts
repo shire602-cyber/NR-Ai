@@ -175,9 +175,14 @@ export type InvoiceLine = typeof invoiceLines.$inferSelect;
 export const receipts = pgTable("receipts", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-  filename: text("filename").notNull(),
-  description: text("description"),
+  merchant: text("merchant"),
+  date: text("date"),
   amount: real("amount"),
+  vatAmount: real("vat_amount"),
+  currency: text("currency").default("AED"),
+  category: text("category"),
+  imageData: text("image_data"),
+  rawText: text("raw_text"),
   uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

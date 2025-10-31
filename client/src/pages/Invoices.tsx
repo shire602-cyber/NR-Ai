@@ -18,9 +18,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, FileText, CalendarIcon, Trash2 } from 'lucide-react';
+import { Plus, FileText, CalendarIcon, Trash2, Download } from 'lucide-react';
 import type { Invoice } from '@shared/schema';
 import { cn } from '@/lib/utils';
+import { downloadInvoicePDF } from '@/lib/pdf-invoice';
 
 const invoiceLineSchema = z.object({
   description: z.string().min(1, 'Description is required'),
@@ -376,6 +377,7 @@ export default function Invoices() {
                   <TableHead className="font-semibold">{t.date}</TableHead>
                   <TableHead className="font-semibold text-right">{t.total}</TableHead>
                   <TableHead className="font-semibold text-center">{t.status}</TableHead>
+                  <TableHead className="font-semibold text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -393,11 +395,55 @@ export default function Invoices() {
                           {t[invoice.status as keyof typeof t]}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-center">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            try {
+                              // Fetch full invoice details with lines using apiRequest
+                              const invoiceDetails = await apiRequest('GET', `/api/invoices/${invoice.id}`);
+                              const company = companies?.find(c => c.id === selectedCompanyId);
+                              
+                              await downloadInvoicePDF({
+                                invoiceNumber: invoiceDetails.number,
+                                date: invoiceDetails.date.toString(),
+                                customerName: invoiceDetails.customerName,
+                                customerTRN: invoiceDetails.customerTrn || undefined,
+                                companyName: company?.name || 'Your Company',
+                                companyTRN: company?.trn || undefined,
+                                companyAddress: company?.address || undefined,
+                                lines: invoiceDetails.lines || [],
+                                subtotal: invoiceDetails.subtotal,
+                                vatAmount: invoiceDetails.vatAmount,
+                                total: invoiceDetails.total,
+                                currency: invoiceDetails.currency,
+                                locale,
+                              });
+                              
+                              toast({
+                                title: 'PDF Downloaded',
+                                description: 'Invoice PDF has been downloaded successfully',
+                              });
+                            } catch (error: any) {
+                              toast({
+                                title: 'Error',
+                                description: error.message || 'Failed to generate PDF',
+                                variant: 'destructive',
+                              });
+                            }
+                          }}
+                          data-testid={`button-download-pdf-${invoice.id}`}
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          PDF
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       {t.noData}
                     </TableCell>
                   </TableRow>

@@ -217,6 +217,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/invoices/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const invoice = await storage.getInvoice(id);
+      
+      if (!invoice) {
+        return res.status(404).json({ message: 'Invoice not found' });
+      }
+      
+      // Fetch invoice lines
+      const lines = await storage.getInvoiceLinesByInvoiceId(id);
+      
+      res.json({ ...invoice, lines });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.post("/api/invoices", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId, lines, ...invoiceData } = req.body;
@@ -251,6 +269,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.json(invoice);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // Receipt Routes
+  // =====================================
+  
+  app.get("/api/companies/:companyId/receipts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      res.json(receipts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  app.post("/api/companies/:companyId/receipts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const receiptData = req.body;
+      
+      const receipt = await storage.createReceipt({
+        ...receiptData,
+        uploadedBy: userId,
+      });
+      
+      res.json(receipt);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }

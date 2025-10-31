@@ -20,6 +20,7 @@ import Invoices from '@/pages/Invoices';
 import Journal from '@/pages/Journal';
 import Reports from '@/pages/Reports';
 import AICategorize from '@/pages/AICategorize';
+import Receipts from '@/pages/Receipts';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -68,6 +69,7 @@ function Router() {
           <Route path="/invoices" component={Invoices} />
           <Route path="/journal" component={Journal} />
           <Route path="/reports" component={Reports} />
+          <Route path="/receipts" component={Receipts} />
           <Route path="/ai-categorize" component={AICategorize} />
           <Route component={NotFound} />
         </Switch>

@@ -26,6 +26,7 @@ export interface IStorage {
   // Company Users
   createCompanyUser(companyUser: InsertCompanyUser): Promise<CompanyUser>;
   getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined>;
+  hasCompanyAccess(userId: string, companyId: string): Promise<boolean>;
   
   // Accounts
   getAccount(id: string): Promise<Account | undefined>;
@@ -147,6 +148,11 @@ export class MemStorage implements IStorage {
     return Array.from(this.companyUsers.values()).find(
       cu => cu.companyId === companyId && cu.userId === userId
     );
+  }
+
+  async hasCompanyAccess(userId: string, companyId: string): Promise<boolean> {
+    const companyUser = await this.getUserRole(companyId, userId);
+    return !!companyUser;
   }
 
   // Accounts

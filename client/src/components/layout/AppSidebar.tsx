@@ -7,7 +7,8 @@ import {
   BarChart3, 
   Sparkles,
   Languages,
-  LogOut
+  LogOut,
+  Receipt
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -52,6 +53,11 @@ const navigationItems = [
     title: 'invoices',
     icon: FileText,
     url: '/invoices',
+  },
+  {
+    title: 'receipts',
+    icon: Receipt,
+    url: '/receipts',
   },
   {
     title: 'journal',
