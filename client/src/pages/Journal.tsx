@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -67,7 +67,7 @@ export default function Journal() {
   const form = useForm<JournalFormData>({
     resolver: zodResolver(journalSchema),
     defaultValues: {
-      companyId: selectedCompanyId,
+      companyId: '',
       date: new Date(),
       memo: '',
       lines: [
@@ -76,6 +76,20 @@ export default function Journal() {
       ],
     },
   });
+
+  // Set selectedCompanyId when companies are loaded
+  useEffect(() => {
+    if (!selectedCompanyId && companies && companies.length > 0) {
+      setSelectedCompanyId(companies[0].id);
+    }
+  }, [companies, selectedCompanyId]);
+
+  // Update form's companyId when selectedCompanyId changes
+  useEffect(() => {
+    if (selectedCompanyId) {
+      form.setValue('companyId', selectedCompanyId);
+    }
+  }, [selectedCompanyId, form]);
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -130,10 +144,6 @@ export default function Journal() {
         </Card>
       </div>
     );
-  }
-
-  if (!selectedCompanyId && companies.length > 0) {
-    setSelectedCompanyId(companies[0].id);
   }
 
   // Calculate balance

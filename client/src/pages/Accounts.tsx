@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -47,13 +47,27 @@ export default function Accounts() {
   const form = useForm<AccountFormData>({
     resolver: zodResolver(accountSchema),
     defaultValues: {
-      companyId: selectedCompanyId,
+      companyId: '',
       code: '',
       nameEn: '',
       nameAr: '',
       type: 'asset',
     },
   });
+
+  // Set selectedCompanyId when companies are loaded
+  useEffect(() => {
+    if (!selectedCompanyId && companies && companies.length > 0) {
+      setSelectedCompanyId(companies[0].id);
+    }
+  }, [companies, selectedCompanyId]);
+
+  // Update form's companyId when selectedCompanyId changes
+  useEffect(() => {
+    if (selectedCompanyId) {
+      form.setValue('companyId', selectedCompanyId);
+    }
+  }, [selectedCompanyId, form]);
 
   const createMutation = useMutation({
     mutationFn: (data: AccountFormData) => 
@@ -120,10 +134,6 @@ export default function Accounts() {
         </Card>
       </div>
     );
-  }
-
-  if (!selectedCompanyId && companies.length > 0) {
-    setSelectedCompanyId(companies[0].id);
   }
 
   return (

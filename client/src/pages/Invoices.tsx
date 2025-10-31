@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -59,7 +59,7 @@ export default function Invoices() {
   const form = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
-      companyId: selectedCompanyId,
+      companyId: '',
       number: `INV-${Date.now()}`,
       customerName: '',
       customerTrn: '',
@@ -68,6 +68,20 @@ export default function Invoices() {
       lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     },
   });
+
+  // Set selectedCompanyId when companies are loaded
+  useEffect(() => {
+    if (!selectedCompanyId && companies && companies.length > 0) {
+      setSelectedCompanyId(companies[0].id);
+    }
+  }, [companies, selectedCompanyId]);
+
+  // Update form's companyId when selectedCompanyId changes
+  useEffect(() => {
+    if (selectedCompanyId) {
+      form.setValue('companyId', selectedCompanyId);
+    }
+  }, [selectedCompanyId, form]);
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
@@ -131,10 +145,6 @@ export default function Invoices() {
         </Card>
       </div>
     );
-  }
-
-  if (!selectedCompanyId && companies.length > 0) {
-    setSelectedCompanyId(companies[0].id);
   }
 
   // Calculate totals for preview
