@@ -8,6 +8,7 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { useI18n } from '@/lib/i18n';
+import { getToken } from '@/lib/auth';
 
 // Pages
 import NotFound from '@/pages/not-found';
@@ -47,7 +48,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 
 function Router() {
   const [location, setLocation] = useLocation();
-  const token = localStorage.getItem('token');
+  const token = getToken();
   
   // Redirect authenticated users from landing to dashboard
   useEffect(() => {

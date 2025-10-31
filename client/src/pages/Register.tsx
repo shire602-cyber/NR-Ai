@@ -8,14 +8,14 @@ export default function Register() {
 
   useEffect(() => {
     if (isAuthenticated()) {
-      setLocation('/');
+      setLocation('/dashboard');
     }
   }, [setLocation]);
 
   const handleSuccess = (token: string, user: any) => {
     setToken(token);
     setStoredUser(user);
-    setLocation('/');
+    setLocation('/dashboard');
   };
 
   return (
