@@ -452,6 +452,134 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // =====================================
+  // Dashboard Stats Routes
+  // =====================================
+  
+  app.get("/api/companies/:companyId/dashboard/stats", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      
+      // Calculate from journal entries
+      const balances = new Map<string, number>();
+      for (const entry of entries) {
+        const lines = await storage.getJournalLinesByEntryId(entry.id);
+        for (const line of lines) {
+          const account = accounts.find(a => a.id === line.accountId);
+          if (!account) continue;
+          
+          const current = balances.get(account.type) || 0;
+          if (account.type === 'income') {
+            balances.set('income', current + line.credit - line.debit);
+          } else if (account.type === 'expense') {
+            balances.set('expense', current + line.debit - line.credit);
+          }
+        }
+      }
+      
+      const revenue = balances.get('income') || 0;
+      const expenses = balances.get('expense') || 0;
+      const outstanding = invoices.filter(inv => inv.status === 'sent' || inv.status === 'draft')
+        .reduce((sum, inv) => sum + inv.total, 0);
+      
+      res.json({
+        revenue,
+        expenses,
+        outstanding,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/companies/:companyId/dashboard/expense-breakdown", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      const expenseAccounts = accounts.filter(a => a.type === 'expense');
+      
+      const balances = new Map<string, number>();
+      for (const entry of entries) {
+        const lines = await storage.getJournalLinesByEntryId(entry.id);
+        for (const line of lines) {
+          const account = accounts.find(a => a.id === line.accountId);
+          if (!account || account.type !== 'expense') continue;
+          
+          const current = balances.get(account.code) || 0;
+          balances.set(account.code, current + line.debit - line.credit);
+        }
+      }
+      
+      const breakdown = expenseAccounts
+        .map(account => ({
+          name: account.nameEn,
+          value: balances.get(account.code) || 0,
+        }))
+        .filter(item => item.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5); // Top 5 expenses
+      
+      res.json(breakdown);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/companies/:companyId/dashboard/monthly-trends", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      
+      // Get last 6 months
+      const months = Array.from({ length: 6 }, (_, i) => {
+        const date = new Date();
+        date.setMonth(date.getMonth() - (5 - i));
+        return {
+          month: date.toLocaleDateString('en-US', { month: 'short' }),
+          monthNum: date.getMonth(),
+          yearNum: date.getFullYear(),
+        };
+      });
+
+      const trends = await Promise.all(months.map(async ({ month, monthNum, yearNum }) => {
+        // Calculate revenue from invoices
+        const revenue = invoices
+          .filter(inv => {
+            const invDate = new Date(inv.date);
+            return invDate.getMonth() === monthNum && invDate.getFullYear() === yearNum;
+          })
+          .reduce((sum, inv) => sum + (inv.subtotal || 0), 0);
+
+        // Calculate expenses from journal entries
+        let expenses = 0;
+        for (const entry of entries) {
+          const entryDate = new Date(entry.date);
+          if (entryDate.getMonth() === monthNum && entryDate.getFullYear() === yearNum) {
+            const lines = await storage.getJournalLinesByEntryId(entry.id);
+            for (const line of lines) {
+              const account = accounts.find(a => a.id === line.accountId);
+              if (account && account.type === 'expense') {
+                expenses += line.debit - line.credit;
+              }
+            }
+          }
+        }
+
+        return { month, revenue, expenses };
+      }));
+
+      res.json(trends);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
   // Reports Routes
   // =====================================
   

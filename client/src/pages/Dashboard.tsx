@@ -1,131 +1,380 @@
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { useTranslation } from '@/lib/i18n';
-import { formatCurrency } from '@/lib/format';
-import { TrendingUp, TrendingDown, DollarSign, AlertCircle, FileText } from 'lucide-react';
-import { ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+import { formatCurrency, formatDate } from '@/lib/format';
+import { 
+  TrendingUp, TrendingDown, DollarSign, AlertCircle, FileText, 
+  Plus, Receipt, BookOpen, Sparkles, ArrowRight, Clock, CheckCircle2,
+  Zap, BarChart3
+} from 'lucide-react';
+import { 
+  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, 
+  XAxis, YAxis, Tooltip, Legend, AreaChart, Area, BarChart, Bar
+} from 'recharts';
+import { Link } from 'wouter';
 
 export default function Dashboard() {
   const { t, locale } = useTranslation();
+  const [mounted, setMounted] = useState(false);
 
-  // Fetch dashboard stats
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const { data: companies } = useQuery<any[]>({
+    queryKey: ['/api/companies'],
+  });
+
+  const selectedCompanyId = companies?.[0]?.id || '';
+
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
-    queryKey: ['/api/dashboard/stats'],
+    queryKey: ['/api/companies', selectedCompanyId, 'dashboard/stats'],
+    enabled: !!selectedCompanyId,
   });
 
-  // Fetch recent invoices
   const { data: recentInvoices, isLoading: invoicesLoading } = useQuery<any[]>({
-    queryKey: ['/api/dashboard/recent-invoices'],
+    queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
+    enabled: !!selectedCompanyId,
   });
 
-  // Fetch expense breakdown
+  const { data: journalEntries } = useQuery<any[]>({
+    queryKey: ['/api/companies', selectedCompanyId, 'journal'],
+    enabled: !!selectedCompanyId,
+  });
+
   const { data: expenseData, isLoading: expenseLoading } = useQuery<any[]>({
-    queryKey: ['/api/dashboard/expense-breakdown'],
+    queryKey: ['/api/companies', selectedCompanyId, 'dashboard/expense-breakdown'],
+    enabled: !!selectedCompanyId,
   });
 
-  const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
+  const { data: monthlyTrends, isLoading: trendsLoading } = useQuery<any[]>({
+    queryKey: ['/api/companies', selectedCompanyId, 'dashboard/monthly-trends'],
+    enabled: !!selectedCompanyId,
+  });
+
+  const COLORS = [
+    'hsl(211, 85%, 42%)', // Primary blue
+    'hsl(142, 76%, 36%)', // Green
+    'hsl(45, 93%, 47%)',  // Yellow
+    'hsl(0, 84%, 60%)',   // Red
+    'hsl(262, 83%, 58%)', // Purple
+  ];
+
+
+  const QuickActionCard = ({ icon: Icon, title, description, href, color }: any) => (
+    <Link href={href}>
+      <div className="h-full p-6 rounded-lg border bg-card hover-elevate active-elevate-2 transition-all duration-200 cursor-pointer group">
+        <div className={`w-12 h-12 rounded-lg ${color} bg-opacity-10 dark:bg-opacity-20 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+          <Icon className={`w-6 h-6 ${color.replace('bg-', 'text-')}`} />
+        </div>
+        <h3 className="font-semibold mb-1">{title}</h3>
+        <p className="text-sm text-muted-foreground">{description}</p>
+        <div className="mt-4 flex items-center text-sm font-medium text-primary">
+          <span>Get started</span>
+          <ArrowRight className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+        </div>
+      </div>
+    </Link>
+  );
+
+  const StatCard = ({ icon: Icon, title, value, change, trend, color, isLoading }: any) => (
+    <Card className={`overflow-hidden ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDuration: '600ms' }}>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        <div className={`w-10 h-10 rounded-lg ${color} bg-opacity-10 dark:bg-opacity-20 flex items-center justify-center`}>
+          <Icon className={`w-5 h-5 ${color.replace('bg-', 'text-')}`} />
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-9 w-32" />
+        ) : (
+          <>
+            <div className="text-3xl font-bold font-mono" data-testid={`text-${title.toLowerCase().replace(' ', '-')}`}>
+              {value}
+            </div>
+            {change && (
+              <div className="flex items-center gap-1 mt-2">
+                {trend === 'up' ? (
+                  <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
+                ) : (
+                  <TrendingDown className="w-4 h-4 text-red-600 dark:text-red-400" />
+                )}
+                <span className={`text-sm font-medium ${trend === 'up' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {change}
+                </span>
+                <span className="text-sm text-muted-foreground">vs last month</span>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-semibold mb-2">{t.dashboard}</h1>
-        <p className="text-muted-foreground">Welcome back! Here's your financial overview.</p>
+      {/* Hero Section */}
+      <div className={`${mounted ? 'animate-in fade-in slide-in-from-top-4' : ''}`} style={{ animationDuration: '500ms' }}>
+        <div className="flex items-start justify-between flex-wrap gap-4 mb-2">
+          <div>
+            <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-transparent">
+              {t.dashboard}
+            </h1>
+            <p className="text-lg text-muted-foreground">
+              Welcome back! Here's your financial overview for {new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' })}.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Link href="/invoices">
+              <Button size="sm" variant="outline" data-testid="button-quick-invoice">
+                <FileText className="w-4 h-4 mr-2" />
+                New Invoice
+              </Button>
+            </Link>
+            <Link href="/receipts">
+              <Button size="sm" data-testid="button-quick-receipt">
+                <Receipt className="w-4 h-4 mr-2" />
+                Scan Receipt
+              </Button>
+            </Link>
+          </div>
+        </div>
       </div>
+
+      {/* AI Insights Panel */}
+      {!statsLoading && stats && (stats.revenue > 0 || stats.expenses > 0 || stats.outstanding > 0) && (
+        <div className={`${mounted ? 'animate-in fade-in slide-in-from-top-5' : ''}`} style={{ animationDelay: '100ms', animationDuration: '500ms' }}>
+          <Card className="bg-gradient-to-br from-primary/5 to-primary/10 dark:from-primary/10 dark:to-primary/5 border-primary/20">
+            <CardContent className="flex items-start gap-4 p-6">
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                <Sparkles className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold mb-1 flex items-center gap-2">
+                  AI Insights
+                  <Badge variant="secondary" className="text-xs">Beta</Badge>
+                </h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                  {stats.revenue > 0 && stats.expenses > 0 && (
+                    <>
+                      Your profit margin is {(((stats.revenue - stats.expenses) / stats.revenue) * 100).toFixed(0)}%. 
+                      {stats.outstanding > 0 && (
+                        <> You have outstanding invoices totaling {formatCurrency(stats.outstanding, 'AED', locale)} that need attention.</>
+                      )}
+                    </>
+                  )}
+                  {stats.revenue === 0 && stats.expenses === 0 && stats.outstanding > 0 && (
+                    <>You have outstanding invoices totaling {formatCurrency(stats.outstanding, 'AED', locale)}.</>
+                  )}
+                  {stats.revenue === 0 && stats.expenses === 0 && stats.outstanding === 0 && (
+                    <>Start tracking your finances by creating invoices and journal entries.</>
+                  )}
+                </p>
+                <Link href="/ai-tools">
+                  <Button size="sm" variant="ghost" className="gap-1 px-0">
+                    <span>Explore AI tools</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">{t.revenue}</CardTitle>
-            <div className="w-8 h-8 rounded-md bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {statsLoading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold font-mono" data-testid="text-revenue">
-                  {formatCurrency(stats?.revenue || 0, 'AED', locale)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">This month</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">{t.expenses}</CardTitle>
-            <div className="w-8 h-8 rounded-md bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
-              <TrendingDown className="w-4 h-4 text-red-600 dark:text-red-400" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {statsLoading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold font-mono" data-testid="text-expenses">
-                  {formatCurrency(stats?.expenses || 0, 'AED', locale)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">This month</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">{t.profit}</CardTitle>
-            <div className="w-8 h-8 rounded-md bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-              <DollarSign className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {statsLoading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold font-mono" data-testid="text-profit">
-                  {formatCurrency((stats?.revenue || 0) - (stats?.expenses || 0), 'AED', locale)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">Net this month</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">{t.outstanding}</CardTitle>
-            <div className="w-8 h-8 rounded-md bg-amber-100 dark:bg-amber-900/20 flex items-center justify-center">
-              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {statsLoading ? (
-              <Skeleton className="h-8 w-32" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold font-mono" data-testid="text-outstanding">
-                  {formatCurrency(stats?.outstanding || 0, 'AED', locale)}
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">Unpaid invoices</p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        <StatCard
+          icon={TrendingUp}
+          title="Revenue"
+          value={formatCurrency(stats?.revenue || 0, 'AED', locale)}
+          color="bg-green-600"
+          isLoading={statsLoading}
+        />
+        <StatCard
+          icon={TrendingDown}
+          title="Expenses"
+          value={formatCurrency(stats?.expenses || 0, 'AED', locale)}
+          color="bg-red-600"
+          isLoading={statsLoading}
+        />
+        <StatCard
+          icon={DollarSign}
+          title="Profit"
+          value={formatCurrency((stats?.revenue || 0) - (stats?.expenses || 0), 'AED', locale)}
+          color="bg-blue-600"
+          isLoading={statsLoading}
+        />
+        <StatCard
+          icon={AlertCircle}
+          title="Outstanding"
+          value={formatCurrency(stats?.outstanding || 0, 'AED', locale)}
+          color="bg-amber-600"
+          isLoading={statsLoading}
+        />
       </div>
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Invoices */}
-        <Card>
+        {/* Revenue & Expenses Trend */}
+        <Card className={`${mounted ? 'animate-in fade-in slide-in-from-left-4' : ''}`} style={{ animationDelay: '200ms', animationDuration: '600ms' }}>
           <CardHeader>
-            <CardTitle>{t.recentInvoices}</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5" />
+                Revenue vs Expenses
+              </CardTitle>
+              <Badge variant="outline" className="text-xs">Last 6 months</Badge>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {trendsLoading ? (
+              <Skeleton className="h-[280px] w-full" />
+            ) : (monthlyTrends && monthlyTrends.length > 0) ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={monthlyTrends}>
+                <defs>
+                  <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorExpenses" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="month" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value/1000}k`} />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'hsl(var(--card))', 
+                    border: '1px solid hsl(var(--border))',
+                    borderRadius: '6px',
+                    fontSize: '12px'
+                  }}
+                  formatter={(value: any) => formatCurrency(value, 'AED', locale)}
+                />
+                <Legend wrapperStyle={{ fontSize: '12px' }} />
+                <Area type="monotone" dataKey="revenue" stroke="hsl(142, 76%, 36%)" strokeWidth={2} fillOpacity={1} fill="url(#colorRevenue)" name="Revenue" />
+                <Area type="monotone" dataKey="expenses" stroke="hsl(0, 84%, 60%)" strokeWidth={2} fillOpacity={1} fill="url(#colorExpenses)" name="Expenses" />
+              </AreaChart>
+            </ResponsiveContainer>
+            ) : (
+              <div className="text-center py-20 text-muted-foreground">
+                <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm">No revenue data yet</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Expense Breakdown */}
+        <Card className={`${mounted ? 'animate-in fade-in slide-in-from-right-4' : ''}`} style={{ animationDelay: '200ms', animationDuration: '600ms' }}>
+          <CardHeader>
+            <CardTitle>{t.expenseBreakdown}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {expenseLoading ? (
+              <Skeleton className="h-[280px] w-full" />
+            ) : (expenseData && expenseData.length > 0) ? (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie
+                    data={expenseData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={90}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {expenseData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '6px',
+                      fontSize: '12px'
+                    }}
+                    formatter={(value: any) => formatCurrency(value, 'AED', locale)}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center py-20 text-muted-foreground">
+                <BarChart3 className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm mb-4">No expense data yet</p>
+                <Link href="/journal">
+                  <Button variant="outline" size="sm">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create journal entry
+                  </Button>
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Actions Grid */}
+      <div>
+        <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <QuickActionCard
+            icon={Plus}
+            title="Create Invoice"
+            description="Generate professional UAE-compliant invoices"
+            href="/invoices"
+            color="bg-blue-600"
+          />
+          <QuickActionCard
+            icon={Receipt}
+            title="Scan Receipt"
+            description="AI-powered OCR expense tracking"
+            href="/receipts"
+            color="bg-green-600"
+          />
+          <QuickActionCard
+            icon={BookOpen}
+            title="Journal Entry"
+            description="Record double-entry transactions"
+            href="/journal"
+            color="bg-purple-600"
+          />
+          <QuickActionCard
+            icon={Zap}
+            title="AI Categorize"
+            description="Automatically categorize expenses"
+            href="/ai-tools"
+            color="bg-amber-600"
+          />
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Invoices */}
+        <Card className={`${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDelay: '300ms', animationDuration: '600ms' }}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              {t.recentInvoices}
+            </CardTitle>
+            <Link href="/invoices">
+              <Button variant="ghost" size="sm" className="gap-1">
+                <span>View all</span>
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </Link>
           </CardHeader>
           <CardContent>
             {invoicesLoading ? (
@@ -135,75 +384,101 @@ export default function Dashboard() {
                 ))}
               </div>
             ) : recentInvoices && recentInvoices.length > 0 ? (
-              <div className="space-y-4">
-                {recentInvoices.map((invoice: any) => (
+              <div className="space-y-3">
+                {recentInvoices.slice(0, 5).map((invoice: any) => (
                   <div
                     key={invoice.id}
-                    className="flex items-center justify-between py-3 border-b last:border-0"
+                    className="flex items-center justify-between p-3 rounded-lg border hover-elevate transition-all"
                     data-testid={`invoice-${invoice.id}`}
                   >
-                    <div className="flex-1">
-                      <div className="font-medium">{invoice.customerName}</div>
-                      <div className="text-sm text-muted-foreground">#{invoice.number}</div>
+                    <div className="flex items-center gap-3 flex-1">
+                      <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium truncate">{invoice.customerName}</div>
+                        <div className="text-sm text-muted-foreground font-mono">#{invoice.number}</div>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <div className="font-mono font-medium">
+                    <div className="text-right flex-shrink-0 ml-4">
+                      <div className="font-mono font-semibold">
                         {formatCurrency(invoice.total, invoice.currency, locale)}
                       </div>
-                      <div className="text-xs">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                          invoice.status === 'paid' ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400' :
-                          invoice.status === 'sent' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' :
-                          invoice.status === 'void' ? 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400' :
-                          'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'
-                        }`}>
-                          {t[invoice.status as keyof typeof t]}
-                        </span>
-                      </div>
+                      <Badge 
+                        variant="outline" 
+                        className={`text-xs mt-1 ${
+                          invoice.status === 'paid' ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400 border-green-200' :
+                          invoice.status === 'sent' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 border-blue-200' :
+                          invoice.status === 'void' ? 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400 border-gray-200' :
+                          'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 border-amber-200'
+                        }`}
+                      >
+                        {t[invoice.status as keyof typeof t]}
+                      </Badge>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                <p>{t.noData}</p>
+              <div className="text-center py-12 text-muted-foreground">
+                <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm mb-4">{t.noData}</p>
+                <Link href="/invoices">
+                  <Button variant="outline" size="sm">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create your first invoice
+                  </Button>
+                </Link>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Expense Breakdown */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t.expenseBreakdown}</CardTitle>
+        {/* Recent Transactions */}
+        <Card className={`${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDelay: '350ms', animationDuration: '600ms' }}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              Recent Activity
+            </CardTitle>
+            <Link href="/journal">
+              <Button variant="ghost" size="sm" className="gap-1">
+                <span>View all</span>
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </Link>
           </CardHeader>
           <CardContent>
-            {expenseLoading ? (
-              <Skeleton className="h-64 w-full" />
-            ) : expenseData && expenseData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={expenseData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
+            {journalEntries && journalEntries.length > 0 ? (
+              <div className="space-y-3">
+                {journalEntries.slice(0, 5).map((entry: any) => (
+                  <div
+                    key={entry.id}
+                    className="flex items-center gap-3 p-3 rounded-lg border hover-elevate transition-all"
                   >
-                    {expenseData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+                    <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900/20 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{entry.memo || 'Journal Entry'}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {formatDate(entry.date, locale)}
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="text-xs">Posted</Badge>
+                  </div>
+                ))}
+              </div>
             ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>{t.noData}</p>
+              <div className="text-center py-12 text-muted-foreground">
+                <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="text-sm mb-4">No transactions yet</p>
+                <Link href="/journal">
+                  <Button variant="outline" size="sm">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create journal entry
+                  </Button>
+                </Link>
               </div>
             )}
           </CardContent>
