@@ -7,7 +7,8 @@ import type {
   JournalLine, InsertJournalLine,
   Invoice, InsertInvoice,
   InvoiceLine, InsertInvoiceLine,
-  Receipt, InsertReceipt
+  Receipt, InsertReceipt,
+  Waitlist, InsertWaitlist
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 
@@ -56,6 +57,10 @@ export interface IStorage {
   // Receipts
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
+  
+  // Waitlist
+  createWaitlistEntry(entry: InsertWaitlist): Promise<Waitlist>;
+  getWaitlistByEmail(email: string): Promise<Waitlist | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -68,6 +73,7 @@ export class MemStorage implements IStorage {
   private invoices: Map<string, Invoice>;
   private invoiceLines: Map<string, InvoiceLine>;
   private receipts: Map<string, Receipt>;
+  private waitlist: Map<string, Waitlist>;
 
   constructor() {
     this.users = new Map();
@@ -79,6 +85,7 @@ export class MemStorage implements IStorage {
     this.invoices = new Map();
     this.invoiceLines = new Map();
     this.receipts = new Map();
+    this.waitlist = new Map();
   }
 
   // Users
@@ -285,6 +292,22 @@ export class MemStorage implements IStorage {
     return Array.from(this.receipts.values())
       .filter(r => r.companyId === companyId)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  }
+
+  // Waitlist
+  async createWaitlistEntry(insertEntry: InsertWaitlist): Promise<Waitlist> {
+    const id = randomUUID();
+    const entry: Waitlist = {
+      id,
+      ...insertEntry,
+      createdAt: new Date(),
+    };
+    this.waitlist.set(id, entry);
+    return entry;
+  }
+
+  async getWaitlistByEmail(email: string): Promise<Waitlist | undefined> {
+    return Array.from(this.waitlist.values()).find(w => w.email === email);
   }
 }
 

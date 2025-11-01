@@ -252,3 +252,21 @@ export interface VATSummaryReport {
   purchasesVAT: number;
   netVATPayable: number;
 }
+
+// ===========================
+// Waitlist / Email Collection
+// ===========================
+export const waitlist = pgTable("waitlist", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  source: text("source").notNull().default("landing_page"), // landing_page | popup | other
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertWaitlistSchema = createInsertSchema(waitlist).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertWaitlist = z.infer<typeof insertWaitlistSchema>;
+export type Waitlist = typeof waitlist.$inferSelect;

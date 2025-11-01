@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { storage } from "./storage";
-import { insertUserSchema, insertCompanySchema, insertAccountSchema, insertInvoiceSchema, insertJournalEntrySchema, categorizationRequestSchema } from "@shared/schema";
+import { insertUserSchema, insertCompanySchema, insertAccountSchema, insertInvoiceSchema, insertJournalEntrySchema, categorizationRequestSchema, insertWaitlistSchema } from "@shared/schema";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h";
@@ -853,6 +853,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(data);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // Waitlist Routes (Public)
+  // =====================================
+  
+  app.post("/api/waitlist", async (req: Request, res: Response) => {
+    try {
+      const validated = insertWaitlistSchema.parse(req.body);
+      
+      // Check if email already exists
+      const existing = await storage.getWaitlistByEmail(validated.email);
+      if (existing) {
+        return res.status(400).json({ message: 'Email already registered for waitlist' });
+      }
+
+      const entry = await storage.createWaitlistEntry(validated);
+      
+      res.json({
+        message: 'Successfully added to waitlist!',
+        email: entry.email,
+      });
+    } catch (error: any) {
+      res.status(400).json({ message: error.message || 'Failed to join waitlist' });
     }
   });
 
