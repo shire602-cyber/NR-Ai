@@ -1,0 +1,387 @@
+1️⃣ Create / replace index.html
+
+Create a file called index.html (or replace your current one) and paste this:
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Bookkeeping for UAE Businesses | Alain Books</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="AI-powered bookkeeping tailored for UAE businesses. Automate VAT, invoices, and financial reports with FTA-compliant workflows."
+  />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- NAVBAR -->
+  <header class="nav">
+    <div class="nav-inner container">
+      <a href="#top" class="logo">
+        <span class="logo-mark">AB</span>
+        <span class="logo-text">
+          <strong>Alain Books</strong>
+          <span class="logo-sub">AI Bookkeeping</span>
+        </span>
+      </a>
+
+      <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation">
+        ☰
+      </button>
+
+      <nav class="nav-links" id="navLinks">
+        <a href="#features">Features</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="#contact">Contact</a>
+        <a href="#cta" class="btn btn-outline-sm">Login</a>
+        <a href="#cta" class="btn btn-primary-sm">Start free</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <span className="tagline">Built for UAE SMEs</span>
+          <h1>AI bookkeeping that actually understands UAE VAT.</h1>
+          <p>
+            Automate invoices, VAT, P&amp;L, and trial balance while staying FTA-compliant.
+            One system for founders, CFOs, and accountants in Dubai and beyond.
+          </p>
+          <div class="hero-actions" id="cta">
+            <a href="#pricing" class="btn btn-primary-lg">Start free trial</a>
+            <a href="#how-it-works" class="btn btn-ghost-lg">Watch how it works</a>
+          </div>
+          <div class="hero-meta">
+            <span>🇦🇪 FTA-aligned VAT logic</span>
+            <span>🔐 Bank-grade security</span>
+            <span>🤖 Powered by AI</span>
+          </div>
+        </div>
+
+        <div class="hero-card">
+          <div class="card">
+            <div class="card-header">
+              <h2>Month-end in minutes, not days.</h2>
+              <p>Here’s what your AI assistant is doing behind the scenes:</p>
+            </div>
+            <ul class="checklist">
+              <li>Auto-categorising bank transactions by vendor &amp; narrative</li>
+              <li>Generating bilingual Tax Invoices (English / Arabic)</li>
+              <li>Posting double-entry journals into UAE-ready COA</li>
+              <li>Summarising VAT payable &amp; receivable for the period</li>
+              <li>Preparing P&amp;L and Trial Balance on-click</li>
+            </ul>
+            <div class="card-footer">
+              <span class="pill pill-ok" id="apiStatus">API: checking…</span>
+              <span class="pill pill-soft">Live demo ready</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRUST STRIP -->
+    <section class="trust">
+      <div class="container trust-inner">
+        <span class="trust-label">Built for modern UAE businesses</span>
+        <div class="trust-logos">
+          <div class="trust-logo">📍 Dubai SMEs</div>
+          <div class="trust-logo">🏢 Co-working hubs</div>
+          <div class="trust-logo">🧾 Tax consultants</div>
+          <div class="trust-logo">👨‍⚕️ Clinics &amp; practices</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="section" id="features">
+      <div class="container">
+        <header class="section-header">
+          <h2>Everything you need to stay on top of your books.</h2>
+          <p>
+            From AI-driven categorisation to FTA-aligned reports, Alain Books replaces messy spreadsheets
+            and manual bookkeeping with a clean, automated workflow.
+          </p>
+        </header>
+
+        <div class="features-grid">
+          <article class="feature-card">
+            <h3>AI-first transaction categorisation</h3>
+            <p>
+              Feed bank statements or card transactions. Our AI suggests the correct account code, learns your patterns,
+              and keeps your chart of accounts clean.
+            </p>
+            <ul>
+              <li>Smart mapping by vendor &amp; description</li>
+              <li>Override &amp; train rules per company</li>
+              <li>Perfect for high-volume SMEs</li>
+            </ul>
+          </article>
+
+          <article class="feature-card">
+            <h3>UAE VAT &amp; corporate tax ready</h3>
+            <p>
+              Out-of-the-box 5% VAT handling with dedicated VAT Payable/Receivable accounts,
+              bilingual tax invoices, and VAT summaries ready for FTA forms.
+            </p>
+            <ul>
+              <li>TRN stored for company &amp; customers</li>
+              <li>Tax invoice PDFs in English + Arabic</li>
+              <li>VAT summary report by period</li>
+            </ul>
+          </article>
+
+          <article class="feature-card">
+            <h3>P&amp;L, Trial Balance &amp; more</h3>
+            <p>
+              Financial statements generated directly from your double-entry journals.
+              No spreadsheet gymnastics, no manual exporting.
+            </p>
+            <ul>
+              <li>Profit &amp; Loss by custom date range</li>
+              <li>Trial balance as of any date</li>
+              <li>JSON APIs ready for your own dashboards</li>
+            </ul>
+          </article>
+
+          <article class="feature-card">
+            <h3>Collaborate with your accountant</h3>
+            <p>
+              Invite your external accountant, give them their own workspace, and let them manage journals, filings,
+              and adjustments without chasing you on WhatsApp.
+            </p>
+            <ul>
+              <li>Multi-company, multi-user structure</li>
+              <li>Roles for Owner, Accountant, CFO</li>
+              <li>Audit-ready history of changes</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="section section-alt" id="how-it-works">
+      <div class="container">
+        <header class="section-header">
+          <h2>From messy statements to clean books in 4 steps.</h2>
+          <p>Onboard in under an hour, close your month in under a day.</p>
+        </header>
+
+        <ol class="steps">
+          <li>
+            <h3>1. Create your company</h3>
+            <p>
+              Add your company details, TRN, and base currency. We auto-seed a UAE-friendly chart of accounts.
+            </p>
+          </li>
+          <li>
+            <h3>2. Import bank &amp; card data</h3>
+            <p>
+              Upload CSVs from your bank or card provider. Our AI starts suggesting categories immediately.
+            </p>
+          </li>
+          <li>
+            <h3>3. Let AI do the heavy lifting</h3>
+            <p>
+              Invoices, VAT, and double-entry postings are generated in the background. You only approve edge cases.
+            </p>
+          </li>
+          <li>
+            <h3>4. Download VAT &amp; reports</h3>
+            <p>
+              Export VAT summaries, P&amp;L, and trial balance for your period. Share them with your auditors, or just sleep better.
+            </p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- PRICING -->
+    <section class="section" id="pricing">
+      <div class="container">
+        <header class="section-header">
+          <h2>Simple pricing that grows with you.</h2>
+          <p>All plans include AI categorisation, VAT support, and financial reports.</p>
+        </header>
+
+        <div class="pricing-grid">
+          <!-- Starter -->
+          <article class="pricing-card">
+            <h3>Starter</h3>
+            <p class="price">
+              <span class="price-main">Free</span>
+              <span class="price-sub">no credit card</span>
+            </p>
+            <ul class="pricing-list">
+              <li>1 company</li>
+              <li>Up to 100 transactions / month</li>
+              <li>Invoices &amp; basic reports</li>
+              <li>Email support</li>
+            </ul>
+            <a href="#cta" class="btn btn-outline-lg">Start for free</a>
+          </article>
+
+          <!-- Growth (popular) -->
+          <article class="pricing-card pricing-featured">
+            <div class="badge">Most popular</div>
+            <h3>Growth</h3>
+            <p class="price">
+              <span class="price-main">AED 299</span>
+              <span class="price-sub">per month</span>
+            </p>
+            <ul class="pricing-list">
+              <li>Up to 3 companies</li>
+              <li>Unlimited transactions</li>
+              <li>AI categorisation &amp; anomaly alerts</li>
+              <li>VAT summaries &amp; invoice PDFs</li>
+              <li>Priority chat &amp; onboarding</li>
+            </ul>
+            <a href="#cta" class="btn btn-primary-lg">Start Growth</a>
+          </article>
+
+          <!-- Firm -->
+          <article class="pricing-card">
+            <h3>Firm</h3>
+            <p class="price">
+              <span class="price-main">AED 799</span>
+              <span class="price-sub">per month</span>
+            </p>
+            <ul class="pricing-list">
+              <li>Accounting firms &amp; CFOs</li>
+              <li>Unlimited companies</li>
+              <li>Dedicated success manager</li>
+              <li>Custom VAT &amp; tax workflows</li>
+              <li>Early access to new AI features</li>
+            </ul>
+            <a href="#cta" class="btn btn-outline-lg">Talk to us</a>
+          </article>
+        </div>
+
+        <p class="pricing-footnote">
+          All prices in AED. Cancel anytime. No setup fees.
+        </p>
+      </div>
+    </section>
+
+    <!-- TESTIMONIALS -->
+    <section class="section section-alt" id="testimonials">
+      <div class="container">
+        <header class="section-header">
+          <h2>What founders &amp; finance teams say.</h2>
+          <p>Replace stress and spreadsheets with clarity and control.</p>
+        </header>
+
+        <div class="testimonials-grid">
+          <article class="testimonial-card">
+            <p>
+              “We closed our books 4x faster in Q2. VAT was basically a button instead of a weekly headache.”
+            </p>
+            <h4>CEO, Marketing Agency – Dubai</h4>
+          </article>
+          <article class="testimonial-card">
+            <p>
+              “Our accountant now just reviews and adjusts. The system does the boring part better than any junior.”
+            </p>
+            <h4>Founder, E-commerce – Sharjah</h4>
+          </article>
+          <article class="testimonial-card">
+            <p>
+              “The bilingual tax invoices and UAE chart of accounts made onboarding almost instant.”
+            </p>
+            <h4>Tax Consultant – Abu Dhabi</h4>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section" id="faq">
+      <div class="container">
+        <header class="section-header">
+          <h2>Frequently asked questions.</h2>
+          <p>Still unsure? Here are the answers most people want first.</p>
+        </header>
+
+        <div class="faq-grid">
+          <article class="faq-item">
+            <h3>Is this only for UAE businesses?</h3>
+            <p>
+              We start with UAE-friendly VAT and bilingual invoices, but the engine is global-ready.
+              More jurisdictions are coming as we grow.
+            </p>
+          </article>
+          <article class="faq-item">
+            <h3>Can my existing accountant use it?</h3>
+            <p>
+              Yes. Invite them as an accountant user. They’ll get access to journals, reports, and exports,
+              while you keep control of access.
+            </p>
+          </article>
+          <article class="faq-item">
+            <h3>Where is my data stored?</h3>
+            <p>
+              Your data is stored in secure, encrypted databases with regular backups.
+              We never sell your data and can sign NDAs for larger clients.
+            </p>
+          </article>
+          <article class="faq-item">
+            <h3>Do you connect directly to my bank?</h3>
+            <p>
+              For the MVP, we support CSV import from your bank.
+              Direct connections to UAE banks and card providers are on the roadmap.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTACT / FOOTER CTA -->
+    <section class="section section-cta" id="contact">
+      <div class="container cta-inner">
+        <div>
+          <h2>Ready to see your books in real time?</h2>
+          <p>
+            Start with a free account, or book a short onboarding call.
+            We’ll help you import your first month of data.
+          </p>
+        </div>
+        <div class="cta-actions">
+          <a href="mailto:info@alainbcenter.com" class="btn btn-primary-lg">Book a demo</a>
+          <a href="#pricing" class="btn btn-ghost-lg">Compare plans</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <span class="logo-mark">AB</span>
+        <span>
+          <strong>Alain Books</strong><br />
+          <small>AI Bookkeeping for UAE SMEs</small>
+        </span>
+      </div>
+      <div class="footer-links">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </div>
+      <div class="footer-meta">
+        <small>© <span id="year"></span> Alain Books. All rights reserved.</small><br />
+        <small>Made with ☕ in Dubai.</small>
+      </div>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
