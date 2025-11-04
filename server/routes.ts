@@ -61,6 +61,24 @@ async function seedChartOfAccounts(companyId: string) {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // =====================================
+  // Health Check Route
+  // =====================================
+  
+  app.get("/health", async (req: Request, res: Response) => {
+    try {
+      res.status(200).json({
+        ok: true,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(503).json({
+        ok: false,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // =====================================
   // Auth Routes
   // =====================================
   
