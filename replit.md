@@ -8,26 +8,29 @@ This is an AI-powered bookkeeping platform specifically designed for UAE busines
 
 **November 4, 2025 - Dark SaaS Landing Page Redesign**
 - Completely redesigned landing page (`client/src/pages/Landing.tsx`) with dark SaaS aesthetic inspired by HTML/CSS template
-- Restructured page layout following template structure: Hero → Trust Strip → Features → How It Works → Pricing → Testimonials → FAQ → Final CTA
+- Restructured page layout following template structure: Hero → Trust Strip → Integration Logos → Features → How It Works → Pricing → Testimonials → FAQ → Final CTA
 - Updated messaging to focus on "AI bookkeeping that actually understands UAE VAT"
-- **Hero Section**: Clear headline, subheading for UAE SMEs, dual CTAs (Start free trial, Watch how it works), 3 benefit pills with Lucide icons (FTA-aligned VAT logic, Bank-grade security, Powered by AI), animated dashboard preview card showing month-end automation
+- **Hero Section**: Clear headline, subheading for UAE SMEs, dual CTAs (Start free trial, Watch how it works), 3 benefit pills with exact text ("FTA-Compliant," "Bank-Grade Security," "Powered by AI"), animated dashboard preview card showing month-end automation
 - **Trust Strip**: 4 UAE business segments with Lucide icons (Dubai SMEs, Co-working hubs, Tax consultants, Clinics & practices)
+- **Integration Logos**: Dedicated section showing Stripe, PayPal, and Excel logos with hover effects for credibility
 - **Features**: 4 feature cards with icons and bullet lists (AI categorisation, UAE VAT & corporate tax, P&L/Trial Balance, Accountant collaboration)
 - **How It Works**: 4-step process (Create company, Import data, Let AI work, Download reports) with ROI calculator integrated as highlighted component
 - **ROI Calculator**: Interactive slider with real-time calculations showing monthly savings and weekly hours saved
-- **Pricing**: 3 plans (Starter Free, Growth AED 299 - Most Popular, Firm AED 799) replacing previous USD pricing
+- **Pricing**: 3 plans (Starter Free, Growth AED 299 - Most Popular, Firm AED 799) with footer text "All prices in AED · Cancel anytime · No setup fees" using middle dots
 - **Testimonials**: 3 customer quotes from UAE business owners (CEO Marketing Agency Dubai, Founder E-commerce Sharjah, Tax Consultant Abu Dhabi)
 - **FAQ**: 4 questions (UAE only?, Existing accountant?, Data storage?, Bank connection?)
-- All existing features preserved: Bilingual EN/AR with RTL, ROI calculator, email popup (15s delay), data-testid attributes
+- **Footer**: "Made with ❤️ in Dubai" using Heart icon from Lucide React (red fill)
+- All existing features preserved: Bilingual EN/AR with RTL, ROI calculator, email popup (50% scroll OR 15s - whichever first), data-testid attributes
 - Replaced all emojis with Lucide React icons per design guidelines
-- Added data-testid attributes to all navbar links (nav-features, nav-how-it-works, nav-pricing, nav-faq)
+- Added data-testid attributes to all navbar links and integration logos
 - Fully responsive design (mobile/tablet/desktop) with consistent dark SaaS aesthetic
 
 **Landing Page Technical Details**:
 - Design: Dark SaaS aesthetic with gradients, hover-elevate effects, Cards for content grouping
-- Icons: All UI elements use Lucide React icons (no emojis)
+- Icons: All UI elements use Lucide React icons (no emojis) + react-icons/si for company logos (Stripe, PayPal)
 - ROI Formula: monthlyHours = (transactions × 2min) / 60, weeklyHours = monthlyHours / 4, monthlySavings = monthlyHours × AED 50/hour
-- Email popup: Opens after 15 seconds, collects emails for lifetime deal waitlist
+- Email popup: Dual trigger - opens at 50% scroll OR after 15 seconds (whichever happens first), collects emails for lifetime deal waitlist
+- Integration logos: Stripe (SiStripe), PayPal (SiPaypal), Excel (Sheet from Lucide) with data-testid attributes
 - Bilingual: Full English/Arabic support with RTL layout switching via Globe button
 - Testing: Comprehensive data-testid attributes on all interactive elements
 - Performance: No heavy images/videos, fast-loading, optimized for Core Web Vitals
