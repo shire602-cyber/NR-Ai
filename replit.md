@@ -6,6 +6,18 @@ This is an AI-powered bookkeeping platform specifically designed for UAE busines
 
 ## Recent Changes
 
+**November 4, 2025 - Health Check System Implementation**
+- Added `/health` endpoint to backend (`server/routes.ts`) that returns `{ ok: boolean, timestamp: string }`
+- Created React hook `useHealthCheck` (`client/src/hooks/useHealthCheck.ts`) that polls health endpoint every 30 seconds
+- Updated Landing page hero card to display real-time API health status badge
+- Health status badge shows:
+  - **Online**: Green pill with "API: online" (EN) / "API: متصل" (AR) when backend is responsive
+  - **Offline**: Red pill with "API: offline" (EN) / "API: غير متصل" (AR) when backend is unreachable
+  - **Loading**: "API: checking..." during initial check
+- Badge uses proper TypeScript types and includes 5-second timeout for requests
+- Bilingual support with automatic locale switching
+- Added data-testid="badge-api-status" for testing
+
 **November 4, 2025 - Dark SaaS Landing Page Redesign**
 - Completely redesigned landing page (`client/src/pages/Landing.tsx`) with dark SaaS aesthetic inspired by HTML/CSS template
 - Restructured page layout following template structure: Hero → Trust Strip → Integration Logos → Features → How It Works → Pricing → Testimonials → FAQ → Final CTA
