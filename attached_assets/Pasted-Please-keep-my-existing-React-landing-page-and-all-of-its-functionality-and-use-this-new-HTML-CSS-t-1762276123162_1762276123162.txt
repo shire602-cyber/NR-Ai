@@ -1,0 +1,51 @@
+Please keep my existing React landing page and all of its functionality, and use this new HTML/CSS template purely as a DESIGN + COPY reference.
+
+Concretely:
+
+1. DO NOT replace the React app with static HTML.
+2. KEEP these features exactly as they are:
+   - Bilingual EN/AR support (including RTL behavior)
+   - Interactive ROI calculator
+   - Animated dashboard preview
+   - data-testid attributes for tests
+   - Email popup / lifetime deal logic
+
+3. UPDATE THE LANDING PAGE LAYOUT to follow the structure of the template:
+   - Hero section:
+     - Clear headline like “AI bookkeeping that actually understands UAE VAT”
+     - Subheading focused on UAE SMEs
+     - Primary CTA: “Start free trial”
+     - Secondary CTA: “Watch how it works”
+     - 2–3 small benefit pills (FTA-compliant, AI-powered, secure)
+   - Trust strip (logos / segments) under the hero
+   - “Features” section with 3–4 feature cards:
+     - AI categorisation
+     - UAE VAT & bilingual tax invoices
+     - P&L + Trial Balance
+     - Collaboration with accountants
+   - “How it works” section with 4 steps
+   - “Pricing” section:
+     - 3 plans: Starter, Growth, Firm
+     - Highlight Growth as “Most popular”
+   - Testimonials and FAQ sections
+   - Final CTA section + footer with links
+
+4. IMPLEMENT THE DESIGN IN REACT:
+   - Recreate the template styling using CSS Modules, styled-components, or Tailwind (whatever the project already uses).
+   - Match the general look & feel:
+     - Dark SaaS style
+     - Pill buttons, cards, and grids like in the template
+     - Modern spacing and typography
+   - Keep my current brand name and logo; just adapt colors/layout based on the template.
+
+5. HOOK EXISTING COMPONENTS INTO THE NEW LAYOUT:
+   - Place the animated dashboard preview inside the hero or “How it works” section.
+   - Place the ROI calculator inside the Features or Pricing area as a highlighted component.
+   - Keep the email popup behavior, but make sure its styling matches the new design.
+
+6. PRESERVE TESTS:
+   - Keep all existing data-testid attributes.
+   - If you move components into new sections, keep the same test IDs so my tests don’t break.
+
+In short: 
+Use the new HTML/CSS as a blueprint for layout, copy, and visual styles, but keep everything React-based, preserve all existing behavior, and integrate my current interactive components into the new structure.
