@@ -276,12 +276,12 @@ export default function Landing() {
                 {/* CTAs */}
                 <div className="flex flex-wrap gap-4">
                   <Link href="/register">
-                    <Button size="lg" data-testid="button-start-trial-hero">
+                    <Button size="lg" className="min-h-[44px]" data-testid="button-start-trial-hero">
                       {locale === 'en' ? 'Start free trial' : 'ابدأ تجربة مجانية'}
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </Link>
-                  <Button size="lg" variant="outline" data-testid="button-watch-demo">
+                  <Button size="lg" variant="outline" className="min-h-[44px]" data-testid="button-watch-demo">
                     <Play className="w-4 h-4 mr-2" />
                     {locale === 'en' ? 'Watch how it works' : 'شاهد كيف تعمل'}
                   </Button>
