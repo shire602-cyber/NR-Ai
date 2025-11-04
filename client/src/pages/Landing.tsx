@@ -1,6 +1,13 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Sheet as SheetComponent,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { Link } from 'wouter';
 import { 
   Sparkles, 
@@ -34,7 +41,9 @@ import {
   Bot,
   Award,
   Heart,
-  Sheet
+  Sheet,
+  Menu,
+  X
 } from 'lucide-react';
 import { SiStripe, SiPaypal } from 'react-icons/si';
 import { useState, useEffect } from 'react';
@@ -49,6 +58,7 @@ export default function Landing() {
   const [monthlyTransactions, setMonthlyTransactions] = useState(50);
   const [hoursPerWeek, setHoursPerWeek] = useState(0);
   const [moneySaved, setMoneySaved] = useState(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const healthStatus = useHealthCheck(30000);
 
   useEffect(() => {
@@ -137,7 +147,8 @@ export default function Landing() {
             </a>
           </nav>
 
-          <div className="flex items-center gap-3">
+          {/* Desktop Actions */}
+          <div className="hidden md:flex items-center gap-3">
             <Button 
               variant="ghost" 
               size="sm"
@@ -157,6 +168,79 @@ export default function Landing() {
                 {locale === 'en' ? 'Start free' : 'ابدأ مجانًا'}
               </Button>
             </Link>
+          </div>
+
+          {/* Mobile Menu */}
+          <div className="flex md:hidden items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={toggleLanguage}
+              data-testid="button-toggle-language-mobile"
+            >
+              <Globe className="w-5 h-5" />
+            </Button>
+            <SheetComponent open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
+                  <Menu className="w-5 h-5" />
+                  <span className="sr-only">{locale === 'en' ? 'Open menu' : 'فتح القائمة'}</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent side={isRTL ? 'left' : 'right'}>
+                <SheetHeader>
+                  <SheetTitle>
+                    {locale === 'en' ? 'Menu' : 'القائمة'}
+                  </SheetTitle>
+                </SheetHeader>
+                <nav className="flex flex-col gap-4 mt-8">
+                  <a 
+                    href="#features" 
+                    className="text-lg hover:text-primary transition-colors py-2" 
+                    onClick={() => setMobileMenuOpen(false)}
+                    data-testid="nav-features-mobile"
+                  >
+                    {locale === 'en' ? 'Features' : 'الميزات'}
+                  </a>
+                  <a 
+                    href="#how-it-works" 
+                    className="text-lg hover:text-primary transition-colors py-2"
+                    onClick={() => setMobileMenuOpen(false)}
+                    data-testid="nav-how-it-works-mobile"
+                  >
+                    {locale === 'en' ? 'How it works' : 'كيف تعمل'}
+                  </a>
+                  <a 
+                    href="#pricing" 
+                    className="text-lg hover:text-primary transition-colors py-2"
+                    onClick={() => setMobileMenuOpen(false)}
+                    data-testid="nav-pricing-mobile"
+                  >
+                    {locale === 'en' ? 'Pricing' : 'الأسعار'}
+                  </a>
+                  <a 
+                    href="#faq" 
+                    className="text-lg hover:text-primary transition-colors py-2"
+                    onClick={() => setMobileMenuOpen(false)}
+                    data-testid="nav-faq-mobile"
+                  >
+                    {locale === 'en' ? 'FAQ' : 'الأسئلة'}
+                  </a>
+                  <div className="border-t pt-4 mt-4 flex flex-col gap-3">
+                    <Link href="/login">
+                      <Button variant="ghost" className="w-full" data-testid="link-login-mobile">
+                        {locale === 'en' ? 'Login' : 'دخول'}
+                      </Button>
+                    </Link>
+                    <Link href="/register">
+                      <Button className="w-full" data-testid="link-register-mobile">
+                        {locale === 'en' ? 'Start free trial' : 'ابدأ تجربة مجانية'}
+                      </Button>
+                    </Link>
+                  </div>
+                </nav>
+              </SheetContent>
+            </SheetComponent>
           </div>
         </div>
       </header>
