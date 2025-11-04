@@ -40,6 +40,7 @@ import { SiStripe, SiPaypal } from 'react-icons/si';
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
 import { EmailPopup } from '@/components/EmailPopup';
+import { useHealthCheck } from '@/hooks/useHealthCheck';
 
 export default function Landing() {
   const { locale, setLocale } = useI18n();
@@ -48,6 +49,7 @@ export default function Landing() {
   const [monthlyTransactions, setMonthlyTransactions] = useState(50);
   const [hoursPerWeek, setHoursPerWeek] = useState(0);
   const [moneySaved, setMoneySaved] = useState(0);
+  const healthStatus = useHealthCheck(30000);
 
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 100);
@@ -253,9 +255,22 @@ export default function Landing() {
                         <Zap className="w-3 h-3" />
                         {locale === 'en' ? 'Live demo ready' : 'العرض التجريبي جاهز'}
                       </Badge>
-                      <Badge variant="outline" className="gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-green-500" />
-                        {locale === 'en' ? 'API: Connected' : 'API: متصل'}
+                      <Badge 
+                        variant="outline" 
+                        className={`gap-1 ${
+                          healthStatus.isOnline 
+                            ? 'bg-green-500/10 border-green-500/50 text-green-700 dark:text-green-400' 
+                            : 'bg-red-500/10 border-red-500/50 text-red-700 dark:text-red-400'
+                        }`}
+                        data-testid="badge-api-status"
+                      >
+                        <CheckCircle2 className={`w-3 h-3 ${healthStatus.isOnline ? 'text-green-500' : 'text-red-500'}`} />
+                        {healthStatus.isLoading 
+                          ? (locale === 'en' ? 'API: checking...' : 'API: جارٍ الفحص...') 
+                          : healthStatus.isOnline 
+                            ? (locale === 'en' ? 'API: online' : 'API: متصل') 
+                            : (locale === 'en' ? 'API: offline' : 'API: غير متصل')
+                        }
                       </Badge>
                     </div>
                   </div>
