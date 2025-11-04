@@ -33,8 +33,10 @@ import {
   Lock,
   Bot,
   Award,
-  Coffee
+  Heart,
+  Sheet
 } from 'lucide-react';
+import { SiStripe, SiPaypal } from 'react-icons/si';
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
 import { EmailPopup } from '@/components/EmailPopup';
@@ -52,13 +54,34 @@ export default function Landing() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Show email popup after 15 seconds
+  // Show email popup after 15 seconds OR 50% scroll (whichever comes first)
   useEffect(() => {
-    const popupTimer = setTimeout(() => {
-      setShowEmailPopup(true);
-    }, 15000);
+    let hasShownPopup = false;
+    
+    const showPopup = () => {
+      if (!hasShownPopup) {
+        hasShownPopup = true;
+        setShowEmailPopup(true);
+      }
+    };
 
-    return () => clearTimeout(popupTimer);
+    // Timer: Show after 15 seconds
+    const popupTimer = setTimeout(showPopup, 15000);
+
+    // Scroll listener: Show when user scrolls 50% down the page
+    const handleScroll = () => {
+      const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
+      if (scrollPercent >= 50) {
+        showPopup();
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+
+    return () => {
+      clearTimeout(popupTimer);
+      window.removeEventListener('scroll', handleScroll);
+    };
   }, []);
 
   // Calculate ROI based on transactions
@@ -182,11 +205,11 @@ export default function Landing() {
                 <div className="flex flex-wrap gap-4 pt-4">
                   <Badge variant="secondary" className="gap-2">
                     <FileCheck2 className="w-4 h-4" />
-                    {locale === 'en' ? 'FTA-aligned VAT logic' : 'منطق ضريبة القيمة المضافة متوافق مع الهيئة الاتحادية'}
+                    {locale === 'en' ? 'FTA-Compliant' : 'متوافق مع الهيئة الاتحادية'}
                   </Badge>
                   <Badge variant="secondary" className="gap-2">
                     <Lock className="w-4 h-4" />
-                    {locale === 'en' ? 'Bank-grade security' : 'أمان على مستوى البنوك'}
+                    {locale === 'en' ? 'Bank-Grade Security' : 'أمان على مستوى البنوك'}
                   </Badge>
                   <Badge variant="secondary" className="gap-2">
                     <Bot className="w-4 h-4" />
@@ -260,6 +283,29 @@ export default function Landing() {
                   <div className="text-sm font-medium">{item.text}</div>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* INTEGRATIONS */}
+        <section className="py-12 bg-muted/10">
+          <div className="container max-w-5xl mx-auto px-4">
+            <p className="text-center text-sm text-muted-foreground mb-8 font-medium">
+              {locale === 'en' ? 'Works with' : 'يعمل مع'}
+            </p>
+            <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12">
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-stripe">
+                <SiStripe className="w-10 h-10" />
+                <span className="font-semibold text-lg">Stripe</span>
+              </div>
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-paypal">
+                <SiPaypal className="w-10 h-10" />
+                <span className="font-semibold text-lg">PayPal</span>
+              </div>
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-excel">
+                <Sheet className="w-10 h-10 text-green-600" />
+                <span className="font-semibold text-lg">Excel</span>
+              </div>
             </div>
           </div>
         </section>
@@ -650,8 +696,8 @@ export default function Landing() {
 
             <p className="text-center text-sm text-muted-foreground mt-8">
               {locale === 'en'
-                ? 'All prices in AED. Cancel anytime. No setup fees.'
-                : 'جميع الأسعار بالدرهم الإماراتي. إلغاء في أي وقت. بدون رسوم إعداد.'}
+                ? 'All prices in AED · Cancel anytime · No setup fees'
+                : 'جميع الأسعار بالدرهم الإماراتي · إلغاء في أي وقت · بدون رسوم إعداد'}
             </p>
           </div>
         </section>
@@ -840,7 +886,7 @@ export default function Landing() {
                 <p>© {new Date().getFullYear()} BookKeep. {locale === 'en' ? 'All rights reserved.' : 'كل الحقوق محفوظة.'}</p>
                 <p className="mt-2 flex items-center gap-1">
                   {locale === 'en' ? 'Made with' : 'صُنع بـ'} 
-                  <Coffee className="w-4 h-4" /> 
+                  <Heart className="w-4 h-4 fill-red-500 text-red-500" /> 
                   {locale === 'en' ? 'in Dubai.' : 'في دبي.'}
                 </p>
               </div>
