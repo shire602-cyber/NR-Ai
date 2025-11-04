@@ -6,28 +6,30 @@ This is an AI-powered bookkeeping platform specifically designed for UAE busines
 
 ## Recent Changes
 
-**November 4, 2025 - World-Class Landing Page Redesign**
-- Completely rebuilt landing page (`client/src/pages/Landing.tsx`) to significantly outperform competitors (QuickBooks, Xero, FreshBooks)
-- Implemented cinematic dual-panel hero section with animated dashboard preview
-- Added trust proof bar with 4 certifications (FTA Certified, ISO 27001, Bank-Grade Security, VAT Compliant)
-- Created interactive AI demo section with 3-step visual explainer (Upload → AI Analyzes → Approve)
-- Built UAE-specific compliance section with invoice preview showing VAT, TRN, and QR code
-- Added interactive ROI calculator with dynamic calculations (weekly hours saved, monthly savings)
-- Created competitive comparison matrix vs QuickBooks/Xero/FreshBooks
-- Added 3 testimonials from UAE business owners with 5-star ratings
-- Redesigned pricing section with 3 plans (Starter $49, Professional $99, Enterprise Custom)
-- Added FAQ section with 5 key questions (security, ease of use, cancellation, AI accuracy, FTA compliance)
-- Implemented comprehensive data-testid attributes throughout for end-to-end testing
-- Fixed ROI calculator formula: weeklyHours = monthlyHours/4, monthlySavings = monthlyHours × $50
-- Fixed ROI calculator display: Shows hours with 1 decimal place to prevent "0h" bug
-- Added email popup component for lifetime deal collection (appears after 15 seconds)
-- All features fully responsive (mobile/tablet/desktop) with RTL support for Arabic
+**November 4, 2025 - Dark SaaS Landing Page Redesign**
+- Completely redesigned landing page (`client/src/pages/Landing.tsx`) with dark SaaS aesthetic inspired by HTML/CSS template
+- Restructured page layout following template structure: Hero → Trust Strip → Features → How It Works → Pricing → Testimonials → FAQ → Final CTA
+- Updated messaging to focus on "AI bookkeeping that actually understands UAE VAT"
+- **Hero Section**: Clear headline, subheading for UAE SMEs, dual CTAs (Start free trial, Watch how it works), 3 benefit pills with Lucide icons (FTA-aligned VAT logic, Bank-grade security, Powered by AI), animated dashboard preview card showing month-end automation
+- **Trust Strip**: 4 UAE business segments with Lucide icons (Dubai SMEs, Co-working hubs, Tax consultants, Clinics & practices)
+- **Features**: 4 feature cards with icons and bullet lists (AI categorisation, UAE VAT & corporate tax, P&L/Trial Balance, Accountant collaboration)
+- **How It Works**: 4-step process (Create company, Import data, Let AI work, Download reports) with ROI calculator integrated as highlighted component
+- **ROI Calculator**: Interactive slider with real-time calculations showing monthly savings and weekly hours saved
+- **Pricing**: 3 plans (Starter Free, Growth AED 299 - Most Popular, Firm AED 799) replacing previous USD pricing
+- **Testimonials**: 3 customer quotes from UAE business owners (CEO Marketing Agency Dubai, Founder E-commerce Sharjah, Tax Consultant Abu Dhabi)
+- **FAQ**: 4 questions (UAE only?, Existing accountant?, Data storage?, Bank connection?)
+- All existing features preserved: Bilingual EN/AR with RTL, ROI calculator, email popup (15s delay), data-testid attributes
+- Replaced all emojis with Lucide React icons per design guidelines
+- Added data-testid attributes to all navbar links (nav-features, nav-how-it-works, nav-pricing, nav-faq)
+- Fully responsive design (mobile/tablet/desktop) with consistent dark SaaS aesthetic
 
 **Landing Page Technical Details**:
-- ROI Formula: monthlyHours = (transactions × 2min) / 60, weeklyHours = monthlyHours / 4, monthlySavings = monthlyHours × $50/hour
-- Email popup timing: 15 seconds after page load (reduced from 45s for better conversion)
-- Bilingual support: Full English/Arabic with RTL layout switching
-- Modern design: Gradient backgrounds, hover-elevate effects, smooth animations
+- Design: Dark SaaS aesthetic with gradients, hover-elevate effects, Cards for content grouping
+- Icons: All UI elements use Lucide React icons (no emojis)
+- ROI Formula: monthlyHours = (transactions × 2min) / 60, weeklyHours = monthlyHours / 4, monthlySavings = monthlyHours × AED 50/hour
+- Email popup: Opens after 15 seconds, collects emails for lifetime deal waitlist
+- Bilingual: Full English/Arabic support with RTL layout switching via Globe button
+- Testing: Comprehensive data-testid attributes on all interactive elements
 - Performance: No heavy images/videos, fast-loading, optimized for Core Web Vitals
 
 ## User Preferences

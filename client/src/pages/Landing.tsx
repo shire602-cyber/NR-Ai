@@ -32,7 +32,8 @@ import {
   Stethoscope,
   Lock,
   Bot,
-  Award
+  Award,
+  Coffee
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
@@ -84,7 +85,7 @@ export default function Landing() {
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="container max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/">
-            <a className="flex items-center gap-3 hover-elevate active-elevate-2 rounded-lg px-2 py-1 -ml-2">
+            <a className="flex items-center gap-3 hover-elevate active-elevate-2 rounded-lg px-2 py-1 -ml-2" data-testid="link-logo">
               <Briefcase className="w-6 h-6 text-primary" />
               <div className="flex flex-col">
                 <span className="font-bold text-lg leading-none">
@@ -803,7 +804,7 @@ export default function Landing() {
             <div className="grid md:grid-cols-3 gap-8 mb-8">
               {/* Brand */}
               <div>
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-4" data-testid="footer-brand">
                   <Briefcase className="w-6 h-6 text-primary" />
                   <div className="flex flex-col">
                     <span className="font-bold text-lg leading-none">
@@ -823,13 +824,13 @@ export default function Landing() {
                     {locale === 'en' ? 'Product' : 'المنتج'}
                   </h4>
                   <div className="space-y-2">
-                    <a href="#features" className="block text-sm text-muted-foreground hover:text-primary">
+                    <a href="#features" className="block text-sm text-muted-foreground hover:text-primary" data-testid="footer-link-features">
                       {locale === 'en' ? 'Features' : 'الميزات'}
                     </a>
-                    <a href="#pricing" className="block text-sm text-muted-foreground hover:text-primary">
+                    <a href="#pricing" className="block text-sm text-muted-foreground hover:text-primary" data-testid="footer-link-pricing">
                       {locale === 'en' ? 'Pricing' : 'الأسعار'}
                     </a>
-                    <a href="#faq" className="block text-sm text-muted-foreground hover:text-primary">
+                    <a href="#faq" className="block text-sm text-muted-foreground hover:text-primary" data-testid="footer-link-faq">
                       {locale === 'en' ? 'FAQ' : 'الأسئلة'}
                     </a>
                   </div>
@@ -839,7 +840,11 @@ export default function Landing() {
               {/* Meta */}
               <div className="text-sm text-muted-foreground">
                 <p>© {new Date().getFullYear()} BookKeep. {locale === 'en' ? 'All rights reserved.' : 'كل الحقوق محفوظة.'}</p>
-                <p className="mt-2">{locale === 'en' ? 'Made with ☕ in Dubai.' : 'صُنع بـ ☕ في دبي.'}</p>
+                <p className="mt-2 flex items-center gap-1">
+                  {locale === 'en' ? 'Made with' : 'صُنع بـ'} 
+                  <Coffee className="w-4 h-4" /> 
+                  {locale === 'en' ? 'in Dubai.' : 'في دبي.'}
+                </p>
               </div>
             </div>
           </div>
