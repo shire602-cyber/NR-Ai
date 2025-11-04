@@ -65,7 +65,7 @@ export default function Landing() {
     const monthlyHours = (monthlyTransactions * 2) / 60; // 2 minutes per transaction manually
     const weeklyHours = monthlyHours / 4; // Divide by 4 weeks to get weekly hours
     const monthlySavings = monthlyHours * 50; // $50/hour * monthly hours
-    setHoursPerWeek(Math.round(weeklyHours));
+    setHoursPerWeek(weeklyHours); // Keep as decimal for accurate display
     setMoneySaved(Math.round(monthlySavings));
   }, [monthlyTransactions]);
 
@@ -499,7 +499,7 @@ export default function Landing() {
                 <div className="text-center p-6 bg-gradient-to-br from-blue-500/10 to-cyan-500/10 rounded-lg border border-blue-500/20" data-testid="roi-hours-saved">
                   <Clock className="w-8 h-8 text-blue-500 mx-auto mb-3" />
                   <div className="text-3xl font-bold font-mono text-blue-600 mb-1">
-                    {hoursPerWeek}h
+                    {hoursPerWeek.toFixed(1)}h
                   </div>
                   <div className="text-sm text-muted-foreground">
                     {locale === 'en' ? 'Saved per week' : 'توفير أسبوعي'}
