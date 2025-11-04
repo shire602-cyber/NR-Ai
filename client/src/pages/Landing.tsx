@@ -25,7 +25,14 @@ import {
   UserPlus,
   Database,
   Download,
-  ChevronRight
+  ChevronRight,
+  MapPin,
+  Home,
+  FileCheck2,
+  Stethoscope,
+  Lock,
+  Bot,
+  Award
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
@@ -92,16 +99,16 @@ export default function Landing() {
           
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-6">
-            <a href="#features" className="text-sm hover:text-primary transition-colors">
+            <a href="#features" className="text-sm hover:text-primary transition-colors" data-testid="nav-features">
               {locale === 'en' ? 'Features' : 'الميزات'}
             </a>
-            <a href="#how-it-works" className="text-sm hover:text-primary transition-colors">
+            <a href="#how-it-works" className="text-sm hover:text-primary transition-colors" data-testid="nav-how-it-works">
               {locale === 'en' ? 'How it works' : 'كيف تعمل'}
             </a>
-            <a href="#pricing" className="text-sm hover:text-primary transition-colors">
+            <a href="#pricing" className="text-sm hover:text-primary transition-colors" data-testid="nav-pricing">
               {locale === 'en' ? 'Pricing' : 'الأسعار'}
             </a>
-            <a href="#faq" className="text-sm hover:text-primary transition-colors">
+            <a href="#faq" className="text-sm hover:text-primary transition-colors" data-testid="nav-faq">
               {locale === 'en' ? 'FAQ' : 'الأسئلة'}
             </a>
           </nav>
@@ -139,8 +146,9 @@ export default function Landing() {
             <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
               {/* Left: Copy */}
               <div className={`space-y-8 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000' : 'opacity-0'}`}>
-                <Badge className="w-fit">
-                  🇦🇪 {locale === 'en' ? 'Built for UAE SMEs' : 'مصمم للمؤسسات الإماراتية'}
+                <Badge className="w-fit gap-2">
+                  <Award className="w-4 h-4" />
+                  {locale === 'en' ? 'Built for UAE SMEs' : 'مصمم للمؤسسات الإماراتية'}
                 </Badge>
                 
                 <h1 className="text-4xl lg:text-6xl font-bold leading-tight">
@@ -174,13 +182,16 @@ export default function Landing() {
                 {/* Benefit Pills */}
                 <div className="flex flex-wrap gap-4 pt-4">
                   <Badge variant="secondary" className="gap-2">
-                    🇦🇪 {locale === 'en' ? 'FTA-aligned VAT logic' : 'منطق ضريبة القيمة المضافة متوافق مع الهيئة الاتحادية'}
+                    <FileCheck2 className="w-4 h-4" />
+                    {locale === 'en' ? 'FTA-aligned VAT logic' : 'منطق ضريبة القيمة المضافة متوافق مع الهيئة الاتحادية'}
                   </Badge>
                   <Badge variant="secondary" className="gap-2">
-                    🔐 {locale === 'en' ? 'Bank-grade security' : 'أمان على مستوى البنوك'}
+                    <Lock className="w-4 h-4" />
+                    {locale === 'en' ? 'Bank-grade security' : 'أمان على مستوى البنوك'}
                   </Badge>
                   <Badge variant="secondary" className="gap-2">
-                    🤖 {locale === 'en' ? 'Powered by AI' : 'مدعوم بالذكاء الاصطناعي'}
+                    <Bot className="w-4 h-4" />
+                    {locale === 'en' ? 'Powered by AI' : 'مدعوم بالذكاء الاصطناعي'}
                   </Badge>
                 </div>
               </div>
@@ -240,13 +251,13 @@ export default function Landing() {
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
               {[
-                { icon: '📍', text: locale === 'en' ? 'Dubai SMEs' : 'المؤسسات الصغيرة في دبي' },
-                { icon: '🏢', text: locale === 'en' ? 'Co-working hubs' : 'مراكز العمل المشترك' },
-                { icon: '🧾', text: locale === 'en' ? 'Tax consultants' : 'مستشارو الضرائب' },
-                { icon: '👨‍⚕️', text: locale === 'en' ? 'Clinics & practices' : 'العيادات والممارسات' }
+                { icon: <MapPin className="w-8 h-8 text-primary" />, text: locale === 'en' ? 'Dubai SMEs' : 'المؤسسات الصغيرة في دبي' },
+                { icon: <Home className="w-8 h-8 text-primary" />, text: locale === 'en' ? 'Co-working hubs' : 'مراكز العمل المشترك' },
+                { icon: <FileCheck2 className="w-8 h-8 text-primary" />, text: locale === 'en' ? 'Tax consultants' : 'مستشارو الضرائب' },
+                { icon: <Stethoscope className="w-8 h-8 text-primary" />, text: locale === 'en' ? 'Clinics & practices' : 'العيادات والممارسات' }
               ].map((item, i) => (
                 <div key={i} className="text-center p-4 rounded-lg bg-card border hover-elevate">
-                  <div className="text-3xl mb-2">{item.icon}</div>
+                  <div className="mb-3 flex justify-center">{item.icon}</div>
                   <div className="text-sm font-medium">{item.text}</div>
                 </div>
               ))}
