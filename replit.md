@@ -6,6 +6,29 @@ This is an AI-powered bookkeeping platform specifically designed for UAE busines
 
 ## Recent Changes
 
+**November 4, 2025 - UI/UX Improvements for Top-Tier SaaS Landing Page**
+- Updated hero headline to "AI Bookkeeping Built for UAE Businesses"
+- Updated hero subheading to "Save time, stay FTA-compliant, and get real-time financial clarity – powered by AI."
+- Implemented mobile hamburger menu navigation using Shadcn Sheet component
+  - Visible only on mobile (< 768px), slides from right (LTR) or left (RTL)
+  - Contains all navigation links and action buttons
+  - Auto-closes when navigation link is clicked
+- Enhanced SEO meta tags in `client/index.html`:
+  - Updated title: "AI Bookkeeping Built for UAE Businesses | FTA-Compliant Financial Management"
+  - Improved meta description with new messaging
+  - Added Open Graph tags for social sharing (og:title, og:description, og:site_name)
+  - Added Twitter Card tags (twitter:card, twitter:title, twitter:description)
+  - Added keywords, author, and canonical URL
+- Accessibility improvements:
+  - Added semantic HTML: `<main role="main">` wrapper
+  - Added bilingual aria-labels to all major sections
+  - Added `role="img"` and descriptive `aria-label` to integration logos (Stripe, PayPal, Excel)
+  - Added `aria-hidden="true"` to decorative icons
+  - Fixed hero CTA buttons to meet 44px minimum touch target size (accessibility standard)
+  - Added screen reader support with `sr-only` text for hamburger menu
+- Mobile responsiveness verified across multiple viewport sizes (375x667, 768x1024, 1920x1080)
+- All existing features preserved: health check, bilingual support, ROI calculator, email popup, trust badges
+
 **November 4, 2025 - Health Check System Implementation**
 - Added `/health` endpoint to backend (`server/routes.ts`) that returns `{ ok: boolean, timestamp: string }`
 - Created React hook `useHealthCheck` (`client/src/hooks/useHealthCheck.ts`) that polls health endpoint every 30 seconds
