@@ -1,0 +1,39 @@
+Please apply the following UI/UX improvements to our React + TypeScript landing page to match top-tier AI bookkeeping SaaS competitors:
+
+1. 🎯 Hero Section Overhaul:
+   - Headline: \"AI Bookkeeping Built for UAE Businesses\"
+   - Subheading: \"Save time, stay FTA-compliant, and get real-time financial clarity – powered by AI.\"
+   - Add 2 prominent CTA buttons:
+     • \"Start Free Trial\"
+     • \"Watch Demo\" (optional link to video or GIF)
+   - Add trust badges (e.g., \"FTA Compliant\", \"Bank-Level Security\", \"100+ UAE SMEs\") under CTAs.
+
+2. 📸 Add Product Visuals:
+   - Include a screenshot of the dashboard or reports.
+   - Add 3–4 feature icons: \"Auto-categorization\", \"VAT Filing\", \"Realtime Reports\", \"Collaborate with Your Accountant\".
+   - Optional: embed a short looping animation (GIF or Lottie) of AI categorizing receipts.
+
+3. 🔧 Conversion Strategy:
+   - Add testimonial section: 1–3 customer quotes.
+   - Add logos of known clients, partners, or \"As seen in\" brands (if available).
+   - Emphasize CTA buttons at the end of sections. Ensure consistency and high-contrast color.
+
+4. 💳 Pricing Section:
+   - Make \"Growth\" plan stand out as \"Most Popular\"
+   - Add subtitle: \"All prices in AED · No setup fees · Cancel anytime\"
+
+5. 🧭 Navigation + Mobile:
+   - Ensure the mobile nav bar collapses into a hamburger menu.
+   - Check that hero, pricing, and feature visuals scale correctly on small screens.
+   - Test tap targets (buttons, links) for mobile.
+
+6. ♿ Accessibility & SEO:
+   - Ensure all images/icons have descriptive alt text.
+   - Maintain keyboard navigation support across all sections.
+   - Improve color contrast for any low-contrast text (especially on mobile).
+   - Add meta tags: title, description, OpenGraph for social share.
+
+7. 🧪 Optional: Add live health check indicator
+   - Display API status in header using /health endpoint (green: online, red: offline).
+
+Keep everything in React + TypeScript. Do not revert to HTML/CSS/vanilla JS. Maintain existing EN/AR support, ROI calculator, and testing attributes. Let me know once implemented or if you'd like design references.

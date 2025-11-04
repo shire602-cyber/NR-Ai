@@ -177,16 +177,16 @@ export default function Landing() {
                 
                 <h1 className="text-4xl lg:text-6xl font-bold leading-tight">
                   {locale === 'en' ? (
-                    <>AI bookkeeping that actually <span className="text-primary">understands UAE VAT</span>.</>
+                    <>AI Bookkeeping <span className="text-primary">Built for UAE Businesses</span></>
                   ) : (
-                    <>محاسبة ذكية <span className="text-primary">تفهم ضريبة القيمة المضافة الإماراتية</span> فعلاً.</>
+                    <>محاسبة ذكية <span className="text-primary">مصممة للشركات الإماراتية</span></>
                   )}
                 </h1>
 
                 <p className="text-xl text-muted-foreground">
                   {locale === 'en' 
-                    ? 'Automate invoices, VAT, P&L, and trial balance while staying FTA-compliant. One system for founders, CFOs, and accountants in Dubai and beyond.'
-                    : 'أتمتة الفواتير وضريبة القيمة المضافة والأرباح والخسائر والميزان التجريبي مع الامتثال للهيئة الاتحادية للضرائب. نظام واحد للمؤسسين والمديرين الماليين والمحاسبين في دبي وخارجها.'}
+                    ? 'Save time, stay FTA-compliant, and get real-time financial clarity – powered by AI.'
+                    : 'وفّر الوقت، والتزم بمعايير الهيئة الاتحادية للضرائب، واحصل على وضوح مالي في الوقت الفعلي - مدعوم بالذكاء الاصطناعي.'}
                 </p>
 
                 {/* CTAs */}
