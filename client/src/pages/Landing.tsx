@@ -245,9 +245,9 @@ export default function Landing() {
         </div>
       </header>
 
-      <main>
+      <main role="main">
         {/* HERO SECTION */}
-        <section className="relative py-20 lg:py-32 overflow-hidden">
+        <section className="relative py-20 lg:py-32 overflow-hidden" aria-label={locale === 'en' ? 'Hero section' : 'القسم الرئيسي'}>
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-accent/5" />
           
           <div className="container max-w-7xl mx-auto px-4 relative">
@@ -365,7 +365,7 @@ export default function Landing() {
         </section>
 
         {/* TRUST STRIP */}
-        <section className="py-12 border-y bg-muted/30">
+        <section className="py-12 border-y bg-muted/30" aria-label={locale === 'en' ? 'Trusted by UAE businesses' : 'موثوق به من قبل الشركات الإماراتية'}>
           <div className="container max-w-7xl mx-auto px-4">
             <p className="text-center text-sm text-muted-foreground mb-6 font-medium uppercase tracking-wide">
               {locale === 'en' ? 'Built for modern UAE businesses' : 'مصمم للشركات الإماراتية الحديثة'}
@@ -387,22 +387,22 @@ export default function Landing() {
         </section>
 
         {/* INTEGRATIONS */}
-        <section className="py-12 bg-muted/10">
+        <section className="py-12 bg-muted/10" aria-label={locale === 'en' ? 'Integrations' : 'التكاملات'}>
           <div className="container max-w-5xl mx-auto px-4">
             <p className="text-center text-sm text-muted-foreground mb-8 font-medium">
               {locale === 'en' ? 'Works with' : 'يعمل مع'}
             </p>
             <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12">
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-stripe">
-                <SiStripe className="w-10 h-10" />
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-stripe" role="img" aria-label="Stripe payment integration">
+                <SiStripe className="w-10 h-10" aria-hidden="true" />
                 <span className="font-semibold text-lg">Stripe</span>
               </div>
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-paypal">
-                <SiPaypal className="w-10 h-10" />
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-paypal" role="img" aria-label="PayPal payment integration">
+                <SiPaypal className="w-10 h-10" aria-hidden="true" />
                 <span className="font-semibold text-lg">PayPal</span>
               </div>
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-excel">
-                <Sheet className="w-10 h-10 text-green-600" />
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-excel" role="img" aria-label="Excel spreadsheet integration">
+                <Sheet className="w-10 h-10 text-green-600" aria-hidden="true" />
                 <span className="font-semibold text-lg">Excel</span>
               </div>
             </div>
