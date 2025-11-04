@@ -84,18 +84,16 @@ export default function Landing() {
       {/* NAVBAR */}
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
         <div className="container max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/">
-            <a className="flex items-center gap-3 hover-elevate active-elevate-2 rounded-lg px-2 py-1 -ml-2" data-testid="link-logo">
-              <Briefcase className="w-6 h-6 text-primary" />
-              <div className="flex flex-col">
-                <span className="font-bold text-lg leading-none">
-                  {locale === 'en' ? 'BookKeep' : 'بوككيب'}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  {locale === 'en' ? 'AI Bookkeeping' : 'محاسبة ذكية'}
-                </span>
-              </div>
-            </a>
+          <Link href="/" className="flex items-center gap-3 hover-elevate active-elevate-2 rounded-lg px-2 py-1 -ml-2" data-testid="link-logo">
+            <Briefcase className="w-6 h-6 text-primary" />
+            <div className="flex flex-col">
+              <span className="font-bold text-lg leading-none">
+                {locale === 'en' ? 'BookKeep' : 'بوككيب'}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {locale === 'en' ? 'AI Bookkeeping' : 'محاسبة ذكية'}
+              </span>
+            </div>
           </Link>
           
           {/* Desktop Navigation */}
