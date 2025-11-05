@@ -34,6 +34,24 @@ export const companies = pgTable("companies", {
   name: text("name").notNull().unique(),
   baseCurrency: text("base_currency").notNull().default("AED"),
   locale: text("locale").notNull().default("en"), // 'en' or 'ar'
+  
+  // Company Information
+  legalStructure: text("legal_structure"), // Sole Proprietorship, LLC, Corporation, Partnership, Other
+  industry: text("industry"),
+  registrationNumber: text("registration_number"),
+  businessAddress: text("business_address"),
+  contactPhone: text("contact_phone"),
+  contactEmail: text("contact_email"),
+  websiteUrl: text("website_url"),
+  logoUrl: text("logo_url"),
+  
+  // Tax & Compliance
+  trnVatNumber: text("trn_vat_number"),
+  taxRegistrationType: text("tax_registration_type"), // Standard, Flat Rate, Non-registered, Other
+  vatFilingFrequency: text("vat_filing_frequency"), // Monthly, Quarterly, Annually
+  taxRegistrationDate: timestamp("tax_registration_date"),
+  corporateTaxId: text("corporate_tax_id"),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
