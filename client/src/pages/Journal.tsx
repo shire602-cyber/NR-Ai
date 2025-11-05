@@ -57,7 +57,7 @@ export default function Journal() {
   });
 
   const { data: entries, isLoading } = useQuery<any[]>({
-    queryKey: ['/api/journal'],
+    queryKey: ['/api/journal', { companyId: selectedCompanyId }],
     enabled: !!selectedCompanyId,
   });
 
@@ -116,6 +116,14 @@ export default function Journal() {
   });
 
   const onSubmit = (data: JournalFormData) => {
+    if (!selectedCompanyId) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Company not found. Please refresh the page.',
+      });
+      return;
+    }
     createMutation.mutate({ ...data, companyId: selectedCompanyId });
   };
 
