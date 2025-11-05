@@ -143,13 +143,31 @@ export default function Receipts() {
       });
 
       const text = result.data.text;
+      
+      // Validate that we got some text
+      if (!text || text.trim().length < 10) {
+        throw new Error('Could not extract readable text from image. Try a clearer photo.');
+      }
+
       const parsed = parseReceiptText(text);
 
-      // AI categorization
+      // Validate that we extracted at least some useful data
+      if (!parsed.merchant && !parsed.total) {
+        // Set defaults but keep the raw text for manual editing
+        parsed.merchant = 'Unknown Merchant';
+        parsed.total = 0;
+      }
+
+      // AI categorization (only if we have some data to work with)
       if (parsed.merchant || parsed.total) {
-        const category = await categorizeWithAI(parsed);
-        if (category) {
-          parsed.category = category;
+        try {
+          const category = await categorizeWithAI(parsed);
+          if (category) {
+            parsed.category = category;
+          }
+        } catch (aiError) {
+          console.error('AI categorization failed, continuing without it:', aiError);
+          // Don't fail the whole process if AI categorization fails
         }
       }
 
@@ -159,13 +177,14 @@ export default function Receipts() {
         return updated;
       });
 
-    } catch (error) {
+    } catch (error: any) {
+      console.error('OCR processing error:', error);
       setProcessedReceipts((prev) => {
         const updated = [...prev];
         updated[index] = { 
           ...updated[index], 
           status: 'error', 
-          error: 'OCR processing failed',
+          error: error.message || 'OCR processing failed. Try a clearer image.',
           progress: 0 
         };
         return updated;
@@ -190,39 +209,89 @@ export default function Receipts() {
   };
 
   const parseReceiptText = (text: string): ExtractedData => {
-    const lines = text.split('\n');
+    const lines = text.split('\n').filter(l => l.trim().length > 0);
     let merchant = '';
     let date = '';
     let total = 0;
     let vatAmount = 0;
 
-    // Extract merchant (usually first non-empty line)
-    const firstLine = lines.find(l => l.trim().length > 0);
-    if (firstLine) merchant = firstLine.trim();
-
-    // Extract total
-    const totalPattern = /(?:total|amount|grand total)[:\s]*(?:AED|aed)?\s*([\d,]+\.?\d*)/i;
-    const totalMatch = text.match(totalPattern);
-    if (totalMatch) {
-      total = parseFloat(totalMatch[1].replace(/,/g, ''));
+    // Extract merchant (usually first or second non-empty line)
+    if (lines.length > 0) {
+      merchant = lines[0].trim();
+      // If first line is too short, try second line
+      if (merchant.length < 3 && lines.length > 1) {
+        merchant = lines[1].trim();
+      }
     }
 
-    // Extract VAT
-    const vatPattern = /(?:vat|tax|gst)[:\s]*(?:AED|aed)?\s*([\d,]+\.?\d*)/i;
-    const vatMatch = text.match(vatPattern);
-    if (vatMatch) {
-      vatAmount = parseFloat(vatMatch[1].replace(/,/g, ''));
+    // Extract total - try multiple patterns
+    const totalPatterns = [
+      /(?:total|amount|grand total|net total)[:\s]*(?:AED|aed|dhs)?\s*([\d,]+\.?\d*)/i,
+      /(?:AED|aed|dhs)[:\s]*([\d,]+\.?\d*)[\s]*(?:total)?/i,
+      /([\d,]+\.?\d*)[:\s]*(?:AED|aed|dhs)/i,
+    ];
+
+    for (const pattern of totalPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const value = parseFloat(match[1].replace(/,/g, ''));
+        if (value > 0 && value < 1000000) { // Sanity check
+          total = value;
+          break;
+        }
+      }
     }
 
-    // Extract date
-    const datePattern = /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/;
-    const dateMatch = text.match(datePattern);
-    if (dateMatch) {
-      date = dateMatch[0];
+    // Extract VAT - try multiple patterns
+    const vatPatterns = [
+      /(?:vat|tax|gst)[:\s]*(?:AED|aed|dhs)?\s*([\d,]+\.?\d*)/i,
+      /(?:5%|5\s*%)[:\s]*(?:AED|aed|dhs)?\s*([\d,]+\.?\d*)/i,
+    ];
+
+    for (const pattern of vatPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const value = parseFloat(match[1].replace(/,/g, ''));
+        if (value > 0 && value < total) { // VAT should be less than total
+          vatAmount = value;
+          break;
+        }
+      }
+    }
+
+    // If no VAT found but we have a total, estimate 5% UAE VAT
+    if (total > 0 && vatAmount === 0) {
+      // Check if the total might already include VAT (look for subtotal)
+      const subtotalPattern = /(?:subtotal|sub total|sub-total)[:\s]*(?:AED|aed|dhs)?\s*([\d,]+\.?\d*)/i;
+      const subtotalMatch = text.match(subtotalPattern);
+      if (subtotalMatch) {
+        const subtotal = parseFloat(subtotalMatch[1].replace(/,/g, ''));
+        vatAmount = total - subtotal;
+      }
+    }
+
+    // Extract date - try multiple formats
+    const datePatterns = [
+      /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/,
+      /\d{4}[-/]\d{1,2}[-/]\d{1,2}/,
+      /\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{2,4}/i,
+    ];
+
+    for (const pattern of datePatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        date = match[0];
+        break;
+      }
+    }
+
+    // If no date found, use today
+    if (!date) {
+      date = new Date().toISOString().split('T')[0];
     }
 
     return {
-      merchant,
+      merchant: merchant || 'Unknown Merchant',
       date,
       total,
       vatAmount,
@@ -233,19 +302,26 @@ export default function Receipts() {
   };
 
   const categorizeWithAI = async (data: ExtractedData): Promise<string | null> => {
+    if (!companyId) return null;
+    
     try {
       const response = await fetch('/api/ai/categorize', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
         body: JSON.stringify({
+          companyId,
           description: `${data.merchant || 'Unknown'} - ${data.total} ${data.currency}`,
           amount: data.total,
+          currency: data.currency || 'AED',
         }),
       });
 
       if (response.ok) {
         const result = await response.json();
-        return result.category;
+        return result.suggestedAccountName || result.category;
       }
     } catch (error) {
       console.error('AI categorization failed:', error);
@@ -309,7 +385,6 @@ export default function Receipts() {
           currency: receipt.data!.currency || 'AED',
           imageData: receipt.preview,
           rawText: receipt.data!.rawText,
-          confidence: receipt.data!.confidence,
         };
 
         await apiRequest('POST', `/api/companies/${companyId}/receipts`, receiptData);
