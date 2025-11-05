@@ -8,7 +8,8 @@ import {
   Languages,
   LogOut,
   Receipt,
-  Bot
+  Bot,
+  Settings
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -48,6 +49,11 @@ const navigationItems = [
     title: 'invoices',
     icon: FileText,
     url: '/invoices',
+  },
+  {
+    title: 'Invoice Settings',
+    icon: Settings,
+    url: '/invoice-settings',
   },
   {
     title: 'receipts',

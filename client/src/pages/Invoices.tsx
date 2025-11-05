@@ -385,20 +385,36 @@ export default function Invoices() {
                               // Fetch full invoice details with lines using apiRequest
                               const invoiceDetails = await apiRequest('GET', `/api/invoices/${invoice.id}`);
                               
+                              // Check if company is VAT registered
+                              const isVATRegistered = company?.trnVatNumber && company.trnVatNumber.length > 0;
+                              
                               await downloadInvoicePDF({
                                 invoiceNumber: invoiceDetails.number,
                                 date: invoiceDetails.date.toString(),
                                 customerName: invoiceDetails.customerName,
                                 customerTRN: invoiceDetails.customerTrn || undefined,
                                 companyName: company?.name || 'Your Company',
-                                companyTRN: undefined, // TODO: Add TRN field to company schema
-                                companyAddress: undefined, // TODO: Add address field to company schema
+                                companyTRN: company?.trnVatNumber || undefined,
+                                companyAddress: company?.businessAddress || undefined,
+                                companyPhone: company?.contactPhone || undefined,
+                                companyEmail: company?.contactEmail || undefined,
+                                companyWebsite: company?.websiteUrl || undefined,
+                                companyLogo: company?.logoUrl || undefined,
                                 lines: invoiceDetails.lines || [],
                                 subtotal: invoiceDetails.subtotal,
                                 vatAmount: invoiceDetails.vatAmount,
                                 total: invoiceDetails.total,
                                 currency: invoiceDetails.currency,
                                 locale,
+                                // Invoice customization settings
+                                showLogo: company?.invoiceShowLogo ?? true,
+                                showAddress: company?.invoiceShowAddress ?? true,
+                                showPhone: company?.invoiceShowPhone ?? true,
+                                showEmail: company?.invoiceShowEmail ?? true,
+                                showWebsite: company?.invoiceShowWebsite ?? false,
+                                customTitle: company?.invoiceCustomTitle || undefined,
+                                footerNote: company?.invoiceFooterNote || undefined,
+                                isVATRegistered,
                               });
                               
                               toast({

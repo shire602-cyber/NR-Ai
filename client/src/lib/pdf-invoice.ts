@@ -10,6 +10,10 @@ export interface InvoicePDFData {
   companyName: string;
   companyTRN?: string;
   companyAddress?: string;
+  companyPhone?: string;
+  companyEmail?: string;
+  companyWebsite?: string;
+  companyLogo?: string;
   lines: {
     description: string;
     quantity: number;
@@ -21,6 +25,15 @@ export interface InvoicePDFData {
   total: number;
   currency: string;
   locale: 'en' | 'ar';
+  // Invoice customization settings
+  showLogo?: boolean;
+  showAddress?: boolean;
+  showPhone?: boolean;
+  showEmail?: boolean;
+  showWebsite?: boolean;
+  customTitle?: string;
+  footerNote?: string;
+  isVATRegistered?: boolean;
 }
 
 export async function generateInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
@@ -48,16 +61,35 @@ export async function generateInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
   doc.setFillColor(30, 64, 175);
   doc.rect(0, 0, pageWidth, 50, 'F');
 
+  // Company Logo (if enabled and provided)
+  if (data.showLogo && data.companyLogo) {
+    try {
+      doc.addImage(data.companyLogo, 'PNG', isRTL ? pageWidth - margin - 40 : margin, yPosition, 40, 25);
+    } catch (error) {
+      console.error('Failed to add logo to PDF:', error);
+    }
+  }
+
   // Company Name
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(24);
   doc.setFont('helvetica', 'bold');
-  doc.text(data.companyName, isRTL ? pageWidth - margin : margin, yPosition + 15);
+  const companyNameX = data.showLogo && data.companyLogo 
+    ? (isRTL ? pageWidth - margin - 50 : margin + 45)
+    : (isRTL ? pageWidth - margin : margin);
+  doc.text(data.companyName, companyNameX, yPosition + 15);
 
-  // Invoice Title
+  // Invoice Title - "Tax Invoice" for VAT registered, or custom title
   doc.setFontSize(16);
-  doc.setFont('helvetica', 'normal');
-  const invoiceLabel = isRTL ? 'فاتورة' : 'INVOICE';
+  doc.setFont('helvetica', 'bold');
+  let invoiceLabel: string;
+  if (data.customTitle) {
+    invoiceLabel = data.customTitle;
+  } else if (data.isVATRegistered) {
+    invoiceLabel = isRTL ? 'فاتورة ضريبية' : 'TAX INVOICE';
+  } else {
+    invoiceLabel = isRTL ? 'فاتورة' : 'INVOICE';
+  }
   doc.text(invoiceLabel, isRTL ? margin : pageWidth - margin, yPosition + 15, {
     align: isRTL ? 'left' : 'right',
   });
@@ -86,16 +118,49 @@ export async function generateInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
   doc.setFont('helvetica', 'normal');
   doc.text(formatDate(new Date(data.date), data.locale), margin + 35, yPosition + 20);
 
-  // Company Details
-  if (data.companyTRN) {
+  // Company Details - Right side
+  let companyDetailsY = yPosition + 10;
+  
+  // TRN (always show for VAT registered companies)
+  if (data.isVATRegistered && data.companyTRN) {
     doc.setFont('helvetica', 'bold');
     const trnLabel = isRTL ? 'الرقم الضريبي:' : 'TRN:';
-    doc.text(trnLabel, pageWidth - margin - 60, yPosition + 10);
+    doc.text(trnLabel, pageWidth - margin - 65, companyDetailsY);
     doc.setFont('helvetica', 'normal');
-    doc.text(data.companyTRN, pageWidth - margin - 5, yPosition + 10, { align: 'right' });
+    doc.text(data.companyTRN, pageWidth - margin - 5, companyDetailsY, { align: 'right' });
+    companyDetailsY += 6;
   }
 
-  yPosition += 45;
+  // Additional company details (left side below invoice box)
+  let additionalDetailsY = yPosition + 35;
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(107, 114, 128);
+
+  if (data.showAddress && data.companyAddress) {
+    doc.text(data.companyAddress, margin, additionalDetailsY, { maxWidth: 80 });
+    additionalDetailsY += 8;
+  }
+
+  if (data.showPhone && data.companyPhone) {
+    const phoneLabel = isRTL ? `هاتف: ${data.companyPhone}` : `Phone: ${data.companyPhone}`;
+    doc.text(phoneLabel, margin, additionalDetailsY);
+    additionalDetailsY += 5;
+  }
+
+  if (data.showEmail && data.companyEmail) {
+    const emailLabel = isRTL ? `بريد: ${data.companyEmail}` : `Email: ${data.companyEmail}`;
+    doc.text(emailLabel, margin, additionalDetailsY);
+    additionalDetailsY += 5;
+  }
+
+  if (data.showWebsite && data.companyWebsite) {
+    const websiteLabel = isRTL ? `موقع: ${data.companyWebsite}` : `Web: ${data.companyWebsite}`;
+    doc.text(websiteLabel, margin, additionalDetailsY);
+    additionalDetailsY += 5;
+  }
+
+  yPosition = Math.max(yPosition + 45, additionalDetailsY + 5);
 
   // Bill To Section
   doc.setFontSize(12);
@@ -234,16 +299,29 @@ export async function generateInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
   doc.setTextColor(107, 114, 128);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  const footerText = isRTL
-    ? 'شكراً لتعاملكم معنا'
-    : 'Thank you for your business';
-  doc.text(footerText, pageWidth / 2, pageHeight - margin - 15, { align: 'center' });
+  
+  let footerY = pageHeight - margin - 15;
+  
+  // Custom footer note if provided
+  if (data.footerNote) {
+    doc.text(data.footerNote, pageWidth / 2, footerY, { align: 'center', maxWidth: pageWidth - 2 * margin });
+    footerY += 5;
+  } else {
+    const footerText = isRTL
+      ? 'شكراً لتعاملكم معنا'
+      : 'Thank you for your business';
+    doc.text(footerText, pageWidth / 2, footerY, { align: 'center' });
+    footerY += 5;
+  }
 
-  doc.setFontSize(7);
-  const taxNote = isRTL
-    ? 'هذه فاتورة ضريبية - يرجى الاحتفاظ بها لسجلاتكم'
-    : 'This is a tax invoice - Please keep for your records';
-  doc.text(taxNote, pageWidth / 2, pageHeight - margin - 10, { align: 'center' });
+  // Tax notice for VAT registered companies
+  if (data.isVATRegistered) {
+    doc.setFontSize(7);
+    const taxNote = isRTL
+      ? 'هذه فاتورة ضريبية - يرجى الاحتفاظ بها لسجلاتكم'
+      : 'This is a tax invoice - Please keep for your records';
+    doc.text(taxNote, pageWidth / 2, footerY, { align: 'center' });
+  }
 
   return doc;
 }

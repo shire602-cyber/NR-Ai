@@ -52,6 +52,15 @@ export const companies = pgTable("companies", {
   taxRegistrationDate: timestamp("tax_registration_date"),
   corporateTaxId: text("corporate_tax_id"),
   
+  // Invoice Customization
+  invoiceShowLogo: boolean("invoice_show_logo").notNull().default(true),
+  invoiceShowAddress: boolean("invoice_show_address").notNull().default(true),
+  invoiceShowPhone: boolean("invoice_show_phone").notNull().default(true),
+  invoiceShowEmail: boolean("invoice_show_email").notNull().default(true),
+  invoiceShowWebsite: boolean("invoice_show_website").notNull().default(false),
+  invoiceCustomTitle: text("invoice_custom_title"), // Custom invoice title, defaults to "Tax Invoice" for VAT registered
+  invoiceFooterNote: text("invoice_footer_note"),
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
