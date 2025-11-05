@@ -19,31 +19,29 @@ import {
   CheckCircle2,
   ArrowRight,
   Globe,
-  Users,
+  Brain,
   Clock,
   Star,
   Building2,
   Check,
   Briefcase,
-  Calculator,
-  Coins,
-  Play,
   TrendingUp,
-  UserPlus,
   Database,
   Download,
   ChevronRight,
   MapPin,
-  Home,
-  FileCheck2,
-  Stethoscope,
   Lock,
   Bot,
   Award,
-  Heart,
-  Sheet,
   Menu,
-  X
+  Rocket,
+  Cpu,
+  Activity,
+  Eye,
+  Layers,
+  GitBranch,
+  Target,
+  Microscope
 } from 'lucide-react';
 import { SiStripe, SiPaypal } from 'react-icons/si';
 import { useState, useEffect } from 'react';
@@ -59,6 +57,9 @@ export default function Landing() {
   const [hoursPerWeek, setHoursPerWeek] = useState(0);
   const [moneySaved, setMoneySaved] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [animatedInvoices, setAnimatedInvoices] = useState(0);
+  const [animatedAccuracy, setAnimatedAccuracy] = useState(0);
+  const [animatedTime, setAnimatedTime] = useState(0);
   const healthStatus = useHealthCheck(30000);
 
   useEffect(() => {
@@ -66,7 +67,32 @@ export default function Landing() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Show email popup after 15 seconds OR 50% scroll (whichever comes first)
+  // Animated stats
+  useEffect(() => {
+    if (!mounted) return;
+    
+    const duration = 2000;
+    const steps = 60;
+    const invoiceTarget = 15000;
+    const accuracyTarget = 99.8;
+    const timeTarget = 87;
+    
+    let current = 0;
+    const interval = setInterval(() => {
+      current++;
+      const progress = current / steps;
+      
+      setAnimatedInvoices(Math.floor(invoiceTarget * progress));
+      setAnimatedAccuracy(Number((accuracyTarget * progress).toFixed(1)));
+      setAnimatedTime(Math.floor(timeTarget * progress));
+      
+      if (current >= steps) clearInterval(interval);
+    }, duration / steps);
+    
+    return () => clearInterval(interval);
+  }, [mounted]);
+
+  // Show email popup after 15 seconds OR 50% scroll
   useEffect(() => {
     let hasShownPopup = false;
     
@@ -77,19 +103,13 @@ export default function Landing() {
       }
     };
 
-    // Timer: Show after 15 seconds
     const popupTimer = setTimeout(showPopup, 15000);
-
-    // Scroll listener: Show when user scrolls 50% down the page
     const handleScroll = () => {
       const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
-      if (scrollPercent >= 50) {
-        showPopup();
-      }
+      if (scrollPercent >= 50) showPopup();
     };
 
     window.addEventListener('scroll', handleScroll);
-
     return () => {
       clearTimeout(popupTimer);
       window.removeEventListener('scroll', handleScroll);
@@ -113,20 +133,22 @@ export default function Landing() {
 
   return (
     <div className={`min-h-screen bg-background ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
-      {/* Email Popup */}
       <EmailPopup open={showEmailPopup} onClose={() => setShowEmailPopup(false)} locale={locale} />
 
       {/* NAVBAR */}
-      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-b border-border/40">
         <div className="container max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 hover-elevate active-elevate-2 rounded-lg px-2 py-1 -ml-2" data-testid="link-logo">
-            <Briefcase className="w-6 h-6 text-primary" />
+            <div className="relative">
+              <Briefcase className="w-6 h-6 text-primary" />
+              <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full animate-pulse" />
+            </div>
             <div className="flex flex-col">
               <span className="font-bold text-lg leading-none">
-                {locale === 'en' ? 'BookKeep' : 'بوككيب'}
+                {locale === 'en' ? 'BookKeep AI' : 'بوككيب AI'}
               </span>
               <span className="text-xs text-muted-foreground">
-                {locale === 'en' ? 'AI Bookkeeping' : 'محاسبة ذكية'}
+                {locale === 'en' ? 'Futuristic Accounting' : 'محاسبة مستقبلية'}
               </span>
             </div>
           </Link>
@@ -136,14 +158,11 @@ export default function Landing() {
             <a href="#features" className="text-sm hover:text-primary transition-colors" data-testid="nav-features">
               {locale === 'en' ? 'Features' : 'الميزات'}
             </a>
-            <a href="#how-it-works" className="text-sm hover:text-primary transition-colors" data-testid="nav-how-it-works">
-              {locale === 'en' ? 'How it works' : 'كيف تعمل'}
+            <a href="#platform" className="text-sm hover:text-primary transition-colors" data-testid="nav-platform">
+              {locale === 'en' ? 'Platform' : 'المنصة'}
             </a>
             <a href="#pricing" className="text-sm hover:text-primary transition-colors" data-testid="nav-pricing">
               {locale === 'en' ? 'Pricing' : 'الأسعار'}
-            </a>
-            <a href="#faq" className="text-sm hover:text-primary transition-colors" data-testid="nav-faq">
-              {locale === 'en' ? 'FAQ' : 'الأسئلة'}
             </a>
           </nav>
 
@@ -153,6 +172,7 @@ export default function Landing() {
               variant="ghost" 
               size="sm"
               onClick={toggleLanguage}
+              aria-label={locale === 'en' ? 'Switch to Arabic' : 'التبديل إلى الإنجليزية'}
               data-testid="button-toggle-language"
             >
               <Globe className="w-4 h-4 mr-2" />
@@ -164,8 +184,9 @@ export default function Landing() {
               </Button>
             </Link>
             <Link href="/register">
-              <Button size="sm" data-testid="link-register-header">
-                {locale === 'en' ? 'Start free' : 'ابدأ مجانًا'}
+              <Button size="sm" className="bg-gradient-to-r from-primary to-primary/80" data-testid="link-register-header">
+                {locale === 'en' ? 'Start Free' : 'ابدأ مجانًا'}
+                <Rocket className="w-4 h-4 ml-2" />
               </Button>
             </Link>
           </div>
@@ -176,55 +197,36 @@ export default function Landing() {
               variant="ghost" 
               size="icon"
               onClick={toggleLanguage}
+              aria-label={locale === 'en' ? 'Switch to Arabic' : 'التبديل إلى الإنجليزية'}
               data-testid="button-toggle-language-mobile"
             >
               <Globe className="w-5 h-5" />
             </Button>
             <SheetComponent open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  aria-label={locale === 'en' ? 'Open main menu' : 'فتح القائمة الرئيسية'}
+                  data-testid="button-mobile-menu"
+                >
                   <Menu className="w-5 h-5" />
                   <span className="sr-only">{locale === 'en' ? 'Open menu' : 'فتح القائمة'}</span>
                 </Button>
               </SheetTrigger>
               <SheetContent side={isRTL ? 'left' : 'right'}>
                 <SheetHeader>
-                  <SheetTitle>
-                    {locale === 'en' ? 'Menu' : 'القائمة'}
-                  </SheetTitle>
+                  <SheetTitle>{locale === 'en' ? 'Menu' : 'القائمة'}</SheetTitle>
                 </SheetHeader>
                 <nav className="flex flex-col gap-4 mt-8">
-                  <a 
-                    href="#features" 
-                    className="text-lg hover:text-primary transition-colors py-2" 
-                    onClick={() => setMobileMenuOpen(false)}
-                    data-testid="nav-features-mobile"
-                  >
+                  <a href="#features" className="text-lg hover:text-primary transition-colors py-2" onClick={() => setMobileMenuOpen(false)} data-testid="nav-features-mobile">
                     {locale === 'en' ? 'Features' : 'الميزات'}
                   </a>
-                  <a 
-                    href="#how-it-works" 
-                    className="text-lg hover:text-primary transition-colors py-2"
-                    onClick={() => setMobileMenuOpen(false)}
-                    data-testid="nav-how-it-works-mobile"
-                  >
-                    {locale === 'en' ? 'How it works' : 'كيف تعمل'}
+                  <a href="#platform" className="text-lg hover:text-primary transition-colors py-2" onClick={() => setMobileMenuOpen(false)} data-testid="nav-platform-mobile">
+                    {locale === 'en' ? 'Platform' : 'المنصة'}
                   </a>
-                  <a 
-                    href="#pricing" 
-                    className="text-lg hover:text-primary transition-colors py-2"
-                    onClick={() => setMobileMenuOpen(false)}
-                    data-testid="nav-pricing-mobile"
-                  >
+                  <a href="#pricing" className="text-lg hover:text-primary transition-colors py-2" onClick={() => setMobileMenuOpen(false)} data-testid="nav-pricing-mobile">
                     {locale === 'en' ? 'Pricing' : 'الأسعار'}
-                  </a>
-                  <a 
-                    href="#faq" 
-                    className="text-lg hover:text-primary transition-colors py-2"
-                    onClick={() => setMobileMenuOpen(false)}
-                    data-testid="nav-faq-mobile"
-                  >
-                    {locale === 'en' ? 'FAQ' : 'الأسئلة'}
                   </a>
                   <div className="border-t pt-4 mt-4 flex flex-col gap-3">
                     <Link href="/login">
@@ -234,7 +236,7 @@ export default function Landing() {
                     </Link>
                     <Link href="/register">
                       <Button className="w-full" data-testid="link-register-mobile">
-                        {locale === 'en' ? 'Start free trial' : 'ابدأ تجربة مجانية'}
+                        {locale === 'en' ? 'Start Free Trial' : 'ابدأ تجربة مجانية'}
                       </Button>
                     </Link>
                   </div>
@@ -246,748 +248,670 @@ export default function Landing() {
       </header>
 
       <main role="main">
-        {/* HERO SECTION */}
-        <section className="relative py-20 lg:py-32 overflow-hidden" aria-label={locale === 'en' ? 'Hero section' : 'القسم الرئيسي'}>
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-accent/5" />
+        {/* HERO SECTION - FUTURISTIC */}
+        <section className="relative py-32 lg:py-40 overflow-hidden" aria-label={locale === 'en' ? 'Hero section' : 'القسم الرئيسي'}>
+          {/* Animated Background */}
+          <div className="absolute inset-0">
+            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-accent/20 opacity-50" />
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-transparent to-transparent opacity-30" />
+            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/10 rounded-full blur-3xl animate-pulse delay-700" />
+          </div>
           
           <div className="container max-w-7xl mx-auto px-4 relative">
-            <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
-              {/* Left: Copy */}
-              <div className={`space-y-8 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000' : 'opacity-0'}`}>
-                <Badge className="w-fit gap-2">
-                  <Award className="w-4 h-4" />
-                  {locale === 'en' ? 'Built for UAE SMEs' : 'مصمم للمؤسسات الإماراتية'}
+            <div className="text-center max-w-5xl mx-auto space-y-8">
+              {/* Status Badge */}
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border ${mounted ? 'animate-in fade-in slide-in-from-top-4 duration-1000' : 'opacity-0'}`}>
+                <Activity className="w-4 h-4 text-primary animate-pulse" />
+                <span className="text-sm font-medium">
+                  {locale === 'en' ? 'Next-Generation AI Accounting' : 'محاسبة الذكاء الاصطناعي من الجيل التالي'}
+                </span>
+                <Badge 
+                  variant="outline" 
+                  className={`gap-1 ${
+                    healthStatus.isOnline 
+                      ? 'bg-green-500/10 border-green-500/50 text-green-700 dark:text-green-400' 
+                      : 'bg-red-500/10 border-red-500/50 text-red-700 dark:text-red-400'
+                  }`}
+                  data-testid="badge-api-status"
+                >
+                  <CheckCircle2 className={`w-3 h-3 ${healthStatus.isOnline ? 'text-green-500' : 'text-red-500'}`} />
+                  {healthStatus.isOnline ? (locale === 'en' ? 'Live' : 'مباشر') : (locale === 'en' ? 'Offline' : 'غير متصل')}
                 </Badge>
-                
-                <h1 className="text-4xl lg:text-6xl font-bold leading-tight">
-                  {locale === 'en' ? (
-                    <>AI Bookkeeping <span className="text-primary">Built for UAE Businesses</span></>
-                  ) : (
-                    <>محاسبة ذكية <span className="text-primary">مصممة للشركات الإماراتية</span></>
-                  )}
-                </h1>
+              </div>
+              
+              {/* Hero Headline */}
+              <h1 className={`text-5xl lg:text-7xl font-bold leading-tight ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-100' : 'opacity-0'}`}>
+                {locale === 'en' ? (
+                  <>
+                    <span className="bg-gradient-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent">
+                      AI Bookkeeping
+                    </span>
+                    {' '}Built for UAE Businesses
+                  </>
+                ) : (
+                  <>
+                    <span className="bg-gradient-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent">
+                      محاسبة AI
+                    </span>
+                    {' '}مصممة للشركات الإماراتية
+                  </>
+                )}
+              </h1>
 
-                <p className="text-xl text-muted-foreground">
-                  {locale === 'en' 
-                    ? 'Save time, stay FTA-compliant, and get real-time financial clarity – powered by AI.'
-                    : 'وفّر الوقت، والتزم بمعايير الهيئة الاتحادية للضرائب، واحصل على وضوح مالي في الوقت الفعلي - مدعوم بالذكاء الاصطناعي.'}
-                </p>
+              {/* Subheading */}
+              <p className={`text-xl lg:text-2xl text-muted-foreground max-w-3xl mx-auto ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-200' : 'opacity-0'}`}>
+                {locale === 'en' 
+                  ? 'Experience futuristic accounting automation. Save time, stay FTA-compliant, and unlock real-time financial clarity with cutting-edge AI.'
+                  : 'اختبر أتمتة المحاسبة المستقبلية. وفّر الوقت، والتزم بمعايير الهيئة الاتحادية للضرائب، واحصل على وضوح مالي في الوقت الفعلي باستخدام الذكاء الاصطناعي المتقدم.'}
+              </p>
 
-                {/* CTAs */}
-                <div className="flex flex-wrap gap-4">
-                  <Link href="/register">
-                    <Button size="lg" className="min-h-[44px]" data-testid="button-start-trial-hero">
-                      {locale === 'en' ? 'Start free trial' : 'ابدأ تجربة مجانية'}
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
-                  </Link>
-                  <Button size="lg" variant="outline" className="min-h-[44px]" data-testid="button-watch-demo">
-                    <Play className="w-4 h-4 mr-2" />
-                    {locale === 'en' ? 'Watch how it works' : 'شاهد كيف تعمل'}
+              {/* CTAs */}
+              <div className={`flex flex-wrap justify-center gap-4 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300' : 'opacity-0'}`}>
+                <Link href="/register">
+                  <Button 
+                    size="lg" 
+                    className="min-h-[44px] text-lg px-8 bg-gradient-to-r from-primary to-primary/80 hover:shadow-lg hover:shadow-primary/50 transition-shadow"
+                    aria-label={locale === 'en' ? 'Start free trial and create your account' : 'ابدأ تجربة مجانية وأنشئ حسابك'}
+                    data-testid="button-start-trial-hero"
+                  >
+                    <Rocket className="w-5 h-5 mr-2" />
+                    {locale === 'en' ? 'Start Free Trial' : 'ابدأ تجربة مجانية'}
+                    <ArrowRight className="w-5 h-5 ml-2" />
                   </Button>
-                </div>
-
-                {/* Benefit Pills */}
-                <div className="flex flex-wrap gap-4 pt-4">
-                  <Badge variant="secondary" className="gap-2">
-                    <FileCheck2 className="w-4 h-4" />
-                    {locale === 'en' ? 'FTA-Compliant' : 'متوافق مع الهيئة الاتحادية'}
-                  </Badge>
-                  <Badge variant="secondary" className="gap-2">
-                    <Lock className="w-4 h-4" />
-                    {locale === 'en' ? 'Bank-Grade Security' : 'أمان على مستوى البنوك'}
-                  </Badge>
-                  <Badge variant="secondary" className="gap-2">
-                    <Bot className="w-4 h-4" />
-                    {locale === 'en' ? 'Powered by AI' : 'مدعوم بالذكاء الاصطناعي'}
-                  </Badge>
-                </div>
+                </Link>
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  className="min-h-[44px] text-lg px-8 backdrop-blur-sm"
+                  aria-label={locale === 'en' ? 'Watch demo video to see the platform in action' : 'شاهد فيديو توضيحي لرؤية المنصة أثناء العمل'}
+                  data-testid="button-watch-demo"
+                >
+                  <Eye className="w-5 h-5 mr-2" />
+                  {locale === 'en' ? 'See it in Action' : 'شاهده أثناء العمل'}
+                </Button>
               </div>
 
-              {/* Right: Animated Dashboard Preview Card */}
-              <div className={`${mounted ? 'animate-in fade-in slide-in-from-right-4 duration-1000 delay-200' : 'opacity-0'}`}>
-                <Card className="p-8 hover-elevate">
-                  <div className="space-y-6">
-                    <div>
-                      <h2 className="text-2xl font-bold mb-2">
-                        {locale === 'en' ? 'Month-end in minutes, not days.' : 'إغلاق الشهر في دقائق، ليس أيامًا.'}
-                      </h2>
-                      <p className="text-muted-foreground">
-                        {locale === 'en' 
-                          ? "Here's what your AI assistant is doing behind the scenes:"
-                          : 'إليك ما يفعله مساعدك الذكي خلف الكواليس:'}
-                      </p>
-                    </div>
-
-                    <ul className="space-y-3">
-                      {[
-                        locale === 'en' ? 'Auto-categorising bank transactions by vendor & narrative' : 'تصنيف المعاملات المصرفية تلقائيًا حسب البائع والوصف',
-                        locale === 'en' ? 'Generating bilingual Tax Invoices (English / Arabic)' : 'إنشاء فواتير ضريبية ثنائية اللغة (إنجليزي / عربي)',
-                        locale === 'en' ? 'Posting double-entry journals into UAE-ready COA' : 'ترحيل قيود مزدوجة في دليل حسابات جاهز للإمارات',
-                        locale === 'en' ? 'Summarising VAT payable & receivable for the period' : 'تلخيص ضريبة القيمة المضافة المستحقة والمستحقة القبض للفترة',
-                        locale === 'en' ? 'Preparing P&L and Trial Balance on-click' : 'إعداد قائمة الأرباح والخسائر والميزان التجريبي بنقرة واحدة'
-                      ].map((item, i) => (
-                        <li key={i} className="flex items-start gap-3">
-                          <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                          <span className="text-sm">{item}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    <div className="flex gap-2 pt-4 border-t">
-                      <Badge variant="secondary" className="gap-1">
-                        <Zap className="w-3 h-3" />
-                        {locale === 'en' ? 'Live demo ready' : 'العرض التجريبي جاهز'}
-                      </Badge>
-                      <Badge 
-                        variant="outline" 
-                        className={`gap-1 ${
-                          healthStatus.isOnline 
-                            ? 'bg-green-500/10 border-green-500/50 text-green-700 dark:text-green-400' 
-                            : 'bg-red-500/10 border-red-500/50 text-red-700 dark:text-red-400'
-                        }`}
-                        data-testid="badge-api-status"
-                      >
-                        <CheckCircle2 className={`w-3 h-3 ${healthStatus.isOnline ? 'text-green-500' : 'text-red-500'}`} />
-                        {healthStatus.isLoading 
-                          ? (locale === 'en' ? 'API: checking...' : 'API: جارٍ الفحص...') 
-                          : healthStatus.isOnline 
-                            ? (locale === 'en' ? 'API: online' : 'API: متصل') 
-                            : (locale === 'en' ? 'API: offline' : 'API: غير متصل')
-                        }
-                      </Badge>
-                    </div>
-                  </div>
-                </Card>
+              {/* Trust Badges */}
+              <div className={`flex flex-wrap justify-center gap-4 pt-6 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-400' : 'opacity-0'}`}>
+                <Badge variant="secondary" className="gap-2 px-4 py-2 text-sm">
+                  <Shield className="w-4 h-4" />
+                  {locale === 'en' ? 'FTA-Compliant' : 'متوافق مع الهيئة'}
+                </Badge>
+                <Badge variant="secondary" className="gap-2 px-4 py-2 text-sm">
+                  <Lock className="w-4 h-4" />
+                  {locale === 'en' ? 'Bank-Grade Security' : 'أمان بنكي'}
+                </Badge>
+                <Badge variant="secondary" className="gap-2 px-4 py-2 text-sm">
+                  <Brain className="w-4 h-4" />
+                  {locale === 'en' ? 'Powered by AI' : 'مدعوم بـ AI'}
+                </Badge>
               </div>
+            </div>
+
+            {/* Animated Stats */}
+            <div className={`grid grid-cols-1 md:grid-cols-3 gap-6 mt-20 max-w-5xl mx-auto ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-500' : 'opacity-0'}`}>
+              <Card className="p-6 text-center border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent hover-elevate">
+                <div className="text-4xl lg:text-5xl font-bold text-primary mb-2">
+                  {animatedInvoices.toLocaleString()}+
+                </div>
+                <div className="text-sm text-muted-foreground font-medium">
+                  {locale === 'en' ? 'Invoices Processed' : 'فواتير معالجة'}
+                </div>
+              </Card>
+              <Card className="p-6 text-center border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent hover-elevate">
+                <div className="text-4xl lg:text-5xl font-bold text-primary mb-2">
+                  {animatedAccuracy}%
+                </div>
+                <div className="text-sm text-muted-foreground font-medium">
+                  {locale === 'en' ? 'AI Accuracy Rate' : 'دقة الذكاء الاصطناعي'}
+                </div>
+              </Card>
+              <Card className="p-6 text-center border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent hover-elevate">
+                <div className="text-4xl lg:text-5xl font-bold text-primary mb-2">
+                  {animatedTime}%
+                </div>
+                <div className="text-sm text-muted-foreground font-medium">
+                  {locale === 'en' ? 'Time Saved' : 'الوقت الموفر'}
+                </div>
+              </Card>
             </div>
           </div>
         </section>
 
-        {/* TRUST STRIP */}
-        <section className="py-12 border-y bg-muted/30" aria-label={locale === 'en' ? 'Trusted by UAE businesses' : 'موثوق به من قبل الشركات الإماراتية'}>
+        {/* FEATURES - INTERACTIVE SHOWCASE */}
+        <section className="py-20 lg:py-32 bg-muted/20" id="features">
           <div className="container max-w-7xl mx-auto px-4">
-            <p className="text-center text-sm text-muted-foreground mb-6 font-medium uppercase tracking-wide">
-              {locale === 'en' ? 'Built for modern UAE businesses' : 'مصمم للشركات الإماراتية الحديثة'}
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
-              {[
-                { icon: <MapPin className="w-8 h-8 text-primary" />, text: locale === 'en' ? 'Dubai SMEs' : 'المؤسسات الصغيرة في دبي' },
-                { icon: <Home className="w-8 h-8 text-primary" />, text: locale === 'en' ? 'Co-working hubs' : 'مراكز العمل المشترك' },
-                { icon: <FileCheck2 className="w-8 h-8 text-primary" />, text: locale === 'en' ? 'Tax consultants' : 'مستشارو الضرائب' },
-                { icon: <Stethoscope className="w-8 h-8 text-primary" />, text: locale === 'en' ? 'Clinics & practices' : 'العيادات والممارسات' }
-              ].map((item, i) => (
-                <div key={i} className="text-center p-4 rounded-lg bg-card border hover-elevate">
-                  <div className="mb-3 flex justify-center">{item.icon}</div>
-                  <div className="text-sm font-medium">{item.text}</div>
+            <div className="text-center mb-16">
+              <Badge className="mb-4">
+                <Sparkles className="w-4 h-4 mr-2" />
+                {locale === 'en' ? 'Cutting-Edge Features' : 'ميزات متطورة'}
+              </Badge>
+              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
+                {locale === 'en' ? (
+                  <>The Future of <span className="text-primary">Accounting is Here</span></>
+                ) : (
+                  <>مستقبل <span className="text-primary">المحاسبة هنا</span></>
+                )}
+              </h2>
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+                {locale === 'en'
+                  ? 'Experience next-generation AI that understands UAE tax law, learns from your data, and automates complex workflows in real-time.'
+                  : 'اختبر الذكاء الاصطناعي من الجيل التالي الذي يفهم القانون الضريبي الإماراتي، ويتعلم من بياناتك، ويؤتمت سير العمل المعقد في الوقت الفعلي.'}
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+              {/* Feature 1 */}
+              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-ai-brain">
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
+                  <Brain className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
                 </div>
-              ))}
+                <h3 className="text-2xl font-bold mb-3">
+                  {locale === 'en' ? 'Intelligent Auto-Categorization' : 'تصنيف تلقائي ذكي'}
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  {locale === 'en'
+                    ? 'Our AI learns your business patterns and auto-categorizes transactions with 99.8% accuracy. No manual data entry ever again.'
+                    : 'يتعلم الذكاء الاصطناعي أنماط عملك ويصنف المعاملات تلقائيًا بدقة 99.8٪. لا حاجة لإدخال البيانات يدويًا مرة أخرى.'}
+                </p>
+                <ul className="space-y-2">
+                  {[
+                    locale === 'en' ? 'Real-time transaction processing' : 'معالجة المعاملات في الوقت الفعلي',
+                    locale === 'en' ? 'Custom rule learning' : 'تعلم القواعد المخصصة',
+                    locale === 'en' ? 'Vendor pattern recognition' : 'التعرف على أنماط البائعين'
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <span className="text-sm">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              {/* Feature 2 */}
+              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-realtime">
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
+                  <Activity className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
+                </div>
+                <h3 className="text-2xl font-bold mb-3">
+                  {locale === 'en' ? 'Real-Time P&L Dashboard' : 'لوحة P&L في الوقت الفعلي'}
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  {locale === 'en'
+                    ? 'Watch your financial health update live. Every transaction instantly reflects in beautifully designed reports.'
+                    : 'شاهد صحتك المالية تتحدث مباشرة. كل معاملة تنعكس على الفور في تقارير مصممة بشكل جميل.'}
+                </p>
+                <ul className="space-y-2">
+                  {[
+                    locale === 'en' ? 'Live profit & loss tracking' : 'تتبع الأرباح والخسائر المباشر',
+                    locale === 'en' ? 'Interactive financial charts' : 'رسوم بيانية مالية تفاعلية',
+                    locale === 'en' ? 'One-click report generation' : 'إنشاء التقرير بنقرة واحدة'
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <span className="text-sm">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              {/* Feature 3 */}
+              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-uae-tax">
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
+                  <FileText className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
+                </div>
+                <h3 className="text-2xl font-bold mb-3">
+                  {locale === 'en' ? 'UAE Tax Automation' : 'أتمتة الضرائب الإماراتية'}
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  {locale === 'en'
+                    ? 'Built-in UAE VAT (5%) and corporate tax compliance. Generate FTA-ready reports with one click.'
+                    : 'امتثال مدمج لضريبة القيمة المضافة (5٪) والضريبة على الشركات في الإمارات. إنشاء تقارير جاهزة للهيئة الاتحادية بنقرة واحدة.'}
+                </p>
+                <ul className="space-y-2">
+                  {[
+                    locale === 'en' ? 'Bilingual tax invoices (EN/AR)' : 'فواتير ضريبية ثنائية اللغة',
+                    locale === 'en' ? 'Automatic VAT calculations' : 'حسابات ضريبة القيمة المضافة التلقائية',
+                    locale === 'en' ? 'FTA filing assistance' : 'مساعدة تقديم الهيئة الاتحادية'
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <span className="text-sm">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              {/* Feature 4 */}
+              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-collaboration">
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
+                  <GitBranch className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
+                </div>
+                <h3 className="text-2xl font-bold mb-3">
+                  {locale === 'en' ? 'Accountant Collaboration' : 'تعاون المحاسبين'}
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  {locale === 'en'
+                    ? 'Invite your accountant with one click. Share read-only or edit access. Perfect for year-end close.'
+                    : 'ادع محاسبك بنقرة واحدة. شارك الوصول للقراءة فقط أو التحرير. مثالي لإغلاق نهاية العام.'}
+                </p>
+                <ul className="space-y-2">
+                  {[
+                    locale === 'en' ? 'Role-based permissions' : 'أذونات قائمة على الأدوار',
+                    locale === 'en' ? 'Audit trail & history' : 'مسار التدقيق والتاريخ',
+                    locale === 'en' ? 'Shared workspaces' : 'مساحات عمل مشتركة'
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <span className="text-sm">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              {/* Feature 5 */}
+              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-ocr">
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
+                  <Microscope className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
+                </div>
+                <h3 className="text-2xl font-bold mb-3">
+                  {locale === 'en' ? 'OCR Receipt Scanning' : 'مسح الإيصالات بـ OCR'}
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  {locale === 'en'
+                    ? 'Snap a photo of any receipt. Our AI extracts amount, date, vendor, and categorizes automatically.'
+                    : 'التقط صورة لأي إيصال. يستخرج الذكاء الاصطناعي المبلغ والتاريخ والبائع ويصنف تلقائيًا.'}
+                </p>
+                <ul className="space-y-2">
+                  {[
+                    locale === 'en' ? 'Mobile app integration' : 'تكامل تطبيق الجوال',
+                    locale === 'en' ? 'Multi-language support' : 'دعم متعدد اللغات',
+                    locale === 'en' ? 'Cloud receipt storage' : 'تخزين الإيصالات السحابي'
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <span className="text-sm">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              {/* Feature 6 */}
+              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-security">
+                <div className="relative mb-6">
+                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
+                  <Shield className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
+                </div>
+                <h3 className="text-2xl font-bold mb-3">
+                  {locale === 'en' ? 'Bank-Grade Security' : 'أمان على مستوى البنوك'}
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  {locale === 'en'
+                    ? 'Your data is encrypted end-to-end. Hosted on UAE cloud infrastructure with automatic backups.'
+                    : 'بياناتك مشفرة من طرف إلى طرف. مستضافة على البنية التحتية السحابية الإماراتية مع نسخ احتياطية تلقائية.'}
+                </p>
+                <ul className="space-y-2">
+                  {[
+                    locale === 'en' ? '256-bit encryption' : 'تشفير 256 بت',
+                    locale === 'en' ? 'UAE data sovereignty' : 'سيادة البيانات الإماراتية',
+                    locale === 'en' ? 'Daily automated backups' : 'نسخ احتياطية يومية تلقائية'
+                  ].map((item, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <span className="text-sm">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </div>
+          </div>
+        </section>
+
+        {/* PLATFORM SHOWCASE */}
+        <section className="py-20 lg:py-32" id="platform">
+          <div className="container max-w-7xl mx-auto px-4">
+            <div className="text-center mb-16">
+              <Badge className="mb-4">
+                <Cpu className="w-4 h-4 mr-2" />
+                {locale === 'en' ? 'The Platform' : 'المنصة'}
+              </Badge>
+              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
+                {locale === 'en' ? (
+                  <>Built for <span className="text-primary">Scale & Speed</span></>
+                ) : (
+                  <>مصمم من أجل <span className="text-primary">النطاق والسرعة</span></>
+                )}
+              </h2>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-12 items-center">
+              <div className="space-y-8">
+                <div className="flex gap-4 hover-elevate p-6 rounded-lg">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Zap className="w-6 h-6 text-primary" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold mb-2">
+                      {locale === 'en' ? 'Lightning Fast' : 'سريع البرق'}
+                    </h3>
+                    <p className="text-muted-foreground">
+                      {locale === 'en'
+                        ? 'Process thousands of transactions in seconds. Our AI engine is optimized for UAE business volumes.'
+                        : 'معالجة آلاف المعاملات في ثوانٍ. محرك الذكاء الاصطناعي محسّن لأحجام الأعمال الإماراتية.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 hover-elevate p-6 rounded-lg">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Layers className="w-6 h-6 text-primary" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold mb-2">
+                      {locale === 'en' ? 'Multi-Company Support' : 'دعم متعدد الشركات'}
+                    </h3>
+                    <p className="text-muted-foreground">
+                      {locale === 'en'
+                        ? 'Manage unlimited companies from one dashboard. Perfect for accountants and business owners with multiple entities.'
+                        : 'إدارة شركات غير محدودة من لوحة معلومات واحدة. مثالي للمحاسبين وأصحاب الأعمال مع كيانات متعددة.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex gap-4 hover-elevate p-6 rounded-lg">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Database className="w-6 h-6 text-primary" />
+                    </div>
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold mb-2">
+                      {locale === 'en' ? 'Smart Integrations' : 'تكاملات ذكية'}
+                    </h3>
+                    <p className="text-muted-foreground">
+                      {locale === 'en'
+                        ? 'Connect with Stripe, PayPal, Excel, and more. Import transactions automatically and stay synced.'
+                        : 'اتصل بـ Stripe و PayPal و Excel والمزيد. استيراد المعاملات تلقائيًا والبقاء متزامنًا.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <Card className="p-8 border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-2xl font-bold">
+                      {locale === 'en' ? 'ROI Calculator' : 'حاسبة العائد على الاستثمار'}
+                    </h3>
+                    <Target className="w-8 h-8 text-primary" />
+                  </div>
+                  
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">
+                      {locale === 'en' ? 'Monthly Transactions' : 'المعاملات الشهرية'}
+                    </label>
+                    <input
+                      type="range"
+                      min="10"
+                      max="500"
+                      value={monthlyTransactions}
+                      onChange={(e) => setMonthlyTransactions(Number(e.target.value))}
+                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                    />
+                    <div className="text-3xl font-bold text-primary mt-4">
+                      {monthlyTransactions}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {locale === 'en' ? 'Hours Saved/Week' : 'ساعات موفرة/أسبوع'}
+                      </div>
+                      <div className="text-2xl font-bold text-primary">
+                        {hoursPerWeek.toFixed(1)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-1">
+                        {locale === 'en' ? 'Money Saved/Month' : 'أموال موفرة/شهر'}
+                      </div>
+                      <div className="text-2xl font-bold text-primary">
+                        AED {moneySaved}
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    {locale === 'en'
+                      ? 'Based on 2 minutes per transaction @ AED 50/hour'
+                      : 'بناءً على دقيقتين لكل معاملة @ 50 درهم/ساعة'}
+                  </p>
+                </div>
+              </Card>
             </div>
           </div>
         </section>
 
         {/* INTEGRATIONS */}
-        <section className="py-12 bg-muted/10" aria-label={locale === 'en' ? 'Integrations' : 'التكاملات'}>
+        <section className="py-12 bg-muted/10">
           <div className="container max-w-5xl mx-auto px-4">
-            <p className="text-center text-sm text-muted-foreground mb-8 font-medium">
-              {locale === 'en' ? 'Works with' : 'يعمل مع'}
+            <p className="text-center text-sm text-muted-foreground mb-8 font-medium uppercase tracking-wide">
+              {locale === 'en' ? 'Seamless Integrations' : 'تكاملات سلسة'}
             </p>
             <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12">
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-stripe" role="img" aria-label="Stripe payment integration">
-                <SiStripe className="w-10 h-10" aria-hidden="true" />
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity hover-elevate p-4 rounded-lg" data-testid="integration-stripe" role="img" aria-label="Stripe payment integration">
+                <SiStripe className="w-12 h-12" aria-hidden="true" />
                 <span className="font-semibold text-lg">Stripe</span>
               </div>
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-paypal" role="img" aria-label="PayPal payment integration">
-                <SiPaypal className="w-10 h-10" aria-hidden="true" />
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity hover-elevate p-4 rounded-lg" data-testid="integration-paypal" role="img" aria-label="PayPal payment integration">
+                <SiPaypal className="w-12 h-12" aria-hidden="true" />
                 <span className="font-semibold text-lg">PayPal</span>
               </div>
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity" data-testid="integration-excel" role="img" aria-label="Excel spreadsheet integration">
-                <Sheet className="w-10 h-10 text-green-600" aria-hidden="true" />
+              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity hover-elevate p-4 rounded-lg" data-testid="integration-excel" role="img" aria-label="Excel spreadsheet integration">
+                <Database className="w-12 h-12 text-green-600" aria-hidden="true" />
                 <span className="font-semibold text-lg">Excel</span>
               </div>
             </div>
           </div>
         </section>
 
-        {/* FEATURES */}
-        <section className="py-20 lg:py-32" id="features">
+        {/* PRICING */}
+        <section className="py-20 lg:py-32 bg-muted/20" id="pricing">
           <div className="container max-w-7xl mx-auto px-4">
-            <div className="text-center mb-16">
+            <div className="text-center mb-4">
               <h2 className="text-4xl lg:text-5xl font-bold mb-4">
                 {locale === 'en' ? (
-                  <>Everything you need to stay <span className="text-primary">on top of your books</span>.</>
+                  <>Simple, <span className="text-primary">Transparent Pricing</span></>
                 ) : (
-                  <>كل ما تحتاجه للبقاء <span className="text-primary">على اطلاع بحساباتك</span>.</>
+                  <>تسعير <span className="text-primary">بسيط وشفاف</span></>
                 )}
               </h2>
-              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                {locale === 'en'
-                  ? 'From AI-driven categorisation to FTA-aligned reports, BookKeep replaces messy spreadsheets and manual bookkeeping with a clean, automated workflow.'
-                  : 'من التصنيف المدعوم بالذكاء الاصطناعي إلى التقارير المتوافقة مع الهيئة الاتحادية للضرائب، يستبدل BookKeep جداول البيانات الفوضوية والمحاسبة اليدوية بسير عمل نظيف وتلقائي.'}
+              <p className="text-muted-foreground text-sm">
+                {locale === 'en' 
+                  ? 'All prices in AED · No setup fees · Cancel anytime'
+                  : 'جميع الأسعار بالدرهم الإماراتي · بدون رسوم إعداد · إلغاء في أي وقت'}
               </p>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-8">
-              {/* Feature 1: AI Categorisation */}
-              <Card className="p-8 hover-elevate" data-testid="feature-ai-categorisation">
-                <Sparkles className="w-12 h-12 text-primary mb-4" />
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'AI-first transaction categorisation' : 'تصنيف المعاملات بالذكاء الاصطناعي'}
+            <div className="grid md:grid-cols-3 gap-8 mt-12">
+              {/* Starter */}
+              <Card className="p-8 hover-elevate">
+                <h3 className="text-2xl font-bold mb-2">
+                  {locale === 'en' ? 'Starter' : 'بداية'}
                 </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Feed bank statements or card transactions. Our AI suggests the correct account code, learns your patterns, and keeps your chart of accounts clean.'
-                    : 'أدخل كشوف الحسابات المصرفية أو معاملات البطاقات. يقترح الذكاء الاصطناعي رمز الحساب الصحيح، ويتعلم أنماطك، ويحافظ على دليل حساباتك نظيفًا.'}
+                <div className="text-4xl font-bold mb-4">
+                  {locale === 'en' ? 'Free' : 'مجاني'}
+                </div>
+                <p className="text-muted-foreground mb-6">
+                  {locale === 'en' ? 'Perfect for freelancers' : 'مثالي للعاملين الأحرار'}
                 </p>
-                <ul className="space-y-2">
+                <ul className="space-y-3 mb-8">
                   {[
-                    locale === 'en' ? 'Smart mapping by vendor & description' : 'ربط ذكي حسب البائع والوصف',
-                    locale === 'en' ? 'Override & train rules per company' : 'تجاوز وتدريب القواعد لكل شركة',
-                    locale === 'en' ? 'Perfect for high-volume SMEs' : 'مثالي للمؤسسات الصغيرة ذات الحجم الكبير'
+                    locale === 'en' ? '1 company' : 'شركة واحدة',
+                    locale === 'en' ? '50 transactions/month' : '50 معاملة/شهر',
+                    locale === 'en' ? 'Basic reports' : 'تقارير أساسية',
+                    locale === 'en' ? 'Email support' : 'دعم البريد الإلكتروني'
                   ].map((item, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
                       <span className="text-sm">{item}</span>
                     </li>
                   ))}
                 </ul>
+                <Link href="/register">
+                  <Button className="w-full" variant="outline">
+                    {locale === 'en' ? 'Get Started' : 'ابدأ'}
+                  </Button>
+                </Link>
               </Card>
 
-              {/* Feature 2: UAE VAT */}
-              <Card className="p-8 hover-elevate" data-testid="feature-uae-vat">
-                <FileText className="w-12 h-12 text-primary mb-4" />
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'UAE VAT & corporate tax ready' : 'جاهز لضريبة القيمة المضافة والضريبة على الشركات'}
+              {/* Growth - Most Popular */}
+              <Card className="p-8 border-2 border-primary relative hover-elevate">
+                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">
+                  {locale === 'en' ? 'Most Popular' : 'الأكثر شعبية'}
+                </Badge>
+                <h3 className="text-2xl font-bold mb-2">
+                  {locale === 'en' ? 'Growth' : 'نمو'}
                 </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Out-of-the-box 5% VAT handling with dedicated VAT Payable/Receivable accounts, bilingual tax invoices, and VAT summaries ready for FTA forms.'
-                    : 'معالجة ضريبة القيمة المضافة 5٪ مباشرة مع حسابات ضريبة القيمة المضافة المستحقة/المستحقة القبض، فواتير ضريبية ثنائية اللغة، وملخصات ضريبة القيمة المضافة جاهزة لنماذج الهيئة الاتحادية.'}
+                <div className="text-4xl font-bold mb-4">
+                  AED 299<span className="text-lg text-muted-foreground">/mo</span>
+                </div>
+                <p className="text-muted-foreground mb-6">
+                  {locale === 'en' ? 'For growing businesses' : 'للأعمال المتنامية'}
                 </p>
-                <ul className="space-y-2">
+                <ul className="space-y-3 mb-8">
                   {[
-                    locale === 'en' ? 'TRN stored for company & customers' : 'رقم التسجيل الضريبي مخزن للشركة والعملاء',
-                    locale === 'en' ? 'Tax invoice PDFs in English + Arabic' : 'فواتير ضريبية PDF بالإنجليزية والعربية',
-                    locale === 'en' ? 'VAT summary report by period' : 'تقرير ملخص ضريبة القيمة المضافة حسب الفترة'
+                    locale === 'en' ? '3 companies' : '3 شركات',
+                    locale === 'en' ? 'Unlimited transactions' : 'معاملات غير محدودة',
+                    locale === 'en' ? 'AI categorization' : 'تصنيف AI',
+                    locale === 'en' ? 'All reports' : 'جميع التقارير',
+                    locale === 'en' ? 'Priority support' : 'دعم الأولوية'
                   ].map((item, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
                       <span className="text-sm">{item}</span>
                     </li>
                   ))}
                 </ul>
+                <Link href="/register">
+                  <Button className="w-full bg-gradient-to-r from-primary to-primary/80">
+                    {locale === 'en' ? 'Start Free Trial' : 'ابدأ تجربة مجانية'}
+                  </Button>
+                </Link>
               </Card>
 
-              {/* Feature 3: Reports */}
-              <Card className="p-8 hover-elevate" data-testid="feature-reports">
-                <BarChart3 className="w-12 h-12 text-primary mb-4" />
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'P&L, Trial Balance & more' : 'قائمة الأرباح والخسائر والميزان التجريبي والمزيد'}
+              {/* Firm */}
+              <Card className="p-8 hover-elevate">
+                <h3 className="text-2xl font-bold mb-2">
+                  {locale === 'en' ? 'Firm' : 'مكتب'}
                 </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Financial statements generated directly from your double-entry journals. No spreadsheet gymnastics, no manual exporting.'
-                    : 'بيانات مالية مُنشأة مباشرة من قيودك المزدوجة. لا توجد جداول بيانات معقدة، ولا تصدير يدوي.'}
+                <div className="text-4xl font-bold mb-4">
+                  AED 799<span className="text-lg text-muted-foreground">/mo</span>
+                </div>
+                <p className="text-muted-foreground mb-6">
+                  {locale === 'en' ? 'For accounting firms' : 'لمكاتب المحاسبة'}
                 </p>
-                <ul className="space-y-2">
+                <ul className="space-y-3 mb-8">
                   {[
-                    locale === 'en' ? 'Profit & Loss by custom date range' : 'الأرباح والخسائر حسب نطاق تاريخ مخصص',
-                    locale === 'en' ? 'Trial balance as of any date' : 'الميزان التجريبي اعتبارًا من أي تاريخ',
-                    locale === 'en' ? 'JSON APIs ready for your own dashboards' : 'واجهات برمجة التطبيقات JSON جاهزة للوحات المعلومات الخاصة بك'
+                    locale === 'en' ? 'Unlimited companies' : 'شركات غير محدودة',
+                    locale === 'en' ? 'White-label reports' : 'تقارير بعلامة بيضاء',
+                    locale === 'en' ? 'API access' : 'وصول API',
+                    locale === 'en' ? 'Custom integrations' : 'تكاملات مخصصة',
+                    locale === 'en' ? 'Dedicated support' : 'دعم مخصص'
                   ].map((item, i) => (
                     <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
+                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
                       <span className="text-sm">{item}</span>
                     </li>
                   ))}
                 </ul>
-              </Card>
-
-              {/* Feature 4: Collaboration */}
-              <Card className="p-8 hover-elevate" data-testid="feature-collaboration">
-                <Users className="w-12 h-12 text-primary mb-4" />
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'Collaborate with your accountant' : 'تعاون مع محاسبك'}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Invite your external accountant, give them their own workspace, and let them manage journals, filings, and adjustments without chasing you on WhatsApp.'
-                    : 'ادعُ محاسبك الخارجي، امنحه مساحة عمل خاصة به، ودعه يدير القيود والإيداعات والتعديلات دون مطاردتك على واتساب.'}
-                </p>
-                <ul className="space-y-2">
-                  {[
-                    locale === 'en' ? 'Multi-company, multi-user structure' : 'هيكل متعدد الشركات والمستخدمين',
-                    locale === 'en' ? 'Roles for Owner, Accountant, CFO' : 'أدوار للمالك والمحاسب والمدير المالي',
-                    locale === 'en' ? 'Audit-ready history of changes' : 'سجل جاهز للتدقيق للتغييرات'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
+                <Link href="/register">
+                  <Button className="w-full" variant="outline">
+                    {locale === 'en' ? 'Contact Sales' : 'اتصل بالمبيعات'}
+                  </Button>
+                </Link>
               </Card>
             </div>
           </div>
         </section>
 
-        {/* HOW IT WORKS with ROI Calculator */}
-        <section className="py-20 lg:py-32 bg-muted/30" id="how-it-works">
-          <div className="container max-w-7xl mx-auto px-4">
-            <div className="text-center mb-16">
-              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-                {locale === 'en' ? (
-                  <>From messy statements to <span className="text-primary">clean books</span> in 4 steps.</>
-                ) : (
-                  <>من البيانات الفوضوية إلى <span className="text-primary">دفاتر نظيفة</span> في 4 خطوات.</>
-                )}
-              </h2>
-              <p className="text-xl text-muted-foreground">
-                {locale === 'en' 
-                  ? 'Onboard in under an hour, close your month in under a day.'
-                  : 'انضم في أقل من ساعة، أغلق شهرك في أقل من يوم.'}
-              </p>
-            </div>
-
-            {/* Steps */}
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
-              {[
-                {
-                  step: '1',
-                  icon: <Building2 className="w-8 h-8" />,
-                  title: locale === 'en' ? 'Create your company' : 'أنشئ شركتك',
-                  desc: locale === 'en' 
-                    ? 'Add your company details, TRN, and base currency. We auto-seed a UAE-friendly chart of accounts.'
-                    : 'أضف تفاصيل شركتك ورقم التسجيل الضريبي والعملة الأساسية. نقوم بإنشاء دليل حسابات صديق للإمارات تلقائيًا.'
-                },
-                {
-                  step: '2',
-                  icon: <Database className="w-8 h-8" />,
-                  title: locale === 'en' ? 'Import bank & card data' : 'استورد بيانات البنك والبطاقة',
-                  desc: locale === 'en'
-                    ? 'Upload CSVs from your bank or card provider. Our AI starts suggesting categories immediately.'
-                    : 'قم بتحميل ملفات CSV من البنك أو مزود البطاقة. يبدأ الذكاء الاصطناعي في اقتراح الفئات على الفور.'
-                },
-                {
-                  step: '3',
-                  icon: <Sparkles className="w-8 h-8" />,
-                  title: locale === 'en' ? 'Let AI do the heavy lifting' : 'دع الذكاء الاصطناعي يقوم بالعمل الثقيل',
-                  desc: locale === 'en'
-                    ? 'Invoices, VAT, and double-entry postings are generated in the background. You only approve edge cases.'
-                    : 'يتم إنشاء الفواتير وضريبة القيمة المضافة والقيود المزدوجة في الخلفية. أنت توافق فقط على الحالات الحدية.'
-                },
-                {
-                  step: '4',
-                  icon: <Download className="w-8 h-8" />,
-                  title: locale === 'en' ? 'Download VAT & reports' : 'تنزيل ضريبة القيمة المضافة والتقارير',
-                  desc: locale === 'en'
-                    ? 'Export VAT summaries, P&L, and trial balance for your period. Share them with your auditors, or just sleep better.'
-                    : 'صدّر ملخصات ضريبة القيمة المضافة وقائمة الأرباح والخسائر والميزان التجريبي لفترتك. شاركها مع المدققين، أو فقط نم بشكل أفضل.'
-                }
-              ].map((item, i) => (
-                <div key={i} className="text-center" data-testid={`step-${i + 1}`}>
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
-                    {item.icon}
-                  </div>
-                  <h3 className="text-xl font-bold mb-2">
-                    {item.step}. {item.title}
-                  </h3>
-                  <p className="text-muted-foreground">{item.desc}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* ROI Calculator Highlight */}
-            <Card className="p-8 max-w-4xl mx-auto">
-              <div className="text-center mb-8">
-                <Calculator className="w-12 h-12 text-primary mx-auto mb-4" />
-                <h3 className="text-2xl font-bold mb-2">
-                  {locale === 'en' ? 'Calculate your savings' : 'احسب توفيرك'}
-                </h3>
-                <p className="text-muted-foreground">
+        {/* CTA SECTION */}
+        <section className="py-20 lg:py-32">
+          <div className="container max-w-5xl mx-auto px-4">
+            <Card className="p-12 lg:p-16 text-center border-2 border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 relative overflow-hidden">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-50" />
+              <div className="absolute top-10 right-10 w-64 h-64 bg-primary/10 rounded-full blur-3xl" />
+              <div className="absolute bottom-10 left-10 w-64 h-64 bg-accent/10 rounded-full blur-3xl" />
+              
+              <div className="relative z-10">
+                <Badge className="mb-6">
+                  <Rocket className="w-4 h-4 mr-2" />
+                  {locale === 'en' ? 'Start Your Journey' : 'ابدأ رحلتك'}
+                </Badge>
+                <h2 className="text-4xl lg:text-5xl font-bold mb-6">
+                  {locale === 'en' ? (
+                    <>Ready to Experience the <span className="text-primary">Future?</span></>
+                  ) : (
+                    <>جاهز لتجربة <span className="text-primary">المستقبل؟</span></>
+                  )}
+                </h2>
+                <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
                   {locale === 'en'
-                    ? 'See how much time and money you could save each month'
-                    : 'اطلع على الوقت والمال الذي يمكنك توفيره كل شهر'}
+                    ? 'Join forward-thinking UAE businesses using AI to automate bookkeeping. Start your free trial today—no credit card required.'
+                    : 'انضم إلى الشركات الإماراتية ذات التفكير المستقبلي التي تستخدم الذكاء الاصطناعي لأتمتة المحاسبة. ابدأ تجربتك المجانية اليوم - لا حاجة لبطاقة ائتمان.'}
                 </p>
-              </div>
-
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium mb-4">
-                    {locale === 'en' 
-                      ? `Monthly transactions: ${monthlyTransactions}`
-                      : `المعاملات الشهرية: ${monthlyTransactions}`}
-                  </label>
-                  <input
-                    type="range"
-                    min="10"
-                    max="500"
-                    step="10"
-                    value={monthlyTransactions}
-                    onChange={(e) => setMonthlyTransactions(parseInt(e.target.value))}
-                    className="w-full"
-                    data-testid="input-roi-calculator"
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-2">
-                    <span>10</span>
-                    <span>500</span>
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-6 pt-6 border-t">
-                  <div className="text-center p-6 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-lg border border-green-500/20" data-testid="roi-money-saved">
-                    <Coins className="w-8 h-8 text-green-500 mx-auto mb-3" />
-                    <div className="text-3xl font-bold font-mono text-green-600 mb-1">
-                      AED {moneySaved.toLocaleString()}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {locale === 'en' ? 'Saved per month' : 'توفير شهري'}
-                    </div>
-                  </div>
-
-                  <div className="text-center p-6 bg-gradient-to-br from-blue-500/10 to-cyan-500/10 rounded-lg border border-blue-500/20" data-testid="roi-hours-saved">
-                    <Clock className="w-8 h-8 text-blue-500 mx-auto mb-3" />
-                    <div className="text-3xl font-bold font-mono text-blue-600 mb-1">
-                      {hoursPerWeek.toFixed(1)}h
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {locale === 'en' ? 'Saved per week' : 'توفير أسبوعي'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-center pt-4">
+                <div className="flex flex-wrap justify-center gap-4">
                   <Link href="/register">
-                    <Button size="lg" data-testid="button-start-saving">
-                      {locale === 'en' ? 'Start Saving Today' : 'ابدأ التوفير اليوم'}
-                      <ArrowRight className="w-4 h-4 ml-2" />
+                    <Button size="lg" className="text-lg px-8 bg-gradient-to-r from-primary to-primary/80 hover:shadow-lg hover:shadow-primary/50 transition-shadow">
+                      <Rocket className="w-5 h-5 mr-2" />
+                      {locale === 'en' ? 'Start Free Trial' : 'ابدأ تجربة مجانية'}
+                      <ArrowRight className="w-5 h-5 ml-2" />
                     </Button>
                   </Link>
+                  <Button size="lg" variant="outline" className="text-lg px-8 backdrop-blur-sm">
+                    {locale === 'en' ? 'Book a Demo' : 'احجز عرضًا توضيحيًا'}
+                  </Button>
                 </div>
               </div>
             </Card>
           </div>
         </section>
 
-        {/* PRICING */}
-        <section className="py-20 lg:py-32" id="pricing">
-          <div className="container max-w-7xl mx-auto px-4">
-            <div className="text-center mb-16">
-              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-                {locale === 'en' ? (
-                  <>Simple pricing that <span className="text-primary">grows with you</span>.</>
-                ) : (
-                  <>تسعير بسيط <span className="text-primary">ينمو معك</span>.</>
-                )}
-              </h2>
-              <p className="text-xl text-muted-foreground">
-                {locale === 'en'
-                  ? 'All plans include AI categorisation, VAT support, and financial reports.'
-                  : 'تشمل جميع الخطط التصنيف بالذكاء الاصطناعي ودعم ضريبة القيمة المضافة والتقارير المالية.'}
-              </p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-              {/* Starter */}
-              <Card className="p-8">
-                <h3 className="text-2xl font-bold mb-2">
-                  {locale === 'en' ? 'Starter' : 'المبتدئ'}
-                </h3>
-                <div className="mb-6">
-                  <div className="text-4xl font-bold mb-1">
-                    {locale === 'en' ? 'Free' : 'مجانًا'}
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {locale === 'en' ? 'no credit card' : 'بدون بطاقة ائتمان'}
-                  </div>
-                </div>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    locale === 'en' ? '1 company' : 'شركة واحدة',
-                    locale === 'en' ? 'Up to 100 transactions / month' : 'حتى 100 معاملة / شهر',
-                    locale === 'en' ? 'Invoices & basic reports' : 'فواتير وتقارير أساسية',
-                    locale === 'en' ? 'Email support' : 'دعم البريد الإلكتروني'
-                  ].map((feature, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-sm">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/register">
-                  <Button className="w-full" variant="outline" size="lg" data-testid="button-plan-starter">
-                    {locale === 'en' ? 'Start for free' : 'ابدأ مجانًا'}
-                  </Button>
-                </Link>
-              </Card>
-
-              {/* Growth - Most Popular */}
-              <Card className="p-8 border-2 border-primary shadow-xl relative scale-105">
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  {locale === 'en' ? 'Most popular' : 'الأكثر شعبية'}
-                </Badge>
-                <h3 className="text-2xl font-bold mb-2">
-                  {locale === 'en' ? 'Growth' : 'النمو'}
-                </h3>
-                <div className="mb-6">
-                  <div className="text-4xl font-bold mb-1">
-                    AED 299
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {locale === 'en' ? 'per month' : 'في الشهر'}
-                  </div>
-                </div>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    locale === 'en' ? 'Up to 3 companies' : 'حتى 3 شركات',
-                    locale === 'en' ? 'Unlimited transactions' : 'معاملات غير محدودة',
-                    locale === 'en' ? 'AI categorisation & anomaly alerts' : 'تصنيف الذكاء الاصطناعي وتنبيهات الشذوذ',
-                    locale === 'en' ? 'VAT summaries & invoice PDFs' : 'ملخصات ضريبة القيمة المضافة وفواتير PDF',
-                    locale === 'en' ? 'Priority chat & onboarding' : 'دردشة ذات أولوية وإعداد'
-                  ].map((feature, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-sm">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/register">
-                  <Button className="w-full" size="lg" data-testid="button-plan-growth">
-                    {locale === 'en' ? 'Start Growth' : 'ابدأ النمو'}
-                  </Button>
-                </Link>
-              </Card>
-
-              {/* Firm */}
-              <Card className="p-8">
-                <h3 className="text-2xl font-bold mb-2">
-                  {locale === 'en' ? 'Firm' : 'المؤسسة'}
-                </h3>
-                <div className="mb-6">
-                  <div className="text-4xl font-bold mb-1">
-                    AED 799
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {locale === 'en' ? 'per month' : 'في الشهر'}
-                  </div>
-                </div>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    locale === 'en' ? 'Accounting firms & CFOs' : 'شركات المحاسبة والمديرون الماليون',
-                    locale === 'en' ? 'Unlimited companies' : 'شركات غير محدودة',
-                    locale === 'en' ? 'Dedicated success manager' : 'مدير نجاح مخصص',
-                    locale === 'en' ? 'Custom VAT & tax workflows' : 'سير عمل مخصص لضريبة القيمة المضافة والضرائب',
-                    locale === 'en' ? 'Early access to new AI features' : 'وصول مبكر إلى ميزات الذكاء الاصطناعي الجديدة'
-                  ].map((feature, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-sm">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/register">
-                  <Button className="w-full" variant="outline" size="lg" data-testid="button-plan-firm">
-                    {locale === 'en' ? 'Talk to us' : 'تحدث إلينا'}
-                  </Button>
-                </Link>
-              </Card>
-            </div>
-
-            <p className="text-center text-sm text-muted-foreground mt-8">
-              {locale === 'en'
-                ? 'All prices in AED · Cancel anytime · No setup fees'
-                : 'جميع الأسعار بالدرهم الإماراتي · إلغاء في أي وقت · بدون رسوم إعداد'}
-            </p>
-          </div>
-        </section>
-
-        {/* TESTIMONIALS */}
-        <section className="py-20 lg:py-32 bg-muted/30">
-          <div className="container max-w-7xl mx-auto px-4">
-            <div className="text-center mb-16">
-              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-                {locale === 'en' ? (
-                  <>What <span className="text-primary">founders & finance teams</span> say.</>
-                ) : (
-                  <>ماذا يقول <span className="text-primary">المؤسسون وفرق المالية</span>.</>
-                )}
-              </h2>
-              <p className="text-xl text-muted-foreground">
-                {locale === 'en'
-                  ? 'Replace stress and spreadsheets with clarity and control.'
-                  : 'استبدل الإجهاد وجداول البيانات بالوضوح والتحكم.'}
-              </p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8">
-              {[
-                {
-                  quote: locale === 'en' 
-                    ? 'We closed our books 4x faster in Q2. VAT was basically a button instead of a weekly headache.'
-                    : 'أغلقنا دفاترنا أسرع 4 مرات في الربع الثاني. كانت ضريبة القيمة المضافة في الأساس زرًا بدلاً من صداع أسبوعي.',
-                  author: locale === 'en' ? 'CEO, Marketing Agency – Dubai' : 'الرئيس التنفيذي، وكالة تسويق - دبي'
-                },
-                {
-                  quote: locale === 'en'
-                    ? 'Our accountant now just reviews and adjusts. The system does the boring part better than any junior.'
-                    : 'محاسبنا الآن يراجع ويعدل فقط. يقوم النظام بالجزء الممل أفضل من أي محاسب مبتدئ.',
-                  author: locale === 'en' ? 'Founder, E-commerce – Sharjah' : 'المؤسس، التجارة الإلكترونية - الشارقة'
-                },
-                {
-                  quote: locale === 'en'
-                    ? 'The bilingual tax invoices and UAE chart of accounts made onboarding almost instant.'
-                    : 'جعلت الفواتير الضريبية ثنائية اللغة ودليل حسابات الإمارات الإعداد فوريًا تقريبًا.',
-                  author: locale === 'en' ? 'Tax Consultant – Abu Dhabi' : 'مستشار ضرائب - أبو ظبي'
-                }
-              ].map((testimonial, i) => (
-                <Card key={i} className="p-6 hover-elevate" data-testid={`testimonial-${i + 1}`}>
-                  <div className="flex gap-1 mb-4">
-                    {[...Array(5)].map((_, j) => (
-                      <Star key={j} className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                    ))}
-                  </div>
-                  <p className="text-muted-foreground mb-6 italic" data-testid={`testimonial-quote-${i + 1}`}>
-                    "{testimonial.quote}"
-                  </p>
-                  <div className="font-semibold" data-testid={`testimonial-author-${i + 1}`}>
-                    {testimonial.author}
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* FAQ */}
-        <section className="py-20 lg:py-32" id="faq">
-          <div className="container max-w-4xl mx-auto px-4">
-            <div className="text-center mb-16">
-              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-                {locale === 'en' ? (
-                  <>Frequently asked <span className="text-primary">questions</span>.</>
-                ) : (
-                  <><span className="text-primary">الأسئلة</span> الشائعة.</>
-                )}
-              </h2>
-              <p className="text-xl text-muted-foreground">
-                {locale === 'en'
-                  ? 'Still unsure? Here are the answers most people want first.'
-                  : 'لا تزال غير متأكد؟ إليك الإجابات التي يريدها معظم الناس أولاً.'}
-              </p>
-            </div>
-
-            <div className="space-y-6">
-              {[
-                {
-                  q: locale === 'en' ? 'Is this only for UAE businesses?' : 'هل هذا فقط للشركات الإماراتية؟',
-                  a: locale === 'en'
-                    ? 'We start with UAE-friendly VAT and bilingual invoices, but the engine is global-ready. More jurisdictions are coming as we grow.'
-                    : 'نبدأ بضريبة القيمة المضافة الصديقة للإمارات والفواتير ثنائية اللغة، لكن المحرك جاهز عالميًا. المزيد من الولايات القضائية قادمة مع نمونا.'
-                },
-                {
-                  q: locale === 'en' ? 'Can my existing accountant use it?' : 'هل يمكن لمحاسبي الحالي استخدامه؟',
-                  a: locale === 'en'
-                    ? "Yes. Invite them as an accountant user. They'll get access to journals, reports, and exports, while you keep control of access."
-                    : 'نعم. ادعهم كمستخدم محاسب. سيحصلون على وصول إلى القيود والتقارير والتصديرات، بينما تحتفظ أنت بالتحكم في الوصول.'
-                },
-                {
-                  q: locale === 'en' ? 'Where is my data stored?' : 'أين يتم تخزين بياناتي؟',
-                  a: locale === 'en'
-                    ? 'Your data is stored in secure, encrypted databases with regular backups. We never sell your data and can sign NDAs for larger clients.'
-                    : 'يتم تخزين بياناتك في قواعد بيانات آمنة ومشفرة مع نسخ احتياطية منتظمة. نحن لا نبيع بياناتك أبدًا ويمكننا التوقيع على اتفاقيات عدم الإفشاء للعملاء الأكبر.'
-                },
-                {
-                  q: locale === 'en' ? 'Do you connect directly to my bank?' : 'هل تتصل مباشرة ببنكي؟',
-                  a: locale === 'en'
-                    ? 'For the MVP, we support CSV import from your bank. Direct connections to UAE banks and card providers are on the roadmap.'
-                    : 'بالنسبة للمنتج الأدنى القابل للتطبيق، ندعم استيراد CSV من بنكك. الاتصالات المباشرة بالبنوك الإماراتية ومزودي البطاقات في خارطة الطريق.'
-                }
-              ].map((faq, i) => (
-                <Card key={i} className="p-6 hover-elevate" data-testid={`faq-${i + 1}`}>
-                  <h3 className="font-semibold text-lg mb-2" data-testid={`faq-question-${i + 1}`}>{faq.q}</h3>
-                  <p className="text-muted-foreground" data-testid={`faq-answer-${i + 1}`}>{faq.a}</p>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* FINAL CTA */}
-        <section className="py-20 lg:py-32 bg-gradient-to-br from-primary/10 to-accent/10">
-          <div className="container max-w-4xl mx-auto px-4 text-center">
-            <h2 className="text-4xl lg:text-5xl font-bold mb-6">
-              {locale === 'en' ? (
-                <>Ready to see your books <span className="text-primary">in real time</span>?</>
-              ) : (
-                <>مستعد لرؤية دفاترك <span className="text-primary">في الوقت الفعلي</span>؟</>
-              )}
-            </h2>
-            <p className="text-xl text-muted-foreground mb-8">
-              {locale === 'en'
-                ? "Start with a free account, or book a short onboarding call. We'll help you import your first month of data."
-                : 'ابدأ بحساب مجاني، أو احجز مكالمة إعداد قصيرة. سنساعدك على استيراد بيانات شهرك الأول.'}
-            </p>
-            <div className="flex flex-wrap gap-4 justify-center">
-              <Link href="/register">
-                <Button size="lg" data-testid="button-start-trial-footer">
-                  {locale === 'en' ? 'Start free trial' : 'ابدأ تجربة مجانية'}
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </Link>
-              <Button size="lg" variant="outline" data-testid="button-compare-plans">
-                {locale === 'en' ? 'Compare plans' : 'قارن الخطط'}
-              </Button>
-            </div>
-          </div>
-        </section>
-
         {/* FOOTER */}
-        <footer className="border-t py-12 bg-muted/30">
+        <footer className="py-12 border-t bg-muted/20">
           <div className="container max-w-7xl mx-auto px-4">
-            <div className="grid md:grid-cols-3 gap-8 mb-8">
-              {/* Brand */}
-              <div>
-                <div className="flex items-center gap-3 mb-4" data-testid="footer-brand">
-                  <Briefcase className="w-6 h-6 text-primary" />
-                  <div className="flex flex-col">
-                    <span className="font-bold text-lg leading-none">
-                      {locale === 'en' ? 'BookKeep' : 'بوككيب'}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {locale === 'en' ? 'AI Bookkeeping for UAE SMEs' : 'محاسبة ذكية للمؤسسات الإماراتية'}
-                    </span>
-                  </div>
-                </div>
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Building2 className="w-4 h-4" />
+                <span>
+                  {locale === 'en' ? 'Made with' : 'صنع بـ'}
+                </span>
+                <Award className="w-4 h-4 text-red-500" />
+                <span>
+                  {locale === 'en' ? 'in Dubai' : 'في دبي'}
+                </span>
               </div>
-
-              {/* Links */}
-              <div className="flex gap-8">
-                <div>
-                  <h4 className="font-semibold mb-3">
-                    {locale === 'en' ? 'Product' : 'المنتج'}
-                  </h4>
-                  <div className="space-y-2">
-                    <a href="#features" className="block text-sm text-muted-foreground hover:text-primary" data-testid="footer-link-features">
-                      {locale === 'en' ? 'Features' : 'الميزات'}
-                    </a>
-                    <a href="#pricing" className="block text-sm text-muted-foreground hover:text-primary" data-testid="footer-link-pricing">
-                      {locale === 'en' ? 'Pricing' : 'الأسعار'}
-                    </a>
-                    <a href="#faq" className="block text-sm text-muted-foreground hover:text-primary" data-testid="footer-link-faq">
-                      {locale === 'en' ? 'FAQ' : 'الأسئلة'}
-                    </a>
-                  </div>
-                </div>
-              </div>
-
-              {/* Meta */}
-              <div className="text-sm text-muted-foreground">
-                <p>© {new Date().getFullYear()} BookKeep. {locale === 'en' ? 'All rights reserved.' : 'كل الحقوق محفوظة.'}</p>
-                <p className="mt-2 flex items-center gap-1">
-                  {locale === 'en' ? 'Made with' : 'صُنع بـ'} 
-                  <Heart className="w-4 h-4 fill-red-500 text-red-500" /> 
-                  {locale === 'en' ? 'in Dubai.' : 'في دبي.'}
-                </p>
+              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <a href="#" className="hover:text-primary transition-colors">
+                  {locale === 'en' ? 'Privacy' : 'الخصوصية'}
+                </a>
+                <a href="#" className="hover:text-primary transition-colors">
+                  {locale === 'en' ? 'Terms' : 'الشروط'}
+                </a>
+                <a href="#" className="hover:text-primary transition-colors">
+                  {locale === 'en' ? 'Contact' : 'اتصل'}
+                </a>
               </div>
             </div>
           </div>
