@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
@@ -47,12 +48,8 @@ type JournalFormData = z.infer<typeof journalSchema>;
 export default function Journal() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
+  const { companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-
-  const { data: companies } = useQuery<any[]>({
-    queryKey: ['/api/companies'],
-  });
 
   const { data: accounts } = useQuery<any[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'accounts'],
@@ -67,7 +64,7 @@ export default function Journal() {
   const form = useForm<JournalFormData>({
     resolver: zodResolver(journalSchema),
     defaultValues: {
-      companyId: '',
+      companyId: selectedCompanyId || '',
       date: new Date(),
       memo: '',
       lines: [
@@ -76,13 +73,6 @@ export default function Journal() {
       ],
     },
   });
-
-  // Set selectedCompanyId when companies are loaded
-  useEffect(() => {
-    if (!selectedCompanyId && companies && companies.length > 0) {
-      setSelectedCompanyId(companies[0].id);
-    }
-  }, [companies, selectedCompanyId]);
 
   // Update form's companyId when selectedCompanyId changes
   useEffect(() => {
@@ -128,23 +118,6 @@ export default function Journal() {
   const onSubmit = (data: JournalFormData) => {
     createMutation.mutate({ ...data, companyId: selectedCompanyId });
   };
-
-  if (!companies || companies.length === 0) {
-    return (
-      <div className="space-y-8">
-        <h1 className="text-3xl font-semibold">{t.journal}</h1>
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <BookMarked className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No company selected</h3>
-            <p className="text-sm text-muted-foreground">
-              Please create a company first to post journal entries
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   // Calculate balance
   const watchLines = form.watch('lines');

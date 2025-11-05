@@ -6,16 +6,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatNumber } from '@/lib/format';
 import { Download, BarChart3, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
 
 export default function Reports() {
   const { t, locale } = useTranslation();
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-
-  const { data: companies } = useQuery<any[]>({
-    queryKey: ['/api/companies'],
-  });
+  const { companyId: selectedCompanyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
   const { data: profitLoss, isLoading: plLoading } = useQuery({
     queryKey: ['/api/companies', selectedCompanyId, 'reports', 'pl'],
@@ -31,27 +28,6 @@ export default function Reports() {
     queryKey: ['/api/companies', selectedCompanyId, 'reports', 'vat-summary'],
     enabled: !!selectedCompanyId,
   });
-
-  if (!companies || companies.length === 0) {
-    return (
-      <div className="space-y-8">
-        <h1 className="text-3xl font-semibold">{t.reports}</h1>
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <BarChart3 className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No company selected</h3>
-            <p className="text-sm text-muted-foreground">
-              Please create a company first to view financial reports
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!selectedCompanyId && companies.length > 0) {
-    setSelectedCompanyId(companies[0].id);
-  }
 
   return (
     <div className="space-y-8">

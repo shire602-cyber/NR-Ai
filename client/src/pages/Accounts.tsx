@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Plus, BookOpen, Search } from 'lucide-react';
 import type { Account } from '@shared/schema';
@@ -31,13 +32,9 @@ type AccountFormData = z.infer<typeof accountSchema>;
 export default function Accounts() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
+  const { companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-
-  const { data: companies } = useQuery<any[]>({
-    queryKey: ['/api/companies'],
-  });
 
   const { data: accounts, isLoading } = useQuery<Account[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'accounts'],
@@ -47,20 +44,13 @@ export default function Accounts() {
   const form = useForm<AccountFormData>({
     resolver: zodResolver(accountSchema),
     defaultValues: {
-      companyId: '',
+      companyId: selectedCompanyId || '',
       code: '',
       nameEn: '',
       nameAr: '',
       type: 'asset',
     },
   });
-
-  // Set selectedCompanyId when companies are loaded
-  useEffect(() => {
-    if (!selectedCompanyId && companies && companies.length > 0) {
-      setSelectedCompanyId(companies[0].id);
-    }
-  }, [companies, selectedCompanyId]);
 
   // Update form's companyId when selectedCompanyId changes
   useEffect(() => {
@@ -118,23 +108,6 @@ export default function Accounts() {
       default: return 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400';
     }
   };
-
-  if (!companies || companies.length === 0) {
-    return (
-      <div className="space-y-8">
-        <h1 className="text-3xl font-semibold">{t.accounts}</h1>
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <BookOpen className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No company selected</h3>
-            <p className="text-sm text-muted-foreground">
-              Please create a company first to view the Chart of Accounts
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-8">

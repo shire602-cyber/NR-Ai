@@ -16,6 +16,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Plus, FileText, CalendarIcon, Trash2, Download } from 'lucide-react';
@@ -45,12 +46,8 @@ type InvoiceFormData = z.infer<typeof invoiceSchema>;
 export default function Invoices() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
+  const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-
-  const { data: companies } = useQuery<any[]>({
-    queryKey: ['/api/companies'],
-  });
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
@@ -60,7 +57,7 @@ export default function Invoices() {
   const form = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
-      companyId: '',
+      companyId: selectedCompanyId || '',
       number: `INV-${Date.now()}`,
       customerName: '',
       customerTrn: '',
@@ -69,13 +66,6 @@ export default function Invoices() {
       lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     },
   });
-
-  // Set selectedCompanyId when companies are loaded
-  useEffect(() => {
-    if (!selectedCompanyId && companies && companies.length > 0) {
-      setSelectedCompanyId(companies[0].id);
-    }
-  }, [companies, selectedCompanyId]);
 
   // Update form's companyId when selectedCompanyId changes
   useEffect(() => {
@@ -130,23 +120,6 @@ export default function Invoices() {
       default: return 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400';
     }
   };
-
-  if (!companies || companies.length === 0) {
-    return (
-      <div className="space-y-8">
-        <h1 className="text-3xl font-semibold">{t.invoices}</h1>
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <FileText className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No company selected</h3>
-            <p className="text-sm text-muted-foreground">
-              Please create a company first to manage invoices
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   // Calculate totals for preview
   const watchLines = form.watch('lines');
@@ -403,7 +376,6 @@ export default function Invoices() {
                             try {
                               // Fetch full invoice details with lines using apiRequest
                               const invoiceDetails = await apiRequest('GET', `/api/invoices/${invoice.id}`);
-                              const company = companies?.find(c => c.id === selectedCompanyId);
                               
                               await downloadInvoicePDF({
                                 invoiceNumber: invoiceDetails.number,

@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import Tesseract from 'tesseract.js';
 import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2 } from 'lucide-react';
@@ -38,33 +39,23 @@ interface ProcessedReceipt {
 export default function Receipts() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
+  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [totalToSave, setTotalToSave] = useState(0);
 
-  const { data: companies } = useQuery<any[]>({
-    queryKey: ['/api/companies'],
-  });
-
-  useEffect(() => {
-    if (!selectedCompanyId && companies && companies.length > 0) {
-      setSelectedCompanyId(companies[0].id);
-    }
-  }, [companies, selectedCompanyId]);
-
   // Fetch receipts
   const { data: receipts, isLoading } = useQuery<any[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'receipts'],
-    enabled: !!selectedCompanyId,
+    queryKey: ['/api/companies', companyId, 'receipts'],
+    enabled: !!companyId,
   });
 
   // Save single receipt mutation
   const saveReceiptMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('POST', `/api/companies/${selectedCompanyId}/receipts`, data);
+      return apiRequest('POST', `/api/companies/${companyId}/receipts`, data);
     },
   });
 
@@ -289,10 +280,10 @@ export default function Receipts() {
       return;
     }
 
-    if (!selectedCompanyId) {
+    if (!companyId) {
       toast({
         title: 'Error',
-        description: 'Please select a company first',
+        description: 'Company not found. Please try refreshing the page.',
         variant: 'destructive',
       });
       return;
@@ -309,7 +300,7 @@ export default function Receipts() {
     for (const { receipt, index } of completedIndices) {
       try {
         const receiptData = {
-          companyId: selectedCompanyId,
+          companyId: companyId,
           merchant: receipt.data!.merchant || 'Unknown',
           date: receipt.data!.date || new Date().toISOString().split('T')[0],
           amount: receipt.data!.total || 0,
@@ -321,7 +312,7 @@ export default function Receipts() {
           confidence: receipt.data!.confidence,
         };
 
-        await apiRequest('POST', `/api/companies/${selectedCompanyId}/receipts`, receiptData);
+        await apiRequest('POST', `/api/companies/${companyId}/receipts`, receiptData);
         
         // Mark this receipt as saved
         setProcessedReceipts((prev) => {
@@ -350,7 +341,7 @@ export default function Receipts() {
     }
 
     // Wait for queries to invalidate and refresh
-    await queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'receipts'] });
+    await queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
     
     setIsSavingAll(false);
 

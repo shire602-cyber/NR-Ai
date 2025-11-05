@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { 
   TrendingUp, TrendingDown, DollarSign, AlertCircle, FileText, 
@@ -19,17 +20,12 @@ import { Link } from 'wouter';
 
 export default function Dashboard() {
   const { t, locale } = useTranslation();
+  const { companyId: selectedCompanyId } = useDefaultCompany();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  const { data: companies } = useQuery<any[]>({
-    queryKey: ['/api/companies'],
-  });
-
-  const selectedCompanyId = companies?.[0]?.id || '';
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
     queryKey: ['/api/companies', selectedCompanyId, 'dashboard/stats'],
