@@ -7,7 +7,8 @@ import {
   Sparkles,
   Languages,
   LogOut,
-  Receipt
+  Receipt,
+  Bot
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -67,6 +68,11 @@ const navigationItems = [
     title: 'aiTools',
     icon: Sparkles,
     url: '/ai-categorize',
+  },
+  {
+    title: 'AI CFO',
+    icon: Bot,
+    url: '/ai-cfo',
   },
 ];
 

@@ -2,11 +2,17 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import OpenAI from "openai";
 import { storage } from "./storage";
 import { insertUserSchema, insertCompanySchema, insertAccountSchema, insertInvoiceSchema, insertJournalEntrySchema, categorizationRequestSchema, insertWaitlistSchema } from "@shared/schema";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h";
+
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // Authentication middleware
 async function authMiddleware(req: Request, res: Response, next: Function) {
@@ -446,48 +452,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const accounts = await storage.getAccountsByCompanyId(validated.companyId);
       const expenseAccounts = accounts.filter(a => a.type === 'expense');
       
-      // Simple rule-based matching (will be replaced with OpenAI in Task 3)
-      const description = validated.description.toLowerCase();
+      // Build account list for AI prompt
+      const accountList = expenseAccounts.map(acc => 
+        `${acc.code}: ${acc.nameEn}${acc.nameAr ? ` (${acc.nameAr})` : ''}`
+      ).join('\n');
       
-      let suggestedAccountCode = '5400'; // Default to Office Supplies
-      let confidence = 0.25;
-      let reason = 'Fallback to Office Supplies';
+      // Use OpenAI to categorize the expense
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert accountant specializing in UAE business expenses. Your task is to categorize expenses into the appropriate account from the Chart of Accounts.
+
+Available expense accounts:
+${accountList}
+
+Analyze the transaction description and amount, then respond with a JSON object containing:
+- accountCode: the most appropriate account code
+- accountName: the English name of the account
+- confidence: a number between 0 and 1 indicating how confident you are
+- reason: a brief explanation (1-2 sentences) of why you chose this account
+
+Consider UAE-specific patterns like DEWA (utilities), Careem/Uber (transport), du/Etisalat (telecom), etc.`
+          },
+          {
+            role: "user",
+            content: `Categorize this transaction:
+Description: ${validated.description}
+Amount: ${validated.amount} ${validated.currency}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+      });
       
-      // Business rules for UAE expenses
-      if (description.includes('uber') || description.includes('taxi') || description.includes('careem') || description.includes('transport')) {
-        suggestedAccountCode = '5300';
-        confidence = 0.75;
-        reason = 'Transportation expense pattern detected';
-      } else if (description.includes('facebook') || description.includes('google ads') || description.includes('tiktok') || description.includes('marketing') || description.includes('advertising')) {
-        suggestedAccountCode = '5300';
-        confidence = 0.80;
-        reason = 'Marketing/advertising expense pattern detected';
-      } else if (description.includes('du ') || description.includes('etisalat') || description.includes('utility') || description.includes('dewa') || description.includes('electricity') || description.includes('water')) {
-        suggestedAccountCode = '5200';
-        confidence = 0.85;
-        reason = 'Utilities expense pattern detected';
-      } else if (description.includes('rent') || description.includes('lease')) {
-        suggestedAccountCode = '5100';
-        confidence = 0.90;
-        reason = 'Rent expense pattern detected';
-      } else if (description.includes('stationery') || description.includes('paper') || description.includes('ink') || description.includes('pens') || description.includes('supplies')) {
-        suggestedAccountCode = '5400';
-        confidence = 0.70;
-        reason = 'Office supplies pattern detected';
-      }
-      
-      // Find the account name
-      const account = accounts.find(a => a.code === suggestedAccountCode);
-      const suggestedAccountName = account ? account.nameEn : 'Office Supplies';
+      const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
       
       res.json({
-        suggestedAccountCode,
-        suggestedAccountName,
-        confidence,
-        reason,
+        suggestedAccountCode: aiResponse.accountCode,
+        suggestedAccountName: aiResponse.accountName,
+        confidence: aiResponse.confidence,
+        reason: aiResponse.reason,
       });
     } catch (error: any) {
-      res.status(400).json({ message: error.message });
+      console.error('AI categorization error:', error);
+      res.status(500).json({ message: error.message || 'AI categorization failed' });
+    }
+  });
+
+  // AI CFO Advice Route
+  app.post("/api/ai/cfo-advice", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, question, context } = req.body;
+      
+      if (!companyId || !question) {
+        return res.status(400).json({ message: 'Company ID and question are required' });
+      }
+      
+      // Get additional company data for context
+      const company = await storage.getCompany(companyId);
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      
+      // Build financial context
+      const financialContext = {
+        companyName: company?.name,
+        totalRevenue: context?.stats?.totalRevenue || 0,
+        totalExpenses: context?.stats?.totalExpenses || 0,
+        netIncome: context?.profitLoss?.netIncome || 0,
+        totalInvoices: invoices.length,
+        outstandingInvoices: invoices.filter(i => i.status === 'sent' || i.status === 'draft').length,
+        totalReceipts: receipts.length,
+        accountCount: accounts.length,
+      };
+      
+      // Use OpenAI to provide CFO advice
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an experienced CFO and financial advisor specializing in UAE businesses. You provide strategic financial advice based on real business data.
+
+Company Financial Context:
+- Company: ${financialContext.companyName}
+- Total Revenue: AED ${financialContext.totalRevenue.toLocaleString()}
+- Total Expenses: AED ${financialContext.totalExpenses.toLocaleString()}
+- Net Income: AED ${financialContext.netIncome.toLocaleString()}
+- Total Invoices: ${financialContext.totalInvoices}
+- Outstanding Invoices: ${financialContext.outstandingInvoices}
+- Receipts Processed: ${financialContext.totalReceipts}
+- Chart of Accounts: ${financialContext.accountCount} accounts
+
+Your role is to:
+1. Provide actionable financial advice specific to UAE businesses
+2. Identify trends, risks, and opportunities in the data
+3. Suggest concrete steps to improve financial health
+4. Consider UAE-specific factors like VAT, corporate tax, and local business practices
+5. Be concise but thorough (2-4 paragraphs)
+6. Use specific numbers from the context when relevant
+
+Keep your tone professional but friendly, like a trusted advisor.`
+          },
+          {
+            role: "user",
+            content: question
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 800,
+      });
+      
+      res.json({
+        advice: completion.choices[0].message.content,
+        context: financialContext,
+      });
+    } catch (error: any) {
+      console.error('AI CFO advice error:', error);
+      res.status(500).json({ message: error.message || 'Failed to get AI advice' });
     }
   });
 

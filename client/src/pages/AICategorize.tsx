@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation } from '@tanstack/react-query';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatPercent } from '@/lib/format';
 import { apiRequest } from '@/lib/queryClient';
 import { Sparkles, ArrowRight, CheckCircle2 } from 'lucide-react';
@@ -29,17 +30,25 @@ type CategorizeFormData = z.infer<typeof categorizeSchema>;
 export default function AICategorize() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
+  const { companyId } = useDefaultCompany();
   const [result, setResult] = useState<any>(null);
 
   const form = useForm<CategorizeFormData>({
     resolver: zodResolver(categorizeSchema),
     defaultValues: {
-      companyId: '',
+      companyId: companyId || '',
       description: '',
       amount: 0,
       currency: 'AED',
     },
   });
+
+  // Update form's companyId when it's loaded
+  useEffect(() => {
+    if (companyId) {
+      form.setValue('companyId', companyId);
+    }
+  }, [companyId, form]);
 
   const categorizeMutation = useMutation({
     mutationFn: (data: CategorizeFormData) => 
