@@ -249,6 +249,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/accounts/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      // Get account to verify it exists and get company access
+      const account = await storage.getAccount(id);
+      if (!account) {
+        return res.status(404).json({ message: 'Account not found' });
+      }
+
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, account.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Check if account has any transactions
+      const hasTransactions = await storage.accountHasTransactions(id);
+      if (hasTransactions) {
+        return res.status(400).json({ 
+          message: 'Cannot delete account with existing transactions. Please remove all journal entries using this account first.' 
+        });
+      }
+
+      await storage.deleteAccount(id);
+      res.json({ message: 'Account deleted successfully' });
+    } catch (error: any) {
+      console.error('[Accounts] Error deleting account:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // =====================================
   // Invoice Routes
   // =====================================
