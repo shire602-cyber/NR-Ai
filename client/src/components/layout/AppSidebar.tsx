@@ -8,7 +8,8 @@ import {
   Languages,
   LogOut,
   Receipt,
-  Bot
+  Bot,
+  Building2
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -38,6 +39,11 @@ const navigationItems = [
     title: 'dashboard',
     icon: LayoutDashboard,
     url: '/dashboard',
+  },
+  {
+    title: 'Company Profile',
+    icon: Building2,
+    url: '/company-profile',
   },
   {
     title: 'accounts',
