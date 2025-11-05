@@ -47,6 +47,8 @@ export interface IStorage {
   getAccountsByCompanyId(companyId: string): Promise<Account[]>;
   getAccountByCode(companyId: string, code: string): Promise<Account | undefined>;
   createAccount(account: InsertAccount): Promise<Account>;
+  deleteAccount(id: string): Promise<void>;
+  accountHasTransactions(accountId: string): Promise<boolean>;
   
   // Journal Entries
   getJournalEntry(id: string): Promise<JournalEntry | undefined>;
@@ -190,6 +192,19 @@ export class DatabaseStorage implements IStorage {
       .values(insertAccount)
       .returning();
     return account;
+  }
+
+  async deleteAccount(id: string): Promise<void> {
+    await db.delete(accounts).where(eq(accounts.id, id));
+  }
+
+  async accountHasTransactions(accountId: string): Promise<boolean> {
+    const lines = await db
+      .select()
+      .from(journalLines)
+      .where(eq(journalLines.accountId, accountId))
+      .limit(1);
+    return lines.length > 0;
   }
 
   // Journal Entries
