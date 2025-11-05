@@ -217,6 +217,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/companies/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const company = await storage.getCompany(id);
+      if (!company) {
+        return res.status(404).json({ message: 'Company not found' });
+      }
+
+      res.json(company);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.patch("/api/companies/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Convert taxRegistrationDate if it's a string
+      const updateData = { ...req.body };
+      if (updateData.taxRegistrationDate && typeof updateData.taxRegistrationDate === 'string') {
+        updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
+      }
+
+      const company = await storage.updateCompany(id, updateData);
+      console.log('[Company Profile] Company updated:', company.id);
+      res.json(company);
+    } catch (error: any) {
+      console.error('[Company Profile] Error updating company:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   // =====================================
   // Account Routes
   // =====================================
