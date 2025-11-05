@@ -101,6 +101,7 @@ export default function Accounts() {
   });
 
   const onSubmit = (data: AccountFormData) => {
+    if (!selectedCompanyId) return;
     createMutation.mutate({ ...data, companyId: selectedCompanyId });
   };
 
