@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Switch, Route, useLocation } from 'wouter';
+import { Switch, Route, useLocation, Link } from 'wouter';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
@@ -9,6 +9,8 @@ import { AppSidebar } from '@/components/layout/AppSidebar';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { useI18n } from '@/lib/i18n';
 import { getToken } from '@/lib/auth';
+import { Button } from '@/components/ui/button';
+import { User } from 'lucide-react';
 
 // Pages
 import NotFound from '@/pages/not-found';
@@ -38,6 +40,12 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         <div className="flex flex-col flex-1 min-w-0">
           <header className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-10">
             <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <Link href="/company-profile">
+              <Button variant="ghost" size="sm" data-testid="button-profile">
+                <User className="w-4 h-4 mr-2" />
+                Profile
+              </Button>
+            </Link>
           </header>
           <main className="flex-1 overflow-auto p-8">
             {children}
