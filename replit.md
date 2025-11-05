@@ -6,6 +6,30 @@ This is an AI-powered bookkeeping platform specifically designed for UAE busines
 
 ## Recent Changes
 
+**November 5, 2025 - Database Migration and Bulk Upload Feature**
+- Migrated from in-memory storage (MemStorage) to PostgreSQL database (DatabaseStorage) to fix receipt persistence issues
+- Created `server/db.ts` for Neon PostgreSQL connection with WebSocket support using `@neondatabase/serverless` and `ws`
+- Implemented comprehensive `DatabaseStorage` class in `server/storage.ts` using Drizzle ORM
+  - All 22 IStorage methods implemented (users, companies, accounts, invoices, receipts, journal entries, waitlist)
+  - Uses proper Drizzle query builders with `eq()`, `and()`, `desc()` for type-safe queries
+  - Automatically handles UUID generation, timestamps, and defaults
+- Successfully pushed database schema to production using `npm run db:push`
+- Added **bulk upload functionality** to Receipt Scanner (`client/src/pages/Receipts.tsx`):
+  - File input now accepts multiple files (`<input multiple />`)
+  - Drag-and-drop zone supports bulk file selection
+  - New `ProcessedReceipt` interface tracks status (pending, processing, completed, error) for each receipt
+  - Sequential OCR processing with real-time progress tracking for each file
+  - Individual receipt cards show thumbnails, status badges, and editable extracted data
+  - "Process All Receipts" button runs OCR on all pending receipts sequentially
+  - "Save All" button saves all completed receipts to database in batch
+  - Status summary badges show counts: pending, processing, completed, errors
+  - Individual remove buttons (X) to delete receipts from the queue before saving
+  - AI categorization runs automatically for each processed receipt
+  - Inline editing for merchant, date, amount, and category for each receipt
+- Receipts now persist across server restarts (stored in PostgreSQL)
+- All receipt data includes: merchant, date, amount, VAT, category, imageData (base64), rawText, confidence, uploadedBy
+- Comprehensive data-testid attributes for all interactive elements (dropzone, buttons, inputs, cards)
+
 **November 4, 2025 - UI/UX Improvements for Top-Tier SaaS Landing Page**
 - Updated hero headline to "AI Bookkeeping Built for UAE Businesses"
 - Updated hero subheading to "Save time, stay FTA-compliant, and get real-time financial clarity – powered by AI."

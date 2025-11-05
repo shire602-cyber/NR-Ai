@@ -10,7 +10,20 @@ import type {
   Receipt, InsertReceipt,
   Waitlist, InsertWaitlist
 } from "@shared/schema";
-import { randomUUID } from "crypto";
+import {
+  users,
+  companies,
+  companyUsers,
+  accounts,
+  journalEntries,
+  journalLines,
+  invoices,
+  invoiceLines,
+  receipts,
+  waitlist
+} from "@shared/schema";
+import { db } from "./db";
+import { eq, and, desc } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -63,252 +76,236 @@ export interface IStorage {
   getWaitlistByEmail(email: string): Promise<Waitlist | undefined>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private companies: Map<string, Company>;
-  private companyUsers: Map<string, CompanyUser>;
-  private accounts: Map<string, Account>;
-  private journalEntries: Map<string, JournalEntry>;
-  private journalLines: Map<string, JournalLine>;
-  private invoices: Map<string, Invoice>;
-  private invoiceLines: Map<string, InvoiceLine>;
-  private receipts: Map<string, Receipt>;
-  private waitlist: Map<string, Waitlist>;
-
-  constructor() {
-    this.users = new Map();
-    this.companies = new Map();
-    this.companyUsers = new Map();
-    this.accounts = new Map();
-    this.journalEntries = new Map();
-    this.journalLines = new Map();
-    this.invoices = new Map();
-    this.invoiceLines = new Map();
-    this.receipts = new Map();
-    this.waitlist = new Map();
-  }
-
+export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(u => u.email === email);
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
   }
 
   async createUser(insertUser: InsertUser & { passwordHash?: string }): Promise<User> {
-    const id = randomUUID();
-    const user: User = {
-      id,
-      email: insertUser.email,
-      name: insertUser.name,
-      passwordHash: (insertUser as any).passwordHash || '',
-      createdAt: new Date(),
-    };
-    this.users.set(id, user);
+    const [user] = await db
+      .insert(users)
+      .values({
+        ...insertUser,
+        passwordHash: (insertUser as any).passwordHash || '',
+      })
+      .returning();
     return user;
   }
 
   // Companies
   async getCompany(id: string): Promise<Company | undefined> {
-    return this.companies.get(id);
+    const [company] = await db.select().from(companies).where(eq(companies.id, id));
+    return company || undefined;
   }
 
   async getCompanyByName(name: string): Promise<Company | undefined> {
-    return Array.from(this.companies.values()).find(c => c.name === name);
+    const [company] = await db.select().from(companies).where(eq(companies.name, name));
+    return company || undefined;
   }
 
   async getCompaniesByUserId(userId: string): Promise<Company[]> {
-    const userCompanyIds = Array.from(this.companyUsers.values())
-      .filter(cu => cu.userId === userId)
-      .map(cu => cu.companyId);
+    const results = await db
+      .select({
+        id: companies.id,
+        name: companies.name,
+        baseCurrency: companies.baseCurrency,
+        locale: companies.locale,
+        createdAt: companies.createdAt,
+      })
+      .from(companies)
+      .innerJoin(companyUsers, eq(companies.id, companyUsers.companyId))
+      .where(eq(companyUsers.userId, userId));
     
-    return Array.from(this.companies.values())
-      .filter(c => userCompanyIds.includes(c.id));
+    return results;
   }
 
   async createCompany(insertCompany: InsertCompany): Promise<Company> {
-    const id = randomUUID();
-    const company: Company = {
-      id,
-      ...insertCompany,
-      createdAt: new Date(),
-    };
-    this.companies.set(id, company);
+    const [company] = await db
+      .insert(companies)
+      .values(insertCompany)
+      .returning();
     return company;
   }
 
   // Company Users
   async createCompanyUser(insertCompanyUser: InsertCompanyUser): Promise<CompanyUser> {
-    const id = randomUUID();
-    const companyUser: CompanyUser = {
-      id,
-      ...insertCompanyUser,
-      createdAt: new Date(),
-    };
-    this.companyUsers.set(id, companyUser);
+    const [companyUser] = await db
+      .insert(companyUsers)
+      .values(insertCompanyUser)
+      .returning();
     return companyUser;
   }
 
   async getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined> {
-    return Array.from(this.companyUsers.values()).find(
-      cu => cu.companyId === companyId && cu.userId === userId
-    );
+    const [companyUser] = await db
+      .select()
+      .from(companyUsers)
+      .where(
+        and(
+          eq(companyUsers.companyId, companyId),
+          eq(companyUsers.userId, userId)
+        )
+      );
+    return companyUser || undefined;
   }
 
   async hasCompanyAccess(userId: string, companyId: string): Promise<boolean> {
-    const companyUser = await this.getUserRole(companyId, userId);
-    return !!companyUser;
+    const result = await this.getUserRole(companyId, userId);
+    return !!result;
   }
 
   // Accounts
   async getAccount(id: string): Promise<Account | undefined> {
-    return this.accounts.get(id);
+    const [account] = await db.select().from(accounts).where(eq(accounts.id, id));
+    return account || undefined;
   }
 
   async getAccountsByCompanyId(companyId: string): Promise<Account[]> {
-    return Array.from(this.accounts.values())
-      .filter(a => a.companyId === companyId)
-      .sort((a, b) => a.code.localeCompare(b.code));
+    return await db.select().from(accounts).where(eq(accounts.companyId, companyId));
   }
 
   async getAccountByCode(companyId: string, code: string): Promise<Account | undefined> {
-    return Array.from(this.accounts.values()).find(
-      a => a.companyId === companyId && a.code === code
-    );
+    const [account] = await db
+      .select()
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.companyId, companyId),
+          eq(accounts.code, code)
+        )
+      );
+    return account || undefined;
   }
 
   async createAccount(insertAccount: InsertAccount): Promise<Account> {
-    const id = randomUUID();
-    const account: Account = {
-      id,
-      ...insertAccount,
-      createdAt: new Date(),
-    };
-    this.accounts.set(id, account);
+    const [account] = await db
+      .insert(accounts)
+      .values(insertAccount)
+      .returning();
     return account;
   }
 
   // Journal Entries
   async getJournalEntry(id: string): Promise<JournalEntry | undefined> {
-    return this.journalEntries.get(id);
+    const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+    return entry || undefined;
   }
 
   async getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]> {
-    return Array.from(this.journalEntries.values())
-      .filter(je => je.companyId === companyId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return await db
+      .select()
+      .from(journalEntries)
+      .where(eq(journalEntries.companyId, companyId))
+      .orderBy(desc(journalEntries.date));
   }
 
   async createJournalEntry(insertEntry: InsertJournalEntry): Promise<JournalEntry> {
-    const id = randomUUID();
-    const entry: JournalEntry = {
-      id,
-      ...insertEntry,
-      createdAt: new Date(),
-    };
-    this.journalEntries.set(id, entry);
+    const [entry] = await db
+      .insert(journalEntries)
+      .values(insertEntry)
+      .returning();
     return entry;
   }
 
   // Journal Lines
   async createJournalLine(insertLine: InsertJournalLine): Promise<JournalLine> {
-    const id = randomUUID();
-    const line: JournalLine = {
-      id,
-      ...insertLine,
-    };
-    this.journalLines.set(id, line);
+    const [line] = await db
+      .insert(journalLines)
+      .values(insertLine)
+      .returning();
     return line;
   }
 
   async getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]> {
-    return Array.from(this.journalLines.values())
-      .filter(jl => jl.entryId === entryId);
+    return await db.select().from(journalLines).where(eq(journalLines.entryId, entryId));
   }
 
   // Invoices
   async getInvoice(id: string): Promise<Invoice | undefined> {
-    return this.invoices.get(id);
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
+    return invoice || undefined;
   }
 
   async getInvoicesByCompanyId(companyId: string): Promise<Invoice[]> {
-    return Array.from(this.invoices.values())
-      .filter(inv => inv.companyId === companyId)
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.companyId, companyId))
+      .orderBy(desc(invoices.date));
   }
 
   async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
-    const id = randomUUID();
-    const invoice: Invoice = {
-      id,
-      ...insertInvoice,
-      createdAt: new Date(),
-    };
-    this.invoices.set(id, invoice);
+    const [invoice] = await db
+      .insert(invoices)
+      .values(insertInvoice)
+      .returning();
     return invoice;
   }
 
   async updateInvoiceStatus(id: string, status: string): Promise<Invoice> {
-    const invoice = this.invoices.get(id);
+    const [invoice] = await db
+      .update(invoices)
+      .set({ status })
+      .where(eq(invoices.id, id))
+      .returning();
+    
     if (!invoice) {
       throw new Error('Invoice not found');
     }
-    const updated = { ...invoice, status };
-    this.invoices.set(id, updated);
-    return updated;
+    
+    return invoice;
   }
 
   // Invoice Lines
   async createInvoiceLine(insertLine: InsertInvoiceLine): Promise<InvoiceLine> {
-    const id = randomUUID();
-    const line: InvoiceLine = {
-      id,
-      ...insertLine,
-    };
-    this.invoiceLines.set(id, line);
+    const [line] = await db
+      .insert(invoiceLines)
+      .values(insertLine)
+      .returning();
     return line;
   }
 
   async getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]> {
-    return Array.from(this.invoiceLines.values())
-      .filter(il => il.invoiceId === invoiceId);
+    return await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
   }
 
   // Receipts
   async createReceipt(insertReceipt: InsertReceipt): Promise<Receipt> {
-    const id = randomUUID();
-    const receipt: Receipt = {
-      id,
-      ...insertReceipt,
-      createdAt: new Date(),
-    };
-    this.receipts.set(id, receipt);
+    const [receipt] = await db
+      .insert(receipts)
+      .values(insertReceipt)
+      .returning();
     return receipt;
   }
 
   async getReceiptsByCompanyId(companyId: string): Promise<Receipt[]> {
-    return Array.from(this.receipts.values())
-      .filter(r => r.companyId === companyId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return await db
+      .select()
+      .from(receipts)
+      .where(eq(receipts.companyId, companyId))
+      .orderBy(desc(receipts.createdAt));
   }
 
   // Waitlist
   async createWaitlistEntry(insertEntry: InsertWaitlist): Promise<Waitlist> {
-    const id = randomUUID();
-    const entry: Waitlist = {
-      id,
-      ...insertEntry,
-      createdAt: new Date(),
-    };
-    this.waitlist.set(id, entry);
+    const [entry] = await db
+      .insert(waitlist)
+      .values(insertEntry)
+      .returning();
     return entry;
   }
 
   async getWaitlistByEmail(email: string): Promise<Waitlist | undefined> {
-    return Array.from(this.waitlist.values()).find(w => w.email === email);
+    const [entry] = await db.select().from(waitlist).where(eq(waitlist.email, email));
+    return entry || undefined;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

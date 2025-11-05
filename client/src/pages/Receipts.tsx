@@ -12,7 +12,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import Tesseract from 'tesseract.js';
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2 } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
 
 interface ExtractedData {
@@ -26,16 +26,24 @@ interface ExtractedData {
   confidence?: number;
 }
 
+interface ProcessedReceipt {
+  file: File;
+  preview: string;
+  status: 'pending' | 'processing' | 'completed' | 'saved' | 'error' | 'save_error';
+  progress: number;
+  data?: ExtractedData;
+  error?: string;
+}
+
 export default function Receipts() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [ocrProgress, setOcrProgress] = useState(0);
+  const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
+  const [isSavingAll, setIsSavingAll] = useState(false);
+  const [totalToSave, setTotalToSave] = useState(0);
 
   const { data: companies } = useQuery<any[]>({
     queryKey: ['/api/companies'],
@@ -53,51 +61,49 @@ export default function Receipts() {
     enabled: !!selectedCompanyId,
   });
 
-  // Save receipt mutation
+  // Save single receipt mutation
   const saveReceiptMutation = useMutation({
     mutationFn: async (data: any) => {
       return apiRequest('POST', `/api/companies/${selectedCompanyId}/receipts`, data);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'receipts'] });
-      toast({
-        title: 'Success!',
-        description: 'Receipt saved successfully',
-      });
-      resetForm();
-    },
-    onError: (error: any) => {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to save receipt',
-        variant: 'destructive',
-      });
-    },
   });
 
   const resetForm = () => {
-    setSelectedFile(null);
-    setPreview(null);
-    setExtractedData(null);
-    setOcrProgress(0);
+    setProcessedReceipts([]);
+    setIsProcessingBulk(false);
+    setIsSavingAll(false);
+    setTotalToSave(0);
   };
 
-  const handleFileSelect = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) {
-      toast({
-        title: 'Invalid file',
-        description: 'Please upload an image file',
-        variant: 'destructive',
-      });
-      return;
-    }
+  const handleFilesSelect = useCallback((files: FileList | File[]) => {
+    const validFiles: ProcessedReceipt[] = [];
+    const fileArray = Array.from(files);
 
-    setSelectedFile(file);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setPreview(e.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    fileArray.forEach((file) => {
+      if (!file.type.startsWith('image/')) {
+        toast({
+          title: 'Invalid file',
+          description: `${file.name} is not an image file`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const preview = e.target?.result as string;
+        setProcessedReceipts((prev) => [
+          ...prev,
+          {
+            file,
+            preview,
+            status: 'pending',
+            progress: 0,
+          },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
   }, [toast]);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -112,45 +118,84 @@ export default function Receipts() {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFileSelect(file);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFilesSelect(files);
     }
   };
 
-  const extractTextFromImage = async (imageFile: File) => {
-    setIsProcessing(true);
-    setOcrProgress(0);
+  const removeReceipt = (index: number) => {
+    setProcessedReceipts((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const processReceipt = async (index: number) => {
+    const receipt = processedReceipts[index];
+    if (!receipt) return;
+
+    setProcessedReceipts((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], status: 'processing', progress: 0 };
+      return updated;
+    });
 
     try {
-      const result = await Tesseract.recognize(imageFile, 'eng', {
+      const result = await Tesseract.recognize(receipt.file, 'eng', {
         logger: (m) => {
           if (m.status === 'recognizing text') {
-            setOcrProgress(Math.round(m.progress * 100));
+            setProcessedReceipts((prev) => {
+              const updated = [...prev];
+              updated[index] = { ...updated[index], progress: Math.round(m.progress * 100) };
+              return updated;
+            });
           }
         },
       });
 
       const text = result.data.text;
-      
-      // Parse the extracted text
       const parsed = parseReceiptText(text);
-      setExtractedData(parsed);
 
       // AI categorization
       if (parsed.merchant || parsed.total) {
-        categorizeWithAI(parsed);
+        const category = await categorizeWithAI(parsed);
+        if (category) {
+          parsed.category = category;
+        }
       }
 
-    } catch (error) {
-      toast({
-        title: 'OCR Failed',
-        description: 'Could not extract text from image',
-        variant: 'destructive',
+      setProcessedReceipts((prev) => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], status: 'completed', data: parsed, progress: 100 };
+        return updated;
       });
-    } finally {
-      setIsProcessing(false);
+
+    } catch (error) {
+      setProcessedReceipts((prev) => {
+        const updated = [...prev];
+        updated[index] = { 
+          ...updated[index], 
+          status: 'error', 
+          error: 'OCR processing failed',
+          progress: 0 
+        };
+        return updated;
+      });
     }
+  };
+
+  const processAllReceipts = async () => {
+    setIsProcessingBulk(true);
+    
+    for (let i = 0; i < processedReceipts.length; i++) {
+      if (processedReceipts[i].status === 'pending') {
+        await processReceipt(i);
+      }
+    }
+    
+    setIsProcessingBulk(false);
+    toast({
+      title: 'Processing Complete',
+      description: `Processed ${processedReceipts.length} receipt(s)`,
+    });
   };
 
   const parseReceiptText = (text: string): ExtractedData => {
@@ -196,7 +241,7 @@ export default function Receipts() {
     };
   };
 
-  const categorizeWithAI = async (data: ExtractedData) => {
+  const categorizeWithAI = async (data: ExtractedData): Promise<string | null> => {
     try {
       const response = await fetch('/api/ai/categorize', {
         method: 'POST',
@@ -209,287 +254,458 @@ export default function Receipts() {
 
       if (response.ok) {
         const result = await response.json();
-        setExtractedData(prev => prev ? { ...prev, category: result.category } : null);
+        return result.category;
       }
     } catch (error) {
       console.error('AI categorization failed:', error);
     }
+    return null;
   };
 
-  const handleSave = () => {
-    if (!extractedData || !selectedCompanyId) return;
-
-    saveReceiptMutation.mutate({
-      companyId: selectedCompanyId,
-      merchant: extractedData.merchant || 'Unknown',
-      date: extractedData.date || new Date().toISOString(),
-      amount: extractedData.total || 0,
-      vatAmount: extractedData.vatAmount,
-      category: extractedData.category || 'Uncategorized',
-      currency: extractedData.currency || 'AED',
-      imageData: preview || '',
-      rawText: extractedData.rawText,
-      confidence: extractedData.confidence,
+  const updateReceiptData = (index: number, updates: Partial<ExtractedData>) => {
+    setProcessedReceipts((prev) => {
+      const updated = [...prev];
+      if (updated[index].data) {
+        updated[index] = {
+          ...updated[index],
+          data: { ...updated[index].data!, ...updates },
+        };
+      }
+      return updated;
     });
   };
+
+  const saveAllReceipts = async () => {
+    const completedIndices = processedReceipts
+      .map((r, i) => ({ receipt: r, index: i }))
+      .filter(({ receipt }) => receipt.status === 'completed' && receipt.data);
+    
+    if (completedIndices.length === 0) {
+      toast({
+        title: 'No receipts to save',
+        description: 'Please process receipts before saving',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!selectedCompanyId) {
+      toast({
+        title: 'Error',
+        description: 'Please select a company first',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Capture total count before starting to prevent denominator from shrinking
+    const total = completedIndices.length;
+    setTotalToSave(total);
+    setIsSavingAll(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Save each receipt sequentially with status updates
+    for (const { receipt, index } of completedIndices) {
+      try {
+        const receiptData = {
+          companyId: selectedCompanyId,
+          merchant: receipt.data!.merchant || 'Unknown',
+          date: receipt.data!.date || new Date().toISOString().split('T')[0],
+          amount: receipt.data!.total || 0,
+          vatAmount: receipt.data!.vatAmount || null,
+          category: receipt.data!.category || 'Uncategorized',
+          currency: receipt.data!.currency || 'AED',
+          imageData: receipt.preview,
+          rawText: receipt.data!.rawText,
+          confidence: receipt.data!.confidence,
+        };
+
+        await apiRequest('POST', `/api/companies/${selectedCompanyId}/receipts`, receiptData);
+        
+        // Mark this receipt as saved
+        setProcessedReceipts((prev) => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], status: 'saved' };
+          return updated;
+        });
+        
+        successCount++;
+      } catch (error) {
+        console.error('Failed to save receipt:', error);
+        
+        // Mark this receipt as failed to save
+        setProcessedReceipts((prev) => {
+          const updated = [...prev];
+          updated[index] = { 
+            ...updated[index], 
+            status: 'save_error',
+            error: 'Failed to save to database'
+          };
+          return updated;
+        });
+        
+        errorCount++;
+      }
+    }
+
+    // Wait for queries to invalidate and refresh
+    await queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'receipts'] });
+    
+    setIsSavingAll(false);
+
+    if (successCount > 0) {
+      toast({
+        title: 'Receipts Saved',
+        description: `Successfully saved ${successCount} receipt(s)${errorCount > 0 ? `. ${errorCount} failed` : ''}`,
+      });
+      
+      // Only clear successfully saved receipts
+      if (errorCount === 0) {
+        resetForm();
+      } else {
+        // Remove only the saved ones, keep the failed ones for retry
+        setProcessedReceipts((prev) => prev.filter((r) => r.status !== 'saved'));
+      }
+    } else {
+      toast({
+        title: 'Save Failed',
+        description: 'Failed to save any receipts. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const pendingCount = processedReceipts.filter((r) => r.status === 'pending').length;
+  const processingCount = processedReceipts.filter((r) => r.status === 'processing').length;
+  const completedCount = processedReceipts.filter((r) => r.status === 'completed').length;
+  const savedCount = processedReceipts.filter((r) => r.status === 'saved').length;
+  const errorCount = processedReceipts.filter((r) => r.status === 'error').length;
+  const saveErrorCount = processedReceipts.filter((r) => r.status === 'save_error').length;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold mb-2">Receipt Scanner</h1>
         <p className="text-muted-foreground">
-          Upload receipts and let AI extract and categorize expenses automatically
+          Upload multiple receipts and let AI extract and categorize expenses automatically
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Upload Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5" />
-              Upload Receipt
-            </CardTitle>
-            <CardDescription>
-              Drag & drop or click to upload an image
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Drop Zone */}
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`
-                border-2 border-dashed rounded-lg p-8 text-center transition-all
-                ${isDragging ? 'border-primary bg-primary/5' : 'border-border'}
-                ${preview ? 'border-green-500 bg-green-500/5' : ''}
-                hover:border-primary hover:bg-accent/50 cursor-pointer
-              `}
-              onClick={() => document.getElementById('file-input')?.click()}
-              data-testid="drop-zone"
-            >
-              <input
-                id="file-input"
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileSelect(file);
-                }}
-                data-testid="input-file"
-              />
+      {/* Upload Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="w-5 h-5" />
+            Upload Receipts
+          </CardTitle>
+          <CardDescription>
+            Drag & drop multiple images or click to browse (supports bulk upload)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Drop Zone */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`
+              border-2 border-dashed rounded-lg p-8 text-center transition-all
+              ${isDragging ? 'border-primary bg-primary/5' : 'border-border'}
+              ${processedReceipts.length > 0 ? 'border-green-500 bg-green-500/5' : ''}
+              hover:border-primary hover:bg-accent/50 cursor-pointer
+            `}
+            onClick={() => document.getElementById('file-input')?.click()}
+            data-testid="drop-zone"
+          >
+            <input
+              id="file-input"
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                const files = e.target.files;
+                if (files && files.length > 0) handleFilesSelect(files);
+              }}
+              data-testid="input-file"
+            />
 
-              {preview ? (
-                <div className="space-y-4">
-                  <img
-                    src={preview}
-                    alt="Receipt preview"
-                    className="max-h-64 mx-auto rounded-lg border"
-                  />
-                  <div className="flex items-center justify-center gap-2 text-green-600">
-                    <CheckCircle2 className="w-5 h-5" />
-                    <span>Image loaded successfully</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex justify-center">
-                    <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Camera className="w-8 h-8 text-primary" />
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-lg font-medium">Drop your receipt here</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      or click to browse files
-                    </p>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Supports: JPG, PNG, HEIC
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            {preview && !isProcessing && !extractedData && (
-              <Button
-                onClick={() => selectedFile && extractTextFromImage(selectedFile)}
-                className="w-full"
-                size="lg"
-                data-testid="button-scan"
-              >
-                <Sparkles className="w-4 h-4 mr-2" />
-                Scan Receipt with AI
-              </Button>
-            )}
-
-            {isProcessing && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Processing with OCR...
-                  </span>
-                  <span>{ocrProgress}%</span>
-                </div>
-                <Progress value={ocrProgress} />
-              </div>
-            )}
-
-            {preview && (
-              <Button
-                variant="outline"
-                onClick={resetForm}
-                className="w-full"
-                data-testid="button-reset"
-              >
-                Upload Different Receipt
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Extracted Data Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Extracted Information
-            </CardTitle>
-            <CardDescription>
-              Review and edit the extracted data
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {extractedData ? (
+            {processedReceipts.length > 0 ? (
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Merchant / Vendor</Label>
-                  <Input
-                    value={extractedData.merchant || ''}
-                    onChange={(e) =>
-                      setExtractedData({ ...extractedData, merchant: e.target.value })
-                    }
-                    placeholder="e.g., Carrefour"
-                    data-testid="input-merchant"
-                  />
+                <div className="flex items-center justify-center gap-2 text-green-600">
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span>{processedReceipts.length} image(s) loaded</span>
                 </div>
-
-                <div className="space-y-2">
-                  <Label>Date</Label>
-                  <Input
-                    type="date"
-                    value={extractedData.date || ''}
-                    onChange={(e) =>
-                      setExtractedData({ ...extractedData, date: e.target.value })
-                    }
-                    data-testid="input-date"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Total Amount</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={extractedData.total || ''}
-                      onChange={(e) =>
-                        setExtractedData({ ...extractedData, total: parseFloat(e.target.value) })
-                      }
-                      placeholder="0.00"
-                      data-testid="input-total"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>VAT Amount</Label>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={extractedData.vatAmount || ''}
-                      onChange={(e) =>
-                        setExtractedData({ ...extractedData, vatAmount: parseFloat(e.target.value) })
-                      }
-                      placeholder="0.00"
-                      data-testid="input-vat"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Category</Label>
-                  <div className="flex gap-2">
-                    <Select
-                      value={extractedData.category}
-                      onValueChange={(value) =>
-                        setExtractedData({ ...extractedData, category: value })
-                      }
-                    >
-                      <SelectTrigger data-testid="select-category">
-                        <SelectValue placeholder="Select category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                        <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
-                        <SelectItem value="Travel">Travel</SelectItem>
-                        <SelectItem value="Utilities">Utilities</SelectItem>
-                        <SelectItem value="Marketing">Marketing</SelectItem>
-                        <SelectItem value="Software">Software</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {extractedData.category && (
-                      <Badge variant="secondary" className="whitespace-nowrap">
-                        <Sparkles className="w-3 h-3 mr-1" />
-                        AI
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-
-                <div className="pt-4 space-y-2">
-                  <Button
-                    onClick={handleSave}
-                    disabled={saveReceiptMutation.isPending}
-                    className="w-full"
-                    size="lg"
-                    data-testid="button-save"
-                  >
-                    {saveReceiptMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        Save Receipt
-                      </>
-                    )}
-                  </Button>
-                  
-                  {extractedData.confidence && (
-                    <p className="text-xs text-center text-muted-foreground">
-                      OCR Confidence: {Math.round(extractedData.confidence * 100)}%
-                    </p>
-                  )}
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  Click or drop more images to add them
+                </p>
               </div>
             ) : (
-              <div className="text-center py-12">
-                <ImageIcon className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
-                <p className="text-muted-foreground">
-                  Upload and scan a receipt to see extracted data here
+              <div className="space-y-4">
+                <div className="flex justify-center">
+                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Camera className="w-8 h-8 text-primary" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-lg font-medium">Drop your receipts here</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    or click to browse files (multiple selection supported)
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Supports: JPG, PNG, HEIC • Bulk upload enabled
                 </p>
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+
+          {/* Action Buttons */}
+          {processedReceipts.length > 0 && (
+            <div className="flex gap-2">
+              <Button
+                onClick={processAllReceipts}
+                disabled={isProcessingBulk || pendingCount === 0}
+                className="flex-1"
+                size="lg"
+                data-testid="button-process-all"
+              >
+                {isProcessingBulk ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Process All Receipts ({pendingCount})
+                  </>
+                )}
+              </Button>
+              
+              <Button
+                onClick={saveAllReceipts}
+                disabled={completedCount === 0 || isSavingAll || isProcessingBulk}
+                className="flex-1"
+                size="lg"
+                data-testid="button-save-all"
+              >
+                {isSavingAll ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving ({savedCount}/{totalToSave})...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    Save All ({completedCount})
+                  </>
+                )}
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={resetForm}
+                disabled={isProcessingBulk}
+                data-testid="button-reset"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+
+          {/* Status Summary */}
+          {processedReceipts.length > 0 && (
+            <div className="flex flex-wrap gap-2 text-sm">
+              {pendingCount > 0 && (
+                <Badge variant="outline">{pendingCount} pending</Badge>
+              )}
+              {processingCount > 0 && (
+                <Badge variant="outline">{processingCount} processing</Badge>
+              )}
+              {completedCount > 0 && (
+                <Badge variant="outline" className="bg-green-500/10 border-green-500">
+                  {completedCount} ready to save
+                </Badge>
+              )}
+              {savedCount > 0 && (
+                <Badge variant="outline" className="bg-blue-500/10 border-blue-500">
+                  {savedCount} saved
+                </Badge>
+              )}
+              {errorCount > 0 && (
+                <Badge variant="outline" className="bg-red-500/10 border-red-500">
+                  {errorCount} OCR errors
+                </Badge>
+              )}
+              {saveErrorCount > 0 && (
+                <Badge variant="outline" className="bg-orange-500/10 border-orange-500">
+                  {saveErrorCount} save failed
+                </Badge>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Processed Receipts */}
+      {processedReceipts.length > 0 && (
+        <div className="space-y-3">
+          {processedReceipts.map((receipt, index) => (
+            <Card key={index} data-testid={`receipt-card-${index}`}>
+              <CardContent className="p-4">
+                <div className="flex gap-4">
+                  {/* Thumbnail */}
+                  <div className="relative">
+                    <img
+                      src={receipt.preview}
+                      alt={`Receipt ${index + 1}`}
+                      className="w-24 h-24 object-cover rounded-lg border"
+                    />
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute -top-2 -right-2 h-6 w-6"
+                      onClick={() => removeReceipt(index)}
+                      disabled={isProcessingBulk}
+                      data-testid={`button-remove-${index}`}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+
+                  {/* Status and Data */}
+                  <div className="flex-1 space-y-3">
+                    {receipt.status === 'pending' && (
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">Pending</Badge>
+                        <p className="text-sm text-muted-foreground">
+                          Ready to process
+                        </p>
+                      </div>
+                    )}
+
+                    {receipt.status === 'processing' && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Processing with OCR...
+                          </span>
+                          <span>{receipt.progress}%</span>
+                        </div>
+                        <Progress value={receipt.progress} />
+                      </div>
+                    )}
+
+                    {receipt.status === 'error' && (
+                      <div className="flex items-center gap-2 text-red-600">
+                        <XCircle className="w-4 h-4" />
+                        <span className="text-sm">{receipt.error}</span>
+                      </div>
+                    )}
+
+                    {receipt.status === 'saved' && (
+                      <div className="flex items-center gap-2 text-blue-600">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span className="text-sm font-medium">Successfully saved to database</span>
+                      </div>
+                    )}
+
+                    {receipt.status === 'save_error' && (
+                      <div className="flex items-center gap-2 text-orange-600">
+                        <XCircle className="w-4 h-4" />
+                        <span className="text-sm">{receipt.error || 'Failed to save'}</span>
+                      </div>
+                    )}
+
+                    {receipt.status === 'completed' && receipt.data && (
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Merchant</Label>
+                          <Input
+                            value={receipt.data.merchant || ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { merchant: e.target.value })
+                            }
+                            className="h-8"
+                            data-testid={`input-merchant-${index}`}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">Date</Label>
+                          <Input
+                            type="date"
+                            value={receipt.data.date || ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { date: e.target.value })
+                            }
+                            className="h-8"
+                            data-testid={`input-date-${index}`}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">Amount</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={receipt.data.total || ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { total: parseFloat(e.target.value) })
+                            }
+                            className="h-8"
+                            data-testid={`input-amount-${index}`}
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">Category</Label>
+                          <Select
+                            value={receipt.data.category}
+                            onValueChange={(value) =>
+                              updateReceiptData(index, { category: value })
+                            }
+                          >
+                            <SelectTrigger className="h-8" data-testid={`select-category-${index}`}>
+                              <SelectValue placeholder="Category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Office Supplies">Office Supplies</SelectItem>
+                              <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
+                              <SelectItem value="Travel">Travel</SelectItem>
+                              <SelectItem value="Utilities">Utilities</SelectItem>
+                              <SelectItem value="Marketing">Marketing</SelectItem>
+                              <SelectItem value="Software">Software</SelectItem>
+                              <SelectItem value="Other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {receipt.data.confidence && (
+                          <div className="col-span-2">
+                            <p className="text-xs text-muted-foreground">
+                              OCR Confidence: {Math.round(receipt.data.confidence * 100)}%
+                              {receipt.data.category && (
+                                <Badge variant="secondary" className="ml-2">
+                                  <Sparkles className="w-2 h-2 mr-1" />
+                                  AI
+                                </Badge>
+                              )}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Recent Receipts */}
       <Card>
