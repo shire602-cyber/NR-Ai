@@ -250,10 +250,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Convert taxRegistrationDate if it's a string
+      // Prepare update data with proper type conversions
       const updateData = { ...req.body };
-      if (updateData.taxRegistrationDate && typeof updateData.taxRegistrationDate === 'string') {
-        updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
+      
+      // Convert taxRegistrationDate to Date if it exists and is not already a Date
+      if (updateData.taxRegistrationDate) {
+        if (typeof updateData.taxRegistrationDate === 'string') {
+          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
+        } else if (!(updateData.taxRegistrationDate instanceof Date)) {
+          // If it's not a string or Date, try to coerce it
+          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
+        }
+      } else {
+        // If taxRegistrationDate is undefined or null, ensure it's properly set
+        delete updateData.taxRegistrationDate;
       }
 
       const company = await storage.updateCompany(id, updateData);

@@ -24,20 +24,20 @@ const companyProfileSchema = z.object({
   
   // Company Information
   legalStructure: z.string().min(1, 'Legal structure is required'),
-  industry: z.string().optional(),
-  registrationNumber: z.string().optional(),
+  industry: z.string().transform(val => val || undefined).optional(),
+  registrationNumber: z.string().transform(val => val || undefined).optional(),
   businessAddress: z.string().min(1, 'Business address is required'),
-  contactPhone: z.string().optional(),
-  contactEmail: z.string().email('Invalid email').optional().or(z.literal('')),
-  websiteUrl: z.string().url('Invalid URL').optional().or(z.literal('')),
-  logoUrl: z.string().optional(),
+  contactPhone: z.string().transform(val => val || undefined).optional(),
+  contactEmail: z.string().email('Invalid email').or(z.literal('')).transform(val => val || undefined).optional(),
+  websiteUrl: z.string().url('Invalid URL').or(z.literal('')).transform(val => val || undefined).optional(),
+  logoUrl: z.string().transform(val => val || undefined).optional(),
   
   // Tax & Compliance
   trnVatNumber: z.string().min(1, 'TRN/VAT Number is required'),
-  taxRegistrationType: z.string().optional(),
+  taxRegistrationType: z.string().min(1, 'Tax registration type is required'),
   vatFilingFrequency: z.string().min(1, 'VAT filing frequency is required'),
-  taxRegistrationDate: z.string().optional(),
-  corporateTaxId: z.string().optional(),
+  taxRegistrationDate: z.string().transform(val => val || undefined).optional(),
+  corporateTaxId: z.string().transform(val => val || undefined).optional(),
 });
 
 type CompanyProfileFormData = z.infer<typeof companyProfileSchema>;
@@ -105,8 +105,15 @@ export default function CompanyProfile() {
 
   const updateMutation = useMutation({
     mutationFn: (data: CompanyProfileFormData) => {
-      console.log('Company Profile Data:', JSON.stringify(data, null, 2));
-      return apiRequest('PATCH', `/api/companies/${companyId}`, data);
+      // Convert date string to Date object if present
+      const payload = {
+        ...data,
+        taxRegistrationDate: data.taxRegistrationDate 
+          ? new Date(data.taxRegistrationDate) 
+          : undefined,
+      };
+      console.log('Company Profile Data:', JSON.stringify(payload, null, 2));
+      return apiRequest('PATCH', `/api/companies/${companyId}`, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId] });
