@@ -386,7 +386,7 @@ export default function Invoices() {
                               const invoiceDetails = await apiRequest('GET', `/api/invoices/${invoice.id}`);
                               
                               // Check if company is VAT registered
-                              const isVATRegistered = company?.trnVatNumber && company.trnVatNumber.length > 0;
+                              const isVATRegistered = !!(company?.trnVatNumber && company.trnVatNumber.length > 0);
                               
                               await downloadInvoicePDF({
                                 invoiceNumber: invoiceDetails.number,
@@ -407,11 +407,11 @@ export default function Invoices() {
                                 currency: invoiceDetails.currency,
                                 locale,
                                 // Invoice customization settings
-                                showLogo: company?.invoiceShowLogo ?? true,
-                                showAddress: company?.invoiceShowAddress ?? true,
-                                showPhone: company?.invoiceShowPhone ?? true,
-                                showEmail: company?.invoiceShowEmail ?? true,
-                                showWebsite: company?.invoiceShowWebsite ?? false,
+                                showLogo: company?.invoiceShowLogo !== undefined ? company.invoiceShowLogo : true,
+                                showAddress: company?.invoiceShowAddress !== undefined ? company.invoiceShowAddress : true,
+                                showPhone: company?.invoiceShowPhone !== undefined ? company.invoiceShowPhone : true,
+                                showEmail: company?.invoiceShowEmail !== undefined ? company.invoiceShowEmail : true,
+                                showWebsite: company?.invoiceShowWebsite === true ? true : undefined,
                                 customTitle: company?.invoiceCustomTitle || undefined,
                                 footerNote: company?.invoiceFooterNote || undefined,
                                 isVATRegistered,
