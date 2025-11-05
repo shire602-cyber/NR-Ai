@@ -281,9 +281,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/invoices", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/invoices", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { companyId, lines, ...invoiceData } = req.body;
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      const { lines, date, ...invoiceData } = req.body;
+      
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
       
       // Calculate totals
       let subtotal = 0;
@@ -297,9 +305,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const total = subtotal + vatAmount;
       
+      // Convert date string to Date object if it's a string
+      const invoiceDate = typeof date === 'string' ? new Date(date) : date;
+      
+      console.log('[Invoices] Creating invoice:', { 
+        companyId, 
+        userId,
+        number: invoiceData.number,
+        date: invoiceDate,
+        subtotal,
+        vatAmount,
+        total,
+        linesCount: lines.length
+      });
+      
       // Create invoice
       const invoice = await storage.createInvoice({
         ...invoiceData,
+        date: invoiceDate,
         companyId,
         subtotal,
         vatAmount,
@@ -314,9 +337,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      console.log('[Invoices] Invoice created successfully:', invoice.id);
       res.json(invoice);
     } catch (error: any) {
-      res.status(400).json({ message: error.message });
+      console.error('[Invoices] Error creating invoice:', error);
+      res.status(400).json({ message: error.message || 'Failed to create invoice' });
     }
   });
 

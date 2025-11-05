@@ -81,7 +81,7 @@ export default function Invoices() {
 
   const createMutation = useMutation({
     mutationFn: (data: InvoiceFormData) => 
-      apiRequest('POST', '/api/invoices', data),
+      apiRequest('POST', `/api/companies/${selectedCompanyId}/invoices`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
       toast({
@@ -109,6 +109,14 @@ export default function Invoices() {
   });
 
   const onSubmit = (data: InvoiceFormData) => {
+    if (!selectedCompanyId) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Company not found. Please refresh the page.',
+      });
+      return;
+    }
     createMutation.mutate({ ...data, companyId: selectedCompanyId });
   };
 
@@ -383,8 +391,8 @@ export default function Invoices() {
                                 customerName: invoiceDetails.customerName,
                                 customerTRN: invoiceDetails.customerTrn || undefined,
                                 companyName: company?.name || 'Your Company',
-                                companyTRN: company?.trn || undefined,
-                                companyAddress: company?.address || undefined,
+                                companyTRN: undefined, // TODO: Add TRN field to company schema
+                                companyAddress: undefined, // TODO: Add address field to company schema
                                 lines: invoiceDetails.lines || [],
                                 subtotal: invoiceDetails.subtotal,
                                 vatAmount: invoiceDetails.vatAmount,
