@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -16,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, BookOpen, Search } from 'lucide-react';
+import { Plus, BookOpen, Search, Trash2 } from 'lucide-react';
 import type { Account } from '@shared/schema';
 
 const accountSchema = z.object({
@@ -80,8 +81,31 @@ export default function Accounts() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (accountId: string) => 
+      apiRequest('DELETE', `/api/accounts/${accountId}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'accounts'] });
+      toast({
+        title: 'Account deleted',
+        description: 'Account has been removed from the Chart of Accounts.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to delete account',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
   const onSubmit = (data: AccountFormData) => {
     createMutation.mutate({ ...data, companyId: selectedCompanyId });
+  };
+
+  const handleDelete = (accountId: string) => {
+    deleteMutation.mutate(accountId);
   };
 
   const filteredAccounts = accounts?.filter(acc => 
@@ -232,6 +256,7 @@ export default function Accounts() {
                   <TableHead className="font-semibold">{t.accountName}</TableHead>
                   <TableHead className="font-semibold">{t.type}</TableHead>
                   <TableHead className="text-center font-semibold">Status</TableHead>
+                  <TableHead className="text-center font-semibold">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -252,11 +277,48 @@ export default function Accounts() {
                           {account.isActive ? 'Active' : 'Inactive'}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-center">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              data-testid={`button-delete-account-${account.id}`}
+                              disabled={deleteMutation.isPending}
+                            >
+                              <Trash2 className="w-4 h-4 text-destructive" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Account?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete account <strong>{account.code} - {account.nameEn}</strong>? 
+                                This action cannot be undone.
+                                {account.isActive && (
+                                  <span className="block mt-2 text-destructive font-medium">
+                                    Note: This account cannot be deleted if it has existing transactions.
+                                  </span>
+                                )}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => handleDelete(account.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                       {t.noData}
                     </TableCell>
                   </TableRow>
