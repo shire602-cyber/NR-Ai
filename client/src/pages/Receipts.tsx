@@ -397,8 +397,11 @@ export default function Receipts() {
         });
         
         successCount++;
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to save receipt:', error);
+        
+        // Extract error message
+        const errorMessage = error.message || 'Failed to save to database';
         
         // Mark this receipt as failed to save
         setProcessedReceipts((prev) => {
@@ -406,7 +409,7 @@ export default function Receipts() {
           updated[index] = { 
             ...updated[index], 
             status: 'save_error',
-            error: 'Failed to save to database'
+            error: errorMessage
           };
           return updated;
         });

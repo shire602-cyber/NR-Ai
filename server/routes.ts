@@ -355,14 +355,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const receiptData = req.body;
       
+      console.log('[Receipts] Creating receipt:', { 
+        companyId, 
+        userId, 
+        merchant: receiptData.merchant,
+        amount: receiptData.amount,
+        hasImageData: !!receiptData.imageData,
+        imageDataLength: receiptData.imageData?.length
+      });
+      
       const receipt = await storage.createReceipt({
         ...receiptData,
         uploadedBy: userId,
       });
       
+      console.log('[Receipts] Receipt created successfully:', receipt.id);
       res.json(receipt);
     } catch (error: any) {
-      res.status(400).json({ message: error.message });
+      console.error('[Receipts] Error creating receipt:', error);
+      res.status(400).json({ message: error.message || 'Failed to create receipt' });
     }
   });
 
