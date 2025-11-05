@@ -57,7 +57,7 @@ export default function Journal() {
   });
 
   const { data: entries, isLoading } = useQuery<any[]>({
-    queryKey: ['/api/journal', { companyId: selectedCompanyId }],
+    queryKey: ['/api/companies', selectedCompanyId, 'journal'],
     enabled: !!selectedCompanyId,
   });
 
@@ -88,9 +88,9 @@ export default function Journal() {
 
   const createMutation = useMutation({
     mutationFn: (data: JournalFormData) => 
-      apiRequest('POST', '/api/journal', data),
+      apiRequest('POST', `/api/companies/${selectedCompanyId}/journal`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/journal'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'journal'] });
       toast({
         title: 'Journal entry posted',
         description: 'Your double-entry journal has been recorded.',

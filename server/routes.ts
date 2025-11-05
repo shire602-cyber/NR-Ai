@@ -370,14 +370,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Journal Entry Routes
   // =====================================
   
-  app.get("/api/journal", authMiddleware, async (req: Request, res: Response) => {
+  app.get("/api/companies/:companyId/journal", authMiddleware, async (req: Request, res: Response) => {
     try {
-      const { companyId } = req.query;
-      if (!companyId) {
-        return res.status(400).json({ message: 'Company ID required' });
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
       
-      const entries = await storage.getJournalEntriesByCompanyId(companyId as string);
+      const entries = await storage.getJournalEntriesByCompanyId(companyId);
       
       // Fetch lines and accounts for each entry
       const entriesWithLines = await Promise.all(
@@ -399,10 +403,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/journal", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/journal", authMiddleware, async (req: Request, res: Response) => {
     try {
+      const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { companyId, lines, ...entryData } = req.body;
+      const { lines, date, ...entryData } = req.body;
+      
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
       
       // Validate debits equal credits
       let totalDebit = 0;
@@ -417,9 +428,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: 'Debits must equal credits' });
       }
       
+      // Convert date string to Date object if it's a string
+      const entryDate = typeof date === 'string' ? new Date(date) : date;
+      
       // Create journal entry
       const entry = await storage.createJournalEntry({
         ...entryData,
+        date: entryDate,
         companyId,
         createdBy: userId,
       });
