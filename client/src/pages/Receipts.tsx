@@ -63,10 +63,20 @@ export default function Receipts() {
   const [totalToSave, setTotalToSave] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingReceipt, setEditingReceipt] = useState<any>(null);
+  const [postDialogOpen, setPostDialogOpen] = useState(false);
+  const [postingReceipt, setPostingReceipt] = useState<any>(null);
+  const [selectedExpenseAccount, setSelectedExpenseAccount] = useState<string>('');
+  const [selectedPaymentAccount, setSelectedPaymentAccount] = useState<string>('');
 
   // Fetch receipts
   const { data: receipts, isLoading } = useQuery<any[]>({
     queryKey: ['/api/companies', companyId, 'receipts'],
+    enabled: !!companyId,
+  });
+
+  // Fetch accounts for posting
+  const { data: accounts } = useQuery<any[]>({
+    queryKey: ['/api/companies', companyId, 'accounts'],
     enabled: !!companyId,
   });
 
@@ -110,6 +120,30 @@ export default function Receipts() {
     },
   });
 
+  const postExpenseMutation = useMutation({
+    mutationFn: ({ id, accountId, paymentAccountId }: { id: string; accountId: string; paymentAccountId: string }) => 
+      apiRequest('POST', `/api/receipts/${id}/post`, { accountId, paymentAccountId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'journal-entries'] });
+      toast({
+        title: 'Expense posted successfully',
+        description: 'Journal entry has been created.',
+      });
+      setPostDialogOpen(false);
+      setPostingReceipt(null);
+      setSelectedExpenseAccount('');
+      setSelectedPaymentAccount('');
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to post expense',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
   const handleEditReceipt = (receipt: any) => {
     setEditingReceipt(receipt);
     form.reset({
@@ -121,6 +155,30 @@ export default function Receipts() {
       currency: receipt.currency || 'AED',
     });
     setEditDialogOpen(true);
+  };
+
+  const handlePostExpense = (receipt: any) => {
+    setPostingReceipt(receipt);
+    setSelectedExpenseAccount('');
+    setSelectedPaymentAccount('');
+    setPostDialogOpen(true);
+  };
+
+  const submitPostExpense = () => {
+    if (!postingReceipt || !selectedExpenseAccount || !selectedPaymentAccount) {
+      toast({
+        variant: 'destructive',
+        title: 'Missing information',
+        description: 'Please select both expense and payment accounts.',
+      });
+      return;
+    }
+
+    postExpenseMutation.mutate({
+      id: postingReceipt.id,
+      accountId: selectedExpenseAccount,
+      paymentAccountId: selectedPaymentAccount,
+    });
   };
 
   const onEditSubmit = (data: ReceiptFormData) => {
@@ -888,19 +946,39 @@ export default function Receipts() {
                       <p className="font-mono font-semibold">
                         {formatCurrency(receipt.amount || 0, 'AED', locale)}
                       </p>
-                      <Badge variant="outline" className="mt-1">
-                        {receipt.category || 'Uncategorized'}
-                      </Badge>
+                      <div className="flex gap-2 mt-1">
+                        <Badge variant="outline">
+                          {receipt.category || 'Uncategorized'}
+                        </Badge>
+                        {receipt.posted && (
+                          <Badge variant="default" className="bg-green-600">
+                            Posted
+                          </Badge>
+                        )}
+                      </div>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEditReceipt(receipt)}
-                      data-testid={`button-edit-receipt-${receipt.id}`}
-                    >
-                      <Edit className="w-4 h-4 mr-2" />
-                      Edit
-                    </Button>
+                    <div className="flex gap-2">
+                      {!receipt.posted && (
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handlePostExpense(receipt)}
+                          data-testid={`button-post-receipt-${receipt.id}`}
+                        >
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                          Post
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditReceipt(receipt)}
+                        data-testid={`button-edit-receipt-${receipt.id}`}
+                      >
+                        <Edit className="w-4 h-4 mr-2" />
+                        Edit
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1012,6 +1090,106 @@ export default function Receipts() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Post Expense Dialog */}
+      <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Post Expense to Journal</DialogTitle>
+            <DialogDescription>
+              Select accounts to create journal entry for this expense
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {postingReceipt && (
+              <div className="p-4 rounded-md bg-muted">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-medium">{postingReceipt.merchant || 'Unknown Merchant'}</p>
+                    <p className="text-sm text-muted-foreground">{postingReceipt.date}</p>
+                  </div>
+                  <p className="font-mono font-semibold text-lg">
+                    {formatCurrency((postingReceipt.amount || 0) + (postingReceipt.vatAmount || 0), 'AED', locale)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="expense-account">Expense Account (Debit)</Label>
+              <Select value={selectedExpenseAccount} onValueChange={setSelectedExpenseAccount}>
+                <SelectTrigger id="expense-account" data-testid="select-expense-account">
+                  <SelectValue placeholder="Select expense account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts?.filter(acc => acc.type === 'expense').map(account => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.code} - {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The account that will be debited (increased) for this expense
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="payment-account">Payment Account (Credit)</Label>
+              <Select value={selectedPaymentAccount} onValueChange={setSelectedPaymentAccount}>
+                <SelectTrigger id="payment-account" data-testid="select-payment-account">
+                  <SelectValue placeholder="Select payment account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {accounts?.filter(acc => acc.type === 'asset').map(account => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.code} - {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The cash or bank account that was used to pay (will be credited/decreased)
+              </p>
+            </div>
+
+            <div className="p-4 rounded-md border bg-card">
+              <p className="text-sm font-medium mb-2">Journal Entry Preview:</p>
+              <div className="space-y-1 text-sm font-mono">
+                <div className="flex justify-between">
+                  <span>Dr. {accounts?.find(a => a.id === selectedExpenseAccount)?.nameEn || 'Expense Account'}</span>
+                  <span>{formatCurrency((postingReceipt?.amount || 0) + (postingReceipt?.vatAmount || 0), 'AED', locale)}</span>
+                </div>
+                <div className="flex justify-between pl-4">
+                  <span>Cr. {accounts?.find(a => a.id === selectedPaymentAccount)?.nameEn || 'Payment Account'}</span>
+                  <span>{formatCurrency((postingReceipt?.amount || 0) + (postingReceipt?.vatAmount || 0), 'AED', locale)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setPostDialogOpen(false)} 
+                className="flex-1"
+                disabled={postExpenseMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="button" 
+                onClick={submitPostExpense} 
+                disabled={postExpenseMutation.isPending || !selectedExpenseAccount || !selectedPaymentAccount} 
+                className="flex-1"
+                data-testid="button-submit-post-expense"
+              >
+                {postExpenseMutation.isPending ? 'Posting...' : 'Post to Journal'}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
