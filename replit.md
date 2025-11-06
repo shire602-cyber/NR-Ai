@@ -37,9 +37,9 @@ Preferred communication style: Simple, everyday language.
 - **Company Users**: Many-to-many relationship with roles.
 - **Accounts**: Chart of accounts with bilingual names, codes, types.
 - **Journal Entries & Lines**: Double-entry system with validation.
-- **Invoices & Invoice Lines**: Customer info, TRN, line items, VAT, status tracking.
-- **Receipts**: Document attachments, categorization data.
-**Key Architectural Decisions**: UUID primary keys, timestamps, bilingual field support (nameEn/nameAr), normalized schema.
+- **Invoices & Invoice Lines**: Customer info, TRN, line items, VAT, status tracking, automatic journal entry creation.
+- **Receipts/Expenses**: Document attachments, categorization data, posting to journal entries with account selection.
+**Key Architectural Decisions**: UUID primary keys, timestamps, bilingual field support (nameEn/nameAr), normalized schema, complete double-entry bookkeeping system.
 
 ## External Dependencies
 
@@ -68,3 +68,63 @@ Preferred communication style: Simple, everyday language.
 - **TypeScript**: Type safety.
 - **Tailwind CSS**: Utility-first styling.
 - **PostCSS**: CSS processing.
+
+## Double-Entry Bookkeeping System
+
+The platform implements a complete double-entry bookkeeping system that ensures all financial transactions are properly recorded and balanced.
+
+### Automatic Journal Entries for Invoices
+
+Invoices automatically create journal entries when their status changes:
+
+**Draft → Sent** (Revenue Recognition):
+```
+Dr. Accounts Receivable (1200)
+    Cr. Sales Revenue (4000)
+    Cr. VAT Payable (2100)
+```
+
+**Sent → Paid** (Payment Received):
+```
+Dr. Bank (1100)
+    Cr. Accounts Receivable (1200)
+```
+
+**Draft → Paid** (Direct Payment):
+```
+Dr. Bank (1100)
+    Cr. Sales Revenue (4000)
+    Cr. VAT Payable (2100)
+```
+
+### Manual Posting for Expenses
+
+Expenses (formerly Receipts) can be posted to the journal through a user-friendly interface:
+
+1. **Upload or Create Expense**: Users upload receipt images or manually enter expense details
+2. **Review Details**: Merchant, date, amount, VAT, and category are extracted or entered
+3. **Post to Journal**: Users select:
+   - **Expense Account** (debit): Which expense category (Rent, Utilities, etc.)
+   - **Payment Account** (credit): Which cash/bank account was used
+4. **Journal Entry Created**:
+```
+Dr. Expense Account (e.g., Rent Expense 5100)
+    Cr. Payment Account (e.g., Bank 1100)
+```
+
+### Security & Data Integrity
+
+All journal entry creation includes:
+- **Company Isolation**: Accounts must belong to the same company as the transaction
+- **Amount Validation**: Positive amounts required
+- **Account Type Validation**: Ensures correct account types used
+- **Balance Validation**: Debits must equal credits
+- **Atomic Operations**: Journal entries and lines created together
+
+### Reports
+
+All financial reports (Profit & Loss, Balance Sheet, VAT Summary) calculate directly from journal entries, ensuring:
+- Consistent data across all reports
+- Real-time accuracy
+- FTA compliance
+- Proper accounting treatment
