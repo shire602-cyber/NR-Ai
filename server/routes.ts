@@ -997,6 +997,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/journal/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      // Get journal entry
+      const entry = await storage.getJournalEntry(id);
+      if (!entry) {
+        return res.status(404).json({ message: 'Journal entry not found' });
+      }
+
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get journal lines for this entry
+      const lines = await storage.getJournalLinesByEntryId(id);
+
+      res.json({
+        ...entry,
+        lines,
+      });
+    } catch (error: any) {
+      console.error('[Journal] Error fetching journal entry:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.put("/api/journal/:id", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
