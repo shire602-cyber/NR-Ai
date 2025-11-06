@@ -13,8 +13,13 @@ import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import Tesseract from 'tesseract.js';
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2 } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit } from 'lucide-react';
 import { formatCurrency } from '@/lib/format';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 
 interface ExtractedData {
   merchant?: string;
@@ -36,6 +41,17 @@ interface ProcessedReceipt {
   error?: string;
 }
 
+const receiptSchema = z.object({
+  merchant: z.string().min(1, 'Merchant name is required'),
+  date: z.string().min(1, 'Date is required'),
+  amount: z.coerce.number().min(0, 'Amount must be positive'),
+  vatAmount: z.coerce.number().nullable(),
+  category: z.string().min(1, 'Category is required'),
+  currency: z.string().default('AED'),
+});
+
+type ReceiptFormData = z.infer<typeof receiptSchema>;
+
 export default function Receipts() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -45,11 +61,25 @@ export default function Receipts() {
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [totalToSave, setTotalToSave] = useState(0);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingReceipt, setEditingReceipt] = useState<any>(null);
 
   // Fetch receipts
   const { data: receipts, isLoading } = useQuery<any[]>({
     queryKey: ['/api/companies', companyId, 'receipts'],
     enabled: !!companyId,
+  });
+
+  const form = useForm<ReceiptFormData>({
+    resolver: zodResolver(receiptSchema),
+    defaultValues: {
+      merchant: '',
+      date: '',
+      amount: 0,
+      vatAmount: null,
+      category: '',
+      currency: 'AED',
+    },
   });
 
   // Save single receipt mutation
@@ -58,6 +88,45 @@ export default function Receipts() {
       return apiRequest('POST', `/api/companies/${companyId}/receipts`, data);
     },
   });
+
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ReceiptFormData }) => 
+      apiRequest('PUT', `/api/receipts/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
+      toast({
+        title: 'Receipt updated successfully',
+        description: 'Your receipt has been updated.',
+      });
+      setEditDialogOpen(false);
+      setEditingReceipt(null);
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update receipt',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const handleEditReceipt = (receipt: any) => {
+    setEditingReceipt(receipt);
+    form.reset({
+      merchant: receipt.merchant || '',
+      date: receipt.date || '',
+      amount: receipt.amount || 0,
+      vatAmount: receipt.vatAmount || null,
+      category: receipt.category || '',
+      currency: receipt.currency || 'AED',
+    });
+    setEditDialogOpen(true);
+  };
+
+  const onEditSubmit = (data: ReceiptFormData) => {
+    if (!editingReceipt) return;
+    editMutation.mutate({ id: editingReceipt.id, data });
+  };
 
   const resetForm = () => {
     setProcessedReceipts([]);
@@ -806,13 +875,24 @@ export default function Receipts() {
                       <p className="text-sm text-muted-foreground">{receipt.date}</p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-mono font-semibold">
-                      {formatCurrency(receipt.amount || 0, 'AED', locale)}
-                    </p>
-                    <Badge variant="outline" className="mt-1">
-                      {receipt.category || 'Uncategorized'}
-                    </Badge>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="font-mono font-semibold">
+                        {formatCurrency(receipt.amount || 0, 'AED', locale)}
+                      </p>
+                      <Badge variant="outline" className="mt-1">
+                        {receipt.category || 'Uncategorized'}
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEditReceipt(receipt)}
+                      data-testid={`button-edit-receipt-${receipt.id}`}
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -824,6 +904,108 @@ export default function Receipts() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Receipt Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Receipt</DialogTitle>
+            <DialogDescription>
+              Update receipt details
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onEditSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="merchant"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Merchant</FormLabel>
+                    <FormControl>
+                      <Input {...field} data-testid="input-edit-merchant" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="date" data-testid="input-edit-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="number" step="0.01" className="font-mono" data-testid="input-edit-amount" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="vatAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>VAT Amount (Optional)</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="number" step="0.01" className="font-mono" value={field.value ?? ''} onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : null)} data-testid="input-edit-vat" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-edit-category">
+                          <SelectValue placeholder="Select category" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="Office Supplies">Office Supplies</SelectItem>
+                        <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
+                        <SelectItem value="Travel">Travel</SelectItem>
+                        <SelectItem value="Utilities">Utilities</SelectItem>
+                        <SelectItem value="Marketing">Marketing</SelectItem>
+                        <SelectItem value="Software">Software</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)} className="flex-1">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={editMutation.isPending} className="flex-1" data-testid="button-submit-edit-receipt">
+                  {editMutation.isPending ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

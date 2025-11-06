@@ -19,7 +19,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, FileText, CalendarIcon, Trash2, Download } from 'lucide-react';
+import { Plus, FileText, CalendarIcon, Trash2, Download, Edit } from 'lucide-react';
 import type { Invoice } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
@@ -48,6 +48,7 @@ export default function Invoices() {
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
@@ -89,6 +90,7 @@ export default function Invoices() {
         description: 'Your invoice has been created with VAT calculation.',
       });
       setDialogOpen(false);
+      setEditingInvoice(null);
       form.reset({
         companyId: selectedCompanyId,
         number: `INV-${Date.now()}`,
@@ -108,6 +110,59 @@ export default function Invoices() {
     },
   });
 
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: InvoiceFormData }) => 
+      apiRequest('PUT', `/api/invoices/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
+      toast({
+        title: 'Invoice updated successfully',
+        description: 'Your invoice has been updated.',
+      });
+      setDialogOpen(false);
+      setEditingInvoice(null);
+      form.reset({
+        companyId: selectedCompanyId,
+        number: `INV-${Date.now()}`,
+        customerName: '',
+        customerTrn: '',
+        date: new Date(),
+        currency: 'AED',
+        lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update invoice',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const handleEditInvoice = async (invoice: Invoice) => {
+    try {
+      const fullInvoice = await apiRequest('GET', `/api/invoices/${invoice.id}`);
+      setEditingInvoice(fullInvoice);
+      form.reset({
+        companyId: fullInvoice.companyId,
+        number: fullInvoice.number,
+        customerName: fullInvoice.customerName,
+        customerTrn: fullInvoice.customerTrn || '',
+        date: new Date(fullInvoice.date),
+        currency: fullInvoice.currency,
+        lines: fullInvoice.lines || [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      });
+      setDialogOpen(true);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to load invoice details.',
+      });
+    }
+  };
+
   const onSubmit = (data: InvoiceFormData) => {
     if (!selectedCompanyId) {
       toast({
@@ -117,7 +172,11 @@ export default function Invoices() {
       });
       return;
     }
-    createMutation.mutate({ ...data, companyId: selectedCompanyId });
+    if (editingInvoice) {
+      editMutation.mutate({ id: editingInvoice.id, data: { ...data, companyId: selectedCompanyId } });
+    } else {
+      createMutation.mutate({ ...data, companyId: selectedCompanyId });
+    }
   };
 
   const getStatusBadgeColor = (status: string) => {
@@ -142,7 +201,21 @@ export default function Invoices() {
           <h1 className="text-3xl font-semibold mb-2">{t.invoices}</h1>
           <p className="text-muted-foreground">Manage invoices with automatic UAE VAT (5%) calculation</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setEditingInvoice(null);
+            form.reset({
+              companyId: selectedCompanyId,
+              number: `INV-${Date.now()}`,
+              customerName: '',
+              customerTrn: '',
+              date: new Date(),
+              currency: 'AED',
+              lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+            });
+          }
+        }}>
           <DialogTrigger asChild>
             <Button data-testid="button-create-invoice">
               <Plus className="w-4 h-4 mr-2" />
@@ -151,9 +224,9 @@ export default function Invoices() {
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{t.newInvoice}</DialogTitle>
+              <DialogTitle>{editingInvoice ? 'Edit Invoice' : t.newInvoice}</DialogTitle>
               <DialogDescription>
-                Create a new invoice with automatic VAT calculation
+                {editingInvoice ? 'Update invoice details' : 'Create a new invoice with automatic VAT calculation'}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -335,8 +408,8 @@ export default function Invoices() {
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="flex-1">
                     {t.cancel}
                   </Button>
-                  <Button type="submit" disabled={createMutation.isPending} className="flex-1" data-testid="button-submit-invoice">
-                    {createMutation.isPending ? t.loading : t.save}
+                  <Button type="submit" disabled={createMutation.isPending || editMutation.isPending} className="flex-1" data-testid="button-submit-invoice">
+                    {(createMutation.isPending || editMutation.isPending) ? t.loading : t.save}
                   </Button>
                 </div>
               </form>
@@ -377,10 +450,20 @@ export default function Invoices() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={async () => {
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditInvoice(invoice)}
+                            data-testid={`button-edit-invoice-${invoice.id}`}
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={async () => {
                             try {
                               // Fetch full invoice details with lines using apiRequest
                               const invoiceDetails = await apiRequest('GET', `/api/invoices/${invoice.id}`);
@@ -428,12 +511,13 @@ export default function Invoices() {
                                 variant: 'destructive',
                               });
                             }
-                          }}
-                          data-testid={`button-download-pdf-${invoice.id}`}
-                        >
-                          <Download className="w-4 h-4 mr-2" />
-                          PDF
-                        </Button>
+                            }}
+                            data-testid={`button-download-pdf-${invoice.id}`}
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            PDF
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

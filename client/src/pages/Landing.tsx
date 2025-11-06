@@ -1,13 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import {
-  Sheet as SheetComponent,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet';
 import { Link } from 'wouter';
 import { 
   Sparkles, 
@@ -27,103 +20,31 @@ import {
   Briefcase,
   TrendingUp,
   Database,
-  Download,
   ChevronRight,
-  MapPin,
   Lock,
   Bot,
   Award,
   Menu,
   Rocket,
   Cpu,
-  Activity,
-  Eye,
-  Layers,
-  GitBranch,
   Target,
-  Microscope
+  X,
+  Scan,
+  FileCheck,
+  PieChart,
+  MessageSquare
 } from 'lucide-react';
-import { SiStripe, SiPaypal } from 'react-icons/si';
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
-import { EmailPopup } from '@/components/EmailPopup';
-import { useHealthCheck } from '@/hooks/useHealthCheck';
 
 export default function Landing() {
   const { locale, setLocale } = useI18n();
   const [mounted, setMounted] = useState(false);
-  const [showEmailPopup, setShowEmailPopup] = useState(false);
-  const [monthlyTransactions, setMonthlyTransactions] = useState(50);
-  const [hoursPerWeek, setHoursPerWeek] = useState(0);
-  const [moneySaved, setMoneySaved] = useState(0);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [animatedInvoices, setAnimatedInvoices] = useState(0);
-  const [animatedAccuracy, setAnimatedAccuracy] = useState(0);
-  const [animatedTime, setAnimatedTime] = useState(0);
-  const healthStatus = useHealthCheck(30000);
 
   useEffect(() => {
-    const timer = setTimeout(() => setMounted(true), 100);
-    return () => clearTimeout(timer);
+    setMounted(true);
   }, []);
-
-  // Animated stats
-  useEffect(() => {
-    if (!mounted) return;
-    
-    const duration = 2000;
-    const steps = 60;
-    const invoiceTarget = 15000;
-    const accuracyTarget = 99.8;
-    const timeTarget = 87;
-    
-    let current = 0;
-    const interval = setInterval(() => {
-      current++;
-      const progress = current / steps;
-      
-      setAnimatedInvoices(Math.floor(invoiceTarget * progress));
-      setAnimatedAccuracy(Number((accuracyTarget * progress).toFixed(1)));
-      setAnimatedTime(Math.floor(timeTarget * progress));
-      
-      if (current >= steps) clearInterval(interval);
-    }, duration / steps);
-    
-    return () => clearInterval(interval);
-  }, [mounted]);
-
-  // Show email popup after 15 seconds OR 50% scroll
-  useEffect(() => {
-    let hasShownPopup = false;
-    
-    const showPopup = () => {
-      if (!hasShownPopup) {
-        hasShownPopup = true;
-        setShowEmailPopup(true);
-      }
-    };
-
-    const popupTimer = setTimeout(showPopup, 15000);
-    const handleScroll = () => {
-      const scrollPercent = (window.scrollY / (document.documentElement.scrollHeight - window.innerHeight)) * 100;
-      if (scrollPercent >= 50) showPopup();
-    };
-
-    window.addEventListener('scroll', handleScroll);
-    return () => {
-      clearTimeout(popupTimer);
-      window.removeEventListener('scroll', handleScroll);
-    };
-  }, []);
-
-  // Calculate ROI based on transactions
-  useEffect(() => {
-    const monthlyHours = (monthlyTransactions * 2) / 60;
-    const weeklyHours = monthlyHours / 4;
-    const monthlySavings = monthlyHours * 50;
-    setHoursPerWeek(weeklyHours);
-    setMoneySaved(Math.round(monthlySavings));
-  }, [monthlyTransactions]);
 
   const toggleLanguage = () => {
     setLocale(locale === 'en' ? 'ar' : 'en');
@@ -131,38 +52,214 @@ export default function Landing() {
 
   const isRTL = locale === 'ar';
 
+  const t = {
+    // Header
+    nav: {
+      features: locale === 'en' ? 'Features' : 'الميزات',
+      advantages: locale === 'en' ? 'Advantages' : 'المزايا',
+      roadmap: locale === 'en' ? 'Roadmap' : 'خارطة الطريق',
+      login: locale === 'en' ? 'Login' : 'تسجيل الدخول',
+      getStarted: locale === 'en' ? 'Get Started' : 'ابدأ الآن',
+      languageToggle: locale === 'en' ? 'العربية' : 'EN',
+    },
+    // Hero
+    hero: {
+      headline: locale === 'en' 
+        ? 'AI-Powered Bookkeeping for UAE Businesses'
+        : 'محاسبة ذكية مدعومة بالذكاء الاصطناعي للشركات الإماراتية',
+      subheadline: locale === 'en'
+        ? 'Automate invoices, track expenses, and stay FTA-compliant with intelligent categorization. Save 20+ hours per month and eliminate costly errors.'
+        : 'أتمتة الفواتير وتتبع المصروفات والامتثال للهيئة الاتحادية للضرائب بتصنيف ذكي. وفّر أكثر من 20 ساعة شهرياً وتجنب الأخطاء المكلفة.',
+      ctaPrimary: locale === 'en' ? 'Start Free Trial' : 'ابدأ الإصدار التجريبي المجاني',
+      ctaSecondary: locale === 'en' ? 'Schedule Demo' : 'حدد موعد عرض توضيحي',
+      trustBadge: locale === 'en' ? 'No credit card required • UAE VAT compliant • 14-day trial' : 'لا حاجة لبطاقة ائتمان • متوافق مع ضريبة القيمة المضافة الإماراتية • تجربة مجانية لمدة 14 يوماً',
+    },
+    // Stats
+    stats: {
+      invoices: locale === 'en' ? 'Invoices Processed' : 'الفواتير المعالجة',
+      accuracy: locale === 'en' ? 'AI Accuracy' : 'دقة الذكاء الاصطناعي',
+      timeSaved: locale === 'en' ? 'Time Saved' : 'الوقت الموفر',
+      businesses: locale === 'en' ? 'UAE Businesses' : 'الشركات الإماراتية',
+    },
+    // Features
+    features: {
+      title: locale === 'en' ? 'Everything You Need for Modern Bookkeeping' : 'كل ما تحتاجه للمحاسبة الحديثة',
+      subtitle: locale === 'en' ? 'Built specifically for UAE businesses with AI-powered automation' : 'مصمم خصيصاً للشركات الإماراتية مع أتمتة مدعومة بالذكاء الاصطناعي',
+      items: [
+        {
+          icon: Bot,
+          title: locale === 'en' ? 'AI Expense Categorization' : 'تصنيف المصروفات بالذكاء الاصطناعي',
+          description: locale === 'en' 
+            ? 'Upload receipts and let GPT-4o instantly categorize expenses with 99.8% accuracy. No manual data entry required.'
+            : 'ارفع الإيصالات ودع GPT-4o يصنف المصروفات فوراً بدقة 99.8%. لا حاجة لإدخال بيانات يدوي.',
+        },
+        {
+          icon: FileCheck,
+          title: locale === 'en' ? 'Smart Invoice Generation' : 'إنشاء فواتير ذكية',
+          description: locale === 'en'
+            ? 'Create FTA-compliant invoices in seconds with automatic VAT calculation and customizable templates.'
+            : 'أنشئ فواتير متوافقة مع الهيئة الاتحادية للضرائب في ثوانٍ مع حساب تلقائي لضريبة القيمة المضافة وقوالب قابلة للتخصيص.',
+        },
+        {
+          icon: Scan,
+          title: locale === 'en' ? 'OCR Receipt Scanning' : 'مسح الإيصالات بتقنية OCR',
+          description: locale === 'en'
+            ? 'Bulk upload receipts and extract data automatically. Supports Arabic and English text with high accuracy.'
+            : 'ارفع إيصالات متعددة واستخرج البيانات تلقائياً. يدعم النصوص العربية والإنجليزية بدقة عالية.',
+        },
+        {
+          icon: PieChart,
+          title: locale === 'en' ? 'Real-Time Financial Reports' : 'تقارير مالية في الوقت الفعلي',
+          description: locale === 'en'
+            ? 'Access profit & loss, balance sheets, and VAT summaries instantly. Export for FTA filing or audits.'
+            : 'احصل على الأرباح والخسائر والميزانية العمومية وملخصات ضريبة القيمة المضافة فوراً. صدّر للتقديم للهيئة أو المراجعة.',
+        },
+        {
+          icon: MessageSquare,
+          title: locale === 'en' ? 'AI CFO Advisor' : 'مستشار مالي بالذكاء الاصطناعي',
+          description: locale === 'en'
+            ? 'Ask questions about your finances in plain English or Arabic. Get instant insights and recommendations.'
+            : 'اسأل عن شؤونك المالية بالعربية أو الإنجليزية البسيطة. احصل على رؤى وتوصيات فورية.',
+        },
+        {
+          icon: Lock,
+          title: locale === 'en' ? 'Bank-Level Security' : 'أمان على مستوى البنوك',
+          description: locale === 'en'
+            ? 'Enterprise-grade encryption, automated backups, and SOC 2 compliance keep your financial data safe.'
+            : 'تشفير على مستوى المؤسسات ونسخ احتياطية تلقائية والامتثال لـ SOC 2 تحافظ على أمان بياناتك المالية.',
+        },
+      ],
+    },
+    // Advantages
+    advantages: {
+      title: locale === 'en' ? 'Why We\'re Different from Traditional Accounting Software' : 'لماذا نحن مختلفون عن برامج المحاسبة التقليدية',
+      subtitle: locale === 'en' ? 'Built for the modern UAE business owner, not legacy desktop systems' : 'مصمم لصاحب الأعمال الإماراتي الحديث، وليس لأنظمة سطح المكتب القديمة',
+      items: [
+        {
+          title: locale === 'en' ? 'AI-First Design' : 'تصميم يعتمد على الذكاء الاصطناعي أولاً',
+          us: locale === 'en' ? 'GPT-4o categorizes expenses automatically' : 'GPT-4o يصنف المصروفات تلقائياً',
+          them: locale === 'en' ? 'Manual entry and tedious categorization' : 'إدخال يدوي وتصنيف ممل',
+        },
+        {
+          title: locale === 'en' ? 'UAE-Specific Compliance' : 'امتثال خاص بالإمارات',
+          us: locale === 'en' ? 'Built-in FTA VAT compliance and templates' : 'امتثال مدمج لضريبة القيمة المضافة الإماراتية وقوالب جاهزة',
+          them: locale === 'en' ? 'Generic templates requiring customization' : 'قوالب عامة تحتاج تخصيص',
+        },
+        {
+          title: locale === 'en' ? 'Bilingual Support' : 'دعم ثنائي اللغة',
+          us: locale === 'en' ? 'Full Arabic and English with RTL support' : 'دعم كامل للعربية والإنجليزية مع RTL',
+          them: locale === 'en' ? 'English only, poor Arabic support' : 'إنجليزي فقط، دعم ضعيف للعربية',
+        },
+        {
+          title: locale === 'en' ? 'Modern Cloud Platform' : 'منصة سحابية حديثة',
+          us: locale === 'en' ? 'Access anywhere, automatic updates, no IT needed' : 'الوصول من أي مكان، تحديثات تلقائية، لا حاجة لتقنية المعلومات',
+          them: locale === 'en' ? 'Desktop software with manual updates' : 'برامج سطح المكتب مع تحديثات يدوية',
+        },
+        {
+          title: locale === 'en' ? 'Intelligent Automation' : 'أتمتة ذكية',
+          us: locale === 'en' ? 'OCR receipt scanning, bulk uploads' : 'مسح الإيصالات بـ OCR، تحميلات متعددة',
+          them: locale === 'en' ? 'One-by-one manual processing' : 'معالجة يدوية واحداً تلو الآخر',
+        },
+        {
+          title: locale === 'en' ? 'Price' : 'السعر',
+          us: locale === 'en' ? 'Pay as you grow, no setup fees' : 'ادفع مع نموك، بدون رسوم إعداد',
+          them: locale === 'en' ? 'High upfront costs and annual licenses' : 'تكاليف أولية عالية وتراخيص سنوية',
+        },
+      ],
+    },
+    // Roadmap
+    roadmap: {
+      title: locale === 'en' ? 'Product Roadmap' : 'خارطة طريق المنتج',
+      subtitle: locale === 'en' ? 'Current features and what\'s coming next' : 'الميزات الحالية وما سيأتي',
+      current: locale === 'en' ? 'Available Now' : 'متاح الآن',
+      q1: locale === 'en' ? 'Q1 2025' : 'الربع الأول 2025',
+      q2: locale === 'en' ? 'Q2 2025' : 'الربع الثاني 2025',
+      features: {
+        current: [
+          {
+            title: locale === 'en' ? 'AI Expense Categorization' : 'تصنيف المصروفات بالذكاء الاصطناعي',
+            description: locale === 'en' ? 'GPT-4o powered intelligent categorization' : 'تصنيف ذكي مدعوم بـ GPT-4o',
+          },
+          {
+            title: locale === 'en' ? 'Invoice Generation' : 'إنشاء الفواتير',
+            description: locale === 'en' ? 'FTA-compliant invoices with VAT' : 'فواتير متوافقة مع الهيئة الاتحادية للضرائب مع ضريبة القيمة المضافة',
+          },
+          {
+            title: locale === 'en' ? 'OCR Receipt Scanning' : 'مسح الإيصالات بـ OCR',
+            description: locale === 'en' ? 'Bulk upload and automatic data extraction' : 'تحميل متعدد واستخراج تلقائي للبيانات',
+          },
+          {
+            title: locale === 'en' ? 'Financial Reports' : 'التقارير المالية',
+            description: locale === 'en' ? 'P&L, Balance Sheet, VAT Summary' : 'الأرباح والخسائر، الميزانية، ملخص ضريبة القيمة المضافة',
+          },
+        ],
+        q1: [
+          {
+            title: locale === 'en' ? 'Bank Integration' : 'تكامل مصرفي',
+            description: locale === 'en' ? 'Connect UAE bank accounts for automatic transaction import' : 'اربط حسابات مصرفية إماراتية لاستيراد المعاملات تلقائياً',
+          },
+          {
+            title: locale === 'en' ? 'Multi-Currency Support' : 'دعم متعدد العملات',
+            description: locale === 'en' ? 'Handle USD, EUR, GBP with automatic conversion' : 'تعامل مع الدولار واليورو والجنيه الإسترليني مع تحويل تلقائي',
+          },
+          {
+            title: locale === 'en' ? 'Mobile App (iOS & Android)' : 'تطبيق جوال (iOS و Android)',
+            description: locale === 'en' ? 'Scan receipts and manage finances on the go' : 'امسح الإيصالات وأدر شؤونك المالية أثناء التنقل',
+          },
+        ],
+        q2: [
+          {
+            title: locale === 'en' ? 'Inventory Management' : 'إدارة المخزون',
+            description: locale === 'en' ? 'Track stock levels and cost of goods sold' : 'تتبع مستويات المخزون وتكلفة البضائع المباعة',
+          },
+          {
+            title: locale === 'en' ? 'Team Collaboration' : 'تعاون فريقي',
+            description: locale === 'en' ? 'Multi-user access with role-based permissions' : 'وصول متعدد المستخدمين مع صلاحيات حسب الدور',
+          },
+          {
+            title: locale === 'en' ? 'Advanced AI Insights' : 'رؤى ذكاء اصطناعي متقدمة',
+            description: locale === 'en' ? 'Predictive cash flow analysis and anomaly detection' : 'تحليل تدفق نقدي تنبؤي وكشف شذوذات',
+          },
+        ],
+      },
+    },
+    // Final CTA
+    cta: {
+      title: locale === 'en' ? 'Ready to Transform Your Bookkeeping?' : 'هل أنت مستعد لتحويل محاسبتك؟',
+      subtitle: locale === 'en' ? 'Join hundreds of UAE businesses saving time and staying compliant' : 'انضم لمئات الشركات الإماراتية التي توفر الوقت وتحافظ على الامتثال',
+      primary: locale === 'en' ? 'Start Free Trial' : 'ابدأ الإصدار التجريبي المجاني',
+      secondary: locale === 'en' ? 'Schedule Demo' : 'حدد موعد عرض توضيحي',
+    },
+  };
+
   return (
     <div className={`min-h-screen bg-background ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
-      <EmailPopup open={showEmailPopup} onClose={() => setShowEmailPopup(false)} locale={locale} />
-
+      
       {/* NAVBAR */}
-      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-lg supports-[backdrop-filter]:bg-background/60 border-b border-border/40">
-        <div className="container max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
+      <header className="sticky top-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/40">
+        <div className="container max-w-7xl mx-auto px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 hover-elevate active-elevate-2 rounded-lg px-2 py-1 -ml-2" data-testid="link-logo">
             <div className="relative">
-              <Briefcase className="w-6 h-6 text-primary" />
-              <div className="absolute -top-1 -right-1 w-2 h-2 bg-primary rounded-full animate-pulse" />
+              <Briefcase className="w-7 h-7 text-primary" />
+              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-primary rounded-full animate-pulse" />
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-lg leading-none">
+              <span className="font-bold text-xl leading-none tracking-tight">
                 {locale === 'en' ? 'BookKeep AI' : 'بوككيب AI'}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {locale === 'en' ? 'Futuristic Accounting' : 'محاسبة مستقبلية'}
               </span>
             </div>
           </Link>
           
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-6">
-            <a href="#features" className="text-sm hover:text-primary transition-colors" data-testid="nav-features">
-              {locale === 'en' ? 'Features' : 'الميزات'}
+          <nav className="hidden md:flex items-center gap-8">
+            <a href="#features" className="text-sm font-medium hover:text-primary transition-colors" data-testid="nav-features">
+              {t.nav.features}
             </a>
-            <a href="#platform" className="text-sm hover:text-primary transition-colors" data-testid="nav-platform">
-              {locale === 'en' ? 'Platform' : 'المنصة'}
+            <a href="#advantages" className="text-sm font-medium hover:text-primary transition-colors" data-testid="nav-advantages">
+              {t.nav.advantages}
             </a>
-            <a href="#pricing" className="text-sm hover:text-primary transition-colors" data-testid="nav-pricing">
-              {locale === 'en' ? 'Pricing' : 'الأسعار'}
+            <a href="#roadmap" className="text-sm font-medium hover:text-primary transition-colors" data-testid="nav-roadmap">
+              {t.nav.roadmap}
             </a>
           </nav>
 
@@ -172,751 +269,332 @@ export default function Landing() {
               variant="ghost" 
               size="sm"
               onClick={toggleLanguage}
-              aria-label={locale === 'en' ? 'Switch to Arabic' : 'التبديل إلى الإنجليزية'}
-              data-testid="button-toggle-language"
+              data-testid="button-language-toggle"
             >
-              <Globe className="w-4 h-4 mr-2" />
-              {locale === 'en' ? 'العربية' : 'English'}
+              {t.nav.languageToggle}
             </Button>
             <Link href="/login">
-              <Button variant="ghost" size="sm" data-testid="link-login">
-                {locale === 'en' ? 'Login' : 'دخول'}
+              <Button variant="ghost" size="sm" data-testid="button-login">
+                {t.nav.login}
               </Button>
             </Link>
             <Link href="/register">
-              <Button size="sm" className="bg-gradient-to-r from-primary to-primary/80" data-testid="link-register-header">
-                {locale === 'en' ? 'Start Free' : 'ابدأ مجانًا'}
-                <Rocket className="w-4 h-4 ml-2" />
+              <Button size="sm" data-testid="button-get-started">
+                {t.nav.getStarted}
+                <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </Link>
           </div>
 
-          {/* Mobile Menu */}
-          <div className="flex md:hidden items-center gap-2">
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={toggleLanguage}
-              aria-label={locale === 'en' ? 'Switch to Arabic' : 'التبديل إلى الإنجليزية'}
-              data-testid="button-toggle-language-mobile"
-            >
-              <Globe className="w-5 h-5" />
-            </Button>
-            <SheetComponent open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <SheetTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  aria-label={locale === 'en' ? 'Open main menu' : 'فتح القائمة الرئيسية'}
-                  data-testid="button-mobile-menu"
-                >
-                  <Menu className="w-5 h-5" />
-                  <span className="sr-only">{locale === 'en' ? 'Open menu' : 'فتح القائمة'}</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side={isRTL ? 'left' : 'right'}>
-                <SheetHeader>
-                  <SheetTitle>{locale === 'en' ? 'Menu' : 'القائمة'}</SheetTitle>
-                </SheetHeader>
-                <nav className="flex flex-col gap-4 mt-8">
-                  <a href="#features" className="text-lg hover:text-primary transition-colors py-2" onClick={() => setMobileMenuOpen(false)} data-testid="nav-features-mobile">
-                    {locale === 'en' ? 'Features' : 'الميزات'}
-                  </a>
-                  <a href="#platform" className="text-lg hover:text-primary transition-colors py-2" onClick={() => setMobileMenuOpen(false)} data-testid="nav-platform-mobile">
-                    {locale === 'en' ? 'Platform' : 'المنصة'}
-                  </a>
-                  <a href="#pricing" className="text-lg hover:text-primary transition-colors py-2" onClick={() => setMobileMenuOpen(false)} data-testid="nav-pricing-mobile">
-                    {locale === 'en' ? 'Pricing' : 'الأسعار'}
-                  </a>
-                  <div className="border-t pt-4 mt-4 flex flex-col gap-3">
-                    <Link href="/login">
-                      <Button variant="ghost" className="w-full" data-testid="link-login-mobile">
-                        {locale === 'en' ? 'Login' : 'دخول'}
-                      </Button>
-                    </Link>
-                    <Link href="/register">
-                      <Button className="w-full" data-testid="link-register-mobile">
-                        {locale === 'en' ? 'Start Free Trial' : 'ابدأ تجربة مجانية'}
-                      </Button>
-                    </Link>
-                  </div>
-                </nav>
-              </SheetContent>
-            </SheetComponent>
-          </div>
+          {/* Mobile Menu Button */}
+          <button
+            className="md:hidden p-2 hover-elevate active-elevate-2 rounded-lg"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            data-testid="button-mobile-menu"
+          >
+            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
         </div>
+
+        {/* Mobile Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t border-border/40 bg-background/95 backdrop-blur-xl">
+            <nav className="container max-w-7xl mx-auto px-6 py-4 flex flex-col gap-4">
+              <a href="#features" className="text-sm font-medium hover:text-primary transition-colors" onClick={() => setMobileMenuOpen(false)} data-testid="mobile-nav-features">
+                {t.nav.features}
+              </a>
+              <a href="#advantages" className="text-sm font-medium hover:text-primary transition-colors" onClick={() => setMobileMenuOpen(false)} data-testid="mobile-nav-advantages">
+                {t.nav.advantages}
+              </a>
+              <a href="#roadmap" className="text-sm font-medium hover:text-primary transition-colors" onClick={() => setMobileMenuOpen(false)} data-testid="mobile-nav-roadmap">
+                {t.nav.roadmap}
+              </a>
+              <div className="flex flex-col gap-2 pt-2">
+                <Button variant="ghost" size="sm" onClick={toggleLanguage} data-testid="mobile-button-language-toggle">
+                  {t.nav.languageToggle}
+                </Button>
+                <Link href="/login">
+                  <Button variant="ghost" size="sm" className="w-full" data-testid="mobile-button-login">
+                    {t.nav.login}
+                  </Button>
+                </Link>
+                <Link href="/register">
+                  <Button size="sm" className="w-full" data-testid="mobile-button-get-started">
+                    {t.nav.getStarted}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </Link>
+              </div>
+            </nav>
+          </div>
+        )}
       </header>
 
-      <main role="main">
-        {/* HERO SECTION - FUTURISTIC */}
-        <section className="relative py-32 lg:py-40 overflow-hidden" aria-label={locale === 'en' ? 'Hero section' : 'القسم الرئيسي'}>
-          {/* Animated Background */}
-          <div className="absolute inset-0">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-accent/20 opacity-50" />
-            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-transparent to-transparent opacity-30" />
-            <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/10 rounded-full blur-3xl animate-pulse delay-700" />
-          </div>
-          
-          <div className="container max-w-7xl mx-auto px-4 relative">
-            <div className="text-center max-w-5xl mx-auto space-y-8">
-              {/* Status Badge */}
-              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border ${mounted ? 'animate-in fade-in slide-in-from-top-4 duration-1000' : 'opacity-0'}`}>
-                <Activity className="w-4 h-4 text-primary animate-pulse" />
-                <span className="text-sm font-medium">
-                  {locale === 'en' ? 'Next-Generation AI Accounting' : 'محاسبة الذكاء الاصطناعي من الجيل التالي'}
-                </span>
-                <Badge 
-                  variant="outline" 
-                  className={`gap-1 ${
-                    healthStatus.isOnline 
-                      ? 'bg-green-500/10 border-green-500/50 text-green-700 dark:text-green-400' 
-                      : 'bg-red-500/10 border-red-500/50 text-red-700 dark:text-red-400'
-                  }`}
-                  data-testid="badge-api-status"
-                >
-                  <CheckCircle2 className={`w-3 h-3 ${healthStatus.isOnline ? 'text-green-500' : 'text-red-500'}`} />
-                  {healthStatus.isOnline ? (locale === 'en' ? 'Live' : 'مباشر') : (locale === 'en' ? 'Offline' : 'غير متصل')}
-                </Badge>
-              </div>
+      {/* HERO SECTION */}
+      <section className="relative overflow-hidden" data-testid="section-hero">
+        {/* Gradient background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-accent/5 pointer-events-none" />
+        
+        <div className="container max-w-7xl mx-auto px-6 lg:px-8 py-24 lg:py-32 relative">
+          <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+            {/* Text Content */}
+            <div className="max-w-3xl">
+              <Badge className="mb-6 px-4 py-1.5" variant="secondary" data-testid="badge-ai-powered">
+                <Sparkles className="w-4 h-4 mr-2" />
+                AI-Powered
+              </Badge>
               
-              {/* Hero Headline */}
-              <h1 className={`text-5xl lg:text-7xl font-bold leading-tight ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-100' : 'opacity-0'}`}>
-                {locale === 'en' ? (
-                  <>
-                    <span className="bg-gradient-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent">
-                      AI Bookkeeping
-                    </span>
-                    {' '}Built for UAE Businesses
-                  </>
-                ) : (
-                  <>
-                    <span className="bg-gradient-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent">
-                      محاسبة AI
-                    </span>
-                    {' '}مصممة للشركات الإماراتية
-                  </>
-                )}
+              <h1 className="text-5xl lg:text-7xl font-bold tracking-tight mb-6 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
+                {t.hero.headline}
               </h1>
-
-              {/* Subheading */}
-              <p className={`text-xl lg:text-2xl text-muted-foreground max-w-3xl mx-auto ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-200' : 'opacity-0'}`}>
-                {locale === 'en' 
-                  ? 'Experience futuristic accounting automation. Save time, stay FTA-compliant, and unlock real-time financial clarity with cutting-edge AI.'
-                  : 'اختبر أتمتة المحاسبة المستقبلية. وفّر الوقت، والتزم بمعايير الهيئة الاتحادية للضرائب، واحصل على وضوح مالي في الوقت الفعلي باستخدام الذكاء الاصطناعي المتقدم.'}
+              
+              <p className="text-xl lg:text-2xl text-muted-foreground leading-relaxed mb-8 max-w-2xl" data-testid="hero-subheadline">
+                {t.hero.subheadline}
               </p>
 
-              {/* CTAs */}
-              <div className={`flex flex-wrap justify-center gap-4 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-300' : 'opacity-0'}`}>
+              <div className="flex flex-col sm:flex-row gap-4 mb-8">
                 <Link href="/register">
-                  <Button 
-                    size="lg" 
-                    className="min-h-[44px] text-lg px-8 bg-gradient-to-r from-primary to-primary/80 hover:shadow-lg hover:shadow-primary/50 transition-shadow"
-                    aria-label={locale === 'en' ? 'Start free trial and create your account' : 'ابدأ تجربة مجانية وأنشئ حسابك'}
-                    data-testid="button-start-trial-hero"
-                  >
-                    <Rocket className="w-5 h-5 mr-2" />
-                    {locale === 'en' ? 'Start Free Trial' : 'ابدأ تجربة مجانية'}
+                  <Button size="lg" className="px-8 py-6 text-lg" data-testid="hero-button-start-trial">
+                    {t.hero.ctaPrimary}
                     <ArrowRight className="w-5 h-5 ml-2" />
                   </Button>
                 </Link>
-                <Button 
-                  size="lg" 
-                  variant="outline" 
-                  className="min-h-[44px] text-lg px-8 backdrop-blur-sm"
-                  aria-label={locale === 'en' ? 'Watch demo video to see the platform in action' : 'شاهد فيديو توضيحي لرؤية المنصة أثناء العمل'}
-                  data-testid="button-watch-demo"
-                >
-                  <Eye className="w-5 h-5 mr-2" />
-                  {locale === 'en' ? 'See it in Action' : 'شاهده أثناء العمل'}
+                <Button size="lg" variant="outline" className="px-8 py-6 text-lg backdrop-blur-sm" data-testid="hero-button-schedule-demo">
+                  {t.hero.ctaSecondary}
                 </Button>
               </div>
 
-              {/* Trust Badges */}
-              <div className={`flex flex-wrap justify-center gap-4 pt-6 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-400' : 'opacity-0'}`}>
-                <Badge variant="secondary" className="gap-2 px-4 py-2 text-sm">
-                  <Shield className="w-4 h-4" />
-                  {locale === 'en' ? 'FTA-Compliant' : 'متوافق مع الهيئة'}
-                </Badge>
-                <Badge variant="secondary" className="gap-2 px-4 py-2 text-sm">
-                  <Lock className="w-4 h-4" />
-                  {locale === 'en' ? 'Bank-Grade Security' : 'أمان بنكي'}
-                </Badge>
-                <Badge variant="secondary" className="gap-2 px-4 py-2 text-sm">
-                  <Brain className="w-4 h-4" />
-                  {locale === 'en' ? 'Powered by AI' : 'مدعوم بـ AI'}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Animated Stats */}
-            <div className={`grid grid-cols-1 md:grid-cols-3 gap-6 mt-20 max-w-5xl mx-auto ${mounted ? 'animate-in fade-in slide-in-from-bottom-4 duration-1000 delay-500' : 'opacity-0'}`}>
-              <Card className="p-6 text-center border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent hover-elevate">
-                <div className="text-4xl lg:text-5xl font-bold text-primary mb-2">
-                  {animatedInvoices.toLocaleString()}+
-                </div>
-                <div className="text-sm text-muted-foreground font-medium">
-                  {locale === 'en' ? 'Invoices Processed' : 'فواتير معالجة'}
-                </div>
-              </Card>
-              <Card className="p-6 text-center border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent hover-elevate">
-                <div className="text-4xl lg:text-5xl font-bold text-primary mb-2">
-                  {animatedAccuracy}%
-                </div>
-                <div className="text-sm text-muted-foreground font-medium">
-                  {locale === 'en' ? 'AI Accuracy Rate' : 'دقة الذكاء الاصطناعي'}
-                </div>
-              </Card>
-              <Card className="p-6 text-center border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent hover-elevate">
-                <div className="text-4xl lg:text-5xl font-bold text-primary mb-2">
-                  {animatedTime}%
-                </div>
-                <div className="text-sm text-muted-foreground font-medium">
-                  {locale === 'en' ? 'Time Saved' : 'الوقت الموفر'}
-                </div>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* FEATURES - INTERACTIVE SHOWCASE */}
-        <section className="py-20 lg:py-32 bg-muted/20" id="features">
-          <div className="container max-w-7xl mx-auto px-4">
-            <div className="text-center mb-16">
-              <Badge className="mb-4">
-                <Sparkles className="w-4 h-4 mr-2" />
-                {locale === 'en' ? 'Cutting-Edge Features' : 'ميزات متطورة'}
-              </Badge>
-              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-                {locale === 'en' ? (
-                  <>The Future of <span className="text-primary">Accounting is Here</span></>
-                ) : (
-                  <>مستقبل <span className="text-primary">المحاسبة هنا</span></>
-                )}
-              </h2>
-              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                {locale === 'en'
-                  ? 'Experience next-generation AI that understands UAE tax law, learns from your data, and automates complex workflows in real-time.'
-                  : 'اختبر الذكاء الاصطناعي من الجيل التالي الذي يفهم القانون الضريبي الإماراتي، ويتعلم من بياناتك، ويؤتمت سير العمل المعقد في الوقت الفعلي.'}
+              <p className="text-sm text-muted-foreground" data-testid="hero-trust-badge">
+                {t.hero.trustBadge}
               </p>
             </div>
 
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-              {/* Feature 1 */}
-              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-ai-brain">
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
-                  <Brain className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
-                </div>
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'Intelligent Auto-Categorization' : 'تصنيف تلقائي ذكي'}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Our AI learns your business patterns and auto-categorizes transactions with 99.8% accuracy. No manual data entry ever again.'
-                    : 'يتعلم الذكاء الاصطناعي أنماط عملك ويصنف المعاملات تلقائيًا بدقة 99.8٪. لا حاجة لإدخال البيانات يدويًا مرة أخرى.'}
-                </p>
-                <ul className="space-y-2">
-                  {[
-                    locale === 'en' ? 'Real-time transaction processing' : 'معالجة المعاملات في الوقت الفعلي',
-                    locale === 'en' ? 'Custom rule learning' : 'تعلم القواعد المخصصة',
-                    locale === 'en' ? 'Vendor pattern recognition' : 'التعرف على أنماط البائعين'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-
-              {/* Feature 2 */}
-              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-realtime">
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
-                  <Activity className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
-                </div>
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'Real-Time P&L Dashboard' : 'لوحة P&L في الوقت الفعلي'}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Watch your financial health update live. Every transaction instantly reflects in beautifully designed reports.'
-                    : 'شاهد صحتك المالية تتحدث مباشرة. كل معاملة تنعكس على الفور في تقارير مصممة بشكل جميل.'}
-                </p>
-                <ul className="space-y-2">
-                  {[
-                    locale === 'en' ? 'Live profit & loss tracking' : 'تتبع الأرباح والخسائر المباشر',
-                    locale === 'en' ? 'Interactive financial charts' : 'رسوم بيانية مالية تفاعلية',
-                    locale === 'en' ? 'One-click report generation' : 'إنشاء التقرير بنقرة واحدة'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-
-              {/* Feature 3 */}
-              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-uae-tax">
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
-                  <FileText className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
-                </div>
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'UAE Tax Automation' : 'أتمتة الضرائب الإماراتية'}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Built-in UAE VAT (5%) and corporate tax compliance. Generate FTA-ready reports with one click.'
-                    : 'امتثال مدمج لضريبة القيمة المضافة (5٪) والضريبة على الشركات في الإمارات. إنشاء تقارير جاهزة للهيئة الاتحادية بنقرة واحدة.'}
-                </p>
-                <ul className="space-y-2">
-                  {[
-                    locale === 'en' ? 'Bilingual tax invoices (EN/AR)' : 'فواتير ضريبية ثنائية اللغة',
-                    locale === 'en' ? 'Automatic VAT calculations' : 'حسابات ضريبة القيمة المضافة التلقائية',
-                    locale === 'en' ? 'FTA filing assistance' : 'مساعدة تقديم الهيئة الاتحادية'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-
-              {/* Feature 4 */}
-              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-collaboration">
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
-                  <GitBranch className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
-                </div>
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'Accountant Collaboration' : 'تعاون المحاسبين'}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Invite your accountant with one click. Share read-only or edit access. Perfect for year-end close.'
-                    : 'ادع محاسبك بنقرة واحدة. شارك الوصول للقراءة فقط أو التحرير. مثالي لإغلاق نهاية العام.'}
-                </p>
-                <ul className="space-y-2">
-                  {[
-                    locale === 'en' ? 'Role-based permissions' : 'أذونات قائمة على الأدوار',
-                    locale === 'en' ? 'Audit trail & history' : 'مسار التدقيق والتاريخ',
-                    locale === 'en' ? 'Shared workspaces' : 'مساحات عمل مشتركة'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-
-              {/* Feature 5 */}
-              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-ocr">
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
-                  <Microscope className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
-                </div>
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'OCR Receipt Scanning' : 'مسح الإيصالات بـ OCR'}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Snap a photo of any receipt. Our AI extracts amount, date, vendor, and categorizes automatically.'
-                    : 'التقط صورة لأي إيصال. يستخرج الذكاء الاصطناعي المبلغ والتاريخ والبائع ويصنف تلقائيًا.'}
-                </p>
-                <ul className="space-y-2">
-                  {[
-                    locale === 'en' ? 'Mobile app integration' : 'تكامل تطبيق الجوال',
-                    locale === 'en' ? 'Multi-language support' : 'دعم متعدد اللغات',
-                    locale === 'en' ? 'Cloud receipt storage' : 'تخزين الإيصالات السحابي'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-
-              {/* Feature 6 */}
-              <Card className="p-8 hover-elevate group cursor-pointer transition-all border-2 hover:border-primary/50" data-testid="feature-security">
-                <div className="relative mb-6">
-                  <div className="absolute inset-0 bg-primary/10 rounded-full blur-2xl group-hover:blur-3xl transition-all" />
-                  <Shield className="w-16 h-16 text-primary relative z-10 group-hover:scale-110 transition-transform" />
-                </div>
-                <h3 className="text-2xl font-bold mb-3">
-                  {locale === 'en' ? 'Bank-Grade Security' : 'أمان على مستوى البنوك'}
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  {locale === 'en'
-                    ? 'Your data is encrypted end-to-end. Hosted on UAE cloud infrastructure with automatic backups.'
-                    : 'بياناتك مشفرة من طرف إلى طرف. مستضافة على البنية التحتية السحابية الإماراتية مع نسخ احتياطية تلقائية.'}
-                </p>
-                <ul className="space-y-2">
-                  {[
-                    locale === 'en' ? '256-bit encryption' : 'تشفير 256 بت',
-                    locale === 'en' ? 'UAE data sovereignty' : 'سيادة البيانات الإماراتية',
-                    locale === 'en' ? 'Daily automated backups' : 'نسخ احتياطية يومية تلقائية'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-4 h-4 text-green-500 mt-1 flex-shrink-0" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* PLATFORM SHOWCASE */}
-        <section className="py-20 lg:py-32" id="platform">
-          <div className="container max-w-7xl mx-auto px-4">
-            <div className="text-center mb-16">
-              <Badge className="mb-4">
-                <Cpu className="w-4 h-4 mr-2" />
-                {locale === 'en' ? 'The Platform' : 'المنصة'}
-              </Badge>
-              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-                {locale === 'en' ? (
-                  <>Built for <span className="text-primary">Scale & Speed</span></>
-                ) : (
-                  <>مصمم من أجل <span className="text-primary">النطاق والسرعة</span></>
-                )}
-              </h2>
-            </div>
-
-            <div className="grid lg:grid-cols-2 gap-12 items-center">
-              <div className="space-y-8">
-                <div className="flex gap-4 hover-elevate p-6 rounded-lg">
-                  <div className="flex-shrink-0">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Zap className="w-6 h-6 text-primary" />
+            {/* Hero Visual - Glassmorphic Dashboard Preview */}
+            <div className="relative lg:block" data-testid="hero-visual">
+              <div className="relative rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xl p-8 shadow-2xl">
+                <div className="space-y-4">
+                  {/* Mock dashboard elements */}
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="h-3 w-32 bg-primary/20 rounded mb-2" />
+                      <div className="h-2 w-24 bg-muted rounded" />
                     </div>
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold mb-2">
-                      {locale === 'en' ? 'Lightning Fast' : 'سريع البرق'}
-                    </h3>
-                    <p className="text-muted-foreground">
-                      {locale === 'en'
-                        ? 'Process thousands of transactions in seconds. Our AI engine is optimized for UAE business volumes.'
-                        : 'معالجة آلاف المعاملات في ثوانٍ. محرك الذكاء الاصطناعي محسّن لأحجام الأعمال الإماراتية.'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-4 hover-elevate p-6 rounded-lg">
-                  <div className="flex-shrink-0">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Layers className="w-6 h-6 text-primary" />
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-green-500/10 flex items-center justify-center">
+                      <CheckCircle2 className="w-6 h-6 text-green-500" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="h-3 w-40 bg-green-500/20 rounded mb-2" />
+                      <div className="h-2 w-28 bg-muted rounded" />
                     </div>
                   </div>
-                  <div>
-                    <h3 className="text-xl font-bold mb-2">
-                      {locale === 'en' ? 'Multi-Company Support' : 'دعم متعدد الشركات'}
-                    </h3>
-                    <p className="text-muted-foreground">
-                      {locale === 'en'
-                        ? 'Manage unlimited companies from one dashboard. Perfect for accountants and business owners with multiple entities.'
-                        : 'إدارة شركات غير محدودة من لوحة معلومات واحدة. مثالي للمحاسبين وأصحاب الأعمال مع كيانات متعددة.'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-4 hover-elevate p-6 rounded-lg">
-                  <div className="flex-shrink-0">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Database className="w-6 h-6 text-primary" />
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                      <BarChart3 className="w-6 h-6 text-blue-500" />
                     </div>
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold mb-2">
-                      {locale === 'en' ? 'Smart Integrations' : 'تكاملات ذكية'}
-                    </h3>
-                    <p className="text-muted-foreground">
-                      {locale === 'en'
-                        ? 'Connect with Stripe, PayPal, Excel, and more. Import transactions automatically and stay synced.'
-                        : 'اتصل بـ Stripe و PayPal و Excel والمزيد. استيراد المعاملات تلقائيًا والبقاء متزامنًا.'}
-                    </p>
+                    <div className="flex-1">
+                      <div className="h-3 w-36 bg-blue-500/20 rounded mb-2" />
+                      <div className="h-2 w-20 bg-muted rounded" />
+                    </div>
                   </div>
                 </div>
               </div>
-
-              <Card className="p-8 border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-2xl font-bold">
-                      {locale === 'en' ? 'ROI Calculator' : 'حاسبة العائد على الاستثمار'}
-                    </h3>
-                    <Target className="w-8 h-8 text-primary" />
-                  </div>
-                  
-                  <div>
-                    <label className="text-sm font-medium mb-2 block">
-                      {locale === 'en' ? 'Monthly Transactions' : 'المعاملات الشهرية'}
-                    </label>
-                    <input
-                      type="range"
-                      min="10"
-                      max="500"
-                      value={monthlyTransactions}
-                      onChange={(e) => setMonthlyTransactions(Number(e.target.value))}
-                      className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                    />
-                    <div className="text-3xl font-bold text-primary mt-4">
-                      {monthlyTransactions}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t">
-                    <div>
-                      <div className="text-sm text-muted-foreground mb-1">
-                        {locale === 'en' ? 'Hours Saved/Week' : 'ساعات موفرة/أسبوع'}
-                      </div>
-                      <div className="text-2xl font-bold text-primary">
-                        {hoursPerWeek.toFixed(1)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-sm text-muted-foreground mb-1">
-                        {locale === 'en' ? 'Money Saved/Month' : 'أموال موفرة/شهر'}
-                      </div>
-                      <div className="text-2xl font-bold text-primary">
-                        AED {moneySaved}
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-muted-foreground">
-                    {locale === 'en'
-                      ? 'Based on 2 minutes per transaction @ AED 50/hour'
-                      : 'بناءً على دقيقتين لكل معاملة @ 50 درهم/ساعة'}
-                  </p>
-                </div>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* INTEGRATIONS */}
-        <section className="py-12 bg-muted/10">
-          <div className="container max-w-5xl mx-auto px-4">
-            <p className="text-center text-sm text-muted-foreground mb-8 font-medium uppercase tracking-wide">
-              {locale === 'en' ? 'Seamless Integrations' : 'تكاملات سلسة'}
-            </p>
-            <div className="flex flex-wrap justify-center items-center gap-8 md:gap-12">
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity hover-elevate p-4 rounded-lg" data-testid="integration-stripe" role="img" aria-label="Stripe payment integration">
-                <SiStripe className="w-12 h-12" aria-hidden="true" />
-                <span className="font-semibold text-lg">Stripe</span>
-              </div>
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity hover-elevate p-4 rounded-lg" data-testid="integration-paypal" role="img" aria-label="PayPal payment integration">
-                <SiPaypal className="w-12 h-12" aria-hidden="true" />
-                <span className="font-semibold text-lg">PayPal</span>
-              </div>
-              <div className="flex items-center gap-3 opacity-70 hover:opacity-100 transition-opacity hover-elevate p-4 rounded-lg" data-testid="integration-excel" role="img" aria-label="Excel spreadsheet integration">
-                <Database className="w-12 h-12 text-green-600" aria-hidden="true" />
-                <span className="font-semibold text-lg">Excel</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* PRICING */}
-        <section className="py-20 lg:py-32 bg-muted/20" id="pricing">
-          <div className="container max-w-7xl mx-auto px-4">
-            <div className="text-center mb-4">
-              <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-                {locale === 'en' ? (
-                  <>Simple, <span className="text-primary">Transparent Pricing</span></>
-                ) : (
-                  <>تسعير <span className="text-primary">بسيط وشفاف</span></>
-                )}
-              </h2>
-              <p className="text-muted-foreground text-sm">
-                {locale === 'en' 
-                  ? 'All prices in AED · No setup fees · Cancel anytime'
-                  : 'جميع الأسعار بالدرهم الإماراتي · بدون رسوم إعداد · إلغاء في أي وقت'}
-              </p>
-            </div>
-
-            <div className="grid md:grid-cols-3 gap-8 mt-12">
-              {/* Starter */}
-              <Card className="p-8 hover-elevate">
-                <h3 className="text-2xl font-bold mb-2">
-                  {locale === 'en' ? 'Starter' : 'بداية'}
-                </h3>
-                <div className="text-4xl font-bold mb-4">
-                  {locale === 'en' ? 'Free' : 'مجاني'}
-                </div>
-                <p className="text-muted-foreground mb-6">
-                  {locale === 'en' ? 'Perfect for freelancers' : 'مثالي للعاملين الأحرار'}
-                </p>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    locale === 'en' ? '1 company' : 'شركة واحدة',
-                    locale === 'en' ? '50 transactions/month' : '50 معاملة/شهر',
-                    locale === 'en' ? 'Basic reports' : 'تقارير أساسية',
-                    locale === 'en' ? 'Email support' : 'دعم البريد الإلكتروني'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/register">
-                  <Button className="w-full" variant="outline">
-                    {locale === 'en' ? 'Get Started' : 'ابدأ'}
-                  </Button>
-                </Link>
-              </Card>
-
-              {/* Growth - Most Popular */}
-              <Card className="p-8 border-2 border-primary relative hover-elevate">
-                <Badge className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  {locale === 'en' ? 'Most Popular' : 'الأكثر شعبية'}
-                </Badge>
-                <h3 className="text-2xl font-bold mb-2">
-                  {locale === 'en' ? 'Growth' : 'نمو'}
-                </h3>
-                <div className="text-4xl font-bold mb-4">
-                  AED 299<span className="text-lg text-muted-foreground">/mo</span>
-                </div>
-                <p className="text-muted-foreground mb-6">
-                  {locale === 'en' ? 'For growing businesses' : 'للأعمال المتنامية'}
-                </p>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    locale === 'en' ? '3 companies' : '3 شركات',
-                    locale === 'en' ? 'Unlimited transactions' : 'معاملات غير محدودة',
-                    locale === 'en' ? 'AI categorization' : 'تصنيف AI',
-                    locale === 'en' ? 'All reports' : 'جميع التقارير',
-                    locale === 'en' ? 'Priority support' : 'دعم الأولوية'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/register">
-                  <Button className="w-full bg-gradient-to-r from-primary to-primary/80">
-                    {locale === 'en' ? 'Start Free Trial' : 'ابدأ تجربة مجانية'}
-                  </Button>
-                </Link>
-              </Card>
-
-              {/* Firm */}
-              <Card className="p-8 hover-elevate">
-                <h3 className="text-2xl font-bold mb-2">
-                  {locale === 'en' ? 'Firm' : 'مكتب'}
-                </h3>
-                <div className="text-4xl font-bold mb-4">
-                  AED 799<span className="text-lg text-muted-foreground">/mo</span>
-                </div>
-                <p className="text-muted-foreground mb-6">
-                  {locale === 'en' ? 'For accounting firms' : 'لمكاتب المحاسبة'}
-                </p>
-                <ul className="space-y-3 mb-8">
-                  {[
-                    locale === 'en' ? 'Unlimited companies' : 'شركات غير محدودة',
-                    locale === 'en' ? 'White-label reports' : 'تقارير بعلامة بيضاء',
-                    locale === 'en' ? 'API access' : 'وصول API',
-                    locale === 'en' ? 'Custom integrations' : 'تكاملات مخصصة',
-                    locale === 'en' ? 'Dedicated support' : 'دعم مخصص'
-                  ].map((item, i) => (
-                    <li key={i} className="flex items-start gap-2">
-                      <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-sm">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/register">
-                  <Button className="w-full" variant="outline">
-                    {locale === 'en' ? 'Contact Sales' : 'اتصل بالمبيعات'}
-                  </Button>
-                </Link>
-              </Card>
-            </div>
-          </div>
-        </section>
-
-        {/* CTA SECTION */}
-        <section className="py-20 lg:py-32">
-          <div className="container max-w-5xl mx-auto px-4">
-            <Card className="p-12 lg:p-16 text-center border-2 border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-50" />
-              <div className="absolute top-10 right-10 w-64 h-64 bg-primary/10 rounded-full blur-3xl" />
-              <div className="absolute bottom-10 left-10 w-64 h-64 bg-accent/10 rounded-full blur-3xl" />
               
-              <div className="relative z-10">
-                <Badge className="mb-6">
-                  <Rocket className="w-4 h-4 mr-2" />
-                  {locale === 'en' ? 'Start Your Journey' : 'ابدأ رحلتك'}
-                </Badge>
-                <h2 className="text-4xl lg:text-5xl font-bold mb-6">
-                  {locale === 'en' ? (
-                    <>Ready to Experience the <span className="text-primary">Future?</span></>
-                  ) : (
-                    <>جاهز لتجربة <span className="text-primary">المستقبل؟</span></>
-                  )}
-                </h2>
-                <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
-                  {locale === 'en'
-                    ? 'Join forward-thinking UAE businesses using AI to automate bookkeeping. Start your free trial today—no credit card required.'
-                    : 'انضم إلى الشركات الإماراتية ذات التفكير المستقبلي التي تستخدم الذكاء الاصطناعي لأتمتة المحاسبة. ابدأ تجربتك المجانية اليوم - لا حاجة لبطاقة ائتمان.'}
-                </p>
-                <div className="flex flex-wrap justify-center gap-4">
-                  <Link href="/register">
-                    <Button size="lg" className="text-lg px-8 bg-gradient-to-r from-primary to-primary/80 hover:shadow-lg hover:shadow-primary/50 transition-shadow">
-                      <Rocket className="w-5 h-5 mr-2" />
-                      {locale === 'en' ? 'Start Free Trial' : 'ابدأ تجربة مجانية'}
-                      <ArrowRight className="w-5 h-5 ml-2" />
-                    </Button>
-                  </Link>
-                  <Button size="lg" variant="outline" className="text-lg px-8 backdrop-blur-sm">
-                    {locale === 'en' ? 'Book a Demo' : 'احجز عرضًا توضيحيًا'}
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </section>
-
-        {/* FOOTER */}
-        <footer className="py-12 border-t bg-muted/20">
-          <div className="container max-w-7xl mx-auto px-4">
-            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Building2 className="w-4 h-4" />
-                <span>
-                  {locale === 'en' ? 'Made with' : 'صنع بـ'}
-                </span>
-                <Award className="w-4 h-4 text-red-500" />
-                <span>
-                  {locale === 'en' ? 'in Dubai' : 'في دبي'}
-                </span>
-              </div>
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <a href="#" className="hover:text-primary transition-colors">
-                  {locale === 'en' ? 'Privacy' : 'الخصوصية'}
-                </a>
-                <a href="#" className="hover:text-primary transition-colors">
-                  {locale === 'en' ? 'Terms' : 'الشروط'}
-                </a>
-                <a href="#" className="hover:text-primary transition-colors">
-                  {locale === 'en' ? 'Contact' : 'اتصل'}
-                </a>
-              </div>
+              {/* Floating accent */}
+              <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/20 rounded-full blur-3xl animate-pulse" />
+              <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-accent/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
             </div>
           </div>
-        </footer>
-      </main>
+        </div>
+      </section>
+
+      {/* STATS SECTION */}
+      <section className="border-y border-border/40 bg-card/30 backdrop-blur-sm" data-testid="section-stats">
+        <div className="container max-w-7xl mx-auto px-6 lg:px-8 py-16">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="text-center" data-testid="stat-invoices">
+              <div className="text-4xl lg:text-5xl font-bold font-mono mb-2">15,000+</div>
+              <div className="text-sm text-muted-foreground">{t.stats.invoices}</div>
+            </div>
+            <div className="text-center" data-testid="stat-accuracy">
+              <div className="text-4xl lg:text-5xl font-bold font-mono mb-2">99.8%</div>
+              <div className="text-sm text-muted-foreground">{t.stats.accuracy}</div>
+            </div>
+            <div className="text-center" data-testid="stat-time-saved">
+              <div className="text-4xl lg:text-5xl font-bold font-mono mb-2">87%</div>
+              <div className="text-sm text-muted-foreground">{t.stats.timeSaved}</div>
+            </div>
+            <div className="text-center" data-testid="stat-businesses">
+              <div className="text-4xl lg:text-5xl font-bold font-mono mb-2">300+</div>
+              <div className="text-sm text-muted-foreground">{t.stats.businesses}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FEATURES SECTION */}
+      <section id="features" className="py-24 lg:py-32" data-testid="section-features">
+        <div className="container max-w-7xl mx-auto px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl lg:text-5xl font-bold mb-4" data-testid="features-title">{t.features.title}</h2>
+            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="features-subtitle">{t.features.subtitle}</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {t.features.items.map((feature, index) => (
+              <Card 
+                key={index} 
+                className="p-8 border border-border/50 bg-card/50 backdrop-blur-sm hover-elevate transition-all duration-300"
+                data-testid={`feature-card-${index}`}
+              >
+                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                  <feature.icon className="w-6 h-6 text-primary" />
+                </div>
+                <h3 className="text-xl font-semibold mb-4">{feature.title}</h3>
+                <p className="text-muted-foreground leading-relaxed">{feature.description}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ADVANTAGES SECTION */}
+      <section id="advantages" className="py-24 lg:py-32 bg-gradient-to-b from-accent/5 to-background" data-testid="section-advantages">
+        <div className="container max-w-7xl mx-auto px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl lg:text-5xl font-bold mb-4" data-testid="advantages-title">{t.advantages.title}</h2>
+            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="advantages-subtitle">{t.advantages.subtitle}</p>
+          </div>
+
+          <div className="max-w-5xl mx-auto space-y-6">
+            {t.advantages.items.map((advantage, index) => (
+              <div 
+                key={index} 
+                className="grid lg:grid-cols-3 gap-4 p-6 rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover-elevate transition-all duration-300"
+                data-testid={`advantage-row-${index}`}
+              >
+                <div className="font-semibold flex items-center gap-2">
+                  <Target className="w-5 h-5 text-primary" />
+                  {advantage.title}
+                </div>
+                <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                  <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">{advantage.us}</span>
+                </div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <X className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm">{advantage.them}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ROADMAP SECTION */}
+      <section id="roadmap" className="py-24 lg:py-32" data-testid="section-roadmap">
+        <div className="container max-w-7xl mx-auto px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl lg:text-5xl font-bold mb-4" data-testid="roadmap-title">{t.roadmap.title}</h2>
+            <p className="text-xl text-muted-foreground max-w-3xl mx-auto" data-testid="roadmap-subtitle">{t.roadmap.subtitle}</p>
+          </div>
+
+          <div className="grid lg:grid-cols-3 gap-8">
+            {/* Current Features */}
+            <div className="space-y-6" data-testid="roadmap-current">
+              <div className="flex items-center gap-3 mb-6">
+                <Badge className="px-4 py-1.5" variant="default">
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  {t.roadmap.current}
+                </Badge>
+              </div>
+              {t.roadmap.features.current.map((feature, index) => (
+                <Card key={index} className="p-6 border-2 border-primary/20 bg-primary/5" data-testid={`roadmap-current-feature-${index}`}>
+                  <h4 className="font-semibold mb-2">{feature.title}</h4>
+                  <p className="text-sm text-muted-foreground">{feature.description}</p>
+                </Card>
+              ))}
+            </div>
+
+            {/* Q1 2025 */}
+            <div className="space-y-6" data-testid="roadmap-q1">
+              <div className="flex items-center gap-3 mb-6">
+                <Badge className="px-4 py-1.5" variant="secondary">
+                  <Rocket className="w-4 h-4 mr-2" />
+                  {t.roadmap.q1}
+                </Badge>
+              </div>
+              {t.roadmap.features.q1.map((feature, index) => (
+                <Card key={index} className="p-6 border border-border/50 bg-card/50 backdrop-blur-sm" data-testid={`roadmap-q1-feature-${index}`}>
+                  <h4 className="font-semibold mb-2">{feature.title}</h4>
+                  <p className="text-sm text-muted-foreground">{feature.description}</p>
+                </Card>
+              ))}
+            </div>
+
+            {/* Q2 2025 */}
+            <div className="space-y-6" data-testid="roadmap-q2">
+              <div className="flex items-center gap-3 mb-6">
+                <Badge className="px-4 py-1.5" variant="outline">
+                  <Star className="w-4 h-4 mr-2" />
+                  {t.roadmap.q2}
+                </Badge>
+              </div>
+              {t.roadmap.features.q2.map((feature, index) => (
+                <Card key={index} className="p-6 border border-dashed border-border/50 bg-card/30 backdrop-blur-sm" data-testid={`roadmap-q2-feature-${index}`}>
+                  <h4 className="font-semibold mb-2">{feature.title}</h4>
+                  <p className="text-sm text-muted-foreground">{feature.description}</p>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FINAL CTA SECTION */}
+      <section className="py-24 lg:py-32 relative overflow-hidden" data-testid="section-cta">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-accent/5 to-background pointer-events-none" />
+        
+        <div className="container max-w-7xl mx-auto px-6 lg:px-8 relative">
+          <div className="max-w-4xl mx-auto text-center">
+            <h2 className="text-4xl lg:text-5xl font-bold mb-6" data-testid="cta-title">{t.cta.title}</h2>
+            <p className="text-xl text-muted-foreground mb-8" data-testid="cta-subtitle">{t.cta.subtitle}</p>
+            
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Link href="/register">
+                <Button size="lg" className="px-8 py-6 text-lg" data-testid="cta-button-start-trial">
+                  {t.cta.primary}
+                  <ArrowRight className="w-5 h-5 ml-2" />
+                </Button>
+              </Link>
+              <Button size="lg" variant="outline" className="px-8 py-6 text-lg backdrop-blur-sm" data-testid="cta-button-schedule-demo">
+                {t.cta.secondary}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="border-t border-border/40 py-12" data-testid="section-footer">
+        <div className="container max-w-7xl mx-auto px-6 lg:px-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-3">
+              <Briefcase className="w-6 h-6 text-primary" />
+              <span className="font-semibold">
+                {locale === 'en' ? 'BookKeep AI' : 'بوككيب AI'}
+              </span>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              © 2025 BookKeep AI. {locale === 'en' ? 'All rights reserved.' : 'جميع الحقوق محفوظة.'}
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

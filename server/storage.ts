@@ -48,6 +48,7 @@ export interface IStorage {
   getAccountsByCompanyId(companyId: string): Promise<Account[]>;
   getAccountByCode(companyId: string, code: string): Promise<Account | undefined>;
   createAccount(account: InsertAccount): Promise<Account>;
+  updateAccount(id: string, data: Partial<InsertAccount>): Promise<Account>;
   deleteAccount(id: string): Promise<void>;
   accountHasTransactions(accountId: string): Promise<boolean>;
   
@@ -55,24 +56,32 @@ export interface IStorage {
   getJournalEntry(id: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
   createJournalEntry(entry: InsertJournalEntry): Promise<JournalEntry>;
+  updateJournalEntry(id: string, data: Partial<InsertJournalEntry>): Promise<JournalEntry>;
+  deleteJournalEntry(id: string): Promise<void>;
   
   // Journal Lines
   createJournalLine(line: InsertJournalLine): Promise<JournalLine>;
   getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]>;
+  deleteJournalLinesByEntryId(entryId: string): Promise<void>;
   
   // Invoices
   getInvoice(id: string): Promise<Invoice | undefined>;
   getInvoicesByCompanyId(companyId: string): Promise<Invoice[]>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
+  updateInvoice(id: string, data: Partial<InsertInvoice>): Promise<Invoice>;
   updateInvoiceStatus(id: string, status: string): Promise<Invoice>;
+  deleteInvoice(id: string): Promise<void>;
   
   // Invoice Lines
   createInvoiceLine(line: InsertInvoiceLine): Promise<InvoiceLine>;
   getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]>;
+  deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void>;
   
   // Receipts
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
+  updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt>;
+  deleteReceipt(id: string): Promise<void>;
   
   // Waitlist
   createWaitlistEntry(entry: InsertWaitlist): Promise<Waitlist>;
@@ -198,6 +207,18 @@ export class DatabaseStorage implements IStorage {
     return account;
   }
 
+  async updateAccount(id: string, data: Partial<InsertAccount>): Promise<Account> {
+    const [account] = await db
+      .update(accounts)
+      .set(data)
+      .where(eq(accounts.id, id))
+      .returning();
+    if (!account) {
+      throw new Error('Account not found');
+    }
+    return account;
+  }
+
   async deleteAccount(id: string): Promise<void> {
     await db.delete(accounts).where(eq(accounts.id, id));
   }
@@ -233,6 +254,22 @@ export class DatabaseStorage implements IStorage {
     return entry;
   }
 
+  async updateJournalEntry(id: string, data: Partial<InsertJournalEntry>): Promise<JournalEntry> {
+    const [entry] = await db
+      .update(journalEntries)
+      .set(data)
+      .where(eq(journalEntries.id, id))
+      .returning();
+    if (!entry) {
+      throw new Error('Journal entry not found');
+    }
+    return entry;
+  }
+
+  async deleteJournalEntry(id: string): Promise<void> {
+    await db.delete(journalEntries).where(eq(journalEntries.id, id));
+  }
+
   // Journal Lines
   async createJournalLine(insertLine: InsertJournalLine): Promise<JournalLine> {
     const [line] = await db
@@ -244,6 +281,10 @@ export class DatabaseStorage implements IStorage {
 
   async getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]> {
     return await db.select().from(journalLines).where(eq(journalLines.entryId, entryId));
+  }
+
+  async deleteJournalLinesByEntryId(entryId: string): Promise<void> {
+    await db.delete(journalLines).where(eq(journalLines.entryId, entryId));
   }
 
   // Invoices
@@ -268,6 +309,18 @@ export class DatabaseStorage implements IStorage {
     return invoice;
   }
 
+  async updateInvoice(id: string, data: Partial<InsertInvoice>): Promise<Invoice> {
+    const [invoice] = await db
+      .update(invoices)
+      .set(data)
+      .where(eq(invoices.id, id))
+      .returning();
+    if (!invoice) {
+      throw new Error('Invoice not found');
+    }
+    return invoice;
+  }
+
   async updateInvoiceStatus(id: string, status: string): Promise<Invoice> {
     const [invoice] = await db
       .update(invoices)
@@ -282,6 +335,10 @@ export class DatabaseStorage implements IStorage {
     return invoice;
   }
 
+  async deleteInvoice(id: string): Promise<void> {
+    await db.delete(invoices).where(eq(invoices.id, id));
+  }
+
   // Invoice Lines
   async createInvoiceLine(insertLine: InsertInvoiceLine): Promise<InvoiceLine> {
     const [line] = await db
@@ -293,6 +350,10 @@ export class DatabaseStorage implements IStorage {
 
   async getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]> {
     return await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
+  }
+
+  async deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void> {
+    await db.delete(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
   }
 
   // Receipts
@@ -310,6 +371,22 @@ export class DatabaseStorage implements IStorage {
       .from(receipts)
       .where(eq(receipts.companyId, companyId))
       .orderBy(desc(receipts.createdAt));
+  }
+
+  async updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt> {
+    const [receipt] = await db
+      .update(receipts)
+      .set(data)
+      .where(eq(receipts.id, id))
+      .returning();
+    if (!receipt) {
+      throw new Error('Receipt not found');
+    }
+    return receipt;
+  }
+
+  async deleteReceipt(id: string): Promise<void> {
+    await db.delete(receipts).where(eq(receipts.id, id));
   }
 
   // Waitlist

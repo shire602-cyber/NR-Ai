@@ -17,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, BookOpen, Search, Trash2 } from 'lucide-react';
+import { Plus, BookOpen, Search, Trash2, Edit } from 'lucide-react';
 import type { Account } from '@shared/schema';
 
 const accountSchema = z.object({
@@ -26,6 +26,7 @@ const accountSchema = z.object({
   nameEn: z.string().min(1, 'Account name (EN) is required'),
   nameAr: z.string().optional(),
   type: z.enum(['asset', 'liability', 'equity', 'income', 'expense']),
+  isActive: z.boolean().default(true),
 });
 
 type AccountFormData = z.infer<typeof accountSchema>;
@@ -36,6 +37,7 @@ export default function Accounts() {
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
 
   const { data: accounts, isLoading } = useQuery<Account[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'accounts'],
@@ -50,6 +52,7 @@ export default function Accounts() {
       nameEn: '',
       nameAr: '',
       type: 'asset',
+      isActive: true,
     },
   });
 
@@ -70,12 +73,35 @@ export default function Accounts() {
         description: 'New account has been added to the Chart of Accounts.',
       });
       setDialogOpen(false);
+      setEditingAccount(null);
       form.reset();
     },
     onError: (error: any) => {
       toast({
         variant: 'destructive',
         title: 'Failed to create account',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: AccountFormData }) => 
+      apiRequest('PUT', `/api/accounts/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'accounts'] });
+      toast({
+        title: 'Account updated successfully',
+        description: 'Account has been updated in the Chart of Accounts.',
+      });
+      setDialogOpen(false);
+      setEditingAccount(null);
+      form.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update account',
         description: error.message || 'Please try again.',
       });
     },
@@ -100,9 +126,26 @@ export default function Accounts() {
     },
   });
 
+  const handleEditAccount = (account: Account) => {
+    setEditingAccount(account);
+    form.reset({
+      companyId: account.companyId,
+      code: account.code,
+      nameEn: account.nameEn,
+      nameAr: account.nameAr || '',
+      type: account.type,
+      isActive: account.isActive,
+    });
+    setDialogOpen(true);
+  };
+
   const onSubmit = (data: AccountFormData) => {
     if (!selectedCompanyId) return;
-    createMutation.mutate({ ...data, companyId: selectedCompanyId });
+    if (editingAccount) {
+      editMutation.mutate({ id: editingAccount.id, data: { ...data, companyId: selectedCompanyId } });
+    } else {
+      createMutation.mutate({ ...data, companyId: selectedCompanyId });
+    }
   };
 
   const handleDelete = (accountId: string) => {
@@ -141,7 +184,13 @@ export default function Accounts() {
           <h1 className="text-3xl font-semibold mb-2">{t.accounts}</h1>
           <p className="text-muted-foreground">UAE Chart of Accounts with bilingual support</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setEditingAccount(null);
+            form.reset();
+          }
+        }}>
           <DialogTrigger asChild>
             <Button data-testid="button-create-account">
               <Plus className="w-4 h-4 mr-2" />
@@ -150,9 +199,9 @@ export default function Accounts() {
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Add New Account</DialogTitle>
+              <DialogTitle>{editingAccount ? 'Edit Account' : 'Add New Account'}</DialogTitle>
               <DialogDescription>
-                Create a new account in your Chart of Accounts
+                {editingAccount ? 'Update account details' : 'Create a new account in your Chart of Accounts'}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -224,8 +273,8 @@ export default function Accounts() {
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="flex-1">
                     {t.cancel}
                   </Button>
-                  <Button type="submit" disabled={createMutation.isPending} className="flex-1" data-testid="button-submit-account">
-                    {createMutation.isPending ? t.loading : t.save}
+                  <Button type="submit" disabled={createMutation.isPending || editMutation.isPending} className="flex-1" data-testid="button-submit-account">
+                    {(createMutation.isPending || editMutation.isPending) ? t.loading : t.save}
                   </Button>
                 </div>
               </form>
@@ -279,17 +328,27 @@ export default function Accounts() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
-                              data-testid={`button-delete-account-${account.id}`}
-                              disabled={deleteMutation.isPending}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </AlertDialogTrigger>
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditAccount(account)}
+                            data-testid={`button-edit-account-${account.id}`}
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                data-testid={`button-delete-account-${account.id}`}
+                                disabled={deleteMutation.isPending}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete Account?</AlertDialogTitle>
@@ -314,6 +373,7 @@ export default function Accounts() {
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

@@ -20,7 +20,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
+import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2, Edit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const journalLineSchema = z.object({
@@ -50,6 +50,7 @@ export default function Journal() {
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<any>(null);
 
   const { data: accounts } = useQuery<any[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'accounts'],
@@ -96,6 +97,7 @@ export default function Journal() {
         description: 'Your double-entry journal has been recorded.',
       });
       setDialogOpen(false);
+      setEditingEntry(null);
       form.reset({
         companyId: selectedCompanyId,
         date: new Date(),
@@ -115,6 +117,63 @@ export default function Journal() {
     },
   });
 
+  const editMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: JournalFormData }) => 
+      apiRequest('PUT', `/api/journal/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'journal'] });
+      toast({
+        title: 'Journal entry updated successfully',
+        description: 'Your journal entry has been updated.',
+      });
+      setDialogOpen(false);
+      setEditingEntry(null);
+      form.reset({
+        companyId: selectedCompanyId,
+        date: new Date(),
+        memo: '',
+        lines: [
+          { accountId: '', debit: 0, credit: 0 },
+          { accountId: '', debit: 0, credit: 0 },
+        ],
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update entry',
+        description: error.message || 'Please check that debits equal credits.',
+      });
+    },
+  });
+
+  const handleEditEntry = async (entry: any) => {
+    try {
+      const fullEntry = await apiRequest('GET', `/api/journal/${entry.id}`);
+      setEditingEntry(fullEntry);
+      form.reset({
+        companyId: fullEntry.companyId,
+        date: new Date(fullEntry.date),
+        memo: fullEntry.memo || '',
+        lines: fullEntry.lines?.map((line: any) => ({
+          accountId: line.accountId,
+          debit: line.debit || 0,
+          credit: line.credit || 0,
+        })) || [
+          { accountId: '', debit: 0, credit: 0 },
+          { accountId: '', debit: 0, credit: 0 },
+        ],
+      });
+      setDialogOpen(true);
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message || 'Failed to load journal entry details.',
+      });
+    }
+  };
+
   const onSubmit = (data: JournalFormData) => {
     if (!selectedCompanyId) {
       toast({
@@ -124,7 +183,11 @@ export default function Journal() {
       });
       return;
     }
-    createMutation.mutate({ ...data, companyId: selectedCompanyId });
+    if (editingEntry) {
+      editMutation.mutate({ id: editingEntry.id, data: { ...data, companyId: selectedCompanyId } });
+    } else {
+      createMutation.mutate({ ...data, companyId: selectedCompanyId });
+    }
   };
 
   // Calculate balance
@@ -140,7 +203,21 @@ export default function Journal() {
           <h1 className="text-3xl font-semibold mb-2">{t.journal}</h1>
           <p className="text-muted-foreground">Double-entry journal with automatic balance validation</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open);
+          if (!open) {
+            setEditingEntry(null);
+            form.reset({
+              companyId: selectedCompanyId,
+              date: new Date(),
+              memo: '',
+              lines: [
+                { accountId: '', debit: 0, credit: 0 },
+                { accountId: '', debit: 0, credit: 0 },
+              ],
+            });
+          }
+        }}>
           <DialogTrigger asChild>
             <Button data-testid="button-create-entry">
               <Plus className="w-4 h-4 mr-2" />
@@ -149,9 +226,9 @@ export default function Journal() {
           </DialogTrigger>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{t.newEntry}</DialogTitle>
+              <DialogTitle>{editingEntry ? 'Edit Journal Entry' : t.newEntry}</DialogTitle>
               <DialogDescription>
-                Create a balanced double-entry journal entry
+                {editingEntry ? 'Update journal entry details' : 'Create a balanced double-entry journal entry'}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -350,11 +427,11 @@ export default function Journal() {
                   </Button>
                   <Button 
                     type="submit" 
-                    disabled={!isBalanced || createMutation.isPending} 
+                    disabled={!isBalanced || createMutation.isPending || editMutation.isPending} 
                     className="flex-1" 
                     data-testid="button-submit-entry"
                   >
-                    {createMutation.isPending ? t.loading : t.save}
+                    {(createMutation.isPending || editMutation.isPending) ? t.loading : t.save}
                   </Button>
                 </div>
               </form>
@@ -375,9 +452,20 @@ export default function Journal() {
                     <div className="text-sm text-muted-foreground">{formatDate(entry.date, locale)}</div>
                     {entry.memo && <div className="font-medium mt-1">{entry.memo}</div>}
                   </div>
-                  <Badge variant="outline" className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
-                    {t.balanced}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
+                      {t.balanced}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleEditEntry(entry)}
+                      data-testid={`button-edit-journal-${entry.id}`}
+                    >
+                      <Edit className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   {entry.lines?.map((line: any, idx: number) => (
