@@ -75,27 +75,27 @@ The platform implements a complete double-entry bookkeeping system that ensures 
 
 ### Automatic Journal Entries for Invoices
 
-Invoices automatically create journal entries when their status changes:
-
-**Draft → Sent** (Revenue Recognition):
+**Revenue Recognition (Immediate upon Invoice Creation)**:
+When an invoice is created, revenue is recognized immediately:
 ```
-Dr. Accounts Receivable (1200)
-    Cr. Sales Revenue (4000)
-    Cr. VAT Payable (2100)
-```
-
-**Sent → Paid** (Payment Received):
-```
-Dr. Bank (1100)
-    Cr. Accounts Receivable (1200)
+Dr. Accounts Receivable (1200)     [Total Amount]
+    Cr. Sales Revenue (4000)        [Subtotal]
+    Cr. VAT Payable (2100)          [VAT Amount]
 ```
 
-**Draft → Paid** (Direct Payment):
+**Payment Recording (When Invoice Marked as Paid)**:
+When an invoice is marked as paid, user selects the payment account (cash/bank):
 ```
-Dr. Bank (1100)
-    Cr. Sales Revenue (4000)
-    Cr. VAT Payable (2100)
+Dr. Selected Payment Account (1000/1100)  [Total Amount]
+    Cr. Accounts Receivable (1200)        [Total Amount]
 ```
+
+**Key Features**:
+- Revenue recognized immediately when invoice is raised (accrual accounting)
+- User selects payment account when marking invoice as paid
+- Validates payment account belongs to company
+- Validates payment account is cash or bank (codes 1000 or 1100)
+- Separate journal entries for revenue recognition and payment
 
 ### Manual Posting for Expenses
 

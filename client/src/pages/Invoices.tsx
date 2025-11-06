@@ -66,9 +66,17 @@ export default function Invoices() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [activeTab, setActiveTab] = useState('invoices');
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [invoiceForPayment, setInvoiceForPayment] = useState<Invoice | null>(null);
+  const [selectedPaymentAccount, setSelectedPaymentAccount] = useState<string>('');
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: accounts = [] } = useQuery<any[]>({
+    queryKey: ['/api/companies', selectedCompanyId, 'accounts'],
     enabled: !!selectedCompanyId,
   });
 
@@ -158,14 +166,17 @@ export default function Invoices() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest('PATCH', `/api/invoices/${id}/status`, { status }),
+    mutationFn: ({ id, status, paymentAccountId }: { id: string; status: string; paymentAccountId?: string }) =>
+      apiRequest('PATCH', `/api/invoices/${id}/status`, { status, paymentAccountId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
       toast({
         title: 'Status updated',
         description: 'Invoice status has been updated successfully.',
       });
+      setPaymentDialogOpen(false);
+      setInvoiceForPayment(null);
+      setSelectedPaymentAccount('');
     },
     onError: (error: any) => {
       toast({
@@ -175,6 +186,38 @@ export default function Invoices() {
       });
     },
   });
+
+  const handleStatusChange = (invoice: Invoice, newStatus: string) => {
+    if (newStatus === 'paid' && invoice.status !== 'paid') {
+      // Show payment account selection dialog
+      setInvoiceForPayment(invoice);
+      setPaymentDialogOpen(true);
+    } else {
+      // For other status changes, proceed directly
+      updateStatusMutation.mutate({ id: invoice.id, status: newStatus });
+    }
+  };
+
+  const handleConfirmPayment = () => {
+    if (!selectedPaymentAccount || !invoiceForPayment) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please select a payment account.',
+      });
+      return;
+    }
+    updateStatusMutation.mutate({ 
+      id: invoiceForPayment.id, 
+      status: 'paid',
+      paymentAccountId: selectedPaymentAccount 
+    });
+  };
+
+  // Get cash and bank accounts for payment selection
+  const paymentAccounts = accounts.filter(acc => 
+    ['1000', '1100'].includes(acc.code)
+  );
 
   const handleEditInvoice = async (invoice: Invoice) => {
     try {
@@ -553,9 +596,7 @@ export default function Invoices() {
                       <TableCell className="text-center">
                         <Select
                           value={invoice.status}
-                          onValueChange={(newStatus) => {
-                            updateStatusMutation.mutate({ id: invoice.id, status: newStatus });
-                          }}
+                          onValueChange={(newStatus) => handleStatusChange(invoice, newStatus)}
                           disabled={updateStatusMutation.isPending}
                         >
                           <SelectTrigger 
@@ -915,6 +956,78 @@ export default function Invoices() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Payment Account Selection Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Payment Account</DialogTitle>
+            <DialogDescription>
+              Choose where the payment for invoice {invoiceForPayment?.number} was deposited
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {paymentAccounts.length > 0 ? (
+              <div className="space-y-2">
+                {paymentAccounts.map((account) => (
+                  <Card
+                    key={account.id}
+                    className={cn(
+                      "cursor-pointer transition-all hover-elevate",
+                      selectedPaymentAccount === account.id && "ring-2 ring-primary"
+                    )}
+                    onClick={() => setSelectedPaymentAccount(account.id)}
+                    data-testid={`select-payment-account-${account.id}`}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">
+                            {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
+                          </div>
+                          <div className="text-sm text-muted-foreground font-mono">
+                            {account.code}
+                          </div>
+                        </div>
+                        {selectedPaymentAccount === account.id && (
+                          <div className="text-primary">✓</div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Alert>
+                <AlertDescription>
+                  No cash or bank accounts found. Please create a cash or bank account first.
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPaymentDialogOpen(false);
+                setSelectedPaymentAccount('');
+              }}
+              className="flex-1"
+              data-testid="button-cancel-payment"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleConfirmPayment}
+              disabled={!selectedPaymentAccount || updateStatusMutation.isPending}
+              className="flex-1"
+              data-testid="button-confirm-payment"
+            >
+              {updateStatusMutation.isPending ? 'Processing...' : 'Mark as Paid'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

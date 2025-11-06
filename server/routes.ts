@@ -461,6 +461,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
+      // Revenue recognition: create journal entry immediately when invoice is raised
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      const accountsReceivable = accounts.find(a => a.code === '1200');
+      const salesRevenue = accounts.find(a => a.code === '4000');
+      const vatPayable = accounts.find(a => a.code === '2100');
+      
+      if (accountsReceivable && salesRevenue) {
+        const entry = await storage.createJournalEntry({
+          companyId: companyId,
+          date: invoiceDate,
+          memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
+          createdBy: userId,
+        });
+
+        // Debit: Accounts Receivable (total)
+        await storage.createJournalLine({
+          entryId: entry.id,
+          accountId: accountsReceivable.id,
+          debit: total,
+          credit: 0,
+        });
+
+        // Credit: Sales Revenue (subtotal)
+        await storage.createJournalLine({
+          entryId: entry.id,
+          accountId: salesRevenue.id,
+          debit: 0,
+          credit: subtotal,
+        });
+
+        // Credit: VAT Payable (vat amount) - if there's VAT
+        if (vatAmount > 0 && vatPayable) {
+          await storage.createJournalLine({
+            entryId: entry.id,
+            accountId: vatPayable.id,
+            debit: 0,
+            credit: vatAmount,
+          });
+        }
+
+        console.log('[Invoices] Revenue recognition journal entry created for invoice:', invoice.id);
+      } else {
+        console.warn('[Invoices] Could not create revenue recognition entry - missing accounts');
+      }
+      
       console.log('[Invoices] Invoice created successfully:', invoice.id);
       res.json(invoice);
     } catch (error: any) {
@@ -556,7 +601,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/invoices/:id/status", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, paymentAccountId } = req.body;
       const userId = (req as any).user.id;
 
       // Validate status
@@ -582,64 +627,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`[Invoices] Status transition: ${oldStatus} -> ${status} for invoice ${id}`);
       
-      // Automatic journal entry creation for revenue recognition
-      // Only create journal entries when transitioning to 'sent' or 'paid' status
-      const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
-      const accountsReceivable = accounts.find(a => a.code === '1200');
-      const salesRevenue = accounts.find(a => a.code === '4000');
-      const vatPayable = accounts.find(a => a.code === '2100');
-      const bankAccount = accounts.find(a => a.code === '1100');
-      
-      console.log('[Invoices] Found accounts:', {
-        accountsReceivable: accountsReceivable?.nameEn,
-        salesRevenue: salesRevenue?.nameEn,
-        vatPayable: vatPayable?.nameEn,
-        bankAccount: bankAccount?.nameEn
-      });
-
-      // When invoice is sent: recognize revenue
-      if (oldStatus === 'draft' && status === 'sent') {
-        if (accountsReceivable && salesRevenue) {
-          const entry = await storage.createJournalEntry({
-            companyId: invoice.companyId,
-            date: new Date(),
-            memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
-            createdBy: userId,
-          });
-
-          // Debit: Accounts Receivable (total)
-          await storage.createJournalLine({
-            entryId: entry.id,
-            accountId: accountsReceivable.id,
-            debit: invoice.total,
-            credit: 0,
-          });
-
-          // Credit: Sales Revenue (subtotal)
-          await storage.createJournalLine({
-            entryId: entry.id,
-            accountId: salesRevenue.id,
-            debit: 0,
-            credit: invoice.subtotal,
-          });
-
-          // Credit: VAT Payable (vat amount) - if there's VAT
-          if (invoice.vatAmount > 0 && vatPayable) {
-            await storage.createJournalLine({
-              entryId: entry.id,
-              accountId: vatPayable.id,
-              debit: 0,
-              credit: invoice.vatAmount,
-            });
-          }
-
-          console.log('[Invoices] Revenue journal entry created for invoice:', id);
+      // Payment recording when invoice is marked as paid
+      // Note: Revenue is already recognized when invoice is created
+      if (status === 'paid' && oldStatus !== 'paid') {
+        // Validate payment account is provided
+        if (!paymentAccountId) {
+          return res.status(400).json({ message: 'Payment account is required when marking invoice as paid' });
         }
-      }
 
-      // When invoice is paid: record payment
-      if (oldStatus === 'sent' && status === 'paid') {
-        if (accountsReceivable && bankAccount) {
+        // Validate payment account belongs to company
+        const paymentAccount = await storage.getAccount(paymentAccountId);
+        if (!paymentAccount || paymentAccount.companyId !== invoice.companyId) {
+          return res.status(400).json({ message: 'Invalid payment account' });
+        }
+
+        // Validate payment account is an asset account (cash/bank)
+        if (!['1000', '1100'].includes(paymentAccount.code)) {
+          return res.status(400).json({ message: 'Payment account must be a cash or bank account' });
+        }
+
+        const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
+        const accountsReceivable = accounts.find(a => a.code === '1200');
+        
+        if (accountsReceivable) {
           const entry = await storage.createJournalEntry({
             companyId: invoice.companyId,
             date: new Date(),
@@ -647,10 +657,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             createdBy: userId,
           });
 
-          // Debit: Bank (total)
+          // Debit: Selected payment account (total)
           await storage.createJournalLine({
             entryId: entry.id,
-            accountId: bankAccount.id,
+            accountId: paymentAccountId,
             debit: invoice.total,
             credit: 0,
           });
@@ -663,47 +673,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             credit: invoice.total,
           });
 
-          console.log('[Invoices] Payment journal entry created for invoice:', id);
-        }
-      }
-
-      // When invoice goes from draft to paid directly: recognize revenue and payment
-      if (oldStatus === 'draft' && status === 'paid') {
-        if (bankAccount && salesRevenue) {
-          const entry = await storage.createJournalEntry({
-            companyId: invoice.companyId,
-            date: new Date(),
-            memo: `Sales Invoice ${invoice.number} - ${invoice.customerName} (Paid)`,
-            createdBy: userId,
-          });
-
-          // Debit: Bank (total)
-          await storage.createJournalLine({
-            entryId: entry.id,
-            accountId: bankAccount.id,
-            debit: invoice.total,
-            credit: 0,
-          });
-
-          // Credit: Sales Revenue (subtotal)
-          await storage.createJournalLine({
-            entryId: entry.id,
-            accountId: salesRevenue.id,
-            debit: 0,
-            credit: invoice.subtotal,
-          });
-
-          // Credit: VAT Payable (vat amount) - if there's VAT
-          if (invoice.vatAmount > 0 && vatPayable) {
-            await storage.createJournalLine({
-              entryId: entry.id,
-              accountId: vatPayable.id,
-              debit: 0,
-              credit: invoice.vatAmount,
-            });
-          }
-
-          console.log('[Invoices] Direct payment journal entry created for invoice:', id);
+          console.log('[Invoices] Payment journal entry created for invoice:', id, 'to account:', paymentAccount.nameEn);
+        } else {
+          return res.status(500).json({ message: 'Accounts Receivable account not found' });
         }
       }
 
