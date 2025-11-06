@@ -577,7 +577,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
+      const oldStatus = invoice.status;
       const updatedInvoice = await storage.updateInvoiceStatus(id, status);
+      
+      console.log(`[Invoices] Status transition: ${oldStatus} -> ${status} for invoice ${id}`);
+      
+      // Automatic journal entry creation for revenue recognition
+      // Only create journal entries when transitioning to 'sent' or 'paid' status
+      const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
+      const accountsReceivable = accounts.find(a => a.code === '1200');
+      const salesRevenue = accounts.find(a => a.code === '4000');
+      const vatPayable = accounts.find(a => a.code === '2100');
+      const bankAccount = accounts.find(a => a.code === '1100');
+      
+      console.log('[Invoices] Found accounts:', {
+        accountsReceivable: accountsReceivable?.nameEn,
+        salesRevenue: salesRevenue?.nameEn,
+        vatPayable: vatPayable?.nameEn,
+        bankAccount: bankAccount?.nameEn
+      });
+
+      // When invoice is sent: recognize revenue
+      if (oldStatus === 'draft' && status === 'sent') {
+        if (accountsReceivable && salesRevenue) {
+          const entry = await storage.createJournalEntry({
+            companyId: invoice.companyId,
+            date: new Date(),
+            memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
+            createdBy: userId,
+          });
+
+          // Debit: Accounts Receivable (total)
+          await storage.createJournalLine({
+            entryId: entry.id,
+            accountId: accountsReceivable.id,
+            debit: invoice.total,
+            credit: 0,
+          });
+
+          // Credit: Sales Revenue (subtotal)
+          await storage.createJournalLine({
+            entryId: entry.id,
+            accountId: salesRevenue.id,
+            debit: 0,
+            credit: invoice.subtotal,
+          });
+
+          // Credit: VAT Payable (vat amount) - if there's VAT
+          if (invoice.vatAmount > 0 && vatPayable) {
+            await storage.createJournalLine({
+              entryId: entry.id,
+              accountId: vatPayable.id,
+              debit: 0,
+              credit: invoice.vatAmount,
+            });
+          }
+
+          console.log('[Invoices] Revenue journal entry created for invoice:', id);
+        }
+      }
+
+      // When invoice is paid: record payment
+      if (oldStatus === 'sent' && status === 'paid') {
+        if (accountsReceivable && bankAccount) {
+          const entry = await storage.createJournalEntry({
+            companyId: invoice.companyId,
+            date: new Date(),
+            memo: `Payment received for Invoice ${invoice.number}`,
+            createdBy: userId,
+          });
+
+          // Debit: Bank (total)
+          await storage.createJournalLine({
+            entryId: entry.id,
+            accountId: bankAccount.id,
+            debit: invoice.total,
+            credit: 0,
+          });
+
+          // Credit: Accounts Receivable (total)
+          await storage.createJournalLine({
+            entryId: entry.id,
+            accountId: accountsReceivable.id,
+            debit: 0,
+            credit: invoice.total,
+          });
+
+          console.log('[Invoices] Payment journal entry created for invoice:', id);
+        }
+      }
+
+      // When invoice goes from draft to paid directly: recognize revenue and payment
+      if (oldStatus === 'draft' && status === 'paid') {
+        if (bankAccount && salesRevenue) {
+          const entry = await storage.createJournalEntry({
+            companyId: invoice.companyId,
+            date: new Date(),
+            memo: `Sales Invoice ${invoice.number} - ${invoice.customerName} (Paid)`,
+            createdBy: userId,
+          });
+
+          // Debit: Bank (total)
+          await storage.createJournalLine({
+            entryId: entry.id,
+            accountId: bankAccount.id,
+            debit: invoice.total,
+            credit: 0,
+          });
+
+          // Credit: Sales Revenue (subtotal)
+          await storage.createJournalLine({
+            entryId: entry.id,
+            accountId: salesRevenue.id,
+            debit: 0,
+            credit: invoice.subtotal,
+          });
+
+          // Credit: VAT Payable (vat amount) - if there's VAT
+          if (invoice.vatAmount > 0 && vatPayable) {
+            await storage.createJournalLine({
+              entryId: entry.id,
+              accountId: vatPayable.id,
+              debit: 0,
+              credit: invoice.vatAmount,
+            });
+          }
+
+          console.log('[Invoices] Direct payment journal entry created for invoice:', id);
+        }
+      }
+
       console.log('[Invoices] Invoice status updated:', id, status);
       res.json(updatedInvoice);
     } catch (error: any) {
