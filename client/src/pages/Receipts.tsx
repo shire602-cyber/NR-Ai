@@ -46,7 +46,7 @@ const receiptSchema = z.object({
   date: z.string().min(1, 'Date is required'),
   amount: z.coerce.number().min(0, 'Amount must be positive'),
   vatAmount: z.coerce.number().nullable(),
-  category: z.string().min(1, 'Category is required'),
+  category: z.string().nullable(),
   currency: z.string().default('AED'),
 });
 
@@ -125,7 +125,15 @@ export default function Receipts() {
 
   const onEditSubmit = (data: ReceiptFormData) => {
     if (!editingReceipt) return;
-    editMutation.mutate({ id: editingReceipt.id, data });
+    
+    // Clean up data: convert empty strings to null for optional UUID fields
+    const cleanedData = {
+      ...data,
+      category: data.category === '' ? null : data.category,
+      vatAmount: data.vatAmount === 0 || data.vatAmount === null || isNaN(data.vatAmount as number) ? null : data.vatAmount,
+    };
+    
+    editMutation.mutate({ id: editingReceipt.id, data: cleanedData });
   };
 
   const resetForm = () => {
@@ -974,7 +982,7 @@ export default function Receipts() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Category</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value ?? undefined}>
                       <FormControl>
                         <SelectTrigger data-testid="select-edit-category">
                           <SelectValue placeholder="Select category" />

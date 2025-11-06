@@ -615,10 +615,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { id } = req.params;
       const userId = (req as any).user.id;
 
-      // Get receipt to verify it exists and get company access
-      const existingReceipt = await storage.getReceiptsByCompanyId(''); // We'll need to fetch by ID
-      // Note: We don't have a getReceipt method, so we need to add one or check differently
-      // For now, let's just trust the user has access if they know the ID
+      // Convert empty category string to null (UUID field cannot accept empty strings)
+      if (req.body.category === '') {
+        req.body.category = null;
+      }
       
       const updatedReceipt = await storage.updateReceipt(id, req.body);
       console.log('[Receipts] Receipt updated successfully:', id);
