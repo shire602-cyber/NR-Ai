@@ -553,6 +553,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch("/api/invoices/:id/status", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      const userId = (req as any).user.id;
+
+      // Validate status
+      const validStatuses = ['draft', 'sent', 'paid', 'void'];
+      if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ message: 'Invalid status. Must be one of: draft, sent, paid, void' });
+      }
+
+      // Get invoice to verify it exists and get company access
+      const invoice = await storage.getInvoice(id);
+      if (!invoice) {
+        return res.status(404).json({ message: 'Invoice not found' });
+      }
+
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const updatedInvoice = await storage.updateInvoiceStatus(id, status);
+      console.log('[Invoices] Invoice status updated:', id, status);
+      res.json(updatedInvoice);
+    } catch (error: any) {
+      console.error('[Invoices] Error updating invoice status:', error);
+      res.status(500).json({ message: error.message || 'Failed to update invoice status' });
+    }
+  });
+
   // =====================================
   // Receipt Routes
   // =====================================

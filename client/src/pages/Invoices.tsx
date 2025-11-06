@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
@@ -151,6 +152,25 @@ export default function Invoices() {
       toast({
         variant: 'destructive',
         title: 'Failed to update invoice',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest('PATCH', `/api/invoices/${id}/status`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
+      toast({
+        title: 'Status updated',
+        description: 'Invoice status has been updated successfully.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update status',
         description: error.message || 'Please try again.',
       });
     },
@@ -531,9 +551,36 @@ export default function Invoices() {
                         {formatCurrency(invoice.total, invoice.currency, locale)}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant="outline" className={getStatusBadgeColor(invoice.status)}>
-                          {t[invoice.status as keyof typeof t]}
-                        </Badge>
+                        <Select
+                          value={invoice.status}
+                          onValueChange={(newStatus) => {
+                            updateStatusMutation.mutate({ id: invoice.id, status: newStatus });
+                          }}
+                          disabled={updateStatusMutation.isPending}
+                        >
+                          <SelectTrigger 
+                            className={cn("w-32 border-0", getStatusBadgeColor(invoice.status))}
+                            data-testid={`select-status-${invoice.id}`}
+                          >
+                            <SelectValue>
+                              {t[invoice.status as keyof typeof t]}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="draft" data-testid={`status-option-draft-${invoice.id}`}>
+                              {t.draft}
+                            </SelectItem>
+                            <SelectItem value="sent" data-testid={`status-option-sent-${invoice.id}`}>
+                              {t.sent}
+                            </SelectItem>
+                            <SelectItem value="paid" data-testid={`status-option-paid-${invoice.id}`}>
+                              {t.paid}
+                            </SelectItem>
+                            <SelectItem value="void" data-testid={`status-option-void-${invoice.id}`}>
+                              {t.void}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-2">
