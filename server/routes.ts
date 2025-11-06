@@ -804,6 +804,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/receipts/:id/post", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const { accountId, paymentAccountId } = req.body;
+
+      // Validate required fields
+      if (!accountId || !paymentAccountId) {
+        return res.status(400).json({ message: 'Expense account and payment account are required' });
+      }
+
+      // Get receipt
+      const receipt = await storage.getReceipt(id);
+      if (!receipt) {
+        return res.status(404).json({ message: 'Receipt not found' });
+      }
+
+      // Check if already posted
+      if (receipt.posted) {
+        return res.status(400).json({ message: 'Receipt has already been posted' });
+      }
+
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, receipt.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Validate amount is present and positive
+      const totalAmount = (receipt.amount || 0) + (receipt.vatAmount || 0);
+      if (totalAmount <= 0) {
+        return res.status(400).json({ message: 'Receipt amount must be greater than zero' });
+      }
+
+      // Get accounts to validate they exist and are correct types
+      const expenseAccount = await storage.getAccount(accountId);
+      const paymentAccount = await storage.getAccount(paymentAccountId);
+
+      if (!expenseAccount || !paymentAccount) {
+        return res.status(404).json({ message: 'Account not found' });
+      }
+
+      // CRITICAL: Validate accounts belong to the same company as the receipt
+      if (expenseAccount.companyId !== receipt.companyId) {
+        return res.status(403).json({ message: 'Expense account must belong to the same company as the receipt' });
+      }
+
+      if (paymentAccount.companyId !== receipt.companyId) {
+        return res.status(403).json({ message: 'Payment account must belong to the same company as the receipt' });
+      }
+
+      // Validate account types
+      if (expenseAccount.type !== 'expense') {
+        return res.status(400).json({ message: 'Selected account must be an expense account' });
+      }
+
+      if (paymentAccount.type !== 'asset') {
+        return res.status(400).json({ message: 'Payment account must be a cash or bank account (asset)' });
+      }
+
+      // TODO: Wrap in database transaction to ensure atomicity
+      // For now, we'll proceed with the journal entry creation
+      // In production, this should be wrapped in a transaction
+
+      // Create journal entry for the receipt
+      const entry = await storage.createJournalEntry({
+        companyId: receipt.companyId,
+        date: receipt.date ? new Date(receipt.date) : new Date(),
+        memo: `Receipt: ${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
+        createdBy: userId,
+      });
+
+      // Debit: Expense Account (total amount including VAT)
+      await storage.createJournalLine({
+        entryId: entry.id,
+        accountId: expenseAccount.id,
+        debit: totalAmount,
+        credit: 0,
+      });
+
+      // Credit: Payment Account (cash/bank)
+      await storage.createJournalLine({
+        entryId: entry.id,
+        accountId: paymentAccount.id,
+        debit: 0,
+        credit: totalAmount,
+      });
+
+      // Update receipt with posting information
+      const updatedReceipt = await storage.updateReceipt(id, {
+        accountId,
+        paymentAccountId,
+        posted: true,
+        journalEntryId: entry.id,
+      });
+
+      console.log('[Receipts] Receipt posted successfully:', id, 'Journal entry:', entry.id);
+      res.json(updatedReceipt);
+    } catch (error: any) {
+      console.error('[Receipts] Error posting receipt:', error);
+      res.status(500).json({ message: error.message || 'Failed to post receipt' });
+    }
+  });
+
   // =====================================
   // Journal Entry Routes
   // =====================================

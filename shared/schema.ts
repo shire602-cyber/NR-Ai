@@ -208,6 +208,10 @@ export const receipts = pgTable("receipts", {
   vatAmount: real("vat_amount"),
   currency: text("currency").default("AED"),
   category: text("category"),
+  accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
+  paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit
+  posted: boolean("posted").default(false).notNull(), // Whether journal entry has been created
+  journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id), // Link to created journal entry
   imageData: text("image_data"),
   rawText: text("raw_text"),
   uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),

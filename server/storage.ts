@@ -78,6 +78,7 @@ export interface IStorage {
   deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void>;
   
   // Receipts
+  getReceipt(id: string): Promise<Receipt | undefined>;
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
   updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt>;
@@ -357,6 +358,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Receipts
+  async getReceipt(id: string): Promise<Receipt | undefined> {
+    const [receipt] = await db.select().from(receipts).where(eq(receipts.id, id));
+    return receipt || undefined;
+  }
+
   async createReceipt(insertReceipt: InsertReceipt): Promise<Receipt> {
     const [receipt] = await db
       .insert(receipts)
