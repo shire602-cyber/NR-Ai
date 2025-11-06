@@ -109,6 +109,7 @@ export const t = {
     
     // AI
     aiCategorize: 'AI Categorize',
+    aiCfo: 'AI CFO & Financial Advisor',
     transactionDescription: 'Transaction Description',
     suggestedAccount: 'Suggested Account',
     confidence: 'Confidence',
@@ -213,6 +214,7 @@ export const t = {
     
     // AI
     aiCategorize: 'التصنيف الذكي',
+    aiCfo: 'مستشار مالي بالذكاء الاصطناعي',
     transactionDescription: 'وصف المعاملة',
     suggestedAccount: 'الحساب المقترح',
     confidence: 'مستوى الثقة',

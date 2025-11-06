@@ -51,11 +51,6 @@ const navigationItems = [
     url: '/invoices',
   },
   {
-    title: 'Invoice Settings',
-    icon: Settings,
-    url: '/invoice-settings',
-  },
-  {
     title: 'receipts',
     icon: Receipt,
     url: '/receipts',
@@ -76,7 +71,7 @@ const navigationItems = [
     url: '/ai-categorize',
   },
   {
-    title: 'AI CFO',
+    title: 'aiCfo',
     icon: Bot,
     url: '/ai-cfo',
   },

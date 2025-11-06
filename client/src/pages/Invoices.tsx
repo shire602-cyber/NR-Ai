@@ -4,23 +4,27 @@ import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format } from 'date-fns';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, FileText, CalendarIcon, Trash2, Download, Edit } from 'lucide-react';
-import type { Invoice } from '@shared/schema';
+import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info } from 'lucide-react';
+import type { Invoice, Company } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
 
@@ -41,7 +45,18 @@ const invoiceSchema = z.object({
   lines: z.array(invoiceLineSchema).min(1, 'At least one line item is required'),
 });
 
+const invoiceBrandingSchema = z.object({
+  invoiceShowLogo: z.boolean().default(true),
+  invoiceShowAddress: z.boolean().default(true),
+  invoiceShowPhone: z.boolean().default(true),
+  invoiceShowEmail: z.boolean().default(true),
+  invoiceShowWebsite: z.boolean().default(false),
+  invoiceCustomTitle: z.string().transform(val => val || undefined).optional(),
+  invoiceFooterNote: z.string().transform(val => val || undefined).optional(),
+});
+
 type InvoiceFormData = z.infer<typeof invoiceSchema>;
+type InvoiceBrandingFormData = z.infer<typeof invoiceBrandingSchema>;
 
 export default function Invoices() {
   const { t, locale } = useTranslation();
@@ -49,6 +64,7 @@ export default function Invoices() {
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [activeTab, setActiveTab] = useState('invoices');
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
@@ -194,14 +210,84 @@ export default function Invoices() {
   const vatAmount = watchLines.reduce((sum, line) => sum + (line.quantity * line.unitPrice * line.vatRate), 0);
   const total = subtotal + vatAmount;
 
+  // Invoice Branding Form
+  const brandingForm = useForm<InvoiceBrandingFormData>({
+    resolver: zodResolver(invoiceBrandingSchema),
+    defaultValues: {
+      invoiceShowLogo: true,
+      invoiceShowAddress: true,
+      invoiceShowPhone: true,
+      invoiceShowEmail: true,
+      invoiceShowWebsite: false,
+      invoiceCustomTitle: '',
+      invoiceFooterNote: '',
+    },
+  });
+
+  // Load company branding settings into form
+  useEffect(() => {
+    if (company) {
+      brandingForm.reset({
+        invoiceShowLogo: company.invoiceShowLogo ?? true,
+        invoiceShowAddress: company.invoiceShowAddress ?? true,
+        invoiceShowPhone: company.invoiceShowPhone ?? true,
+        invoiceShowEmail: company.invoiceShowEmail ?? true,
+        invoiceShowWebsite: company.invoiceShowWebsite ?? false,
+        invoiceCustomTitle: company.invoiceCustomTitle || '',
+        invoiceFooterNote: company.invoiceFooterNote || '',
+      });
+    }
+  }, [company, brandingForm]);
+
+  const updateBrandingMutation = useMutation({
+    mutationFn: (data: InvoiceBrandingFormData) => {
+      return apiRequest('PATCH', `/api/companies/${selectedCompanyId}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      toast({
+        title: 'Invoice branding updated',
+        description: 'Your invoice customization settings have been saved successfully.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to update branding',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const onBrandingSubmit = (data: InvoiceBrandingFormData) => {
+    updateBrandingMutation.mutate(data);
+  };
+
+  const isVATRegistered = company?.trnVatNumber && company?.trnVatNumber.length > 0;
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-3xl font-semibold mb-2">{t.invoices}</h1>
-          <p className="text-muted-foreground">Manage invoices with automatic UAE VAT (5%) calculation</p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={(open) => {
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-semibold mb-2">{t.invoices}</h1>
+        <p className="text-muted-foreground">Manage invoices and customize their appearance</p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="invoices" data-testid="tab-invoices">
+            <FileText className="w-4 h-4 mr-2" />
+            Invoices
+          </TabsTrigger>
+          <TabsTrigger value="branding" data-testid="tab-branding">
+            <Palette className="w-4 h-4 mr-2" />
+            Invoice Branding
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="invoices" className="space-y-6 mt-0">
+          <div className="flex items-center justify-end flex-wrap gap-4">
+            <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) {
             setEditingInvoice(null);
@@ -533,6 +619,255 @@ export default function Invoices() {
           </div>
         </Card>
       )}
+        </TabsContent>
+
+        <TabsContent value="branding" className="space-y-6 mt-0">
+          {isLoading ? (
+            <Skeleton className="h-96" />
+          ) : !company ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Company not found</p>
+            </div>
+          ) : (
+            <div className="space-y-6 max-w-3xl">
+              {isVATRegistered && (
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    Your company is VAT registered. All invoices will automatically display your TRN ({company.trnVatNumber}) 
+                    and be labeled as "Tax Invoice" to comply with UAE FTA requirements.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Form {...brandingForm}>
+                <form onSubmit={brandingForm.handleSubmit(onBrandingSubmit)} className="space-y-8">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <FileText className="w-5 h-5" />
+                        Company Details Display
+                      </CardTitle>
+                      <CardDescription>
+                        Choose which company information to display on invoices
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <FormField
+                        control={brandingForm.control}
+                        name="invoiceShowLogo"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Show Company Logo</FormLabel>
+                              <FormDescription>
+                                Display your company logo at the top of invoices
+                                {!company.logoUrl && (
+                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                    Note: Set your logo in Company Profile first
+                                  </span>
+                                )}
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled={!company.logoUrl}
+                                data-testid="switch-show-logo"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={brandingForm.control}
+                        name="invoiceShowAddress"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Show Business Address</FormLabel>
+                              <FormDescription>
+                                Display your business address on invoices
+                                {!company.businessAddress && (
+                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                    Note: Set your address in Company Profile first
+                                  </span>
+                                )}
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled={!company.businessAddress}
+                                data-testid="switch-show-address"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={brandingForm.control}
+                        name="invoiceShowPhone"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Show Phone Number</FormLabel>
+                              <FormDescription>
+                                Display your business phone number on invoices
+                                {!company.contactPhone && (
+                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                    Note: Set your phone in Company Profile first
+                                  </span>
+                                )}
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled={!company.contactPhone}
+                                data-testid="switch-show-phone"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={brandingForm.control}
+                        name="invoiceShowEmail"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Show Email Address</FormLabel>
+                              <FormDescription>
+                                Display your business email on invoices
+                                {!company.contactEmail && (
+                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                    Note: Set your email in Company Profile first
+                                  </span>
+                                )}
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled={!company.contactEmail}
+                                data-testid="switch-show-email"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={brandingForm.control}
+                        name="invoiceShowWebsite"
+                        render={({ field }) => (
+                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                            <div className="space-y-0.5">
+                              <FormLabel className="text-base">Show Website</FormLabel>
+                              <FormDescription>
+                                Display your website URL on invoices
+                                {!company.websiteUrl && (
+                                  <span className="block text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                    Note: Set your website in Company Profile first
+                                  </span>
+                                )}
+                              </FormDescription>
+                            </div>
+                            <FormControl>
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                disabled={!company.websiteUrl}
+                                data-testid="switch-show-website"
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Invoice Customization</CardTitle>
+                      <CardDescription>
+                        Customize the appearance and text of your invoices
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <FormField
+                        control={brandingForm.control}
+                        name="invoiceCustomTitle"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Invoice Title</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder={isVATRegistered ? "Tax Invoice (default)" : "Invoice (default)"}
+                                {...field}
+                                data-testid="input-invoice-title"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {isVATRegistered 
+                                ? 'For VAT-registered companies, invoices default to "Tax Invoice". You can customize this, but it must comply with FTA regulations.'
+                                : 'Custom title for your invoices. Leave blank to use "Invoice".'
+                              }
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={brandingForm.control}
+                        name="invoiceFooterNote"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Footer Note</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder="Thank you for your business"
+                                className="resize-none"
+                                rows={3}
+                                {...field}
+                                data-testid="textarea-footer-note"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Add a custom message at the bottom of your invoices (e.g., payment terms, thank you message)
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex justify-end">
+                    <Button
+                      type="submit"
+                      disabled={updateBrandingMutation.isPending}
+                      data-testid="button-save-branding"
+                    >
+                      <Save className="w-4 h-4 mr-2" />
+                      {updateBrandingMutation.isPending ? 'Saving...' : 'Save Settings'}
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
