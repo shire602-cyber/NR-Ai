@@ -21,7 +21,6 @@ import Accounts from '@/pages/Accounts';
 import Invoices from '@/pages/Invoices';
 import Journal from '@/pages/Journal';
 import Reports from '@/pages/Reports';
-import AICategorize from '@/pages/AICategorize';
 import AICFO from '@/pages/AICFO';
 import Receipts from '@/pages/Receipts';
 import Landing from '@/pages/Landing';
@@ -99,7 +98,6 @@ function Router() {
           <Route path="/journal" component={Journal} />
           <Route path="/reports" component={Reports} />
           <Route path="/receipts" component={Receipts} />
-          <Route path="/ai-categorize" component={AICategorize} />
           <Route path="/ai-cfo" component={AICFO} />
           <Route component={NotFound} />
         </Switch>

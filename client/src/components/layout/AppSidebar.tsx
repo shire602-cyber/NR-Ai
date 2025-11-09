@@ -66,11 +66,6 @@ const navigationItems = [
     url: '/reports',
   },
   {
-    title: 'aiTools',
-    icon: Sparkles,
-    url: '/ai-categorize',
-  },
-  {
     title: 'aiCfo',
     icon: Bot,
     url: '/ai-cfo',
