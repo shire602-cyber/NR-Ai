@@ -13,7 +13,9 @@ import {
   Plug,
   MessageCircle,
   MessageSquare,
-  Brain
+  Brain,
+  TrendingUp,
+  ShoppingCart
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -83,6 +85,16 @@ const navigationItems = [
     title: 'aiFeatures',
     icon: Brain,
     url: '/ai-features',
+  },
+  {
+    title: 'advancedAnalytics',
+    icon: TrendingUp,
+    url: '/advanced-analytics',
+  },
+  {
+    title: 'integrationsHub',
+    icon: ShoppingCart,
+    url: '/integrations-hub',
   },
   {
     title: 'integrations',

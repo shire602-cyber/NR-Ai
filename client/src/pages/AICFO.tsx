@@ -375,7 +375,7 @@ export default function AICFO() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis />
-                    <Tooltip formatter={(value) => formatCurrency(value, 'AED')} />
+                    <Tooltip formatter={(value) => formatCurrency(Number(value), 'AED')} />
                     <Legend />
                     <Line 
                       type="monotone" 

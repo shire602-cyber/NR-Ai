@@ -15,7 +15,11 @@ import type {
   AnomalyAlert, InsertAnomalyAlert,
   BankTransaction, InsertBankTransaction,
   CashFlowForecast, InsertCashFlowForecast,
-  TransactionClassification, InsertTransactionClassification
+  TransactionClassification, InsertTransactionClassification,
+  Budget, InsertBudget,
+  EcommerceIntegration, InsertEcommerceIntegration,
+  EcommerceTransaction, InsertEcommerceTransaction,
+  FinancialKpi, InsertFinancialKpi
 } from "@shared/schema";
 import {
   users,
@@ -34,7 +38,11 @@ import {
   anomalyAlerts,
   bankTransactions,
   cashFlowForecasts,
-  transactionClassifications
+  transactionClassifications,
+  budgets,
+  ecommerceIntegrations,
+  ecommerceTransactions,
+  financialKpis
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -140,6 +148,32 @@ export interface IStorage {
   createTransactionClassification(classification: InsertTransactionClassification): Promise<TransactionClassification>;
   getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]>;
   updateTransactionClassification(id: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification>;
+
+  // Journal Lines (for analytics)
+  getJournalLinesByCompanyId(companyId: string): Promise<JournalLine[]>;
+
+  // Budgets
+  getBudgetsByCompanyId(companyId: string, year: number, month: number): Promise<Budget[]>;
+  createBudget(budget: InsertBudget): Promise<Budget>;
+  updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget>;
+
+  // E-Commerce Integrations
+  getEcommerceIntegrations(companyId: string): Promise<EcommerceIntegration[]>;
+  createEcommerceIntegration(integration: InsertEcommerceIntegration): Promise<EcommerceIntegration>;
+  updateEcommerceIntegration(id: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration>;
+  deleteEcommerceIntegration(id: string): Promise<void>;
+
+  // E-Commerce Transactions
+  getEcommerceTransactions(companyId: string): Promise<EcommerceTransaction[]>;
+  createEcommerceTransaction(transaction: InsertEcommerceTransaction): Promise<EcommerceTransaction>;
+  updateEcommerceTransaction(id: string, data: Partial<InsertEcommerceTransaction>): Promise<EcommerceTransaction>;
+
+  // Financial KPIs
+  getFinancialKpis(companyId: string): Promise<FinancialKpi[]>;
+  createFinancialKpi(kpi: InsertFinancialKpi): Promise<FinancialKpi>;
+  
+  // Cash Flow Forecasts (alias for consistency)
+  getCashFlowForecasts(companyId: string): Promise<CashFlowForecast[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -707,6 +741,141 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Transaction classification not found');
     }
     return classification;
+  }
+
+  // Journal Lines (for analytics)
+  async getJournalLinesByCompanyId(companyId: string): Promise<JournalLine[]> {
+    return await db
+      .select({
+        id: journalLines.id,
+        entryId: journalLines.entryId,
+        accountId: journalLines.accountId,
+        debit: journalLines.debit,
+        credit: journalLines.credit,
+      })
+      .from(journalLines)
+      .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+      .where(eq(journalEntries.companyId, companyId));
+  }
+
+  // Budgets
+  async getBudgetsByCompanyId(companyId: string, year: number, month: number): Promise<Budget[]> {
+    return await db
+      .select()
+      .from(budgets)
+      .where(and(
+        eq(budgets.companyId, companyId),
+        eq(budgets.year, year),
+        eq(budgets.month, month)
+      ));
+  }
+
+  async createBudget(insertBudget: InsertBudget): Promise<Budget> {
+    const [budget] = await db
+      .insert(budgets)
+      .values(insertBudget)
+      .returning();
+    return budget;
+  }
+
+  async updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget> {
+    const [budget] = await db
+      .update(budgets)
+      .set(data)
+      .where(eq(budgets.id, id))
+      .returning();
+    if (!budget) {
+      throw new Error('Budget not found');
+    }
+    return budget;
+  }
+
+  // E-Commerce Integrations
+  async getEcommerceIntegrations(companyId: string): Promise<EcommerceIntegration[]> {
+    return await db
+      .select()
+      .from(ecommerceIntegrations)
+      .where(eq(ecommerceIntegrations.companyId, companyId))
+      .orderBy(desc(ecommerceIntegrations.createdAt));
+  }
+
+  async createEcommerceIntegration(insertIntegration: InsertEcommerceIntegration): Promise<EcommerceIntegration> {
+    const [integration] = await db
+      .insert(ecommerceIntegrations)
+      .values(insertIntegration)
+      .returning();
+    return integration;
+  }
+
+  async updateEcommerceIntegration(id: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration> {
+    const [integration] = await db
+      .update(ecommerceIntegrations)
+      .set(data)
+      .where(eq(ecommerceIntegrations.id, id))
+      .returning();
+    if (!integration) {
+      throw new Error('E-commerce integration not found');
+    }
+    return integration;
+  }
+
+  async deleteEcommerceIntegration(id: string): Promise<void> {
+    await db.delete(ecommerceIntegrations).where(eq(ecommerceIntegrations.id, id));
+  }
+
+  // E-Commerce Transactions
+  async getEcommerceTransactions(companyId: string): Promise<EcommerceTransaction[]> {
+    const results = await db
+      .select({
+        ecommerceTransactions: ecommerceTransactions,
+      })
+      .from(ecommerceTransactions)
+      .innerJoin(ecommerceIntegrations, eq(ecommerceTransactions.integrationId, ecommerceIntegrations.id))
+      .where(eq(ecommerceIntegrations.companyId, companyId));
+    
+    return results.map(r => r.ecommerceTransactions);
+  }
+
+  async createEcommerceTransaction(insertTransaction: InsertEcommerceTransaction): Promise<EcommerceTransaction> {
+    const [transaction] = await db
+      .insert(ecommerceTransactions)
+      .values(insertTransaction)
+      .returning();
+    return transaction;
+  }
+
+  async updateEcommerceTransaction(id: string, data: Partial<InsertEcommerceTransaction>): Promise<EcommerceTransaction> {
+    const [transaction] = await db
+      .update(ecommerceTransactions)
+      .set(data)
+      .where(eq(ecommerceTransactions.id, id))
+      .returning();
+    if (!transaction) {
+      throw new Error('E-commerce transaction not found');
+    }
+    return transaction;
+  }
+
+  // Financial KPIs
+  async getFinancialKpis(companyId: string): Promise<FinancialKpi[]> {
+    return await db
+      .select()
+      .from(financialKpis)
+      .where(eq(financialKpis.companyId, companyId))
+      .orderBy(desc(financialKpis.calculatedAt));
+  }
+
+  async createFinancialKpi(insertKpi: InsertFinancialKpi): Promise<FinancialKpi> {
+    const [kpi] = await db
+      .insert(financialKpis)
+      .values(insertKpi)
+      .returning();
+    return kpi;
+  }
+
+  // Cash Flow Forecasts (alias for consistency)
+  async getCashFlowForecasts(companyId: string): Promise<CashFlowForecast[]> {
+    return this.getCashFlowForecastsByCompanyId(companyId);
   }
 }
 

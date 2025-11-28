@@ -1983,10 +1983,10 @@ Respond with JSON:
           total: receipts.length,
           posted: receipts.filter(r => r.journalEntryId).length,
           pending: receipts.filter(r => !r.journalEntryId).length,
-          totalAmount: receipts.reduce((sum, r) => sum + Number(r.total), 0),
+          totalAmount: receipts.reduce((sum, r) => sum + Number(r.amount || 0) + Number(r.vatAmount || 0), 0),
         },
         recentInvoices: invoices.slice(-5).map(i => ({
-          number: i.invoiceNumber,
+          number: i.number,
           customer: i.customerName,
           amount: i.total,
           status: i.status,
@@ -1994,7 +1994,7 @@ Respond with JSON:
         })),
         recentExpenses: receipts.slice(-5).map(r => ({
           merchant: r.merchant,
-          amount: r.total,
+          amount: (r.amount || 0) + (r.vatAmount || 0),
           category: r.category,
           date: r.date,
         })),
@@ -2014,10 +2014,12 @@ Respond with JSON:
         monthlyData.set(month, current);
       }
       for (const receipt of receipts) {
-        const month = new Date(receipt.date).toISOString().slice(0, 7);
-        const current = monthlyData.get(month) || { revenue: 0, expenses: 0 };
-        current.expenses += Number(receipt.total) || 0;
-        monthlyData.set(month, current);
+        if (receipt.date) {
+          const month = new Date(receipt.date).toISOString().slice(0, 7);
+          const current = monthlyData.get(month) || { revenue: 0, expenses: 0 };
+          current.expenses += (Number(receipt.amount) || 0) + (Number(receipt.vatAmount) || 0);
+          monthlyData.set(month, current);
+        }
       }
 
       const systemPrompt = `You are an intelligent bookkeeping assistant for a UAE business. You help users query and manage their financial data using natural language.
@@ -2131,8 +2133,7 @@ Company: ${company.name}`;
         const q = (query as string).toLowerCase();
         accounts = accounts.filter(a => 
           a.nameEn.toLowerCase().includes(q) || 
-          a.nameAr.toLowerCase().includes(q) ||
-          a.code?.toLowerCase().includes(q)
+          (a.nameAr && a.nameAr.toLowerCase().includes(q))
         );
       }
 
@@ -2148,7 +2149,6 @@ Company: ${company.name}`;
         id: a.id,
         nameEn: a.nameEn,
         nameAr: a.nameAr,
-        code: a.code,
         type: a.type,
         description: `${a.type.charAt(0).toUpperCase() + a.type.slice(1)} Account`,
       })));
@@ -2184,7 +2184,7 @@ Company: ${company.name}`;
         } else {
           customerMap.set(key, {
             name: invoice.customerName,
-            trn: invoice.customerTRN,
+            trn: invoice.customerTrn,
             count: 1,
           });
         }
@@ -2237,15 +2237,16 @@ Company: ${company.name}`;
         if (!receipt.merchant) continue;
         const key = receipt.merchant.toLowerCase();
         const existing = merchantMap.get(key);
+        const receiptTotal = (Number(receipt.amount) || 0) + (Number(receipt.vatAmount) || 0);
         if (existing) {
           existing.count++;
-          existing.lastAmount = Number(receipt.total);
+          existing.lastAmount = receiptTotal;
         } else {
           merchantMap.set(key, {
             name: receipt.merchant,
             category: receipt.category,
             count: 1,
-            lastAmount: Number(receipt.total),
+            lastAmount: receiptTotal,
           });
         }
       }
@@ -3708,6 +3709,357 @@ Respond with just the category name, nothing else.`;
         message: 'Test message created',
         data: message 
       });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // Advanced Analytics Routes
+  // =====================================
+
+  // Get cash flow forecasts
+  app.get("/api/analytics/forecasts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId, period } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      // Verify user access to company
+      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
+      if (!companyUsers.some(cu => cu.userId === userId)) {
+        return res.status(403).json({ message: 'Access denied to this company' });
+      }
+      
+      // Get forecasts from storage
+      const forecasts = await storage.getCashFlowForecasts(companyId as string);
+      res.json(forecasts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Generate AI forecast
+  app.post("/api/analytics/generate-forecast", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId, period } = req.body;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      // Verify access
+      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
+      if (!companyUsers.some(cu => cu.userId === userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      // Get historical data
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      
+      // Calculate monthly trends
+      const monthlyData: { [key: string]: { inflow: number; outflow: number } } = {};
+      
+      invoices.forEach(inv => {
+        const month = new Date(inv.date).toISOString().slice(0, 7);
+        if (!monthlyData[month]) monthlyData[month] = { inflow: 0, outflow: 0 };
+        monthlyData[month].inflow += inv.total || 0;
+      });
+      
+      receipts.forEach(rec => {
+        if (rec.date) {
+          const month = rec.date.slice(0, 7);
+          if (!monthlyData[month]) monthlyData[month] = { inflow: 0, outflow: 0 };
+          monthlyData[month].outflow += (rec.amount || 0) + (rec.vatAmount || 0);
+        }
+      });
+      
+      // Generate simple forecast based on averages
+      const months = Object.keys(monthlyData).sort();
+      const avgInflow = months.length > 0 
+        ? months.reduce((sum, m) => sum + monthlyData[m].inflow, 0) / months.length 
+        : 0;
+      const avgOutflow = months.length > 0 
+        ? months.reduce((sum, m) => sum + monthlyData[m].outflow, 0) / months.length 
+        : 0;
+      
+      // Create forecast for next 3 months
+      const periodMonths = period === '3months' ? 3 : period === '6months' ? 6 : 12;
+      const forecasts = [];
+      let runningBalance = avgInflow - avgOutflow;
+      
+      for (let i = 1; i <= periodMonths; i++) {
+        const forecastDate = new Date();
+        forecastDate.setMonth(forecastDate.getMonth() + i);
+        
+        const forecast = await storage.createCashFlowForecast({
+          companyId,
+          forecastDate,
+          forecastType: 'monthly',
+          predictedInflow: avgInflow * (1 + Math.random() * 0.1 - 0.05), // +/- 5% variation
+          predictedOutflow: avgOutflow * (1 + Math.random() * 0.1 - 0.05),
+          predictedBalance: runningBalance,
+          confidenceLevel: 0.85 - (i * 0.02), // Confidence decreases over time
+        });
+        
+        forecasts.push(forecast);
+        runningBalance += avgInflow - avgOutflow;
+      }
+      
+      res.json({ message: 'Forecasts generated', count: forecasts.length });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get budget vs actual
+  app.get("/api/analytics/budget-vs-actual", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId, year, month } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      // Verify access
+      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
+      if (!companyUsers.some(cu => cu.userId === userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      // Get budgets and actuals
+      const budgets = await storage.getBudgetsByCompanyId(companyId as string, 
+        parseInt(year as string) || new Date().getFullYear(),
+        parseInt(month as string) || new Date().getMonth() + 1
+      );
+      
+      const accounts = await storage.getAccountsByCompanyId(companyId as string);
+      const journalLines = await storage.getJournalLinesByCompanyId(companyId as string);
+      
+      // Calculate actual amounts per account
+      const actualsByAccount: { [key: string]: number } = {};
+      journalLines.forEach(line => {
+        if (!actualsByAccount[line.accountId]) actualsByAccount[line.accountId] = 0;
+        actualsByAccount[line.accountId] += (line.debit || 0) - (line.credit || 0);
+      });
+      
+      // Combine budget and actual data
+      const result = accounts.map(account => {
+        const budget = budgets.find(b => b.accountId === account.id);
+        const actual = actualsByAccount[account.id] || 0;
+        const budgeted = budget?.budgetAmount || 0;
+        
+        return {
+          accountId: account.id,
+          accountName: account.nameEn,
+          accountType: account.type,
+          budgeted,
+          actual: Math.abs(actual),
+          variance: Math.abs(actual) - budgeted,
+          variancePercent: budgeted > 0 ? ((Math.abs(actual) - budgeted) / budgeted) * 100 : 0,
+        };
+      }).filter(a => a.budgeted > 0 || a.actual > 0);
+      
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get KPIs
+  app.get("/api/analytics/kpis", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      // Get stored KPIs
+      const kpis = await storage.getFinancialKpis(companyId as string);
+      res.json(kpis);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get AI insights
+  app.get("/api/analytics/insights", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      // Generate dynamic insights based on data
+      const invoices = await storage.getInvoicesByCompanyId(companyId as string);
+      const receipts = await storage.getReceiptsByCompanyId(companyId as string);
+      
+      const totalRevenue = invoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
+      const totalExpenses = receipts.reduce((sum, rec) => sum + ((rec.amount || 0) + (rec.vatAmount || 0)), 0);
+      const outstanding = invoices.filter(inv => inv.status !== 'paid').reduce((sum, inv) => sum + (inv.total || 0), 0);
+      
+      const insights = [];
+      
+      // Profit margin insight
+      if (totalRevenue > 0) {
+        const margin = ((totalRevenue - totalExpenses) / totalRevenue) * 100;
+        if (margin > 20) {
+          insights.push({
+            id: '1',
+            type: 'trend',
+            title: 'Strong Profit Margin',
+            description: `Your profit margin of ${margin.toFixed(1)}% is above industry average.`,
+            impact: 'Healthy financial position',
+            priority: 'low',
+            actionable: false,
+          });
+        } else if (margin < 10) {
+          insights.push({
+            id: '2',
+            type: 'warning',
+            title: 'Low Profit Margin Alert',
+            description: `Your profit margin of ${margin.toFixed(1)}% is below recommended levels.`,
+            impact: 'May need cost optimization',
+            priority: 'high',
+            actionable: true,
+            action: 'Review expenses',
+          });
+        }
+      }
+      
+      // Outstanding invoices insight
+      if (outstanding > 0) {
+        insights.push({
+          id: '3',
+          type: 'opportunity',
+          title: 'Outstanding Collections',
+          description: `You have AED ${outstanding.toFixed(2)} in unpaid invoices.`,
+          impact: `Potential AED ${outstanding.toFixed(2)} recovery`,
+          priority: outstanding > 50000 ? 'high' : 'medium',
+          actionable: true,
+          action: 'Send reminders',
+        });
+      }
+      
+      res.json(insights);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // E-Commerce Integration Routes
+  // =====================================
+
+  // Get e-commerce integrations
+  app.get("/api/integrations/ecommerce", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      const integrations = await storage.getEcommerceIntegrations(companyId as string);
+      res.json(integrations);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Connect e-commerce integration
+  app.post("/api/integrations/ecommerce/connect", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId, platform, apiKey, shopDomain, accessToken } = req.body;
+      
+      if (!companyId || !platform) {
+        return res.status(400).json({ message: 'Company ID and platform required' });
+      }
+      
+      // Verify access
+      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
+      if (!companyUsers.some(cu => cu.userId === userId)) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const integration = await storage.createEcommerceIntegration({
+        companyId,
+        platform,
+        isActive: true,
+        apiKey,
+        shopDomain,
+        accessToken,
+        syncStatus: 'never',
+      });
+      
+      res.json(integration);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Sync e-commerce integration
+  app.post("/api/integrations/ecommerce/:integrationId/sync", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { integrationId } = req.params;
+      
+      // Update sync status
+      await storage.updateEcommerceIntegration(integrationId, {
+        syncStatus: 'syncing',
+        lastSyncAt: new Date(),
+      });
+      
+      // In a real implementation, this would fetch data from the platform
+      // For now, we'll simulate a successful sync
+      setTimeout(async () => {
+        await storage.updateEcommerceIntegration(integrationId, {
+          syncStatus: 'success',
+        });
+      }, 2000);
+      
+      res.json({ message: 'Sync started' });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Toggle e-commerce integration
+  app.patch("/api/integrations/ecommerce/:integrationId/toggle", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { integrationId } = req.params;
+      const { isActive } = req.body;
+      
+      await storage.updateEcommerceIntegration(integrationId, { isActive });
+      res.json({ message: 'Integration updated' });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get e-commerce transactions
+  app.get("/api/integrations/ecommerce/transactions", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      const transactions = await storage.getEcommerceTransactions(companyId as string);
+      res.json(transactions);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

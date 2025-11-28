@@ -130,7 +130,7 @@ export default function Accounts() {
       companyId: account.companyId,
       nameEn: account.nameEn,
       nameAr: account.nameAr || '',
-      type: account.type,
+      type: account.type as 'asset' | 'liability' | 'equity' | 'income' | 'expense',
       isActive: account.isActive,
     });
     setDialogOpen(true);

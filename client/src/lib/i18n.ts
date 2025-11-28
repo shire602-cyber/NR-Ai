@@ -112,6 +112,8 @@ export const t = {
     aiCategorize: 'AI Categorize',
     aiCfo: 'AI CFO & Financial Advisor',
     aiFeatures: 'AI Automation',
+    advancedAnalytics: 'Analytics & Forecasts',
+    integrationsHub: 'CRM & E-Commerce',
     integrations: 'Integrations',
     whatsappInbox: 'WhatsApp Inbox',
     transactionDescription: 'Transaction Description',
@@ -135,6 +137,10 @@ export const t = {
     loading: 'Loading...',
     noData: 'No data available',
     error: 'Error',
+    tryAgain: 'Try Again',
+    invoiceDeleted: 'Invoice Deleted',
+    invoiceDeletedDesc: 'The invoice has been successfully deleted.',
+    deleteFailed: 'Delete Failed',
   },
   ar: {
     // Navigation
@@ -221,6 +227,8 @@ export const t = {
     aiCategorize: 'التصنيف الذكي',
     aiCfo: 'مستشار مالي بالذكاء الاصطناعي',
     aiFeatures: 'الأتمتة الذكية',
+    advancedAnalytics: 'التحليلات والتوقعات',
+    integrationsHub: 'إدارة العملاء والتجارة الإلكترونية',
     integrations: 'التكاملات',
     whatsappInbox: 'صندوق الواتساب',
     transactionDescription: 'وصف المعاملة',
@@ -244,6 +252,10 @@ export const t = {
     loading: 'جاري التحميل...',
     noData: 'لا توجد بيانات',
     error: 'خطأ',
+    tryAgain: 'حاول مرة أخرى',
+    invoiceDeleted: 'تم حذف الفاتورة',
+    invoiceDeletedDesc: 'تم حذف الفاتورة بنجاح.',
+    deleteFailed: 'فشل الحذف',
   },
 };
 
