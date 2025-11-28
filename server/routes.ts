@@ -393,6 +393,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Check for similar invoices
+  app.post("/api/companies/:companyId/invoices/check-similar", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      const { customerName, total, date } = req.body;
+      
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      
+      // Find similar invoices
+      const similarInvoices = invoices.filter(invoice => {
+        // Check if customer name is similar (case-insensitive partial match)
+        const customerMatch = customerName && invoice.customerName && 
+          invoice.customerName.toLowerCase().includes(customerName.toLowerCase()) ||
+          customerName.toLowerCase().includes(invoice.customerName?.toLowerCase() || '');
+        
+        // Check if total is within 10% range
+        const amountMatch = total && invoice.total &&
+          Math.abs(invoice.total - total) / total < 0.1;
+        
+        // Check if date is within 7 days
+        let dateMatch = false;
+        if (date && invoice.date) {
+          const checkDate = new Date(date);
+          const invoiceDate = new Date(invoice.date);
+          const daysDiff = Math.abs((checkDate.getTime() - invoiceDate.getTime()) / (1000 * 60 * 60 * 24));
+          dateMatch = daysDiff <= 7;
+        }
+        
+        // Return if at least 2 criteria match
+        const matchCount = [customerMatch, amountMatch, dateMatch].filter(Boolean).length;
+        return matchCount >= 2;
+      });
+      
+      res.json({
+        hasSimilar: similarInvoices.length > 0,
+        similarInvoices: similarInvoices.slice(0, 5).map(invoice => ({
+          id: invoice.id,
+          number: invoice.number,
+          customerName: invoice.customerName,
+          total: invoice.total,
+          date: invoice.date,
+          status: invoice.status,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[Invoices] Error checking similar invoices:', error);
+      res.status(500).json({ message: error.message || 'Failed to check similar invoices' });
+    }
+  });
+
   app.post("/api/companies/:companyId/invoices", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
@@ -697,6 +754,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
   
+  // Check for similar transactions
+  app.post("/api/companies/:companyId/receipts/check-similar", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      const { merchant, amount, date } = req.body;
+      
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      
+      // Find similar transactions
+      const similarTransactions = receipts.filter(receipt => {
+        // Check if merchant name is similar (case-insensitive partial match)
+        const merchantMatch = merchant && receipt.merchant && 
+          receipt.merchant.toLowerCase().includes(merchant.toLowerCase()) ||
+          merchant.toLowerCase().includes(receipt.merchant?.toLowerCase() || '');
+        
+        // Check if amount is within 10% range
+        const amountMatch = amount && receipt.amount &&
+          Math.abs(receipt.amount - amount) / amount < 0.1;
+        
+        // Check if date is within 7 days
+        let dateMatch = false;
+        if (date && receipt.date) {
+          const checkDate = new Date(date);
+          const receiptDate = new Date(receipt.date);
+          const daysDiff = Math.abs((checkDate.getTime() - receiptDate.getTime()) / (1000 * 60 * 60 * 24));
+          dateMatch = daysDiff <= 7;
+        }
+        
+        // Return if at least 2 criteria match
+        const matchCount = [merchantMatch, amountMatch, dateMatch].filter(Boolean).length;
+        return matchCount >= 2;
+      });
+      
+      res.json({
+        hasSimilar: similarTransactions.length > 0,
+        similarTransactions: similarTransactions.slice(0, 5).map(receipt => ({
+          id: receipt.id,
+          merchant: receipt.merchant,
+          amount: receipt.amount,
+          date: receipt.date,
+          category: receipt.category,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[Receipts] Error checking similar transactions:', error);
+      res.status(500).json({ message: error.message || 'Failed to check similar transactions' });
+    }
+  });
+
   app.post("/api/companies/:companyId/receipts", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;

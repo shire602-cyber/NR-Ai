@@ -24,7 +24,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info } from 'lucide-react';
+import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle } from 'lucide-react';
 import type { Invoice, Company } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
@@ -69,6 +69,9 @@ export default function Invoices() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [invoiceForPayment, setInvoiceForPayment] = useState<Invoice | null>(null);
   const [selectedPaymentAccount, setSelectedPaymentAccount] = useState<string>('');
+  const [similarWarningOpen, setSimilarWarningOpen] = useState(false);
+  const [similarInvoices, setSimilarInvoices] = useState<any[]>([]);
+  const [pendingInvoiceData, setPendingInvoiceData] = useState<any>(null);
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
@@ -188,29 +191,27 @@ export default function Invoices() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => 
-      apiRequest('DELETE', `/api/invoices/${id}`),
+    mutationFn: (id: string) => apiRequest('DELETE', `/api/invoices/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
       toast({
-        title: 'Invoice deleted',
-        description: 'The invoice has been deleted successfully.',
+        title: t.invoiceDeleted,
+        description: t.invoiceDeletedDesc,
       });
     },
     onError: (error: any) => {
       toast({
         variant: 'destructive',
-        title: 'Failed to delete invoice',
-        description: error.message || 'Please try again.',
+        title: t.deleteFailed,
+        description: error.message || t.tryAgain,
       });
     },
   });
 
-  const handleDeleteInvoice = (invoice: Invoice) => {
-    if (window.confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) {
-      deleteMutation.mutate(invoice.id);
-    }
-  };
+  const checkSimilarMutation = useMutation({
+    mutationFn: (data: any) => 
+      apiRequest('POST', `/api/companies/${selectedCompanyId}/invoices/check-similar`, data),
+  });
 
   const handleStatusChange = (invoice: Invoice, newStatus: string) => {
     if (newStatus === 'paid' && invoice.status !== 'paid') {
@@ -267,20 +268,74 @@ export default function Invoices() {
     }
   };
 
-  const onSubmit = (data: InvoiceFormData) => {
-    if (!selectedCompanyId) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Company not found. Please refresh the page.',
-      });
-      return;
+  const resetForm = () => {
+    form.reset({
+      companyId: selectedCompanyId,
+      number: `INV-${Date.now()}`,
+      customerName: '',
+      customerTrn: '',
+      date: new Date(),
+      currency: 'AED',
+      lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+    });
+    setEditingInvoice(null);
+  };
+
+  const onSubmit = async (data: InvoiceFormData) => {
+    try {
+      const invoiceData = {
+        ...data,
+        companyId: selectedCompanyId!,
+        lines: fields.map(line => ({
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          vatRate: line.vatRate,
+        })),
+      };
+
+      // Check for similar invoices only when creating new (not editing)
+      if (!editingInvoice) {
+        const total = fields.reduce((sum, line) => {
+          const lineTotal = line.quantity * line.unitPrice;
+          return sum + lineTotal + (lineTotal * line.vatRate);
+        }, 0);
+
+        try {
+          const checkResult = await checkSimilarMutation.mutateAsync({
+            customerName: data.customerName,
+            total: total,
+            date: data.date,
+          });
+
+          if (checkResult.hasSimilar && checkResult.similarInvoices.length > 0) {
+            setSimilarInvoices(checkResult.similarInvoices);
+            setPendingInvoiceData(invoiceData);
+            setSimilarWarningOpen(true);
+            return;
+          }
+        } catch (error) {
+          console.error('Error checking for similar invoices:', error);
+          // Continue with save if check fails
+        }
+      }
+
+      // Proceed with save
+      await performInvoiceSave(invoiceData, editingInvoice);
+    } catch (error) {
+      // Error is handled by mutation callbacks
     }
-    if (editingInvoice) {
-      editMutation.mutate({ id: editingInvoice.id, data: { ...data, companyId: selectedCompanyId } });
+  };
+
+  const performInvoiceSave = async (invoiceData: any, editing: any) => {
+    if (editing) {
+      await editMutation.mutateAsync({ id: editing.id, data: invoiceData });
     } else {
-      createMutation.mutate({ ...data, companyId: selectedCompanyId });
+      await createMutation.mutateAsync(invoiceData);
     }
+
+    setDialogOpen(false);
+    resetForm();
   };
 
   const getStatusBadgeColor = (status: string) => {
@@ -499,7 +554,7 @@ export default function Invoices() {
                       {t.addLine}
                     </Button>
                   </div>
-                  
+
                   {fields.map((field, index) => (
                     <div key={field.id} className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md">
                       <div className="col-span-5">
@@ -582,8 +637,8 @@ export default function Invoices() {
                   <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="flex-1">
                     {t.cancel}
                   </Button>
-                  <Button type="submit" disabled={createMutation.isPending || editMutation.isPending} className="flex-1" data-testid="button-submit-invoice">
-                    {(createMutation.isPending || editMutation.isPending) ? t.loading : t.save}
+                  <Button type="submit" disabled={createMutation.isPending || editMutation.isPending || checkSimilarMutation.isPending} className="flex-1" data-testid="button-submit-invoice">
+                    {(createMutation.isPending || editMutation.isPending || checkSimilarMutation.isPending) ? t.loading : t.save}
                   </Button>
                 </div>
               </form>
@@ -666,10 +721,10 @@ export default function Invoices() {
                             try {
                               // Fetch full invoice details with lines using apiRequest
                               const invoiceDetails = await apiRequest('GET', `/api/invoices/${invoice.id}`);
-                              
+
                               // Check if company is VAT registered
                               const isVATRegistered = !!(company?.trnVatNumber && company.trnVatNumber.length > 0);
-                              
+
                               await downloadInvoicePDF({
                                 invoiceNumber: invoiceDetails.number,
                                 date: invoiceDetails.date.toString(),
@@ -698,7 +753,7 @@ export default function Invoices() {
                                 footerNote: company?.invoiceFooterNote || undefined,
                                 isVATRegistered,
                               });
-                              
+
                               toast({
                                 title: 'PDF Downloaded',
                                 description: 'Invoice PDF has been downloaded successfully',
@@ -715,15 +770,6 @@ export default function Invoices() {
                           >
                             <Download className="w-4 h-4 mr-2" />
                             PDF
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteInvoice(invoice)}
-                            disabled={deleteMutation.isPending}
-                            data-testid={`button-delete-invoice-${invoice.id}`}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </div>
                       </TableCell>
@@ -990,6 +1036,155 @@ export default function Invoices() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Similar Invoices Warning Dialog */}
+      <Dialog open={similarWarningOpen} onOpenChange={setSimilarWarningOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="w-5 h-5 text-yellow-500" />
+              Similar Invoices Found
+            </DialogTitle>
+            <DialogDescription>
+              We found similar invoices that might be duplicates. Review them before proceeding.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="max-h-[300px] overflow-y-auto space-y-2">
+              {similarInvoices.map((invoice, idx) => (
+                <div key={idx} className="p-3 border rounded-md bg-muted/50">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{invoice.number}</p>
+                      <p className="text-sm">{invoice.customerName}</p>
+                      <p className="text-xs text-muted-foreground">{formatDate(invoice.date, locale)}</p>
+                      <Badge variant="outline" className="mt-1">{invoice.status}</Badge>
+                    </div>
+                    <p className="font-mono font-semibold">
+                      {formatCurrency(invoice.total || 0, 'AED', locale)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSimilarWarningOpen(false);
+                  setPendingInvoiceData(null);
+                  setSimilarInvoices([]);
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  setSimilarWarningOpen(false);
+                  if (pendingInvoiceData) {
+                    await performInvoiceSave(pendingInvoiceData, editingInvoice);
+                  }
+                  setPendingInvoiceData(null);
+                  setSimilarInvoices([]);
+                }}
+                className="flex-1"
+              >
+                Create Anyway
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Invoice Dialog */}
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Invoice Details</DialogTitle>
+            <DialogDescription>
+              View details of invoice {viewInvoice?.number}
+            </DialogDescription>
+          </DialogHeader>
+          {viewInvoice ? (
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-semibold mb-2">Invoice Information</h4>
+                  <p><strong>Number:</strong> {viewInvoice.number}</p>
+                  <p><strong>Date:</strong> {formatDate(viewInvoice.date, locale)}</p>
+                  <p><strong>Status:</strong> <Badge className={getStatusBadgeColor(viewInvoice.status)}>{t[viewInvoice.status as keyof typeof t]}</Badge></p>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2">Customer Information</h4>
+                  <p><strong>Name:</strong> {viewInvoice.customerName}</p>
+                  {viewInvoice.customerTrn && <p><strong>TRN:</strong> {viewInvoice.customerTrn}</p>}
+                </div>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Line Items</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-right">Quantity</TableHead>
+                        <TableHead className="text-right">Unit Price</TableHead>
+                        <TableHead className="text-right">VAT Rate</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {viewInvoice.lines.map((line: any, index: number) => (
+                        <TableRow key={index}>
+                          <TableCell>{line.description}</TableCell>
+                          <TableCell className="text-right font-mono">{line.quantity}</TableCell>
+                          <TableCell className="text-right font-mono">{formatCurrency(line.unitPrice, viewInvoice.currency, locale)}</TableCell>
+                          <TableCell className="text-right font-mono">{`${(line.vatRate * 100).toFixed(2)}%`}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(line.quantity * line.unitPrice * (1 + line.vatRate), viewInvoice.currency, locale)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              <div className="flex justify-end space-x-4">
+                <div className="text-right">
+                  <p className="text-muted-foreground">Subtotal:</p>
+                  <p className="text-lg font-semibold font-mono">{formatCurrency(viewInvoice.subtotal, viewInvoice.currency, locale)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-muted-foreground">VAT:</p>
+                  <p className="text-lg font-semibold font-mono">{formatCurrency(viewInvoice.vatAmount, viewInvoice.currency, locale)}</p>
+                </div>
+                <div className="text-right border-l pl-4">
+                  <p className="text-muted-foreground">Total:</p>
+                  <p className="text-xl font-bold font-mono">{formatCurrency(viewInvoice.total, viewInvoice.currency, locale)}</p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <Skeleton className="h-64" />
+          )}
+          <DialogContent className="absolute top-4 right-4 p-0 border-none">
+            <DialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setViewDialogOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+          </DialogContent>
+        </Dialog>
+      </Dialog>
 
       {/* Payment Account Selection Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>

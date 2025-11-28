@@ -71,6 +71,9 @@ export default function Receipts() {
   const [newAccountType, setNewAccountType] = useState<'expense' | 'asset'>('expense');
   const [newAccountCode, setNewAccountCode] = useState('');
   const [newAccountName, setNewAccountName] = useState('');
+  const [similarWarningOpen, setSimilarWarningOpen] = useState(false);
+  const [similarTransactions, setSimilarTransactions] = useState<any[]>([]);
+  const [pendingSaveData, setPendingSaveData] = useState<any>(null);
 
   // Fetch receipts
   const { data: receipts, isLoading } = useQuery<any[]>({
@@ -176,30 +179,10 @@ export default function Receipts() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => 
-      apiRequest('DELETE', `/api/receipts/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
-      toast({
-        title: 'Expense deleted',
-        description: 'The expense has been deleted successfully.',
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: 'destructive',
-        title: 'Failed to delete expense',
-        description: error.message || 'Please try again.',
-      });
-    },
+  const checkSimilarMutation = useMutation({
+    mutationFn: (data: any) => 
+      apiRequest('POST', `/api/companies/${companyId}/receipts/check-similar`, data),
   });
-
-  const handleDeleteReceipt = (receipt: any) => {
-    if (window.confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
-      deleteMutation.mutate(receipt.id);
-    }
-  };
 
   const handleEditReceipt = (receipt: any) => {
     setEditingReceipt(receipt);
@@ -547,6 +530,41 @@ export default function Receipts() {
       });
       return;
     }
+
+    if (!companyId) {
+      toast({
+        title: 'Error',
+        description: 'Company not found. Please try refreshing the page.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Check for similar transactions before saving
+    try {
+      const firstReceipt = completedIndices[0].receipt.data!;
+      const checkResult = await checkSimilarMutation.mutateAsync({
+        merchant: firstReceipt.merchant,
+        amount: firstReceipt.total,
+        date: firstReceipt.date,
+      });
+
+      if (checkResult.hasSimilar && checkResult.similarTransactions.length > 0) {
+        setSimilarTransactions(checkResult.similarTransactions);
+        setPendingSaveData(completedIndices);
+        setSimilarWarningOpen(true);
+        return;
+      }
+    } catch (error) {
+      console.error('Error checking for similar transactions:', error);
+      // Continue with save if check fails
+    }
+
+    // Proceed with save
+    await performSave(completedIndices);
+  };
+
+  const performSave = async (completedIndices: any[]) => {
 
     if (!companyId) {
       toast({
@@ -1035,15 +1053,6 @@ export default function Receipts() {
                         <Edit className="w-4 h-4 mr-2" />
                         Edit
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDeleteReceipt(receipt)}
-                        disabled={deleteMutation.isPending}
-                        data-testid={`button-delete-receipt-${receipt.id}`}
-                      >
-                        <Trash2 className="w-4 h-4 text-destructive" />
-                      </Button>
                     </div>
                   </div>
                 </div>
@@ -1156,6 +1165,67 @@ export default function Receipts() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Similar Transactions Warning Dialog */}
+      <Dialog open={similarWarningOpen} onOpenChange={setSimilarWarningOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="w-5 h-5 text-yellow-500" />
+              Similar Transactions Found
+            </DialogTitle>
+            <DialogDescription>
+              We found similar transactions that might be duplicates. Review them before proceeding.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="max-h-[300px] overflow-y-auto space-y-2">
+              {similarTransactions.map((transaction, idx) => (
+                <div key={idx} className="p-3 border rounded-md bg-muted/50">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">{transaction.merchant || 'Unknown Merchant'}</p>
+                      <p className="text-sm text-muted-foreground">{transaction.date}</p>
+                      {transaction.category && (
+                        <Badge variant="outline" className="mt-1">{transaction.category}</Badge>
+                      )}
+                    </div>
+                    <p className="font-mono font-semibold">
+                      {formatCurrency(transaction.amount || 0, 'AED', locale)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSimilarWarningOpen(false);
+                  setPendingSaveData(null);
+                  setSimilarTransactions([]);
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  setSimilarWarningOpen(false);
+                  if (pendingSaveData) {
+                    await performSave(pendingSaveData);
+                  }
+                  setPendingSaveData(null);
+                  setSimilarTransactions([]);
+                }}
+                className="flex-1"
+              >
+                Save Anyway
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
