@@ -721,6 +721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const receipt = await storage.createReceipt({
         ...receiptData,
+        companyId, // Add companyId from URL params
         uploadedBy: userId,
       });
       
@@ -2274,6 +2275,165 @@ Keep your tone professional but friendly, like a trusted advisor.`
         connected: config.isActive,
         configured: true,
         phoneNumberId: config.phoneNumberId,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===========================
+  // OCR Processing Endpoint
+  // ===========================
+
+  // Process receipt image with OCR and AI categorization
+  app.post("/api/ocr/process", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      // Validate and get company for scoping
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+      const companyId = companies[0].id;
+
+      const { messageId, mediaId, content, imageData } = req.body;
+
+      // Validate input
+      const sanitizedContent = content ? String(content).slice(0, 10000) : '';
+      const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
+      const sanitizedMediaId = mediaId ? String(mediaId).slice(0, 100) : null;
+
+      // Default extraction results
+      let rawText = sanitizedContent;
+      let extractedData = {
+        merchant: 'Unknown Merchant',
+        date: new Date().toISOString().split('T')[0],
+        amount: 0,
+        vatAmount: 0,
+        category: 'Office Supplies',
+        confidence: 0.5,
+        rawText: rawText,
+        companyId: companyId,
+        messageId: sanitizedMessageId,
+      };
+
+      // Valid expense categories for UAE businesses
+      const validCategories = [
+        'Office Supplies', 'Utilities', 'Travel', 'Meals', 
+        'Rent', 'Marketing', 'Equipment', 'Professional Services',
+        'Insurance', 'Maintenance', 'Communication', 'Other'
+      ];
+
+      // Try to use AI to extract structured data from text
+      if (sanitizedContent) {
+        try {
+          const aiResponse = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              {
+                role: "system",
+                content: `You are a receipt data extraction assistant for UAE businesses. Extract the following information from receipt text:
+                - merchant: The store/business name
+                - date: The transaction date (YYYY-MM-DD format, use today if not found)
+                - amount: The subtotal amount before VAT in AED (number only, exclude VAT)
+                - vatAmount: The VAT amount in AED (number only, assume 5% of amount if not specified)
+                - category: Categorize as one of: ${validCategories.join(', ')}
+                
+                Important: All amounts should be in AED. If the receipt shows a different currency, convert to AED.
+                Respond in JSON format only with these exact field names.`
+              },
+              {
+                role: "user",
+                content: `Extract receipt data from this text:\n\n${sanitizedContent}`
+              }
+            ],
+            response_format: { type: "json_object" },
+            max_tokens: 500,
+          });
+
+          const aiResult = JSON.parse(aiResponse.choices[0]?.message?.content || '{}');
+          
+          // Validate and sanitize AI response
+          const parsedAmount = parseFloat(aiResult.amount);
+          const parsedVat = parseFloat(aiResult.vatAmount);
+          const category = validCategories.includes(aiResult.category) ? aiResult.category : 'Other';
+          
+          // Validate date format
+          let parsedDate = extractedData.date;
+          if (aiResult.date && /^\d{4}-\d{2}-\d{2}$/.test(aiResult.date)) {
+            parsedDate = aiResult.date;
+          }
+
+          extractedData = {
+            merchant: aiResult.merchant ? String(aiResult.merchant).slice(0, 200) : extractedData.merchant,
+            date: parsedDate,
+            amount: !isNaN(parsedAmount) && parsedAmount >= 0 ? parsedAmount : 0,
+            vatAmount: !isNaN(parsedVat) && parsedVat >= 0 ? parsedVat : 0,
+            category: category,
+            confidence: 0.9,
+            rawText: sanitizedContent,
+            companyId: companyId,
+            messageId: sanitizedMessageId,
+          };
+        } catch (aiError: any) {
+          console.log('AI extraction error:', aiError.message || 'Unknown error');
+          // Return default data with lower confidence
+          extractedData.confidence = 0.3;
+        }
+      }
+
+      res.json(extractedData);
+    } catch (error: any) {
+      console.error('OCR processing error:', error);
+      res.status(500).json({ message: error.message || 'Failed to process receipt' });
+    }
+  });
+
+  // Test message for WhatsApp webhook (for development)
+  app.post("/api/integrations/whatsapp/test-message", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+
+      const companyId = companies[0].id;
+      const { from, messageType, content, mediaId } = req.body;
+
+      // Validate input
+      const sanitizedFrom = from ? String(from).slice(0, 20).replace(/[^+\d]/g, '') : '+971501234567';
+      const sanitizedMessageType = ['text', 'image', 'document'].includes(messageType) ? messageType : 'text';
+      const sanitizedContent = content ? String(content).slice(0, 5000) : 'Test receipt message';
+      const sanitizedMediaId = mediaId ? String(mediaId).slice(0, 100) : null;
+
+      // Generate unique waMessageId with random suffix to prevent duplicates
+      const waMessageId = `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Create a test message with validated and sanitized data
+      const message = await storage.createWhatsappMessage({
+        companyId,
+        waMessageId,
+        from: sanitizedFrom,
+        to: 'business_number',
+        messageType: sanitizedMessageType,
+        content: sanitizedContent,
+        mediaId: sanitizedMediaId,
+        direction: 'inbound',
+        status: 'received',
+      });
+
+      res.json({ 
+        message: 'Test message created',
+        data: message 
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
