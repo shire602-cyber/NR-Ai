@@ -1889,6 +1889,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
   // Import invoices from Google Sheets
   app.post("/api/integrations/google-sheets/import/invoices", authMiddleware, async (req: Request, res: Response) => {
     try {
+      const userId = (req as any).userId;
       const { companyId, sheetUrl } = req.body;
       if (!companyId || !sheetUrl) {
         return res.status(400).json({ message: 'Company ID and sheet URL required' });
@@ -1916,7 +1917,14 @@ Keep your tone professional but friendly, like a trusted advisor.`
         try {
           const invoice = await storage.createInvoice({
             companyId,
-            ...invoiceData
+            number: invoiceData.invoiceNumber,
+            customerName: invoiceData.customerName,
+            customerTrn: invoiceData.customerTrn,
+            date: new Date(invoiceData.issueDate),
+            subtotal: invoiceData.subtotal,
+            vatAmount: invoiceData.vatAmount,
+            total: invoiceData.total,
+            status: invoiceData.status || 'draft',
           });
           createdCount++;
         } catch (err) {
@@ -1947,9 +1955,10 @@ Keep your tone professional but friendly, like a trusted advisor.`
   // Import expenses from Google Sheets
   app.post("/api/integrations/google-sheets/import/expenses", authMiddleware, async (req: Request, res: Response) => {
     try {
+      const userId = (req as any).userId;
       const { companyId, sheetUrl } = req.body;
-      if (!companyId || !sheetUrl) {
-        return res.status(400).json({ message: 'Company ID and sheet URL required' });
+      if (!companyId || !sheetUrl || !userId) {
+        return res.status(400).json({ message: 'Company ID, sheet URL, and user authentication required' });
       }
       
       const isConnected = await googleSheets.isGoogleSheetsConnected();
@@ -1974,7 +1983,14 @@ Keep your tone professional but friendly, like a trusted advisor.`
         try {
           const receipt = await storage.createReceipt({
             companyId,
-            ...expenseData
+            date: expenseData.date,
+            merchant: expenseData.merchant,
+            category: expenseData.category,
+            amount: expenseData.amount,
+            vatAmount: expenseData.vatAmount,
+            uploadedBy: userId,
+            posted: false,
+            currency: 'AED'
           });
           createdCount++;
         } catch (err) {
