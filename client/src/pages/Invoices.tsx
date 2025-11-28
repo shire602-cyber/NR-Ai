@@ -187,6 +187,31 @@ export default function Invoices() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => 
+      apiRequest('DELETE', `/api/invoices/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
+      toast({
+        title: 'Invoice deleted',
+        description: 'The invoice has been deleted successfully.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to delete invoice',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const handleDeleteInvoice = (invoice: Invoice) => {
+    if (window.confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) {
+      deleteMutation.mutate(invoice.id);
+    }
+  };
+
   const handleStatusChange = (invoice: Invoice, newStatus: string) => {
     if (newStatus === 'paid' && invoice.status !== 'paid') {
       // Show payment account selection dialog
@@ -690,6 +715,15 @@ export default function Invoices() {
                           >
                             <Download className="w-4 h-4 mr-2" />
                             PDF
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteInvoice(invoice)}
+                            disabled={deleteMutation.isPending}
+                            data-testid={`button-delete-invoice-${invoice.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
                           </Button>
                         </div>
                       </TableCell>

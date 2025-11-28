@@ -176,6 +176,31 @@ export default function Receipts() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => 
+      apiRequest('DELETE', `/api/receipts/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
+      toast({
+        title: 'Expense deleted',
+        description: 'The expense has been deleted successfully.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to delete expense',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const handleDeleteReceipt = (receipt: any) => {
+    if (window.confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
+      deleteMutation.mutate(receipt.id);
+    }
+  };
+
   const handleEditReceipt = (receipt: any) => {
     setEditingReceipt(receipt);
     form.reset({
@@ -1009,6 +1034,15 @@ export default function Receipts() {
                       >
                         <Edit className="w-4 h-4 mr-2" />
                         Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteReceipt(receipt)}
+                        disabled={deleteMutation.isPending}
+                        data-testid={`button-delete-receipt-${receipt.id}`}
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
                       </Button>
                     </div>
                   </div>
