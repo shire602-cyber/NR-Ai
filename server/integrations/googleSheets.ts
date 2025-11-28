@@ -327,10 +327,23 @@ export async function exportChartOfAccountsToSheet(
 
 // Import invoices from a Google Sheet
 export async function importInvoicesFromSheet(
-  spreadsheetId: string,
-  range: string = 'Invoices!A:K'
+  spreadsheetId: string
 ): Promise<any[]> {
-  const data = await readFromSheet(spreadsheetId, range);
+  const sheets = await getGoogleSheetsClient();
+  
+  // Get all sheets in the spreadsheet
+  const response = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties'
+  });
+  
+  const firstSheet = response.data.sheets?.[0]?.properties?.title;
+  if (!firstSheet) {
+    throw new Error('No sheets found in spreadsheet');
+  }
+  
+  // Read from first sheet
+  const data = await readFromSheet(spreadsheetId, `${firstSheet}!A:K`);
   
   if (data.length < 2) {
     return [];
@@ -356,10 +369,23 @@ export async function importInvoicesFromSheet(
 
 // Import expenses from a Google Sheet
 export async function importExpensesFromSheet(
-  spreadsheetId: string,
-  range: string = 'Expenses!A:H'
+  spreadsheetId: string
 ): Promise<any[]> {
-  const data = await readFromSheet(spreadsheetId, range);
+  const sheets = await getGoogleSheetsClient();
+  
+  // Get all sheets in the spreadsheet
+  const response = await sheets.spreadsheets.get({
+    spreadsheetId,
+    fields: 'sheets.properties'
+  });
+  
+  const firstSheet = response.data.sheets?.[0]?.properties?.title;
+  if (!firstSheet) {
+    throw new Error('No sheets found in spreadsheet');
+  }
+  
+  // Read from first sheet
+  const data = await readFromSheet(spreadsheetId, `${firstSheet}!A:H`);
   
   if (data.length < 2) {
     return [];
