@@ -27,7 +27,19 @@ import {
   Handshake,
   Languages,
   TrendingUp,
-  Star
+  Star,
+  Brain,
+  Zap,
+  ScanLine,
+  Bot,
+  LineChart,
+  Target,
+  Lightbulb,
+  Mic,
+  FileSearch,
+  Banknote,
+  AlertTriangle,
+  Workflow
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
@@ -88,6 +100,15 @@ export default function Services() {
       subheadline: locale === 'en'
         ? 'From freelancers to enterprises, we support businesses of all sizes'
         : 'من المستقلين إلى المؤسسات، ندعم الشركات بجميع أحجامها',
+    },
+    ai: {
+      badge: locale === 'en' ? 'AI Capabilities' : 'قدرات الذكاء الاصطناعي',
+      headline: locale === 'en' ? 'Powered by AI' : 'مدعوم بالذكاء الاصطناعي',
+      subheadline: locale === 'en'
+        ? 'Cutting-edge artificial intelligence that transforms your bookkeeping experience'
+        : 'ذكاء اصطناعي متطور يحول تجربة مسك الدفاتر الخاصة بك',
+      currentBadge: locale === 'en' ? 'Available Now' : 'متوفر الآن',
+      futureBadge: locale === 'en' ? 'Coming Soon' : 'قريباً',
     },
     cta: {
       headline: locale === 'en' ? 'Need help with VAT or Tax Setup?' : 'تحتاج مساعدة في إعداد ضريبة القيمة المضافة أو الضرائب؟',
@@ -224,6 +245,102 @@ export default function Services() {
     { icon: Building2, title: locale === 'en' ? 'Holding Companies' : 'الشركات القابضة' },
     { icon: Home, title: locale === 'en' ? 'Real Estate' : 'العقارات' },
     { icon: Rocket, title: locale === 'en' ? 'Startups' : 'الشركات الناشئة' },
+  ];
+
+  const currentAiCapabilities = [
+    {
+      icon: ScanLine,
+      title: locale === 'en' ? 'OCR Receipt Scanning' : 'مسح الإيصالات بالتعرف الضوئي',
+      description: locale === 'en'
+        ? 'Instantly extract merchant, amount, date, and VAT from receipts using advanced OCR technology.'
+        : 'استخراج فوري للتاجر والمبلغ والتاريخ وضريبة القيمة المضافة من الإيصالات باستخدام تقنية التعرف الضوئي المتقدمة.',
+      bgColor: 'bg-blue-500/10',
+      iconColor: 'text-blue-500',
+    },
+    {
+      icon: Brain,
+      title: locale === 'en' ? 'Smart Expense Categorization' : 'تصنيف المصروفات الذكي',
+      description: locale === 'en'
+        ? 'AI automatically categorizes expenses into the correct chart of accounts with 95%+ accuracy.'
+        : 'الذكاء الاصطناعي يصنف المصروفات تلقائياً في الحسابات الصحيحة بدقة تتجاوز 95%.',
+      bgColor: 'bg-purple-500/10',
+      iconColor: 'text-purple-500',
+    },
+    {
+      icon: Zap,
+      title: locale === 'en' ? 'Bulk Receipt Processing' : 'معالجة الإيصالات بالجملة',
+      description: locale === 'en'
+        ? 'Upload multiple receipts at once. Our AI processes them in parallel for maximum efficiency.'
+        : 'ارفع عدة إيصالات دفعة واحدة. الذكاء الاصطناعي يعالجها بالتوازي لأقصى كفاءة.',
+      bgColor: 'bg-amber-500/10',
+      iconColor: 'text-amber-500',
+    },
+    {
+      icon: FileSearch,
+      title: locale === 'en' ? 'Intelligent Data Extraction' : 'استخراج البيانات الذكي',
+      description: locale === 'en'
+        ? 'Automatically extract and validate TRN numbers, invoice details, and payment terms.'
+        : 'استخراج والتحقق تلقائياً من أرقام التسجيل الضريبي وتفاصيل الفواتير وشروط الدفع.',
+      bgColor: 'bg-green-500/10',
+      iconColor: 'text-green-500',
+    },
+  ];
+
+  const futureAiCapabilities = [
+    {
+      icon: Bot,
+      title: locale === 'en' ? 'AI CFO / Financial Advisor' : 'المدير المالي بالذكاء الاصطناعي',
+      description: locale === 'en'
+        ? 'Get personalized financial advice, cash flow predictions, and strategic recommendations from your AI advisor.'
+        : 'احصل على نصائح مالية مخصصة وتنبؤات التدفق النقدي وتوصيات استراتيجية من مستشارك الذكي.',
+      bgColor: 'bg-violet-500/10',
+      iconColor: 'text-violet-500',
+    },
+    {
+      icon: LineChart,
+      title: locale === 'en' ? 'Predictive Analytics' : 'التحليلات التنبؤية',
+      description: locale === 'en'
+        ? 'AI-powered forecasting for revenue, expenses, and cash flow based on historical patterns.'
+        : 'تنبؤات مدعومة بالذكاء الاصطناعي للإيرادات والمصروفات والتدفق النقدي بناءً على الأنماط التاريخية.',
+      bgColor: 'bg-cyan-500/10',
+      iconColor: 'text-cyan-500',
+    },
+    {
+      icon: AlertTriangle,
+      title: locale === 'en' ? 'Anomaly Detection' : 'كشف الشذوذ',
+      description: locale === 'en'
+        ? 'Automatically flag unusual transactions, duplicate payments, and potential fraud.'
+        : 'تحديد تلقائي للمعاملات غير العادية والمدفوعات المكررة والاحتيال المحتمل.',
+      bgColor: 'bg-red-500/10',
+      iconColor: 'text-red-500',
+    },
+    {
+      icon: Mic,
+      title: locale === 'en' ? 'Voice Commands' : 'الأوامر الصوتية',
+      description: locale === 'en'
+        ? 'Create invoices, log expenses, and query reports using natural voice commands in English or Arabic.'
+        : 'إنشاء الفواتير وتسجيل المصروفات والاستعلام عن التقارير باستخدام الأوامر الصوتية بالإنجليزية أو العربية.',
+      bgColor: 'bg-pink-500/10',
+      iconColor: 'text-pink-500',
+    },
+    {
+      icon: Target,
+      title: locale === 'en' ? 'Smart Tax Optimization' : 'تحسين الضرائب الذكي',
+      description: locale === 'en'
+        ? 'AI recommendations to minimize tax liability while maintaining full FTA compliance.'
+        : 'توصيات ذكية لتقليل الالتزام الضريبي مع الحفاظ على الامتثال الكامل للهيئة الاتحادية للضرائب.',
+      bgColor: 'bg-emerald-500/10',
+      iconColor: 'text-emerald-500',
+    },
+    {
+      icon: Workflow,
+      title: locale === 'en' ? 'Automated Workflows' : 'سير العمل الآلي',
+      description: locale === 'en'
+        ? 'Set up automated rules for recurring transactions, approvals, and reminders.'
+        : 'إعداد قواعد آلية للمعاملات المتكررة والموافقات والتذكيرات.',
+      bgColor: 'bg-indigo-500/10',
+      iconColor: 'text-indigo-500',
+    },
   ];
 
   const stats = [
@@ -483,8 +600,94 @@ export default function Services() {
         </div>
       </section>
 
+      {/* AI Capabilities Section */}
+      <section className="py-20 lg:py-28 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-blue-500/5 dark:from-violet-500/10 dark:via-transparent dark:to-blue-500/10" />
+        
+        <div className="relative z-10 max-w-7xl mx-auto px-6 lg:px-8">
+          <div className={`text-center mb-16 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDelay: '250ms', animationDuration: '600ms' }}>
+            <Badge className="mb-4 bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20 px-4 py-1.5" data-testid="badge-ai">
+              <Brain className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
+              {t.ai.badge}
+            </Badge>
+            <h2 className="text-4xl md:text-5xl font-bold mb-4" data-testid="text-ai-headline">
+              {t.ai.headline}
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto" data-testid="text-ai-subheadline">
+              {t.ai.subheadline}
+            </p>
+          </div>
+
+          {/* Current AI Capabilities */}
+          <div className="mb-16">
+            <div className={`flex items-center justify-center gap-3 mb-8 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDelay: '300ms', animationDuration: '600ms' }}>
+              <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 border-green-500/30 px-4 py-2 text-sm font-semibold" data-testid="badge-ai-current">
+                <CheckCircle2 className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
+                {t.ai.currentBadge}
+              </Badge>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {currentAiCapabilities.map((capability, index) => (
+                <Card 
+                  key={index}
+                  className={`p-6 hover-elevate transition-all duration-300 group border-border/50 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`}
+                  style={{ animationDelay: `${350 + index * 75}ms`, animationDuration: '600ms' }}
+                  data-testid={`card-ai-current-${index}`}
+                >
+                  <div className={`w-12 h-12 rounded-xl ${capability.bgColor} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform`}>
+                    <capability.icon className={`w-6 h-6 ${capability.iconColor}`} />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2 group-hover:text-primary transition-colors" data-testid={`text-ai-current-title-${index}`}>
+                    {capability.title}
+                  </h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed" data-testid={`text-ai-current-desc-${index}`}>
+                    {capability.description}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          </div>
+
+          {/* Future AI Capabilities */}
+          <div>
+            <div className={`flex items-center justify-center gap-3 mb-8 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDelay: '500ms', animationDuration: '600ms' }}>
+              <Badge className="bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30 px-4 py-2 text-sm font-semibold" data-testid="badge-ai-future">
+                <Rocket className={`w-4 h-4 ${isRTL ? 'ml-2' : 'mr-2'}`} />
+                {t.ai.futureBadge}
+              </Badge>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {futureAiCapabilities.map((capability, index) => (
+                <Card 
+                  key={index}
+                  className={`p-6 hover-elevate transition-all duration-300 group border-border/50 border-dashed ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`}
+                  style={{ animationDelay: `${550 + index * 75}ms`, animationDuration: '600ms' }}
+                  data-testid={`card-ai-future-${index}`}
+                >
+                  <div className="flex items-start gap-4">
+                    <div className={`w-12 h-12 rounded-xl ${capability.bgColor} flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
+                      <capability.icon className={`w-6 h-6 ${capability.iconColor}`} />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2 group-hover:text-primary transition-colors" data-testid={`text-ai-future-title-${index}`}>
+                        {capability.title}
+                      </h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed" data-testid={`text-ai-future-desc-${index}`}>
+                        {capability.description}
+                      </p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Client Types Section */}
-      <section className="py-20 lg:py-28">
+      <section className="py-20 lg:py-28 bg-muted/30">
         <div className="max-w-7xl mx-auto px-6 lg:px-8">
           <div className={`text-center mb-16 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDelay: '300ms', animationDuration: '600ms' }}>
             <Badge className="mb-4 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20 px-4 py-1.5" data-testid="badge-clients">
