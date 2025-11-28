@@ -53,9 +53,8 @@ const UAE_SEED_COA = [
 
 async function seedChartOfAccounts(companyId: string) {
   for (const account of UAE_SEED_COA) {
-    const exists = await storage.getAccounts(companyId).then(accs => 
-      accs.find(a => a.nameEn === account.nameEn)
-    );
+    const accounts = await storage.getAccountsByCompanyId(companyId);
+    const exists = accounts.find(a => a.nameEn === account.nameEn);
     if (!exists) {
       await storage.createAccount({
         companyId,
@@ -296,11 +295,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { companyId } = req.params;
       const validated = insertAccountSchema.parse({ ...req.body, companyId });
-      
-      // Check if account code exists
-      if (existing) {
-        return res.status(400).json({ message: 'Account code already exists' });
-      }
 
       const account = await storage.createAccount(validated);
       res.json(account);
@@ -324,12 +318,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const hasAccess = await storage.hasCompanyAccess(userId, account.companyId);
       if (!hasAccess) {
         return res.status(403).json({ message: 'Access denied' });
-      }
-
-      // If updating code, check if new code already exists
-        if (existing) {
-          return res.status(400).json({ message: 'Account code already exists' });
-        }
       }
 
       const updatedAccount = await storage.updateAccount(id, req.body);
