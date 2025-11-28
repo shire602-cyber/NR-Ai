@@ -106,8 +106,8 @@ export function AppSidebar() {
             <Sparkles className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <div className="font-semibold text-sm">AI Bookkeeping</div>
-            <div className="text-xs text-muted-foreground">UAE Edition</div>
+            <div className="font-semibold text-sm">Muhasib.ai</div>
+            <div className="text-xs text-muted-foreground">NR Accounting</div>
           </div>
         </div>
       </SidebarHeader>

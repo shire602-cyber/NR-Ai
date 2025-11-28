@@ -76,18 +76,18 @@ export default function Landing() {
       languageToggle: locale === 'en' ? 'العربية' : 'EN',
     },
     hero: {
-      badge: locale === 'en' ? 'Trusted by 500+ UAE Businesses' : 'موثوق من 500+ شركة إماراتية',
+      badge: locale === 'en' ? 'Serving UAE businesses since 2017 • Registered Accounting Firm' : 'نخدم الشركات الإماراتية منذ 2017 • شركة محاسبة مسجلة',
       headline: locale === 'en' 
-        ? 'The Future of Bookkeeping is Here'
-        : 'مستقبل المحاسبة هنا',
-      headlineAccent: locale === 'en' ? 'AI-Powered. UAE-Ready.' : 'مدعوم بالذكاء الاصطناعي. جاهز للإمارات.',
+        ? 'Fully Automatic VAT/CIT Filings'
+        : 'تقديم ضريبة القيمة المضافة/الشركات تلقائياً',
+      headlineAccent: locale === 'en' ? '99% Accuracy. AI-Driven. UAE Compliant.' : '99% دقة. مدعوم بالذكاء الاصطناعي. متوافق مع الإمارات.',
       subheadline: locale === 'en'
-        ? 'Transform your financial operations with intelligent automation. Save 20+ hours monthly, eliminate errors, and stay FTA-compliant effortlessly.'
-        : 'حوّل عملياتك المالية بالأتمتة الذكية. وفّر 20+ ساعة شهرياً، تخلص من الأخطاء، والتزم بالهيئة الاتحادية للضرائب بسهولة.',
-      ctaPrimary: locale === 'en' ? 'Start 14-Day Free Trial' : 'ابدأ تجربة 14 يوم مجانية',
-      ctaSecondary: locale === 'en' ? 'Watch Demo' : 'شاهد العرض',
-      noCreditCard: locale === 'en' ? 'No credit card required' : 'لا حاجة لبطاقة ائتمان',
-      cancelAnytime: locale === 'en' ? 'Cancel anytime' : 'إلغاء في أي وقت',
+        ? 'Never miss a filing deadline. AI-driven categorization with 99% accuracy and local tax compliance built-in. Save 20+ hours monthly with automated bookkeeping from NR Accounting Services.'
+        : 'لا تفوت موعد التقديم أبداً. تصنيف مدعوم بالذكاء الاصطناعي بدقة 99% وامتثال ضريبي محلي مدمج. وفّر 20+ ساعة شهرياً مع المحاسبة الآلية من NR Accounting Services.',
+      ctaPrimary: locale === 'en' ? 'Start Now for AED 99/month' : 'ابدأ الآن بـ 99 درهم/شهر',
+      ctaSecondary: locale === 'en' ? 'Book a Demo' : 'احجز عرض توضيحي',
+      noCreditCard: locale === 'en' ? 'Talk to an Expert' : 'تحدث مع خبير',
+      cancelAnytime: locale === 'en' ? 'Full FTA Compliance' : 'امتثال كامل للهيئة الاتحادية للضرائب',
     },
     stats: {
       invoices: locale === 'en' ? 'Invoices Generated' : 'فواتير أُنشئت',
@@ -181,66 +181,69 @@ export default function Landing() {
 
   const testimonials = [
     {
-      name: locale === 'en' ? 'Ahmed Al-Rashid' : 'أحمد الراشد',
-      role: locale === 'en' ? 'CEO, TechFlow Solutions' : 'الرئيس التنفيذي، تك فلو سوليوشنز',
+      name: locale === 'en' ? 'Ahmed K.' : 'أحمد ك.',
+      role: locale === 'en' ? 'E-commerce Business Owner, Dubai' : 'صاحب عمل تجارة إلكترونية، دبي',
       image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=face',
       quote: locale === 'en' 
-        ? 'BookKeep AI transformed our accounting. We save 25 hours per month and our FTA filings are always on time. The AI categorization is incredibly accurate.'
-        : 'BookKeep AI حوّل محاسبتنا. نوفر 25 ساعة شهرياً وتقديماتنا للهيئة دائماً في الوقت المحدد. تصنيف الذكاء الاصطناعي دقيق بشكل مذهل.',
+        ? 'NR Accounting helped us get VAT registered in just 3 days. The AI bookkeeping app saves us 25+ hours monthly. We never miss a filing deadline and the accuracy is 99%+. Highly recommended!'
+        : 'ساعدتنا NR Accounting في التسجيل لضريبة القيمة المضافة في 3 أيام فقط. تطبيق المحاسبة الذكي يوفر لنا 25+ ساعة شهرياً. لا نفوت موعد تقديم أبداً والدقة 99%+. موصى به بشدة!',
       rating: 5,
+      industry: locale === 'en' ? 'E-commerce' : 'التجارة الإلكترونية',
     },
     {
-      name: locale === 'en' ? 'Sara Mohammed' : 'سارة محمد',
-      role: locale === 'en' ? 'Finance Director, Gulf Imports LLC' : 'مديرة المالية، جلف إمبورتس',
+      name: locale === 'en' ? 'Fatima M.' : 'فاطمة م.',
+      role: locale === 'en' ? 'CFO, Real Estate Investment Firm' : 'المدير المالي، شركة استثمار عقاري',
       image: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=face',
       quote: locale === 'en'
-        ? 'The bilingual support is a game-changer. Our Arabic invoices look professional and the receipt scanner handles both languages perfectly.'
-        : 'الدعم ثنائي اللغة غيّر قواعد اللعبة. فواتيرنا العربية تبدو احترافية وماسح الإيصالات يتعامل مع اللغتين بشكل مثالي.',
+        ? 'Managing 15+ properties was a nightmare before. The AI categorization is spot-on and the bilingual support means our Arabic documents are handled perfectly. Saved us from 3 potential audit issues.'
+        : 'كانت إدارة 15+ عقار كابوساً قبل ذلك. التصنيف الذكي دقيق تماماً والدعم ثنائي اللغة يعني أن مستنداتنا العربية تُعالج بشكل مثالي. وفر علينا 3 مشاكل تدقيق محتملة.',
       rating: 5,
+      industry: locale === 'en' ? 'Real Estate' : 'العقارات',
     },
     {
-      name: locale === 'en' ? 'Omar Hassan' : 'عمر حسن',
-      role: locale === 'en' ? 'Owner, Hassan Trading' : 'مالك، حسن للتجارة',
+      name: locale === 'en' ? 'Khalid S.' : 'خالد س.',
+      role: locale === 'en' ? 'Freelance Consultant' : 'مستشار مستقل',
       image: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face',
       quote: locale === 'en'
-        ? 'I used to spend weekends on bookkeeping. Now the AI handles everything automatically. Best investment I made for my business this year.'
-        : 'كنت أقضي عطلات نهاية الأسبوع في المحاسبة. الآن الذكاء الاصطناعي يتولى كل شيء تلقائياً. أفضل استثمار لعملي هذا العام.',
+        ? 'As a freelancer, I needed something simple but professional. The OCR receipt scanner is magic - I just snap photos and AI does the rest. FTA compliance is automatic. Worth every dirham.'
+        : 'كمستقل، كنت بحاجة إلى شيء بسيط لكن احترافي. ماسح الإيصالات سحري - ألتقط صوراً والذكاء الاصطناعي يقوم بالباقي. الامتثال للهيئة تلقائي. يستحق كل درهم.',
       rating: 5,
+      industry: locale === 'en' ? 'Consulting' : 'الاستشارات',
     },
   ];
 
   const pricingPlans = [
     {
       name: locale === 'en' ? 'Starter' : 'المبتدئ',
-      price: 'Free',
-      priceNote: locale === 'en' ? 'Forever free' : 'مجاني للأبد',
+      price: 'AED 99',
+      priceNote: locale === 'en' ? 'per month' : 'شهرياً',
       description: locale === 'en' ? 'Perfect for freelancers and small businesses' : 'مثالي للعاملين المستقلين والشركات الصغيرة',
       features: [
-        locale === 'en' ? 'Up to 50 invoices/month' : 'حتى 50 فاتورة/شهر',
-        locale === 'en' ? 'Basic expense tracking' : 'تتبع مصروفات أساسي',
-        locale === 'en' ? '5 receipt scans/month' : '5 مسح إيصالات/شهر',
-        locale === 'en' ? 'Standard reports' : 'تقارير قياسية',
-        locale === 'en' ? 'Email support' : 'دعم بالبريد الإلكتروني',
+        locale === 'en' ? 'Up to 100 invoices/month' : 'حتى 100 فاتورة/شهر',
+        locale === 'en' ? 'AI expense categorization' : 'تصنيف مصروفات بالذكاء الاصطناعي',
+        locale === 'en' ? 'Unlimited receipt OCR scans' : 'مسح إيصالات OCR غير محدود',
+        locale === 'en' ? 'VAT/CIT filing reports' : 'تقارير تقديم ضريبة القيمة المضافة/الشركات',
+        locale === 'en' ? 'Email & chat support' : 'دعم البريد والدردشة',
       ],
-      cta: locale === 'en' ? 'Start Free' : 'ابدأ مجاناً',
+      cta: locale === 'en' ? 'Start Now' : 'ابدأ الآن',
       popular: false,
       icon: Layers,
     },
     {
       name: locale === 'en' ? 'Professional' : 'الاحترافي',
-      price: 'AED 149',
+      price: 'AED 299',
       priceNote: locale === 'en' ? 'per month' : 'شهرياً',
       description: locale === 'en' ? 'For growing businesses that need more power' : 'للشركات النامية التي تحتاج قوة أكبر',
       features: [
-        locale === 'en' ? 'Unlimited invoices' : 'فواتير غير محدودة',
-        locale === 'en' ? 'AI expense categorization' : 'تصنيف مصروفات بالذكاء الاصطناعي',
-        locale === 'en' ? 'Unlimited receipt scans' : 'مسح إيصالات غير محدود',
-        locale === 'en' ? 'Advanced financial reports' : 'تقارير مالية متقدمة',
-        locale === 'en' ? 'AI CFO assistant' : 'مساعد مالي ذكي',
-        locale === 'en' ? 'Priority support' : 'دعم أولوية',
-        locale === 'en' ? 'VAT filing export' : 'تصدير تقديم ضريبة القيمة المضافة',
+        locale === 'en' ? 'Unlimited invoices & transactions' : 'فواتير ومعاملات غير محدودة',
+        locale === 'en' ? 'AI CFO financial advisor' : 'مستشار مالي ذكي',
+        locale === 'en' ? 'Automated VAT/CIT filing' : 'تقديم ضريبة القيمة المضافة/الشركات آلي',
+        locale === 'en' ? 'Multi-currency support' : 'دعم متعدد العملات',
+        locale === 'en' ? 'Bank reconciliation' : 'مطابقة بنكية',
+        locale === 'en' ? 'Priority phone support' : 'دعم هاتفي أولوية',
+        locale === 'en' ? 'Custom financial reports' : 'تقارير مالية مخصصة',
       ],
-      cta: locale === 'en' ? 'Start Free Trial' : 'ابدأ التجربة المجانية',
+      cta: locale === 'en' ? 'Start Now' : 'ابدأ الآن',
       popular: true,
       icon: Crown,
     },
@@ -252,12 +255,12 @@ export default function Landing() {
       features: [
         locale === 'en' ? 'Everything in Professional' : 'كل ما في الاحترافي',
         locale === 'en' ? 'Multi-company support' : 'دعم متعدد الشركات',
-        locale === 'en' ? 'Custom integrations' : 'تكاملات مخصصة',
-        locale === 'en' ? 'Dedicated account manager' : 'مدير حساب مخصص',
-        locale === 'en' ? 'SLA & premium support' : 'اتفاقية مستوى خدمة ودعم متميز',
-        locale === 'en' ? 'Custom training' : 'تدريب مخصص',
+        locale === 'en' ? 'Dedicated accountant' : 'محاسب مخصص',
+        locale === 'en' ? 'API access & integrations' : 'وصول API وتكاملات',
+        locale === 'en' ? 'White-label options' : 'خيارات العلامة البيضاء',
+        locale === 'en' ? 'SLA & 24/7 support' : 'اتفاقية مستوى خدمة ودعم 24/7',
       ],
-      cta: locale === 'en' ? 'Contact Sales' : 'تواصل مع المبيعات',
+      cta: locale === 'en' ? 'Talk to an Expert' : 'تحدث مع خبير',
       popular: false,
       icon: Gem,
     },
@@ -289,10 +292,10 @@ export default function Landing() {
             </div>
             <div className="flex flex-col">
               <span className="font-bold text-xl leading-none tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-                {locale === 'en' ? 'BookKeep AI' : 'بوككيب AI'}
+                Muhasib.ai
               </span>
               <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
-                {locale === 'en' ? 'UAE Edition' : 'الإمارات'}
+                {locale === 'en' ? 'by NR Accounting Services' : 'من NR Accounting Services'}
               </span>
             </div>
           </Link>
@@ -775,12 +778,15 @@ export default function Landing() {
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center">
                   <Briefcase className="w-5 h-5 text-white" />
                 </div>
-                <span className="font-bold text-xl">BookKeep AI</span>
+                <div>
+                  <div className="font-bold text-xl">Muhasib.ai</div>
+                  <div className="text-xs text-muted-foreground">by NR Accounting Services</div>
+                </div>
               </div>
               <p className="text-muted-foreground max-w-sm mb-6">
                 {locale === 'en' 
-                  ? 'AI-powered bookkeeping for UAE businesses. Automate your finances, stay compliant, and grow faster.'
-                  : 'محاسبة مدعومة بالذكاء الاصطناعي للشركات الإماراتية. أتمتة شؤونك المالية، والتزم بالقوانين، وانمو أسرع.'
+                  ? 'Registered accounting firm serving UAE businesses since 2017. AI-powered bookkeeping with 99% accuracy and full FTA compliance.'
+                  : 'شركة محاسبة مسجلة تخدم الشركات الإماراتية منذ 2017. محاسبة مدعومة بالذكاء الاصطناعي بدقة 99% وامتثال كامل للهيئة الاتحادية للضرائب.'
                 }
               </p>
               <div className="flex items-center gap-4">
@@ -823,7 +829,7 @@ export default function Landing() {
 
           <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-sm text-muted-foreground">
-              © 2025 BookKeep AI. {locale === 'en' ? 'All rights reserved.' : 'جميع الحقوق محفوظة.'}
+              © 2025 Muhasib.ai by NR Accounting Services. {locale === 'en' ? 'All rights reserved.' : 'جميع الحقوق محفوظة.'}
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <a href="#" className="hover:text-foreground transition-colors">{locale === 'en' ? 'Privacy Policy' : 'سياسة الخصوصية'}</a>

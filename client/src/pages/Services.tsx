@@ -772,8 +772,8 @@ export default function Services() {
         <div className="max-w-7xl mx-auto px-6 lg:px-8 text-center text-sm text-muted-foreground">
           <p data-testid="text-footer">
             {locale === 'en' 
-              ? '© 2024 Muhasib.ai - Your AI-Powered Bookkeeping Partner in Dubai, UAE'
-              : '© 2024 محاسب.ai - شريكك في مسك الدفاتر بالذكاء الاصطناعي في دبي، الإمارات'}
+              ? '© 2025 Muhasib.ai by NR Accounting Services - Licensed Accounting Firm in Dubai, UAE since 2017'
+              : '© 2025 محاسب.ai من NR Accounting Services - شركة محاسبة مرخصة في دبي، الإمارات منذ 2017'}
           </p>
         </div>
       </footer>
