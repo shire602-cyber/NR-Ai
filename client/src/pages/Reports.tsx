@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,24 +6,56 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency, formatNumber } from '@/lib/format';
-import { Download, BarChart3, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
+import { formatCurrency } from '@/lib/format';
+import { Download, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
+
+interface AccountLineItem {
+  accountCode?: string;
+  accountName: string;
+  amount: number;
+}
+
+interface ProfitLossReport {
+  revenue: AccountLineItem[];
+  expenses: AccountLineItem[];
+  totalRevenue: number;
+  totalExpenses: number;
+  netProfit: number;
+}
+
+interface BalanceSheetReport {
+  assets: AccountLineItem[];
+  liabilities: AccountLineItem[];
+  equity: AccountLineItem[];
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+}
+
+interface VATSummaryReport {
+  period: string;
+  salesSubtotal: number;
+  salesVAT: number;
+  purchasesSubtotal: number;
+  purchasesVAT: number;
+  netVATPayable: number;
+}
 
 export default function Reports() {
   const { t, locale } = useTranslation();
-  const { companyId: selectedCompanyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId: selectedCompanyId } = useDefaultCompany();
 
-  const { data: profitLoss, isLoading: plLoading } = useQuery({
+  const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
     queryKey: ['/api/companies', selectedCompanyId, 'reports', 'pl'],
     enabled: !!selectedCompanyId,
   });
 
-  const { data: balanceSheet, isLoading: bsLoading } = useQuery({
+  const { data: balanceSheet, isLoading: bsLoading } = useQuery<BalanceSheetReport>({
     queryKey: ['/api/companies', selectedCompanyId, 'reports', 'balance-sheet'],
     enabled: !!selectedCompanyId,
   });
 
-  const { data: vatSummary, isLoading: vatLoading } = useQuery({
+  const { data: vatSummary, isLoading: vatLoading } = useQuery<VATSummaryReport>({
     queryKey: ['/api/companies', selectedCompanyId, 'reports', 'vat-summary'],
     enabled: !!selectedCompanyId,
   });
@@ -120,12 +151,12 @@ export default function Reports() {
                     <h3 className="font-semibold mb-3 text-green-600 dark:text-green-400">Revenue</h3>
                     <Table>
                       <TableBody>
-                        {profitLoss?.revenue?.map((item: any) => (
-                          <TableRow key={item.accountCode}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode}</TableCell>
-                            <TableCell>{item.accountName}</TableCell>
+                        {profitLoss?.revenue?.map((item, index) => (
+                          <TableRow key={item.accountCode || `revenue-${index}`}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode || '-'}</TableCell>
+                            <TableCell>{item.accountName || 'Unknown Account'}</TableCell>
                             <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount, 'AED', locale)}
+                              {formatCurrency(item.amount ?? 0, 'AED', locale)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -143,12 +174,12 @@ export default function Reports() {
                     <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">Expenses</h3>
                     <Table>
                       <TableBody>
-                        {profitLoss?.expenses?.map((item: any) => (
-                          <TableRow key={item.accountCode}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode}</TableCell>
-                            <TableCell>{item.accountName}</TableCell>
+                        {profitLoss?.expenses?.map((item, index) => (
+                          <TableRow key={item.accountCode || `expense-${index}`}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode || '-'}</TableCell>
+                            <TableCell>{item.accountName || 'Unknown Account'}</TableCell>
                             <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount, 'AED', locale)}
+                              {formatCurrency(item.amount ?? 0, 'AED', locale)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -165,8 +196,8 @@ export default function Reports() {
                   <div className="border-t-4 pt-4">
                     <div className="flex justify-between items-center text-lg font-semibold">
                       <span>Net Profit</span>
-                      <span className={`font-mono ${profitLoss?.netProfit >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {formatCurrency(profitLoss?.netProfit || 0, 'AED', locale)}
+                      <span className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        {formatCurrency(profitLoss?.netProfit ?? 0, 'AED', locale)}
                       </span>
                     </div>
                   </div>
@@ -191,12 +222,12 @@ export default function Reports() {
                     <h3 className="font-semibold mb-3 text-blue-600 dark:text-blue-400">Assets</h3>
                     <Table>
                       <TableBody>
-                        {balanceSheet?.assets?.map((item: any) => (
-                          <TableRow key={item.accountCode}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode}</TableCell>
-                            <TableCell>{item.accountName}</TableCell>
+                        {balanceSheet?.assets?.map((item, index) => (
+                          <TableRow key={item.accountCode || `asset-${index}`}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode || '-'}</TableCell>
+                            <TableCell>{item.accountName || 'Unknown Account'}</TableCell>
                             <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount, 'AED', locale)}
+                              {formatCurrency(item.amount ?? 0, 'AED', locale)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -214,12 +245,12 @@ export default function Reports() {
                     <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">Liabilities</h3>
                     <Table>
                       <TableBody>
-                        {balanceSheet?.liabilities?.map((item: any) => (
-                          <TableRow key={item.accountCode}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode}</TableCell>
-                            <TableCell>{item.accountName}</TableCell>
+                        {balanceSheet?.liabilities?.map((item, index) => (
+                          <TableRow key={item.accountCode || `liability-${index}`}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode || '-'}</TableCell>
+                            <TableCell>{item.accountName || 'Unknown Account'}</TableCell>
                             <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount, 'AED', locale)}
+                              {formatCurrency(item.amount ?? 0, 'AED', locale)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -237,12 +268,12 @@ export default function Reports() {
                     <h3 className="font-semibold mb-3 text-purple-600 dark:text-purple-400">Equity</h3>
                     <Table>
                       <TableBody>
-                        {balanceSheet?.equity?.map((item: any) => (
-                          <TableRow key={item.accountCode}>
-                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode}</TableCell>
-                            <TableCell>{item.accountName}</TableCell>
+                        {balanceSheet?.equity?.map((item, index) => (
+                          <TableRow key={item.accountCode || `equity-${index}`}>
+                            <TableCell className="font-mono text-xs text-muted-foreground">{item.accountCode || '-'}</TableCell>
+                            <TableCell>{item.accountName || 'Unknown Account'}</TableCell>
                             <TableCell className="text-right font-mono font-medium">
-                              {formatCurrency(item.amount, 'AED', locale)}
+                              {formatCurrency(item.amount ?? 0, 'AED', locale)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -305,13 +336,13 @@ export default function Reports() {
                   <div className="border-t-4 pt-6">
                     <div className="flex justify-between items-center text-lg font-semibold">
                       <span>Net VAT Payable to FTA</span>
-                      <span className={`font-mono ${vatSummary?.netVATPayable >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                        {formatCurrency(Math.abs(vatSummary?.netVATPayable || 0), 'AED', locale)}
-                        {vatSummary?.netVATPayable < 0 && ' (Refund)'}
+                      <span className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                        {formatCurrency(Math.abs(vatSummary?.netVATPayable ?? 0), 'AED', locale)}
+                        {(vatSummary?.netVATPayable ?? 0) < 0 && ' (Refund)'}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {vatSummary?.netVATPayable >= 0 
+                      {(vatSummary?.netVATPayable ?? 0) >= 0 
                         ? 'Amount to be paid to the Federal Tax Authority' 
                         : 'Amount to be refunded by the Federal Tax Authority'}
                     </p>

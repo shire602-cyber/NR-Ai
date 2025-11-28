@@ -20,6 +20,20 @@ interface Message {
   timestamp: Date;
 }
 
+interface DashboardStats {
+  revenue: number;
+  expenses: number;
+  outstanding: number;
+  totalInvoices: number;
+  totalEntries: number;
+}
+
+interface ProfitLossReport {
+  totalRevenue: number;
+  totalExpenses: number;
+  netProfit: number;
+}
+
 export default function AICFO() {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -28,12 +42,12 @@ export default function AICFO() {
   const [input, setInput] = useState('');
 
   // Get financial context for AI
-  const { data: stats } = useQuery<any>({
+  const { data: stats } = useQuery<DashboardStats>({
     queryKey: ['/api/companies', companyId, 'dashboard/stats'],
     enabled: !!companyId,
   });
 
-  const { data: profitLoss } = useQuery({
+  const { data: profitLoss } = useQuery<ProfitLossReport>({
     queryKey: ['/api/companies', companyId, 'reports', 'pl'],
     enabled: !!companyId,
   });
@@ -117,10 +131,10 @@ export default function AICFO() {
             {stats ? (
               <>
                 <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(stats.totalRevenue || 0, 'AED')}
+                  {formatCurrency(stats.revenue || 0, 'AED')}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  From {stats.totalInvoices || 0} invoices
+                  From journal entries
                 </p>
               </>
             ) : (
@@ -131,17 +145,17 @@ export default function AICFO() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">Cash Position</CardTitle>
+            <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
             <TrendingUp className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             {profitLoss ? (
               <>
-                <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(profitLoss.netIncome || 0, 'AED')}
+                <div className={`text-2xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {formatCurrency(profitLoss.netProfit || 0, 'AED')}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Net income
+                  Revenue minus expenses
                 </p>
               </>
             ) : (
@@ -152,7 +166,7 @@ export default function AICFO() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">Entries Posted</CardTitle>
+            <CardTitle className="text-sm font-medium">Journal Entries</CardTitle>
             <FileText className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -162,7 +176,7 @@ export default function AICFO() {
                   {stats.totalEntries || 0}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Journal entries
+                  From {stats.totalInvoices || 0} invoices
                 </p>
               </>
             ) : (

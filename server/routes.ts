@@ -1160,15 +1160,18 @@ Amount: ${validated.amount} ${validated.currency}`
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
       
-      // Build financial context
+      // Build financial context from actual data
       const financialContext = {
         companyName: company?.name,
-        totalRevenue: context?.stats?.totalRevenue || 0,
-        totalExpenses: context?.stats?.totalExpenses || 0,
-        netIncome: context?.profitLoss?.netIncome || 0,
+        totalRevenue: context?.profitLoss?.totalRevenue || context?.stats?.revenue || 0,
+        totalExpenses: context?.profitLoss?.totalExpenses || context?.stats?.expenses || 0,
+        netProfit: context?.profitLoss?.netProfit || 0,
         totalInvoices: invoices.length,
         outstandingInvoices: invoices.filter(i => i.status === 'sent' || i.status === 'draft').length,
+        outstandingAmount: invoices.filter(i => i.status === 'sent' || i.status === 'draft')
+          .reduce((sum, i) => sum + i.total, 0),
         totalReceipts: receipts.length,
+        postedReceipts: receipts.filter(r => r.posted).length,
         accountCount: accounts.length,
       };
       
@@ -1256,6 +1259,8 @@ Keep your tone professional but friendly, like a trusted advisor.`
         revenue,
         expenses,
         outstanding,
+        totalInvoices: invoices.length,
+        totalEntries: entries.length,
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -1473,6 +1478,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
     try {
       const { companyId } = req.params;
       const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
       
       let salesSubtotal = 0;
       let salesVAT = 0;
@@ -1484,9 +1490,19 @@ Keep your tone professional but friendly, like a trusted advisor.`
         }
       }
       
-      // Purchases VAT would come from bills/expenses (simplified for now)
-      const purchasesSubtotal = 0;
-      const purchasesVAT = 0;
+      // Calculate purchases VAT from posted receipts/expenses
+      // Note: receipt.amount is the subtotal (VAT-exclusive), receipt.vatAmount is the VAT component
+      let purchasesSubtotal = 0;
+      let purchasesVAT = 0;
+      
+      for (const receipt of receipts) {
+        if (receipt.posted) {
+          // receipt.amount = subtotal (VAT-exclusive)
+          // receipt.vatAmount = VAT amount (separate field)
+          purchasesSubtotal += (receipt.amount || 0);
+          purchasesVAT += (receipt.vatAmount || 0);
+        }
+      }
       
       const netVATPayable = salesVAT - purchasesVAT;
       
@@ -1511,7 +1527,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
     try {
       const { companyId } = req.query;
       if (!companyId) {
-        return res.json({ revenue: 0, expenses: 0, outstanding: 0 });
+        return res.json({ revenue: 0, expenses: 0, outstanding: 0, totalInvoices: 0, totalEntries: 0 });
       }
       
       const invoices = await storage.getInvoicesByCompanyId(companyId as string);
@@ -1542,6 +1558,8 @@ Keep your tone professional but friendly, like a trusted advisor.`
         revenue: balances.get('income') || 0,
         expenses: balances.get('expense') || 0,
         outstanding,
+        totalInvoices: invoices.length,
+        totalEntries: entries.length,
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
