@@ -67,6 +67,10 @@ export default function Receipts() {
   const [postingReceipt, setPostingReceipt] = useState<any>(null);
   const [selectedExpenseAccount, setSelectedExpenseAccount] = useState<string>('');
   const [selectedPaymentAccount, setSelectedPaymentAccount] = useState<string>('');
+  const [createAccountDialogOpen, setCreateAccountDialogOpen] = useState(false);
+  const [newAccountType, setNewAccountType] = useState<'expense' | 'asset'>('expense');
+  const [newAccountCode, setNewAccountCode] = useState('');
+  const [newAccountName, setNewAccountName] = useState('');
 
   // Fetch receipts
   const { data: receipts, isLoading } = useQuery<any[]>({
@@ -139,6 +143,34 @@ export default function Receipts() {
       toast({
         variant: 'destructive',
         title: 'Failed to post expense',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const createAccountMutation = useMutation({
+    mutationFn: (data: any) => 
+      apiRequest('POST', `/api/companies/${companyId}/accounts`, data),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'accounts'] });
+      toast({
+        title: 'Account created successfully',
+        description: `${data.nameEn} has been added.`,
+      });
+      setCreateAccountDialogOpen(false);
+      setNewAccountCode('');
+      setNewAccountName('');
+      // Auto-select the new account if it matches the type
+      if (newAccountType === 'expense') {
+        setSelectedExpenseAccount(data.id);
+      } else if (newAccountType === 'asset') {
+        setSelectedPaymentAccount(data.id);
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to create account',
         description: error.message || 'Please try again.',
       });
     },
@@ -1093,6 +1125,76 @@ export default function Receipts() {
         </DialogContent>
       </Dialog>
 
+      {/* Create Account Dialog */}
+      <Dialog open={createAccountDialogOpen} onOpenChange={setCreateAccountDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Account</DialogTitle>
+            <DialogDescription>
+              Add a new {newAccountType === 'expense' ? 'expense' : 'payment'} account
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="account-code">Account Code</Label>
+              <Input 
+                id="account-code"
+                value={newAccountCode}
+                onChange={(e) => setNewAccountCode(e.target.value)}
+                placeholder="e.g., 5220"
+                data-testid="input-account-code"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="account-name">Account Name</Label>
+              <Input 
+                id="account-name"
+                value={newAccountName}
+                onChange={(e) => setNewAccountName(e.target.value)}
+                placeholder="e.g., Travel Expenses"
+                data-testid="input-account-name"
+              />
+            </div>
+            <div className="flex gap-3 pt-4">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => setCreateAccountDialogOpen(false)} 
+                className="flex-1"
+                disabled={createAccountMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="button" 
+                onClick={() => {
+                  if (!newAccountCode.trim() || !newAccountName.trim()) {
+                    toast({
+                      variant: 'destructive',
+                      title: 'Missing information',
+                      description: 'Please enter both account code and name.',
+                    });
+                    return;
+                  }
+                  createAccountMutation.mutate({
+                    code: newAccountCode.trim(),
+                    nameEn: newAccountName.trim(),
+                    nameAr: newAccountName.trim(),
+                    type: newAccountType,
+                    isActive: true,
+                  });
+                }}
+                disabled={createAccountMutation.isPending || !newAccountCode.trim() || !newAccountName.trim()}
+                className="flex-1"
+                data-testid="button-create-account-submit"
+              >
+                {createAccountMutation.isPending ? 'Creating...' : 'Create Account'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Post Expense Dialog */}
       <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
         <DialogContent>
@@ -1118,7 +1220,21 @@ export default function Receipts() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="expense-account">Expense Account (Debit)</Label>
+              <div className="flex justify-between items-center">
+                <Label htmlFor="expense-account">Expense Account (Debit)</Label>
+                <Button 
+                  type="button" 
+                  size="sm" 
+                  variant="ghost"
+                  onClick={() => {
+                    setNewAccountType('expense');
+                    setCreateAccountDialogOpen(true);
+                  }}
+                  data-testid="button-create-expense-account"
+                >
+                  + Create
+                </Button>
+              </div>
               <Select value={selectedExpenseAccount} onValueChange={setSelectedExpenseAccount}>
                 <SelectTrigger id="expense-account" data-testid="select-expense-account">
                   <SelectValue placeholder="Select expense account" />
@@ -1137,7 +1253,21 @@ export default function Receipts() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="payment-account">Payment Account (Credit)</Label>
+              <div className="flex justify-between items-center">
+                <Label htmlFor="payment-account">Payment Account (Credit)</Label>
+                <Button 
+                  type="button" 
+                  size="sm" 
+                  variant="ghost"
+                  onClick={() => {
+                    setNewAccountType('asset');
+                    setCreateAccountDialogOpen(true);
+                  }}
+                  data-testid="button-create-payment-account"
+                >
+                  + Create
+                </Button>
+              </div>
               <Select value={selectedPaymentAccount} onValueChange={setSelectedPaymentAccount}>
                 <SelectTrigger id="payment-account" data-testid="select-payment-account">
                   <SelectValue placeholder="Select payment account" />
