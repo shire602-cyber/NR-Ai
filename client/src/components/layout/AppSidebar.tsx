@@ -10,7 +10,8 @@ import {
   Receipt,
   Bot,
   Settings,
-  Plug
+  Plug,
+  MessageCircle
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -75,6 +76,11 @@ const navigationItems = [
     title: 'integrations',
     icon: Plug,
     url: '/integrations',
+  },
+  {
+    title: 'whatsappInbox',
+    icon: MessageCircle,
+    url: '/whatsapp',
   },
 ];
 

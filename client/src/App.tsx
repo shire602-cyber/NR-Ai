@@ -27,6 +27,7 @@ import Landing from '@/pages/Landing';
 import Services from '@/pages/Services';
 import CompanyProfile from '@/pages/CompanyProfile';
 import Integrations from '@/pages/Integrations';
+import WhatsAppDashboard from '@/pages/WhatsAppDashboard';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -103,6 +104,7 @@ function Router() {
           <Route path="/receipts" component={Receipts} />
           <Route path="/ai-cfo" component={AICFO} />
           <Route path="/integrations" component={Integrations} />
+          <Route path="/whatsapp" component={WhatsAppDashboard} />
           <Route component={NotFound} />
         </Switch>
       </ProtectedLayout>
