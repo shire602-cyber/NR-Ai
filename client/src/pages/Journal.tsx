@@ -353,11 +353,12 @@ export default function Journal() {
                             <FormItem>
                               <FormControl>
                                 <Input 
-                                  {...field} 
                                   type="number" 
                                   step="0.01" 
                                   placeholder="0.00" 
-                                  className="font-mono text-right" 
+                                  className="font-mono text-right"
+                                  value={field.value ?? ''} 
+                                  onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
                                   data-testid={`input-debit-${index}`}
                                 />
                               </FormControl>
@@ -373,11 +374,12 @@ export default function Journal() {
                             <FormItem>
                               <FormControl>
                                 <Input 
-                                  {...field} 
                                   type="number" 
                                   step="0.01" 
                                   placeholder="0.00" 
-                                  className="font-mono text-right" 
+                                  className="font-mono text-right"
+                                  value={field.value ?? ''} 
+                                  onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
                                   data-testid={`input-credit-${index}`}
                                 />
                               </FormControl>

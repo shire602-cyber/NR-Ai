@@ -1145,7 +1145,14 @@ export default function Receipts() {
                   <FormItem>
                     <FormLabel>Amount</FormLabel>
                     <FormControl>
-                      <Input {...field} type="number" step="0.01" className="font-mono" data-testid="input-edit-amount" />
+                      <Input 
+                        type="number" 
+                        step="0.01" 
+                        className="font-mono"
+                        value={field.value ?? ''} 
+                        onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
+                        data-testid="input-edit-amount" 
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

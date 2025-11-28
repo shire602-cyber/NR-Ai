@@ -136,11 +136,12 @@ export default function AICategorize() {
                       <FormLabel>{t.amount}</FormLabel>
                       <FormControl>
                         <Input
-                          {...field}
                           type="number"
                           step="0.01"
                           placeholder="100.00"
                           className="font-mono"
+                          value={field.value ?? ''} 
+                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
                           data-testid="input-amount"
                         />
                       </FormControl>

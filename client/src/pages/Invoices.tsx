@@ -588,7 +588,15 @@ export default function Invoices() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input {...field} type="number" step="0.01" placeholder="Qty" className="font-mono" data-testid={`input-line-quantity-${index}`} />
+                                <Input 
+                                  type="number" 
+                                  step="0.01" 
+                                  placeholder="Qty" 
+                                  className="font-mono"
+                                  value={field.value ?? ''} 
+                                  onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
+                                  data-testid={`input-line-quantity-${index}`} 
+                                />
                               </FormControl>
                             </FormItem>
                           )}
@@ -601,7 +609,15 @@ export default function Invoices() {
                           render={({ field }) => (
                             <FormItem>
                               <FormControl>
-                                <Input {...field} type="number" step="0.01" placeholder="Price" className="font-mono" data-testid={`input-line-price-${index}`} />
+                                <Input 
+                                  type="number" 
+                                  step="0.01" 
+                                  placeholder="Price" 
+                                  className="font-mono"
+                                  value={field.value ?? ''} 
+                                  onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
+                                  data-testid={`input-line-price-${index}`} 
+                                />
                               </FormControl>
                             </FormItem>
                           )}
