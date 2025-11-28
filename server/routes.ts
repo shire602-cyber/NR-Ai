@@ -1184,14 +1184,14 @@ Amount: ${validated.amount} ${validated.currency}`
             content: `You are an experienced CFO and financial advisor specializing in UAE businesses. You provide strategic financial advice based on real business data.
 
 Company Financial Context:
-- Company: ${financialContext.companyName}
-- Total Revenue: AED ${financialContext.totalRevenue.toLocaleString()}
-- Total Expenses: AED ${financialContext.totalExpenses.toLocaleString()}
-- Net Income: AED ${financialContext.netIncome.toLocaleString()}
-- Total Invoices: ${financialContext.totalInvoices}
-- Outstanding Invoices: ${financialContext.outstandingInvoices}
-- Receipts Processed: ${financialContext.totalReceipts}
-- Chart of Accounts: ${financialContext.accountCount} accounts
+- Company: ${financialContext.companyName || 'Your Business'}
+- Total Revenue: AED ${(financialContext.totalRevenue || 0).toLocaleString()}
+- Total Expenses: AED ${(financialContext.totalExpenses || 0).toLocaleString()}
+- Net Profit: AED ${(financialContext.netProfit || 0).toLocaleString()}
+- Total Invoices: ${financialContext.totalInvoices || 0}
+- Outstanding Invoices: ${financialContext.outstandingInvoices || 0} (AED ${(financialContext.outstandingAmount || 0).toLocaleString()})
+- Receipts Processed: ${financialContext.totalReceipts || 0} (${financialContext.postedReceipts || 0} posted)
+- Chart of Accounts: ${financialContext.accountCount || 0} accounts
 
 Your role is to:
 1. Provide actionable financial advice specific to UAE businesses
