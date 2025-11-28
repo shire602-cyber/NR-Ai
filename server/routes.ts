@@ -841,10 +841,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // For now, we'll proceed with the journal entry creation
       // In production, this should be wrapped in a transaction
 
+      // Parse date safely
+      let entryDate: Date;
+      try {
+        const parsed = new Date(receipt.date || new Date());
+        if (isNaN(parsed.getTime())) {
+          entryDate = new Date();
+        } else {
+          entryDate = parsed;
+        }
+      } catch (e) {
+        entryDate = new Date();
+      }
+
       // Create journal entry for the receipt
       const entry = await storage.createJournalEntry({
         companyId: receipt.companyId,
-        date: receipt.date ? new Date(receipt.date) : new Date(),
+        date: entryDate,
         memo: `Receipt: ${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
         createdBy: userId,
       });

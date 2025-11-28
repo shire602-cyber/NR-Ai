@@ -394,14 +394,53 @@ export async function importExpensesFromSheet(
   // Skip header row
   const rows = data.slice(1);
   
-  return rows.map(row => ({
-    date: row[0] || new Date().toISOString().split('T')[0],
-    merchant: row[1] || '',
-    description: row[2] || '',
-    category: row[3] || '',
-    amount: parseFloat(row[4]) || 0,
-    vatAmount: parseFloat(row[5]) || 0,
-    paymentMethod: row[6] || '',
-    status: row[7] || 'pending'
-  })).filter(exp => exp.amount > 0);
+  return rows.map(row => {
+    let date = new Date().toISOString().split('T')[0];
+    const dateStr = row[0]?.toString().trim();
+    if (dateStr) {
+      try {
+        // Try to parse various date formats
+        // Handles: DD/MM/YY, DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY
+        let parsedDate: Date | null = null;
+        
+        if (dateStr.includes('/')) {
+          const parts = dateStr.split('/');
+          if (parts.length === 3) {
+            let day = parseInt(parts[0], 10);
+            let month = parseInt(parts[1], 10);
+            let year = parseInt(parts[2], 10);
+            
+            // Handle 2-digit year
+            if (year < 100) {
+              year += year < 50 ? 2000 : 1900;
+            }
+            
+            parsedDate = new Date(year, month - 1, day);
+          }
+        } else if (dateStr.includes('-')) {
+          parsedDate = new Date(dateStr);
+        } else {
+          // Try generic parsing
+          parsedDate = new Date(dateStr);
+        }
+        
+        if (parsedDate && !isNaN(parsedDate.getTime())) {
+          date = parsedDate.toISOString().split('T')[0];
+        }
+      } catch (e) {
+        // Fall back to today's date
+      }
+    }
+    
+    return {
+      date,
+      merchant: row[1] || '',
+      description: row[2] || '',
+      category: row[3] || '',
+      amount: parseFloat(row[4]) || 0,
+      vatAmount: parseFloat(row[5]) || 0,
+      paymentMethod: row[6] || '',
+      status: row[7] || 'pending'
+    };
+  }).filter(exp => exp.amount > 0);
 }
