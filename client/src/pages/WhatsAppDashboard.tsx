@@ -433,24 +433,24 @@ export default function WhatsAppDashboard() {
                           </div>
                           <div className="flex flex-col items-end gap-2">
                             {getStatusBadge(message.status)}
-                            {(message.messageType === 'image' || message.messageType === 'document') && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleProcessOCR(message);
-                                }}
-                                disabled={isProcessingOCR}
-                                data-testid={`button-ocr-${message.id}`}
-                              >
-                                {isProcessingOCR && selectedMessage?.id === message.id ? (
-                                  <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> {t.processingOCR}</>
-                                ) : (
-                                  <><Scan className="w-3 h-3 mr-1" /> {t.processOCR}</>
-                                )}
-                              </Button>
-                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleProcessOCR(message);
+                              }}
+                              disabled={isProcessingOCR}
+                              data-testid={`button-ocr-${message.id}`}
+                            >
+                              {isProcessingOCR && selectedMessage?.id === message.id ? (
+                                <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> {t.processingOCR}</>
+                              ) : (
+                                <><Bot className="w-3 h-3 mr-1" /> {message.messageType === 'text' 
+                                  ? (locale === 'en' ? 'Process with AI' : 'معالجة بالذكاء') 
+                                  : t.processOCR}</>
+                              )}
+                            </Button>
                           </div>
                         </div>
                       </div>

@@ -146,7 +146,17 @@ The platform supports external service integrations for data sync and automation
 - Configurable per-company with Phone Number ID, Business Account ID, and Access Token
 - Toggle integration on/off
 - Schema: `whatsapp_configs` (configuration) and `whatsapp_messages` (message logs)
-- Endpoints:
+
+**WhatsApp Inbox Dashboard** (New):
+- Dedicated dashboard page at `/whatsapp` for processing incoming messages
+- AI-powered text extraction from receipt messages (text, image, document types)
+- Extracts merchant, date, amount, VAT, and category from receipt content
+- UAE-specific expense categories: Office Supplies, Utilities, Travel, Meals, Rent, Marketing, Equipment, Professional Services, Insurance, Maintenance, Communication, Other
+- Direct expense creation from extracted data with account selection
+- Company-scoped processing with input validation
+- Bilingual support (English/Arabic with RTL)
+
+**WhatsApp API Endpoints**:
   - `GET /api/webhooks/whatsapp` - Meta webhook verification
   - `POST /api/webhooks/whatsapp` - Receive incoming messages
   - `GET /api/integrations/whatsapp/config` - Get configuration status
@@ -154,6 +164,8 @@ The platform supports external service integrations for data sync and automation
   - `PATCH /api/integrations/whatsapp/toggle` - Toggle integration on/off
   - `GET /api/integrations/whatsapp/messages` - Message history
   - `GET /api/integrations/whatsapp/status` - Integration status for dashboard
+  - `POST /api/ocr/process` - Process receipt with AI categorization
+  - `POST /api/integrations/whatsapp/test-message` - Create test message (development)
 
 ### Coming Soon
 
