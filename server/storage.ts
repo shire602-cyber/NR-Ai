@@ -48,7 +48,6 @@ export interface IStorage {
   // Accounts
   getAccount(id: string): Promise<Account | undefined>;
   getAccountsByCompanyId(companyId: string): Promise<Account[]>;
-  getAccountByCode(companyId: string, code: string): Promise<Account | undefined>;
   createAccount(account: InsertAccount): Promise<Account>;
   updateAccount(id: string, data: Partial<InsertAccount>): Promise<Account>;
   deleteAccount(id: string): Promise<void>;
@@ -194,14 +193,12 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(accounts).where(eq(accounts.companyId, companyId));
   }
 
-  async getAccountByCode(companyId: string, code: string): Promise<Account | undefined> {
     const [account] = await db
       .select()
       .from(accounts)
       .where(
         and(
           eq(accounts.companyId, companyId),
-          eq(accounts.code, code)
         )
       );
     return account || undefined;

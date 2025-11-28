@@ -34,29 +34,31 @@ async function authMiddleware(req: Request, res: Response, next: Function) {
 
 // UAE Chart of Accounts seed data
 const UAE_SEED_COA = [
-  { code: "1000", nameEn: "Cash", nameAr: "نقد", type: "asset" },
-  { code: "1100", nameEn: "Bank", nameAr: "بنك", type: "asset" },
-  { code: "1200", nameEn: "Accounts Receivable", nameAr: "حسابات مدينة", type: "asset" },
-  { code: "2000", nameEn: "Accounts Payable", nameAr: "حسابات دائنة", type: "liability" },
-  { code: "2100", nameEn: "VAT Payable", nameAr: "ضريبة مستحقة", type: "liability" },
-  { code: "2200", nameEn: "VAT Receivable", nameAr: "ضريبة مستردة", type: "asset" },
-  { code: "3000", nameEn: "Owner's Equity", nameAr: "حقوق الملكية", type: "equity" },
-  { code: "4000", nameEn: "Sales Revenue", nameAr: "إيرادات المبيعات", type: "income" },
-  { code: "4100", nameEn: "Other Income", nameAr: "إيرادات أخرى", type: "income" },
-  { code: "5000", nameEn: "COGS", nameAr: "تكلفة البضاعة المباعة", type: "expense" },
-  { code: "5100", nameEn: "Rent Expense", nameAr: "مصروف الإيجار", type: "expense" },
-  { code: "5200", nameEn: "Utilities Expense", nameAr: "مصروف المرافق", type: "expense" },
-  { code: "5300", nameEn: "Marketing Expense", nameAr: "مصروف التسويق", type: "expense" },
-  { code: "5400", nameEn: "Office Supplies", nameAr: "مستلزمات مكتبية", type: "expense" },
+  { nameEn: "Cash", nameAr: "نقد", type: "asset" },
+  { nameEn: "Bank", nameAr: "بنك", type: "asset" },
+  { nameEn: "Accounts Receivable", nameAr: "حسابات مدينة", type: "asset" },
+  { nameEn: "Accounts Payable", nameAr: "حسابات دائنة", type: "liability" },
+  { nameEn: "VAT Payable", nameAr: "ضريبة مستحقة", type: "liability" },
+  { nameEn: "VAT Receivable", nameAr: "ضريبة مستردة", type: "asset" },
+  { nameEn: "Owner's Equity", nameAr: "حقوق الملكية", type: "equity" },
+  { nameEn: "Sales Revenue", nameAr: "إيرادات المبيعات", type: "income" },
+  { nameEn: "Other Income", nameAr: "إيرادات أخرى", type: "income" },
+  { nameEn: "COGS", nameAr: "تكلفة البضاعة المباعة", type: "expense" },
+  { nameEn: "Rent Expense", nameAr: "مصروف الإيجار", type: "expense" },
+  { nameEn: "Utilities Expense", nameAr: "مصروف المرافق", type: "expense" },
+  { nameEn: "Marketing Expense", nameAr: "مصروف التسويق", type: "expense" },
+  { nameEn: "Office Supplies", nameAr: "مستلزمات مكتبية", type: "expense" },
+  { nameEn: "Travel Expenses", nameAr: "مصروفات السفر", type: "expense" },
 ];
 
 async function seedChartOfAccounts(companyId: string) {
   for (const account of UAE_SEED_COA) {
-    const exists = await storage.getAccountByCode(companyId, account.code);
+    const exists = await storage.getAccounts(companyId).then(accs => 
+      accs.find(a => a.nameEn === account.nameEn)
+    );
     if (!exists) {
       await storage.createAccount({
         companyId,
-        code: account.code,
         nameEn: account.nameEn,
         nameAr: account.nameAr,
         type: account.type,
@@ -296,7 +298,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validated = insertAccountSchema.parse({ ...req.body, companyId });
       
       // Check if account code exists
-      const existing = await storage.getAccountByCode(companyId, validated.code);
       if (existing) {
         return res.status(400).json({ message: 'Account code already exists' });
       }
@@ -326,8 +327,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // If updating code, check if new code already exists
-      if (req.body.code && req.body.code !== account.code) {
-        const existing = await storage.getAccountByCode(account.companyId, req.body.code);
         if (existing) {
           return res.status(400).json({ message: 'Account code already exists' });
         }
@@ -643,12 +642,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Validate payment account is an asset account (cash/bank)
-        if (!['1000', '1100'].includes(paymentAccount.code)) {
+        if (paymentAccount.type !== 'asset') {
           return res.status(400).json({ message: 'Payment account must be a cash or bank account' });
         }
 
         const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
-        const accountsReceivable = accounts.find(a => a.code === '1200');
+        const accountsReceivable = accounts.find(a => a.nameEn === 'Accounts Receivable');
         
         if (accountsReceivable) {
           const entry = await storage.createJournalEntry({
@@ -1289,15 +1288,12 @@ Keep your tone professional but friendly, like a trusted advisor.`
           const account = accounts.find(a => a.id === line.accountId);
           if (!account || account.type !== 'expense') continue;
           
-          const current = balances.get(account.code) || 0;
-          balances.set(account.code, current + line.debit - line.credit);
         }
       }
       
       const breakdown = expenseAccounts
         .map(account => ({
           name: account.nameEn,
-          value: balances.get(account.code) || 0,
         }))
         .filter(item => item.value > 0)
         .sort((a, b) => b.value - a.value)
@@ -1379,11 +1375,11 @@ Keep your tone professional but friendly, like a trusted advisor.`
           const account = accounts.find(a => a.id === line.accountId);
           if (!account) continue;
           
-          const current = balances.get(account.code) || 0;
+          const current = balances.get(account.id) || 0;
           if (account.type === 'income') {
-            balances.set(account.code, current + line.credit - line.debit);
+            balances.set(account.id, current + line.credit - line.debit);
           } else if (account.type === 'expense') {
-            balances.set(account.code, current + line.debit - line.credit);
+            balances.set(account.id, current + line.debit - line.credit);
           }
         }
       }
@@ -1391,18 +1387,16 @@ Keep your tone professional but friendly, like a trusted advisor.`
       const revenue = accounts
         .filter(a => a.type === 'income')
         .map(a => ({
-          accountCode: a.code,
           accountName: a.nameEn,
-          amount: balances.get(a.code) || 0,
+          amount: balances.get(a.id) || 0,
         }))
         .filter(item => item.amount > 0);
       
       const expenses = accounts
         .filter(a => a.type === 'expense')
         .map(a => ({
-          accountCode: a.code,
           accountName: a.nameEn,
-          amount: balances.get(a.code) || 0,
+          amount: balances.get(a.id) || 0,
         }))
         .filter(item => item.amount > 0);
       
@@ -1437,11 +1431,11 @@ Keep your tone professional but friendly, like a trusted advisor.`
           const account = accounts.find(a => a.id === line.accountId);
           if (!account) continue;
           
-          const current = balances.get(account.code) || 0;
+          const current = balances.get(account.id) || 0;
           if (account.type === 'asset' || account.type === 'expense') {
-            balances.set(account.code, current + line.debit - line.credit);
+            balances.set(account.id, current + line.debit - line.credit);
           } else {
-            balances.set(account.code, current + line.credit - line.debit);
+            balances.set(account.id, current + line.credit - line.debit);
           }
         }
       }
@@ -1449,25 +1443,22 @@ Keep your tone professional but friendly, like a trusted advisor.`
       const assets = accounts
         .filter(a => a.type === 'asset')
         .map(a => ({
-          accountCode: a.code,
           accountName: a.nameEn,
-          amount: balances.get(a.code) || 0,
+          amount: balances.get(a.id) || 0,
         }));
       
       const liabilities = accounts
         .filter(a => a.type === 'liability')
         .map(a => ({
-          accountCode: a.code,
           accountName: a.nameEn,
-          amount: balances.get(a.code) || 0,
+          amount: balances.get(a.id) || 0,
         }));
       
       const equity = accounts
         .filter(a => a.type === 'equity')
         .map(a => ({
-          accountCode: a.code,
           accountName: a.nameEn,
-          amount: balances.get(a.code) || 0,
+          amount: balances.get(a.id) || 0,
         }));
       
       const totalAssets = assets.reduce((sum, item) => sum + item.amount, 0);
@@ -1598,9 +1589,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
           const account = accounts.find(a => a.id === line.accountId);
           if (!account || account.type !== 'expense') continue;
           
-          const current = balances.get(account.code) || { name: account.nameEn, value: 0 };
           current.value += line.debit - line.credit;
-          balances.set(account.code, current);
         }
       }
       

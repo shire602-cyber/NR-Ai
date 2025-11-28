@@ -22,7 +22,6 @@ import type { Account } from '@shared/schema';
 
 const accountSchema = z.object({
   companyId: z.string().uuid(),
-  code: z.string().min(1, 'Account code is required'),
   nameEn: z.string().min(1, 'Account name (EN) is required'),
   nameAr: z.string().optional(),
   type: z.enum(['asset', 'liability', 'equity', 'income', 'expense']),
@@ -48,7 +47,6 @@ export default function Accounts() {
     resolver: zodResolver(accountSchema),
     defaultValues: {
       companyId: selectedCompanyId || '',
-      code: '',
       nameEn: '',
       nameAr: '',
       type: 'asset',
@@ -130,7 +128,6 @@ export default function Accounts() {
     setEditingAccount(account);
     form.reset({
       companyId: account.companyId,
-      code: account.code,
       nameEn: account.nameEn,
       nameAr: account.nameAr || '',
       type: account.type,
@@ -153,7 +150,6 @@ export default function Accounts() {
   };
 
   const filteredAccounts = accounts?.filter(acc => 
-    acc.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
     acc.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (acc.nameAr && acc.nameAr.includes(searchTerm))
   );
@@ -206,19 +202,6 @@ export default function Accounts() {
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="code"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t.accountCode}</FormLabel>
-                      <FormControl>
-                        <Input {...field} placeholder="6000" className="font-mono" data-testid="input-account-code" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
                 <FormField
                   control={form.control}
                   name="nameEn"
@@ -302,7 +285,6 @@ export default function Accounts() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="font-semibold">{t.accountCode}</TableHead>
                   <TableHead className="font-semibold">{t.accountName}</TableHead>
                   <TableHead className="font-semibold">{t.type}</TableHead>
                   <TableHead className="text-center font-semibold">Status</TableHead>
@@ -313,7 +295,6 @@ export default function Accounts() {
                 {filteredAccounts && filteredAccounts.length > 0 ? (
                   filteredAccounts.map((account) => (
                     <TableRow key={account.id} data-testid={`account-row-${account.id}`}>
-                      <TableCell className="font-mono font-medium">{account.code}</TableCell>
                       <TableCell>
                         {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
                       </TableCell>
@@ -353,7 +334,7 @@ export default function Accounts() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete Account?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Are you sure you want to delete account <strong>{account.code} - {account.nameEn}</strong>? 
+                                Are you sure you want to delete account <strong>{account.nameEn}</strong>? 
                                 This action cannot be undone.
                                 {account.isActive && (
                                   <span className="block mt-2 text-destructive font-medium">

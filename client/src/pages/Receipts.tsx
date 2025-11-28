@@ -1242,7 +1242,7 @@ export default function Receipts() {
                 <SelectContent>
                   {accounts?.filter(acc => acc.type === 'expense').map(account => (
                     <SelectItem key={account.id} value={account.id}>
-                      {account.code} - {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
+                      {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1275,7 +1275,7 @@ export default function Receipts() {
                 <SelectContent>
                   {accounts?.filter(acc => acc.type === 'asset').map(account => (
                     <SelectItem key={account.id} value={account.id}>
-                      {account.code} - {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
+                      {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1287,7 +1287,7 @@ export default function Receipts() {
 
             <div className="p-4 rounded-md border bg-card">
               <p className="text-sm font-medium mb-2">Journal Entry Preview:</p>
-              <div className="space-y-1 text-sm font-mono">
+              <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>Dr. {accounts?.find(a => a.id === selectedExpenseAccount)?.nameEn || 'Expense Account'}</span>
                   <span>{formatCurrency((postingReceipt?.amount || 0) + (postingReceipt?.vatAmount || 0), 'AED', locale)}</span>

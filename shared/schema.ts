@@ -97,7 +97,6 @@ export type CompanyUser = typeof companyUsers.$inferSelect;
 export const accounts = pgTable("accounts", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-  code: text("code").notNull(),
   nameEn: text("name_en").notNull(),
   nameAr: text("name_ar"),
   type: text("type").notNull(), // asset | liability | equity | income | expense
