@@ -11,7 +11,11 @@ import type {
   Waitlist, InsertWaitlist,
   IntegrationSync, InsertIntegrationSync,
   WhatsappConfig, InsertWhatsappConfig,
-  WhatsappMessage, InsertWhatsappMessage
+  WhatsappMessage, InsertWhatsappMessage,
+  AnomalyAlert, InsertAnomalyAlert,
+  BankTransaction, InsertBankTransaction,
+  CashFlowForecast, InsertCashFlowForecast,
+  TransactionClassification, InsertTransactionClassification
 } from "@shared/schema";
 import {
   users,
@@ -26,7 +30,11 @@ import {
   waitlist,
   integrationSyncs,
   whatsappConfigs,
-  whatsappMessages
+  whatsappMessages,
+  anomalyAlerts,
+  bankTransactions,
+  cashFlowForecasts,
+  transactionClassifications
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -107,6 +115,30 @@ export interface IStorage {
   createWhatsappMessage(message: InsertWhatsappMessage): Promise<WhatsappMessage>;
   getWhatsappMessagesByCompanyId(companyId: string): Promise<WhatsappMessage[]>;
   updateWhatsappMessage(id: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage>;
+
+  // AI Anomaly Alerts
+  createAnomalyAlert(alert: InsertAnomalyAlert): Promise<AnomalyAlert>;
+  getAnomalyAlertsByCompanyId(companyId: string): Promise<AnomalyAlert[]>;
+  getUnresolvedAnomalyAlerts(companyId: string): Promise<AnomalyAlert[]>;
+  updateAnomalyAlert(id: string, data: Partial<InsertAnomalyAlert>): Promise<AnomalyAlert>;
+  resolveAnomalyAlert(id: string, userId: string, note?: string): Promise<AnomalyAlert>;
+
+  // Bank Transactions
+  createBankTransaction(transaction: InsertBankTransaction): Promise<BankTransaction>;
+  getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]>;
+  getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]>;
+  updateBankTransaction(id: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
+  reconcileBankTransaction(id: string, matchedId: string, matchType: 'journal' | 'receipt' | 'invoice'): Promise<BankTransaction>;
+
+  // Cash Flow Forecasts
+  createCashFlowForecast(forecast: InsertCashFlowForecast): Promise<CashFlowForecast>;
+  getCashFlowForecastsByCompanyId(companyId: string): Promise<CashFlowForecast[]>;
+  deleteCashFlowForecastsByCompanyId(companyId: string): Promise<void>;
+
+  // Transaction Classifications
+  createTransactionClassification(classification: InsertTransactionClassification): Promise<TransactionClassification>;
+  getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]>;
+  updateTransactionClassification(id: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -500,6 +532,176 @@ export class DatabaseStorage implements IStorage {
       throw new Error('WhatsApp message not found');
     }
     return message;
+  }
+
+  // AI Anomaly Alerts
+  async createAnomalyAlert(insertAlert: InsertAnomalyAlert): Promise<AnomalyAlert> {
+    const [alert] = await db
+      .insert(anomalyAlerts)
+      .values(insertAlert)
+      .returning();
+    return alert;
+  }
+
+  async getAnomalyAlertsByCompanyId(companyId: string): Promise<AnomalyAlert[]> {
+    return await db
+      .select()
+      .from(anomalyAlerts)
+      .where(eq(anomalyAlerts.companyId, companyId))
+      .orderBy(desc(anomalyAlerts.createdAt));
+  }
+
+  async getUnresolvedAnomalyAlerts(companyId: string): Promise<AnomalyAlert[]> {
+    return await db
+      .select()
+      .from(anomalyAlerts)
+      .where(and(
+        eq(anomalyAlerts.companyId, companyId),
+        eq(anomalyAlerts.isResolved, false)
+      ))
+      .orderBy(desc(anomalyAlerts.createdAt));
+  }
+
+  async updateAnomalyAlert(id: string, data: Partial<InsertAnomalyAlert>): Promise<AnomalyAlert> {
+    const [alert] = await db
+      .update(anomalyAlerts)
+      .set(data)
+      .where(eq(anomalyAlerts.id, id))
+      .returning();
+    if (!alert) {
+      throw new Error('Anomaly alert not found');
+    }
+    return alert;
+  }
+
+  async resolveAnomalyAlert(id: string, userId: string, note?: string): Promise<AnomalyAlert> {
+    const [alert] = await db
+      .update(anomalyAlerts)
+      .set({
+        isResolved: true,
+        resolvedBy: userId,
+        resolvedAt: new Date(),
+        resolutionNote: note,
+      })
+      .where(eq(anomalyAlerts.id, id))
+      .returning();
+    if (!alert) {
+      throw new Error('Anomaly alert not found');
+    }
+    return alert;
+  }
+
+  // Bank Transactions
+  async createBankTransaction(insertTransaction: InsertBankTransaction): Promise<BankTransaction> {
+    const [transaction] = await db
+      .insert(bankTransactions)
+      .values(insertTransaction)
+      .returning();
+    return transaction;
+  }
+
+  async getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]> {
+    return await db
+      .select()
+      .from(bankTransactions)
+      .where(eq(bankTransactions.companyId, companyId))
+      .orderBy(desc(bankTransactions.transactionDate));
+  }
+
+  async getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]> {
+    return await db
+      .select()
+      .from(bankTransactions)
+      .where(and(
+        eq(bankTransactions.companyId, companyId),
+        eq(bankTransactions.isReconciled, false)
+      ))
+      .orderBy(desc(bankTransactions.transactionDate));
+  }
+
+  async updateBankTransaction(id: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction> {
+    const [transaction] = await db
+      .update(bankTransactions)
+      .set(data)
+      .where(eq(bankTransactions.id, id))
+      .returning();
+    if (!transaction) {
+      throw new Error('Bank transaction not found');
+    }
+    return transaction;
+  }
+
+  async reconcileBankTransaction(id: string, matchedId: string, matchType: 'journal' | 'receipt' | 'invoice'): Promise<BankTransaction> {
+    const updateData: any = {
+      isReconciled: true,
+    };
+    if (matchType === 'journal') {
+      updateData.matchedJournalEntryId = matchedId;
+    } else if (matchType === 'receipt') {
+      updateData.matchedReceiptId = matchedId;
+    } else {
+      updateData.matchedInvoiceId = matchedId;
+    }
+    
+    const [transaction] = await db
+      .update(bankTransactions)
+      .set(updateData)
+      .where(eq(bankTransactions.id, id))
+      .returning();
+    if (!transaction) {
+      throw new Error('Bank transaction not found');
+    }
+    return transaction;
+  }
+
+  // Cash Flow Forecasts
+  async createCashFlowForecast(insertForecast: InsertCashFlowForecast): Promise<CashFlowForecast> {
+    const [forecast] = await db
+      .insert(cashFlowForecasts)
+      .values(insertForecast)
+      .returning();
+    return forecast;
+  }
+
+  async getCashFlowForecastsByCompanyId(companyId: string): Promise<CashFlowForecast[]> {
+    return await db
+      .select()
+      .from(cashFlowForecasts)
+      .where(eq(cashFlowForecasts.companyId, companyId))
+      .orderBy(cashFlowForecasts.forecastDate);
+  }
+
+  async deleteCashFlowForecastsByCompanyId(companyId: string): Promise<void> {
+    await db.delete(cashFlowForecasts).where(eq(cashFlowForecasts.companyId, companyId));
+  }
+
+  // Transaction Classifications
+  async createTransactionClassification(insertClassification: InsertTransactionClassification): Promise<TransactionClassification> {
+    const [classification] = await db
+      .insert(transactionClassifications)
+      .values(insertClassification)
+      .returning();
+    return classification;
+  }
+
+  async getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]> {
+    return await db
+      .select()
+      .from(transactionClassifications)
+      .where(eq(transactionClassifications.companyId, companyId))
+      .orderBy(desc(transactionClassifications.createdAt));
+  }
+
+  async updateTransactionClassification(id: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification> {
+    const [classification] = await db
+      .update(transactionClassifications)
+      .set(data)
+      .where(eq(transactionClassifications.id, id))
+      .returning();
+    if (!classification) {
+      throw new Error('Transaction classification not found');
+    }
+    return classification;
   }
 }
 

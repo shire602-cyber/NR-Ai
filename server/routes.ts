@@ -1337,6 +1337,577 @@ Keep your tone professional but friendly, like a trusted advisor.`
   });
 
   // =====================================
+  // AI-Driven Automation Features
+  // =====================================
+
+  // Enhanced AI Batch Transaction Categorization
+  app.post("/api/ai/batch-categorize", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, transactions } = req.body;
+      if (!companyId || !transactions || !Array.isArray(transactions)) {
+        return res.status(400).json({ message: 'Company ID and transactions array required' });
+      }
+
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      const expenseAccounts = accounts.filter(a => a.type === 'expense');
+      const incomeAccounts = accounts.filter(a => a.type === 'income');
+      const allAccounts = [...expenseAccounts, ...incomeAccounts];
+
+      const accountList = allAccounts.map(acc => 
+        `${acc.nameEn} (${acc.type})${acc.nameAr ? ` - ${acc.nameAr}` : ''}`
+      ).join('\n');
+
+      // Get previous classifications for learning context
+      const previousClassifications = await storage.getTransactionClassificationsByCompanyId(companyId);
+      const learningContext = previousClassifications
+        .filter(c => c.wasAccepted === true)
+        .slice(0, 20)
+        .map(c => `"${c.description}" -> ${c.suggestedCategory}`)
+        .join('\n');
+
+      const transactionList = transactions.map((t: any, i: number) => 
+        `${i + 1}. ${t.description} - Amount: ${t.amount} ${t.currency || 'AED'}`
+      ).join('\n');
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert UAE accountant specializing in transaction categorization using machine learning principles.
+
+Available accounts:
+${accountList}
+
+${learningContext ? `Previous learned patterns (user-confirmed):
+${learningContext}` : ''}
+
+Categorize each transaction based on:
+1. UAE-specific vendor patterns (DEWA, du, Etisalat, Careem, RTA, ENOC, ADNOC, etc.)
+2. Amount patterns and transaction context
+3. Previous user-confirmed categorizations
+
+Respond with a JSON object:
+{
+  "classifications": [
+    {
+      "index": 0,
+      "accountName": "suggested account name",
+      "category": "expense or income category",
+      "confidence": 0.95,
+      "reason": "brief explanation",
+      "flags": ["unusual_amount", "duplicate_risk"] // optional warnings
+    }
+  ]
+}`
+          },
+          {
+            role: "user",
+            content: `Categorize these transactions:\n${transactionList}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      });
+
+      const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
+      
+      // Store classifications for learning
+      for (const classification of aiResponse.classifications || []) {
+        const transaction = transactions[classification.index];
+        if (transaction) {
+          await storage.createTransactionClassification({
+            companyId,
+            description: transaction.description,
+            merchant: transaction.merchant,
+            amount: transaction.amount,
+            suggestedCategory: classification.category,
+            aiConfidence: classification.confidence,
+            aiReason: classification.reason,
+          });
+        }
+      }
+
+      res.json(aiResponse);
+    } catch (error: any) {
+      console.error('Batch categorization error:', error);
+      res.status(500).json({ message: error.message || 'Batch categorization failed' });
+    }
+  });
+
+  // Anomaly & Duplicate Detection
+  app.post("/api/ai/detect-anomalies", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.body;
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+
+      // Prepare transaction data for analysis
+      const transactionData = {
+        invoices: invoices.map(i => ({
+          id: i.id,
+          type: 'invoice',
+          customerName: i.customerName,
+          amount: i.total,
+          date: i.date,
+          number: i.number,
+        })),
+        expenses: receipts.map(r => ({
+          id: r.id,
+          type: 'receipt',
+          merchant: r.merchant,
+          amount: r.amount,
+          date: r.date,
+          category: r.category,
+        })),
+      };
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an AI fraud detection and anomaly detection system for UAE business accounting.
+
+Analyze transactions for:
+1. **Duplicates**: Same amount + similar date + same vendor/customer
+2. **Unusual amounts**: Transactions significantly higher/lower than typical patterns
+3. **Timing anomalies**: Transactions at unusual times or frequencies
+4. **Category mismatches**: Expenses that don't match their category
+5. **Potential fraud indicators**: Round numbers, weekend transactions, etc.
+
+Respond with JSON:
+{
+  "anomalies": [
+    {
+      "type": "duplicate|unusual_amount|timing|category_mismatch|potential_fraud",
+      "severity": "low|medium|high|critical",
+      "title": "Brief title",
+      "description": "Detailed explanation",
+      "entityType": "invoice|receipt",
+      "entityId": "uuid",
+      "duplicateOfId": "uuid if duplicate",
+      "confidence": 0.85
+    }
+  ],
+  "summary": {
+    "totalAnomalies": 5,
+    "criticalCount": 1,
+    "potentialDuplicates": 2,
+    "unusualTransactions": 2
+  }
+}`
+          },
+          {
+            role: "user",
+            content: `Analyze these transactions for anomalies:\n${JSON.stringify(transactionData, null, 2)}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+      });
+
+      const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
+
+      // Store detected anomalies
+      for (const anomaly of aiResponse.anomalies || []) {
+        await storage.createAnomalyAlert({
+          companyId,
+          type: anomaly.type,
+          severity: anomaly.severity,
+          title: anomaly.title,
+          description: anomaly.description,
+          relatedEntityType: anomaly.entityType,
+          relatedEntityId: anomaly.entityId,
+          duplicateOfId: anomaly.duplicateOfId,
+          aiConfidence: anomaly.confidence,
+        });
+      }
+
+      res.json(aiResponse);
+    } catch (error: any) {
+      console.error('Anomaly detection error:', error);
+      res.status(500).json({ message: error.message || 'Anomaly detection failed' });
+    }
+  });
+
+  // Get Anomaly Alerts
+  app.get("/api/companies/:companyId/anomaly-alerts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const { resolved } = req.query;
+      
+      let alerts;
+      if (resolved === 'false') {
+        alerts = await storage.getUnresolvedAnomalyAlerts(companyId);
+      } else {
+        alerts = await storage.getAnomalyAlertsByCompanyId(companyId);
+      }
+      
+      res.json(alerts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Resolve Anomaly Alert
+  app.post("/api/anomaly-alerts/:id/resolve", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { note } = req.body;
+      const userId = (req as any).user?.id;
+
+      const alert = await storage.resolveAnomalyAlert(id, userId, note);
+      res.json(alert);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // AI-Assisted Bank Reconciliation
+  app.post("/api/ai/reconcile", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.body;
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+
+      const bankTransactions = await storage.getUnreconciledBankTransactions(companyId);
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+
+      if (bankTransactions.length === 0) {
+        return res.json({ matches: [], message: 'No unreconciled transactions' });
+      }
+
+      // Prepare data for AI matching
+      const bankData = bankTransactions.map(t => ({
+        id: t.id,
+        date: t.transactionDate,
+        description: t.description,
+        amount: t.amount,
+        reference: t.reference,
+      }));
+
+      const ledgerData = {
+        invoices: invoices.filter(i => i.status === 'sent' || i.status === 'paid').map(i => ({
+          id: i.id,
+          type: 'invoice',
+          customerName: i.customerName,
+          amount: i.total,
+          date: i.date,
+          number: i.number,
+        })),
+        expenses: receipts.filter(r => !r.posted).map(r => ({
+          id: r.id,
+          type: 'receipt',
+          merchant: r.merchant,
+          amount: r.amount,
+          date: r.date,
+        })),
+      };
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an AI bank reconciliation assistant for UAE businesses.
+
+Match bank transactions to ledger records based on:
+1. Amount matching (exact or within AED 1 tolerance for fees)
+2. Date proximity (within 3 business days)
+3. Description/reference matching
+4. Customer/vendor name matching
+
+For each match, provide:
+- Confidence score (0-1)
+- Match reason
+- Suggested action
+
+Respond with JSON:
+{
+  "matches": [
+    {
+      "bankTransactionId": "uuid",
+      "matchedEntityId": "uuid",
+      "matchType": "invoice|receipt|journal",
+      "confidence": 0.95,
+      "reason": "Exact amount match with customer name",
+      "suggestedAction": "Auto-reconcile" | "Manual review needed"
+    }
+  ],
+  "unmatched": [
+    {
+      "bankTransactionId": "uuid",
+      "suggestedCategory": "expense category",
+      "reason": "No matching ledger entry found"
+    }
+  ]
+}`
+          },
+          {
+            role: "user",
+            content: `Match these bank transactions to ledger entries:
+
+Bank Transactions:
+${JSON.stringify(bankData, null, 2)}
+
+Ledger Records:
+${JSON.stringify(ledgerData, null, 2)}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+      });
+
+      const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
+      res.json(aiResponse);
+    } catch (error: any) {
+      console.error('Reconciliation error:', error);
+      res.status(500).json({ message: error.message || 'Reconciliation failed' });
+    }
+  });
+
+  // Apply Reconciliation Match
+  app.post("/api/bank-transactions/:id/reconcile", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { matchedId, matchType } = req.body;
+
+      const transaction = await storage.reconcileBankTransaction(id, matchedId, matchType);
+      res.json(transaction);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Bank Transactions CRUD
+  app.get("/api/companies/:companyId/bank-transactions", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const transactions = await storage.getBankTransactionsByCompanyId(companyId);
+      res.json(transactions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/companies/:companyId/bank-transactions", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const transaction = await storage.createBankTransaction({
+        ...req.body,
+        companyId,
+      });
+      res.json(transaction);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Import bank transactions from CSV
+  app.post("/api/companies/:companyId/bank-transactions/import", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const { transactions } = req.body;
+
+      if (!Array.isArray(transactions)) {
+        return res.status(400).json({ message: 'Transactions array required' });
+      }
+
+      const imported = [];
+      for (const t of transactions) {
+        const transaction = await storage.createBankTransaction({
+          companyId,
+          transactionDate: new Date(t.date),
+          description: t.description,
+          amount: parseFloat(t.amount),
+          reference: t.reference,
+          importSource: 'csv',
+        });
+        imported.push(transaction);
+      }
+
+      res.json({ imported: imported.length, transactions: imported });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Predictive Cash Flow Forecasting
+  app.post("/api/ai/forecast-cashflow", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, forecastMonths = 3 } = req.body;
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+
+      // Calculate historical patterns
+      const now = new Date();
+      const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+
+      const recentInvoices = invoices.filter(i => new Date(i.date) >= sixMonthsAgo);
+      const recentReceipts = receipts.filter(r => r.date && new Date(r.date) >= sixMonthsAgo);
+
+      const monthlyInflow = recentInvoices.reduce((sum, i) => sum + i.total, 0) / 6;
+      const monthlyOutflow = recentReceipts.reduce((sum, r) => sum + (r.amount || 0), 0) / 6;
+
+      const historicalData = {
+        averageMonthlyRevenue: monthlyInflow,
+        averageMonthlyExpenses: monthlyOutflow,
+        totalInvoices: invoices.length,
+        paidInvoices: invoices.filter(i => i.status === 'paid').length,
+        pendingReceivables: invoices
+          .filter(i => i.status === 'sent')
+          .reduce((sum, i) => sum + i.total, 0),
+        recentMonths: Array.from({ length: 6 }, (_, i) => {
+          const month = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const monthInvoices = recentInvoices.filter(inv => {
+            const d = new Date(inv.date);
+            return d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear();
+          });
+          const monthReceipts = recentReceipts.filter(r => {
+            if (!r.date) return false;
+            const d = new Date(r.date);
+            return d.getMonth() === month.getMonth() && d.getFullYear() === month.getFullYear();
+          });
+          return {
+            month: month.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+            revenue: monthInvoices.reduce((s, i) => s + i.total, 0),
+            expenses: monthReceipts.reduce((s, r) => s + (r.amount || 0), 0),
+          };
+        }).reverse(),
+      };
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an AI financial forecasting system for UAE businesses.
+
+Analyze historical financial data and provide:
+1. Cash flow predictions for the next ${forecastMonths} months
+2. Key trends and patterns
+3. Risk factors and opportunities
+4. Actionable recommendations
+
+Consider UAE-specific factors:
+- VAT payment cycles (quarterly)
+- Corporate tax considerations
+- Seasonal business patterns
+
+Respond with JSON:
+{
+  "forecasts": [
+    {
+      "month": "Jan 2025",
+      "predictedInflow": 50000,
+      "predictedOutflow": 35000,
+      "predictedBalance": 15000,
+      "confidence": 0.85
+    }
+  ],
+  "trends": [
+    {
+      "type": "positive|negative|neutral",
+      "title": "Trend title",
+      "description": "Explanation",
+      "impact": "high|medium|low"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": "high|medium|low",
+      "title": "Recommendation",
+      "description": "Action details",
+      "expectedImpact": "Expected outcome"
+    }
+  ],
+  "riskFactors": [
+    {
+      "severity": "high|medium|low",
+      "factor": "Risk description",
+      "mitigation": "Suggested action"
+    }
+  ]
+}`
+          },
+          {
+            role: "user",
+            content: `Forecast cash flow for ${forecastMonths} months based on this data:\n${JSON.stringify(historicalData, null, 2)}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+      });
+
+      const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
+
+      // Clear old forecasts and store new ones
+      await storage.deleteCashFlowForecastsByCompanyId(companyId);
+      
+      for (const forecast of aiResponse.forecasts || []) {
+        await storage.createCashFlowForecast({
+          companyId,
+          forecastDate: new Date(forecast.month),
+          forecastType: 'monthly',
+          predictedInflow: forecast.predictedInflow,
+          predictedOutflow: forecast.predictedOutflow,
+          predictedBalance: forecast.predictedBalance,
+          confidenceLevel: forecast.confidence,
+        });
+      }
+
+      res.json({
+        ...aiResponse,
+        historicalData,
+      });
+    } catch (error: any) {
+      console.error('Cash flow forecast error:', error);
+      res.status(500).json({ message: error.message || 'Forecasting failed' });
+    }
+  });
+
+  // Get stored forecasts
+  app.get("/api/companies/:companyId/forecasts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const forecasts = await storage.getCashFlowForecastsByCompanyId(companyId);
+      res.json(forecasts);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Transaction Classification Feedback (for ML learning)
+  app.post("/api/ai/classification-feedback", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { classificationId, wasAccepted, userSelectedAccountId } = req.body;
+      
+      const classification = await storage.updateTransactionClassification(classificationId, {
+        wasAccepted,
+        userSelectedAccountId,
+      });
+      
+      res.json(classification);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
   // Dashboard Stats Routes
   // =====================================
   

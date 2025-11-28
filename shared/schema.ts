@@ -376,3 +376,111 @@ export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).
 
 export type InsertWhatsappMessage = z.infer<typeof insertWhatsappMessageSchema>;
 export type WhatsappMessage = typeof whatsappMessages.$inferSelect;
+
+// ===========================
+// AI Anomaly Detection
+// ===========================
+export const anomalyAlerts = pgTable("anomaly_alerts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // duplicate | unusual_amount | unusual_timing | unusual_category | potential_fraud
+  severity: text("severity").notNull().default("medium"), // low | medium | high | critical
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  relatedEntityType: text("related_entity_type"), // invoice | receipt | journal_entry
+  relatedEntityId: uuid("related_entity_id"),
+  duplicateOfId: uuid("duplicate_of_id"), // For duplicate detection
+  aiConfidence: real("ai_confidence"), // 0-1 confidence score
+  isResolved: boolean("is_resolved").notNull().default(false),
+  resolvedBy: uuid("resolved_by").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  resolutionNote: text("resolution_note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertAnomalyAlertSchema = createInsertSchema(anomalyAlerts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAnomalyAlert = z.infer<typeof insertAnomalyAlertSchema>;
+export type AnomalyAlert = typeof anomalyAlerts.$inferSelect;
+
+// ===========================
+// Bank Transactions (for reconciliation)
+// ===========================
+export const bankTransactions = pgTable("bank_transactions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  bankAccountId: uuid("bank_account_id").references(() => accounts.id), // Links to bank account in COA
+  transactionDate: timestamp("transaction_date").notNull(),
+  description: text("description").notNull(),
+  amount: real("amount").notNull(), // Positive for credits, negative for debits
+  reference: text("reference"), // Bank reference number
+  category: text("category"), // AI-suggested category
+  isReconciled: boolean("is_reconciled").notNull().default(false),
+  matchedJournalEntryId: uuid("matched_journal_entry_id").references(() => journalEntries.id),
+  matchedReceiptId: uuid("matched_receipt_id").references(() => receipts.id),
+  matchedInvoiceId: uuid("matched_invoice_id").references(() => invoices.id),
+  matchConfidence: real("match_confidence"), // AI confidence for the match
+  importSource: text("import_source"), // manual | csv | api
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertBankTransactionSchema = createInsertSchema(bankTransactions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertBankTransaction = z.infer<typeof insertBankTransactionSchema>;
+export type BankTransaction = typeof bankTransactions.$inferSelect;
+
+// ===========================
+// Cash Flow Forecasts
+// ===========================
+export const cashFlowForecasts = pgTable("cash_flow_forecasts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  forecastDate: timestamp("forecast_date").notNull(),
+  forecastType: text("forecast_type").notNull(), // daily | weekly | monthly
+  predictedInflow: real("predicted_inflow").notNull().default(0),
+  predictedOutflow: real("predicted_outflow").notNull().default(0),
+  predictedBalance: real("predicted_balance").notNull().default(0),
+  confidenceLevel: real("confidence_level"), // 0-1
+  factors: text("factors"), // JSON string of contributing factors
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+});
+
+export const insertCashFlowForecastSchema = createInsertSchema(cashFlowForecasts).omit({
+  id: true,
+  generatedAt: true,
+});
+
+export type InsertCashFlowForecast = z.infer<typeof insertCashFlowForecastSchema>;
+export type CashFlowForecast = typeof cashFlowForecasts.$inferSelect;
+
+// ===========================
+// AI Transaction Classifications (for ML-style learning)
+// ===========================
+export const transactionClassifications = pgTable("transaction_classifications", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  merchant: text("merchant"),
+  amount: real("amount"),
+  suggestedAccountId: uuid("suggested_account_id").references(() => accounts.id),
+  suggestedCategory: text("suggested_category"),
+  aiConfidence: real("ai_confidence"), // 0-1
+  aiReason: text("ai_reason"),
+  wasAccepted: boolean("was_accepted"), // User feedback for ML improvement
+  userSelectedAccountId: uuid("user_selected_account_id").references(() => accounts.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertTransactionClassificationSchema = createInsertSchema(transactionClassifications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTransactionClassification = z.infer<typeof insertTransactionClassificationSchema>;
+export type TransactionClassification = typeof transactionClassifications.$inferSelect;
