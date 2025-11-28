@@ -24,7 +24,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle } from 'lucide-react';
+import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle } from 'lucide-react';
 import type { Invoice, Company } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
@@ -1138,11 +1138,26 @@ export default function Invoices() {
                 ))}
               </div>
             ) : (
-              <Alert>
-                <AlertDescription>
-                  No cash or bank accounts found. Please create a cash or bank account first.
-                </AlertDescription>
-              </Alert>
+              <div className="space-y-4">
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    You need to create at least one bank or cash account before marking invoices as paid.
+                  </AlertDescription>
+                </Alert>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setPaymentDialogOpen(false);
+                    window.location.href = '/chart-of-accounts';
+                  }}
+                  className="w-full"
+                  data-testid="button-create-payment-account"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Bank/Cash Account
+                </Button>
+              </div>
             )}
           </div>
           <div className="flex gap-3">
