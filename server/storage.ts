@@ -97,6 +97,16 @@ export interface IStorage {
   createIntegrationSync(sync: InsertIntegrationSync): Promise<IntegrationSync>;
   getIntegrationSyncsByCompanyId(companyId: string): Promise<IntegrationSync[]>;
   getIntegrationSyncsByType(companyId: string, integrationType: string): Promise<IntegrationSync[]>;
+
+  // WhatsApp Configuration
+  getWhatsappConfig(companyId: string): Promise<WhatsappConfig | undefined>;
+  createWhatsappConfig(config: InsertWhatsappConfig): Promise<WhatsappConfig>;
+  updateWhatsappConfig(id: string, data: Partial<InsertWhatsappConfig>): Promise<WhatsappConfig>;
+
+  // WhatsApp Messages
+  createWhatsappMessage(message: InsertWhatsappMessage): Promise<WhatsappMessage>;
+  getWhatsappMessagesByCompanyId(companyId: string): Promise<WhatsappMessage[]>;
+  updateWhatsappMessage(id: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -432,6 +442,64 @@ export class DatabaseStorage implements IStorage {
         eq(integrationSyncs.integrationType, integrationType)
       ))
       .orderBy(desc(integrationSyncs.syncedAt));
+  }
+
+  // WhatsApp Configuration
+  async getWhatsappConfig(companyId: string): Promise<WhatsappConfig | undefined> {
+    const [config] = await db
+      .select()
+      .from(whatsappConfigs)
+      .where(eq(whatsappConfigs.companyId, companyId));
+    return config || undefined;
+  }
+
+  async createWhatsappConfig(insertConfig: InsertWhatsappConfig): Promise<WhatsappConfig> {
+    const [config] = await db
+      .insert(whatsappConfigs)
+      .values(insertConfig)
+      .returning();
+    return config;
+  }
+
+  async updateWhatsappConfig(id: string, data: Partial<InsertWhatsappConfig>): Promise<WhatsappConfig> {
+    const [config] = await db
+      .update(whatsappConfigs)
+      .set(data)
+      .where(eq(whatsappConfigs.id, id))
+      .returning();
+    if (!config) {
+      throw new Error('WhatsApp configuration not found');
+    }
+    return config;
+  }
+
+  // WhatsApp Messages
+  async createWhatsappMessage(insertMessage: InsertWhatsappMessage): Promise<WhatsappMessage> {
+    const [message] = await db
+      .insert(whatsappMessages)
+      .values(insertMessage)
+      .returning();
+    return message;
+  }
+
+  async getWhatsappMessagesByCompanyId(companyId: string): Promise<WhatsappMessage[]> {
+    return await db
+      .select()
+      .from(whatsappMessages)
+      .where(eq(whatsappMessages.companyId, companyId))
+      .orderBy(desc(whatsappMessages.createdAt));
+  }
+
+  async updateWhatsappMessage(id: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage> {
+    const [message] = await db
+      .update(whatsappMessages)
+      .set(data)
+      .where(eq(whatsappMessages.id, id))
+      .returning();
+    if (!message) {
+      throw new Error('WhatsApp message not found');
+    }
+    return message;
   }
 }
 
