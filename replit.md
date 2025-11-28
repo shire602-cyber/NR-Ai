@@ -141,6 +141,20 @@ The platform supports external service integrations for data sync and automation
 - Creates new spreadsheets with formatted data
 - Sync history tracked in database
 
+**WhatsApp Business** (Active):
+- Webhook-based receipt ingestion from WhatsApp Business Cloud API
+- Configurable per-company with Phone Number ID, Business Account ID, and Access Token
+- Toggle integration on/off
+- Schema: `whatsapp_configs` (configuration) and `whatsapp_messages` (message logs)
+- Endpoints:
+  - `GET /api/webhooks/whatsapp` - Meta webhook verification
+  - `POST /api/webhooks/whatsapp` - Receive incoming messages
+  - `GET /api/integrations/whatsapp/config` - Get configuration status
+  - `POST /api/integrations/whatsapp/config` - Save configuration
+  - `PATCH /api/integrations/whatsapp/toggle` - Toggle integration on/off
+  - `GET /api/integrations/whatsapp/messages` - Message history
+  - `GET /api/integrations/whatsapp/status` - Integration status for dashboard
+
 ### Coming Soon
 
 **QuickBooks Online**:
@@ -152,11 +166,6 @@ The platform supports external service integrations for data sync and automation
 - Two-way sync for invoices and payments
 - OAuth2 authentication
 - Automatic account mapping
-
-**WhatsApp**:
-- Receipt extraction via OCR from chat messages
-- Webhook-based receipt ingestion
-- AI-powered expense categorization
 
 ### Integration Architecture
 
