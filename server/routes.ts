@@ -451,9 +451,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Revenue recognition: create journal entry immediately when invoice is raised
       const accounts = await storage.getAccountsByCompanyId(companyId);
-      const accountsReceivable = accounts.find(a => a.code === '1200');
-      const salesRevenue = accounts.find(a => a.code === '4000');
-      const vatPayable = accounts.find(a => a.code === '2100');
+      const accountsReceivable = accounts.find(a => a.nameEn === 'Accounts Receivable');
+      const salesRevenue = accounts.find(a => a.nameEn === 'Sales Revenue');
+      const vatPayable = accounts.find(a => a.nameEn === 'VAT Payable');
       
       if (accountsReceivable && salesRevenue) {
         const entry = await storage.createJournalEntry({
@@ -1098,7 +1098,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Build account list for AI prompt
       const accountList = expenseAccounts.map(acc => 
-        `${acc.code}: ${acc.nameEn}${acc.nameAr ? ` (${acc.nameAr})` : ''}`
+        `${acc.nameEn}${acc.nameAr ? ` (${acc.nameAr})` : ''}`
       ).join('\n');
       
       // Use OpenAI to categorize the expense
@@ -1276,12 +1276,15 @@ Keep your tone professional but friendly, like a trusted advisor.`
           const account = accounts.find(a => a.id === line.accountId);
           if (!account || account.type !== 'expense') continue;
           
+          const current = balances.get(account.id) || 0;
+          balances.set(account.id, current + line.debit - line.credit);
         }
       }
       
       const breakdown = expenseAccounts
         .map(account => ({
           name: account.nameEn,
+          value: balances.get(account.id) || 0,
         }))
         .filter(item => item.value > 0)
         .sort((a, b) => b.value - a.value)
@@ -1577,7 +1580,9 @@ Keep your tone professional but friendly, like a trusted advisor.`
           const account = accounts.find(a => a.id === line.accountId);
           if (!account || account.type !== 'expense') continue;
           
+          const current = balances.get(account.id) || { name: account.nameEn, value: 0 };
           current.value += line.debit - line.credit;
+          balances.set(account.id, current);
         }
       }
       
@@ -1801,7 +1806,6 @@ Keep your tone professional but friendly, like a trusted advisor.`
           lines: lines.map(line => {
             const account = accounts.find(a => a.id === line.accountId);
             return {
-              accountCode: account?.code || '',
               accountName: account?.nameEn || '',
               debit: line.debit,
               credit: line.credit,

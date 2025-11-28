@@ -193,17 +193,6 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(accounts).where(eq(accounts.companyId, companyId));
   }
 
-    const [account] = await db
-      .select()
-      .from(accounts)
-      .where(
-        and(
-          eq(accounts.companyId, companyId),
-        )
-      );
-    return account || undefined;
-  }
-
   async createAccount(insertAccount: InsertAccount): Promise<Account> {
     const [account] = await db
       .insert(accounts)
