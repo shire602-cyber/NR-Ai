@@ -183,10 +183,22 @@ export default function Journal() {
       });
       return;
     }
+    
+    // Convert numeric values to ensure proper storage
+    const submitData = {
+      ...data,
+      companyId: selectedCompanyId,
+      lines: data.lines.map(line => ({
+        ...line,
+        debit: Number(line.debit),
+        credit: Number(line.credit),
+      })),
+    };
+    
     if (editingEntry) {
-      editMutation.mutate({ id: editingEntry.id, data: { ...data, companyId: selectedCompanyId } });
+      editMutation.mutate({ id: editingEntry.id, data: submitData });
     } else {
-      createMutation.mutate({ ...data, companyId: selectedCompanyId });
+      createMutation.mutate(submitData);
     }
   };
 

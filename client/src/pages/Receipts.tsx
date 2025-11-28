@@ -249,11 +249,12 @@ export default function Receipts() {
   const onEditSubmit = (data: ReceiptFormData) => {
     if (!editingReceipt) return;
     
-    // Clean up data: convert empty strings to null for optional UUID fields
+    // Clean up data: convert empty strings to null for optional UUID fields, ensure numeric conversion
     const cleanedData = {
       ...data,
+      amount: Number(data.amount),
       category: data.category === '' ? null : data.category,
-      vatAmount: data.vatAmount === 0 || data.vatAmount === null || isNaN(data.vatAmount as number) ? null : data.vatAmount,
+      vatAmount: data.vatAmount === 0 || data.vatAmount === null || isNaN(data.vatAmount as number) ? null : Number(data.vatAmount),
     };
     
     editMutation.mutate({ id: editingReceipt.id, data: cleanedData });
@@ -614,8 +615,8 @@ export default function Receipts() {
           companyId: companyId,
           merchant: receipt.data!.merchant || 'Unknown',
           date: receipt.data!.date || new Date().toISOString().split('T')[0],
-          amount: receipt.data!.total || 0,
-          vatAmount: receipt.data!.vatAmount || null,
+          amount: Number(receipt.data!.total) || 0,
+          vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,
           category: receipt.data!.category || 'Uncategorized',
           currency: receipt.data!.currency || 'AED',
           imageData: receipt.preview,
