@@ -63,6 +63,9 @@ export default function Integrations() {
   const { company: currentCompany } = useDefaultCompany();
   const [exportType, setExportType] = useState<string>('');
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
+  const [importType, setImportType] = useState<string>('');
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [spreadsheetUrl, setSpreadsheetUrl] = useState<string>('');
 
   const isRTL = locale === 'ar';
 
@@ -80,6 +83,12 @@ export default function Integrations() {
     connect: locale === 'en' ? 'Connect' : 'اتصال',
     exportToSheets: locale === 'en' ? 'Export to Google Sheets' : 'تصدير إلى جداول Google',
     selectDataType: locale === 'en' ? 'Select what to export' : 'اختر ما تريد تصديره',
+    importFromSheets: locale === 'en' ? 'Import from Google Sheets' : 'استيراد من جداول Google',
+    selectImportType: locale === 'en' ? 'Select what to import' : 'اختر ما تريد استيراده',
+    sheetUrl: locale === 'en' ? 'Google Sheets URL' : 'رابط جداول Google',
+    sheetUrlPlaceholder: locale === 'en' ? 'https://docs.google.com/spreadsheets/d/...' : 'https://docs.google.com/spreadsheets/d/...',
+    importing: locale === 'en' ? 'Importing...' : 'جاري الاستيراد...',
+    importSuccess: locale === 'en' ? 'Import successful!' : 'تم الاستيراد بنجاح!',
     invoices: locale === 'en' ? 'Invoices' : 'الفواتير',
     expenses: locale === 'en' ? 'Expenses' : 'المصروفات',
     journalEntries: locale === 'en' ? 'Journal Entries' : 'القيود اليومية',
@@ -142,9 +151,38 @@ export default function Integrations() {
     },
   });
 
+  const importMutation = useMutation({
+    mutationFn: async ({ dataType, sheetUrl }: { dataType: string; sheetUrl: string }) => {
+      const endpoint = `/api/integrations/google-sheets/import/${dataType}`;
+      return await apiRequest('POST', endpoint, { companyId: currentCompany?.id, sheetUrl });
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: t.importSuccess,
+        description: `${data.recordCount} ${t.records} ${locale === 'en' ? 'imported' : 'تم استيرادها'}`,
+      });
+      queryClient.invalidateQueries({ queryKey: [`/api/integrations/sync-history?companyId=${currentCompany?.id}`] });
+      setIsImportDialogOpen(false);
+      setSpreadsheetUrl('');
+      setImportType('');
+    },
+    onError: (error: Error) => {
+      toast({
+        title: locale === 'en' ? 'Import failed' : 'فشل الاستيراد',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleExport = () => {
     if (!exportType) return;
     exportMutation.mutate({ dataType: exportType });
+  };
+
+  const handleImport = () => {
+    if (!importType || !spreadsheetUrl) return;
+    importMutation.mutate({ dataType: importType, sheetUrl: spreadsheetUrl });
   };
 
   const formatDate = (dateStr: string) => {
@@ -211,7 +249,8 @@ export default function Integrations() {
             </CardHeader>
             <CardContent>
               {integrationStatus?.googleSheets?.connected ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2">
                   <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="gap-2" data-testid="button-export-sheets">
@@ -272,6 +311,70 @@ export default function Integrations() {
                       </div>
                     </DialogContent>
                   </Dialog>
+
+                  <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="gap-2" data-testid="button-import-sheets">
+                        <Upload className="w-4 h-4" />
+                        {t.import}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>{t.importFromSheets}</DialogTitle>
+                        <DialogDescription>{t.selectImportType}</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">{t.selectImportType}</label>
+                          <Select value={importType} onValueChange={setImportType}>
+                            <SelectTrigger data-testid="select-import-type">
+                              <SelectValue placeholder={t.selectImportType} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="invoices" data-testid="import-option-invoices">
+                                {t.invoices}
+                              </SelectItem>
+                              <SelectItem value="expenses" data-testid="import-option-expenses">
+                                {t.expenses}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div>
+                          <label className="text-sm font-medium mb-2 block">{t.sheetUrl}</label>
+                          <input
+                            type="text"
+                            value={spreadsheetUrl}
+                            onChange={(e) => setSpreadsheetUrl(e.target.value)}
+                            placeholder={t.sheetUrlPlaceholder}
+                            className="w-full px-3 py-2 border rounded-md text-sm"
+                            data-testid="input-sheet-url"
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {locale === 'en' 
+                              ? 'First sheet will be used. Ensure columns match expected format.' 
+                              : 'سيتم استخدام الورقة الأولى. تأكد من أن الأعمدة تطابق الصيغة المتوقعة.'}
+                          </p>
+                        </div>
+                        
+                        <Button 
+                          onClick={handleImport} 
+                          disabled={!importType || !spreadsheetUrl || importMutation.isPending}
+                          className="w-full"
+                          data-testid="button-confirm-import"
+                        >
+                          {importMutation.isPending ? (
+                            <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t.importing}</>
+                          ) : (
+                            <><Upload className="w-4 h-4 mr-2" /> {t.import}</>
+                          )}
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                  </div>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
