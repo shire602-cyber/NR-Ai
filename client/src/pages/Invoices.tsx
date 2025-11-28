@@ -806,6 +806,19 @@ export default function Invoices() {
                             <Download className="w-4 h-4 mr-2" />
                             PDF
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (window.confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) {
+                                deleteMutation.mutate(invoice.id);
+                              }
+                            }}
+                            disabled={deleteMutation.isPending}
+                            data-testid={`button-delete-invoice-${invoice.id}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
