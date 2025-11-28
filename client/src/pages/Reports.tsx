@@ -1,13 +1,26 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/format';
-import { Download, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
+import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
+import { 
+  exportToExcel, 
+  exportToGoogleSheets,
+  prepareProfitLossForExport,
+  prepareBalanceSheetForExport,
+  prepareVATSummaryForExport,
+} from '@/lib/export';
+import { Download, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet, FileText } from 'lucide-react';
+import { SiGooglesheets } from 'react-icons/si';
 
 interface AccountLineItem {
   accountCode?: string;
@@ -43,22 +56,95 @@ interface VATSummaryReport {
 
 export default function Reports() {
   const { t, locale } = useTranslation();
+  const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
+  const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
+  const [activeTab, setActiveTab] = useState('pl');
+  const [isExporting, setIsExporting] = useState(false);
+
+  const dateParams = dateRange.from && dateRange.to 
+    ? `?startDate=${format(dateRange.from, 'yyyy-MM-dd')}&endDate=${format(dateRange.to, 'yyyy-MM-dd')}`
+    : '';
 
   const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
-    queryKey: ['/api/companies', selectedCompanyId, 'reports', 'pl'],
+    queryKey: ['/api/companies', selectedCompanyId, 'reports', 'pl', dateParams],
     enabled: !!selectedCompanyId,
   });
 
   const { data: balanceSheet, isLoading: bsLoading } = useQuery<BalanceSheetReport>({
-    queryKey: ['/api/companies', selectedCompanyId, 'reports', 'balance-sheet'],
+    queryKey: ['/api/companies', selectedCompanyId, 'reports', 'balance-sheet', dateParams],
     enabled: !!selectedCompanyId,
   });
 
   const { data: vatSummary, isLoading: vatLoading } = useQuery<VATSummaryReport>({
-    queryKey: ['/api/companies', selectedCompanyId, 'reports', 'vat-summary'],
+    queryKey: ['/api/companies', selectedCompanyId, 'reports', 'vat-summary', dateParams],
     enabled: !!selectedCompanyId,
   });
+
+  const handleExportExcel = () => {
+    const dateRangeStr = dateRange.from && dateRange.to 
+      ? `_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
+      : '';
+
+    if (activeTab === 'pl' && profitLoss) {
+      exportToExcel([prepareProfitLossForExport(profitLoss)], `profit_loss${dateRangeStr}`);
+      toast({ title: 'Export successful', description: 'Profit & Loss exported to Excel' });
+    } else if (activeTab === 'bs' && balanceSheet) {
+      exportToExcel([prepareBalanceSheetForExport(balanceSheet)], `balance_sheet${dateRangeStr}`);
+      toast({ title: 'Export successful', description: 'Balance Sheet exported to Excel' });
+    } else if (activeTab === 'vat' && vatSummary) {
+      exportToExcel([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
+      toast({ title: 'Export successful', description: 'VAT Summary exported to Excel' });
+    }
+  };
+
+  const handleExportGoogleSheets = async () => {
+    if (!selectedCompanyId) return;
+    
+    setIsExporting(true);
+    const dateRangeStr = dateRange.from && dateRange.to 
+      ? ` (${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to, 'MMM dd, yyyy')})`
+      : '';
+
+    let result;
+    if (activeTab === 'pl' && profitLoss) {
+      result = await exportToGoogleSheets(
+        [prepareProfitLossForExport(profitLoss)],
+        `Profit & Loss${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === 'bs' && balanceSheet) {
+      result = await exportToGoogleSheets(
+        [prepareBalanceSheetForExport(balanceSheet)],
+        `Balance Sheet${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === 'vat' && vatSummary) {
+      result = await exportToGoogleSheets(
+        [prepareVATSummaryForExport(vatSummary)],
+        `VAT Summary${dateRangeStr}`,
+        selectedCompanyId
+      );
+    }
+
+    setIsExporting(false);
+
+    if (result?.success) {
+      toast({ 
+        title: 'Export successful', 
+        description: 'Report exported to Google Sheets. Opening...' 
+      });
+      if (result.spreadsheetUrl) {
+        window.open(result.spreadsheetUrl, '_blank');
+      }
+    } else {
+      toast({ 
+        variant: 'destructive',
+        title: 'Export failed', 
+        description: result?.error || 'Failed to export to Google Sheets' 
+      });
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -67,13 +153,39 @@ export default function Reports() {
           <h1 className="text-3xl font-semibold mb-2">{t.reports}</h1>
           <p className="text-muted-foreground">Financial reports and VAT summaries</p>
         </div>
-        <Button variant="outline" data-testid="button-export">
-          <Download className="w-4 h-4 mr-2" />
-          {t.export}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" disabled={isExporting} data-testid="button-export">
+              <Download className="w-4 h-4 mr-2" />
+              {isExporting ? 'Exporting...' : t.export}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+              Export to Excel
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
+              <SiGooglesheets className="w-4 h-4 mr-2" />
+              Export to Google Sheets
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
-      <Tabs defaultValue="pl" className="space-y-6">
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span className="text-sm font-medium">Filter by date:</span>
+            <DateRangeFilter 
+              dateRange={dateRange} 
+              onDateRangeChange={setDateRange} 
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full max-w-md grid-cols-3">
           <TabsTrigger value="pl" data-testid="tab-profit-loss">{t.profitLoss}</TabsTrigger>
           <TabsTrigger value="bs" data-testid="tab-balance-sheet">{t.balanceSheet}</TabsTrigger>
@@ -140,7 +252,11 @@ export default function Reports() {
           <Card>
             <CardHeader>
               <CardTitle>{t.profitLoss} Statement</CardTitle>
-              <CardDescription>Income and expenses for the current period</CardDescription>
+              <CardDescription>
+                {dateRange.from && dateRange.to 
+                  ? `${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to, 'MMM dd, yyyy')}`
+                  : 'All time'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {plLoading ? (
@@ -211,7 +327,11 @@ export default function Reports() {
           <Card>
             <CardHeader>
               <CardTitle>{t.balanceSheet}</CardTitle>
-              <CardDescription>Assets, liabilities, and equity as of today</CardDescription>
+              <CardDescription>
+                {dateRange.from && dateRange.to 
+                  ? `As of ${format(dateRange.to, 'MMM dd, yyyy')}`
+                  : 'Assets, liabilities, and equity as of today'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {bsLoading ? (
@@ -296,7 +416,11 @@ export default function Reports() {
           <Card>
             <CardHeader>
               <CardTitle>{t.vatSummary}</CardTitle>
-              <CardDescription>UAE VAT (5%) summary for the current period</CardDescription>
+              <CardDescription>
+                {dateRange.from && dateRange.to 
+                  ? `${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to, 'MMM dd, yyyy')}`
+                  : 'UAE VAT (5%) summary for the current period'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {vatLoading ? (

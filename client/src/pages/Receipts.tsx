@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
+import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,12 +9,16 @@ import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
+import { exportToExcel, exportToGoogleSheets, prepareReceiptsForExport } from '@/lib/export';
 import Tesseract from 'tesseract.js';
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
+import { SiGooglesheets } from 'react-icons/si';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useForm } from 'react-hook-form';
@@ -74,6 +79,8 @@ export default function Receipts() {
   const [similarWarningOpen, setSimilarWarningOpen] = useState(false);
   const [similarTransactions, setSimilarTransactions] = useState<any[]>([]);
   const [pendingSaveData, setPendingSaveData] = useState<any>(null);
+  const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
+  const [isExporting, setIsExporting] = useState(false);
 
   // Fetch receipts
   const { data: receipts, isLoading } = useQuery<any[]>({
@@ -688,6 +695,81 @@ export default function Receipts() {
   const errorCount = processedReceipts.filter((r) => r.status === 'error').length;
   const saveErrorCount = processedReceipts.filter((r) => r.status === 'save_error').length;
 
+  const filteredReceipts = useMemo(() => {
+    if (!receipts) return [];
+    if (!dateRange.from && !dateRange.to) return receipts;
+    
+    return receipts.filter((receipt: any) => {
+      const receiptDate = typeof receipt.date === 'string' 
+        ? parseISO(receipt.date) 
+        : new Date(receipt.date);
+      
+      if (dateRange.from && dateRange.to) {
+        return isWithinInterval(receiptDate, {
+          start: startOfDay(dateRange.from),
+          end: endOfDay(dateRange.to),
+        });
+      }
+      if (dateRange.from) {
+        return receiptDate >= startOfDay(dateRange.from);
+      }
+      if (dateRange.to) {
+        return receiptDate <= endOfDay(dateRange.to);
+      }
+      return true;
+    });
+  }, [receipts, dateRange]);
+
+  const handleExportExcel = () => {
+    if (!filteredReceipts.length) {
+      toast({ variant: 'destructive', title: 'No data', description: 'No expenses to export' });
+      return;
+    }
+    
+    const dateRangeStr = dateRange.from && dateRange.to 
+      ? `_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
+      : '';
+    
+    exportToExcel([prepareReceiptsForExport(filteredReceipts, locale)], `expenses${dateRangeStr}`);
+    toast({ title: 'Export successful', description: `${filteredReceipts.length} expenses exported to Excel` });
+  };
+
+  const handleExportGoogleSheets = async () => {
+    if (!companyId || !filteredReceipts.length) {
+      toast({ variant: 'destructive', title: 'No data', description: 'No expenses to export' });
+      return;
+    }
+    
+    setIsExporting(true);
+    const dateRangeStr = dateRange.from && dateRange.to 
+      ? ` (${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to, 'MMM dd, yyyy')})`
+      : '';
+
+    const result = await exportToGoogleSheets(
+      [prepareReceiptsForExport(filteredReceipts, locale)],
+      `Expenses${dateRangeStr}`,
+      companyId
+    );
+
+    setIsExporting(false);
+
+    if (result.success) {
+      toast({ 
+        title: 'Export successful', 
+        description: `${filteredReceipts.length} expenses exported to Google Sheets` 
+      });
+      if (result.spreadsheetUrl) {
+        window.open(result.spreadsheetUrl, '_blank');
+      }
+    } else {
+      toast({ 
+        variant: 'destructive',
+        title: 'Export failed', 
+        description: result.error || 'Failed to export to Google Sheets' 
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -1015,19 +1097,48 @@ export default function Receipts() {
       {/* Recent Receipts */}
       <Card>
         <CardHeader>
-          <CardTitle>Recent Receipts</CardTitle>
-          <CardDescription>Previously scanned and saved receipts</CardDescription>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <CardTitle>Recent Expenses</CardTitle>
+              <CardDescription>Previously scanned and saved expenses</CardDescription>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={isExporting} data-testid="button-export-expenses">
+                  <Download className="w-4 h-4 mr-2" />
+                  {isExporting ? 'Exporting...' : 'Export'}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-expenses-excel">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Export to Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-expenses-sheets">
+                  <SiGooglesheets className="w-4 h-4 mr-2" />
+                  Export to Google Sheets
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4 flex-wrap pb-4 border-b">
+            <span className="text-sm font-medium">Filter by date:</span>
+            <DateRangeFilter 
+              dateRange={dateRange} 
+              onDateRangeChange={setDateRange} 
+            />
+          </div>
           {isLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map(i => (
                 <Skeleton key={i} className="h-16 w-full" />
               ))}
             </div>
-          ) : receipts && receipts.length > 0 ? (
+          ) : filteredReceipts && filteredReceipts.length > 0 ? (
             <div className="space-y-2">
-              {receipts.map((receipt: any) => (
+              {filteredReceipts.map((receipt: any) => (
                 <div
                   key={receipt.id}
                   className="flex items-center justify-between p-4 border rounded-lg hover-elevate"

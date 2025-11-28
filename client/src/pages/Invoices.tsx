@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { format } from 'date-fns';
+import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,12 +19,16 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle } from 'lucide-react';
+import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
+import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from '@/lib/export';
+import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import { SiGooglesheets } from 'react-icons/si';
 import type { Invoice, Company } from '@shared/schema';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
@@ -72,6 +76,8 @@ export default function Invoices() {
   const [similarWarningOpen, setSimilarWarningOpen] = useState(false);
   const [similarInvoices, setSimilarInvoices] = useState<any[]>([]);
   const [pendingInvoiceData, setPendingInvoiceData] = useState<any>(null);
+  const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
@@ -420,6 +426,81 @@ export default function Invoices() {
 
   const isVATRegistered = company?.trnVatNumber && company?.trnVatNumber.length > 0;
 
+  const filteredInvoices = useMemo(() => {
+    if (!invoices) return [];
+    if (!dateRange.from && !dateRange.to) return invoices;
+    
+    return invoices.filter(invoice => {
+      const invoiceDate = typeof invoice.date === 'string' 
+        ? parseISO(invoice.date) 
+        : new Date(invoice.date);
+      
+      if (dateRange.from && dateRange.to) {
+        return isWithinInterval(invoiceDate, {
+          start: startOfDay(dateRange.from),
+          end: endOfDay(dateRange.to),
+        });
+      }
+      if (dateRange.from) {
+        return invoiceDate >= startOfDay(dateRange.from);
+      }
+      if (dateRange.to) {
+        return invoiceDate <= endOfDay(dateRange.to);
+      }
+      return true;
+    });
+  }, [invoices, dateRange]);
+
+  const handleExportExcel = () => {
+    if (!filteredInvoices.length) {
+      toast({ variant: 'destructive', title: 'No data', description: 'No invoices to export' });
+      return;
+    }
+    
+    const dateRangeStr = dateRange.from && dateRange.to 
+      ? `_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
+      : '';
+    
+    exportToExcel([prepareInvoicesForExport(filteredInvoices, locale)], `invoices${dateRangeStr}`);
+    toast({ title: 'Export successful', description: `${filteredInvoices.length} invoices exported to Excel` });
+  };
+
+  const handleExportGoogleSheets = async () => {
+    if (!selectedCompanyId || !filteredInvoices.length) {
+      toast({ variant: 'destructive', title: 'No data', description: 'No invoices to export' });
+      return;
+    }
+    
+    setIsExporting(true);
+    const dateRangeStr = dateRange.from && dateRange.to 
+      ? ` (${format(dateRange.from, 'MMM dd, yyyy')} - ${format(dateRange.to, 'MMM dd, yyyy')})`
+      : '';
+
+    const result = await exportToGoogleSheets(
+      [prepareInvoicesForExport(filteredInvoices, locale)],
+      `Invoices${dateRangeStr}`,
+      selectedCompanyId
+    );
+
+    setIsExporting(false);
+
+    if (result.success) {
+      toast({ 
+        title: 'Export successful', 
+        description: `${filteredInvoices.length} invoices exported to Google Sheets` 
+      });
+      if (result.spreadsheetUrl) {
+        window.open(result.spreadsheetUrl, '_blank');
+      }
+    } else {
+      toast({ 
+        variant: 'destructive',
+        title: 'Export failed', 
+        description: result.error || 'Failed to export to Google Sheets' 
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -440,6 +521,40 @@ export default function Invoices() {
         </TabsList>
 
         <TabsContent value="invoices" className="space-y-6 mt-0">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-4 flex-wrap">
+                  <span className="text-sm font-medium">Filter by date:</span>
+                  <DateRangeFilter 
+                    dateRange={dateRange} 
+                    onDateRangeChange={setDateRange} 
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" disabled={isExporting} data-testid="button-export-invoices">
+                        <Download className="w-4 h-4 mr-2" />
+                        {isExporting ? 'Exporting...' : t.export}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-invoices-excel">
+                        <FileSpreadsheet className="w-4 h-4 mr-2" />
+                        Export to Excel
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-invoices-sheets">
+                        <SiGooglesheets className="w-4 h-4 mr-2" />
+                        Export to Google Sheets
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="flex items-center justify-end flex-wrap gap-4">
             <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
@@ -715,8 +830,8 @@ export default function Invoices() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {invoices && invoices.length > 0 ? (
-                  invoices.map((invoice) => (
+                {filteredInvoices && filteredInvoices.length > 0 ? (
+                  filteredInvoices.map((invoice) => (
                     <TableRow key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
                       <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
                       <TableCell>{invoice.customerName}</TableCell>
