@@ -241,9 +241,20 @@ export default function Invoices() {
   };
 
   // Get cash and bank accounts for payment selection
-  const paymentAccounts = accounts.filter(acc => 
-    ['1000', '1100'].includes(acc.code)
-  );
+  const paymentAccounts = accounts.filter(acc => {
+    const name = (acc.nameEn || '').toLowerCase();
+    const nameAr = (acc.nameAr || '').toLowerCase();
+    return (
+      acc.type === 'asset' && (
+        name.includes('bank') || 
+        name.includes('cash') || 
+        name.includes('cheque') ||
+        nameAr.includes('بنك') ||
+        nameAr.includes('نقد') ||
+        nameAr.includes('شيك')
+      )
+    );
+  });
 
   const handleEditInvoice = async (invoice: Invoice) => {
     try {
