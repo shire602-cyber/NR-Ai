@@ -110,6 +110,7 @@ export const t = {
     // AI
     aiCategorize: 'AI Categorize',
     aiCfo: 'AI CFO & Financial Advisor',
+    aiFeatures: 'AI Automation',
     integrations: 'Integrations',
     whatsappInbox: 'WhatsApp Inbox',
     transactionDescription: 'Transaction Description',
@@ -217,6 +218,7 @@ export const t = {
     // AI
     aiCategorize: 'التصنيف الذكي',
     aiCfo: 'مستشار مالي بالذكاء الاصطناعي',
+    aiFeatures: 'الأتمتة الذكية',
     integrations: 'التكاملات',
     whatsappInbox: 'صندوق الواتساب',
     transactionDescription: 'وصف المعاملة',

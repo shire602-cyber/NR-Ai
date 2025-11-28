@@ -11,7 +11,8 @@ import {
   Bot,
   Settings,
   Plug,
-  MessageCircle
+  MessageCircle,
+  Brain
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -71,6 +72,11 @@ const navigationItems = [
     title: 'aiCfo',
     icon: Bot,
     url: '/ai-cfo',
+  },
+  {
+    title: 'aiFeatures',
+    icon: Brain,
+    url: '/ai-features',
   },
   {
     title: 'integrations',
