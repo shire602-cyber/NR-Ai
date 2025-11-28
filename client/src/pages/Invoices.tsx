@@ -299,9 +299,9 @@ export default function Invoices() {
         companyId: selectedCompanyId!,
         lines: fields.map(line => ({
           description: line.description,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice,
-          vatRate: line.vatRate,
+          quantity: Number(line.quantity),
+          unitPrice: Number(line.unitPrice),
+          vatRate: Number(line.vatRate),
         })),
       };
 
