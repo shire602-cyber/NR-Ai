@@ -20,8 +20,9 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate, formatNumber } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2, Edit } from 'lucide-react';
+import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2, Edit, RotateCcw, Lock, FileText, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 
 const journalLineSchema = z.object({
   accountId: z.string().uuid('Please select an account'),
@@ -123,7 +124,7 @@ export default function Journal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'journal'] });
       toast({
-        title: 'Journal entry updated successfully',
+        title: 'Draft entry updated',
         description: 'Your journal entry has been updated.',
       });
       setDialogOpen(false);
@@ -143,6 +144,63 @@ export default function Journal() {
         variant: 'destructive',
         title: 'Failed to update entry',
         description: error.message || 'Please check that debits equal credits.',
+      });
+    },
+  });
+
+  const postMutation = useMutation({
+    mutationFn: (id: string) => 
+      apiRequest('POST', `/api/journal/${id}/post`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'journal'] });
+      toast({
+        title: 'Entry posted',
+        description: 'Journal entry has been posted and is now immutable.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to post entry',
+        description: error.message,
+      });
+    },
+  });
+
+  const reverseMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason?: string }) => 
+      apiRequest('POST', `/api/journal/${id}/reverse`, { reason }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'journal'] });
+      toast({
+        title: 'Entry reversed',
+        description: `Reversal entry ${data.reversalNumber} created. Original entry marked as void.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to reverse entry',
+        description: error.message,
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => 
+      apiRequest('DELETE', `/api/journal/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'journal'] });
+      toast({
+        title: 'Draft entry deleted',
+        description: 'The draft journal entry has been deleted.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to delete entry',
+        description: error.message,
       });
     },
   });
@@ -458,48 +516,175 @@ export default function Journal() {
         <Skeleton className="h-96" />
       ) : entries && entries.length > 0 ? (
         <div className="space-y-4">
-          {entries.map((entry: any) => (
-            <Card key={entry.id}>
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="text-sm text-muted-foreground">{formatDate(entry.date, locale)}</div>
-                    {entry.memo && <div className="font-medium mt-1">{entry.memo}</div>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
-                      {t.balanced}
-                    </Badge>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleEditEntry(entry)}
-                      data-testid={`button-edit-journal-${entry.id}`}
-                    >
-                      <Edit className="w-4 h-4 mr-2" />
-                      Edit
-                    </Button>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {entry.lines?.map((line: any, idx: number) => (
-                    <div key={idx} className="grid grid-cols-12 gap-4 text-sm py-2 border-b last:border-0">
-                      <div className="col-span-6 flex items-center gap-2">
-                        <span className="font-mono text-xs text-muted-foreground">{line.account?.code}</span>
-                        <span>{line.account?.nameEn}</span>
+          {entries.map((entry: any) => {
+            const isPosted = entry.status === 'posted';
+            const isDraft = entry.status === 'draft';
+            const isVoid = entry.status === 'void';
+            
+            const getStatusBadge = () => {
+              if (isPosted) {
+                return (
+                  <Badge variant="outline" className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
+                    <Lock className="w-3 h-3 mr-1" />
+                    Posted
+                  </Badge>
+                );
+              } else if (isVoid) {
+                return (
+                  <Badge variant="outline" className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">
+                    <XCircle className="w-3 h-3 mr-1" />
+                    Void
+                  </Badge>
+                );
+              } else {
+                return (
+                  <Badge variant="outline" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400">
+                    <FileText className="w-3 h-3 mr-1" />
+                    Draft
+                  </Badge>
+                );
+              }
+            };
+
+            const getSourceBadge = () => {
+              if (!entry.source || entry.source === 'manual') return null;
+              const sources: Record<string, { label: string; className: string }> = {
+                invoice: { label: 'Invoice', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' },
+                receipt: { label: 'Receipt', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400' },
+                payment: { label: 'Payment', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' },
+                reversal: { label: 'Reversal', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400' },
+              };
+              const source = sources[entry.source];
+              if (!source) return null;
+              return (
+                <Badge variant="outline" className={source.className}>
+                  {source.label}
+                </Badge>
+              );
+            };
+            
+            return (
+              <Card key={entry.id} className={cn(isVoid && 'opacity-60')}>
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+                        {entry.entryNumber && (
+                          <span className="font-mono font-medium">{entry.entryNumber}</span>
+                        )}
+                        <span>{formatDate(entry.date, locale)}</span>
                       </div>
-                      <div className="col-span-3 text-right font-mono">
-                        {line.debit > 0 ? formatNumber(line.debit, locale) : '-'}
-                      </div>
-                      <div className="col-span-3 text-right font-mono">
-                        {line.credit > 0 ? formatNumber(line.credit, locale) : '-'}
-                      </div>
+                      {entry.memo && <div className="font-medium">{entry.memo}</div>}
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getStatusBadge()}
+                      {getSourceBadge()}
+                      
+                      {isDraft && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => postMutation.mutate(entry.id)}
+                            disabled={postMutation.isPending}
+                            data-testid={`button-post-journal-${entry.id}`}
+                          >
+                            <Send className="w-4 h-4 mr-2" />
+                            Post
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleEditEntry(entry)}
+                            data-testid={`button-edit-journal-${entry.id}`}
+                          >
+                            <Edit className="w-4 h-4 mr-2" />
+                            Edit
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                data-testid={`button-delete-journal-${entry.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Draft Entry?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete this draft entry. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteMutation.mutate(entry.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </>
+                      )}
+                      
+                      {isPosted && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              data-testid={`button-reverse-journal-${entry.id}`}
+                            >
+                              <RotateCcw className="w-4 h-4 mr-2" />
+                              Reverse
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Reverse Journal Entry?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will create a new reversing entry that offsets this posted entry, 
+                                and mark the original as void. Posted entries cannot be edited or deleted.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => reverseMutation.mutate({ id: entry.id, reason: 'User requested reversal' })}
+                              >
+                                Reverse Entry
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {entry.lines?.map((line: any, idx: number) => (
+                      <div key={idx} className="grid grid-cols-12 gap-4 text-sm py-2 border-b last:border-0">
+                        <div className="col-span-6 flex items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">{line.account?.code}</span>
+                          <span>{line.account?.nameEn}</span>
+                        </div>
+                        <div className="col-span-3 text-right font-mono">
+                          {line.debit > 0 ? formatNumber(line.debit, locale) : '-'}
+                        </div>
+                        <div className="col-span-3 text-right font-mono">
+                          {line.credit > 0 ? formatNumber(line.credit, locale) : '-'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       ) : (
         <Card>

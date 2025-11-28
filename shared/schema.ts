@@ -118,15 +118,31 @@ export type Account = typeof accounts.$inferSelect;
 export const journalEntries = pgTable("journal_entries", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  entryNumber: text("entry_number").notNull(), // Auto-generated: JE-YYYYMMDD-001
   date: timestamp("date").notNull(),
   memo: text("memo"),
+  // Status: draft entries can be edited, posted entries are immutable
+  status: text("status").notNull().default("draft"), // draft | posted | void
+  // Source tracking: where did this entry come from?
+  source: text("source").notNull().default("manual"), // manual | invoice | receipt | payment | reversal | system
+  sourceId: uuid("source_id"), // Reference to invoice, receipt, etc.
+  // Reversal support: if this entry is a reversal, link to original
+  reversedEntryId: uuid("reversed_entry_id").references(() => journalEntries.id),
+  reversalReason: text("reversal_reason"),
+  // Audit trail
   createdBy: uuid("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  postedBy: uuid("posted_by").references(() => users.id),
+  postedAt: timestamp("posted_at"),
+  updatedBy: uuid("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at"),
 });
 
 export const insertJournalEntrySchema = createInsertSchema(journalEntries).omit({
   id: true,
   createdAt: true,
+  postedAt: true,
+  updatedAt: true,
 });
 
 export type InsertJournalEntry = z.infer<typeof insertJournalEntrySchema>;
@@ -141,10 +157,17 @@ export const journalLines = pgTable("journal_lines", {
   accountId: uuid("account_id").notNull().references(() => accounts.id),
   debit: real("debit").notNull().default(0),
   credit: real("credit").notNull().default(0),
+  description: text("description"), // Line-level description
+  // Reconciliation support
+  isReconciled: boolean("is_reconciled").notNull().default(false),
+  reconciledAt: timestamp("reconciled_at"),
+  reconciledBy: uuid("reconciled_by").references(() => users.id),
+  bankTransactionId: uuid("bank_transaction_id"), // Reference to matched bank transaction
 });
 
 export const insertJournalLineSchema = createInsertSchema(journalLines).omit({
   id: true,
+  reconciledAt: true,
 });
 
 export type InsertJournalLine = z.infer<typeof insertJournalLineSchema>;

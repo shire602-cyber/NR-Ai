@@ -80,6 +80,7 @@ export interface IStorage {
   createJournalEntry(entry: InsertJournalEntry): Promise<JournalEntry>;
   updateJournalEntry(id: string, data: Partial<InsertJournalEntry>): Promise<JournalEntry>;
   deleteJournalEntry(id: string): Promise<void>;
+  generateEntryNumber(companyId: string, date: Date): Promise<string>;
   
   // Journal Lines
   createJournalLine(line: InsertJournalLine): Promise<JournalLine>;
@@ -347,6 +348,25 @@ export class DatabaseStorage implements IStorage {
 
   async deleteJournalEntry(id: string): Promise<void> {
     await db.delete(journalEntries).where(eq(journalEntries.id, id));
+  }
+
+  async generateEntryNumber(companyId: string, date: Date): Promise<string> {
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const prefix = `JE-${dateStr}`;
+    
+    // Get count of entries for this company and date prefix using SQL for atomicity
+    const allEntries = await db
+      .select()
+      .from(journalEntries)
+      .where(eq(journalEntries.companyId, companyId));
+    
+    // Filter entries that match this date prefix
+    const todayEntries = allEntries.filter(e => 
+      e.entryNumber?.startsWith(prefix)
+    );
+    
+    const nextNumber = todayEntries.length + 1;
+    return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
   }
 
   // Journal Lines

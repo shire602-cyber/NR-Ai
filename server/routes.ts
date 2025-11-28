@@ -513,11 +513,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const vatPayable = accounts.find(a => a.nameEn === 'VAT Payable');
       
       if (accountsReceivable && salesRevenue) {
+        // Generate entry number atomically via storage helper
+        const entryNumber = await storage.generateEntryNumber(companyId, invoiceDate);
+        
         const entry = await storage.createJournalEntry({
           companyId: companyId,
           date: invoiceDate,
           memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
+          entryNumber,
+          status: 'posted', // Revenue recognition is immediately posted
+          source: 'invoice',
+          sourceId: invoice.id,
           createdBy: userId,
+          postedBy: userId,
+          postedAt: new Date(),
         });
 
         // Debit: Accounts Receivable (total)
@@ -526,6 +535,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           accountId: accountsReceivable.id,
           debit: total,
           credit: 0,
+          description: `Invoice ${invoice.number} - ${invoice.customerName}`,
         });
 
         // Credit: Sales Revenue (subtotal)
@@ -534,6 +544,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           accountId: salesRevenue.id,
           debit: 0,
           credit: subtotal,
+          description: `Sales revenue - Invoice ${invoice.number}`,
         });
 
         // Credit: VAT Payable (vat amount) - if there's VAT
@@ -543,10 +554,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
             accountId: vatPayable.id,
             debit: 0,
             credit: vatAmount,
+            description: `VAT output - Invoice ${invoice.number}`,
           });
         }
 
-        console.log('[Invoices] Revenue recognition journal entry created for invoice:', invoice.id);
+        console.log('[Invoices] Revenue recognition journal entry created:', entryNumber, 'for invoice:', invoice.id);
       } else {
         console.warn('[Invoices] Could not create revenue recognition entry - missing accounts');
       }
@@ -695,11 +707,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const accountsReceivable = accounts.find(a => a.nameEn === 'Accounts Receivable');
         
         if (accountsReceivable) {
+          // Generate entry number atomically via storage helper
+          const now = new Date();
+          const entryNumber = await storage.generateEntryNumber(invoice.companyId, now);
+          
           const entry = await storage.createJournalEntry({
             companyId: invoice.companyId,
-            date: new Date(),
+            date: now,
             memo: `Payment received for Invoice ${invoice.number}`,
+            entryNumber,
+            status: 'posted',
+            source: 'payment',
+            sourceId: invoice.id,
             createdBy: userId,
+            postedBy: userId,
+            postedAt: now,
           });
 
           // Debit: Selected payment account (total)
@@ -708,6 +730,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             accountId: paymentAccountId,
             debit: invoice.total,
             credit: 0,
+            description: `Payment received - Invoice ${invoice.number}`,
           });
 
           // Credit: Accounts Receivable (total)
@@ -716,9 +739,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             accountId: accountsReceivable.id,
             debit: 0,
             credit: invoice.total,
+            description: `Clear A/R - Invoice ${invoice.number}`,
           });
 
-          console.log('[Invoices] Payment journal entry created for invoice:', id, 'to account:', paymentAccount.nameEn);
+          console.log('[Invoices] Payment journal entry created:', entryNumber, 'for invoice:', id, 'to account:', paymentAccount.nameEn);
         } else {
           return res.status(500).json({ message: 'Accounts Receivable account not found' });
         }
@@ -955,12 +979,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         entryDate = new Date();
       }
 
+      // Generate entry number atomically via storage helper
+      const entryNumber = await storage.generateEntryNumber(receipt.companyId, entryDate);
+      
       // Create journal entry for the receipt
       const entry = await storage.createJournalEntry({
         companyId: receipt.companyId,
         date: entryDate,
         memo: `Receipt: ${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
+        entryNumber,
+        status: 'posted',
+        source: 'receipt',
+        sourceId: receipt.id,
         createdBy: userId,
+        postedBy: userId,
+        postedAt: new Date(),
       });
 
       // Debit: Expense Account (total amount including VAT)
@@ -969,6 +1002,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountId: expenseAccount.id,
         debit: totalAmount,
         credit: 0,
+        description: `${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
       });
 
       // Credit: Payment Account (cash/bank)
@@ -977,6 +1011,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         accountId: paymentAccount.id,
         debit: 0,
         credit: totalAmount,
+        description: `Payment for ${receipt.merchant || 'expense'}`,
       });
 
       // Update receipt with posting information
@@ -1036,7 +1071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { lines, date, ...entryData } = req.body;
+      const { lines, date, status = 'draft', ...entryData } = req.body;
       
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -1044,21 +1079,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
       
+      // Validate at least 2 lines
+      if (!lines || lines.length < 2) {
+        return res.status(400).json({ message: 'Journal entry must have at least 2 lines' });
+      }
+      
       // Validate debits equal credits
       let totalDebit = 0;
       let totalCredit = 0;
       
       for (const line of lines) {
-        totalDebit += line.debit || 0;
-        totalCredit += line.credit || 0;
+        totalDebit += Number(line.debit) || 0;
+        totalCredit += Number(line.credit) || 0;
+      }
+      
+      // Ensure at least one debit and one credit
+      if (totalDebit === 0 || totalCredit === 0) {
+        return res.status(400).json({ message: 'Entry must have at least one debit and one credit' });
       }
       
       if (Math.abs(totalDebit - totalCredit) > 0.01) {
-        return res.status(400).json({ message: 'Debits must equal credits' });
+        return res.status(400).json({ message: `Debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)})` });
       }
       
       // Convert date string to Date object if it's a string
       const entryDate = typeof date === 'string' ? new Date(date) : date;
+      
+      // Generate entry number atomically via storage helper
+      const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
+      
+      // Determine if posting immediately
+      const isPosting = status === 'posted';
       
       // Create journal entry
       const entry = await storage.createJournalEntry({
@@ -1066,6 +1117,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         date: entryDate,
         companyId,
         createdBy: userId,
+        entryNumber,
+        status: isPosting ? 'posted' : 'draft',
+        source: entryData.source || 'manual',
+        sourceId: entryData.sourceId || null,
+        postedBy: isPosting ? userId : null,
+        postedAt: isPosting ? new Date() : null,
       });
       
       // Create journal lines
@@ -1073,12 +1130,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createJournalLine({
           entryId: entry.id,
           accountId: line.accountId,
-          debit: line.debit || 0,
-          credit: line.credit || 0,
+          debit: Number(line.debit) || 0,
+          credit: Number(line.credit) || 0,
+          description: line.description || null,
         });
       }
       
-      res.json({ id: entry.id, status: 'posted' });
+      res.json({ 
+        id: entry.id, 
+        entryNumber: entry.entryNumber,
+        status: entry.status,
+        message: isPosting ? 'Journal entry posted successfully' : 'Journal entry saved as draft'
+      });
     } catch (error: any) {
       res.status(400).json({ message: error.message });
     }
@@ -1132,26 +1195,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
+      // IMMUTABILITY: Posted entries cannot be edited - must be reversed instead
+      if (entry.status === 'posted') {
+        return res.status(400).json({ 
+          message: 'Posted journal entries cannot be edited. Use reversal to correct posted entries.',
+          code: 'ENTRY_POSTED'
+        });
+      }
+
+      // Void entries cannot be edited
+      if (entry.status === 'void') {
+        return res.status(400).json({ 
+          message: 'Void journal entries cannot be edited.',
+          code: 'ENTRY_VOID'
+        });
+      }
+
+      // Validate at least 2 lines
+      if (!lines || lines.length < 2) {
+        return res.status(400).json({ message: 'Journal entry must have at least 2 lines' });
+      }
+
       // Validate debits equal credits
       let totalDebit = 0;
       let totalCredit = 0;
 
       for (const line of lines) {
-        totalDebit += line.debit || 0;
-        totalCredit += line.credit || 0;
+        totalDebit += Number(line.debit) || 0;
+        totalCredit += Number(line.credit) || 0;
+      }
+
+      // Ensure at least one debit and one credit
+      if (totalDebit === 0 || totalCredit === 0) {
+        return res.status(400).json({ message: 'Entry must have at least one debit and one credit' });
       }
 
       if (Math.abs(totalDebit - totalCredit) > 0.01) {
-        return res.status(400).json({ message: 'Debits must equal credits' });
+        return res.status(400).json({ message: `Debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)})` });
       }
 
       // Convert date string to Date object if it's a string
       const entryDate = typeof date === 'string' ? new Date(date) : date;
 
-      // Update journal entry
+      // Update journal entry with audit trail
       const updatedEntry = await storage.updateJournalEntry(id, {
         ...entryData,
         date: entryDate,
+        updatedBy: userId,
+        updatedAt: new Date(),
       });
 
       // Delete existing lines and create new ones
@@ -1160,16 +1251,143 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createJournalLine({
           entryId: id,
           accountId: line.accountId,
-          debit: line.debit || 0,
-          credit: line.credit || 0,
+          debit: Number(line.debit) || 0,
+          credit: Number(line.credit) || 0,
+          description: line.description || null,
         });
       }
 
-      console.log('[Journal] Journal entry updated successfully:', id);
-      res.json({ id: updatedEntry.id, status: 'posted' });
+      console.log('[Journal] Draft journal entry updated successfully:', id);
+      res.json({ id: updatedEntry.id, status: updatedEntry.status, message: 'Draft entry updated successfully' });
     } catch (error: any) {
       console.error('[Journal] Error updating journal entry:', error);
       res.status(400).json({ message: error.message });
+    }
+  });
+
+  // Post a draft journal entry (makes it immutable)
+  app.post("/api/journal/:id/post", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      const entry = await storage.getJournalEntry(id);
+      if (!entry) {
+        return res.status(404).json({ message: 'Journal entry not found' });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (entry.status !== 'draft') {
+        // Only draft entries can be posted - posted entries are immutable, void entries cannot be re-activated
+        const errorMessage = entry.status === 'posted' 
+          ? 'Entry is already posted and cannot be modified'
+          : 'Void entries cannot be posted or reactivated';
+        return res.status(400).json({ message: errorMessage, code: `ENTRY_${entry.status.toUpperCase()}` });
+      }
+
+      // Validate debits = credits before posting
+      const lines = await storage.getJournalLinesByEntryId(id);
+      let totalDebit = 0;
+      let totalCredit = 0;
+      for (const line of lines) {
+        totalDebit += Number(line.debit) || 0;
+        totalCredit += Number(line.credit) || 0;
+      }
+
+      if (Math.abs(totalDebit - totalCredit) > 0.01) {
+        return res.status(400).json({ message: 'Cannot post: Debits must equal credits' });
+      }
+
+      const updatedEntry = await storage.updateJournalEntry(id, {
+        status: 'posted',
+        postedBy: userId,
+        postedAt: new Date(),
+      });
+
+      console.log('[Journal] Entry posted successfully:', id);
+      res.json({ id: updatedEntry.id, status: 'posted', message: 'Entry posted successfully' });
+    } catch (error: any) {
+      console.error('[Journal] Error posting entry:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Reverse a posted journal entry (creates a new reversing entry)
+  app.post("/api/journal/:id/reverse", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      const { reason } = req.body;
+
+      const entry = await storage.getJournalEntry(id);
+      if (!entry) {
+        return res.status(404).json({ message: 'Journal entry not found' });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      if (entry.status !== 'posted') {
+        return res.status(400).json({ message: 'Only posted entries can be reversed' });
+      }
+
+      // Get original lines
+      const originalLines = await storage.getJournalLinesByEntryId(id);
+
+      // Generate reversal entry number atomically via storage helper
+      const now = new Date();
+      const reversalNumber = await storage.generateEntryNumber(entry.companyId, now);
+
+      // Create reversing entry with swapped debits/credits
+      const reversalEntry = await storage.createJournalEntry({
+        companyId: entry.companyId,
+        date: now,
+        memo: `Reversal of ${entry.entryNumber}: ${reason || 'No reason provided'}`,
+        entryNumber: reversalNumber,
+        status: 'posted',
+        source: 'reversal',
+        sourceId: id,
+        reversedEntryId: id,
+        reversalReason: reason || null,
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: new Date(),
+      });
+
+      // Create reversed lines (swap debits and credits)
+      for (const line of originalLines) {
+        await storage.createJournalLine({
+          entryId: reversalEntry.id,
+          accountId: line.accountId,
+          debit: line.credit, // Swap
+          credit: line.debit, // Swap
+          description: `Reversal: ${line.description || ''}`,
+        });
+      }
+
+      // Mark original entry as void
+      await storage.updateJournalEntry(id, {
+        status: 'void',
+        updatedBy: userId,
+        updatedAt: new Date(),
+      });
+
+      console.log('[Journal] Entry reversed:', id, '-> new entry:', reversalEntry.id);
+      res.json({ 
+        originalId: id,
+        reversalId: reversalEntry.id,
+        reversalNumber: reversalEntry.entryNumber,
+        message: 'Entry reversed successfully'
+      });
+    } catch (error: any) {
+      console.error('[Journal] Error reversing entry:', error);
+      res.status(500).json({ message: error.message });
     }
   });
 
@@ -1190,8 +1408,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
+      // IMMUTABILITY: Posted entries cannot be deleted - must be reversed
+      if (entry.status === 'posted') {
+        return res.status(400).json({ 
+          message: 'Posted entries cannot be deleted. Use the reverse action to void this entry.',
+          code: 'ENTRY_POSTED'
+        });
+      }
+
+      // Void entries should not be deleted either (audit trail)
+      if (entry.status === 'void') {
+        return res.status(400).json({ 
+          message: 'Void entries cannot be deleted (required for audit trail).',
+          code: 'ENTRY_VOID'
+        });
+      }
+
+      // Only draft entries can be deleted
       await storage.deleteJournalEntry(id);
-      res.json({ message: 'Journal entry deleted successfully' });
+      console.log('[Journal] Draft entry deleted:', id);
+      res.json({ message: 'Draft entry deleted successfully' });
     } catch (error: any) {
       console.error('[Journal] Error deleting journal entry:', error);
       res.status(500).json({ message: error.message });
