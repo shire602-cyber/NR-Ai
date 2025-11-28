@@ -37,12 +37,12 @@ export function exportToExcel(data: ExportData[], filename: string) {
 
 export async function exportToGoogleSheets(
   data: ExportData[],
-  spreadsheetTitle: string,
+  title: string,
   companyId: string
 ): Promise<{ success: boolean; spreadsheetUrl?: string; error?: string }> {
   try {
     const sheetsData = data.map(sheet => ({
-      sheetName: sheet.sheetName || 'Sheet1',
+      name: sheet.sheetName || 'Sheet1',
       headers: sheet.columns.map(col => col.header),
       rows: sheet.rows.map(row => 
         sheet.columns.map(col => {
@@ -54,14 +54,14 @@ export async function exportToGoogleSheets(
 
     const response = await apiRequest('POST', `/api/integrations/google-sheets/export/custom`, {
       companyId,
-      spreadsheetTitle,
+      title,
       sheets: sheetsData,
     });
 
     const result = await response.json();
     return {
       success: true,
-      spreadsheetUrl: result.spreadsheetUrl,
+      spreadsheetUrl: result.url,
     };
   } catch (error: any) {
     return {

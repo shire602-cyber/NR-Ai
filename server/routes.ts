@@ -2143,6 +2143,43 @@ Keep your tone professional but friendly, like a trusted advisor.`
     }
   });
 
+  // Custom export to Google Sheets (for filtered/custom data from frontend)
+  app.post("/api/integrations/google-sheets/export/custom", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, title, sheets } = req.body;
+      if (!companyId || !title || !sheets) {
+        return res.status(400).json({ message: 'Company ID, title, and sheets data required' });
+      }
+      
+      const isConnected = await googleSheets.isGoogleSheetsConnected();
+      if (!isConnected) {
+        return res.status(400).json({ message: 'Google Sheets not connected' });
+      }
+      
+      // Export custom data to sheet
+      const result = await googleSheets.exportCustomDataToSheet(title, sheets);
+      
+      // Log the sync
+      await storage.createIntegrationSync({
+        companyId,
+        integrationType: 'google_sheets',
+        syncType: 'export',
+        dataType: 'custom',
+        status: 'completed',
+        recordCount: sheets.reduce((total: number, sheet: any) => total + (sheet.rows?.length || 0), 0),
+        externalId: result.spreadsheetId,
+        externalUrl: result.url,
+      });
+      
+      res.json({
+        message: 'Data exported successfully',
+        ...result,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // ===========================
   // WhatsApp Integration Routes
   // ===========================

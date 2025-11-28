@@ -325,6 +325,23 @@ export async function exportChartOfAccountsToSheet(
   };
 }
 
+// Export custom data to Google Sheets (for filtered/custom exports from frontend)
+export async function exportCustomDataToSheet(
+  title: string,
+  sheets: { name: string; headers: string[]; rows: (string | number | null)[][] }[]
+): Promise<{ spreadsheetId: string; url: string }> {
+  const sheetId = await createSpreadsheet(title);
+  
+  for (const sheet of sheets) {
+    await exportToSheet(sheetId, sheet.name, [sheet.headers, ...sheet.rows]);
+  }
+  
+  return {
+    spreadsheetId: sheetId,
+    url: `https://docs.google.com/spreadsheets/d/${sheetId}`
+  };
+}
+
 // Import invoices from a Google Sheet
 export async function importInvoicesFromSheet(
   spreadsheetId: string
