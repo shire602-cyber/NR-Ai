@@ -3,6 +3,9 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
@@ -23,7 +26,9 @@ import {
   RefreshCw,
   Zap,
   Link2,
-  History
+  History,
+  Settings,
+  Power
 } from 'lucide-react';
 import { SiGoogle, SiWhatsapp, SiQuickbooks } from 'react-icons/si';
 import {
@@ -33,6 +38,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -57,6 +63,16 @@ interface IntegrationsStatusResponse {
   whatsapp: IntegrationStatus;
 }
 
+interface WhatsappConfigResponse {
+  configured: boolean;
+  isActive: boolean;
+  phoneNumberId?: string;
+  businessAccountId?: string;
+  hasAccessToken?: boolean;
+  companyId: string;
+  configId?: string;
+}
+
 export default function Integrations() {
   const { locale } = useI18n();
   const { toast } = useToast();
@@ -66,6 +82,15 @@ export default function Integrations() {
   const [importType, setImportType] = useState<string>('');
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [spreadsheetUrl, setSpreadsheetUrl] = useState<string>('');
+  
+  // WhatsApp state
+  const [isWhatsappDialogOpen, setIsWhatsappDialogOpen] = useState(false);
+  const [whatsappForm, setWhatsappForm] = useState({
+    phoneNumberId: '',
+    accessToken: '',
+    webhookVerifyToken: '',
+    businessAccountId: '',
+  });
 
   const isRTL = locale === 'ar';
 
@@ -113,6 +138,23 @@ export default function Integrations() {
     whatsappDesc: locale === 'en'
       ? 'Extract receipts and invoices from WhatsApp messages automatically'
       : 'استخرج الإيصالات والفواتير من رسائل WhatsApp تلقائياً',
+    // WhatsApp translations
+    whatsappSetup: locale === 'en' ? 'WhatsApp Setup' : 'إعداد WhatsApp',
+    whatsappSetupDesc: locale === 'en' 
+      ? 'Connect your WhatsApp Business account to automatically extract receipts from messages'
+      : 'اربط حساب WhatsApp Business الخاص بك لاستخراج الإيصالات تلقائياً من الرسائل',
+    phoneNumberId: locale === 'en' ? 'Phone Number ID' : 'معرف رقم الهاتف',
+    accessToken: locale === 'en' ? 'Access Token' : 'رمز الوصول',
+    webhookVerifyToken: locale === 'en' ? 'Webhook Verify Token' : 'رمز التحقق من Webhook',
+    businessAccountId: locale === 'en' ? 'Business Account ID' : 'معرف حساب الأعمال',
+    configure: locale === 'en' ? 'Configure' : 'تكوين',
+    saveConfig: locale === 'en' ? 'Save Configuration' : 'حفظ الإعدادات',
+    saving: locale === 'en' ? 'Saving...' : 'جاري الحفظ...',
+    whatsappConfigured: locale === 'en' ? 'WhatsApp configured successfully!' : 'تم تكوين WhatsApp بنجاح!',
+    whatsappActive: locale === 'en' ? 'Active' : 'نشط',
+    whatsappInactive: locale === 'en' ? 'Inactive' : 'غير نشط',
+    webhookUrl: locale === 'en' ? 'Webhook URL' : 'رابط Webhook',
+    copyWebhookUrl: locale === 'en' ? 'Copy this URL to your Meta Developer Console' : 'انسخ هذا الرابط إلى لوحة تحكم Meta Developer',
   };
 
   const { data: integrationStatus, isLoading: statusLoading } = useQuery<IntegrationsStatusResponse>({
@@ -122,6 +164,52 @@ export default function Integrations() {
   const { data: syncHistory = [], isLoading: historyLoading } = useQuery<IntegrationSync[]>({
     queryKey: [`/api/integrations/sync-history?companyId=${currentCompany?.id}`],
     enabled: !!currentCompany?.id,
+  });
+
+  // WhatsApp config query
+  const { data: whatsappConfig, isLoading: whatsappLoading } = useQuery<WhatsappConfigResponse>({
+    queryKey: ['/api/integrations/whatsapp/config'],
+  });
+
+  // WhatsApp save config mutation
+  const whatsappConfigMutation = useMutation({
+    mutationFn: async (config: typeof whatsappForm) => {
+      return await apiRequest('POST', '/api/integrations/whatsapp/config', config);
+    },
+    onSuccess: () => {
+      toast({
+        title: t.whatsappConfigured,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/config'] });
+      setIsWhatsappDialogOpen(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: locale === 'en' ? 'Configuration failed' : 'فشل التكوين',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // WhatsApp toggle mutation
+  const whatsappToggleMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('PATCH', '/api/integrations/whatsapp/toggle', {});
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/config'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: locale === 'en' ? 'Toggle failed' : 'فشل التبديل',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
   });
 
   const exportMutation = useMutation({
@@ -385,6 +473,148 @@ export default function Integrations() {
               )}
             </CardContent>
           </Card>
+
+          {/* WhatsApp Integration */}
+          <Card className="relative overflow-hidden" data-testid="integration-whatsapp">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/10 to-green-600/5 rounded-bl-full" />
+            <CardHeader className="flex flex-row items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg">
+                <SiWhatsapp className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-lg">WhatsApp Business</CardTitle>
+                  <Badge 
+                    variant={whatsappConfig?.configured && whatsappConfig?.isActive ? 'default' : 'secondary'}
+                    className={whatsappConfig?.configured && whatsappConfig?.isActive ? 'bg-green-500' : ''}
+                    data-testid="whatsapp-status"
+                  >
+                    {whatsappConfig?.configured && whatsappConfig?.isActive ? (
+                      <><Check className="w-3 h-3 mr-1" /> {t.whatsappActive}</>
+                    ) : whatsappConfig?.configured ? (
+                      <><Power className="w-3 h-3 mr-1" /> {t.whatsappInactive}</>
+                    ) : (
+                      <><X className="w-3 h-3 mr-1" /> {t.notConnected}</>
+                    )}
+                  </Badge>
+                </div>
+                <CardDescription className="mt-1">{t.whatsappDesc}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {whatsappConfig?.configured ? (
+                  <>
+                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <p className="text-sm font-medium">{t.phoneNumberId}</p>
+                        <p className="text-xs text-muted-foreground">{whatsappConfig.phoneNumberId || 'N/A'}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={whatsappConfig.isActive}
+                          onCheckedChange={() => whatsappToggleMutation.mutate()}
+                          disabled={whatsappToggleMutation.isPending}
+                          data-testid="switch-whatsapp-toggle"
+                        />
+                      </div>
+                    </div>
+                    <div className="p-3 bg-muted/30 rounded-lg border border-dashed">
+                      <p className="text-xs font-medium mb-1">{t.webhookUrl}</p>
+                      <code className="text-xs text-muted-foreground break-all block mb-1">
+                        {window.location.origin}/api/webhooks/whatsapp
+                      </code>
+                      <p className="text-xs text-muted-foreground">{t.copyWebhookUrl}</p>
+                    </div>
+                  </>
+                ) : null}
+                
+                <Dialog open={isWhatsappDialogOpen} onOpenChange={setIsWhatsappDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button 
+                      variant={whatsappConfig?.configured ? 'outline' : 'default'} 
+                      className="gap-2 w-full"
+                      data-testid="button-configure-whatsapp"
+                    >
+                      <Settings className="w-4 h-4" />
+                      {whatsappConfig?.configured ? t.configure : t.connect}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <SiWhatsapp className="w-5 h-5 text-green-500" />
+                        {t.whatsappSetup}
+                      </DialogTitle>
+                      <DialogDescription>{t.whatsappSetupDesc}</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="phoneNumberId">{t.phoneNumberId}</Label>
+                        <Input
+                          id="phoneNumberId"
+                          value={whatsappForm.phoneNumberId}
+                          onChange={(e) => setWhatsappForm(prev => ({ ...prev, phoneNumberId: e.target.value }))}
+                          placeholder="e.g., 123456789012345"
+                          data-testid="input-whatsapp-phone-id"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="businessAccountId">{t.businessAccountId}</Label>
+                        <Input
+                          id="businessAccountId"
+                          value={whatsappForm.businessAccountId}
+                          onChange={(e) => setWhatsappForm(prev => ({ ...prev, businessAccountId: e.target.value }))}
+                          placeholder="e.g., 987654321098765"
+                          data-testid="input-whatsapp-business-id"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="accessToken">{t.accessToken}</Label>
+                        <Input
+                          id="accessToken"
+                          type="password"
+                          value={whatsappForm.accessToken}
+                          onChange={(e) => setWhatsappForm(prev => ({ ...prev, accessToken: e.target.value }))}
+                          placeholder="Your permanent access token"
+                          data-testid="input-whatsapp-token"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="webhookVerifyToken">{t.webhookVerifyToken}</Label>
+                        <Input
+                          id="webhookVerifyToken"
+                          value={whatsappForm.webhookVerifyToken}
+                          onChange={(e) => setWhatsappForm(prev => ({ ...prev, webhookVerifyToken: e.target.value }))}
+                          placeholder="Your custom verify token"
+                          data-testid="input-whatsapp-verify-token"
+                        />
+                      </div>
+                      <div className="p-3 bg-muted/50 rounded-lg">
+                        <p className="text-xs font-medium mb-1">{t.webhookUrl}</p>
+                        <code className="text-xs text-muted-foreground break-all">
+                          {window.location.origin}/api/webhooks/whatsapp
+                        </code>
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        onClick={() => whatsappConfigMutation.mutate(whatsappForm)}
+                        disabled={whatsappConfigMutation.isPending || !whatsappForm.phoneNumberId || !whatsappForm.accessToken}
+                        data-testid="button-save-whatsapp-config"
+                      >
+                        {whatsappConfigMutation.isPending ? (
+                          <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> {t.saving}</>
+                        ) : (
+                          t.saveConfig
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
@@ -395,7 +625,7 @@ export default function Integrations() {
           {t.upcomingIntegrations}
         </h2>
         
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 gap-6">
           {/* Xero */}
           <Card className="relative overflow-hidden opacity-75" data-testid="integration-xero">
             <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-blue-500/10 to-blue-600/5 rounded-bl-full" />
@@ -430,22 +660,6 @@ export default function Integrations() {
             </CardHeader>
           </Card>
 
-          {/* WhatsApp */}
-          <Card className="relative overflow-hidden opacity-75" data-testid="integration-whatsapp">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-green-500/10 to-green-600/5 rounded-bl-full" />
-            <CardHeader className="flex flex-row items-start gap-4 pb-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg">
-                <SiWhatsapp className="w-5 h-5 text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">WhatsApp</CardTitle>
-                  <Badge variant="outline">{t.comingSoon}</Badge>
-                </div>
-                <CardDescription className="mt-1 text-sm">{t.whatsappDesc}</CardDescription>
-              </div>
-            </CardHeader>
-          </Card>
         </div>
       </div>
 

@@ -2029,6 +2029,257 @@ Keep your tone professional but friendly, like a trusted advisor.`
     }
   });
 
+  // ===========================
+  // WhatsApp Integration Routes
+  // ===========================
+
+  // WhatsApp Webhook Verification (GET) - For Meta webhook setup
+  app.get("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    // For initial setup, we accept any verification token
+    // In production, this should validate against stored webhook_verify_token
+    if (mode === 'subscribe') {
+      console.log('WhatsApp webhook verified');
+      return res.status(200).send(challenge);
+    }
+
+    res.status(403).json({ message: 'Forbidden' });
+  });
+
+  // WhatsApp Webhook (POST) - Receive messages
+  app.post("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
+    try {
+      const body = req.body;
+
+      // Acknowledge receipt immediately (WhatsApp requires quick response)
+      res.status(200).send('EVENT_RECEIVED');
+
+      // Process messages asynchronously
+      if (body.object === 'whatsapp_business_account') {
+        for (const entry of body.entry || []) {
+          for (const change of entry.changes || []) {
+            if (change.field === 'messages') {
+              const value = change.value;
+              const messages = value.messages || [];
+              
+              for (const message of messages) {
+                await processWhatsAppMessage(message, value.metadata);
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('WhatsApp webhook error:', error);
+      // Still return 200 to prevent retries
+      res.status(200).send('ERROR_LOGGED');
+    }
+  });
+
+  // Process incoming WhatsApp message
+  async function processWhatsAppMessage(message: any, metadata: any) {
+    try {
+      const phoneNumberId = metadata?.phone_number_id;
+      
+      // Find company by phone number ID
+      // For now, we'll use a simple approach - in production, map phone numbers to companies
+      const messageData = {
+        waMessageId: message.id,
+        from: message.from,
+        to: phoneNumberId,
+        messageType: message.type,
+        content: message.text?.body || null,
+        mediaId: message.image?.id || message.document?.id || null,
+        direction: 'inbound' as const,
+        status: 'received' as const,
+      };
+
+      console.log('Received WhatsApp message:', messageData);
+      
+      // TODO: In full implementation:
+      // 1. Look up company by phone number ID
+      // 2. Download media if present
+      // 3. Run OCR on images
+      // 4. Use AI to categorize expenses
+      // 5. Create receipt/expense entry
+
+    } catch (error) {
+      console.error('Error processing WhatsApp message:', error);
+    }
+  }
+
+  // Get WhatsApp configuration
+  app.get("/api/integrations/whatsapp/config", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+
+      const companyId = companies[0].id;
+      const config = await storage.getWhatsappConfig(companyId);
+
+      if (!config) {
+        return res.json({
+          configured: false,
+          isActive: false,
+          companyId,
+        });
+      }
+
+      // Don't expose sensitive tokens
+      res.json({
+        configured: true,
+        isActive: config.isActive,
+        phoneNumberId: config.phoneNumberId,
+        businessAccountId: config.businessAccountId,
+        hasAccessToken: !!config.accessToken,
+        companyId,
+        configId: config.id,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Save WhatsApp configuration
+  app.post("/api/integrations/whatsapp/config", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { phoneNumberId, accessToken, webhookVerifyToken, businessAccountId } = req.body;
+      
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+
+      const companyId = companies[0].id;
+      const existingConfig = await storage.getWhatsappConfig(companyId);
+
+      if (existingConfig) {
+        // Update existing config
+        const updated = await storage.updateWhatsappConfig(existingConfig.id, {
+          phoneNumberId,
+          accessToken,
+          webhookVerifyToken,
+          businessAccountId,
+          isActive: true,
+        });
+        res.json({ message: 'WhatsApp configuration updated', configId: updated.id });
+      } else {
+        // Create new config
+        const config = await storage.createWhatsappConfig({
+          companyId,
+          phoneNumberId,
+          accessToken,
+          webhookVerifyToken,
+          businessAccountId,
+          isActive: true,
+        });
+        res.json({ message: 'WhatsApp configuration created', configId: config.id });
+      }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Toggle WhatsApp integration on/off
+  app.patch("/api/integrations/whatsapp/toggle", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+
+      const companyId = companies[0].id;
+      const config = await storage.getWhatsappConfig(companyId);
+
+      if (!config) {
+        return res.status(404).json({ message: 'WhatsApp not configured' });
+      }
+
+      const updated = await storage.updateWhatsappConfig(config.id, {
+        isActive: !config.isActive,
+      });
+
+      res.json({ 
+        message: updated.isActive ? 'WhatsApp integration enabled' : 'WhatsApp integration disabled',
+        isActive: updated.isActive 
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get WhatsApp message history
+  app.get("/api/integrations/whatsapp/messages", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+
+      const companyId = companies[0].id;
+      const messages = await storage.getWhatsappMessagesByCompanyId(companyId);
+
+      res.json(messages);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get WhatsApp integration status (for dashboard)
+  app.get("/api/integrations/whatsapp/status", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.json({ connected: false, configured: false });
+      }
+
+      const companyId = companies[0].id;
+      const config = await storage.getWhatsappConfig(companyId);
+
+      if (!config) {
+        return res.json({ connected: false, configured: false });
+      }
+
+      res.json({
+        connected: config.isActive,
+        configured: true,
+        phoneNumberId: config.phoneNumberId,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
