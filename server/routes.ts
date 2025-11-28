@@ -1907,6 +1907,23 @@ Keep your tone professional but friendly, like a trusted advisor.`
       
       const spreadsheetId = match[1];
       
+      // Import invoices from sheet
+      const invoices = await googleSheets.importInvoicesFromSheet(spreadsheetId);
+      
+      // Create invoices in database
+      let createdCount = 0;
+      for (const invoiceData of invoices) {
+        try {
+          const invoice = await storage.createInvoice({
+            companyId,
+            ...invoiceData
+          });
+          createdCount++;
+        } catch (err) {
+          console.error('Error creating invoice:', err);
+        }
+      }
+      
       // Log the sync
       await storage.createIntegrationSync({
         companyId,
@@ -1914,13 +1931,13 @@ Keep your tone professional but friendly, like a trusted advisor.`
         syncType: 'import',
         dataType: 'invoices',
         status: 'completed',
-        recordCount: 0,
+        recordCount: createdCount,
         externalUrl: sheetUrl,
       });
       
       res.json({
-        message: 'Invoices import started successfully',
-        recordCount: 0,
+        message: 'Invoices imported successfully',
+        recordCount: createdCount,
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -1948,6 +1965,23 @@ Keep your tone professional but friendly, like a trusted advisor.`
       
       const spreadsheetId = match[1];
       
+      // Import expenses from sheet
+      const expenses = await googleSheets.importExpensesFromSheet(spreadsheetId);
+      
+      // Create expenses in database
+      let createdCount = 0;
+      for (const expenseData of expenses) {
+        try {
+          const receipt = await storage.createReceipt({
+            companyId,
+            ...expenseData
+          });
+          createdCount++;
+        } catch (err) {
+          console.error('Error creating expense:', err);
+        }
+      }
+      
       // Log the sync
       await storage.createIntegrationSync({
         companyId,
@@ -1955,13 +1989,13 @@ Keep your tone professional but friendly, like a trusted advisor.`
         syncType: 'import',
         dataType: 'expenses',
         status: 'completed',
-        recordCount: 0,
+        recordCount: createdCount,
         externalUrl: sheetUrl,
       });
       
       res.json({
-        message: 'Expenses import started successfully',
-        recordCount: 0,
+        message: 'Expenses imported successfully',
+        recordCount: createdCount,
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });

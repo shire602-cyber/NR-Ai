@@ -325,10 +325,39 @@ export async function exportChartOfAccountsToSheet(
   };
 }
 
+// Import invoices from a Google Sheet
+export async function importInvoicesFromSheet(
+  spreadsheetId: string,
+  range: string = 'Invoices!A:K'
+): Promise<any[]> {
+  const data = await readFromSheet(spreadsheetId, range);
+  
+  if (data.length < 2) {
+    return [];
+  }
+  
+  // Skip header row
+  const rows = data.slice(1);
+  
+  return rows.map(row => ({
+    invoiceNumber: row[0]?.toString() || '',
+    customerName: row[1]?.toString() || '',
+    customerEmail: row[2]?.toString() || '',
+    customerTrn: row[3]?.toString() || '',
+    issueDate: row[4]?.toString() || new Date().toISOString().split('T')[0],
+    dueDate: row[5]?.toString() || new Date().toISOString().split('T')[0],
+    subtotal: parseFloat(row[6] as string) || 0,
+    vatAmount: parseFloat(row[7] as string) || 0,
+    total: parseFloat(row[8] as string) || 0,
+    status: row[9]?.toString() || 'draft',
+    notes: row[10]?.toString() || ''
+  })).filter(inv => inv.subtotal > 0);
+}
+
 // Import expenses from a Google Sheet
 export async function importExpensesFromSheet(
   spreadsheetId: string,
-  range: string = 'Sheet1!A:H'
+  range: string = 'Expenses!A:H'
 ): Promise<any[]> {
   const data = await readFromSheet(spreadsheetId, range);
   
