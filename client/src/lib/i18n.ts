@@ -108,6 +108,7 @@ export const t = {
     expense: 'Expense',
     
     // AI
+    smartAssistant: 'Smart Assistant',
     aiCategorize: 'AI Categorize',
     aiCfo: 'AI CFO & Financial Advisor',
     aiFeatures: 'AI Automation',
@@ -216,6 +217,7 @@ export const t = {
     expense: 'مصروفات',
     
     // AI
+    smartAssistant: 'المساعد الذكي',
     aiCategorize: 'التصنيف الذكي',
     aiCfo: 'مستشار مالي بالذكاء الاصطناعي',
     aiFeatures: 'الأتمتة الذكية',

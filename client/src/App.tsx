@@ -29,6 +29,7 @@ import CompanyProfile from '@/pages/CompanyProfile';
 import Integrations from '@/pages/Integrations';
 import WhatsAppDashboard from '@/pages/WhatsAppDashboard';
 import AIFeatures from '@/pages/AIFeatures';
+import SmartAssistant from '@/pages/SmartAssistant';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -105,6 +106,7 @@ function Router() {
           <Route path="/receipts" component={Receipts} />
           <Route path="/ai-cfo" component={AICFO} />
           <Route path="/ai-features" component={AIFeatures} />
+          <Route path="/smart-assistant" component={SmartAssistant} />
           <Route path="/integrations" component={Integrations} />
           <Route path="/whatsapp" component={WhatsAppDashboard} />
           <Route component={NotFound} />

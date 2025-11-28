@@ -250,6 +250,50 @@ Four-tab dashboard providing:
 - **Forecast** - Cash flow predictions with visual charts
 - **Automation** - Feature showcase and batch processing tools
 
+## UX Innovations
+
+### Smart Assistant (Natural Language Interface)
+
+**Route**: `/smart-assistant`
+**API**: `POST /api/ai/nl-gateway`
+
+A conversational chat interface allowing users to query financial data in plain English or Arabic:
+
+**Features**:
+- Natural language queries about sales, expenses, invoices, and profit
+- Quick question buttons for common financial queries
+- Real-time financial context from all data sources
+- Intent classification (query, advice, action)
+- Follow-up suggestions based on context
+- Bilingual support (English/Arabic)
+- Financial summary cards showing revenue, expenses, outstanding amounts
+
+**Example Queries**:
+- "What were our total sales this month?"
+- "Show me pending invoices"
+- "What are my biggest expenses?"
+- "How does my profit margin look?"
+
+### Autocomplete & Smart Suggestions
+
+**APIs**:
+- `GET /api/autocomplete/accounts` - Search accounts by name/code
+- `GET /api/autocomplete/customers` - Search previous customers
+- `GET /api/autocomplete/merchants` - Search previous merchants/vendors
+- `GET /api/autocomplete/descriptions` - Search previous transaction descriptions
+- `POST /api/ai/smart-suggest` - AI-powered context-aware suggestions
+
+**Components**:
+- `SmartInput` - Input with autocomplete dropdown for accounts, customers, merchants
+- `SmartAccountSelect` - Account selector with search and filtering
+- `InlineHelp` - Contextual help tooltips for bookkeeping concepts
+
+**Features**:
+- Type-ahead suggestions based on previous entries
+- AI-powered category suggestions based on merchant names
+- Contextual help content for UAE-specific concepts (VAT, TRN, account types)
+- Learns from user patterns to improve future suggestions
+
 ### Coming Soon
 
 **QuickBooks Online**:

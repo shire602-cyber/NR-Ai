@@ -12,6 +12,7 @@ import {
   Settings,
   Plug,
   MessageCircle,
+  MessageSquare,
   Brain
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
@@ -69,6 +70,11 @@ const navigationItems = [
     url: '/reports',
   },
   {
+    title: 'smartAssistant',
+    icon: MessageCircle,
+    url: '/smart-assistant',
+  },
+  {
     title: 'aiCfo',
     icon: Bot,
     url: '/ai-cfo',
@@ -85,7 +91,7 @@ const navigationItems = [
   },
   {
     title: 'whatsappInbox',
-    icon: MessageCircle,
+    icon: MessageSquare,
     url: '/whatsapp',
   },
 ];

@@ -1,0 +1,102 @@
+# Double-Entry Accounting Implementation Guide for a Bookkeeping Web App
+
+## 1. Standard Account Types in Accounting
+
+Double-entry bookkeeping classifies all accounts into **five core types**: **Assets, Liabilities, Equity, Income (Revenue), and Expenses**. Every financial transaction impacts at least two accounts from these categories, keeping the accounting equation in balance (Assets = Liabilities + Equity). Below is a breakdown of each account type with definitions and common examples:
+
+* **Assets:** Resources the business owns or controls that provide future benefit. *Examples:* Cash, Bank accounts, Accounts Receivable, Inventory, Equipment. Increase with debits, decrease with credits.
+
+* **Liabilities:** Obligations the business owes to outsiders. *Examples:* Accounts Payable, Loans, Taxes Payable. Increase with credits, decrease with debits.
+
+* **Equity:** Owner's residual interest in the business. *Examples:* Owner's Capital, Retained Earnings, Drawings. Increase with credits, decrease with debits.
+
+* **Income (Revenue):** Earnings from sales or services. *Examples:* Sales Revenue, Service Income. Increase with credits, decrease with debits.
+
+* **Expenses:** Costs incurred to earn revenue. *Examples:* Rent, Utilities, Salaries, COGS. Increase with debits, decrease with credits.
+
+## 2. Double-Entry Rules: Journal Entry Examples
+
+| **Transaction Type**    | **Debit**                       | **Credit**                             | **Notes**                         |
+| ----------------------- | ------------------------------- | -------------------------------------- | --------------------------------- |
+| Cash Sale (no VAT)      | Cash (Asset)                    | Sales Revenue (Income)                 | Immediate cash inflow.            |
+| Cash Sale (with 5% VAT) | Cash (Asset)                    | Sales Revenue, VAT Payable (Liability) | Split VAT from sales revenue.     |
+| Credit Sale             | Accounts Receivable (Asset)     | Sales Revenue, VAT Payable             | Invoice issued, payment later.    |
+| Inventory Sale          | COGS (Expense)                  | Inventory (Asset)                      | Record cost of goods sold.        |
+| Paid Expense            | Expense Account                 | Cash/Bank (Asset)                      | Simple cash expense.              |
+| Expense with VAT        | Expense, VAT Receivable (Asset) | Cash or Accounts Payable               | Record VAT credit for tax return. |
+| Vendor Bill (on Credit) | Expense or Asset                | Accounts Payable (Liability)           | Payable created.                  |
+| Vendor Bill Payment     | Accounts Payable                | Cash/Bank                              | Clears the liability.             |
+| Bank Transfer           | Receiving Bank                  | Sending Bank                           | No change in net assets.          |
+| Owner Withdrawal        | Drawings (Equity)               | Cash                                   | Reduces owner equity.             |
+| Owner Investment        | Cash/Bank                       | Owner's Capital                        | Increases owner equity.           |
+| Accrued Corporate Tax   | Income Tax Expense              | Income Tax Payable                     | Record income tax liability.      |
+
+## 3. Data Model (TypeScript-like)
+
+```ts
+interface Account {
+  id: string;
+  name: string;
+  type: 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
+  parentId?: string;
+  balance?: number;
+  currency?: string;
+}
+
+interface JournalEntry {
+  id: string;
+  date: string;
+  description: string;
+  lines: JournalLine[];
+  source?: string;
+  posted: boolean;
+}
+
+interface JournalLine {
+  accountId: string;
+  debit: number;
+  credit: number;
+  description?: string;
+}
+```
+
+### Example JSON Entry:
+
+```json
+{
+  "id": "JRN-1001",
+  "date": "2025-11-28",
+  "description": "Invoice #INV-1001 - Credit sale with VAT",
+  "lines": [
+    { "accountId": "AR-100", "debit": 105.00, "credit": 0.00, "description": "Accounts Receivable" },
+    { "accountId": "REV-400", "debit": 0.00, "credit": 100.00, "description": "Sales Revenue" },
+    { "accountId": "TAX-210", "debit": 0.00, "credit": 5.00,   "description": "VAT Payable 5%" }
+  ],
+  "posted": true,
+  "source": "user_invoice"
+}
+```
+
+## 4. Mapping User Actions to Journal Entries
+
+* **Sales Invoice:** DR Accounts Receivable, CR Sales Revenue, CR VAT Payable.
+* **Customer Payment:** DR Cash/Bank, CR Accounts Receivable.
+* **Paid Expense:** DR Expense, CR Cash.
+* **Receipt with VAT:** DR Expense, DR VAT Receivable, CR Cash.
+* **Vendor Bill:** DR Expense/Asset, CR Accounts Payable.
+* **Bill Payment:** DR Accounts Payable, CR Cash.
+* **Internal Transfer:** DR Receiving Bank, CR Sending Bank.
+* **Owner Investment:** DR Cash, CR Capital.
+* **Owner Draw:** DR Drawings, CR Cash.
+* **Tax Accrual/Payment:** DR Income Tax Expense, CR Income Tax Payable → Then DR Payable, CR Cash.
+
+## 5. Best Practices
+
+* **Immutability:** Posted entries should be uneditable; use reversing entries for corrections.
+* **Reconciliation:** Mark journal lines as reconciled against bank/statement lines.
+* **Audit Trail:** Store created_by, timestamps, reversal references.
+* **Validation:** Enforce debits = credits before posting.
+* **Permissions:** Restrict who can post/edit/reverse entries.
+* **Exports:** Enable exports of general ledger and audit trail.
+
+With this structure, your app will support reliable, scalable double-entry bookkeeping that can handle user and AI-generated transactions safely and accurately.

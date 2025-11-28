@@ -55,6 +55,7 @@ export interface IStorage {
   // Company Users
   createCompanyUser(companyUser: InsertCompanyUser): Promise<CompanyUser>;
   getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined>;
+  getCompanyUsersByCompanyId(companyId: string): Promise<CompanyUser[]>;
   hasCompanyAccess(userId: string, companyId: string): Promise<boolean>;
   
   // Accounts
@@ -227,6 +228,10 @@ export class DatabaseStorage implements IStorage {
   async hasCompanyAccess(userId: string, companyId: string): Promise<boolean> {
     const result = await this.getUserRole(companyId, userId);
     return !!result;
+  }
+
+  async getCompanyUsersByCompanyId(companyId: string): Promise<CompanyUser[]> {
+    return await db.select().from(companyUsers).where(eq(companyUsers.companyId, companyId));
   }
 
   // Accounts
