@@ -91,7 +91,7 @@ export function AppSidebar() {
 
   const handleLogout = () => {
     removeToken();
-    setLocation('/login');
+    setLocation('/');
   };
 
   const toggleLanguage = () => {
