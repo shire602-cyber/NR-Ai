@@ -24,6 +24,7 @@ import Reports from '@/pages/Reports';
 import AICFO from '@/pages/AICFO';
 import Receipts from '@/pages/Receipts';
 import Landing from '@/pages/Landing';
+import Services from '@/pages/Services';
 import CompanyProfile from '@/pages/CompanyProfile';
 import Integrations from '@/pages/Integrations';
 
@@ -78,11 +79,12 @@ function Router() {
   }
   
   // Public routes (no sidebar)
-  if (location === '/login' || location === '/register') {
+  if (location === '/login' || location === '/register' || location === '/services') {
     return (
       <Switch>
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
+        <Route path="/services" component={Services} />
       </Switch>
     );
   }
