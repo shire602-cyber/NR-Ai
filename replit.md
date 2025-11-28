@@ -167,6 +167,89 @@ The platform supports external service integrations for data sync and automation
   - `POST /api/ocr/process` - Process receipt with AI categorization
   - `POST /api/integrations/whatsapp/test-message` - Create test message (development)
 
+## AI Financial Automation Features
+
+The platform includes 5 advanced AI-driven automation features powered by OpenAI GPT-4o:
+
+### 1. Smart Transaction Categorization
+
+**API**: `POST /api/ai/batch-categorize`
+- Batch processes multiple transactions with AI categorization
+- Uses UAE-specific expense categories
+- Learns from user feedback to improve accuracy over time
+- Stores classification history for pattern learning
+
+**Schema**: `transactionClassifications` table stores:
+- `vendorPattern` - Vendor name patterns for future matching
+- `suggestedAccountId` - AI-suggested account
+- `confidence` - AI confidence score (0-1)
+- `userFeedback` - User confirmation/override for learning
+
+### 2. Anomaly & Duplicate Detection
+
+**API**: `POST /api/ai/detect-anomalies`
+**API**: `GET /api/companies/:companyId/anomaly-alerts`
+- Scans all company transactions for irregularities
+- Detects duplicates, unusual amounts, missing data, suspicious patterns
+- Real-time flagging with severity levels (high, medium, low)
+- Resolution tracking with user actions
+
+**Schema**: `anomalyAlerts` table stores:
+- `alertType` - duplicate, unusual_amount, missing_data, suspicious_pattern, other
+- `severity` - high, medium, low
+- `status` - active, resolved, ignored
+- `aiAnalysis` - Detailed AI explanation of the anomaly
+
+### 3. AI-Assisted Bank Reconciliation
+
+**API**: `POST /api/ai/reconcile`
+**API**: `GET /api/companies/:companyId/bank-transactions`
+**API**: `POST /api/companies/:companyId/bank-transactions`
+**API**: `POST /api/companies/:companyId/bank-transactions/import`
+- Smart matching between bank transactions and journal entries
+- AI suggests matches with confidence scores
+- Supports bulk import from CSV/bank exports
+- Tracks matched/unmatched status
+
+**Schema**: `bankTransactions` table stores:
+- `externalReference` - Bank reference number
+- `matchedJournalEntryId` - Linked journal entry when matched
+- `matchStatus` - unmatched, matched, suggested
+- `aiSuggestedMatchId` - AI-suggested journal entry match
+- `matchConfidence` - AI confidence score (0-1)
+
+### 4. Predictive Cash Flow Forecasting
+
+**API**: `POST /api/ai/forecast-cashflow`
+**API**: `GET /api/companies/:companyId/forecasts`
+- Generates 3/6/12 month cash flow predictions
+- Analyzes historical invoice patterns and expense trends
+- Provides UAE-specific business insights
+- Visual chart display with monthly projections
+
+**Schema**: `cashFlowForecasts` table stores:
+- `forecastPeriod` - 3_months, 6_months, 12_months
+- `projectedIncome` / `projectedExpenses` / `projectedBalance`
+- `monthlyBreakdown` - JSON array of monthly projections
+- `assumptions` - AI assumptions used for forecast
+- `recommendations` - AI-generated recommendations
+
+### 5. ML-Style Learning from Feedback
+
+**API**: `POST /api/ai/classification-feedback`
+- Records user corrections to AI categorizations
+- Builds pattern database for improved accuracy
+- Creates vendor-to-account mappings
+
+### AI Features Dashboard
+
+**Route**: `/ai-features`
+Four-tab dashboard providing:
+- **Overview** - Quick stats and one-click feature access
+- **Anomalies** - List of detected issues with resolve/ignore actions
+- **Forecast** - Cash flow predictions with visual charts
+- **Automation** - Feature showcase and batch processing tools
+
 ### Coming Soon
 
 **QuickBooks Online**:
