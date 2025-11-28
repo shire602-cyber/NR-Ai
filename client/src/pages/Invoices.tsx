@@ -557,7 +557,7 @@ export default function Invoices() {
 
                   {fields.map((field, index) => (
                     <div key={field.id} className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md">
-                      <div className="col-span-5">
+                      <div className="col-span-4">
                         <FormField
                           control={form.control}
                           name={`lines.${index}.description`}
@@ -570,7 +570,7 @@ export default function Invoices() {
                           )}
                         />
                       </div>
-                      <div className="col-span-2">
+                      <div className="col-span-1.5">
                         <FormField
                           control={form.control}
                           name={`lines.${index}.quantity`}
@@ -583,7 +583,7 @@ export default function Invoices() {
                           )}
                         />
                       </div>
-                      <div className="col-span-2">
+                      <div className="col-span-1.5">
                         <FormField
                           control={form.control}
                           name={`lines.${index}.unitPrice`}
@@ -596,9 +596,31 @@ export default function Invoices() {
                           )}
                         />
                       </div>
+                      <div className="col-span-1.5">
+                        <FormField
+                          control={form.control}
+                          name={`lines.${index}.vatRate`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Select value={String(field.value * 100)} onValueChange={(val) => field.onChange(parseFloat(val) / 100)}>
+                                  <SelectTrigger className="font-mono" data-testid={`select-line-vat-${index}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="0">0%</SelectItem>
+                                    <SelectItem value="5">5%</SelectItem>
+                                    <SelectItem value="10">10%</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
                       <div className="col-span-2">
                         <div className="h-10 flex items-center justify-end font-mono text-sm">
-                          {formatCurrency((watchLines[index]?.quantity || 0) * (watchLines[index]?.unitPrice || 0), 'AED', locale)}
+                          {formatCurrency((watchLines[index]?.quantity || 0) * (watchLines[index]?.unitPrice || 0) * (1 + (watchLines[index]?.vatRate || 0)), 'AED', locale)}
                         </div>
                       </div>
                       <div className="col-span-1 flex items-center justify-center">
@@ -624,7 +646,9 @@ export default function Invoices() {
                     <span className="font-mono font-medium">{formatCurrency(subtotal, 'AED', locale)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">{t.vat} (5%)</span>
+                    <span className="text-muted-foreground">
+                      {t.vat} ({watchLines.some(line => line.vatRate !== 0) ? `avg ${Math.round(watchLines.reduce((sum, line) => sum + line.vatRate, 0) / Math.max(1, watchLines.filter(l => l.vatRate > 0).length) * 100)}%` : '0%'})
+                    </span>
                     <span className="font-mono font-medium">{formatCurrency(vatAmount, 'AED', locale)}</span>
                   </div>
                   <div className="flex justify-between text-lg font-semibold pt-2 border-t">
