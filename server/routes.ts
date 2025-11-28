@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import OpenAI from "openai";
 import { storage } from "./storage";
 import { insertUserSchema, insertCompanySchema, insertAccountSchema, insertInvoiceSchema, insertJournalEntrySchema, categorizationRequestSchema, insertWaitlistSchema } from "@shared/schema";
+import * as googleSheets from "./integrations/googleSheets";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h";
@@ -1623,6 +1624,265 @@ Keep your tone professional but friendly, like a trusted advisor.`
       });
     } catch (error: any) {
       res.status(400).json({ message: error.message || 'Failed to join waitlist' });
+    }
+  });
+
+  // =====================================
+  // Integration Routes
+  // =====================================
+  
+  // Get integration status
+  app.get("/api/integrations/status", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const googleSheetsConnected = await googleSheets.isGoogleSheetsConnected();
+      
+      res.json({
+        googleSheets: {
+          connected: googleSheetsConnected,
+          name: 'Google Sheets',
+          description: 'Export financial data to spreadsheets',
+        },
+        xero: {
+          connected: false,
+          name: 'Xero',
+          description: 'Sync with Xero accounting',
+          comingSoon: true,
+        },
+        quickbooks: {
+          connected: false,
+          name: 'QuickBooks Online',
+          description: 'Sync with QuickBooks',
+          comingSoon: true,
+        },
+        whatsapp: {
+          connected: false,
+          name: 'WhatsApp',
+          description: 'Extract receipts from chats',
+          comingSoon: true,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Get sync history
+  app.get("/api/integrations/sync-history", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, integrationType } = req.query;
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      let syncs;
+      if (integrationType) {
+        syncs = await storage.getIntegrationSyncsByType(companyId as string, integrationType as string);
+      } else {
+        syncs = await storage.getIntegrationSyncsByCompanyId(companyId as string);
+      }
+      
+      res.json(syncs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // List available Google Sheets spreadsheets
+  app.get("/api/integrations/google-sheets/spreadsheets", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const isConnected = await googleSheets.isGoogleSheetsConnected();
+      if (!isConnected) {
+        return res.status(400).json({ message: 'Google Sheets not connected' });
+      }
+      
+      const spreadsheets = await googleSheets.listSpreadsheets();
+      res.json(spreadsheets);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Export invoices to Google Sheets
+  app.post("/api/integrations/google-sheets/export/invoices", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, spreadsheetId } = req.body;
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      const isConnected = await googleSheets.isGoogleSheetsConnected();
+      if (!isConnected) {
+        return res.status(400).json({ message: 'Google Sheets not connected' });
+      }
+      
+      // Fetch invoices
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      
+      // Export to sheet
+      const result = await googleSheets.exportInvoicesToSheet(invoices, spreadsheetId);
+      
+      // Log the sync
+      await storage.createIntegrationSync({
+        companyId,
+        integrationType: 'google_sheets',
+        syncType: 'export',
+        dataType: 'invoices',
+        status: 'completed',
+        recordCount: invoices.length,
+        externalId: result.spreadsheetId,
+        externalUrl: result.url,
+      });
+      
+      res.json({
+        message: 'Invoices exported successfully',
+        ...result,
+        recordCount: invoices.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Export expenses to Google Sheets
+  app.post("/api/integrations/google-sheets/export/expenses", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, spreadsheetId } = req.body;
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      const isConnected = await googleSheets.isGoogleSheetsConnected();
+      if (!isConnected) {
+        return res.status(400).json({ message: 'Google Sheets not connected' });
+      }
+      
+      // Fetch receipts/expenses
+      const expenses = await storage.getReceiptsByCompanyId(companyId);
+      
+      // Export to sheet
+      const result = await googleSheets.exportExpensesToSheet(expenses, spreadsheetId);
+      
+      // Log the sync
+      await storage.createIntegrationSync({
+        companyId,
+        integrationType: 'google_sheets',
+        syncType: 'export',
+        dataType: 'expenses',
+        status: 'completed',
+        recordCount: expenses.length,
+        externalId: result.spreadsheetId,
+        externalUrl: result.url,
+      });
+      
+      res.json({
+        message: 'Expenses exported successfully',
+        ...result,
+        recordCount: expenses.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Export journal entries to Google Sheets
+  app.post("/api/integrations/google-sheets/export/journal-entries", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, spreadsheetId } = req.body;
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      const isConnected = await googleSheets.isGoogleSheetsConnected();
+      if (!isConnected) {
+        return res.status(400).json({ message: 'Google Sheets not connected' });
+      }
+      
+      // Fetch journal entries with lines
+      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      
+      // Enrich entries with lines and account info
+      const enrichedEntries = await Promise.all(entries.map(async (entry, index) => {
+        const lines = await storage.getJournalLinesByEntryId(entry.id);
+        return {
+          entryNumber: index + 1,
+          date: entry.date instanceof Date ? entry.date.toISOString().split('T')[0] : entry.date,
+          description: entry.memo || '',
+          lines: lines.map(line => {
+            const account = accounts.find(a => a.id === line.accountId);
+            return {
+              accountCode: account?.code || '',
+              accountName: account?.nameEn || '',
+              debit: line.debit,
+              credit: line.credit,
+            };
+          }),
+        };
+      }));
+      
+      // Export to sheet
+      const result = await googleSheets.exportJournalEntriesToSheet(enrichedEntries, spreadsheetId);
+      
+      // Log the sync
+      await storage.createIntegrationSync({
+        companyId,
+        integrationType: 'google_sheets',
+        syncType: 'export',
+        dataType: 'journal_entries',
+        status: 'completed',
+        recordCount: entries.length,
+        externalId: result.spreadsheetId,
+        externalUrl: result.url,
+      });
+      
+      res.json({
+        message: 'Journal entries exported successfully',
+        ...result,
+        recordCount: entries.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Export chart of accounts to Google Sheets
+  app.post("/api/integrations/google-sheets/export/chart-of-accounts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId, spreadsheetId } = req.body;
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      const isConnected = await googleSheets.isGoogleSheetsConnected();
+      if (!isConnected) {
+        return res.status(400).json({ message: 'Google Sheets not connected' });
+      }
+      
+      // Fetch accounts
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      
+      // Export to sheet
+      const result = await googleSheets.exportChartOfAccountsToSheet(accounts, spreadsheetId);
+      
+      // Log the sync
+      await storage.createIntegrationSync({
+        companyId,
+        integrationType: 'google_sheets',
+        syncType: 'export',
+        dataType: 'chart_of_accounts',
+        status: 'completed',
+        recordCount: accounts.length,
+        externalId: result.spreadsheetId,
+        externalUrl: result.url,
+      });
+      
+      res.json({
+        message: 'Chart of Accounts exported successfully',
+        ...result,
+        recordCount: accounts.length,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 

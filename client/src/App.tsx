@@ -25,6 +25,7 @@ import AICFO from '@/pages/AICFO';
 import Receipts from '@/pages/Receipts';
 import Landing from '@/pages/Landing';
 import CompanyProfile from '@/pages/CompanyProfile';
+import Integrations from '@/pages/Integrations';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -99,6 +100,7 @@ function Router() {
           <Route path="/reports" component={Reports} />
           <Route path="/receipts" component={Receipts} />
           <Route path="/ai-cfo" component={AICFO} />
+          <Route path="/integrations" component={Integrations} />
           <Route component={NotFound} />
         </Switch>
       </ProtectedLayout>

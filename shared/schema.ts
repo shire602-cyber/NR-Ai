@@ -301,3 +301,28 @@ export const insertWaitlistSchema = createInsertSchema(waitlist).omit({
 
 export type InsertWaitlist = z.infer<typeof insertWaitlistSchema>;
 export type Waitlist = typeof waitlist.$inferSelect;
+
+// ===========================
+// Integration Sync History
+// ===========================
+export const integrationSyncs = pgTable("integration_syncs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  integrationType: text("integration_type").notNull(), // google_sheets | xero | quickbooks | whatsapp
+  syncType: text("sync_type").notNull(), // export | import
+  dataType: text("data_type").notNull(), // invoices | expenses | journal_entries | chart_of_accounts
+  status: text("status").notNull().default("completed"), // pending | in_progress | completed | failed
+  recordCount: integer("record_count"),
+  externalId: text("external_id"), // Spreadsheet ID, etc.
+  externalUrl: text("external_url"), // Link to the spreadsheet, etc.
+  errorMessage: text("error_message"),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+});
+
+export const insertIntegrationSyncSchema = createInsertSchema(integrationSyncs).omit({
+  id: true,
+  syncedAt: true,
+});
+
+export type InsertIntegrationSync = z.infer<typeof insertIntegrationSyncSchema>;
+export type IntegrationSync = typeof integrationSyncs.$inferSelect;

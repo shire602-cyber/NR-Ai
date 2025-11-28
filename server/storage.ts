@@ -8,7 +8,8 @@ import type {
   Invoice, InsertInvoice,
   InvoiceLine, InsertInvoiceLine,
   Receipt, InsertReceipt,
-  Waitlist, InsertWaitlist
+  Waitlist, InsertWaitlist,
+  IntegrationSync, InsertIntegrationSync
 } from "@shared/schema";
 import {
   users,
@@ -20,7 +21,8 @@ import {
   invoices,
   invoiceLines,
   receipts,
-  waitlist
+  waitlist,
+  integrationSyncs
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -87,6 +89,11 @@ export interface IStorage {
   // Waitlist
   createWaitlistEntry(entry: InsertWaitlist): Promise<Waitlist>;
   getWaitlistByEmail(email: string): Promise<Waitlist | undefined>;
+  
+  // Integration Syncs
+  createIntegrationSync(sync: InsertIntegrationSync): Promise<IntegrationSync>;
+  getIntegrationSyncsByCompanyId(companyId: string): Promise<IntegrationSync[]>;
+  getIntegrationSyncsByType(companyId: string, integrationType: string): Promise<IntegrationSync[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -407,6 +414,34 @@ export class DatabaseStorage implements IStorage {
   async getWaitlistByEmail(email: string): Promise<Waitlist | undefined> {
     const [entry] = await db.select().from(waitlist).where(eq(waitlist.email, email));
     return entry || undefined;
+  }
+
+  // Integration Syncs
+  async createIntegrationSync(insertSync: InsertIntegrationSync): Promise<IntegrationSync> {
+    const [sync] = await db
+      .insert(integrationSyncs)
+      .values(insertSync)
+      .returning();
+    return sync;
+  }
+
+  async getIntegrationSyncsByCompanyId(companyId: string): Promise<IntegrationSync[]> {
+    return await db
+      .select()
+      .from(integrationSyncs)
+      .where(eq(integrationSyncs.companyId, companyId))
+      .orderBy(desc(integrationSyncs.syncedAt));
+  }
+
+  async getIntegrationSyncsByType(companyId: string, integrationType: string): Promise<IntegrationSync[]> {
+    return await db
+      .select()
+      .from(integrationSyncs)
+      .where(and(
+        eq(integrationSyncs.companyId, companyId),
+        eq(integrationSyncs.integrationType, integrationType)
+      ))
+      .orderBy(desc(integrationSyncs.syncedAt));
   }
 }
 

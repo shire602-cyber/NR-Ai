@@ -9,7 +9,8 @@ import {
   LogOut,
   Receipt,
   Bot,
-  Settings
+  Settings,
+  Plug
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -69,6 +70,11 @@ const navigationItems = [
     title: 'aiCfo',
     icon: Bot,
     url: '/ai-cfo',
+  },
+  {
+    title: 'integrations',
+    icon: Plug,
+    url: '/integrations',
   },
 ];
 

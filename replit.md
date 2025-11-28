@@ -128,3 +128,46 @@ All financial reports (Profit & Loss, Balance Sheet, VAT Summary) calculate dire
 - Real-time accuracy
 - FTA compliance
 - Proper accounting treatment
+
+## Integrations
+
+The platform supports external service integrations for data sync and automation:
+
+### Available Integrations
+
+**Google Sheets** (Active):
+- Uses Replit's native googleapis connector
+- Export invoices, expenses, journal entries, and chart of accounts
+- Creates new spreadsheets with formatted data
+- Sync history tracked in database
+
+### Coming Soon
+
+**QuickBooks Online**:
+- Two-way sync for invoices and payments
+- OAuth2 authentication with token refresh
+- Invoice/payment status sync
+
+**Xero**:
+- Two-way sync for invoices and payments
+- OAuth2 authentication
+- Automatic account mapping
+
+**WhatsApp**:
+- Receipt extraction via OCR from chat messages
+- Webhook-based receipt ingestion
+- AI-powered expense categorization
+
+### Integration Architecture
+
+- `server/integrations/` contains connector adapters
+- `integrations` table stores OAuth tokens (encrypted)
+- `integration_syncs` table tracks sync history with timestamps
+- Modular adapter pattern allows easy addition of new integrations
+
+### API Endpoints
+
+- `GET /api/integrations/status` - Connection status for all integrations
+- `GET /api/integrations/sync-history?companyId=` - Sync history for company
+- `POST /api/integrations/google-sheets/export/{dataType}` - Export data to Sheets
+  - dataType: invoices, expenses, journal-entries, chart-of-accounts
