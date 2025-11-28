@@ -325,3 +325,54 @@ export const insertIntegrationSyncSchema = createInsertSchema(integrationSyncs).
 
 export type InsertIntegrationSync = z.infer<typeof insertIntegrationSyncSchema>;
 export type IntegrationSync = typeof integrationSyncs.$inferSelect;
+
+// ===========================
+// WhatsApp Integration
+// ===========================
+export const whatsappConfigs = pgTable("whatsapp_configs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  phoneNumberId: text("phone_number_id"),
+  accessToken: text("access_token"),
+  webhookVerifyToken: text("webhook_verify_token"),
+  businessAccountId: text("business_account_id"),
+  isActive: boolean("is_active").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertWhatsappConfigSchema = createInsertSchema(whatsappConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertWhatsappConfig = z.infer<typeof insertWhatsappConfigSchema>;
+export type WhatsappConfig = typeof whatsappConfigs.$inferSelect;
+
+// WhatsApp Message Logs
+export const whatsappMessages = pgTable("whatsapp_messages", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  waMessageId: text("wa_message_id").notNull(),
+  from: text("from_number").notNull(),
+  to: text("to_number"),
+  messageType: text("message_type").notNull(), // text | image | document
+  content: text("content"),
+  mediaUrl: text("media_url"),
+  mediaId: text("media_id"),
+  direction: text("direction").notNull().default("inbound"), // inbound | outbound
+  status: text("status").notNull().default("received"), // received | processing | processed | failed
+  receiptId: uuid("receipt_id").references(() => receipts.id), // Link to created receipt
+  errorMessage: text("error_message"),
+  processedAt: timestamp("processed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertWhatsappMessage = z.infer<typeof insertWhatsappMessageSchema>;
+export type WhatsappMessage = typeof whatsappMessages.$inferSelect;

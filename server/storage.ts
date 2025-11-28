@@ -9,7 +9,9 @@ import type {
   InvoiceLine, InsertInvoiceLine,
   Receipt, InsertReceipt,
   Waitlist, InsertWaitlist,
-  IntegrationSync, InsertIntegrationSync
+  IntegrationSync, InsertIntegrationSync,
+  WhatsappConfig, InsertWhatsappConfig,
+  WhatsappMessage, InsertWhatsappMessage
 } from "@shared/schema";
 import {
   users,
@@ -22,7 +24,9 @@ import {
   invoiceLines,
   receipts,
   waitlist,
-  integrationSyncs
+  integrationSyncs,
+  whatsappConfigs,
+  whatsappMessages
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
