@@ -15,7 +15,8 @@ import {
   Users,
   List,
   Settings,
-  Wallet
+  Wallet,
+  ShoppingCart
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import {
@@ -120,6 +121,13 @@ const settingsItems = [
     titleAr: 'الفريق',
     icon: Users,
     url: '/team',
+  },
+  {
+    title: 'integrationsHub',
+    titleEn: 'Shopify & E-commerce',
+    titleAr: 'شوبيفاي والتجارة الإلكترونية',
+    icon: ShoppingCart,
+    url: '/integrations-hub',
   },
   {
     title: 'integrations',
