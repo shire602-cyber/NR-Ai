@@ -6367,6 +6367,252 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
   
   console.log('[Regulatory News] Automatic news fetching enabled - runs every 30 minutes');
 
+  // =====================================
+  // CLIENT PORTAL - DOCUMENT VAULT
+  // =====================================
+  
+  // Get all documents for a company
+  app.get("/api/companies/:companyId/documents", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const documents = await storage.getDocuments(companyId);
+      res.json(documents);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Upload document (stub - would need file upload middleware in production)
+  app.post("/api/companies/:companyId/documents", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // For now, accept document metadata directly
+      // In production, this would handle file uploads to storage
+      const documentData = {
+        companyId,
+        name: req.body.name || 'Uploaded Document',
+        nameAr: req.body.nameAr || null,
+        category: req.body.category || 'other',
+        description: req.body.description || null,
+        fileUrl: req.body.fileUrl || '/uploads/placeholder.pdf',
+        fileName: req.body.fileName || 'document.pdf',
+        fileSize: req.body.fileSize || null,
+        mimeType: req.body.mimeType || 'application/pdf',
+        expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
+        reminderDays: req.body.reminderDays || 30,
+        reminderSent: false,
+        tags: req.body.tags || null,
+        isArchived: false,
+        uploadedBy: userId,
+      };
+      
+      const document = await storage.createDocument(documentData);
+      res.status(201).json(document);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete document
+  app.delete("/api/documents/:documentId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { documentId } = req.params;
+      await storage.deleteDocument(documentId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // CLIENT PORTAL - TAX RETURN ARCHIVE
+  // =====================================
+  
+  // Get tax return archive for a company
+  app.get("/api/companies/:companyId/tax-returns-archive", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const returns = await storage.getTaxReturnArchive(companyId);
+      res.json(returns);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Add tax return to archive
+  app.post("/api/companies/:companyId/tax-returns-archive", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      const returnData = {
+        companyId,
+        returnType: req.body.returnType || 'vat',
+        periodLabel: req.body.periodLabel,
+        periodStart: new Date(req.body.periodStart),
+        periodEnd: new Date(req.body.periodEnd),
+        filingDate: new Date(req.body.filingDate),
+        ftaReferenceNumber: req.body.ftaReferenceNumber || null,
+        taxAmount: parseFloat(req.body.taxAmount) || 0,
+        paymentStatus: req.body.paymentStatus || 'paid',
+        fileUrl: req.body.fileUrl || null,
+        fileName: req.body.fileName || null,
+        notes: req.body.notes || null,
+        filedBy: userId,
+      };
+      
+      const taxReturn = await storage.createTaxReturnArchive(returnData);
+      res.status(201).json(taxReturn);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // CLIENT PORTAL - COMPLIANCE TASKS
+  // =====================================
+  
+  // Get compliance tasks for a company
+  app.get("/api/companies/:companyId/compliance-tasks", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const tasks = await storage.getComplianceTasks(companyId);
+      res.json(tasks);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create compliance task
+  app.post("/api/companies/:companyId/compliance-tasks", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      const taskData = {
+        companyId,
+        title: req.body.title,
+        titleAr: req.body.titleAr || null,
+        description: req.body.description || null,
+        category: req.body.category || 'other',
+        priority: req.body.priority || 'medium',
+        status: 'pending',
+        dueDate: new Date(req.body.dueDate),
+        reminderDate: req.body.reminderDate ? new Date(req.body.reminderDate) : null,
+        reminderSent: false,
+        isRecurring: req.body.isRecurring || false,
+        recurrencePattern: req.body.recurrencePattern || null,
+        completedAt: null,
+        completedBy: null,
+        assignedTo: req.body.assignedTo || null,
+        createdBy: userId,
+        relatedDocumentId: req.body.relatedDocumentId || null,
+        relatedVatReturnId: req.body.relatedVatReturnId || null,
+        notes: req.body.notes || null,
+      };
+      
+      const task = await storage.createComplianceTask(taskData);
+      res.status(201).json(task);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update compliance task
+  app.patch("/api/compliance-tasks/:taskId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { taskId } = req.params;
+      const userId = (req as any).user.id;
+      
+      const updates: any = {};
+      if (req.body.status) {
+        updates.status = req.body.status;
+        if (req.body.status === 'completed') {
+          updates.completedAt = new Date();
+          updates.completedBy = userId;
+        }
+      }
+      if (req.body.priority) updates.priority = req.body.priority;
+      if (req.body.dueDate) updates.dueDate = new Date(req.body.dueDate);
+      if (req.body.notes !== undefined) updates.notes = req.body.notes;
+      
+      const task = await storage.updateComplianceTask(taskId, updates);
+      res.json(task);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete compliance task
+  app.delete("/api/compliance-tasks/:taskId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { taskId } = req.params;
+      await storage.deleteComplianceTask(taskId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // CLIENT PORTAL - MESSAGES
+  // =====================================
+  
+  // Get messages for a company
+  app.get("/api/companies/:companyId/messages", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const messages = await storage.getMessages(companyId);
+      res.json(messages);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Send message
+  app.post("/api/companies/:companyId/messages", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      const messageData = {
+        companyId,
+        threadId: req.body.threadId || null,
+        subject: req.body.subject || null,
+        content: req.body.content,
+        senderId: userId,
+        recipientId: req.body.recipientId || null,
+        isRead: false,
+        readAt: null,
+        attachmentUrl: req.body.attachmentUrl || null,
+        attachmentName: req.body.attachmentName || null,
+        messageType: req.body.messageType || 'general',
+        isArchived: false,
+      };
+      
+      const message = await storage.createMessage(messageData);
+      res.status(201).json(message);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // CLIENT PORTAL - NEWS FEED
+  // =====================================
+  
+  // Get news items
+  app.get("/api/news", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const news = await storage.getNewsItems();
+      res.json(news);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

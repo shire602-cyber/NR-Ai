@@ -44,6 +44,11 @@ import BankReconciliation from '@/pages/BankReconciliation';
 import VATFiling from '@/pages/VATFiling';
 import TeamManagement from '@/pages/TeamManagement';
 import AdvancedReports from '@/pages/AdvancedReports';
+import DocumentVault from '@/pages/DocumentVault';
+import TaxReturnArchive from '@/pages/TaxReturnArchive';
+import ComplianceCalendar from '@/pages/ComplianceCalendar';
+import TaskCenter from '@/pages/TaskCenter';
+import UAENewsFeed from '@/pages/UAENewsFeed';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -141,6 +146,11 @@ function Router() {
           <Route path="/vat-filing" component={VATFiling} />
           <Route path="/team" component={TeamManagement} />
           <Route path="/advanced-reports" component={AdvancedReports} />
+          <Route path="/document-vault" component={DocumentVault} />
+          <Route path="/tax-return-archive" component={TaxReturnArchive} />
+          <Route path="/compliance-calendar" component={ComplianceCalendar} />
+          <Route path="/task-center" component={TaskCenter} />
+          <Route path="/news-feed" component={UAENewsFeed} />
           <Route component={NotFound} />
         </Switch>
       </ProtectedLayout>

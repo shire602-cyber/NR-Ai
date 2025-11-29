@@ -35,7 +35,12 @@ import type {
   SubscriptionPlan, InsertSubscriptionPlan,
   UserSubscription, InsertUserSubscription,
   AuditLog, InsertAuditLog,
-  VatReturn, InsertVatReturn
+  VatReturn, InsertVatReturn,
+  Document, InsertDocument,
+  TaxReturnArchive, InsertTaxReturnArchive,
+  ComplianceTask, InsertComplianceTask,
+  Message, InsertMessage,
+  NewsItem, InsertNewsItem
 } from "@shared/schema";
 import {
   users,
@@ -74,7 +79,12 @@ import {
   subscriptionPlans,
   userSubscriptions,
   auditLogs,
-  vatReturns
+  vatReturns,
+  documents,
+  taxReturnArchive,
+  complianceTasks,
+  messages,
+  newsItems
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -352,6 +362,35 @@ export interface IStorage {
   // Admin Stats
   getAllUsers(): Promise<User[]>;
   getAllCompanies(): Promise<Company[]>;
+
+  // Document Vault
+  getDocuments(companyId: string): Promise<Document[]>;
+  getDocument(id: string): Promise<Document | undefined>;
+  createDocument(document: InsertDocument): Promise<Document>;
+  updateDocument(id: string, data: Partial<InsertDocument>): Promise<Document>;
+  deleteDocument(id: string): Promise<void>;
+
+  // Tax Return Archive
+  getTaxReturnArchive(companyId: string): Promise<TaxReturnArchive[]>;
+  getTaxReturnArchiveItem(id: string): Promise<TaxReturnArchive | undefined>;
+  createTaxReturnArchive(taxReturn: InsertTaxReturnArchive): Promise<TaxReturnArchive>;
+
+  // Compliance Tasks
+  getComplianceTasks(companyId: string): Promise<ComplianceTask[]>;
+  getComplianceTask(id: string): Promise<ComplianceTask | undefined>;
+  createComplianceTask(task: InsertComplianceTask): Promise<ComplianceTask>;
+  updateComplianceTask(id: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask>;
+  deleteComplianceTask(id: string): Promise<void>;
+
+  // Messages
+  getMessages(companyId: string): Promise<Message[]>;
+  getMessage(id: string): Promise<Message | undefined>;
+  createMessage(message: InsertMessage): Promise<Message>;
+  markMessageAsRead(id: string): Promise<Message>;
+
+  // News Items
+  getNewsItems(): Promise<NewsItem[]>;
+  createNewsItem(news: InsertNewsItem): Promise<NewsItem>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1730,6 +1769,146 @@ export class DatabaseStorage implements IStorage {
       ...r.company_users,
       user: r.users
     }));
+  }
+
+  // Document Vault
+  async getDocuments(companyId: string): Promise<Document[]> {
+    return await db
+      .select()
+      .from(documents)
+      .where(eq(documents.companyId, companyId))
+      .orderBy(desc(documents.createdAt));
+  }
+
+  async getDocument(id: string): Promise<Document | undefined> {
+    const [document] = await db.select().from(documents).where(eq(documents.id, id));
+    return document || undefined;
+  }
+
+  async createDocument(insertDocument: InsertDocument): Promise<Document> {
+    const [document] = await db
+      .insert(documents)
+      .values(insertDocument)
+      .returning();
+    return document;
+  }
+
+  async updateDocument(id: string, data: Partial<InsertDocument>): Promise<Document> {
+    const [document] = await db
+      .update(documents)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(documents.id, id))
+      .returning();
+    return document;
+  }
+
+  async deleteDocument(id: string): Promise<void> {
+    await db.delete(documents).where(eq(documents.id, id));
+  }
+
+  // Tax Return Archive
+  async getTaxReturnArchive(companyId: string): Promise<TaxReturnArchive[]> {
+    return await db
+      .select()
+      .from(taxReturnArchive)
+      .where(eq(taxReturnArchive.companyId, companyId))
+      .orderBy(desc(taxReturnArchive.filingDate));
+  }
+
+  async getTaxReturnArchiveItem(id: string): Promise<TaxReturnArchive | undefined> {
+    const [item] = await db.select().from(taxReturnArchive).where(eq(taxReturnArchive.id, id));
+    return item || undefined;
+  }
+
+  async createTaxReturnArchive(insertTaxReturn: InsertTaxReturnArchive): Promise<TaxReturnArchive> {
+    const [taxReturn] = await db
+      .insert(taxReturnArchive)
+      .values(insertTaxReturn)
+      .returning();
+    return taxReturn;
+  }
+
+  // Compliance Tasks
+  async getComplianceTasks(companyId: string): Promise<ComplianceTask[]> {
+    return await db
+      .select()
+      .from(complianceTasks)
+      .where(eq(complianceTasks.companyId, companyId))
+      .orderBy(complianceTasks.dueDate);
+  }
+
+  async getComplianceTask(id: string): Promise<ComplianceTask | undefined> {
+    const [task] = await db.select().from(complianceTasks).where(eq(complianceTasks.id, id));
+    return task || undefined;
+  }
+
+  async createComplianceTask(insertTask: InsertComplianceTask): Promise<ComplianceTask> {
+    const [task] = await db
+      .insert(complianceTasks)
+      .values(insertTask)
+      .returning();
+    return task;
+  }
+
+  async updateComplianceTask(id: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask> {
+    const [task] = await db
+      .update(complianceTasks)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(complianceTasks.id, id))
+      .returning();
+    return task;
+  }
+
+  async deleteComplianceTask(id: string): Promise<void> {
+    await db.delete(complianceTasks).where(eq(complianceTasks.id, id));
+  }
+
+  // Messages
+  async getMessages(companyId: string): Promise<Message[]> {
+    return await db
+      .select()
+      .from(messages)
+      .where(eq(messages.companyId, companyId))
+      .orderBy(desc(messages.createdAt));
+  }
+
+  async getMessage(id: string): Promise<Message | undefined> {
+    const [message] = await db.select().from(messages).where(eq(messages.id, id));
+    return message || undefined;
+  }
+
+  async createMessage(insertMessage: InsertMessage): Promise<Message> {
+    const [message] = await db
+      .insert(messages)
+      .values(insertMessage)
+      .returning();
+    return message;
+  }
+
+  async markMessageAsRead(id: string): Promise<Message> {
+    const [message] = await db
+      .update(messages)
+      .set({ isRead: true, readAt: new Date() })
+      .where(eq(messages.id, id))
+      .returning();
+    return message;
+  }
+
+  // News Items
+  async getNewsItems(): Promise<NewsItem[]> {
+    return await db
+      .select()
+      .from(newsItems)
+      .where(eq(newsItems.isActive, true))
+      .orderBy(desc(newsItems.publishedAt));
+  }
+
+  async createNewsItem(insertNews: InsertNewsItem): Promise<NewsItem> {
+    const [news] = await db
+      .insert(newsItems)
+      .values(insertNews)
+      .returning();
+    return news;
   }
 }
 

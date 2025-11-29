@@ -1117,3 +1117,158 @@ export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
 
 export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+// ===========================
+// Document Vault (Trade licenses, contracts, tax certificates with expiry tracking)
+// ===========================
+export const documents = pgTable("documents", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  nameAr: text("name_ar"),
+  category: text("category").notNull(), // trade_license | contract | tax_certificate | audit_report | bank_statement | insurance | visa | other
+  description: text("description"),
+  fileUrl: text("file_url").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  expiryDate: timestamp("expiry_date"), // For licenses, certificates that expire
+  reminderDays: integer("reminder_days").default(30), // Days before expiry to send reminder
+  reminderSent: boolean("reminder_sent").default(false),
+  tags: text("tags"), // JSON array of tags for search
+  isArchived: boolean("is_archived").default(false),
+  uploadedBy: uuid("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertDocumentSchema = createInsertSchema(documents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type Document = typeof documents.$inferSelect;
+
+// ===========================
+// Tax Return Archive (Historical filed returns with PDF storage)
+// ===========================
+export const taxReturnArchive = pgTable("tax_return_archive", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  returnType: text("return_type").notNull(), // vat | corporate_tax | excise_tax
+  periodLabel: text("period_label").notNull(), // e.g., "Q1 2025", "FY2024"
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  filingDate: timestamp("filing_date").notNull(),
+  ftaReferenceNumber: text("fta_reference_number"),
+  taxAmount: real("tax_amount").default(0),
+  paymentStatus: text("payment_status").default("paid"), // paid | partial | unpaid
+  fileUrl: text("file_url"), // PDF of filed return
+  fileName: text("file_name"),
+  notes: text("notes"),
+  filedBy: uuid("filed_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertTaxReturnArchiveSchema = createInsertSchema(taxReturnArchive).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertTaxReturnArchive = z.infer<typeof insertTaxReturnArchiveSchema>;
+export type TaxReturnArchive = typeof taxReturnArchive.$inferSelect;
+
+// ===========================
+// Compliance Tasks & Reminders
+// ===========================
+export const complianceTasks = pgTable("compliance_tasks", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  titleAr: text("title_ar"),
+  description: text("description"),
+  category: text("category").notNull(), // vat_filing | corporate_tax | document_upload | payment | review | other
+  priority: text("priority").default("medium"), // low | medium | high | urgent
+  status: text("status").default("pending"), // pending | in_progress | completed | overdue | cancelled
+  dueDate: timestamp("due_date").notNull(),
+  reminderDate: timestamp("reminder_date"),
+  reminderSent: boolean("reminder_sent").default(false),
+  isRecurring: boolean("is_recurring").default(false),
+  recurrencePattern: text("recurrence_pattern"), // monthly | quarterly | yearly
+  completedAt: timestamp("completed_at"),
+  completedBy: uuid("completed_by").references(() => users.id),
+  assignedTo: uuid("assigned_to").references(() => users.id),
+  createdBy: uuid("created_by").references(() => users.id),
+  relatedDocumentId: uuid("related_document_id").references(() => documents.id),
+  relatedVatReturnId: uuid("related_vat_return_id").references(() => vatReturns.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertComplianceTaskSchema = createInsertSchema(complianceTasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertComplianceTask = z.infer<typeof insertComplianceTaskSchema>;
+export type ComplianceTask = typeof complianceTasks.$inferSelect;
+
+// ===========================
+// Secure Messages (Client-Accountant Communication)
+// ===========================
+export const messages = pgTable("messages", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  threadId: uuid("thread_id"), // For grouping related messages
+  subject: text("subject"),
+  content: text("content").notNull(),
+  senderId: uuid("sender_id").notNull().references(() => users.id),
+  recipientId: uuid("recipient_id").references(() => users.id), // null = broadcast to all company users
+  isRead: boolean("is_read").default(false),
+  readAt: timestamp("read_at"),
+  attachmentUrl: text("attachment_url"),
+  attachmentName: text("attachment_name"),
+  messageType: text("message_type").default("general"), // general | inquiry | update | urgent | system
+  isArchived: boolean("is_archived").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertMessageSchema = createInsertSchema(messages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messages.$inferSelect;
+
+// ===========================
+// UAE Tax News Feed Items
+// ===========================
+export const newsItems = pgTable("news_items", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  titleAr: text("title_ar"),
+  summary: text("summary"),
+  summaryAr: text("summary_ar"),
+  content: text("content"),
+  contentAr: text("content_ar"),
+  source: text("source").notNull(), // fta | gulf_news | khaleej_times | other
+  sourceUrl: text("source_url"),
+  category: text("category").notNull(), // vat | corporate_tax | regulation | economy | general
+  imageUrl: text("image_url"),
+  publishedAt: timestamp("published_at").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertNewsItemSchema = createInsertSchema(newsItems).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertNewsItem = z.infer<typeof insertNewsItemSchema>;
+export type NewsItem = typeof newsItems.$inferSelect;

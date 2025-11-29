@@ -14,9 +14,13 @@ import {
   FileCheck,
   Users,
   List,
-  Settings,
   Wallet,
-  ShoppingCart
+  ShoppingCart,
+  FolderArchive,
+  FileStack,
+  CalendarDays,
+  ListTodo,
+  Newspaper
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import {
@@ -111,6 +115,44 @@ const aiItems = [
     titleAr: 'التصنيف الذكي',
     icon: Sparkles,
     url: '/ai-features',
+  },
+];
+
+const clientPortalItems = [
+  {
+    title: 'documentVault',
+    titleEn: 'Document Vault',
+    titleAr: 'خزنة المستندات',
+    icon: FolderArchive,
+    url: '/document-vault',
+  },
+  {
+    title: 'taxReturnArchive',
+    titleEn: 'Tax Return Archive',
+    titleAr: 'أرشيف الإقرارات',
+    icon: FileStack,
+    url: '/tax-return-archive',
+  },
+  {
+    title: 'complianceCalendar',
+    titleEn: 'Compliance Calendar',
+    titleAr: 'تقويم الامتثال',
+    icon: CalendarDays,
+    url: '/compliance-calendar',
+  },
+  {
+    title: 'taskCenter',
+    titleEn: 'Task Center',
+    titleAr: 'مركز المهام',
+    icon: ListTodo,
+    url: '/task-center',
+  },
+  {
+    title: 'newsFeed',
+    titleEn: 'UAE Tax News',
+    titleAr: 'أخبار الضرائب',
+    icon: Newspaper,
+    url: '/news-feed',
   },
 ];
 
@@ -224,6 +266,17 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {aiItems.map(renderMenuItem)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>
+            {locale === 'ar' ? 'بوابة العميل' : 'Client Portal'}
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {clientPortalItems.map(renderMenuItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

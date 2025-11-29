@@ -48,6 +48,14 @@ Preferred communication style: Simple, everyday language.
     - **CRM & E-commerce Integrations Hub**: Manages connections to Stripe, Shopify, and Salesforce for transaction sync.
 **WhatsApp Integration**: Webhook-based receipt ingestion from WhatsApp Business Cloud API, with an inbox dashboard for AI-powered text extraction and expense creation.
 
+**Client Portal Features** (Phase 1):
+    - **Document Vault**: Secure storage for licenses, contracts, and tax certificates with expiry tracking and reminder alerts (30/60/90 days before expiry).
+    - **Tax Return Archive**: Historical record of all VAT, Corporate Tax, and Excise Tax returns filed with the FTA, including reference numbers and payment status.
+    - **Compliance Calendar**: Visual calendar view of upcoming tax deadlines and compliance tasks.
+    - **Task & Reminder Center**: Centralized task management for compliance activities with due dates, priorities, and completion tracking.
+    - **UAE Tax News Feed**: Automated daily updates from FTA and trusted financial news sources about VAT, Corporate Tax, and regulatory changes.
+    - **Secure Messaging**: Client-accountant communication hub with message threading and attachment support.
+
 ## External Dependencies
 
 **Core Infrastructure**:
