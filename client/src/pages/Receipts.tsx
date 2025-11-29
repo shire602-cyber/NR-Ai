@@ -17,6 +17,10 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { exportToExcel, exportToGoogleSheets, prepareReceiptsForExport } from '@/lib/export';
 import Tesseract from 'tesseract.js';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { formatCurrency } from '@/lib/format';
@@ -325,35 +329,98 @@ export default function Receipts() {
     });
   };
 
-  const handleFilesSelect = useCallback((files: FileList | File[]) => {
-    const validFiles: ProcessedReceipt[] = [];
+  const convertPdfToImage = async (file: File): Promise<{ blob: Blob; preview: string }> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const page = await pdf.getPage(1);
+    
+    const scale = 2;
+    const viewport = page.getViewport({ scale });
+    
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d')!;
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    await page.render({
+      canvasContext: context,
+      viewport: viewport,
+      canvas: canvas,
+    } as any).promise;
+    
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        const preview = canvas.toDataURL('image/png');
+        resolve({ blob: blob!, preview });
+      }, 'image/png');
+    });
+  };
+
+  const handleFilesSelect = useCallback(async (files: FileList | File[]) => {
     const fileArray = Array.from(files);
 
-    fileArray.forEach((file) => {
-      if (!file.type.startsWith('image/')) {
+    for (const file of fileArray) {
+      const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf';
+      
+      if (!isImage && !isPdf) {
         toast({
           title: 'Invalid file',
-          description: `${file.name} is not an image file`,
+          description: `${file.name} must be an image or PDF file`,
           variant: 'destructive',
         });
-        return;
+        continue;
       }
 
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const preview = e.target?.result as string;
-        setProcessedReceipts((prev) => [
-          ...prev,
-          {
-            file,
-            preview,
-            status: 'pending',
-            progress: 0,
-          },
-        ]);
-      };
-      reader.readAsDataURL(file);
-    });
+      if (isPdf) {
+        try {
+          toast({
+            title: 'Converting PDF',
+            description: `Processing first page of ${file.name}...`,
+          });
+          
+          const { blob, preview } = await convertPdfToImage(file);
+          const imageFile = new File([blob], file.name.replace('.pdf', '.png'), { type: 'image/png' });
+          
+          setProcessedReceipts((prev) => [
+            ...prev,
+            {
+              file: imageFile,
+              preview,
+              status: 'pending',
+              progress: 0,
+            },
+          ]);
+          
+          toast({
+            title: 'PDF converted',
+            description: `${file.name} converted successfully. Only the first page is processed.`,
+          });
+        } catch (error: any) {
+          console.error('PDF conversion error:', error);
+          toast({
+            title: 'PDF conversion failed',
+            description: `Could not convert ${file.name}. Please upload an image instead (JPG, PNG, HEIC).`,
+            variant: 'destructive',
+          });
+        }
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const preview = e.target?.result as string;
+          setProcessedReceipts((prev) => [
+            ...prev,
+            {
+              file,
+              preview,
+              status: 'pending',
+              progress: 0,
+            },
+          ]);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
   }, [toast]);
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -864,7 +931,7 @@ export default function Receipts() {
             <input
               id="file-input"
               type="file"
-              accept="image/*"
+              accept="image/*,application/pdf"
               multiple
               className="hidden"
               onChange={(e) => {
@@ -898,7 +965,7 @@ export default function Receipts() {
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Supports: JPG, PNG, HEIC • Bulk upload enabled
+                  Supports: JPG, PNG, HEIC, PDF • Bulk upload enabled
                 </p>
               </div>
             )}
