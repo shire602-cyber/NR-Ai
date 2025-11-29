@@ -318,6 +318,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Seed Chart of Accounts for company
+  app.post("/api/companies/:id/seed-accounts", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      // Check if user has access to this company
+      const hasAccess = await storage.hasCompanyAccess(userId, id);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Seed Chart of Accounts
+      await seedChartOfAccounts(id);
+      
+      const accountsWithBalances = await storage.getAccountsWithBalances(id);
+      res.json({ 
+        message: 'Chart of Accounts seeded successfully',
+        accounts: accountsWithBalances
+      });
+    } catch (error: any) {
+      console.error('[Seed Accounts] Error seeding accounts:', error);
+      res.status(400).json({ message: error.message });
+    }
+  });
+
   // =====================================
   // Account Routes
   // =====================================
