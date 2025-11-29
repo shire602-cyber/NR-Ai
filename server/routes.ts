@@ -5493,14 +5493,26 @@ Respond with just the category name, nothing else.`;
       let matchedCount = 0;
       
       for (const txn of unreconciledTxns) {
+        // Skip transactions without valid descriptions
+        const txnDesc = txn.description?.toLowerCase() || '';
+        if (!txnDesc) continue;
+        
         // Try to find matching journal entries
         for (const je of journalEntries) {
-          if (je.description.toLowerCase().includes(txn.description.toLowerCase().substring(0, 20)) ||
-              Math.abs(new Date(je.date).getTime() - new Date(txn.transactionDate).getTime()) < 86400000 * 3) {
+          const jeDesc = je.description?.toLowerCase() || '';
+          const txnSearchTerm = txnDesc.substring(0, 20);
+          
+          // Check for description match or date proximity
+          const descMatch = jeDesc && txnSearchTerm && jeDesc.includes(txnSearchTerm);
+          const jeDate = je.date ? new Date(je.date).getTime() : 0;
+          const txnDate = txn.transactionDate ? new Date(txn.transactionDate).getTime() : 0;
+          const dateProximity = jeDate && txnDate && Math.abs(jeDate - txnDate) < 86400000 * 3;
+          
+          if (descMatch || dateProximity) {
             // Potential match - check amounts through journal lines
             const lines = await storage.getJournalLinesByEntryId(je.id);
-            const totalAmount = lines.reduce((sum, l) => sum + l.debit, 0);
-            if (Math.abs(totalAmount - Math.abs(txn.amount)) < 0.01) {
+            const totalAmount = lines.reduce((sum, l) => sum + (l.debit || 0), 0);
+            if (Math.abs(totalAmount - Math.abs(txn.amount || 0)) < 0.01) {
               await storage.reconcileBankTransaction(txn.id, je.id, 'journal');
               matchedCount++;
               break;
