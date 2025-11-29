@@ -1673,6 +1673,76 @@ Amount: ${validated.amount} ${validated.currency}`
     }
   });
 
+  // AI Bank Statement Parser Route
+  app.post("/api/ai/parse-bank-statement", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { text } = req.body;
+      
+      if (!text || text.trim().length < 10) {
+        return res.status(400).json({ message: 'Bank statement text is required' });
+      }
+      
+      // Use OpenAI to parse bank statement transactions
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are an expert at parsing bank statements from UAE banks. Extract transaction data from the provided text which was extracted from a PDF bank statement.
+
+Your task is to identify and extract all financial transactions found in the text. For each transaction, extract:
+- date: The transaction date in YYYY-MM-DD format (convert from any format found)
+- description: A clean description of the transaction
+- amount: The transaction amount as a number (negative for debits/withdrawals, positive for credits/deposits)
+- reference: Any reference number if available, otherwise null
+
+Important notes:
+- The text may be OCR output so expect some errors - try to interpret the data intelligently
+- UAE banks include: ENBD, Mashreq, FAB, ADCB, RAKBANK, Dubai Islamic Bank, etc.
+- Common patterns: ATM withdrawals, POS purchases, salary credits, transfers, utility payments (DEWA, du, Etisalat)
+- If amounts are in parentheses or marked DR/CR, interpret correctly (DR = debit = negative)
+- Dates may be in various formats: DD/MM/YYYY, DD-MMM-YYYY, etc.
+
+Respond with a JSON object containing:
+{
+  "transactions": [
+    { "date": "YYYY-MM-DD", "description": "...", "amount": number, "reference": "..." or null },
+    ...
+  ]
+}
+
+If no valid transactions can be found, return { "transactions": [] }`
+          },
+          {
+            role: "user",
+            content: `Parse the following bank statement text and extract all transactions:\n\n${text.substring(0, 15000)}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      });
+      
+      const aiResponse = JSON.parse(completion.choices[0].message.content || '{"transactions": []}');
+      
+      // Validate and clean up transactions
+      const validTransactions = (aiResponse.transactions || []).filter((t: any) => {
+        return t.date && t.description && typeof t.amount === 'number' && !isNaN(t.amount);
+      }).map((t: any) => ({
+        date: t.date,
+        description: t.description.substring(0, 200),
+        amount: t.amount.toString(),
+        reference: t.reference || null,
+      }));
+      
+      console.log('[AI] Parsed bank statement, found', validTransactions.length, 'transactions');
+      
+      res.json({ transactions: validTransactions });
+    } catch (error: any) {
+      console.error('AI bank statement parsing error:', error);
+      res.status(500).json({ message: error.message || 'Failed to parse bank statement' });
+    }
+  });
+
   // AI CFO Advice Route
   app.post("/api/ai/cfo-advice", authMiddleware, async (req: Request, res: Response) => {
     try {

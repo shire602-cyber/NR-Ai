@@ -12,11 +12,15 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
 import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import Tesseract from 'tesseract.js';
 import { 
   Upload, 
   FileText, 
@@ -30,8 +34,11 @@ import {
   RefreshCw,
   Building2,
   ArrowRightLeft,
-  Sparkles
+  Sparkles,
+  FileSpreadsheet
 } from 'lucide-react';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 interface BankTransaction {
   id: string;
@@ -77,8 +84,10 @@ export default function BankReconciliation() {
   const [selectedTransaction, setSelectedTransaction] = useState<BankTransaction | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showReconciled, setShowReconciled] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [importFile, setImportFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState(0);
+  const [processingStatus, setProcessingStatus] = useState('');
 
   const { data: accounts, isLoading: isLoadingAccounts } = useQuery<Account[]>({
     queryKey: ['/api/companies', companyId, 'accounts'],
@@ -141,7 +150,9 @@ export default function BankReconciliation() {
         description: `Imported ${data.transactions?.length || data.imported || 0} transactions`,
       });
       setImportDialogOpen(false);
-      setCsvFile(null);
+      setImportFile(null);
+      setPdfProgress(0);
+      setProcessingStatus('');
     },
     onError: (error: any) => {
       toast({
@@ -194,55 +205,170 @@ export default function BankReconciliation() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setCsvFile(file);
+      setImportFile(file);
+      setPdfProgress(0);
+      setProcessingStatus('');
     }
   };
 
+  const convertPdfPageToImage = async (page: any): Promise<Blob> => {
+    const scale = 2;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d')!;
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+    
+    await page.render({
+      canvasContext: context,
+      viewport: viewport,
+      canvas: canvas,
+    } as any).promise;
+    
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob!), 'image/png');
+    });
+  };
+
+  const extractTransactionsFromText = async (text: string): Promise<any[]> => {
+    try {
+      const response = await apiRequest('POST', '/api/ai/parse-bank-statement', { text });
+      return response.transactions || [];
+    } catch (error) {
+      console.error('AI parsing failed:', error);
+      return parseTransactionsManually(text);
+    }
+  };
+
+  const parseTransactionsManually = (text: string): any[] => {
+    const transactions: any[] = [];
+    const lines = text.split('\n');
+    const datePattern = /(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/;
+    const amountPattern = /[\-]?[\d,]+\.?\d{0,2}/g;
+    
+    for (const line of lines) {
+      const dateMatch = line.match(datePattern);
+      if (dateMatch) {
+        const amounts = line.match(amountPattern);
+        if (amounts && amounts.length > 0) {
+          const lastAmount = amounts[amounts.length - 1].replace(/,/g, '');
+          const amount = parseFloat(lastAmount);
+          if (!isNaN(amount) && Math.abs(amount) > 0) {
+            const description = line
+              .replace(dateMatch[0], '')
+              .replace(new RegExp(amounts.join('|').replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '')
+              .trim()
+              .substring(0, 100);
+            
+            if (description.length > 3) {
+              transactions.push({
+                date: dateMatch[0],
+                description: description || 'Transaction',
+                amount: amount.toString(),
+                reference: null,
+              });
+            }
+          }
+        }
+      }
+    }
+    return transactions;
+  };
+
   const handleImport = async () => {
-    if (!csvFile || !selectedBankAccount) {
+    if (!importFile || !selectedBankAccount) {
       toast({
         variant: 'destructive',
         title: 'Missing Information',
-        description: 'Please select a bank account and upload a CSV file',
+        description: 'Please select a bank account and upload a file',
       });
       return;
     }
 
     setIsImporting(true);
+    setPdfProgress(0);
+    
     try {
-      // Parse CSV file
-      const text = await csvFile.text();
-      const lines = text.split('\n');
-      const transactions = [];
+      let transactions: any[] = [];
       
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
+      if (importFile.type === 'application/pdf') {
+        setProcessingStatus('Converting PDF pages...');
         
-        const parts = line.split(',').map(p => p.trim());
-        if (parts.length < 3) continue;
+        const arrayBuffer = await importFile.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const totalPages = pdf.numPages;
+        let allText = '';
         
-        transactions.push({
-          date: parts[0],
-          description: parts[1],
-          amount: parts[2],
-          reference: parts[3] || null,
-        });
+        for (let pageNum = 1; pageNum <= Math.min(totalPages, 10); pageNum++) {
+          setProcessingStatus(`Processing page ${pageNum} of ${Math.min(totalPages, 10)}...`);
+          setPdfProgress((pageNum / Math.min(totalPages, 10)) * 50);
+          
+          const page = await pdf.getPage(pageNum);
+          
+          // Try text extraction first
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map((item: any) => item.str).join(' ');
+          
+          if (pageText.trim().length > 50) {
+            allText += pageText + '\n';
+          } else {
+            // Fall back to OCR if text extraction fails
+            setProcessingStatus(`Running OCR on page ${pageNum}...`);
+            const imageBlob = await convertPdfPageToImage(page);
+            const result = await Tesseract.recognize(imageBlob, 'eng');
+            allText += result.data.text + '\n';
+          }
+        }
+        
+        setProcessingStatus('Extracting transactions...');
+        setPdfProgress(75);
+        
+        transactions = await extractTransactionsFromText(allText);
+        
+        setPdfProgress(100);
+      } else {
+        // CSV parsing
+        const text = await importFile.text();
+        const lines = text.split('\n');
+        
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          
+          const parts = line.split(',').map(p => p.trim());
+          if (parts.length < 3) continue;
+          
+          transactions.push({
+            date: parts[0],
+            description: parts[1],
+            amount: parts[2],
+            reference: parts[3] || null,
+          });
+        }
       }
       
       if (transactions.length === 0) {
         toast({
           variant: 'destructive',
           title: 'No transactions found',
-          description: 'Please check your CSV file format',
+          description: 'Could not extract transactions from the file. Try a different format.',
         });
         setIsImporting(false);
         return;
       }
       
+      setProcessingStatus(`Importing ${transactions.length} transactions...`);
       await importMutation.mutateAsync({ transactions });
+    } catch (error: any) {
+      console.error('Import error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Import Failed',
+        description: error.message || 'Failed to process the file',
+      });
     } finally {
       setIsImporting(false);
+      setProcessingStatus('');
     }
   };
 
@@ -467,8 +593,8 @@ export default function BankReconciliation() {
             <DialogTitle>{locale === 'ar' ? 'استيراد كشف حساب البنك' : 'Import Bank Statement'}</DialogTitle>
             <DialogDescription>
               {locale === 'ar' 
-                ? 'قم بتحميل ملف CSV من البنك لاستيراد المعاملات'
-                : 'Upload a CSV file from your bank to import transactions'}
+                ? 'قم بتحميل ملف CSV أو PDF من البنك لاستيراد المعاملات'
+                : 'Upload a CSV or PDF file from your bank to import transactions'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -488,31 +614,50 @@ export default function BankReconciliation() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>{locale === 'ar' ? 'ملف CSV' : 'CSV File'}</Label>
+              <Label>{locale === 'ar' ? 'ملف كشف الحساب (CSV أو PDF)' : 'Bank Statement File (CSV or PDF)'}</Label>
               <Input
                 type="file"
-                accept=".csv"
+                accept=".csv,.pdf,application/pdf"
                 onChange={handleFileChange}
-                data-testid="input-csv-file"
+                disabled={isImporting}
+                data-testid="input-bank-statement-file"
               />
-              {csvFile && (
-                <p className="text-sm text-muted-foreground">
-                  {csvFile.name} ({(csvFile.size / 1024).toFixed(1)} KB)
-                </p>
+              {importFile && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  {importFile.type === 'application/pdf' ? (
+                    <FileText className="w-4 h-4 text-red-500" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4 text-green-500" />
+                  )}
+                  <span>{importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)</span>
+                </div>
+              )}
+              {isImporting && pdfProgress > 0 && (
+                <div className="space-y-2">
+                  <Progress value={pdfProgress} className="h-2" />
+                  <p className="text-xs text-muted-foreground">{processingStatus}</p>
+                </div>
               )}
             </div>
-            <div className="bg-muted/50 p-3 rounded-md text-sm">
-              <p className="font-medium mb-1">{locale === 'ar' ? 'تنسيق CSV المطلوب:' : 'Expected CSV format:'}</p>
-              <code className="text-xs">Date, Description, Amount, Reference</code>
+            <div className="bg-muted/50 p-3 rounded-md text-sm space-y-2">
+              <p className="font-medium">{locale === 'ar' ? 'الصيغ المدعومة:' : 'Supported formats:'}</p>
+              <div className="flex items-center gap-2 text-xs">
+                <FileSpreadsheet className="w-4 h-4 text-green-500" />
+                <span>CSV: Date, Description, Amount, Reference</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <FileText className="w-4 h-4 text-red-500" />
+                <span>PDF: {locale === 'ar' ? 'كشوف حساب البنك (استخراج AI)' : 'Bank statements (AI extraction)'}</span>
+              </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)} disabled={isImporting}>
               {locale === 'ar' ? 'إلغاء' : 'Cancel'}
             </Button>
             <Button 
               onClick={handleImport} 
-              disabled={isImporting || !csvFile || !selectedBankAccount}
+              disabled={isImporting || !importFile || !selectedBankAccount}
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
