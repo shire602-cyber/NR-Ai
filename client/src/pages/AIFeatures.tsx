@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,7 @@ type CashFlowForecast = {
 };
 
 export default function AIFeatures() {
+  const [, navigate] = useLocation();
   const { companyId } = useDefaultCompany();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
@@ -58,8 +60,6 @@ export default function AIFeatures() {
   const [selectedAlert, setSelectedAlert] = useState<AnomalyAlert | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
   const [categorizationOpen, setCategorizationOpen] = useState(false);
-  const [reconciliationOpen, setReconciliationOpen] = useState(false);
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -662,11 +662,11 @@ export default function AIFeatures() {
                 <Button 
                   variant="outline" 
                   className="w-full" 
-                  onClick={() => setReconciliationOpen(true)}
+                  onClick={() => navigate('/bank-reconciliation')}
                   data-testid="button-bank-reconciliation"
                 >
                   <Upload className="w-4 h-4 mr-2" />
-                  Import Statement
+                  Open Bank Reconciliation
                 </Button>
               </CardContent>
             </Card>
@@ -857,61 +857,6 @@ export default function AIFeatures() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={reconciliationOpen} onOpenChange={setReconciliationOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Import Bank Statement</DialogTitle>
-            <DialogDescription>
-              Upload a CSV file containing your bank transactions
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                Bank Reconciliation feature coming soon! Upload CSV files with columns: Date, Description, Amount
-              </AlertDescription>
-            </Alert>
-            <div className="space-y-2">
-              <Label htmlFor="csv-file">Select CSV File</Label>
-              <Input 
-                id="csv-file" 
-                type="file" 
-                accept=".csv"
-                onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
-                data-testid="input-csv-file"
-              />
-              {uploadedFile && (
-                <p className="text-sm text-muted-foreground">
-                  Selected: {uploadedFile.name}
-                </p>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setReconciliationOpen(false);
-              setUploadedFile(null);
-            }}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => {
-                setReconciliationOpen(false);
-                setUploadedFile(null);
-                toast({
-                  title: 'Coming Soon',
-                  description: 'Bank reconciliation feature will be available soon',
-                });
-              }}
-              disabled={!uploadedFile}
-              data-testid="button-upload-csv"
-            >
-              Upload
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
