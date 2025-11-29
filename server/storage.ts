@@ -19,7 +19,18 @@ import type {
   Budget, InsertBudget,
   EcommerceIntegration, InsertEcommerceIntegration,
   EcommerceTransaction, InsertEcommerceTransaction,
-  FinancialKpi, InsertFinancialKpi
+  FinancialKpi, InsertFinancialKpi,
+  Notification, InsertNotification,
+  RegulatoryNews, InsertRegulatoryNews,
+  ReminderSetting, InsertReminderSetting,
+  ReminderLog, InsertReminderLog,
+  UserOnboarding, InsertUserOnboarding,
+  HelpTip, InsertHelpTip,
+  ReferralCode, InsertReferralCode,
+  Referral, InsertReferral,
+  UserFeedback, InsertUserFeedback,
+  AnalyticsEvent, InsertAnalyticsEvent,
+  FeatureUsageMetric, InsertFeatureUsageMetric
 } from "@shared/schema";
 import {
   users,
@@ -42,7 +53,18 @@ import {
   budgets,
   ecommerceIntegrations,
   ecommerceTransactions,
-  financialKpis
+  financialKpis,
+  notifications,
+  regulatoryNews,
+  reminderSettings,
+  reminderLogs,
+  userOnboarding,
+  helpTips,
+  referralCodes,
+  referrals,
+  userFeedback,
+  analyticsEvents,
+  featureUsageMetrics
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -175,6 +197,62 @@ export interface IStorage {
   
   // Cash Flow Forecasts (alias for consistency)
   getCashFlowForecasts(companyId: string): Promise<CashFlowForecast[]>;
+  
+  // Notifications
+  getNotificationsByUserId(userId: string): Promise<Notification[]>;
+  getUnreadNotificationCount(userId: string): Promise<number>;
+  createNotification(notification: InsertNotification): Promise<Notification>;
+  markNotificationAsRead(id: string): Promise<Notification>;
+  markAllNotificationsAsRead(userId: string): Promise<void>;
+  dismissNotification(id: string): Promise<Notification>;
+  
+  // Regulatory News
+  getRegulatoryNews(): Promise<RegulatoryNews[]>;
+  createRegulatoryNews(news: InsertRegulatoryNews): Promise<RegulatoryNews>;
+  
+  // Reminder Settings
+  getReminderSettingsByCompanyId(companyId: string): Promise<ReminderSetting[]>;
+  createReminderSetting(setting: InsertReminderSetting): Promise<ReminderSetting>;
+  updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting>;
+  
+  // Reminder Logs
+  getReminderLogsByCompanyId(companyId: string): Promise<ReminderLog[]>;
+  createReminderLog(log: InsertReminderLog): Promise<ReminderLog>;
+  updateReminderLog(id: string, data: Partial<InsertReminderLog>): Promise<ReminderLog>;
+  
+  // User Onboarding
+  getUserOnboarding(userId: string): Promise<UserOnboarding | undefined>;
+  createUserOnboarding(onboarding: InsertUserOnboarding): Promise<UserOnboarding>;
+  updateUserOnboarding(userId: string, data: Partial<InsertUserOnboarding>): Promise<UserOnboarding>;
+  
+  // Help Tips
+  getHelpTipsByPage(pageContext: string): Promise<HelpTip[]>;
+  getAllHelpTips(): Promise<HelpTip[]>;
+  createHelpTip(tip: InsertHelpTip): Promise<HelpTip>;
+  
+  // Referral Codes
+  getReferralCodeByUserId(userId: string): Promise<ReferralCode | undefined>;
+  getReferralCodeByCode(code: string): Promise<ReferralCode | undefined>;
+  createReferralCode(code: InsertReferralCode): Promise<ReferralCode>;
+  updateReferralCode(id: string, data: Partial<InsertReferralCode>): Promise<ReferralCode>;
+  
+  // Referrals
+  getReferralsByReferrerId(referrerId: string): Promise<Referral[]>;
+  createReferral(referral: InsertReferral): Promise<Referral>;
+  updateReferral(id: string, data: Partial<InsertReferral>): Promise<Referral>;
+  
+  // User Feedback
+  createUserFeedback(feedback: InsertUserFeedback): Promise<UserFeedback>;
+  getUserFeedback(userId?: string): Promise<UserFeedback[]>;
+  updateUserFeedback(id: string, data: Partial<InsertUserFeedback>): Promise<UserFeedback>;
+  
+  // Analytics Events
+  createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent>;
+  getAnalyticsEvents(filters?: { userId?: string; eventType?: string; startDate?: Date; endDate?: Date }): Promise<AnalyticsEvent[]>;
+  
+  // Feature Usage Metrics
+  getFeatureUsageMetrics(featureName?: string): Promise<FeatureUsageMetric[]>;
+  createFeatureUsageMetric(metric: InsertFeatureUsageMetric): Promise<FeatureUsageMetric>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -896,6 +974,322 @@ export class DatabaseStorage implements IStorage {
   // Cash Flow Forecasts (alias for consistency)
   async getCashFlowForecasts(companyId: string): Promise<CashFlowForecast[]> {
     return this.getCashFlowForecastsByCompanyId(companyId);
+  }
+
+  // Notifications
+  async getNotificationsByUserId(userId: string): Promise<Notification[]> {
+    return await db
+      .select()
+      .from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.isDismissed, false)
+      ))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const result = await db
+      .select()
+      .from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.isRead, false),
+        eq(notifications.isDismissed, false)
+      ));
+    return result.length;
+  }
+
+  async createNotification(insertNotification: InsertNotification): Promise<Notification> {
+    const [notification] = await db
+      .insert(notifications)
+      .values(insertNotification)
+      .returning();
+    return notification;
+  }
+
+  async markNotificationAsRead(id: string): Promise<Notification> {
+    const [notification] = await db
+      .update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(eq(notifications.id, id))
+      .returning();
+    return notification;
+  }
+
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    await db
+      .update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(eq(notifications.userId, userId));
+  }
+
+  async dismissNotification(id: string): Promise<Notification> {
+    const [notification] = await db
+      .update(notifications)
+      .set({ isDismissed: true })
+      .where(eq(notifications.id, id))
+      .returning();
+    return notification;
+  }
+
+  // Regulatory News
+  async getRegulatoryNews(): Promise<RegulatoryNews[]> {
+    return await db
+      .select()
+      .from(regulatoryNews)
+      .where(eq(regulatoryNews.isActive, true))
+      .orderBy(desc(regulatoryNews.publishedAt));
+  }
+
+  async createRegulatoryNews(insertNews: InsertRegulatoryNews): Promise<RegulatoryNews> {
+    const [news] = await db
+      .insert(regulatoryNews)
+      .values(insertNews)
+      .returning();
+    return news;
+  }
+
+  // Reminder Settings
+  async getReminderSettingsByCompanyId(companyId: string): Promise<ReminderSetting[]> {
+    return await db
+      .select()
+      .from(reminderSettings)
+      .where(eq(reminderSettings.companyId, companyId));
+  }
+
+  async createReminderSetting(insertSetting: InsertReminderSetting): Promise<ReminderSetting> {
+    const [setting] = await db
+      .insert(reminderSettings)
+      .values(insertSetting)
+      .returning();
+    return setting;
+  }
+
+  async updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting> {
+    const [setting] = await db
+      .update(reminderSettings)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(reminderSettings.id, id))
+      .returning();
+    return setting;
+  }
+
+  // Reminder Logs
+  async getReminderLogsByCompanyId(companyId: string): Promise<ReminderLog[]> {
+    return await db
+      .select()
+      .from(reminderLogs)
+      .where(eq(reminderLogs.companyId, companyId))
+      .orderBy(desc(reminderLogs.createdAt));
+  }
+
+  async createReminderLog(insertLog: InsertReminderLog): Promise<ReminderLog> {
+    const [log] = await db
+      .insert(reminderLogs)
+      .values(insertLog)
+      .returning();
+    return log;
+  }
+
+  async updateReminderLog(id: string, data: Partial<InsertReminderLog>): Promise<ReminderLog> {
+    const [log] = await db
+      .update(reminderLogs)
+      .set(data)
+      .where(eq(reminderLogs.id, id))
+      .returning();
+    return log;
+  }
+
+  // User Onboarding
+  async getUserOnboarding(userId: string): Promise<UserOnboarding | undefined> {
+    const [onboarding] = await db
+      .select()
+      .from(userOnboarding)
+      .where(eq(userOnboarding.userId, userId));
+    return onboarding;
+  }
+
+  async createUserOnboarding(insertOnboarding: InsertUserOnboarding): Promise<UserOnboarding> {
+    const [onboarding] = await db
+      .insert(userOnboarding)
+      .values(insertOnboarding)
+      .returning();
+    return onboarding;
+  }
+
+  async updateUserOnboarding(userId: string, data: Partial<InsertUserOnboarding>): Promise<UserOnboarding> {
+    const [onboarding] = await db
+      .update(userOnboarding)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(userOnboarding.userId, userId))
+      .returning();
+    return onboarding;
+  }
+
+  // Help Tips
+  async getHelpTipsByPage(pageContext: string): Promise<HelpTip[]> {
+    return await db
+      .select()
+      .from(helpTips)
+      .where(and(
+        eq(helpTips.pageContext, pageContext),
+        eq(helpTips.isActive, true)
+      ))
+      .orderBy(helpTips.order);
+  }
+
+  async getAllHelpTips(): Promise<HelpTip[]> {
+    return await db
+      .select()
+      .from(helpTips)
+      .where(eq(helpTips.isActive, true))
+      .orderBy(helpTips.order);
+  }
+
+  async createHelpTip(insertTip: InsertHelpTip): Promise<HelpTip> {
+    const [tip] = await db
+      .insert(helpTips)
+      .values(insertTip)
+      .returning();
+    return tip;
+  }
+
+  // Referral Codes
+  async getReferralCodeByUserId(userId: string): Promise<ReferralCode | undefined> {
+    const [code] = await db
+      .select()
+      .from(referralCodes)
+      .where(eq(referralCodes.userId, userId));
+    return code;
+  }
+
+  async getReferralCodeByCode(code: string): Promise<ReferralCode | undefined> {
+    const [referralCode] = await db
+      .select()
+      .from(referralCodes)
+      .where(eq(referralCodes.code, code));
+    return referralCode;
+  }
+
+  async createReferralCode(insertCode: InsertReferralCode): Promise<ReferralCode> {
+    const [code] = await db
+      .insert(referralCodes)
+      .values(insertCode)
+      .returning();
+    return code;
+  }
+
+  async updateReferralCode(id: string, data: Partial<InsertReferralCode>): Promise<ReferralCode> {
+    const [code] = await db
+      .update(referralCodes)
+      .set(data)
+      .where(eq(referralCodes.id, id))
+      .returning();
+    return code;
+  }
+
+  // Referrals
+  async getReferralsByReferrerId(referrerId: string): Promise<Referral[]> {
+    return await db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.referrerId, referrerId))
+      .orderBy(desc(referrals.createdAt));
+  }
+
+  async createReferral(insertReferral: InsertReferral): Promise<Referral> {
+    const [referral] = await db
+      .insert(referrals)
+      .values(insertReferral)
+      .returning();
+    return referral;
+  }
+
+  async updateReferral(id: string, data: Partial<InsertReferral>): Promise<Referral> {
+    const [referral] = await db
+      .update(referrals)
+      .set(data)
+      .where(eq(referrals.id, id))
+      .returning();
+    return referral;
+  }
+
+  // User Feedback
+  async createUserFeedback(insertFeedback: InsertUserFeedback): Promise<UserFeedback> {
+    const [feedback] = await db
+      .insert(userFeedback)
+      .values(insertFeedback)
+      .returning();
+    return feedback;
+  }
+
+  async getUserFeedback(userId?: string): Promise<UserFeedback[]> {
+    if (userId) {
+      return await db
+        .select()
+        .from(userFeedback)
+        .where(eq(userFeedback.userId, userId))
+        .orderBy(desc(userFeedback.createdAt));
+    }
+    return await db
+      .select()
+      .from(userFeedback)
+      .orderBy(desc(userFeedback.createdAt));
+  }
+
+  async updateUserFeedback(id: string, data: Partial<InsertUserFeedback>): Promise<UserFeedback> {
+    const [feedback] = await db
+      .update(userFeedback)
+      .set(data)
+      .where(eq(userFeedback.id, id))
+      .returning();
+    return feedback;
+  }
+
+  // Analytics Events
+  async createAnalyticsEvent(insertEvent: InsertAnalyticsEvent): Promise<AnalyticsEvent> {
+    const [event] = await db
+      .insert(analyticsEvents)
+      .values(insertEvent)
+      .returning();
+    return event;
+  }
+
+  async getAnalyticsEvents(filters?: { userId?: string; eventType?: string; startDate?: Date; endDate?: Date }): Promise<AnalyticsEvent[]> {
+    let query = db.select().from(analyticsEvents);
+    
+    if (filters?.userId) {
+      query = query.where(eq(analyticsEvents.userId, filters.userId)) as typeof query;
+    }
+    if (filters?.eventType) {
+      query = query.where(eq(analyticsEvents.eventType, filters.eventType)) as typeof query;
+    }
+    
+    return await query.orderBy(desc(analyticsEvents.createdAt));
+  }
+
+  // Feature Usage Metrics
+  async getFeatureUsageMetrics(featureName?: string): Promise<FeatureUsageMetric[]> {
+    if (featureName) {
+      return await db
+        .select()
+        .from(featureUsageMetrics)
+        .where(eq(featureUsageMetrics.featureName, featureName))
+        .orderBy(desc(featureUsageMetrics.calculatedAt));
+    }
+    return await db
+      .select()
+      .from(featureUsageMetrics)
+      .orderBy(desc(featureUsageMetrics.calculatedAt));
+  }
+
+  async createFeatureUsageMetric(insertMetric: InsertFeatureUsageMetric): Promise<FeatureUsageMetric> {
+    const [metric] = await db
+      .insert(featureUsageMetrics)
+      .values(insertMetric)
+      .returning();
+    return metric;
   }
 }
 

@@ -623,3 +623,348 @@ export const insertFinancialKpiSchema = createInsertSchema(financialKpis).omit({
 
 export type InsertFinancialKpi = z.infer<typeof insertFinancialKpiSchema>;
 export type FinancialKpi = typeof financialKpis.$inferSelect;
+
+// ===========================
+// Smart Reminders & Notifications
+// ===========================
+export const notifications = pgTable("notifications", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // deadline | payment_due | overdue | regulatory | system | referral | onboarding
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  priority: text("priority").notNull().default("normal"), // low | normal | high | urgent
+  relatedEntityType: text("related_entity_type"), // invoice | receipt | vat_return | company
+  relatedEntityId: uuid("related_entity_id"),
+  actionUrl: text("action_url"), // Deep link to relevant page
+  isRead: boolean("is_read").notNull().default(false),
+  readAt: timestamp("read_at"),
+  isDismissed: boolean("is_dismissed").notNull().default(false),
+  scheduledFor: timestamp("scheduled_for"), // For future notifications
+  expiresAt: timestamp("expires_at"), // Auto-dismiss after this date
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertNotificationSchema = createInsertSchema(notifications).omit({
+  id: true,
+  createdAt: true,
+  readAt: true,
+});
+
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
+
+// ===========================
+// Regulatory News Feed
+// ===========================
+export const regulatoryNews = pgTable("regulatory_news", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  titleAr: text("title_ar"), // Arabic translation
+  summary: text("summary").notNull(),
+  summaryAr: text("summary_ar"),
+  content: text("content"),
+  contentAr: text("content_ar"),
+  category: text("category").notNull(), // vat | corporate_tax | customs | labor | general
+  source: text("source"), // FTA, Ministry of Finance, etc.
+  sourceUrl: text("source_url"),
+  effectiveDate: timestamp("effective_date"),
+  importance: text("importance").notNull().default("normal"), // low | normal | high | critical
+  isActive: boolean("is_active").notNull().default(true),
+  publishedAt: timestamp("published_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertRegulatoryNewsSchema = createInsertSchema(regulatoryNews).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRegulatoryNews = z.infer<typeof insertRegulatoryNewsSchema>;
+export type RegulatoryNews = typeof regulatoryNews.$inferSelect;
+
+// ===========================
+// Reminder Settings (for automated reminders)
+// ===========================
+export const reminderSettings = pgTable("reminder_settings", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  reminderType: text("reminder_type").notNull(), // invoice_overdue | invoice_due_soon | vat_deadline | payment_followup
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  // Timing configuration
+  daysBeforeDue: integer("days_before_due"), // Send X days before due date
+  daysAfterDue: integer("days_after_due"), // Send X days after due date (for overdue)
+  repeatIntervalDays: integer("repeat_interval_days"), // Repeat every X days
+  maxReminders: integer("max_reminders").default(3), // Max number of reminders to send
+  // Channel configuration
+  sendEmail: boolean("send_email").notNull().default(true),
+  sendSms: boolean("send_sms").notNull().default(false),
+  sendInApp: boolean("send_in_app").notNull().default(true),
+  // Template customization
+  emailSubject: text("email_subject"),
+  emailTemplate: text("email_template"),
+  smsTemplate: text("sms_template"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertReminderSettingSchema = createInsertSchema(reminderSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertReminderSetting = z.infer<typeof insertReminderSettingSchema>;
+export type ReminderSetting = typeof reminderSettings.$inferSelect;
+
+// ===========================
+// Reminder Logs (track sent reminders)
+// ===========================
+export const reminderLogs = pgTable("reminder_logs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  reminderSettingId: uuid("reminder_setting_id").references(() => reminderSettings.id),
+  reminderType: text("reminder_type").notNull(),
+  relatedEntityType: text("related_entity_type").notNull(), // invoice | vat_return
+  relatedEntityId: uuid("related_entity_id").notNull(),
+  recipientEmail: text("recipient_email"),
+  recipientPhone: text("recipient_phone"),
+  channel: text("channel").notNull(), // email | sms | in_app
+  status: text("status").notNull().default("pending"), // pending | sent | failed | delivered | opened
+  attemptNumber: integer("attempt_number").notNull().default(1),
+  errorMessage: text("error_message"),
+  sentAt: timestamp("sent_at"),
+  deliveredAt: timestamp("delivered_at"),
+  openedAt: timestamp("opened_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertReminderLogSchema = createInsertSchema(reminderLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReminderLog = z.infer<typeof insertReminderLogSchema>;
+export type ReminderLog = typeof reminderLogs.$inferSelect;
+
+// ===========================
+// User Onboarding Progress
+// ===========================
+export const userOnboarding = pgTable("user_onboarding", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // Onboarding steps completed
+  hasCompletedWelcome: boolean("has_completed_welcome").notNull().default(false),
+  hasCreatedCompany: boolean("has_created_company").notNull().default(false),
+  hasSetupChartOfAccounts: boolean("has_setup_chart_of_accounts").notNull().default(false),
+  hasCreatedFirstInvoice: boolean("has_created_first_invoice").notNull().default(false),
+  hasUploadedFirstReceipt: boolean("has_uploaded_first_receipt").notNull().default(false),
+  hasViewedReports: boolean("has_viewed_reports").notNull().default(false),
+  hasExploredAI: boolean("has_explored_ai").notNull().default(false),
+  hasConfiguredReminders: boolean("has_configured_reminders").notNull().default(false),
+  // Progress tracking
+  currentStep: integer("current_step").notNull().default(0),
+  totalSteps: integer("total_steps").notNull().default(8),
+  isOnboardingComplete: boolean("is_onboarding_complete").notNull().default(false),
+  completedAt: timestamp("completed_at"),
+  // UI preferences
+  showTips: boolean("show_tips").notNull().default(true),
+  showTour: boolean("show_tour").notNull().default(true),
+  dismissedTips: text("dismissed_tips"), // JSON array of dismissed tip IDs
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertUserOnboardingSchema = createInsertSchema(userOnboarding).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertUserOnboarding = z.infer<typeof insertUserOnboardingSchema>;
+export type UserOnboarding = typeof userOnboarding.$inferSelect;
+
+// ===========================
+// Help Tips (contextual help)
+// ===========================
+export const helpTips = pgTable("help_tips", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  tipKey: text("tip_key").notNull().unique(), // Unique identifier for the tip location
+  title: text("title").notNull(),
+  titleAr: text("title_ar"),
+  content: text("content").notNull(),
+  contentAr: text("content_ar"),
+  pageContext: text("page_context").notNull(), // dashboard | invoices | receipts | journal | reports | settings
+  targetElement: text("target_element"), // CSS selector for element to highlight
+  tipType: text("tip_type").notNull().default("tooltip"), // tooltip | popover | modal | tour_step
+  order: integer("order").default(0), // For tour ordering
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertHelpTipSchema = createInsertSchema(helpTips).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertHelpTip = z.infer<typeof insertHelpTipSchema>;
+export type HelpTip = typeof helpTips.$inferSelect;
+
+// ===========================
+// Referral Codes
+// ===========================
+export const referralCodes = pgTable("referral_codes", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  code: text("code").notNull().unique(), // Unique referral code
+  customSlug: text("custom_slug").unique(), // User-friendly custom slug
+  isActive: boolean("is_active").notNull().default(true),
+  // Reward configuration
+  referrerRewardType: text("referrer_reward_type").default("credit"), // credit | discount | subscription_days
+  referrerRewardValue: real("referrer_reward_value").default(0),
+  refereeRewardType: text("referee_reward_type").default("discount"), // credit | discount | trial_extension
+  refereeRewardValue: real("referee_reward_value").default(0),
+  // Tracking
+  totalReferrals: integer("total_referrals").notNull().default(0),
+  successfulReferrals: integer("successful_referrals").notNull().default(0),
+  totalRewardsEarned: real("total_rewards_earned").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+});
+
+export const insertReferralCodeSchema = createInsertSchema(referralCodes).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReferralCode = z.infer<typeof insertReferralCodeSchema>;
+export type ReferralCode = typeof referralCodes.$inferSelect;
+
+// ===========================
+// Referrals (tracking sign-ups)
+// ===========================
+export const referrals = pgTable("referrals", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  referralCodeId: uuid("referral_code_id").notNull().references(() => referralCodes.id, { onDelete: "cascade" }),
+  referrerId: uuid("referrer_id").notNull().references(() => users.id),
+  refereeId: uuid("referee_id").references(() => users.id), // Null until they sign up
+  refereeEmail: text("referee_email"), // Email before sign-up
+  status: text("status").notNull().default("pending"), // pending | signed_up | qualified | rewarded | expired
+  // Reward tracking
+  referrerRewardStatus: text("referrer_reward_status").default("pending"), // pending | credited | used
+  refereeRewardStatus: text("referee_reward_status").default("pending"),
+  referrerRewardAmount: real("referrer_reward_amount"),
+  refereeRewardAmount: real("referee_reward_amount"),
+  // Qualification criteria
+  qualificationCriteria: text("qualification_criteria"), // JSON with criteria met
+  qualifiedAt: timestamp("qualified_at"),
+  rewardedAt: timestamp("rewarded_at"),
+  // Tracking
+  signupSource: text("signup_source"), // link | email | social
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+});
+
+export const insertReferralSchema = createInsertSchema(referrals).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertReferral = z.infer<typeof insertReferralSchema>;
+export type Referral = typeof referrals.$inferSelect;
+
+// ===========================
+// User Feedback
+// ===========================
+export const userFeedback = pgTable("user_feedback", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+  feedbackType: text("feedback_type").notNull(), // bug | feature_request | improvement | praise | complaint | nps | survey
+  category: text("category"), // ui | performance | feature | billing | support | other
+  pageContext: text("page_context"), // Which page they were on
+  rating: integer("rating"), // 1-5 or 0-10 for NPS
+  title: text("title"),
+  message: text("message").notNull(),
+  screenshot: text("screenshot"), // Base64 or URL
+  browserInfo: text("browser_info"), // JSON with browser/device info
+  // Response tracking
+  status: text("status").notNull().default("new"), // new | reviewed | in_progress | resolved | wont_fix
+  assignedTo: text("assigned_to"),
+  responseMessage: text("response_message"),
+  respondedAt: timestamp("responded_at"),
+  // Contact preference
+  allowContact: boolean("allow_contact").notNull().default(true),
+  contactEmail: text("contact_email"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertUserFeedbackSchema = createInsertSchema(userFeedback).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertUserFeedback = z.infer<typeof insertUserFeedbackSchema>;
+export type UserFeedback = typeof userFeedback.$inferSelect;
+
+// ===========================
+// Analytics Events
+// ===========================
+export const analyticsEvents = pgTable("analytics_events", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+  sessionId: text("session_id"),
+  eventType: text("event_type").notNull(), // page_view | click | feature_use | error | conversion | search
+  eventName: text("event_name").notNull(), // Specific event identifier
+  pageUrl: text("page_url"),
+  pageTitle: text("page_title"),
+  // Event-specific data
+  properties: text("properties"), // JSON with event properties
+  value: real("value"), // Numeric value if applicable
+  // Context
+  referrer: text("referrer"),
+  deviceType: text("device_type"), // desktop | mobile | tablet
+  browser: text("browser"),
+  os: text("os"),
+  country: text("country"),
+  language: text("language"),
+  // Timing
+  duration: integer("duration"), // Time spent in ms
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertAnalyticsEventSchema = createInsertSchema(analyticsEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAnalyticsEvent = z.infer<typeof insertAnalyticsEventSchema>;
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+
+// ===========================
+// Feature Usage Metrics (aggregated)
+// ===========================
+export const featureUsageMetrics = pgTable("feature_usage_metrics", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  featureName: text("feature_name").notNull(),
+  period: text("period").notNull(), // daily | weekly | monthly
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  totalUsers: integer("total_users").notNull().default(0),
+  totalSessions: integer("total_sessions").notNull().default(0),
+  totalEvents: integer("total_events").notNull().default(0),
+  avgDuration: real("avg_duration"), // Average time spent
+  conversionRate: real("conversion_rate"), // If applicable
+  errorRate: real("error_rate"),
+  calculatedAt: timestamp("calculated_at").defaultNow().notNull(),
+});
+
+export const insertFeatureUsageMetricSchema = createInsertSchema(featureUsageMetrics).omit({
+  id: true,
+  calculatedAt: true,
+});
+
+export type InsertFeatureUsageMetric = z.infer<typeof insertFeatureUsageMetricSchema>;
+export type FeatureUsageMetric = typeof featureUsageMetrics.$inferSelect;
