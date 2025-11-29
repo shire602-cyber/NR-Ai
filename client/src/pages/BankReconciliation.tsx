@@ -131,14 +131,14 @@ export default function BankReconciliation() {
   }, [transactions]);
 
   const importMutation = useMutation({
-    mutationFn: async (formData: FormData) => {
-      return apiRequest('POST', `/api/companies/${companyId}/bank-transactions/import`, formData);
+    mutationFn: async (data: { transactions: any[] }) => {
+      return apiRequest('POST', `/api/companies/${companyId}/bank-transactions/import`, data);
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-transactions'] });
       toast({
         title: 'Import Successful',
-        description: `Imported ${data.count} transactions`,
+        description: `Imported ${data.transactions?.length || data.imported || 0} transactions`,
       });
       setImportDialogOpen(false);
       setCsvFile(null);
@@ -209,12 +209,38 @@ export default function BankReconciliation() {
     }
 
     setIsImporting(true);
-    const formData = new FormData();
-    formData.append('file', csvFile);
-    formData.append('bankAccountId', selectedBankAccount);
-    
     try {
-      await importMutation.mutateAsync(formData);
+      // Parse CSV file
+      const text = await csvFile.text();
+      const lines = text.split('\n');
+      const transactions = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const parts = line.split(',').map(p => p.trim());
+        if (parts.length < 3) continue;
+        
+        transactions.push({
+          date: parts[0],
+          description: parts[1],
+          amount: parts[2],
+          reference: parts[3] || null,
+        });
+      }
+      
+      if (transactions.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'No transactions found',
+          description: 'Please check your CSV file format',
+        });
+        setIsImporting(false);
+        return;
+      }
+      
+      await importMutation.mutateAsync({ transactions });
     } finally {
       setIsImporting(false);
     }
