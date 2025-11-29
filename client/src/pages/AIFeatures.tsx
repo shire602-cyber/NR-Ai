@@ -57,6 +57,9 @@ export default function AIFeatures() {
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<AnomalyAlert | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
+  const [categorizationOpen, setCategorizationOpen] = useState(false);
+  const [reconciliationOpen, setReconciliationOpen] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -617,7 +620,12 @@ export default function AIFeatures() {
                     Batch processing support
                   </li>
                 </ul>
-                <Button variant="outline" className="w-full" data-testid="button-smart-categorization">
+                <Button 
+                  variant="outline" 
+                  className="w-full" 
+                  onClick={() => setCategorizationOpen(true)}
+                  data-testid="button-smart-categorization"
+                >
                   <Zap className="w-4 h-4 mr-2" />
                   Configure
                 </Button>
@@ -651,7 +659,12 @@ export default function AIFeatures() {
                     One-click reconciliation
                   </li>
                 </ul>
-                <Button variant="outline" className="w-full" data-testid="button-bank-reconciliation">
+                <Button 
+                  variant="outline" 
+                  className="w-full" 
+                  onClick={() => setReconciliationOpen(true)}
+                  data-testid="button-bank-reconciliation"
+                >
                   <Upload className="w-4 h-4 mr-2" />
                   Import Statement
                 </Button>
@@ -788,6 +801,113 @@ export default function AIFeatures() {
                 <Check className="w-4 h-4 mr-2" />
               )}
               Mark Resolved
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={categorizationOpen} onOpenChange={setCategorizationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Smart Categorization Settings</DialogTitle>
+            <DialogDescription>
+              Configure how AI categorizes your transactions
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Alert>
+              <Sparkles className="h-4 w-4" />
+              <AlertDescription>
+                Smart Categorization is configured to learn from your corrections automatically. 
+                Just keep correcting miscategorized transactions and the AI will improve over time.
+              </AlertDescription>
+            </Alert>
+            <div className="space-y-2">
+              <Label>Current Settings</Label>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  UAE-specific vendor recognition: Enabled
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  Learning from corrections: Enabled
+                </li>
+                <li className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-green-500" />
+                  Batch processing: Ready
+                </li>
+              </ul>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCategorizationOpen(false)}>
+              Close
+            </Button>
+            <Button onClick={() => {
+              setCategorizationOpen(false);
+              toast({
+                title: 'Settings Saved',
+                description: 'Smart categorization is active and learning from your corrections',
+              });
+            }} data-testid="button-save-categorization">
+              Got It
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reconciliationOpen} onOpenChange={setReconciliationOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Import Bank Statement</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file containing your bank transactions
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Bank Reconciliation feature coming soon! Upload CSV files with columns: Date, Description, Amount
+              </AlertDescription>
+            </Alert>
+            <div className="space-y-2">
+              <Label htmlFor="csv-file">Select CSV File</Label>
+              <Input 
+                id="csv-file" 
+                type="file" 
+                accept=".csv"
+                onChange={(e) => setUploadedFile(e.target.files?.[0] || null)}
+                data-testid="input-csv-file"
+              />
+              {uploadedFile && (
+                <p className="text-sm text-muted-foreground">
+                  Selected: {uploadedFile.name}
+                </p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setReconciliationOpen(false);
+              setUploadedFile(null);
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => {
+                setReconciliationOpen(false);
+                setUploadedFile(null);
+                toast({
+                  title: 'Coming Soon',
+                  description: 'Bank reconciliation feature will be available soon',
+                });
+              }}
+              disabled={!uploadedFile}
+              data-testid="button-upload-csv"
+            >
+              Upload
             </Button>
           </DialogFooter>
         </DialogContent>
