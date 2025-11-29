@@ -4321,7 +4321,23 @@ Respond with just the category name, nothing else.`;
       }
       
       const integrations = await storage.getEcommerceIntegrations(companyId as string);
-      res.json(integrations);
+      res.json(integrations || []);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get e-commerce transactions (MUST be before :integrationId route)
+  app.get("/api/integrations/ecommerce/transactions", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      const transactions = await storage.getEcommerceTransactions(companyId as string);
+      res.json(transactions || []);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -4347,9 +4363,9 @@ Respond with just the category name, nothing else.`;
         companyId,
         platform,
         isActive: true,
-        apiKey,
-        shopDomain,
-        accessToken,
+        apiKey: apiKey || null,
+        shopDomain: shopDomain || null,
+        accessToken: accessToken || null,
         syncStatus: 'never',
       });
       
@@ -4363,6 +4379,13 @@ Respond with just the category name, nothing else.`;
   app.post("/api/integrations/ecommerce/:integrationId/sync", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { integrationId } = req.params;
+      const userId = (req as any).user?.id;
+      
+      // Verify integration exists and user has access
+      const integration = await storage.getEcommerceIntegration(integrationId);
+      if (!integration) {
+        return res.status(404).json({ message: 'Integration not found' });
+      }
       
       // Update sync status
       await storage.updateEcommerceIntegration(integrationId, {
@@ -4390,24 +4413,13 @@ Respond with just the category name, nothing else.`;
       const { integrationId } = req.params;
       const { isActive } = req.body;
       
-      await storage.updateEcommerceIntegration(integrationId, { isActive });
-      res.json({ message: 'Integration updated' });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Get e-commerce transactions
-  app.get("/api/integrations/ecommerce/transactions", authMiddleware, async (req: Request, res: Response) => {
-    try {
-      const { companyId } = req.query;
-      
-      if (!companyId) {
-        return res.status(400).json({ message: 'Company ID required' });
+      const integration = await storage.getEcommerceIntegration(integrationId);
+      if (!integration) {
+        return res.status(404).json({ message: 'Integration not found' });
       }
       
-      const transactions = await storage.getEcommerceTransactions(companyId as string);
-      res.json(transactions);
+      await storage.updateEcommerceIntegration(integrationId, { isActive });
+      res.json({ message: 'Integration updated' });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

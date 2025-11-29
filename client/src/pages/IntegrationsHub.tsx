@@ -185,6 +185,20 @@ export default function IntegrationsHub() {
 
   const handleSubmitConnect = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!selectedPlatform) return;
+    
+    // Validate required fields
+    if (selectedPlatform.id === 'stripe' && !configForm.apiKey) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please enter your Stripe Secret Key' });
+      return;
+    }
+    
+    if (selectedPlatform.id === 'shopify' && (!configForm.shopDomain || !configForm.accessToken)) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Please enter both Shop Domain and Access Token' });
+      return;
+    }
+    
     connectMutation.mutate(configForm);
   };
 
