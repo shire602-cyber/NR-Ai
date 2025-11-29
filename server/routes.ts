@@ -539,12 +539,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           date: invoiceDate,
           memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
           entryNumber,
-          status: 'posted', // Revenue recognition is immediately posted
+          status: 'draft', // Wait for manual posting
           source: 'invoice',
           sourceId: invoice.id,
           createdBy: userId,
-          postedBy: userId,
-          postedAt: new Date(),
+          postedBy: null,
+          postedAt: null,
         });
 
         // Debit: Accounts Receivable (total)
@@ -586,6 +586,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('[Invoices] Error creating invoice:', error);
       res.status(400).json({ message: error.message || 'Failed to create invoice' });
+    }
+  });
+
+  // Post invoice journal entries
+  app.post("/api/invoices/:id/post", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Get invoice
+      const invoice = await storage.getInvoice(id);
+      if (!invoice) {
+        return res.status(404).json({ message: 'Invoice not found' });
+      }
+
+      // Check access
+      const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Get all draft entries for this invoice
+      const entries = await storage.getJournalEntriesByCompanyId(invoice.companyId);
+      const invoiceEntries = entries.filter(e => e.sourceId === id && e.status === 'draft');
+
+      if (invoiceEntries.length === 0) {
+        return res.status(400).json({ message: 'No draft entries to post' });
+      }
+
+      // Post all draft entries
+      for (const entry of invoiceEntries) {
+        await storage.updateJournalEntry(entry.id, {
+          status: 'posted',
+          postedBy: userId,
+          postedAt: new Date(),
+        });
+      }
+
+      res.json({ message: 'Invoice entries posted successfully', count: invoiceEntries.length });
+    } catch (error: any) {
+      console.error('[Invoices] Error posting entries:', error);
+      res.status(500).json({ message: error.message || 'Failed to post entries' });
     }
   });
 
@@ -734,12 +776,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             date: now,
             memo: `Payment received for Invoice ${invoice.number}`,
             entryNumber,
-            status: 'posted',
+            status: 'draft',
             source: 'payment',
             sourceId: invoice.id,
             createdBy: userId,
-            postedBy: userId,
-            postedAt: now,
+            postedBy: null,
+            postedAt: null,
           });
 
           // Debit: Selected payment account (total)
