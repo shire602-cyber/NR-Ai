@@ -1050,6 +1050,52 @@ export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema
 export type UserSubscription = typeof userSubscriptions.$inferSelect;
 
 // ===========================
+// VAT Returns (for FTA compliance)
+// ===========================
+export const vatReturns = pgTable("vat_returns", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  status: text("status").notNull().default("draft"), // draft | pending_review | submitted | filed | amended
+  // Box 1: Sales & Output VAT
+  box1SalesStandard: real("box1_sales_standard").notNull().default(0), // Standard rated supplies in Abu Dhabi
+  box2SalesOtherEmirates: real("box2_sales_other_emirates").notNull().default(0), // Standard rated supplies in other emirates
+  box3SalesTaxExempt: real("box3_sales_tax_exempt").notNull().default(0), // Zero rated supplies
+  box4SalesExempt: real("box4_sales_exempt").notNull().default(0), // Exempt supplies
+  box5TotalOutputTax: real("box5_total_output_tax").notNull().default(0), // Total output tax
+  // Box 6-9: Purchases & Input VAT
+  box6ExpensesStandard: real("box6_expenses_standard").notNull().default(0), // Standard rated expenses
+  box7ExpensesTouristRefund: real("box7_expenses_tourist_refund").notNull().default(0), // Supplies subject to refund
+  box8TotalInputTax: real("box8_total_input_tax").notNull().default(0), // Total recoverable tax
+  box9NetTax: real("box9_net_tax").notNull().default(0), // Total net tax (payable or refundable)
+  // Adjustments
+  adjustmentAmount: real("adjustment_amount").default(0),
+  adjustmentReason: text("adjustment_reason"),
+  // Filing info
+  submittedBy: uuid("submitted_by").references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  ftaReferenceNumber: text("fta_reference_number"),
+  paymentStatus: text("payment_status").default("unpaid"), // unpaid | paid | partial
+  paymentAmount: real("payment_amount"),
+  paymentDate: timestamp("payment_date"),
+  notes: text("notes"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertVatReturnSchema = createInsertSchema(vatReturns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertVatReturn = z.infer<typeof insertVatReturnSchema>;
+export type VatReturn = typeof vatReturns.$inferSelect;
+
+// ===========================
 // System Audit Logs
 // ===========================
 export const auditLogs = pgTable("audit_logs", {

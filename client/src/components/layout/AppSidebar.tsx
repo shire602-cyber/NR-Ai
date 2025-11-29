@@ -22,7 +22,11 @@ import {
   MessageSquarePlus,
   Activity,
   Shield,
-  List
+  List,
+  Building2,
+  FileCheck,
+  Users,
+  PieChart
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -117,6 +121,26 @@ const navigationItems = [
     title: 'whatsappInbox',
     icon: MessageSquare,
     url: '/whatsapp',
+  },
+  {
+    title: 'bankReconciliation',
+    icon: Building2,
+    url: '/bank-reconciliation',
+  },
+  {
+    title: 'vatFiling',
+    icon: FileCheck,
+    url: '/vat-filing',
+  },
+  {
+    title: 'teamManagement',
+    icon: Users,
+    url: '/team',
+  },
+  {
+    title: 'advancedReports',
+    icon: PieChart,
+    url: '/advanced-reports',
   },
 ];
 

@@ -40,6 +40,10 @@ import Referrals from '@/pages/Referrals';
 import Feedback from '@/pages/Feedback';
 import Analytics from '@/pages/Analytics';
 import Admin from '@/pages/Admin';
+import BankReconciliation from '@/pages/BankReconciliation';
+import VATFiling from '@/pages/VATFiling';
+import TeamManagement from '@/pages/TeamManagement';
+import AdvancedReports from '@/pages/AdvancedReports';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -133,6 +137,10 @@ function Router() {
           <Route path="/feedback" component={Feedback} />
           <Route path="/analytics" component={Analytics} />
           <Route path="/admin" component={Admin} />
+          <Route path="/bank-reconciliation" component={BankReconciliation} />
+          <Route path="/vat-filing" component={VATFiling} />
+          <Route path="/team" component={TeamManagement} />
+          <Route path="/advanced-reports" component={AdvancedReports} />
           <Route component={NotFound} />
         </Switch>
       </ProtectedLayout>

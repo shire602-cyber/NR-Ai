@@ -5357,6 +5357,604 @@ Respond with just the category name, nothing else.`;
   });
 
   // =====================================
+  // BANK TRANSACTIONS / RECONCILIATION (Additional Routes)
+  // =====================================
+
+  // Auto-reconcile bank transactions
+  app.post("/api/companies/:companyId/bank-transactions/auto-reconcile", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const unreconciledTxns = await storage.getUnreconciledBankTransactions(companyId);
+      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      
+      let matchedCount = 0;
+      
+      for (const txn of unreconciledTxns) {
+        // Try to find matching journal entries
+        for (const je of journalEntries) {
+          if (je.description.toLowerCase().includes(txn.description.toLowerCase().substring(0, 20)) ||
+              Math.abs(new Date(je.date).getTime() - new Date(txn.transactionDate).getTime()) < 86400000 * 3) {
+            // Potential match - check amounts through journal lines
+            const lines = await storage.getJournalLinesByEntryId(je.id);
+            const totalAmount = lines.reduce((sum, l) => sum + l.debit, 0);
+            if (Math.abs(totalAmount - Math.abs(txn.amount)) < 0.01) {
+              await storage.reconcileBankTransaction(txn.id, je.id, 'journal');
+              matchedCount++;
+              break;
+            }
+          }
+        }
+      }
+      
+      res.json({ matchedCount, totalUnreconciled: unreconciledTxns.length });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get match suggestions for a bank transaction
+  app.get("/api/bank-transactions/:id/match-suggestions", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      // Get the bank transaction - we'll need storage method to get by ID
+      const transactions = await storage.getUnreconciledBankTransactions('');
+      const txn = transactions.find(t => t.id === id);
+      
+      if (!txn) {
+        return res.json([]);
+      }
+      
+      const suggestions: any[] = [];
+      const journalEntries = await storage.getJournalEntriesByCompanyId(txn.companyId);
+      const receipts = await storage.getReceiptsByCompanyId(txn.companyId);
+      const invoices = await storage.getInvoicesByCompanyId(txn.companyId);
+      
+      // Check journal entries
+      for (const je of journalEntries) {
+        const lines = await storage.getJournalLinesByEntryId(je.id);
+        const totalAmount = lines.reduce((sum, l) => sum + l.debit, 0);
+        if (Math.abs(totalAmount - Math.abs(txn.amount)) < 1) {
+          suggestions.push({
+            type: 'journal',
+            id: je.id,
+            description: je.description,
+            amount: totalAmount,
+            date: je.date,
+            confidence: 0.8
+          });
+        }
+      }
+      
+      // Check receipts
+      for (const receipt of receipts) {
+        if (receipt.amount && Math.abs(receipt.amount - Math.abs(txn.amount)) < 1) {
+          suggestions.push({
+            type: 'receipt',
+            id: receipt.id,
+            description: receipt.merchant || 'Receipt',
+            amount: receipt.amount,
+            date: receipt.date || receipt.createdAt,
+            confidence: 0.7
+          });
+        }
+      }
+      
+      // Check invoices
+      for (const inv of invoices) {
+        if (Math.abs(inv.total - Math.abs(txn.amount)) < 1) {
+          suggestions.push({
+            type: 'invoice',
+            id: inv.id,
+            description: `Invoice ${inv.number} - ${inv.customerName}`,
+            amount: inv.total,
+            date: inv.date,
+            confidence: 0.75
+          });
+        }
+      }
+      
+      suggestions.sort((a, b) => b.confidence - a.confidence);
+      res.json(suggestions.slice(0, 5));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // VAT RETURNS
+  // =====================================
+
+  // Get VAT returns by company
+  app.get("/api/companies/:companyId/vat-returns", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const vatReturns = await storage.getVatReturnsByCompanyId(companyId);
+      res.json(vatReturns);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Generate VAT return
+  app.post("/api/companies/:companyId/vat-returns/generate", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+      const { periodStart, periodEnd } = req.body;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      // Calculate VAT from invoices and receipts
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      
+      const startDate = new Date(periodStart);
+      const endDate = new Date(periodEnd);
+      
+      // Calculate output tax from invoices
+      const periodInvoices = invoices.filter(inv => {
+        const invDate = new Date(inv.date);
+        return invDate >= startDate && invDate <= endDate;
+      });
+      
+      const totalSales = periodInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
+      const outputTax = periodInvoices.reduce((sum, inv) => sum + inv.vatAmount, 0);
+      
+      // Calculate input tax from receipts
+      const periodReceipts = receipts.filter(rec => {
+        const recDate = new Date(rec.date || rec.createdAt);
+        return recDate >= startDate && recDate <= endDate;
+      });
+      
+      const totalExpenses = periodReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
+      const inputTax = periodReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
+      
+      // Due date is 28 days after period end
+      const dueDate = new Date(endDate);
+      dueDate.setDate(dueDate.getDate() + 28);
+      
+      const vatReturn = await storage.createVatReturn({
+        companyId,
+        periodStart: startDate,
+        periodEnd: endDate,
+        dueDate,
+        status: 'draft',
+        box1SalesStandard: totalSales,
+        box2SalesOtherEmirates: 0,
+        box3SalesTaxExempt: 0,
+        box4SalesExempt: 0,
+        box5TotalOutputTax: outputTax,
+        box6ExpensesStandard: totalExpenses,
+        box7ExpensesTouristRefund: 0,
+        box8TotalInputTax: inputTax,
+        box9NetTax: outputTax - inputTax,
+        createdBy: userId,
+      });
+      
+      res.status(201).json(vatReturn);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Submit VAT return
+  app.post("/api/vat-returns/:id/submit", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { id } = req.params;
+      const { adjustmentAmount, adjustmentReason, notes } = req.body;
+      
+      const vatReturn = await storage.updateVatReturn(id, {
+        status: 'submitted',
+        adjustmentAmount: adjustmentAmount || 0,
+        adjustmentReason: adjustmentReason || null,
+        notes: notes || null,
+        submittedBy: userId,
+        submittedAt: new Date(),
+      });
+      
+      res.json(vatReturn);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // TEAM MANAGEMENT
+  // =====================================
+
+  // Get team members for a company
+  app.get("/api/companies/:companyId/team", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const teamMembers = await storage.getCompanyUserWithUser(companyId);
+      res.json(teamMembers);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Invite team member
+  app.post("/api/companies/:companyId/team/invite", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+      const { email, role } = req.body;
+      
+      const userRole = await storage.getUserRole(companyId, userId);
+      if (!userRole || userRole.role !== 'owner') {
+        return res.status(403).json({ message: 'Only company owners can invite team members' });
+      }
+      
+      // Check if user exists
+      let invitedUser = await storage.getUserByEmail(email);
+      if (!invitedUser) {
+        // Create a placeholder user that will be activated when they sign up
+        invitedUser = await storage.createUser({
+          email,
+          name: email.split('@')[0],
+          passwordHash: '', // Empty password - needs to be set on registration
+        } as any);
+      }
+      
+      // Check if already a member
+      const existingAccess = await storage.hasCompanyAccess(invitedUser.id, companyId);
+      if (existingAccess) {
+        return res.status(400).json({ message: 'User is already a team member' });
+      }
+      
+      // Add to company
+      const companyUser = await storage.createCompanyUser({
+        companyId,
+        userId: invitedUser.id,
+        role: role || 'employee',
+      });
+      
+      res.status(201).json(companyUser);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update team member role
+  app.put("/api/companies/:companyId/team/:memberId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId, memberId } = req.params;
+      const { role } = req.body;
+      
+      const userRole = await storage.getUserRole(companyId, userId);
+      if (!userRole || userRole.role !== 'owner') {
+        return res.status(403).json({ message: 'Only company owners can update roles' });
+      }
+      
+      const companyUser = await storage.updateCompanyUser(memberId, { role });
+      res.json(companyUser);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Remove team member
+  app.delete("/api/companies/:companyId/team/:memberId", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId, memberId } = req.params;
+      
+      const userRole = await storage.getUserRole(companyId, userId);
+      if (!userRole || userRole.role !== 'owner') {
+        return res.status(403).json({ message: 'Only company owners can remove team members' });
+      }
+      
+      await storage.deleteCompanyUser(memberId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADVANCED REPORTS
+  // =====================================
+
+  // Cash flow report - supports both path segment and query param for period
+  app.get("/api/reports/:companyId/cash-flow/:period?", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId, period: pathPeriod } = req.params;
+      const period = pathPeriod || req.query.period || 'quarter'; // Support path segment, query param, or default
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      const accounts = await storage.getAccountsByCompanyId(companyId);
+      
+      // Group entries by period
+      const now = new Date();
+      let startDate: Date;
+      let periodLength: 'month' | 'quarter' | 'year' = 'quarter';
+      
+      switch (period) {
+        case 'month':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+          periodLength = 'month';
+          break;
+        case 'year':
+          startDate = new Date(now.getFullYear() - 2, 0, 1);
+          periodLength = 'year';
+          break;
+        default:
+          startDate = new Date(now.getFullYear() - 1, Math.floor(now.getMonth() / 3) * 3, 1);
+          periodLength = 'quarter';
+      }
+      
+      const cashFlowData: any[] = [];
+      let currentDate = new Date(startDate);
+      let runningBalance = 0;
+      
+      while (currentDate <= now) {
+        let periodEnd: Date;
+        let periodLabel: string;
+        
+        if (periodLength === 'month') {
+          periodEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+          periodLabel = currentDate.toLocaleString('default', { month: 'short', year: '2-digit' });
+        } else if (periodLength === 'quarter') {
+          periodEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 3, 0);
+          periodLabel = `Q${Math.floor(currentDate.getMonth() / 3) + 1} ${currentDate.getFullYear()}`;
+        } else {
+          periodEnd = new Date(currentDate.getFullYear(), 11, 31);
+          periodLabel = currentDate.getFullYear().toString();
+        }
+        
+        // Get entries for this period
+        const periodEntries = journalEntries.filter(je => {
+          const jeDate = new Date(je.date);
+          return jeDate >= currentDate && jeDate <= periodEnd;
+        });
+        
+        // Calculate cash flows (simplified)
+        let operatingInflow = 0;
+        let operatingOutflow = 0;
+        
+        for (const entry of periodEntries) {
+          const lines = await storage.getJournalLinesByEntryId(entry.id);
+          for (const line of lines) {
+            const account = accounts.find(a => a.id === line.accountId);
+            if (account) {
+              if (account.type === 'income') {
+                operatingInflow += line.credit;
+              } else if (account.type === 'expense') {
+                operatingOutflow += line.debit;
+              }
+            }
+          }
+        }
+        
+        const netCashFlow = operatingInflow - operatingOutflow;
+        runningBalance += netCashFlow;
+        
+        cashFlowData.push({
+          period: periodLabel,
+          operatingInflow,
+          operatingOutflow,
+          investingInflow: 0,
+          investingOutflow: 0,
+          financingInflow: 0,
+          financingOutflow: 0,
+          netCashFlow,
+          endingBalance: runningBalance,
+        });
+        
+        // Move to next period
+        if (periodLength === 'month') {
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        } else if (periodLength === 'quarter') {
+          currentDate.setMonth(currentDate.getMonth() + 3);
+        } else {
+          currentDate.setFullYear(currentDate.getFullYear() + 1);
+        }
+      }
+      
+      res.json(cashFlowData);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Aging report
+  app.get("/api/reports/:companyId/aging", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const now = new Date();
+      const agingData: any[] = [];
+      
+      // Group unpaid invoices by customer
+      const unpaidInvoices = invoices.filter(inv => inv.status !== 'paid');
+      const customerTotals: Record<string, any> = {};
+      
+      for (const inv of unpaidInvoices) {
+        const invDate = new Date(inv.date);
+        const daysOld = Math.floor((now.getTime() - invDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (!customerTotals[inv.customerName]) {
+          customerTotals[inv.customerName] = {
+            id: inv.id,
+            name: inv.customerName,
+            type: 'receivable',
+            current: 0,
+            days30: 0,
+            days60: 0,
+            days90: 0,
+            over90: 0,
+            total: 0,
+          };
+        }
+        
+        const customer = customerTotals[inv.customerName];
+        customer.total += inv.total;
+        
+        if (daysOld <= 0) {
+          customer.current += inv.total;
+        } else if (daysOld <= 30) {
+          customer.days30 += inv.total;
+        } else if (daysOld <= 60) {
+          customer.days60 += inv.total;
+        } else if (daysOld <= 90) {
+          customer.days90 += inv.total;
+        } else {
+          customer.over90 += inv.total;
+        }
+      }
+      
+      agingData.push(...Object.values(customerTotals));
+      res.json(agingData);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Period comparison report - supports both path segment and query param for period  
+  app.get("/api/reports/:companyId/comparison/:period?", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId, period: pathPeriod } = req.params;
+      const period = pathPeriod || req.query.period || 'quarter';
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const invoices = await storage.getInvoicesByCompanyId(companyId);
+      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      
+      const now = new Date();
+      let currentStart: Date, currentEnd: Date, previousStart: Date, previousEnd: Date;
+      
+      if (period === 'month') {
+        currentStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        currentEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        previousStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        previousEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+      } else if (period === 'year') {
+        currentStart = new Date(now.getFullYear(), 0, 1);
+        currentEnd = new Date(now.getFullYear(), 11, 31);
+        previousStart = new Date(now.getFullYear() - 1, 0, 1);
+        previousEnd = new Date(now.getFullYear() - 1, 11, 31);
+      } else { // quarter
+        const currentQ = Math.floor(now.getMonth() / 3);
+        currentStart = new Date(now.getFullYear(), currentQ * 3, 1);
+        currentEnd = new Date(now.getFullYear(), (currentQ + 1) * 3, 0);
+        previousStart = new Date(now.getFullYear(), (currentQ - 1) * 3, 1);
+        previousEnd = new Date(now.getFullYear(), currentQ * 3, 0);
+      }
+      
+      const currentInvoices = invoices.filter(inv => {
+        const d = new Date(inv.date);
+        return d >= currentStart && d <= currentEnd;
+      });
+      const previousInvoices = invoices.filter(inv => {
+        const d = new Date(inv.date);
+        return d >= previousStart && d <= previousEnd;
+      });
+      
+      const currentReceipts = receipts.filter(rec => {
+        const d = new Date(rec.date || rec.createdAt);
+        return d >= currentStart && d <= currentEnd;
+      });
+      const previousReceipts = receipts.filter(rec => {
+        const d = new Date(rec.date || rec.createdAt);
+        return d >= previousStart && d <= previousEnd;
+      });
+      
+      const currentRevenue = currentInvoices.reduce((sum, inv) => sum + inv.total, 0);
+      const previousRevenue = previousInvoices.reduce((sum, inv) => sum + inv.total, 0);
+      const currentExpenses = currentReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
+      const previousExpenses = previousReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
+      
+      const comparison = [
+        {
+          metric: 'Total Revenue',
+          current: currentRevenue,
+          previous: previousRevenue,
+          change: currentRevenue - previousRevenue,
+          changePercent: previousRevenue ? ((currentRevenue - previousRevenue) / previousRevenue) * 100 : 0,
+        },
+        {
+          metric: 'Total Expenses',
+          current: currentExpenses,
+          previous: previousExpenses,
+          change: currentExpenses - previousExpenses,
+          changePercent: previousExpenses ? ((currentExpenses - previousExpenses) / previousExpenses) * 100 : 0,
+        },
+        {
+          metric: 'Net Profit',
+          current: currentRevenue - currentExpenses,
+          previous: previousRevenue - previousExpenses,
+          change: (currentRevenue - currentExpenses) - (previousRevenue - previousExpenses),
+          changePercent: (previousRevenue - previousExpenses) ? (((currentRevenue - currentExpenses) - (previousRevenue - previousExpenses)) / Math.abs(previousRevenue - previousExpenses)) * 100 : 0,
+        },
+        {
+          metric: 'Invoice Count',
+          current: currentInvoices.length,
+          previous: previousInvoices.length,
+          change: currentInvoices.length - previousInvoices.length,
+          changePercent: previousInvoices.length ? ((currentInvoices.length - previousInvoices.length) / previousInvoices.length) * 100 : 0,
+        },
+        {
+          metric: 'Avg Invoice Value',
+          current: currentInvoices.length ? currentRevenue / currentInvoices.length : 0,
+          previous: previousInvoices.length ? previousRevenue / previousInvoices.length : 0,
+          change: (currentInvoices.length ? currentRevenue / currentInvoices.length : 0) - (previousInvoices.length ? previousRevenue / previousInvoices.length : 0),
+          changePercent: (previousInvoices.length && previousRevenue / previousInvoices.length) ? (((currentInvoices.length ? currentRevenue / currentInvoices.length : 0) - (previousRevenue / previousInvoices.length)) / (previousRevenue / previousInvoices.length)) * 100 : 0,
+        },
+      ];
+      
+      res.json(comparison);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
   // ADMIN ROUTES (Requires Admin Role)
   // =====================================
 

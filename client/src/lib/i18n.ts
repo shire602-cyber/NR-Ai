@@ -117,6 +117,10 @@ export const t = {
     integrationsHub: 'CRM & E-Commerce',
     integrations: 'Integrations',
     whatsappInbox: 'WhatsApp Inbox',
+    bankReconciliation: 'Bank Reconciliation',
+    vatFiling: 'VAT Filing',
+    teamManagement: 'Team Management',
+    advancedReports: 'Advanced Reports',
     
     // Engagement
     notifications: 'Notifications',
@@ -240,6 +244,10 @@ export const t = {
     integrationsHub: 'إدارة العملاء والتجارة الإلكترونية',
     integrations: 'التكاملات',
     whatsappInbox: 'صندوق الواتساب',
+    bankReconciliation: 'التسوية البنكية',
+    vatFiling: 'إقرارات الضريبة',
+    teamManagement: 'إدارة الفريق',
+    advancedReports: 'التقارير المتقدمة',
     
     // Engagement
     notifications: 'الإشعارات',

@@ -34,7 +34,8 @@ import type {
   AdminSetting, InsertAdminSetting,
   SubscriptionPlan, InsertSubscriptionPlan,
   UserSubscription, InsertUserSubscription,
-  AuditLog, InsertAuditLog
+  AuditLog, InsertAuditLog,
+  VatReturn, InsertVatReturn
 } from "@shared/schema";
 import {
   users,
@@ -72,7 +73,8 @@ import {
   adminSettings,
   subscriptionPlans,
   userSubscriptions,
-  auditLogs
+  auditLogs,
+  vatReturns
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -333,6 +335,18 @@ export interface IStorage {
   // Audit Logs
   getAuditLogs(limit?: number): Promise<AuditLog[]>;
   createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+
+  // VAT Returns
+  getVatReturnsByCompanyId(companyId: string): Promise<VatReturn[]>;
+  getVatReturn(id: string): Promise<VatReturn | undefined>;
+  createVatReturn(vatReturn: InsertVatReturn): Promise<VatReturn>;
+  updateVatReturn(id: string, data: Partial<InsertVatReturn>): Promise<VatReturn>;
+  deleteVatReturn(id: string): Promise<void>;
+
+  // Team Management
+  updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser>;
+  deleteCompanyUser(id: string): Promise<void>;
+  getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]>;
 
   // Admin Stats
   getAllUsers(): Promise<User[]>;
@@ -1645,6 +1659,68 @@ export class DatabaseStorage implements IStorage {
 
   async getAllCompanies(): Promise<Company[]> {
     return await db.select().from(companies).orderBy(desc(companies.createdAt));
+  }
+
+  // VAT Returns
+  async getVatReturnsByCompanyId(companyId: string): Promise<VatReturn[]> {
+    return await db
+      .select()
+      .from(vatReturns)
+      .where(eq(vatReturns.companyId, companyId))
+      .orderBy(desc(vatReturns.periodEnd));
+  }
+
+  async getVatReturn(id: string): Promise<VatReturn | undefined> {
+    const [vatReturn] = await db.select().from(vatReturns).where(eq(vatReturns.id, id));
+    return vatReturn || undefined;
+  }
+
+  async createVatReturn(insertVatReturn: InsertVatReturn): Promise<VatReturn> {
+    const [vatReturn] = await db
+      .insert(vatReturns)
+      .values(insertVatReturn)
+      .returning();
+    return vatReturn;
+  }
+
+  async updateVatReturn(id: string, data: Partial<InsertVatReturn>): Promise<VatReturn> {
+    const [vatReturn] = await db
+      .update(vatReturns)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(vatReturns.id, id))
+      .returning();
+    return vatReturn;
+  }
+
+  async deleteVatReturn(id: string): Promise<void> {
+    await db.delete(vatReturns).where(eq(vatReturns.id, id));
+  }
+
+  // Team Management
+  async updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser> {
+    const [companyUser] = await db
+      .update(companyUsers)
+      .set(data)
+      .where(eq(companyUsers.id, id))
+      .returning();
+    return companyUser;
+  }
+
+  async deleteCompanyUser(id: string): Promise<void> {
+    await db.delete(companyUsers).where(eq(companyUsers.id, id));
+  }
+
+  async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {
+    const results = await db
+      .select()
+      .from(companyUsers)
+      .innerJoin(users, eq(companyUsers.userId, users.id))
+      .where(eq(companyUsers.companyId, companyId));
+    
+    return results.map(r => ({
+      ...r.company_users,
+      user: r.users
+    }));
   }
 }
 
