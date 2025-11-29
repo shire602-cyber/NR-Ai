@@ -79,18 +79,23 @@ export default function AccountLedger() {
   const [currentPage, setCurrentPage] = useState(1);
   const entriesPerPage = 25;
 
-  const queryParams = useMemo(() => {
-    const params = new URLSearchParams();
-    if (dateRange.from) params.set('dateStart', format(dateRange.from, 'yyyy-MM-dd'));
-    if (dateRange.to) params.set('dateEnd', format(dateRange.to, 'yyyy-MM-dd'));
-    if (searchQuery) params.set('search', searchQuery);
-    params.set('limit', String(entriesPerPage));
-    params.set('offset', String((currentPage - 1) * entriesPerPage));
-    return params.toString();
-  }, [dateRange, searchQuery, currentPage]);
-
   const { data: ledger, isLoading, refetch } = useQuery<LedgerResponse>({
-    queryKey: ['/api/accounts', accountId, 'ledger', queryParams],
+    queryKey: ['/api/accounts', accountId, 'ledger', { dateRange, searchQuery, currentPage }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (dateRange.from) params.set('dateStart', format(dateRange.from, 'yyyy-MM-dd'));
+      if (dateRange.to) params.set('dateEnd', format(dateRange.to, 'yyyy-MM-dd'));
+      if (searchQuery) params.set('search', searchQuery);
+      params.set('limit', String(entriesPerPage));
+      params.set('offset', String((currentPage - 1) * entriesPerPage));
+      
+      const url = `/api/accounts/${accountId}/ledger?${params.toString()}`;
+      const response = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error('Failed to fetch ledger');
+      return response.json();
+    },
     enabled: !!accountId,
   });
 

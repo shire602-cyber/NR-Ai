@@ -1693,7 +1693,7 @@ export default function Receipts() {
                   <FormItem>
                     <FormLabel>VAT Amount (Optional)</FormLabel>
                     <FormControl>
-                      <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-manual-vat" />
+                      <Input type="number" step="0.01" placeholder="0.00" {...field} value={field.value ?? ''} data-testid="input-manual-vat" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1706,7 +1706,7 @@ export default function Receipts() {
                   <FormItem>
                     <FormLabel>Category (Optional)</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Office Supplies" {...field} data-testid="input-manual-category" />
+                      <Input placeholder="e.g., Office Supplies" {...field} value={field.value ?? ''} data-testid="input-manual-category" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
