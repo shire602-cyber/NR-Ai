@@ -15,7 +15,12 @@ import {
   MessageSquare,
   Brain,
   TrendingUp,
-  ShoppingCart
+  ShoppingCart,
+  Bell,
+  Clock,
+  Gift,
+  MessageSquarePlus,
+  Activity
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -108,6 +113,34 @@ const navigationItems = [
   },
 ];
 
+const engagementItems = [
+  {
+    title: 'notifications',
+    icon: Bell,
+    url: '/notifications',
+  },
+  {
+    title: 'reminders',
+    icon: Clock,
+    url: '/reminders',
+  },
+  {
+    title: 'referrals',
+    icon: Gift,
+    url: '/referrals',
+  },
+  {
+    title: 'feedback',
+    icon: MessageSquarePlus,
+    url: '/feedback',
+  },
+  {
+    title: 'analytics',
+    icon: Activity,
+    url: '/analytics',
+  },
+];
+
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
@@ -151,6 +184,29 @@ export function AppSidebar() {
                       <Link href={item.url} data-testid={`link-${item.title}`}>
                         <Icon className="w-4 h-4" />
                         <span>{t[item.title as keyof typeof t]}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        
+        <SidebarGroup>
+          <SidebarGroupLabel>Engagement</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {engagementItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location === item.url;
+                
+                return (
+                  <SidebarMenuItem key={item.url}>
+                    <SidebarMenuButton asChild isActive={isActive}>
+                      <Link href={item.url} data-testid={`link-${item.title}`}>
+                        <Icon className="w-4 h-4" />
+                        <span>{t[item.title as keyof typeof t] || item.title}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

@@ -4,7 +4,25 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import OpenAI from "openai";
 import { storage } from "./storage";
-import { insertUserSchema, insertCompanySchema, insertAccountSchema, insertInvoiceSchema, insertJournalEntrySchema, categorizationRequestSchema, insertWaitlistSchema } from "@shared/schema";
+import { 
+  insertUserSchema, 
+  insertCompanySchema, 
+  insertAccountSchema, 
+  insertInvoiceSchema, 
+  insertJournalEntrySchema, 
+  categorizationRequestSchema, 
+  insertWaitlistSchema,
+  insertNotificationSchema,
+  insertRegulatoryNewsSchema,
+  insertReminderSettingSchema,
+  insertReminderLogSchema,
+  insertUserOnboardingSchema,
+  insertReferralCodeSchema,
+  insertReferralSchema,
+  insertUserFeedbackSchema,
+  insertAnalyticsEventSchema
+} from "@shared/schema";
+import { z } from "zod";
 import * as googleSheets from "./integrations/googleSheets";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
@@ -4296,6 +4314,845 @@ Respond with just the category name, nothing else.`;
       
       const transactions = await storage.getEcommerceTransactions(companyId as string);
       res.json(transactions);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // NOTIFICATIONS & SMART REMINDERS
+  // =====================================
+
+  // Get user notifications
+  app.get("/api/notifications", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const notifications = await storage.getNotificationsByUserId(userId);
+      const unreadCount = await storage.getUnreadNotificationCount(userId);
+      res.json({ notifications, unreadCount });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Mark notification as read
+  app.patch("/api/notifications/:id/read", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const notification = await storage.markNotificationAsRead(id);
+      res.json(notification);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post("/api/notifications/read-all", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      await storage.markAllNotificationsAsRead(userId);
+      res.json({ message: 'All notifications marked as read' });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Dismiss notification
+  app.patch("/api/notifications/:id/dismiss", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const notification = await storage.dismissNotification(id);
+      res.json(notification);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create notification (for current user only - system notifications should be created server-side)
+  app.post("/api/notifications", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Validate input with comprehensive schema
+      const validationSchema = z.object({
+        companyId: z.string().uuid().optional(),
+        type: z.enum(['deadline', 'payment_due', 'overdue', 'regulatory', 'referral', 'system']),
+        title: z.string().min(1).max(200),
+        message: z.string().min(1).max(2000),
+        priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
+        actionUrl: z.string().url().optional().nullable(),
+        relatedEntityType: z.string().max(50).optional().nullable(),
+        relatedEntityId: z.string().uuid().optional().nullable(),
+      });
+      
+      const validated = validationSchema.parse(req.body);
+      
+      // Verify user has access to the company if specified
+      if (validated.companyId) {
+        const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: 'Access denied to this company' });
+        }
+      }
+      
+      // Users can only create notifications for themselves
+      const notification = await storage.createNotification({
+        ...validated,
+        userId,
+        isRead: false,
+        isDismissed: false,
+      });
+      res.json(notification);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: 'Invalid request data', 
+          errors: error.errors.map((e: any) => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // REGULATORY NEWS FEED
+  // =====================================
+
+  // Get regulatory news
+  app.get("/api/regulatory-news", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const news = await storage.getRegulatoryNews();
+      res.json(news);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create regulatory news (admin only - this endpoint is for internal use only)
+  // In production, this would be restricted to admin users via role check
+  app.post("/api/regulatory-news", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Check if user is an owner/admin of any company (simple authorization)
+      const companyUsers = await storage.getCompanyUsersByUserId(userId);
+      const isAdmin = companyUsers.some(cu => cu.role === 'owner' || cu.role === 'cfo');
+      
+      if (!isAdmin) {
+        return res.status(403).json({ message: 'Admin access required to create regulatory news' });
+      }
+      
+      // Validate input
+      const validationSchema = insertRegulatoryNewsSchema.pick({
+        category: true,
+        title: true,
+        summary: true,
+        content: true,
+        source: true,
+        sourceUrl: true,
+        effectiveDate: true,
+        importance: true,
+      });
+      
+      const validated = validationSchema.parse(req.body);
+      
+      const news = await storage.createRegulatoryNews({
+        ...validated,
+        publishedAt: new Date(),
+        isActive: true,
+      });
+      res.json(news);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid request data', errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // REMINDER SETTINGS (Late Payment Reminders)
+  // =====================================
+
+  // Get reminder settings
+  app.get("/api/companies/:companyId/reminder-settings", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user?.id;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const settings = await storage.getReminderSettingsByCompanyId(companyId);
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create reminder setting
+  app.post("/api/companies/:companyId/reminder-settings", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user?.id;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      // Validate input
+      const validationSchema = z.object({
+        reminderType: z.enum(['invoice_overdue', 'invoice_due_soon', 'vat_deadline', 'payment_followup']),
+        isEnabled: z.boolean().default(true),
+        daysBeforeDue: z.number().min(0).max(90).optional(),
+        daysAfterDue: z.number().min(0).max(365).optional(),
+        repeatIntervalDays: z.number().min(1).max(30).optional(),
+        maxReminders: z.number().min(1).max(10).optional(),
+        sendEmail: z.boolean().optional(),
+        sendSms: z.boolean().optional(),
+        sendInApp: z.boolean().optional(),
+        emailSubject: z.string().max(200).optional(),
+        emailTemplate: z.string().max(5000).optional(),
+      });
+      
+      const validated = validationSchema.parse(req.body);
+      
+      const setting = await storage.createReminderSetting({
+        ...validated,
+        companyId,
+      });
+      res.json(setting);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid request data', errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update reminder setting
+  app.patch("/api/reminder-settings/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const setting = await storage.updateReminderSetting(id, req.body);
+      res.json(setting);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get reminder logs
+  app.get("/api/companies/:companyId/reminder-logs", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user?.id;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const logs = await storage.getReminderLogsByCompanyId(companyId);
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Send manual reminder
+  app.post("/api/invoices/:invoiceId/send-reminder", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { invoiceId } = req.params;
+      const userId = (req as any).user?.id;
+      
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: 'Invoice not found' });
+      }
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // Create in-app notification for the reminder
+      await storage.createNotification({
+        userId,
+        companyId: invoice.companyId,
+        type: 'payment_due',
+        title: 'Payment Reminder Sent',
+        message: `Reminder sent for invoice ${invoice.number} to ${invoice.customerName}`,
+        priority: 'normal',
+        relatedEntityType: 'invoice',
+        relatedEntityId: invoiceId,
+        actionUrl: `/invoices/${invoiceId}`,
+      });
+
+      // Log the reminder
+      const log = await storage.createReminderLog({
+        companyId: invoice.companyId,
+        reminderType: 'invoice_overdue',
+        relatedEntityType: 'invoice',
+        relatedEntityId: invoiceId,
+        channel: 'in_app',
+        status: 'sent',
+        attemptNumber: 1,
+        sentAt: new Date(),
+      });
+      
+      res.json({ message: 'Reminder sent successfully', log });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // USER ONBOARDING
+  // =====================================
+
+  // Get user onboarding progress
+  app.get("/api/onboarding", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      let onboarding = await storage.getUserOnboarding(userId);
+      
+      // Create default onboarding if not exists
+      if (!onboarding) {
+        onboarding = await storage.createUserOnboarding({
+          userId,
+          hasCompletedWelcome: false,
+          hasCreatedCompany: false,
+          hasSetupChartOfAccounts: false,
+          hasCreatedFirstInvoice: false,
+          hasUploadedFirstReceipt: false,
+          hasViewedReports: false,
+          hasExploredAI: false,
+          hasConfiguredReminders: false,
+          currentStep: 0,
+          totalSteps: 8,
+          isOnboardingComplete: false,
+          showTips: true,
+          showTour: true,
+        });
+      }
+      
+      res.json(onboarding);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update onboarding progress
+  app.patch("/api/onboarding", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Calculate current step based on completed steps
+      const data = req.body;
+      let currentStep = 0;
+      if (data.hasCompletedWelcome) currentStep = 1;
+      if (data.hasCreatedCompany) currentStep = 2;
+      if (data.hasSetupChartOfAccounts) currentStep = 3;
+      if (data.hasCreatedFirstInvoice) currentStep = 4;
+      if (data.hasUploadedFirstReceipt) currentStep = 5;
+      if (data.hasViewedReports) currentStep = 6;
+      if (data.hasExploredAI) currentStep = 7;
+      if (data.hasConfiguredReminders) currentStep = 8;
+      
+      const isComplete = currentStep >= 8;
+      
+      const onboarding = await storage.updateUserOnboarding(userId, {
+        ...data,
+        currentStep,
+        isOnboardingComplete: isComplete,
+        completedAt: isComplete ? new Date() : undefined,
+      });
+      
+      res.json(onboarding);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Complete onboarding step
+  app.post("/api/onboarding/complete-step", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Validate input with comprehensive schema
+      const validationSchema = z.object({
+        step: z.enum(['welcome', 'company', 'accounts', 'invoice', 'receipt', 'reports', 'ai', 'reminders']),
+      });
+      
+      const validated = validationSchema.parse(req.body);
+      const { step } = validated;
+      
+      const stepMap: Record<string, string> = {
+        welcome: 'hasCompletedWelcome',
+        company: 'hasCreatedCompany',
+        accounts: 'hasSetupChartOfAccounts',
+        invoice: 'hasCreatedFirstInvoice',
+        receipt: 'hasUploadedFirstReceipt',
+        reports: 'hasViewedReports',
+        ai: 'hasExploredAI',
+        reminders: 'hasConfiguredReminders',
+      };
+      
+      const field = stepMap[step];
+      if (!field) {
+        return res.status(400).json({ message: 'Invalid step', errors: [{ field: 'step', message: 'Step must be one of: welcome, company, accounts, invoice, receipt, reports, ai, reminders' }] });
+      }
+      
+      const onboarding = await storage.updateUserOnboarding(userId, {
+        [field]: true,
+      });
+      
+      res.json(onboarding);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Dismiss tip
+  app.post("/api/onboarding/dismiss-tip", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Validate input
+      const validationSchema = z.object({
+        tipId: z.string().min(1, 'Tip ID is required'),
+      });
+      
+      const validated = validationSchema.parse(req.body);
+      const { tipId } = validated;
+      
+      const onboarding = await storage.getUserOnboarding(userId);
+      const dismissedTips = onboarding?.dismissedTips ? JSON.parse(onboarding.dismissedTips) : [];
+      
+      if (!dismissedTips.includes(tipId)) {
+        dismissedTips.push(tipId);
+      }
+      
+      const updated = await storage.updateUserOnboarding(userId, {
+        dismissedTips: JSON.stringify(dismissedTips),
+      });
+      
+      res.json(updated);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: 'Invalid request data', errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get help tips for page
+  app.get("/api/help-tips", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { page } = req.query;
+      const userId = (req as any).user?.id;
+      
+      const onboarding = await storage.getUserOnboarding(userId);
+      const dismissedTips = onboarding?.dismissedTips ? JSON.parse(onboarding.dismissedTips) : [];
+      
+      let tips;
+      if (page) {
+        tips = await storage.getHelpTipsByPage(page as string);
+      } else {
+        tips = await storage.getAllHelpTips();
+      }
+      
+      // Filter out dismissed tips
+      tips = tips.filter(tip => !dismissedTips.includes(tip.tipKey));
+      
+      res.json({ tips, showTips: onboarding?.showTips ?? true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // REFERRAL SYSTEM
+  // =====================================
+
+  // Get user's referral code
+  app.get("/api/referral/my-code", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      let referralCode = await storage.getReferralCodeByUserId(userId);
+      
+      // Auto-generate referral code if not exists
+      if (!referralCode) {
+        const code = `REF-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        referralCode = await storage.createReferralCode({
+          userId,
+          code,
+          isActive: true,
+          referrerRewardType: 'credit',
+          referrerRewardValue: 50, // AED 50 credit
+          refereeRewardType: 'discount',
+          refereeRewardValue: 20, // 20% discount
+          totalReferrals: 0,
+          successfulReferrals: 0,
+          totalRewardsEarned: 0,
+        });
+      }
+      
+      res.json(referralCode);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get referral stats
+  app.get("/api/referral/stats", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const referralCode = await storage.getReferralCodeByUserId(userId);
+      const referrals = await storage.getReferralsByReferrerId(userId);
+      
+      const stats = {
+        code: referralCode?.code || null,
+        totalReferrals: referralCode?.totalReferrals || 0,
+        successfulReferrals: referralCode?.successfulReferrals || 0,
+        pendingReferrals: referrals.filter(r => r.status === 'pending' || r.status === 'signed_up').length,
+        totalRewardsEarned: referralCode?.totalRewardsEarned || 0,
+        recentReferrals: referrals.slice(0, 10),
+      };
+      
+      res.json(stats);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Validate referral code (for signup)
+  app.get("/api/referral/validate/:code", async (req: Request, res: Response) => {
+    try {
+      const { code } = req.params;
+      const referralCode = await storage.getReferralCodeByCode(code);
+      
+      if (!referralCode || !referralCode.isActive) {
+        return res.status(404).json({ valid: false, message: 'Invalid or expired referral code' });
+      }
+      
+      if (referralCode.expiresAt && new Date(referralCode.expiresAt) < new Date()) {
+        return res.status(400).json({ valid: false, message: 'Referral code has expired' });
+      }
+      
+      res.json({
+        valid: true,
+        discount: referralCode.refereeRewardValue,
+        discountType: referralCode.refereeRewardType,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Track referral signup
+  app.post("/api/referral/track-signup", async (req: Request, res: Response) => {
+    try {
+      // Validate input
+      const validationSchema = z.object({
+        code: z.string().min(1, 'Referral code is required'),
+        refereeEmail: z.string().email('Invalid email address'),
+        source: z.string().optional(),
+      });
+      
+      const validated = validationSchema.parse(req.body);
+      const { code, refereeEmail, source } = validated;
+      
+      const referralCode = await storage.getReferralCodeByCode(code);
+      if (!referralCode || !referralCode.isActive) {
+        return res.status(400).json({ message: 'Invalid referral code' });
+      }
+      
+      // Create referral record
+      const referral = await storage.createReferral({
+        referralCodeId: referralCode.id,
+        referrerId: referralCode.userId,
+        refereeEmail,
+        status: 'pending',
+        signupSource: source || 'link',
+        referrerRewardStatus: 'pending',
+        refereeRewardStatus: 'pending',
+        referrerRewardAmount: referralCode.referrerRewardValue,
+        refereeRewardAmount: referralCode.refereeRewardValue,
+      });
+      
+      // Update referral code stats
+      await storage.updateReferralCode(referralCode.id, {
+        totalReferrals: (referralCode.totalReferrals || 0) + 1,
+      });
+      
+      // Notify referrer
+      await storage.createNotification({
+        userId: referralCode.userId,
+        type: 'referral',
+        title: 'New Referral Signup!',
+        message: `Someone signed up using your referral code. They'll need to complete a qualifying action for you to earn your reward.`,
+        priority: 'normal',
+        actionUrl: '/referrals',
+      });
+      
+      res.json(referral);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // USER FEEDBACK
+  // =====================================
+
+  // Submit feedback
+  app.post("/api/feedback", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Validate input with comprehensive schema
+      const validationSchema = z.object({
+        feedbackType: z.enum(['bug', 'feature_request', 'improvement', 'praise', 'other']),
+        category: z.string().max(50).optional().nullable(),
+        pageContext: z.string().max(500).optional().nullable(),
+        rating: z.number().int().min(1).max(5).optional().nullable(),
+        title: z.string().max(200).optional().nullable(),
+        message: z.string().min(10, 'Message must be at least 10 characters').max(5000),
+        allowContact: z.boolean().default(true),
+        contactEmail: z.string().email('Invalid email format').optional().nullable(),
+      });
+      
+      const validated = validationSchema.parse(req.body);
+      
+      const feedback = await storage.createUserFeedback({
+        userId,
+        feedbackType: validated.feedbackType,
+        category: validated.category,
+        pageContext: validated.pageContext,
+        rating: validated.rating,
+        title: validated.title,
+        message: validated.message,
+        status: 'new',
+        allowContact: validated.allowContact,
+        contactEmail: validated.contactEmail,
+      });
+      
+      res.json(feedback);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: 'Invalid request data', 
+          errors: error.errors.map((e: any) => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get user's feedback
+  app.get("/api/feedback", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const feedback = await storage.getUserFeedback(userId);
+      res.json(feedback);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ANALYTICS
+  // =====================================
+
+  // Track analytics event
+  app.post("/api/analytics/event", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      
+      // Validate input with comprehensive schema
+      const validationSchema = z.object({
+        eventType: z.enum(['page_view', 'feature_use', 'error', 'conversion', 'custom']),
+        eventName: z.string().min(1).max(100),
+        pageUrl: z.string().max(2000).optional().nullable(),
+        pageTitle: z.string().max(500).optional().nullable(),
+        properties: z.record(z.unknown()).optional().nullable(),
+        value: z.number().optional().nullable(),
+        deviceType: z.string().max(50).optional().nullable(),
+        browser: z.string().max(100).optional().nullable(),
+        language: z.string().max(10).optional().nullable(),
+      });
+      
+      const validated = validationSchema.parse(req.body);
+      
+      const event = await storage.createAnalyticsEvent({
+        userId,
+        eventType: validated.eventType,
+        eventName: validated.eventName,
+        pageUrl: validated.pageUrl,
+        pageTitle: validated.pageTitle,
+        properties: validated.properties ? JSON.stringify(validated.properties) : null,
+        value: validated.value,
+        deviceType: validated.deviceType,
+        browser: validated.browser,
+        language: validated.language,
+      });
+      
+      res.json(event);
+    } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: 'Invalid request data', 
+          errors: error.errors.map((e: any) => ({ field: e.path.join('.'), message: e.message }))
+        });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get analytics dashboard data
+  app.get("/api/analytics/dashboard", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { startDate, endDate } = req.query;
+      
+      // Get all events (in production, filter by date range)
+      const events = await storage.getAnalyticsEvents();
+      const metrics = await storage.getFeatureUsageMetrics();
+      
+      // Aggregate data for dashboard
+      const pageViews = events.filter(e => e.eventType === 'page_view').length;
+      const featureUses = events.filter(e => e.eventType === 'feature_use').length;
+      const errors = events.filter(e => e.eventType === 'error').length;
+      
+      // Group by event name
+      const eventsByName: Record<string, number> = {};
+      events.forEach(e => {
+        eventsByName[e.eventName] = (eventsByName[e.eventName] || 0) + 1;
+      });
+      
+      // Group by page
+      const pagesByUrl: Record<string, number> = {};
+      events.filter(e => e.eventType === 'page_view').forEach(e => {
+        if (e.pageUrl) {
+          pagesByUrl[e.pageUrl] = (pagesByUrl[e.pageUrl] || 0) + 1;
+        }
+      });
+      
+      res.json({
+        summary: {
+          totalPageViews: pageViews,
+          totalFeatureUses: featureUses,
+          totalErrors: errors,
+          totalEvents: events.length,
+        },
+        eventsByName,
+        pagesByUrl,
+        recentEvents: events.slice(0, 50),
+        featureMetrics: metrics,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get feature usage report
+  app.get("/api/analytics/feature-usage", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { feature } = req.query;
+      const metrics = await storage.getFeatureUsageMetrics(feature as string | undefined);
+      res.json(metrics);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // UPCOMING DEADLINES (Smart Reminders)
+  // =====================================
+
+  // Get upcoming deadlines
+  app.get("/api/deadlines", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.query;
+      
+      if (!companyId) {
+        return res.status(400).json({ message: 'Company ID required' });
+      }
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const company = await storage.getCompany(companyId as string);
+      const invoices = await storage.getInvoicesByCompanyId(companyId as string);
+      
+      const deadlines: any[] = [];
+      const today = new Date();
+      
+      // VAT Return deadlines (based on filing frequency)
+      if (company?.trnVatNumber) {
+        const filingFrequency = company.vatFilingFrequency || 'Quarterly';
+        let nextDeadline = new Date();
+        
+        if (filingFrequency === 'Monthly') {
+          nextDeadline.setMonth(nextDeadline.getMonth() + 1);
+          nextDeadline.setDate(28); // Due by 28th of next month
+        } else if (filingFrequency === 'Quarterly') {
+          const currentQuarter = Math.floor(today.getMonth() / 3);
+          nextDeadline.setMonth((currentQuarter + 1) * 3 + 1); // Month after quarter end
+          nextDeadline.setDate(28);
+        }
+        
+        deadlines.push({
+          id: 'vat-return',
+          type: 'vat_return',
+          title: 'VAT Return Due',
+          description: `Submit VAT return for ${filingFrequency.toLowerCase()} period`,
+          dueDate: nextDeadline.toISOString(),
+          daysRemaining: Math.ceil((nextDeadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)),
+          priority: Math.ceil((nextDeadline.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) <= 7 ? 'high' : 'normal',
+          actionUrl: '/reports',
+        });
+      }
+      
+      // Unpaid invoice deadlines
+      const unpaidInvoices = invoices.filter(inv => inv.status === 'sent');
+      unpaidInvoices.forEach(inv => {
+        const invoiceDate = new Date(inv.date);
+        const dueDate = new Date(invoiceDate);
+        dueDate.setDate(dueDate.getDate() + 30); // Assume 30-day payment terms
+        
+        const daysRemaining = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const isOverdue = daysRemaining < 0;
+        
+        deadlines.push({
+          id: `invoice-${inv.id}`,
+          type: isOverdue ? 'invoice_overdue' : 'invoice_due',
+          title: isOverdue ? `Invoice ${inv.number} Overdue` : `Invoice ${inv.number} Due Soon`,
+          description: `${inv.customerName} - AED ${inv.total.toFixed(2)}`,
+          dueDate: dueDate.toISOString(),
+          daysRemaining,
+          priority: isOverdue ? 'urgent' : (daysRemaining <= 7 ? 'high' : 'normal'),
+          actionUrl: `/invoices/${inv.id}`,
+          relatedEntityType: 'invoice',
+          relatedEntityId: inv.id,
+        });
+      });
+      
+      // Sort by priority and due date
+      deadlines.sort((a, b) => {
+        const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 };
+        const priorityDiff = priorityOrder[a.priority as keyof typeof priorityOrder] - priorityOrder[b.priority as keyof typeof priorityOrder];
+        if (priorityDiff !== 0) return priorityDiff;
+        return a.daysRemaining - b.daysRemaining;
+      });
+      
+      res.json(deadlines);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

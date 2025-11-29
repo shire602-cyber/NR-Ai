@@ -116,6 +116,13 @@ export const t = {
     integrationsHub: 'CRM & E-Commerce',
     integrations: 'Integrations',
     whatsappInbox: 'WhatsApp Inbox',
+    
+    // Engagement
+    notifications: 'Notifications',
+    reminders: 'Payment Reminders',
+    referrals: 'Referral Program',
+    feedback: 'Feedback',
+    analytics: 'Usage Analytics',
     transactionDescription: 'Transaction Description',
     suggestedAccount: 'Suggested Account',
     confidence: 'Confidence',
@@ -231,6 +238,13 @@ export const t = {
     integrationsHub: 'إدارة العملاء والتجارة الإلكترونية',
     integrations: 'التكاملات',
     whatsappInbox: 'صندوق الواتساب',
+    
+    // Engagement
+    notifications: 'الإشعارات',
+    reminders: 'تذكيرات الدفع',
+    referrals: 'برنامج الإحالة',
+    feedback: 'التقييم',
+    analytics: 'تحليلات الاستخدام',
     transactionDescription: 'وصف المعاملة',
     suggestedAccount: 'الحساب المقترح',
     confidence: 'مستوى الثقة',

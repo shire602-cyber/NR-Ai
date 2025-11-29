@@ -32,6 +32,14 @@ import AIFeatures from '@/pages/AIFeatures';
 import SmartAssistant from '@/pages/SmartAssistant';
 import AdvancedAnalytics from '@/pages/AdvancedAnalytics';
 import IntegrationsHub from '@/pages/IntegrationsHub';
+import Notifications from '@/pages/Notifications';
+import Reminders from '@/pages/Reminders';
+import Referrals from '@/pages/Referrals';
+import Feedback from '@/pages/Feedback';
+import Analytics from '@/pages/Analytics';
+
+// Components
+import { OnboardingWizard } from '@/components/Onboarding';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -58,6 +66,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      <OnboardingWizard />
     </SidebarProvider>
   );
 }
@@ -113,6 +122,11 @@ function Router() {
           <Route path="/integrations" component={Integrations} />
           <Route path="/integrations-hub" component={IntegrationsHub} />
           <Route path="/whatsapp" component={WhatsAppDashboard} />
+          <Route path="/notifications" component={Notifications} />
+          <Route path="/reminders" component={Reminders} />
+          <Route path="/referrals" component={Referrals} />
+          <Route path="/feedback" component={Feedback} />
+          <Route path="/analytics" component={Analytics} />
           <Route component={NotFound} />
         </Switch>
       </ProtectedLayout>
