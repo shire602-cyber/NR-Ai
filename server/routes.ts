@@ -402,6 +402,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get accounts with balances for Chart of Accounts
+  app.get("/api/companies/:companyId/accounts-with-balances", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const { dateStart, dateEnd } = req.query;
+      let dateRange: { start: Date; end: Date } | undefined;
+      
+      if (dateStart && dateEnd) {
+        dateRange = {
+          start: new Date(dateStart as string),
+          end: new Date(dateEnd as string)
+        };
+      }
+      
+      const accountsWithBalances = await storage.getAccountsWithBalances(companyId, dateRange);
+      res.json(accountsWithBalances);
+    } catch (error: any) {
+      console.error('[Accounts] Error getting accounts with balances:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get account ledger
+  app.get("/api/accounts/:id/ledger", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+      
+      const account = await storage.getAccount(id);
+      if (!account) {
+        return res.status(404).json({ message: 'Account not found' });
+      }
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, account.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      const { dateStart, dateEnd, search, limit, offset } = req.query;
+      
+      const options: {
+        dateStart?: Date;
+        dateEnd?: Date;
+        search?: string;
+        limit?: number;
+        offset?: number;
+      } = {};
+      
+      if (dateStart) options.dateStart = new Date(dateStart as string);
+      if (dateEnd) options.dateEnd = new Date(dateEnd as string);
+      if (search) options.search = search as string;
+      if (limit) options.limit = parseInt(limit as string);
+      if (offset) options.offset = parseInt(offset as string);
+      
+      const ledger = await storage.getAccountLedger(id, options);
+      res.json(ledger);
+    } catch (error: any) {
+      console.error('[Accounts] Error getting account ledger:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // =====================================
   // Invoice Routes
   // =====================================

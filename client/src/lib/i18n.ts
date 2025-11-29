@@ -31,7 +31,8 @@ export const t = {
     // Navigation
     dashboard: 'Dashboard',
     companies: 'Companies',
-    accounts: 'Chart of Accounts',
+    chartOfAccounts: 'Chart of Accounts',
+    accounts: 'Manage Accounts',
     invoices: 'Invoices',
     receipts: 'Expenses',
     journal: 'Journal Entries',
@@ -153,7 +154,8 @@ export const t = {
     // Navigation
     dashboard: 'لوحة التحكم',
     companies: 'الشركات',
-    accounts: 'دليل الحسابات',
+    chartOfAccounts: 'دليل الحسابات',
+    accounts: 'إدارة الحسابات',
     invoices: 'الفواتير',
     receipts: 'المصروفات',
     journal: 'القيود',

@@ -21,7 +21,8 @@ import {
   Gift,
   MessageSquarePlus,
   Activity,
-  Shield
+  Shield,
+  List
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -51,6 +52,11 @@ const navigationItems = [
     title: 'dashboard',
     icon: LayoutDashboard,
     url: '/dashboard',
+  },
+  {
+    title: 'chartOfAccounts',
+    icon: List,
+    url: '/chart-of-accounts',
   },
   {
     title: 'accounts',

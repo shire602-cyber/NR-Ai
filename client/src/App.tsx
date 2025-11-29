@@ -18,6 +18,8 @@ import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import Dashboard from '@/pages/Dashboard';
 import Accounts from '@/pages/Accounts';
+import ChartOfAccounts from '@/pages/ChartOfAccounts';
+import AccountLedger from '@/pages/AccountLedger';
 import Invoices from '@/pages/Invoices';
 import Journal from '@/pages/Journal';
 import Reports from '@/pages/Reports';
@@ -112,6 +114,8 @@ function Router() {
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/company-profile" component={CompanyProfile} />
           <Route path="/accounts" component={Accounts} />
+          <Route path="/chart-of-accounts" component={ChartOfAccounts} />
+          <Route path="/accounts/:id/ledger" component={AccountLedger} />
           <Route path="/invoices" component={Invoices} />
           <Route path="/journal" component={Journal} />
           <Route path="/reports" component={Reports} />

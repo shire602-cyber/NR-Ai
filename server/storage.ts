@@ -104,6 +104,56 @@ export interface IStorage {
   deleteAccount(id: string): Promise<void>;
   accountHasTransactions(accountId: string): Promise<boolean>;
   
+  // Account Ledger & Balance
+  getAccountsWithBalances(companyId: string, dateRange?: { start: Date; end: Date }): Promise<{
+    account: Account;
+    balance: number;
+    debitTotal: number;
+    creditTotal: number;
+  }[]>;
+  getAccountLedger(accountId: string, options?: { 
+    dateStart?: Date; 
+    dateEnd?: Date; 
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    entries: {
+      id: string;
+      date: Date;
+      entryNumber: string;
+      description: string;
+      debit: number;
+      credit: number;
+      runningBalance: number;
+      journalEntryId: string;
+      journalLineId: string;
+      memo: string | null;
+      source: string;
+      status: string;
+    }[];
+    allEntries: {
+      id: string;
+      date: Date;
+      entryNumber: string;
+      description: string;
+      debit: number;
+      credit: number;
+      runningBalance: number;
+      journalEntryId: string;
+      journalLineId: string;
+      memo: string | null;
+      source: string;
+      status: string;
+    }[];
+    account: Account;
+    openingBalance: number;
+    totalDebit: number;
+    totalCredit: number;
+    closingBalance: number;
+    totalCount: number;
+  }>;
+  
   // Journal Entries
   getJournalEntry(id: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
@@ -422,6 +472,167 @@ export class DatabaseStorage implements IStorage {
       .where(eq(journalLines.accountId, accountId))
       .limit(1);
     return lines.length > 0;
+  }
+
+  async getAccountsWithBalances(companyId: string, dateRange?: { start: Date; end: Date }) {
+    const accountsList = await db.select().from(accounts).where(eq(accounts.companyId, companyId));
+    
+    const results = await Promise.all(accountsList.map(async (account) => {
+      let lines = await db
+        .select({
+          debit: journalLines.debit,
+          credit: journalLines.credit,
+          date: journalEntries.date,
+          status: journalEntries.status
+        })
+        .from(journalLines)
+        .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+        .where(eq(journalLines.accountId, account.id));
+      
+      if (dateRange) {
+        lines = lines.filter(line => {
+          const lineDate = new Date(line.date);
+          return lineDate >= dateRange.start && lineDate <= dateRange.end;
+        });
+      }
+      
+      const postedLines = lines.filter(l => l.status === 'posted');
+      
+      const debitTotal = postedLines.reduce((sum, l) => sum + (l.debit || 0), 0);
+      const creditTotal = postedLines.reduce((sum, l) => sum + (l.credit || 0), 0);
+      
+      let balance = 0;
+      if (['asset', 'expense'].includes(account.type)) {
+        balance = debitTotal - creditTotal;
+      } else {
+        balance = creditTotal - debitTotal;
+      }
+      
+      return {
+        account,
+        balance,
+        debitTotal,
+        creditTotal
+      };
+    }));
+    
+    return results;
+  }
+
+  async getAccountLedger(accountId: string, options?: { 
+    dateStart?: Date; 
+    dateEnd?: Date; 
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const account = await this.getAccount(accountId);
+    if (!account) {
+      throw new Error('Account not found');
+    }
+    
+    const allLines = await db
+      .select({
+        lineId: journalLines.id,
+        debit: journalLines.debit,
+        credit: journalLines.credit,
+        lineDescription: journalLines.description,
+        entryId: journalEntries.id,
+        entryNumber: journalEntries.entryNumber,
+        date: journalEntries.date,
+        memo: journalEntries.memo,
+        source: journalEntries.source,
+        status: journalEntries.status
+      })
+      .from(journalLines)
+      .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+      .where(eq(journalLines.accountId, accountId));
+    
+    const postedLines = allLines.filter(l => l.status === 'posted');
+    postedLines.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    let openingBalance = 0;
+    if (options?.dateStart) {
+      const priorLines = postedLines.filter(l => new Date(l.date) < options.dateStart!);
+      const priorDebit = priorLines.reduce((sum, l) => sum + (l.debit || 0), 0);
+      const priorCredit = priorLines.reduce((sum, l) => sum + (l.credit || 0), 0);
+      
+      if (['asset', 'expense'].includes(account.type)) {
+        openingBalance = priorDebit - priorCredit;
+      } else {
+        openingBalance = priorCredit - priorDebit;
+      }
+    }
+    
+    let filteredLines = postedLines;
+    if (options?.dateStart) {
+      filteredLines = filteredLines.filter(l => new Date(l.date) >= options.dateStart!);
+    }
+    if (options?.dateEnd) {
+      filteredLines = filteredLines.filter(l => new Date(l.date) <= options.dateEnd!);
+    }
+    
+    if (options?.search) {
+      const searchLower = options.search.toLowerCase();
+      filteredLines = filteredLines.filter(l => 
+        l.entryNumber?.toLowerCase().includes(searchLower) ||
+        l.memo?.toLowerCase().includes(searchLower) ||
+        l.lineDescription?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    let runningBalance = openingBalance;
+    let totalDebit = 0;
+    let totalCredit = 0;
+    
+    const allEntries = filteredLines.map(line => {
+      const debit = line.debit || 0;
+      const credit = line.credit || 0;
+      
+      totalDebit += debit;
+      totalCredit += credit;
+      
+      if (['asset', 'expense'].includes(account.type)) {
+        runningBalance += debit - credit;
+      } else {
+        runningBalance += credit - debit;
+      }
+      
+      return {
+        id: line.lineId,
+        date: line.date,
+        entryNumber: line.entryNumber,
+        description: line.lineDescription || line.memo || '',
+        debit,
+        credit,
+        runningBalance,
+        journalEntryId: line.entryId,
+        journalLineId: line.lineId,
+        memo: line.memo,
+        source: line.source,
+        status: line.status
+      };
+    });
+    
+    const totalCount = allEntries.length;
+    const paginatedEntries = options?.limit 
+      ? allEntries.slice(options.offset || 0, (options.offset || 0) + options.limit)
+      : allEntries;
+    
+    const closingBalance = openingBalance + ((['asset', 'expense'].includes(account.type)) 
+      ? totalDebit - totalCredit 
+      : totalCredit - totalDebit);
+    
+    return {
+      entries: paginatedEntries,
+      allEntries,
+      account,
+      openingBalance,
+      totalDebit,
+      totalCredit,
+      closingBalance,
+      totalCount
+    };
   }
 
   // Journal Entries
