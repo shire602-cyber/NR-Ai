@@ -2067,9 +2067,27 @@ ${JSON.stringify(ledgerData, null, 2)}`
   app.post("/api/bank-transactions/:id/reconcile", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const { matchedId, matchType } = req.body;
+      const userId = (req as any).user?.id;
+      // Support both matchId (frontend) and matchedId (legacy) parameter names
+      const matchId = req.body.matchId || req.body.matchedId;
+      const { matchType } = req.body;
 
-      const transaction = await storage.reconcileBankTransaction(id, matchedId, matchType);
+      if (!matchId || !matchType) {
+        return res.status(400).json({ message: 'matchId and matchType are required' });
+      }
+      
+      // Verify user has access to the company that owns this transaction
+      const txn = await storage.getBankTransactionById(id);
+      if (!txn) {
+        return res.status(404).json({ message: 'Transaction not found' });
+      }
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, txn.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const transaction = await storage.reconcileBankTransaction(id, matchId, matchType);
       res.json(transaction);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -5405,12 +5423,19 @@ Respond with just the category name, nothing else.`;
   app.get("/api/bank-transactions/:id/match-suggestions", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      // Get the bank transaction - we'll need storage method to get by ID
-      const transactions = await storage.getUnreconciledBankTransactions('');
-      const txn = transactions.find(t => t.id === id);
+      const userId = (req as any).user?.id;
+      
+      // Get the bank transaction by ID
+      const txn = await storage.getBankTransactionById(id);
       
       if (!txn) {
         return res.json([]);
+      }
+      
+      // Verify user has access to the company that owns this transaction
+      const hasAccess = await storage.hasCompanyAccess(userId, txn.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
       
       const suggestions: any[] = [];
@@ -6090,6 +6115,149 @@ Respond with just the category name, nothing else.`;
       res.status(500).json({ message: error.message });
     }
   });
+
+  // =====================================
+  // AUTOMATIC REGULATORY NEWS FETCHING
+  // =====================================
+  
+  // Function to fetch UAE regulatory/tax news using OpenAI with retry logic
+  async function fetchAndStoreRegulatoryNews(retryCount = 0): Promise<void> {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 5000; // 5 seconds
+    
+    // Check if OpenAI API key is available
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn('[Regulatory News] OpenAI API key not configured, skipping news fetch');
+      return;
+    }
+    
+    try {
+      console.log('[Regulatory News] Starting automatic news fetch...');
+      
+      const currentDate = new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+      
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a UAE tax and regulatory news aggregator for accountants and bookkeepers. 
+Generate 3-5 realistic and timely news items about UAE tax, accounting, and financial regulations.
+Focus on:
+- Federal Tax Authority (FTA) announcements
+- VAT updates and clarifications
+- Corporate tax changes
+- Excise tax news
+- Tax compliance deadlines
+- New regulations affecting businesses
+- Ministry of Finance updates
+- Free zone regulations
+
+Return a JSON array of news items with this structure:
+{
+  "news": [
+    {
+      "title": "News headline",
+      "titleAr": "Arabic translation of headline",
+      "summary": "Brief 2-3 sentence summary",
+      "summaryAr": "Arabic translation of summary", 
+      "content": "Detailed content (3-4 paragraphs)",
+      "contentAr": "Arabic translation of content",
+      "category": "vat" | "corporate_tax" | "customs" | "labor" | "general",
+      "source": "Federal Tax Authority" | "Ministry of Finance" | "UAE Government" | "FTA Clarification",
+      "sourceUrl": "https://tax.gov.ae/en/legislation.aspx",
+      "importance": "low" | "normal" | "high" | "critical",
+      "effectiveDate": "YYYY-MM-DD or null"
+    }
+  ]
+}
+
+Make the news items realistic, current, and relevant to UAE businesses. Include recent dates.`
+          },
+          {
+            role: "user",
+            content: `Generate the latest UAE tax and financial regulatory news as of ${currentDate}. Include any recent FTA updates, VAT clarifications, corporate tax announcements, or compliance deadlines.`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+      });
+      
+      const response = JSON.parse(completion.choices[0].message.content || '{"news":[]}');
+      const newsItems = response.news || [];
+      
+      let storedCount = 0;
+      for (const item of newsItems) {
+        try {
+          await storage.createRegulatoryNews({
+            title: item.title,
+            titleAr: item.titleAr,
+            summary: item.summary,
+            summaryAr: item.summaryAr,
+            content: item.content,
+            contentAr: item.contentAr,
+            category: item.category || 'general',
+            source: item.source,
+            sourceUrl: item.sourceUrl,
+            importance: item.importance || 'normal',
+            effectiveDate: item.effectiveDate ? new Date(item.effectiveDate) : null,
+            publishedAt: new Date(),
+            isActive: true,
+          });
+          storedCount++;
+        } catch (storeError: any) {
+          console.error('[Regulatory News] Error storing news item:', storeError.message);
+        }
+      }
+      
+      console.log(`[Regulatory News] Successfully stored ${storedCount} news items`);
+    } catch (error: any) {
+      console.error(`[Regulatory News] Error fetching news (attempt ${retryCount + 1}/${MAX_RETRIES}):`, error.message);
+      
+      // Retry with exponential backoff
+      if (retryCount < MAX_RETRIES - 1) {
+        const delay = RETRY_DELAY_MS * Math.pow(2, retryCount);
+        console.log(`[Regulatory News] Retrying in ${delay / 1000} seconds...`);
+        setTimeout(() => {
+          fetchAndStoreRegulatoryNews(retryCount + 1).catch(() => {
+            // Silently handle final retry failure
+          });
+        }, delay);
+      } else {
+        console.error('[Regulatory News] Max retries reached, will try again in next scheduled run');
+      }
+    }
+  }
+  
+  // Manual trigger for news fetch
+  app.post("/api/regulatory-news/fetch", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      await fetchAndStoreRegulatoryNews();
+      const news = await storage.getRegulatoryNews();
+      res.json({ success: true, count: news.length, news });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+  
+  // Set up automatic news fetching every 30 minutes
+  const NEWS_FETCH_INTERVAL = 30 * 60 * 1000; // 30 minutes in milliseconds
+  
+  // Initial fetch on server start (after a brief delay)
+  setTimeout(() => {
+    fetchAndStoreRegulatoryNews();
+  }, 5000);
+  
+  // Schedule recurring fetch every 30 minutes
+  setInterval(() => {
+    fetchAndStoreRegulatoryNews();
+  }, NEWS_FETCH_INTERVAL);
+  
+  console.log('[Regulatory News] Automatic news fetching enabled - runs every 30 minutes');
 
   const httpServer = createServer(app);
   return httpServer;

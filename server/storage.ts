@@ -217,6 +217,7 @@ export interface IStorage {
 
   // Bank Transactions
   createBankTransaction(transaction: InsertBankTransaction): Promise<BankTransaction>;
+  getBankTransactionById(id: string): Promise<BankTransaction | undefined>;
   getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]>;
   getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]>;
   updateBankTransaction(id: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
@@ -993,6 +994,14 @@ export class DatabaseStorage implements IStorage {
       .insert(bankTransactions)
       .values(insertTransaction)
       .returning();
+    return transaction;
+  }
+
+  async getBankTransactionById(id: string): Promise<BankTransaction | undefined> {
+    const [transaction] = await db
+      .select()
+      .from(bankTransactions)
+      .where(eq(bankTransactions.id, id));
     return transaction;
   }
 
