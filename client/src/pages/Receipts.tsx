@@ -81,6 +81,19 @@ export default function Receipts() {
   const [pendingSaveData, setPendingSaveData] = useState<any>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+  const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
+  
+  const manualExpenseForm = useForm<ReceiptFormData>({
+    resolver: zodResolver(receiptSchema),
+    defaultValues: {
+      merchant: '',
+      date: new Date().toISOString().split('T')[0],
+      amount: 0,
+      vatAmount: null,
+      category: '',
+      currency: 'AED',
+    },
+  });
 
   // Fetch receipts
   const { data: receipts, isLoading } = useQuery<any[]>({
@@ -153,6 +166,36 @@ export default function Receipts() {
       toast({
         variant: 'destructive',
         title: 'Failed to post expense',
+        description: error.message || 'Please try again.',
+      });
+    },
+  });
+
+  const manualExpenseMutation = useMutation({
+    mutationFn: async (data: ReceiptFormData) => {
+      return apiRequest('POST', `/api/companies/${companyId}/receipts`, {
+        merchant: data.merchant,
+        date: data.date,
+        amount: data.amount,
+        vatAmount: data.vatAmount,
+        category: data.category,
+        currency: data.currency,
+        status: 'pending',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
+      toast({
+        title: 'Expense created successfully',
+        description: 'The expense has been added. You can now post it to the journal.',
+      });
+      setManualExpenseDialogOpen(false);
+      manualExpenseForm.reset();
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to create expense',
         description: error.message || 'Please try again.',
       });
     },
@@ -274,15 +317,26 @@ export default function Receipts() {
     setTotalToSave(0);
   };
 
+  const onManualExpenseSubmit = (data: ReceiptFormData) => {
+    manualExpenseMutation.mutate({
+      ...data,
+      amount: Number(data.amount),
+      vatAmount: data.vatAmount === 0 || data.vatAmount === null || isNaN(data.vatAmount as number) ? null : Number(data.vatAmount),
+    });
+  };
+
   const handleFilesSelect = useCallback((files: FileList | File[]) => {
     const validFiles: ProcessedReceipt[] = [];
     const fileArray = Array.from(files);
 
     fileArray.forEach((file) => {
-      if (!file.type.startsWith('image/')) {
+      const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      
+      if (!isImage && !isPdf) {
         toast({
           title: 'Invalid file',
-          description: `${file.name} is not an image file`,
+          description: `${file.name} is not an image or PDF file`,
           variant: 'destructive',
         });
         return;
@@ -772,11 +826,16 @@ export default function Receipts() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold mb-2">Receipt Scanner</h1>
-        <p className="text-muted-foreground">
-          Upload multiple receipts and let AI extract and categorize expenses automatically
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold mb-2">Receipt Scanner</h1>
+          <p className="text-muted-foreground">
+            Upload receipts for AI extraction or enter manually
+          </p>
+        </div>
+        <Button onClick={() => setManualExpenseDialogOpen(true)} data-testid="button-add-manual-expense">
+          + Add Expense Manually
+        </Button>
       </div>
 
       {/* Upload Section */}
@@ -787,7 +846,7 @@ export default function Receipts() {
             Upload Receipts
           </CardTitle>
           <CardDescription>
-            Drag & drop multiple images or click to browse (supports bulk upload)
+            Drag & drop images, PDFs, or click to browse (supports images, PDF receipts, and bulk upload)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -808,7 +867,7 @@ export default function Receipts() {
             <input
               id="file-input"
               type="file"
-              accept="image/*"
+              accept="image/*,.pdf"
               multiple
               className="hidden"
               onChange={(e) => {
@@ -842,7 +901,7 @@ export default function Receipts() {
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Supports: JPG, PNG, HEIC • Bulk upload enabled
+                  Supports: JPG, PNG, HEIC, PDF • Bulk upload enabled
                 </p>
               </div>
             )}
@@ -1577,6 +1636,95 @@ export default function Receipts() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Expense Entry Dialog */}
+      <Dialog open={manualExpenseDialogOpen} onOpenChange={setManualExpenseDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Add Expense Manually</DialogTitle>
+            <DialogDescription>
+              Enter expense details without OCR scanning
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...manualExpenseForm}>
+            <form onSubmit={manualExpenseForm.handleSubmit(onManualExpenseSubmit)} className="space-y-4">
+              <FormField
+                control={manualExpenseForm.control}
+                name="merchant"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Merchant/Vendor</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Office Depot" {...field} data-testid="input-manual-merchant" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={manualExpenseForm.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Date</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} data-testid="input-manual-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={manualExpenseForm.control}
+                name="amount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Amount (AED)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-manual-amount" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={manualExpenseForm.control}
+                name="vatAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>VAT Amount (Optional)</FormLabel>
+                    <FormControl>
+                      <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-manual-vat" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={manualExpenseForm.control}
+                name="category"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Category (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Office Supplies" {...field} data-testid="input-manual-category" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="flex gap-3 pt-4">
+                <Button type="button" variant="outline" onClick={() => setManualExpenseDialogOpen(false)} className="flex-1">
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={manualExpenseMutation.isPending} className="flex-1" data-testid="button-submit-manual-expense">
+                  {manualExpenseMutation.isPending ? 'Creating...' : 'Create Expense'}
+                </Button>
+              </div>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>
