@@ -2851,8 +2851,23 @@ Respond with just the category name, nothing else.`;
   app.get("/api/companies/:companyId/reports/pl", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
+      const { startDate, endDate } = req.query;
+      
       const accounts = await storage.getAccountsByCompanyId(companyId);
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      let entries = await storage.getJournalEntriesByCompanyId(companyId);
+      
+      // Filter entries by date range if provided
+      if (startDate || endDate) {
+        const start = startDate ? new Date(startDate as string) : null;
+        const end = endDate ? new Date(endDate as string) : null;
+        
+        entries = entries.filter(entry => {
+          const entryDate = new Date(entry.date);
+          if (start && entryDate < start) return false;
+          if (end && entryDate > end) return false;
+          return true;
+        });
+      }
       
       // Calculate balances for each account
       const balances = new Map<string, number>();
@@ -2907,8 +2922,23 @@ Respond with just the category name, nothing else.`;
   app.get("/api/companies/:companyId/reports/balance-sheet", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
+      const { startDate, endDate } = req.query;
+      
       const accounts = await storage.getAccountsByCompanyId(companyId);
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      let entries = await storage.getJournalEntriesByCompanyId(companyId);
+      
+      // Filter entries by date range if provided
+      if (startDate || endDate) {
+        const start = startDate ? new Date(startDate as string) : null;
+        const end = endDate ? new Date(endDate as string) : null;
+        
+        entries = entries.filter(entry => {
+          const entryDate = new Date(entry.date);
+          if (start && entryDate < start) return false;
+          if (end && entryDate > end) return false;
+          return true;
+        });
+      }
       
       // Calculate balances
       const balances = new Map<string, number>();
@@ -2969,8 +2999,30 @@ Respond with just the category name, nothing else.`;
   app.get("/api/companies/:companyId/reports/vat-summary", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const receipts = await storage.getReceiptsByCompanyId(companyId);
+      const { startDate, endDate } = req.query;
+      
+      let invoices = await storage.getInvoicesByCompanyId(companyId);
+      let receipts = await storage.getReceiptsByCompanyId(companyId);
+      
+      // Filter invoices by date range if provided
+      if (startDate || endDate) {
+        const start = startDate ? new Date(startDate as string) : null;
+        const end = endDate ? new Date(endDate as string) : null;
+        
+        invoices = invoices.filter(invoice => {
+          const invoiceDate = new Date(invoice.date);
+          if (start && invoiceDate < start) return false;
+          if (end && invoiceDate > end) return false;
+          return true;
+        });
+        
+        receipts = receipts.filter(receipt => {
+          const receiptDate = new Date(receipt.date);
+          if (start && receiptDate < start) return false;
+          if (end && receiptDate > end) return false;
+          return true;
+        });
+      }
       
       let salesSubtotal = 0;
       let salesVAT = 0;
