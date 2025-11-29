@@ -441,8 +441,8 @@ export default function BankReconciliation() {
             <DialogTitle>{locale === 'ar' ? 'استيراد كشف حساب البنك' : 'Import Bank Statement'}</DialogTitle>
             <DialogDescription>
               {locale === 'ar' 
-                ? 'قم بتحميل ملف CSV أو PDF من البنك لاستيراد المعاملات'
-                : 'Upload a CSV or PDF file from your bank to import transactions'}
+                ? 'قم بتحميل ملف CSV من البنك لاستيراد المعاملات'
+                : 'Upload a CSV file from your bank to import transactions'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -462,10 +462,10 @@ export default function BankReconciliation() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>{locale === 'ar' ? 'ملف CSV أو PDF' : 'CSV or PDF File'}</Label>
+              <Label>{locale === 'ar' ? 'ملف CSV' : 'CSV File'}</Label>
               <Input
                 type="file"
-                accept=".csv,.pdf"
+                accept=".csv"
                 onChange={handleFileChange}
                 data-testid="input-csv-file"
               />
@@ -476,9 +476,8 @@ export default function BankReconciliation() {
               )}
             </div>
             <div className="bg-muted/50 p-3 rounded-md text-sm">
-              <p className="font-medium mb-1">{locale === 'ar' ? 'الصيغ المدعومة:' : 'Supported formats:'}</p>
-              <p className="text-xs mb-1">{locale === 'ar' ? 'CSV: ' : 'CSV: '}<code>Date, Description, Amount, Reference</code></p>
-              <p className="text-xs">{locale === 'ar' ? 'PDF: يتم استخراج المعاملات تلقائياً من كشف الحساب' : 'PDF: Transactions are extracted automatically from bank statements'}</p>
+              <p className="font-medium mb-1">{locale === 'ar' ? 'تنسيق CSV المطلوب:' : 'Expected CSV format:'}</p>
+              <code className="text-xs">Date, Description, Amount, Reference</code>
             </div>
           </div>
           <DialogFooter>

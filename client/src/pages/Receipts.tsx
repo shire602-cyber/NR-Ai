@@ -330,13 +330,10 @@ export default function Receipts() {
     const fileArray = Array.from(files);
 
     fileArray.forEach((file) => {
-      const isImage = file.type.startsWith('image/');
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      
-      if (!isImage && !isPdf) {
+      if (!file.type.startsWith('image/')) {
         toast({
           title: 'Invalid file',
-          description: `${file.name} is not an image or PDF file`,
+          description: `${file.name} is not an image file`,
           variant: 'destructive',
         });
         return;
@@ -846,7 +843,7 @@ export default function Receipts() {
             Upload Receipts
           </CardTitle>
           <CardDescription>
-            Drag & drop images, PDFs, or click to browse (supports images, PDF receipts, and bulk upload)
+            Drag & drop receipt images or click to browse (supports bulk upload)
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -867,7 +864,7 @@ export default function Receipts() {
             <input
               id="file-input"
               type="file"
-              accept="image/*,.pdf"
+              accept="image/*"
               multiple
               className="hidden"
               onChange={(e) => {
@@ -901,7 +898,7 @@ export default function Receipts() {
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Supports: JPG, PNG, HEIC, PDF • Bulk upload enabled
+                  Supports: JPG, PNG, HEIC • Bulk upload enabled
                 </p>
               </div>
             )}
