@@ -364,12 +364,12 @@ export default function BankReconciliation() {
                   {locale === 'ar' ? 'إظهار المسوى' : 'Show Reconciled'}
                 </Label>
               </div>
-              <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
+              <Select value={selectedBankAccount || 'all'} onValueChange={(val) => setSelectedBankAccount(val === 'all' ? '' : val)}>
                 <SelectTrigger className="w-48" data-testid="select-bank-account">
                   <SelectValue placeholder={locale === 'ar' ? 'كل الحسابات' : 'All Accounts'} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">{locale === 'ar' ? 'كل الحسابات' : 'All Accounts'}</SelectItem>
+                  <SelectItem value="all">{locale === 'ar' ? 'كل الحسابات' : 'All Accounts'}</SelectItem>
                   {bankAccounts.map(account => (
                     <SelectItem key={account.id} value={account.id}>
                       {locale === 'ar' ? account.nameAr || account.nameEn : account.nameEn}
