@@ -20,7 +20,8 @@ import {
   Clock,
   Gift,
   MessageSquarePlus,
-  Activity
+  Activity,
+  Shield
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import {
@@ -141,6 +142,14 @@ const engagementItems = [
   },
 ];
 
+const adminItems = [
+  {
+    title: 'admin',
+    icon: Shield,
+    url: '/admin',
+  },
+];
+
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
@@ -207,6 +216,29 @@ export function AppSidebar() {
                       <Link href={item.url} data-testid={`link-${item.title}`}>
                         <Icon className="w-4 h-4" />
                         <span>{t[item.title as keyof typeof t] || item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>System</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {adminItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location === item.url;
+                
+                return (
+                  <SidebarMenuItem key={item.url}>
+                    <SidebarMenuButton asChild isActive={isActive}>
+                      <Link href={item.url} data-testid={`link-${item.title}`}>
+                        <Icon className="w-4 h-4" />
+                        <span>Admin</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

@@ -37,6 +37,7 @@ import Reminders from '@/pages/Reminders';
 import Referrals from '@/pages/Referrals';
 import Feedback from '@/pages/Feedback';
 import Analytics from '@/pages/Analytics';
+import Admin from '@/pages/Admin';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -127,6 +128,7 @@ function Router() {
           <Route path="/referrals" component={Referrals} />
           <Route path="/feedback" component={Feedback} />
           <Route path="/analytics" component={Analytics} />
+          <Route path="/admin" component={Admin} />
           <Route component={NotFound} />
         </Switch>
       </ProtectedLayout>

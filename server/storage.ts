@@ -30,7 +30,11 @@ import type {
   Referral, InsertReferral,
   UserFeedback, InsertUserFeedback,
   AnalyticsEvent, InsertAnalyticsEvent,
-  FeatureUsageMetric, InsertFeatureUsageMetric
+  FeatureUsageMetric, InsertFeatureUsageMetric,
+  AdminSetting, InsertAdminSetting,
+  SubscriptionPlan, InsertSubscriptionPlan,
+  UserSubscription, InsertUserSubscription,
+  AuditLog, InsertAuditLog
 } from "@shared/schema";
 import {
   users,
@@ -64,7 +68,11 @@ import {
   referrals,
   userFeedback,
   analyticsEvents,
-  featureUsageMetrics
+  featureUsageMetrics,
+  adminSettings,
+  subscriptionPlans,
+  userSubscriptions,
+  auditLogs
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -253,6 +261,32 @@ export interface IStorage {
   // Feature Usage Metrics
   getFeatureUsageMetrics(featureName?: string): Promise<FeatureUsageMetric[]>;
   createFeatureUsageMetric(metric: InsertFeatureUsageMetric): Promise<FeatureUsageMetric>;
+
+  // Admin Settings
+  getAdminSettings(): Promise<AdminSetting[]>;
+  getAdminSettingByKey(key: string): Promise<AdminSetting | undefined>;
+  createAdminSetting(setting: InsertAdminSetting): Promise<AdminSetting>;
+  updateAdminSetting(key: string, value: string): Promise<AdminSetting>;
+
+  // Subscription Plans
+  getSubscriptionPlans(): Promise<SubscriptionPlan[]>;
+  getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined>;
+  createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan>;
+  updateSubscriptionPlan(id: string, data: Partial<InsertSubscriptionPlan>): Promise<SubscriptionPlan>;
+  deleteSubscriptionPlan(id: string): Promise<void>;
+
+  // User Subscriptions
+  getUserSubscription(userId: string): Promise<UserSubscription | undefined>;
+  createUserSubscription(subscription: InsertUserSubscription): Promise<UserSubscription>;
+  updateUserSubscription(id: string, data: Partial<InsertUserSubscription>): Promise<UserSubscription>;
+
+  // Audit Logs
+  getAuditLogs(limit?: number): Promise<AuditLog[]>;
+  createAuditLog(log: InsertAuditLog): Promise<AuditLog>;
+
+  // Admin Stats
+  getAllUsers(): Promise<User[]>;
+  getAllCompanies(): Promise<Company[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1290,6 +1324,116 @@ export class DatabaseStorage implements IStorage {
       .values(insertMetric)
       .returning();
     return metric;
+  }
+
+  // Admin Settings
+  async getAdminSettings(): Promise<AdminSetting[]> {
+    return await db.select().from(adminSettings);
+  }
+
+  async getAdminSettingByKey(key: string): Promise<AdminSetting | undefined> {
+    const [setting] = await db.select().from(adminSettings).where(eq(adminSettings.key, key));
+    return setting || undefined;
+  }
+
+  async createAdminSetting(insertSetting: InsertAdminSetting): Promise<AdminSetting> {
+    const [setting] = await db
+      .insert(adminSettings)
+      .values(insertSetting)
+      .returning();
+    return setting;
+  }
+
+  async updateAdminSetting(key: string, value: string): Promise<AdminSetting> {
+    const [setting] = await db
+      .update(adminSettings)
+      .set({ value, updatedAt: new Date() })
+      .where(eq(adminSettings.key, key))
+      .returning();
+    return setting;
+  }
+
+  // Subscription Plans
+  async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
+    return await db.select().from(subscriptionPlans).orderBy(subscriptionPlans.sortOrder);
+  }
+
+  async getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined> {
+    const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+    return plan || undefined;
+  }
+
+  async createSubscriptionPlan(insertPlan: InsertSubscriptionPlan): Promise<SubscriptionPlan> {
+    const [plan] = await db
+      .insert(subscriptionPlans)
+      .values(insertPlan)
+      .returning();
+    return plan;
+  }
+
+  async updateSubscriptionPlan(id: string, data: Partial<InsertSubscriptionPlan>): Promise<SubscriptionPlan> {
+    const [plan] = await db
+      .update(subscriptionPlans)
+      .set(data)
+      .where(eq(subscriptionPlans.id, id))
+      .returning();
+    return plan;
+  }
+
+  async deleteSubscriptionPlan(id: string): Promise<void> {
+    await db.delete(subscriptionPlans).where(eq(subscriptionPlans.id, id));
+  }
+
+  // User Subscriptions
+  async getUserSubscription(userId: string): Promise<UserSubscription | undefined> {
+    const [subscription] = await db
+      .select()
+      .from(userSubscriptions)
+      .where(eq(userSubscriptions.userId, userId));
+    return subscription || undefined;
+  }
+
+  async createUserSubscription(insertSubscription: InsertUserSubscription): Promise<UserSubscription> {
+    const [subscription] = await db
+      .insert(userSubscriptions)
+      .values(insertSubscription)
+      .returning();
+    return subscription;
+  }
+
+  async updateUserSubscription(id: string, data: Partial<InsertUserSubscription>): Promise<UserSubscription> {
+    const [subscription] = await db
+      .update(userSubscriptions)
+      .set(data)
+      .where(eq(userSubscriptions.id, id))
+      .returning();
+    return subscription;
+  }
+
+  // Audit Logs
+  async getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
+    return await db
+      .select()
+      .from(auditLogs)
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit);
+  }
+
+  async createAuditLog(insertLog: InsertAuditLog): Promise<AuditLog> {
+    const [log] = await db
+      .insert(auditLogs)
+      .values(insertLog)
+      .returning();
+    return log;
+  }
+
+  // Admin Stats
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
+  async getAllCompanies(): Promise<Company[]> {
+    return await db.select().from(companies).orderBy(desc(companies.createdAt));
   }
 }
 

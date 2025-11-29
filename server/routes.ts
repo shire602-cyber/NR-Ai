@@ -50,6 +50,29 @@ async function authMiddleware(req: Request, res: Response, next: Function) {
   }
 }
 
+// Admin authorization middleware
+async function adminMiddleware(req: Request, res: Response, next: Function) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const token = authHeader.substring(7);
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string };
+    const user = await storage.getUser(decoded.userId);
+    
+    if (!user || !user.isAdmin) {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    
+    (req as any).user = { id: decoded.userId, email: decoded.email, isAdmin: true };
+    next();
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid or expired token' });
+  }
+}
+
 // UAE Chart of Accounts seed data
 const UAE_SEED_COA = [
   { nameEn: "Cash", nameAr: "نقد", type: "asset" },
@@ -5259,6 +5282,143 @@ Respond with just the category name, nothing else.`;
       });
       
       res.json(deadlines);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN ROUTES (Requires Admin Role)
+  // =====================================
+
+  // Get admin settings
+  app.get("/api/admin/settings", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getAdminSettings();
+      res.json(settings);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update admin setting
+  app.put("/api/admin/settings", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { key, value } = req.body;
+      if (!key || value === undefined) {
+        return res.status(400).json({ message: 'Key and value required' });
+      }
+      
+      const existing = await storage.getAdminSettingByKey(key);
+      if (existing) {
+        const setting = await storage.updateAdminSetting(key, value);
+        res.json(setting);
+      } else {
+        const setting = await storage.createAdminSetting({
+          key,
+          value,
+          category: 'system',
+        });
+        res.json(setting);
+      }
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get subscription plans
+  app.get("/api/admin/plans", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const plans = await storage.getSubscriptionPlans();
+      res.json(plans);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create subscription plan
+  app.post("/api/admin/plans", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const plan = await storage.createSubscriptionPlan(req.body);
+      res.status(201).json(plan);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update subscription plan
+  app.put("/api/admin/plans/:id", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const plan = await storage.updateSubscriptionPlan(id, req.body);
+      res.json(plan);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete subscription plan
+  app.delete("/api/admin/plans/:id", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteSubscriptionPlan(id);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get all users (admin)
+  app.get("/api/admin/users", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const users = await storage.getAllUsers();
+      res.json(users.map(u => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        createdAt: u.createdAt,
+      })));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get all companies (admin)
+  app.get("/api/admin/companies", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const companies = await storage.getAllCompanies();
+      res.json(companies);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get audit logs
+  app.get("/api/admin/audit-logs", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = await storage.getAuditLogs(limit);
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get admin stats
+  app.get("/api/admin/stats", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const users = await storage.getAllUsers();
+      const companies = await storage.getAllCompanies();
+      
+      res.json({
+        totalUsers: users.length,
+        activeUsers: users.length,
+        totalCompanies: companies.length,
+        totalInvoices: 0,
+        totalReceipts: 0,
+        monthlyRevenue: 0,
+        aiCreditsUsed: 0,
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
