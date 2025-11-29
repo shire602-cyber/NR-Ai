@@ -28,7 +28,7 @@ import {
   Users,
   PieChart
 } from 'lucide-react';
-import { Link, useLocation } from 'wouter';
+import { useLocation } from 'wouter';
 import {
   Sidebar,
   SidebarContent,
@@ -219,11 +219,13 @@ export function AppSidebar() {
                 
                 return (
                   <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.url} data-testid={`link-${item.title}`}>
-                        <Icon className="w-4 h-4" />
-                        <span>{t[item.title as keyof typeof t]}</span>
-                      </Link>
+                    <SidebarMenuButton 
+                      isActive={isActive}
+                      onClick={() => setLocation(item.url)}
+                      data-testid={`link-${item.title}`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{t[item.title as keyof typeof t]}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -242,11 +244,13 @@ export function AppSidebar() {
                 
                 return (
                   <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.url} data-testid={`link-${item.title}`}>
-                        <Icon className="w-4 h-4" />
-                        <span>{t[item.title as keyof typeof t] || item.title}</span>
-                      </Link>
+                    <SidebarMenuButton 
+                      isActive={isActive}
+                      onClick={() => setLocation(item.url)}
+                      data-testid={`link-${item.title}`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>{t[item.title as keyof typeof t] || item.title}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -265,11 +269,13 @@ export function AppSidebar() {
                 
                 return (
                   <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.url} data-testid={`link-${item.title}`}>
-                        <Icon className="w-4 h-4" />
-                        <span>Admin</span>
-                      </Link>
+                    <SidebarMenuButton 
+                      isActive={isActive}
+                      onClick={() => setLocation(item.url)}
+                      data-testid={`link-${item.title}`}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span>Admin</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
