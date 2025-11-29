@@ -1,6 +1,5 @@
 import { 
   LayoutDashboard, 
-  BookOpen, 
   FileText, 
   BookMarked, 
   BarChart3, 
@@ -9,24 +8,14 @@ import {
   LogOut,
   Receipt,
   Bot,
-  Settings,
   Plug,
-  MessageCircle,
   MessageSquare,
-  Brain,
-  TrendingUp,
-  ShoppingCart,
-  Bell,
-  Clock,
-  Gift,
-  MessageSquarePlus,
-  Activity,
-  Shield,
-  List,
   Building2,
   FileCheck,
   Users,
-  PieChart
+  List,
+  Settings,
+  Wallet
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import {
@@ -42,141 +31,109 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useTranslation, useI18n } from '@/lib/i18n';
 import { removeToken } from '@/lib/auth';
 
-const navigationItems = [
+const coreItems = [
   {
     title: 'dashboard',
+    titleEn: 'Dashboard',
+    titleAr: 'لوحة التحكم',
     icon: LayoutDashboard,
     url: '/dashboard',
   },
   {
     title: 'chartOfAccounts',
+    titleEn: 'Chart of Accounts',
+    titleAr: 'دليل الحسابات',
     icon: List,
     url: '/chart-of-accounts',
   },
   {
-    title: 'accounts',
-    icon: BookOpen,
-    url: '/accounts',
+    title: 'journal',
+    titleEn: 'Journal Entries',
+    titleAr: 'القيود اليومية',
+    icon: BookMarked,
+    url: '/journal',
   },
   {
     title: 'invoices',
+    titleEn: 'Invoices',
+    titleAr: 'الفواتير',
     icon: FileText,
     url: '/invoices',
   },
   {
     title: 'receipts',
+    titleEn: 'Receipts & Expenses',
+    titleAr: 'الإيصالات والمصروفات',
     icon: Receipt,
     url: '/receipts',
   },
   {
-    title: 'journal',
-    icon: BookMarked,
-    url: '/journal',
+    title: 'bankReconciliation',
+    titleEn: 'Bank Reconciliation',
+    titleAr: 'تسوية البنك',
+    icon: Building2,
+    url: '/bank-reconciliation',
   },
+];
+
+const reportsItems = [
   {
     title: 'reports',
+    titleEn: 'Financial Reports',
+    titleAr: 'التقارير المالية',
     icon: BarChart3,
     url: '/reports',
   },
   {
-    title: 'smartAssistant',
-    icon: MessageCircle,
-    url: '/smart-assistant',
+    title: 'vatFiling',
+    titleEn: 'VAT Filing',
+    titleAr: 'تقديم ضريبة القيمة المضافة',
+    icon: FileCheck,
+    url: '/vat-filing',
   },
+];
+
+const aiItems = [
   {
-    title: 'aiCfo',
+    title: 'aiAssistant',
+    titleEn: 'AI Assistant',
+    titleAr: 'المساعد الذكي',
     icon: Bot,
     url: '/ai-cfo',
   },
   {
-    title: 'aiFeatures',
-    icon: Brain,
+    title: 'aiCategorization',
+    titleEn: 'AI Categorization',
+    titleAr: 'التصنيف الذكي',
+    icon: Sparkles,
     url: '/ai-features',
   },
+];
+
+const settingsItems = [
   {
-    title: 'advancedAnalytics',
-    icon: TrendingUp,
-    url: '/advanced-analytics',
-  },
-  {
-    title: 'integrationsHub',
-    icon: ShoppingCart,
-    url: '/integrations-hub',
+    title: 'teamManagement',
+    titleEn: 'Team',
+    titleAr: 'الفريق',
+    icon: Users,
+    url: '/team',
   },
   {
     title: 'integrations',
+    titleEn: 'Integrations',
+    titleAr: 'التكاملات',
     icon: Plug,
     url: '/integrations',
   },
   {
     title: 'whatsappInbox',
+    titleEn: 'WhatsApp',
+    titleAr: 'واتساب',
     icon: MessageSquare,
     url: '/whatsapp',
-  },
-  {
-    title: 'bankReconciliation',
-    icon: Building2,
-    url: '/bank-reconciliation',
-  },
-  {
-    title: 'vatFiling',
-    icon: FileCheck,
-    url: '/vat-filing',
-  },
-  {
-    title: 'teamManagement',
-    icon: Users,
-    url: '/team',
-  },
-  {
-    title: 'advancedReports',
-    icon: PieChart,
-    url: '/advanced-reports',
-  },
-];
-
-const engagementItems = [
-  {
-    title: 'notifications',
-    icon: Bell,
-    url: '/notifications',
-  },
-  {
-    title: 'reminders',
-    icon: Clock,
-    url: '/reminders',
-  },
-  {
-    title: 'referrals',
-    icon: Gift,
-    url: '/referrals',
-  },
-  {
-    title: 'feedback',
-    icon: MessageSquarePlus,
-    url: '/feedback',
-  },
-  {
-    title: 'analytics',
-    icon: Activity,
-    url: '/analytics',
-  },
-];
-
-const adminItems = [
-  {
-    title: 'admin',
-    icon: Shield,
-    url: '/admin',
   },
 ];
 
@@ -194,92 +151,82 @@ export function AppSidebar() {
     setLocale(locale === 'en' ? 'ar' : 'en');
   };
 
+  const renderMenuItem = (item: typeof coreItems[0]) => {
+    const Icon = item.icon;
+    const isActive = location === item.url || location.startsWith(item.url + '/');
+    const label = locale === 'ar' ? item.titleAr : item.titleEn;
+    
+    return (
+      <SidebarMenuItem key={item.url}>
+        <SidebarMenuButton 
+          isActive={isActive}
+          onClick={() => setLocation(item.url)}
+          data-testid={`link-${item.title}`}
+        >
+          <Icon className="w-4 h-4" />
+          <span>{label}</span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    );
+  };
+
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-primary-foreground" />
+            <Wallet className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
             <div className="font-semibold text-sm">Muhasib.ai</div>
-            <div className="text-xs text-muted-foreground">NR Accounting</div>
+            <div className="text-xs text-muted-foreground">
+              {locale === 'ar' ? 'المحاسبة الذكية' : 'Smart Accounting'}
+            </div>
           </div>
         </div>
       </SidebarHeader>
       
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>
+            {locale === 'ar' ? 'المحاسبة' : 'Accounting'}
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navigationItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = location === item.url;
-                
-                return (
-                  <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton 
-                      isActive={isActive}
-                      onClick={() => setLocation(item.url)}
-                      data-testid={`link-${item.title}`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>{t[item.title as keyof typeof t]}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {coreItems.map(renderMenuItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
         
         <SidebarGroup>
-          <SidebarGroupLabel>Engagement</SidebarGroupLabel>
+          <SidebarGroupLabel>
+            {locale === 'ar' ? 'التقارير' : 'Reports'}
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {engagementItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = location === item.url;
-                
-                return (
-                  <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton 
-                      isActive={isActive}
-                      onClick={() => setLocation(item.url)}
-                      data-testid={`link-${item.title}`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>{t[item.title as keyof typeof t] || item.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {reportsItems.map(renderMenuItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>System</SidebarGroupLabel>
+          <SidebarGroupLabel>
+            {locale === 'ar' ? 'الذكاء الاصطناعي' : 'AI Tools'}
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {adminItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = location === item.url;
-                
-                return (
-                  <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton 
-                      isActive={isActive}
-                      onClick={() => setLocation(item.url)}
-                      data-testid={`link-${item.title}`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>Admin</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {aiItems.map(renderMenuItem)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>
+            {locale === 'ar' ? 'الإعدادات' : 'Settings'}
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {settingsItems.map(renderMenuItem)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -303,7 +250,7 @@ export function AppSidebar() {
           data-testid="button-logout"
         >
           <LogOut className="w-4 h-4 mr-2" />
-          {t.logout}
+          {locale === 'ar' ? 'تسجيل الخروج' : 'Logout'}
         </Button>
       </SidebarFooter>
     </Sidebar>
