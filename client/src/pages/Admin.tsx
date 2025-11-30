@@ -90,10 +90,7 @@ export default function Admin() {
   // Mutations
   const updateSettingMutation = useMutation({
     mutationFn: async (setting: { key: string; value: string }) => {
-      return apiRequest('/api/admin/settings', {
-        method: 'PUT',
-        body: JSON.stringify(setting),
-      });
+      return apiRequest('PUT', '/api/admin/settings', setting);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/settings'] });
@@ -107,10 +104,7 @@ export default function Admin() {
 
   const createPlanMutation = useMutation({
     mutationFn: async (plan: Partial<SubscriptionPlan>) => {
-      return apiRequest('/api/admin/plans', {
-        method: 'POST',
-        body: JSON.stringify(plan),
-      });
+      return apiRequest('POST', '/api/admin/plans', plan);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/plans'] });
@@ -124,10 +118,7 @@ export default function Admin() {
 
   const updatePlanMutation = useMutation({
     mutationFn: async (plan: Partial<SubscriptionPlan> & { id: string }) => {
-      return apiRequest(`/api/admin/plans/${plan.id}`, {
-        method: 'PUT',
-        body: JSON.stringify(plan),
-      });
+      return apiRequest('PUT', `/api/admin/plans/${plan.id}`, plan);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/plans'] });
@@ -141,9 +132,7 @@ export default function Admin() {
 
   const deletePlanMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/admin/plans/${id}`, {
-        method: 'DELETE',
-      });
+      return apiRequest('DELETE', `/api/admin/plans/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/plans'] });

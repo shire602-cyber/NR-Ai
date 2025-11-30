@@ -47,10 +47,7 @@ export default function UserInvitations() {
 
   const createInvitationMutation = useMutation({
     mutationFn: async (data: { email: string; companyId?: string; role: string }) => {
-      return apiRequest('/api/admin/invitations', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
+      return apiRequest('POST', '/api/admin/invitations', data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
@@ -64,9 +61,7 @@ export default function UserInvitations() {
 
   const revokeInvitationMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/admin/invitations/${id}/revoke`, {
-        method: 'PATCH',
-      });
+      return apiRequest('PATCH', `/api/admin/invitations/${id}/revoke`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
@@ -79,9 +74,7 @@ export default function UserInvitations() {
 
   const resendInvitationMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/admin/invitations/${id}/resend`, {
-        method: 'POST',
-      });
+      return apiRequest('POST', `/api/admin/invitations/${id}/resend`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
@@ -94,9 +87,7 @@ export default function UserInvitations() {
 
   const deleteInvitationMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest(`/api/admin/invitations/${id}`, {
-        method: 'DELETE',
-      });
+      return apiRequest('DELETE', `/api/admin/invitations/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
