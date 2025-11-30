@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -240,18 +241,30 @@ export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
-  
-  // Check if user is admin from localStorage token
-  const isAdmin = (() => {
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) return false;
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      return payload.isAdmin === true;
-    } catch {
-      return true; // Default to showing admin menu for now
-    }
-  })();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    // Check if user is admin from localStorage token
+    const checkAdminStatus = () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+          setIsAdmin(false);
+          return;
+        }
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setIsAdmin(payload.isAdmin === true);
+      } catch (error) {
+        setIsAdmin(false);
+      }
+    };
+
+    checkAdminStatus();
+    
+    // Listen for storage changes (e.g., login/logout from another tab)
+    window.addEventListener('storage', checkAdminStatus);
+    return () => window.removeEventListener('storage', checkAdminStatus);
+  }, []);
 
   const handleLogout = () => {
     removeToken();
