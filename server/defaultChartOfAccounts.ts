@@ -8,7 +8,7 @@ export interface DefaultAccountTemplate {
   type: "asset" | "liability" | "equity" | "income" | "expense";
   subType: string | null;
   isVatAccount: boolean;
-  vatType: "input" | "output" | null;
+  vatType: "input" | "output" | "zero_rated" | "exempt" | null;
   isSystemAccount: boolean;
 }
 
@@ -168,6 +168,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     isSystemAccount: true,
   },
   {
+    code: "2025",
+    nameEn: "FTA VAT Control Account",
+    nameAr: "حساب مراقبة ضريبة القيمة المضافة - الهيئة الاتحادية للضرائب",
+    description: "Net VAT payable/receivable to Federal Tax Authority",
+    type: "liability",
+    subType: "current_liability",
+    isVatAccount: true,
+    vatType: "output",
+    isSystemAccount: true,
+  },
+  {
     code: "2030",
     nameEn: "Salaries Payable",
     nameAr: "الرواتب المستحقة",
@@ -320,6 +331,28 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     subType: null,
     isVatAccount: false,
     vatType: null,
+    isSystemAccount: false,
+  },
+  {
+    code: "4060",
+    nameEn: "Zero-Rated Sales",
+    nameAr: "مبيعات بنسبة صفر",
+    description: "Exports and designated zero-rated supplies per FTA",
+    type: "income",
+    subType: null,
+    isVatAccount: true,
+    vatType: "zero_rated",
+    isSystemAccount: false,
+  },
+  {
+    code: "4070",
+    nameEn: "Exempt Sales",
+    nameAr: "مبيعات معفاة",
+    description: "VAT-exempt supplies (financial services, residential property)",
+    type: "income",
+    subType: null,
+    isVatAccount: true,
+    vatType: "exempt",
     isSystemAccount: false,
   },
 

@@ -604,10 +604,10 @@ export class DatabaseStorage implements IStorage {
     const [account] = await db
       .update(accounts)
       .set({ isArchived: true, isActive: false, updatedAt: new Date() })
-      .where(eq(accounts.id, id))
+      .where(and(eq(accounts.id, id), eq(accounts.isSystemAccount, false)))
       .returning();
     if (!account) {
-      throw new Error('Account not found');
+      throw new Error('Account not found or is a system account');
     }
     return account;
   }
@@ -629,10 +629,22 @@ export class DatabaseStorage implements IStorage {
 
   async createBulkAccounts(accountsData: InsertAccount[]): Promise<Account[]> {
     if (accountsData.length === 0) return [];
-    const createdAccounts = await db
-      .insert(accounts)
-      .values(accountsData)
-      .returning();
+    
+    const expectedCount = accountsData.length;
+    const createdAccounts = await db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(accounts)
+        .values(accountsData)
+        .onConflictDoNothing()
+        .returning();
+      
+      if (inserted.length < expectedCount) {
+        throw new Error(`PARTIAL_INSERT: Only ${inserted.length}/${expectedCount} accounts were created. Some accounts already exist.`);
+      }
+      
+      return inserted;
+    });
+    
     return createdAccounts;
   }
 

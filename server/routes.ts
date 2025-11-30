@@ -153,18 +153,28 @@ function requireUserType(...allowedTypes: string[]) {
 // Import comprehensive UAE Chart of Accounts
 import { createDefaultAccountsForCompany } from "./defaultChartOfAccounts";
 
-async function seedChartOfAccounts(companyId: string) {
+async function seedChartOfAccounts(companyId: string): Promise<{ created: number; alreadyExisted: boolean }> {
   // Check if company already has accounts
   const hasAccounts = await storage.companyHasAccounts(companyId);
   if (hasAccounts) {
     console.log(`[Seed COA] Company ${companyId} already has accounts, skipping seed`);
-    return;
+    return { created: 0, alreadyExisted: true };
   }
   
   // Create all default accounts for this company
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
-  await storage.createBulkAccounts(defaultAccounts as any);
-  console.log(`[Seed COA] Created ${defaultAccounts.length} accounts for company ${companyId}`);
+  
+  try {
+    const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
+    console.log(`[Seed COA] Created ${createdAccounts.length} accounts for company ${companyId}`);
+    return { created: createdAccounts.length, alreadyExisted: false };
+  } catch (error: any) {
+    if (error.message?.includes('PARTIAL_INSERT')) {
+      console.error(`[Seed COA] Partial insert detected for company ${companyId}: ${error.message}`);
+      throw new Error('PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support.');
+    }
+    throw error;
+  }
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -423,15 +433,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Seed Chart of Accounts
-      await seedChartOfAccounts(id);
+      const result = await seedChartOfAccounts(id);
       
       const accountsWithBalances = await storage.getAccountsWithBalances(id);
-      res.json({ 
+      
+      if (result.alreadyExisted) {
+        return res.status(409).json({ 
+          message: 'Chart of Accounts already exists for this company',
+          accounts: accountsWithBalances
+        });
+      }
+      
+      res.status(201).json({ 
         message: 'Chart of Accounts seeded successfully',
+        accountsCreated: result.created,
         accounts: accountsWithBalances
       });
     } catch (error: any) {
       console.error('[Seed Accounts] Error seeding accounts:', error);
+      
+      // Handle partial chart error with 409
+      if (error.message?.includes('PARTIAL_CHART')) {
+        return res.status(409).json({ 
+          message: 'Chart of Accounts was partially created due to a race condition. Please contact support to resolve this inconsistency.',
+          error: 'PARTIAL_CHART'
+        });
+      }
+      
       res.status(400).json({ message: error.message });
     }
   });
@@ -506,7 +534,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Customer-only: Delete accounts
+  // Customer-only: Archive accounts (soft delete)
+  app.post("/api/accounts/:id/archive", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      const account = await storage.getAccount(id);
+      if (!account) {
+        return res.status(404).json({ message: 'Account not found' });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, account.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      // System accounts cannot be archived (pre-check for better error message)
+      if (account.isSystemAccount) {
+        return res.status(409).json({ 
+          message: 'System accounts cannot be archived. These are essential for proper bookkeeping.' 
+        });
+      }
+
+      try {
+        const archivedAccount = await storage.archiveAccount(id);
+        res.json(archivedAccount);
+      } catch (archiveError: any) {
+        // Handle race condition where account was marked as system between read and update
+        if (archiveError.message.includes('system account')) {
+          return res.status(409).json({ 
+            message: 'System accounts cannot be archived. These are essential for proper bookkeeping.' 
+          });
+        }
+        throw archiveError;
+      }
+    } catch (error: any) {
+      console.error('[Accounts] Error archiving account:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Customer-only: Unarchive accounts
+  app.post("/api/accounts/:id/unarchive", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const userId = (req as any).user.id;
+
+      const account = await storage.getAccount(id);
+      if (!account) {
+        return res.status(404).json({ message: 'Account not found' });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, account.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const unarchivedAccount = await storage.updateAccount(id, { 
+        isArchived: false, 
+        isActive: true,
+        updatedAt: new Date() 
+      });
+      res.json(unarchivedAccount);
+    } catch (error: any) {
+      console.error('[Accounts] Error unarchiving account:', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Customer-only: Delete accounts (permanent - only for non-system accounts with no transactions)
   app.delete("/api/accounts/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
@@ -524,11 +621,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: 'Access denied' });
       }
 
+      // System accounts cannot be deleted
+      if (account.isSystemAccount) {
+        return res.status(400).json({ 
+          message: 'System accounts cannot be deleted. You can archive them instead if needed.' 
+        });
+      }
+
       // Check if account has any transactions
       const hasTransactions = await storage.accountHasTransactions(id);
       if (hasTransactions) {
         return res.status(400).json({ 
-          message: 'Cannot delete account with existing transactions. Please remove all journal entries using this account first.' 
+          message: 'Cannot delete account with existing transactions. Please archive the account instead, or remove all journal entries first.' 
         });
       }
 

@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -122,19 +122,32 @@ export const accounts = pgTable("accounts", {
   type: text("type").notNull(), // asset | liability | equity | income | expense
   subType: text("sub_type"), // current_asset | fixed_asset | current_liability | long_term_liability | null
   isVatAccount: boolean("is_vat_account").notNull().default(false), // For VAT tracking
-  vatType: text("vat_type"), // input | output | null - for VAT accounts only
+  vatType: text("vat_type"), // input | output | zero_rated | exempt | null - for VAT accounts only
   isSystemAccount: boolean("is_system_account").notNull().default(false), // System accounts cannot be deleted
   isActive: boolean("is_active").notNull().default(true),
   isArchived: boolean("is_archived").notNull().default(false), // Soft delete / archive
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
-});
+}, (table) => ({
+  companyCodeUnique: unique().on(table.companyId, table.code),
+}));
 
 export const insertAccountSchema = createInsertSchema(accounts).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-});
+}).refine(
+  (data) => {
+    if (data.isVatAccount && !data.vatType) {
+      return false;
+    }
+    if (!data.isVatAccount && data.vatType) {
+      return false;
+    }
+    return true;
+  },
+  { message: "vatType must be provided when isVatAccount is true, and must be null when isVatAccount is false" }
+);
 
 export type InsertAccount = z.infer<typeof insertAccountSchema>;
 export type Account = typeof accounts.$inferSelect;
