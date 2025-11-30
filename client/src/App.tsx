@@ -54,6 +54,7 @@ import ClientManagement from '@/pages/ClientManagement';
 import UserInvitations from '@/pages/UserInvitations';
 import ActivityLogs from '@/pages/ActivityLogs';
 import AdminDocuments from '@/pages/AdminDocuments';
+import ClientImport from '@/pages/ClientImport';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -162,6 +163,7 @@ function Router() {
           <Route path="/admin/clients" component={ClientManagement} />
           <Route path="/admin/documents" component={AdminDocuments} />
           <Route path="/admin/invitations" component={UserInvitations} />
+          <Route path="/admin/import" component={ClientImport} />
           <Route path="/admin/activity-logs" component={ActivityLogs} />
           <Route path="/admin/users" component={Admin} />
           <Route path="/admin" component={Admin} />

@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import OpenAI from "openai";
+import * as XLSX from "xlsx";
 import { storage } from "./storage";
 import { 
   insertUserSchema, 
@@ -7436,6 +7437,263 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
       const { noteId } = req.params;
       await storage.deleteClientNote(noteId);
       res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN PANEL - EXCEL IMPORT FOR CLIENTS
+  // =====================================
+
+  // Import clients from Excel - Admin only
+  app.post("/api/admin/import/clients", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { data, createInvitations, sendEmails } = req.body;
+      
+      if (!data || !Array.isArray(data)) {
+        return res.status(400).json({ message: "Invalid data format. Expected array of client records." });
+      }
+
+      const userId = (req as any).user.id;
+      const results = {
+        success: [] as any[],
+        errors: [] as any[],
+        invitations: [] as any[],
+      };
+
+      for (const row of data) {
+        try {
+          // Validate required fields
+          if (!row.name || row.name.trim() === '') {
+            results.errors.push({ row, error: "Company name is required" });
+            continue;
+          }
+
+          // Check if company already exists
+          const existingCompany = await storage.getCompanyByName(row.name.trim());
+          if (existingCompany) {
+            results.errors.push({ row, error: `Company "${row.name}" already exists` });
+            continue;
+          }
+
+          // Create the company as a client type
+          const company = await storage.createCompany({
+            name: row.name.trim(),
+            baseCurrency: row.currency || "AED",
+            locale: row.locale || "en",
+            companyType: "client", // All imported companies are NR-managed clients
+            legalStructure: row.legalStructure || null,
+            industry: row.industry || null,
+            registrationNumber: row.registrationNumber || row.trn || null,
+            businessAddress: row.address || null,
+            contactPhone: row.phone || null,
+            contactEmail: row.email || null,
+            websiteUrl: row.website || null,
+            trnNumber: row.trn || null,
+          });
+
+          results.success.push({
+            id: company.id,
+            name: company.name,
+            email: row.email,
+          });
+
+          // Log activity
+          await storage.createActivityLog({
+            userId,
+            companyId: company.id,
+            action: 'create',
+            entityType: 'company',
+            entityId: company.id,
+            description: `Imported client company: ${company.name}`,
+          });
+
+          // Create invitation if email is provided and createInvitations is true
+          if (createInvitations && row.email) {
+            try {
+              const token = require('crypto').randomBytes(32).toString('hex');
+              const expiresAt = new Date();
+              expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+
+              const invitation = await storage.createInvitation({
+                email: row.email.trim(),
+                companyId: company.id,
+                role: 'client',
+                userType: 'client',
+                token,
+                expiresAt,
+                createdBy: userId,
+                status: 'pending',
+              });
+
+              results.invitations.push({
+                email: row.email,
+                companyName: company.name,
+                inviteLink: `/register?invite=${token}`,
+              });
+            } catch (invErr: any) {
+              // Don't fail the whole import if invitation fails
+              console.error(`Failed to create invitation for ${row.email}:`, invErr.message);
+            }
+          }
+
+        } catch (rowError: any) {
+          results.errors.push({ row, error: rowError.message });
+        }
+      }
+
+      res.json({
+        message: `Import completed. ${results.success.length} clients created, ${results.errors.length} errors.`,
+        results,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Parse Excel file and return preview - Admin only
+  app.post("/api/admin/import/preview", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { fileData, fileName } = req.body;
+      
+      if (!fileData) {
+        return res.status(400).json({ message: "No file data provided" });
+      }
+
+      // Convert base64 to buffer
+      const buffer = Buffer.from(fileData, 'base64');
+      
+      // Parse Excel file
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      
+      // Convert to JSON with headers
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      
+      // Get column headers
+      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+      const headers: string[] = [];
+      for (let col = range.s.c; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: col });
+        const cell = worksheet[cellAddress];
+        headers.push(cell ? String(cell.v) : `Column ${col + 1}`);
+      }
+
+      // Map data to expected format based on column headers
+      const mappedData = jsonData.map((row: any) => {
+        // Try to intelligently map columns
+        const mapped: any = {};
+        
+        // Name mapping (look for various name columns)
+        mapped.name = row['Company Name'] || row['Name'] || row['Client Name'] || 
+                      row['company_name'] || row['name'] || row['client'] || 
+                      row['Company'] || row['Business Name'] || '';
+        
+        // Email mapping
+        mapped.email = row['Email'] || row['email'] || row['Contact Email'] || 
+                       row['contact_email'] || row['E-mail'] || '';
+        
+        // Phone mapping
+        mapped.phone = row['Phone'] || row['phone'] || row['Contact Phone'] || 
+                       row['contact_phone'] || row['Tel'] || row['Telephone'] || '';
+        
+        // TRN/Registration mapping
+        mapped.trn = row['TRN'] || row['trn'] || row['Tax Registration Number'] || 
+                     row['VAT Number'] || row['Registration Number'] || row['registration_number'] || '';
+        
+        // Address mapping
+        mapped.address = row['Address'] || row['address'] || row['Business Address'] || 
+                         row['business_address'] || row['Location'] || '';
+        
+        // Industry mapping
+        mapped.industry = row['Industry'] || row['industry'] || row['Sector'] || 
+                          row['Business Type'] || '';
+        
+        // Website mapping
+        mapped.website = row['Website'] || row['website'] || row['URL'] || row['Web'] || '';
+        
+        // Legal structure mapping
+        mapped.legalStructure = row['Legal Structure'] || row['legal_structure'] || 
+                                row['Business Structure'] || row['Type'] || '';
+        
+        // Currency (default to AED)
+        mapped.currency = row['Currency'] || row['currency'] || 'AED';
+        
+        // Locale (default to en)
+        mapped.locale = row['Locale'] || row['locale'] || row['Language'] || 'en';
+        
+        // Keep original row for reference
+        mapped._original = row;
+        
+        return mapped;
+      });
+
+      res.json({
+        fileName,
+        sheetName: firstSheetName,
+        headers,
+        totalRows: jsonData.length,
+        preview: mappedData.slice(0, 10), // First 10 rows for preview
+        allData: mappedData,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: `Failed to parse Excel file: ${error.message}` });
+    }
+  });
+
+  // Download sample import template - Admin only
+  app.get("/api/admin/import/template", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      // Create sample data
+      const sampleData = [
+        {
+          'Company Name': 'Example Company LLC',
+          'Email': 'contact@example.com',
+          'Phone': '+971 50 123 4567',
+          'TRN': '100000000000003',
+          'Address': 'Dubai, UAE',
+          'Industry': 'Technology',
+          'Website': 'www.example.com',
+          'Legal Structure': 'LLC',
+        },
+        {
+          'Company Name': 'Sample Trading Est.',
+          'Email': 'info@sample.ae',
+          'Phone': '+971 4 123 4567',
+          'TRN': '100000000000004',
+          'Address': 'Abu Dhabi, UAE',
+          'Industry': 'Trading',
+          'Website': '',
+          'Legal Structure': 'Sole Proprietorship',
+        },
+      ];
+
+      // Create workbook
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(sampleData);
+      
+      // Set column widths
+      worksheet['!cols'] = [
+        { wch: 25 }, // Company Name
+        { wch: 25 }, // Email
+        { wch: 18 }, // Phone
+        { wch: 18 }, // TRN
+        { wch: 30 }, // Address
+        { wch: 15 }, // Industry
+        { wch: 20 }, // Website
+        { wch: 18 }, // Legal Structure
+      ];
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
+      
+      // Generate buffer
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=client_import_template.xlsx');
+      res.send(buffer);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

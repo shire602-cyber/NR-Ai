@@ -25,7 +25,8 @@ import {
   Shield,
   UserPlus,
   Activity,
-  Settings
+  Settings,
+  FileUp
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import {
@@ -220,6 +221,13 @@ const adminItems = [
     titleAr: 'الدعوات',
     icon: UserPlus,
     url: '/admin/invitations',
+  },
+  {
+    title: 'clientImport',
+    titleEn: 'Import Clients',
+    titleAr: 'استيراد العملاء',
+    icon: FileUp,
+    url: '/admin/import',
   },
   {
     title: 'userManagement',
