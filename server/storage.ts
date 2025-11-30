@@ -600,6 +600,51 @@ export class DatabaseStorage implements IStorage {
     await db.delete(accounts).where(eq(accounts.id, id));
   }
 
+  async archiveAccount(id: string): Promise<Account> {
+    const [account] = await db
+      .update(accounts)
+      .set({ isArchived: true, isActive: false, updatedAt: new Date() })
+      .where(eq(accounts.id, id))
+      .returning();
+    if (!account) {
+      throw new Error('Account not found');
+    }
+    return account;
+  }
+
+  async getAccountByCode(companyId: string, code: string): Promise<Account | undefined> {
+    const [account] = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.companyId, companyId), eq(accounts.code, code)));
+    return account || undefined;
+  }
+
+  async getVatAccounts(companyId: string): Promise<Account[]> {
+    return await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.companyId, companyId), eq(accounts.isVatAccount, true)));
+  }
+
+  async createBulkAccounts(accountsData: InsertAccount[]): Promise<Account[]> {
+    if (accountsData.length === 0) return [];
+    const createdAccounts = await db
+      .insert(accounts)
+      .values(accountsData)
+      .returning();
+    return createdAccounts;
+  }
+
+  async companyHasAccounts(companyId: string): Promise<boolean> {
+    const existingAccounts = await db
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(eq(accounts.companyId, companyId))
+      .limit(1);
+    return existingAccounts.length > 0;
+  }
+
   async accountHasTransactions(accountId: string): Promise<boolean> {
     const lines = await db
       .select()

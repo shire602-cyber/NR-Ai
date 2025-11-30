@@ -150,39 +150,21 @@ function requireUserType(...allowedTypes: string[]) {
   };
 }
 
-// UAE Chart of Accounts seed data
-const UAE_SEED_COA = [
-  { nameEn: "Cash", nameAr: "نقد", type: "asset" },
-  { nameEn: "Bank", nameAr: "بنك", type: "asset" },
-  { nameEn: "Accounts Receivable", nameAr: "حسابات مدينة", type: "asset" },
-  { nameEn: "Accounts Payable", nameAr: "حسابات دائنة", type: "liability" },
-  { nameEn: "VAT Payable", nameAr: "ضريبة مستحقة", type: "liability" },
-  { nameEn: "VAT Receivable", nameAr: "ضريبة مستردة", type: "asset" },
-  { nameEn: "Owner's Equity", nameAr: "حقوق الملكية", type: "equity" },
-  { nameEn: "Sales Revenue", nameAr: "إيرادات المبيعات", type: "income" },
-  { nameEn: "Other Income", nameAr: "إيرادات أخرى", type: "income" },
-  { nameEn: "COGS", nameAr: "تكلفة البضاعة المباعة", type: "expense" },
-  { nameEn: "Rent Expense", nameAr: "مصروف الإيجار", type: "expense" },
-  { nameEn: "Utilities Expense", nameAr: "مصروف المرافق", type: "expense" },
-  { nameEn: "Marketing Expense", nameAr: "مصروف التسويق", type: "expense" },
-  { nameEn: "Office Supplies", nameAr: "مستلزمات مكتبية", type: "expense" },
-  { nameEn: "Travel Expenses", nameAr: "مصروفات السفر", type: "expense" },
-];
+// Import comprehensive UAE Chart of Accounts
+import { createDefaultAccountsForCompany } from "./defaultChartOfAccounts";
 
 async function seedChartOfAccounts(companyId: string) {
-  for (const account of UAE_SEED_COA) {
-    const accounts = await storage.getAccountsByCompanyId(companyId);
-    const exists = accounts.find(a => a.nameEn === account.nameEn);
-    if (!exists) {
-      await storage.createAccount({
-        companyId,
-        nameEn: account.nameEn,
-        nameAr: account.nameAr,
-        type: account.type,
-        isActive: true,
-      });
-    }
+  // Check if company already has accounts
+  const hasAccounts = await storage.companyHasAccounts(companyId);
+  if (hasAccounts) {
+    console.log(`[Seed COA] Company ${companyId} already has accounts, skipping seed`);
+    return;
   }
+  
+  // Create all default accounts for this company
+  const defaultAccounts = createDefaultAccountsForCompany(companyId);
+  await storage.createBulkAccounts(defaultAccounts as any);
+  console.log(`[Seed COA] Created ${defaultAccounts.length} accounts for company ${companyId}`);
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
