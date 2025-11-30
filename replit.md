@@ -56,6 +56,46 @@ Preferred communication style: Simple, everyday language.
     - **UAE Tax News Feed**: Automated daily updates from FTA and trusted financial news sources about VAT, Corporate Tax, and regulatory changes.
     - **Secure Messaging**: Client-accountant communication hub with message threading and attachment support.
 
+## Security Architecture
+
+### Dual User Architecture
+The platform supports three user types with distinct access levels:
+- **admin**: NR Accounting Services staff with full administrative access
+- **customer**: Self-service SaaS users with full bookkeeping features
+- **client**: NR-managed clients with portal-only access to document vault, messaging, and compliance features
+
+### Authorization Implementation
+**Authentication**:
+- JWT-based authentication with secure password hashing (bcrypt)
+- authMiddleware fetches user from database on each request (never trusts JWT claims for sensitive data)
+- Registration endpoint forces userType='customer' and isAdmin=false to prevent privilege escalation
+
+**Route Protection Pattern**:
+- requireCustomerMiddleware: Blocks client users from customer-only bookkeeping routes
+- requireClientMiddleware: Blocks customer users from client portal routes  
+- requireAdminMiddleware: Blocks non-admin users from admin routes
+- hasCompanyAccess(userId, companyId): Validates user belongs to the company before data access
+
+**Secured Routes** (Core Bookkeeping):
+- Account routes: All CRUD operations require both userType validation AND company access checks
+- Invoice routes: All CRUD, posting, and status updates require both validations
+- Journal entry routes: All CRUD, posting, and reversal require both validations
+- Receipt routes: All CRUD and posting require both validations
+- Report routes: P&L, Balance Sheet, VAT Summary/Returns require company access checks
+- Export routes: Google Sheets exports require company access checks
+
+**AI Automation Routes** (Secured):
+- POST /api/ai/categorize: Single transaction categorization
+- POST /api/ai/batch-categorize: Batch transaction categorization
+- POST /api/ai/detect-anomalies: Anomaly detection
+- POST /api/ai/reconcile: Bank reconciliation
+- POST /api/ai/forecast-cashflow: Cash flow forecasting
+
+**Bank Transaction Routes** (Secured):
+- GET/POST /api/companies/:companyId/bank-transactions
+- POST /api/companies/:companyId/bank-transactions/import
+- POST /api/bank-transactions/:id/reconcile
+
 ## External Dependencies
 
 **Core Infrastructure**:

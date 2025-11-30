@@ -236,6 +236,7 @@ export interface IStorage {
 
   // AI Anomaly Alerts
   createAnomalyAlert(alert: InsertAnomalyAlert): Promise<AnomalyAlert>;
+  getAnomalyAlertById(id: string): Promise<AnomalyAlert | undefined>;
   getAnomalyAlertsByCompanyId(companyId: string): Promise<AnomalyAlert[]>;
   getUnresolvedAnomalyAlerts(companyId: string): Promise<AnomalyAlert[]>;
   updateAnomalyAlert(id: string, data: Partial<InsertAnomalyAlert>): Promise<AnomalyAlert>;
@@ -1056,6 +1057,14 @@ export class DatabaseStorage implements IStorage {
       .insert(anomalyAlerts)
       .values(insertAlert)
       .returning();
+    return alert;
+  }
+
+  async getAnomalyAlertById(id: string): Promise<AnomalyAlert | undefined> {
+    const [alert] = await db
+      .select()
+      .from(anomalyAlerts)
+      .where(eq(anomalyAlerts.id, id));
     return alert;
   }
 

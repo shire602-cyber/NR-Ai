@@ -1998,11 +1998,19 @@ Keep your tone professional but friendly, like a trusted advisor.`
   // =====================================
 
   // Enhanced AI Batch Transaction Categorization
-  app.post("/api/ai/batch-categorize", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/ai/batch-categorize", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId, transactions } = req.body;
+      const userId = (req as any).user.id;
+      
       if (!companyId || !transactions || !Array.isArray(transactions)) {
         return res.status(400).json({ message: 'Company ID and transactions array required' });
+      }
+
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
 
       const accounts = await storage.getAccountsByCompanyId(companyId);
@@ -2093,11 +2101,19 @@ Respond with a JSON object:
   });
 
   // Anomaly & Duplicate Detection
-  app.post("/api/ai/detect-anomalies", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/ai/detect-anomalies", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.body;
+      const userId = (req as any).user.id;
+      
       if (!companyId) {
         return res.status(400).json({ message: 'Company ID required' });
+      }
+
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
 
       const invoices = await storage.getInvoicesByCompanyId(companyId);
@@ -2194,10 +2210,17 @@ Respond with JSON:
   });
 
   // Get Anomaly Alerts
-  app.get("/api/companies/:companyId/anomaly-alerts", authMiddleware, async (req: Request, res: Response) => {
+  app.get("/api/companies/:companyId/anomaly-alerts", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const { resolved } = req.query;
+      const userId = (req as any).user.id;
+      
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
       
       let alerts;
       if (resolved === 'false') {
@@ -2213,25 +2236,44 @@ Respond with JSON:
   });
 
   // Resolve Anomaly Alert
-  app.post("/api/anomaly-alerts/:id/resolve", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/anomaly-alerts/:id/resolve", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { note } = req.body;
       const userId = (req as any).user?.id;
 
-      const alert = await storage.resolveAnomalyAlert(id, userId, note);
-      res.json(alert);
+      // Get alert to verify company access
+      const alert = await storage.getAnomalyAlertById(id);
+      if (!alert) {
+        return res.status(404).json({ message: 'Alert not found' });
+      }
+      
+      const hasAccess = await storage.hasCompanyAccess(userId, alert.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const resolvedAlert = await storage.resolveAnomalyAlert(id, userId, note);
+      res.json(resolvedAlert);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
   });
 
   // AI-Assisted Bank Reconciliation
-  app.post("/api/ai/reconcile", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/ai/reconcile", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.body;
+      const userId = (req as any).user.id;
+      
       if (!companyId) {
         return res.status(400).json({ message: 'Company ID required' });
+      }
+
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
 
       const bankTransactions = await storage.getUnreconciledBankTransactions(companyId);
@@ -2364,9 +2406,17 @@ ${JSON.stringify(ledgerData, null, 2)}`
   });
 
   // Bank Transactions CRUD
-  app.get("/api/companies/:companyId/bank-transactions", authMiddleware, async (req: Request, res: Response) => {
+  app.get("/api/companies/:companyId/bank-transactions", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
       const transactions = await storage.getBankTransactionsByCompanyId(companyId);
       res.json(transactions);
     } catch (error: any) {
@@ -2374,9 +2424,17 @@ ${JSON.stringify(ledgerData, null, 2)}`
     }
   });
 
-  app.post("/api/companies/:companyId/bank-transactions", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/bank-transactions", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
       const transaction = await storage.createBankTransaction({
         ...req.body,
         companyId,
@@ -2388,10 +2446,17 @@ ${JSON.stringify(ledgerData, null, 2)}`
   });
 
   // Import bank transactions from CSV
-  app.post("/api/companies/:companyId/bank-transactions/import", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/bank-transactions/import", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const { transactions } = req.body;
+      const userId = (req as any).user.id;
+
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
 
       if (!Array.isArray(transactions)) {
         return res.status(400).json({ message: 'Transactions array required' });
@@ -2417,11 +2482,19 @@ ${JSON.stringify(ledgerData, null, 2)}`
   });
 
   // Predictive Cash Flow Forecasting
-  app.post("/api/ai/forecast-cashflow", authMiddleware, async (req: Request, res: Response) => {
+  app.post("/api/ai/forecast-cashflow", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId, forecastMonths = 3 } = req.body;
+      const userId = (req as any).user.id;
+      
       if (!companyId) {
         return res.status(400).json({ message: 'Company ID required' });
+      }
+
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
 
       const invoices = await storage.getInvoicesByCompanyId(companyId);
