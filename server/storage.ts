@@ -40,7 +40,10 @@ import type {
   TaxReturnArchive, InsertTaxReturnArchive,
   ComplianceTask, InsertComplianceTask,
   Message, InsertMessage,
-  NewsItem, InsertNewsItem
+  NewsItem, InsertNewsItem,
+  Invitation, InsertInvitation,
+  ActivityLog, InsertActivityLog,
+  ClientNote, InsertClientNote
 } from "@shared/schema";
 import {
   users,
@@ -84,7 +87,10 @@ import {
   taxReturnArchive,
   complianceTasks,
   messages,
-  newsItems
+  newsItems,
+  invitations,
+  activityLogs,
+  clientNotes
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -391,6 +397,34 @@ export interface IStorage {
   // News Items
   getNewsItems(): Promise<NewsItem[]>;
   createNewsItem(news: InsertNewsItem): Promise<NewsItem>;
+
+  // Invitations (Admin)
+  getInvitations(): Promise<Invitation[]>;
+  getInvitationsByCompany(companyId: string): Promise<Invitation[]>;
+  getInvitationByToken(token: string): Promise<Invitation | undefined>;
+  getInvitationByEmail(email: string): Promise<Invitation | undefined>;
+  createInvitation(invitation: InsertInvitation): Promise<Invitation>;
+  updateInvitation(id: string, data: Partial<InsertInvitation>): Promise<Invitation>;
+  deleteInvitation(id: string): Promise<void>;
+
+  // Activity Logs (Admin)
+  getActivityLogs(limit?: number): Promise<ActivityLog[]>;
+  getActivityLogsByCompany(companyId: string, limit?: number): Promise<ActivityLog[]>;
+  getActivityLogsByUser(userId: string, limit?: number): Promise<ActivityLog[]>;
+  createActivityLog(log: InsertActivityLog): Promise<ActivityLog>;
+
+  // Client Notes (Admin internal notes)
+  getClientNotes(companyId: string): Promise<ClientNote[]>;
+  createClientNote(note: InsertClientNote): Promise<ClientNote>;
+  updateClientNote(id: string, data: Partial<InsertClientNote>): Promise<ClientNote>;
+  deleteClientNote(id: string): Promise<void>;
+
+  // Admin User Management
+  updateUser(id: string, data: { name?: string; email?: string; isAdmin?: boolean }): Promise<User>;
+  deleteUser(id: string): Promise<void>;
+
+  // Admin Company Management
+  deleteCompany(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1909,6 +1943,143 @@ export class DatabaseStorage implements IStorage {
       .values(insertNews)
       .returning();
     return news;
+  }
+
+  // Invitations (Admin)
+  async getInvitations(): Promise<Invitation[]> {
+    return await db
+      .select()
+      .from(invitations)
+      .orderBy(desc(invitations.createdAt));
+  }
+
+  async getInvitationsByCompany(companyId: string): Promise<Invitation[]> {
+    return await db
+      .select()
+      .from(invitations)
+      .where(eq(invitations.companyId, companyId))
+      .orderBy(desc(invitations.createdAt));
+  }
+
+  async getInvitationByToken(token: string): Promise<Invitation | undefined> {
+    const [invitation] = await db
+      .select()
+      .from(invitations)
+      .where(eq(invitations.token, token));
+    return invitation || undefined;
+  }
+
+  async getInvitationByEmail(email: string): Promise<Invitation | undefined> {
+    const [invitation] = await db
+      .select()
+      .from(invitations)
+      .where(eq(invitations.email, email));
+    return invitation || undefined;
+  }
+
+  async createInvitation(insertInvitation: InsertInvitation): Promise<Invitation> {
+    const [invitation] = await db
+      .insert(invitations)
+      .values(insertInvitation)
+      .returning();
+    return invitation;
+  }
+
+  async updateInvitation(id: string, data: Partial<InsertInvitation>): Promise<Invitation> {
+    const [invitation] = await db
+      .update(invitations)
+      .set(data)
+      .where(eq(invitations.id, id))
+      .returning();
+    return invitation;
+  }
+
+  async deleteInvitation(id: string): Promise<void> {
+    await db.delete(invitations).where(eq(invitations.id, id));
+  }
+
+  // Activity Logs (Admin)
+  async getActivityLogs(limit: number = 100): Promise<ActivityLog[]> {
+    return await db
+      .select()
+      .from(activityLogs)
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getActivityLogsByCompany(companyId: string, limit: number = 100): Promise<ActivityLog[]> {
+    return await db
+      .select()
+      .from(activityLogs)
+      .where(eq(activityLogs.companyId, companyId))
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getActivityLogsByUser(userId: string, limit: number = 100): Promise<ActivityLog[]> {
+    return await db
+      .select()
+      .from(activityLogs)
+      .where(eq(activityLogs.userId, userId))
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(limit);
+  }
+
+  async createActivityLog(insertLog: InsertActivityLog): Promise<ActivityLog> {
+    const [log] = await db
+      .insert(activityLogs)
+      .values(insertLog)
+      .returning();
+    return log;
+  }
+
+  // Client Notes (Admin)
+  async getClientNotes(companyId: string): Promise<ClientNote[]> {
+    return await db
+      .select()
+      .from(clientNotes)
+      .where(eq(clientNotes.companyId, companyId))
+      .orderBy(desc(clientNotes.createdAt));
+  }
+
+  async createClientNote(insertNote: InsertClientNote): Promise<ClientNote> {
+    const [note] = await db
+      .insert(clientNotes)
+      .values(insertNote)
+      .returning();
+    return note;
+  }
+
+  async updateClientNote(id: string, data: Partial<InsertClientNote>): Promise<ClientNote> {
+    const [note] = await db
+      .update(clientNotes)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(clientNotes.id, id))
+      .returning();
+    return note;
+  }
+
+  async deleteClientNote(id: string): Promise<void> {
+    await db.delete(clientNotes).where(eq(clientNotes.id, id));
+  }
+
+  // Admin User Management
+  async updateUser(id: string, data: { name?: string; email?: string; isAdmin?: boolean }): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set(data)
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
+  }
+
+  // Admin Company Management
+  async deleteCompany(id: string): Promise<void> {
+    await db.delete(companies).where(eq(companies.id, id));
   }
 }
 

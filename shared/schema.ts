@@ -1272,3 +1272,74 @@ export const insertNewsItemSchema = createInsertSchema(newsItems).omit({
 
 export type InsertNewsItem = z.infer<typeof insertNewsItemSchema>;
 export type NewsItem = typeof newsItems.$inferSelect;
+
+// ===========================
+// User Invitations (Admin invites clients)
+// ===========================
+export const invitations = pgTable("invitations", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull(),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("client"), // client | staff
+  token: text("token").notNull().unique(), // Hashed invitation token
+  invitedBy: uuid("invited_by").notNull().references(() => users.id),
+  status: text("status").notNull().default("pending"), // pending | accepted | expired | revoked
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedAt: timestamp("accepted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertInvitationSchema = createInsertSchema(invitations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvitation = z.infer<typeof insertInvitationSchema>;
+export type Invitation = typeof invitations.$inferSelect;
+
+// ===========================
+// Activity Logs (Audit Trail)
+// ===========================
+export const activityLogs = pgTable("activity_logs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").references(() => users.id),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  action: text("action").notNull(), // create | update | delete | login | logout | invite | view
+  entityType: text("entity_type").notNull(), // user | company | document | invoice | journal_entry | etc
+  entityId: text("entity_id"),
+  description: text("description").notNull(),
+  metadata: text("metadata"), // JSON string for additional context
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertActivityLog = z.infer<typeof insertActivityLogSchema>;
+export type ActivityLog = typeof activityLogs.$inferSelect;
+
+// ===========================
+// Client Notes (Admin notes about clients - internal only)
+// ===========================
+export const clientNotes = pgTable("client_notes", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  authorId: uuid("author_id").notNull().references(() => users.id),
+  content: text("content").notNull(),
+  isPinned: boolean("is_pinned").default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertClientNoteSchema = createInsertSchema(clientNotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertClientNote = z.infer<typeof insertClientNoteSchema>;
+export type ClientNote = typeof clientNotes.$inferSelect;
