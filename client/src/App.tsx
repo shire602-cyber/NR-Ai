@@ -49,6 +49,10 @@ import TaxReturnArchive from '@/pages/TaxReturnArchive';
 import ComplianceCalendar from '@/pages/ComplianceCalendar';
 import TaskCenter from '@/pages/TaskCenter';
 import UAENewsFeed from '@/pages/UAENewsFeed';
+import AdminDashboard from '@/pages/AdminDashboard';
+import ClientManagement from '@/pages/ClientManagement';
+import UserInvitations from '@/pages/UserInvitations';
+import ActivityLogs from '@/pages/ActivityLogs';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -151,6 +155,15 @@ function Router() {
           <Route path="/compliance-calendar" component={ComplianceCalendar} />
           <Route path="/task-center" component={TaskCenter} />
           <Route path="/news-feed" component={UAENewsFeed} />
+          
+          {/* Admin Routes */}
+          <Route path="/admin/dashboard" component={AdminDashboard} />
+          <Route path="/admin/clients" component={ClientManagement} />
+          <Route path="/admin/invitations" component={UserInvitations} />
+          <Route path="/admin/activity-logs" component={ActivityLogs} />
+          <Route path="/admin/users" component={Admin} />
+          <Route path="/admin" component={Admin} />
+          
           <Route component={NotFound} />
         </Switch>
       </ProtectedLayout>

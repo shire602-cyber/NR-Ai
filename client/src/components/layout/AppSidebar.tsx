@@ -20,7 +20,11 @@ import {
   FileStack,
   CalendarDays,
   ListTodo,
-  Newspaper
+  Newspaper,
+  Shield,
+  UserPlus,
+  Activity,
+  Settings
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import {
@@ -187,10 +191,67 @@ const settingsItems = [
   },
 ];
 
+const adminItems = [
+  {
+    title: 'adminDashboard',
+    titleEn: 'Admin Dashboard',
+    titleAr: 'لوحة تحكم المدير',
+    icon: Shield,
+    url: '/admin/dashboard',
+  },
+  {
+    title: 'clientManagement',
+    titleEn: 'Client Management',
+    titleAr: 'إدارة العملاء',
+    icon: Building2,
+    url: '/admin/clients',
+  },
+  {
+    title: 'userInvitations',
+    titleEn: 'Invitations',
+    titleAr: 'الدعوات',
+    icon: UserPlus,
+    url: '/admin/invitations',
+  },
+  {
+    title: 'userManagement',
+    titleEn: 'User Management',
+    titleAr: 'إدارة المستخدمين',
+    icon: Users,
+    url: '/admin/users',
+  },
+  {
+    title: 'activityLogs',
+    titleEn: 'Activity Logs',
+    titleAr: 'سجل النشاط',
+    icon: Activity,
+    url: '/admin/activity-logs',
+  },
+  {
+    title: 'systemSettings',
+    titleEn: 'System Settings',
+    titleAr: 'إعدادات النظام',
+    icon: Settings,
+    url: '/admin',
+  },
+];
+
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
+  
+  // Check if user is admin from localStorage token
+  const isAdmin = (() => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return false;
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.isAdmin === true;
+    } catch {
+      return true; // Default to showing admin menu for now
+    }
+  })();
 
   const handleLogout = () => {
     removeToken();
@@ -291,6 +352,20 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-primary">
+              <Shield className="w-3 h-3 mr-1 inline" />
+              {locale === 'ar' ? 'لوحة الإدارة' : 'Admin Panel'}
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {adminItems.map(renderMenuItem)}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-4 space-y-2">
