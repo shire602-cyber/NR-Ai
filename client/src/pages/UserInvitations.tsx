@@ -186,12 +186,12 @@ export default function UserInvitations() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="company">Assign to Client (optional)</Label>
-                <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
+                <Select value={selectedCompanyId || "none"} onValueChange={(value) => setSelectedCompanyId(value === "none" ? "" : value)}>
                   <SelectTrigger data-testid="select-invite-company">
                     <SelectValue placeholder="Select a client company" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No company assigned</SelectItem>
+                    <SelectItem value="none">No company assigned</SelectItem>
                     {clients.map((client) => (
                       <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                     ))}
