@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { useTranslation, useI18n } from '@/lib/i18n';
-import { removeToken } from '@/lib/auth';
+import { removeToken, getToken } from '@/lib/auth';
 
 const coreItems = [
   {
@@ -241,28 +241,42 @@ export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
-  const [isAdmin, setIsAdmin] = useState(false);
 
-  // Check admin status - runs on mount and whenever location changes (e.g., after login redirect)
-  const checkAdminStatus = () => {
+  // Check admin status directly from token - no state needed
+  const checkAdminStatus = (): { isAdmin: boolean; needsRelogin: boolean } => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getToken(); // Use the correct auth token key
       if (!token) {
-        return false;
+        return { isAdmin: false, needsRelogin: false };
       }
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      return payload.isAdmin === true;
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        return { isAdmin: false, needsRelogin: false };
+      }
+      const payload = JSON.parse(atob(parts[1]));
+      
+      // If token doesn't have isAdmin field, it's an old token - needs re-login
+      if (payload.isAdmin === undefined) {
+        return { isAdmin: false, needsRelogin: true };
+      }
+      
+      return { isAdmin: payload.isAdmin === true, needsRelogin: false };
     } catch (error) {
-      return false;
+      return { isAdmin: false, needsRelogin: false };
     }
   };
 
-  // Re-check on every render and location change
-  const currentIsAdmin = checkAdminStatus();
+  // Check admin status on every render
+  const { isAdmin, needsRelogin } = checkAdminStatus();
   
+  // Handle old token logout in useEffect (can't update state during render)
   useEffect(() => {
-    setIsAdmin(currentIsAdmin);
-  }, [location, currentIsAdmin]);
+    if (needsRelogin) {
+      console.log('[Admin Check] Old token detected - forcing re-login to get updated token');
+      removeToken();
+      setLocation('/');
+    }
+  }, [needsRelogin, setLocation]);
 
   const handleLogout = () => {
     removeToken();
@@ -364,7 +378,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {currentIsAdmin && (
+        {isAdmin && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-primary">
               <Shield className="w-3 h-3 mr-1 inline" />
