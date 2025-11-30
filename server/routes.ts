@@ -28,15 +28,17 @@ import * as googleSheets from "./integrations/googleSheets";
 const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h";
 
-// Initialize AI client using OpenRouter with DeepSeek model
+// Initialize AI client using OpenRouter with ultra-cheap Llama 3.2 model
 // This uses Replit's AI Integrations service, which provides OpenRouter-compatible API access without requiring your own API key.
 const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
   apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
 });
 
-// DeepSeek model for all AI features - free/cheaper alternative to OpenAI
-const AI_MODEL = "deepseek/deepseek-chat";
+// Llama 3.2 3B - Absolute cheapest AI model available (~20x cheaper than DeepSeek)
+// Pricing: $0.06 input / $0.08 output per 1M tokens (vs DeepSeek's $0.56/$1.10)
+// Using 3B version for better quality while staying ultra-cheap
+const AI_MODEL = "meta-llama/llama-3.2-3b-instruct";
 
 // Authentication middleware
 async function authMiddleware(req: Request, res: Response, next: Function) {
