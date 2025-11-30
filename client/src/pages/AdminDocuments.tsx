@@ -381,7 +381,7 @@ export default function AdminDocuments() {
                 <div className="text-center py-12 text-muted-foreground">
                   <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p>No documents found for {selectedCompany?.nameEn}</p>
-                  <Button variant="link" onClick={() => setUploadDialogOpen(true)}>
+                  <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
                     Upload a document
                   </Button>
                 </div>
