@@ -206,7 +206,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      const token = jwt.sign({ userId: user.id, email: user.email, isAdmin: user.isAdmin === true }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      // Ensure isAdmin is a proper boolean
+      const isAdminBoolean = user.isAdmin === true || user.isAdmin === 'true' || user.isAdmin === 1;
+      const token = jwt.sign({ userId: user.id, email: user.email, isAdmin: isAdminBoolean }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
       
       res.json({
         token,
@@ -214,7 +216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: user.id,
           email: user.email,
           name: user.name,
-          isAdmin: user.isAdmin,
+          isAdmin: isAdminBoolean,
         },
       });
     } catch (error: any) {

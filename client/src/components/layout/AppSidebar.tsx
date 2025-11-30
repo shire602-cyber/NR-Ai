@@ -253,8 +253,11 @@ export function AppSidebar() {
           return;
         }
         const payload = JSON.parse(atob(token.split('.')[1]));
+        console.log('Token payload:', payload);
+        console.log('isAdmin value:', payload.isAdmin);
         setIsAdmin(payload.isAdmin === true);
       } catch (error) {
+        console.error('Error checking admin status:', error);
         setIsAdmin(false);
       }
     };
