@@ -75,4 +75,4 @@ args = "npm run dev"
 waitForPort = 5000
 
 [agent]
-integrations = ["google-sheet:1.0.0"]
+integrations = ["google-sheet:1.0.0", "javascript_openrouter_ai_integrations:1.0.0"]

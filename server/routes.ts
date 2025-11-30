@@ -28,10 +28,15 @@ import * as googleSheets from "./integrations/googleSheets";
 const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h";
 
-// Initialize OpenAI client
+// Initialize AI client using OpenRouter with DeepSeek model
+// This uses Replit's AI Integrations service, which provides OpenRouter-compatible API access without requiring your own API key.
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
+  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
 });
+
+// DeepSeek model for all AI features - free/cheaper alternative to OpenAI
+const AI_MODEL = "deepseek/deepseek-chat";
 
 // Authentication middleware
 async function authMiddleware(req: Request, res: Response, next: Function) {
@@ -1638,7 +1643,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Use OpenAI to categorize the expense
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -1691,7 +1696,7 @@ Amount: ${validated.amount} ${validated.currency}`
       
       // Use OpenAI to parse bank statement transactions
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -1782,7 +1787,7 @@ If no valid transactions can be found, return { "transactions": [] }`
       
       // Use OpenAI to provide CFO advice
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -1861,7 +1866,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
       ).join('\n');
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -1959,7 +1964,7 @@ Respond with a JSON object:
       };
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -2105,7 +2110,7 @@ Respond with JSON:
       };
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -2300,7 +2305,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
       };
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -2565,7 +2570,7 @@ Current date: ${new Date().toISOString().split('T')[0]}
 Company: ${company.name}`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: message },
@@ -2910,7 +2915,7 @@ ${expenseAccounts.map(a => `- ${a.nameEn}`).join('\n')}
 Respond with just the account name, nothing else.`;
 
           const response = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: AI_MODEL,
             messages: [{ role: "user", content: prompt }],
             temperature: 0.3,
             max_tokens: 50,
@@ -2945,7 +2950,7 @@ Respond with just the account name, nothing else.`;
 Respond with just the category name, nothing else.`;
 
         const response = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model: AI_MODEL,
           messages: [{ role: "user", content: prompt }],
           temperature: 0.3,
           max_tokens: 30,
@@ -4167,7 +4172,7 @@ Respond with just the category name, nothing else.`;
       if (sanitizedContent) {
         try {
           const aiResponse = await openai.chat.completions.create({
-            model: "gpt-4o",
+            model: AI_MODEL,
             messages: [
               {
                 role: "system",
@@ -6256,7 +6261,7 @@ Respond with just the category name, nothing else.`;
       });
       
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -7266,7 +7271,7 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
         aiEnabled: !!process.env.OPENAI_API_KEY,
         categorization: {
           enabled: true,
-          model: 'gpt-4o',
+          model: AI_MODEL,
         },
         anomalyDetection: {
           enabled: true,
