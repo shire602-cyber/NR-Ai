@@ -6613,6 +6613,668 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
     }
   });
 
+  // =====================================
+  // ADMIN PANEL - DASHBOARD & STATS
+  // =====================================
+  
+  // Get admin dashboard stats
+  app.get("/api/admin/stats", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const users = await storage.getAllUsers();
+      const companies = await storage.getAllCompanies();
+      const invitations = await storage.getInvitations();
+      const activityLogs = await storage.getActivityLogs(10);
+      
+      const pendingInvitations = invitations.filter(i => i.status === 'pending').length;
+      const activeClients = companies.length;
+      const totalUsers = users.length;
+      const adminUsers = users.filter(u => u.isAdmin).length;
+      
+      res.json({
+        totalClients: activeClients,
+        totalUsers,
+        adminUsers,
+        clientUsers: totalUsers - adminUsers,
+        pendingInvitations,
+        recentActivity: activityLogs,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN PANEL - CLIENT (COMPANY) MANAGEMENT
+  // =====================================
+  
+  // Get all clients (companies) - Admin only
+  app.get("/api/admin/clients", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const companies = await storage.getAllCompanies();
+      
+      // Get user counts per company
+      const clientsWithStats = await Promise.all(
+        companies.map(async (company) => {
+          const companyUsers = await storage.getCompanyUsersByCompanyId(company.id);
+          const documents = await storage.getDocuments(company.id);
+          const invoices = await storage.getInvoicesByCompanyId(company.id);
+          
+          return {
+            ...company,
+            userCount: companyUsers.length,
+            documentCount: documents.length,
+            invoiceCount: invoices.length,
+          };
+        })
+      );
+      
+      res.json(clientsWithStats);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get specific client details with all related data - Admin only
+  app.get("/api/admin/clients/:clientId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const company = await storage.getCompany(clientId);
+      
+      if (!company) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+      
+      const companyUsers = await storage.getCompanyUserWithUser(clientId);
+      const documents = await storage.getDocuments(clientId);
+      const invoices = await storage.getInvoicesByCompanyId(clientId);
+      const receipts = await storage.getReceiptsByCompanyId(clientId);
+      const journalEntries = await storage.getJournalEntriesByCompanyId(clientId);
+      const complianceTasks = await storage.getComplianceTasks(clientId);
+      const clientNotes = await storage.getClientNotes(clientId);
+      const activityLogs = await storage.getActivityLogsByCompany(clientId, 50);
+      
+      res.json({
+        company,
+        users: companyUsers,
+        documents,
+        invoices,
+        receipts,
+        journalEntries,
+        complianceTasks,
+        clientNotes,
+        activityLogs,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create new client (company) - Admin only
+  app.post("/api/admin/clients", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user.id;
+      
+      const company = await storage.createCompany({
+        name: req.body.name,
+        baseCurrency: req.body.baseCurrency || "AED",
+        locale: req.body.locale || "en",
+        legalStructure: req.body.legalStructure,
+        industry: req.body.industry,
+        registrationNumber: req.body.registrationNumber,
+        businessAddress: req.body.businessAddress,
+        contactPhone: req.body.contactPhone,
+        contactEmail: req.body.contactEmail,
+        websiteUrl: req.body.websiteUrl,
+        logoUrl: req.body.logoUrl,
+        trnVatNumber: req.body.trnVatNumber,
+        taxRegistrationType: req.body.taxRegistrationType,
+        vatFilingFrequency: req.body.vatFilingFrequency,
+        corporateTaxId: req.body.corporateTaxId,
+      });
+      
+      // Seed chart of accounts for the new company
+      await seedChartOfAccounts(company.id);
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId,
+        companyId: company.id,
+        action: 'create',
+        entityType: 'company',
+        entityId: company.id,
+        description: `Created new client: ${company.name}`,
+      });
+      
+      res.status(201).json(company);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update client (company) - Admin only
+  app.patch("/api/admin/clients/:clientId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const userId = (req as any).user.id;
+      
+      const company = await storage.updateCompany(clientId, req.body);
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId,
+        companyId: clientId,
+        action: 'update',
+        entityType: 'company',
+        entityId: clientId,
+        description: `Updated client: ${company.name}`,
+      });
+      
+      res.json(company);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete client (company) - Admin only
+  app.delete("/api/admin/clients/:clientId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const userId = (req as any).user.id;
+      
+      const company = await storage.getCompany(clientId);
+      if (!company) {
+        return res.status(404).json({ message: "Client not found" });
+      }
+      
+      await storage.deleteCompany(clientId);
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId,
+        action: 'delete',
+        entityType: 'company',
+        entityId: clientId,
+        description: `Deleted client: ${company.name}`,
+      });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN PANEL - USER MANAGEMENT
+  // =====================================
+  
+  // Get all users - Admin only
+  app.get("/api/admin/users", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const users = await storage.getAllUsers();
+      
+      // Return users without password hashes
+      const safeUsers = users.map(({ passwordHash, ...user }) => user);
+      res.json(safeUsers);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update user (admin can promote to admin, change details) - Admin only
+  app.patch("/api/admin/users/:userId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { userId: targetUserId } = req.params;
+      const adminUserId = (req as any).user.id;
+      
+      const updates: any = {};
+      if (req.body.name) updates.name = req.body.name;
+      if (req.body.email) updates.email = req.body.email;
+      if (typeof req.body.isAdmin === 'boolean') updates.isAdmin = req.body.isAdmin;
+      
+      const user = await storage.updateUser(targetUserId, updates);
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId: adminUserId,
+        action: 'update',
+        entityType: 'user',
+        entityId: targetUserId,
+        description: `Updated user: ${user.email}`,
+        metadata: JSON.stringify({ changes: Object.keys(updates) }),
+      });
+      
+      const { passwordHash, ...safeUser } = user;
+      res.json(safeUser);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete user - Admin only
+  app.delete("/api/admin/users/:userId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { userId: targetUserId } = req.params;
+      const adminUserId = (req as any).user.id;
+      
+      // Prevent admin from deleting themselves
+      if (targetUserId === adminUserId) {
+        return res.status(400).json({ message: "Cannot delete your own account" });
+      }
+      
+      const user = await storage.getUser(targetUserId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      await storage.deleteUser(targetUserId);
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId: adminUserId,
+        action: 'delete',
+        entityType: 'user',
+        entityId: targetUserId,
+        description: `Deleted user: ${user.email}`,
+      });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN PANEL - CLIENT INVITATIONS
+  // =====================================
+  
+  // Get all invitations - Admin only
+  app.get("/api/admin/invitations", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const invitations = await storage.getInvitations();
+      res.json(invitations);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create invitation - Admin only
+  app.post("/api/admin/invitations", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const adminUserId = (req as any).user.id;
+      
+      // Check if email already has pending invitation
+      const existing = await storage.getInvitationByEmail(req.body.email);
+      if (existing && existing.status === 'pending') {
+        return res.status(400).json({ message: "Pending invitation already exists for this email" });
+      }
+      
+      // Generate secure token
+      const token = require('crypto').randomBytes(32).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+      
+      const invitation = await storage.createInvitation({
+        email: req.body.email,
+        companyId: req.body.companyId || null,
+        role: req.body.role || 'client',
+        token,
+        invitedBy: adminUserId,
+        status: 'pending',
+        expiresAt,
+      });
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId: adminUserId,
+        companyId: req.body.companyId || null,
+        action: 'invite',
+        entityType: 'invitation',
+        entityId: invitation.id,
+        description: `Sent invitation to ${req.body.email}`,
+      });
+      
+      res.status(201).json(invitation);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Revoke invitation - Admin only
+  app.patch("/api/admin/invitations/:invitationId/revoke", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { invitationId } = req.params;
+      const adminUserId = (req as any).user.id;
+      
+      const invitation = await storage.updateInvitation(invitationId, { status: 'revoked' });
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId: adminUserId,
+        action: 'update',
+        entityType: 'invitation',
+        entityId: invitationId,
+        description: `Revoked invitation for ${invitation.email}`,
+      });
+      
+      res.json(invitation);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Resend invitation - Admin only
+  app.post("/api/admin/invitations/:invitationId/resend", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { invitationId } = req.params;
+      const adminUserId = (req as any).user.id;
+      
+      // Generate new token and extend expiry
+      const token = require('crypto').randomBytes(32).toString('hex');
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+      
+      const invitation = await storage.updateInvitation(invitationId, {
+        token,
+        expiresAt,
+        status: 'pending',
+      });
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId: adminUserId,
+        action: 'update',
+        entityType: 'invitation',
+        entityId: invitationId,
+        description: `Resent invitation to ${invitation.email}`,
+      });
+      
+      res.json(invitation);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete invitation - Admin only
+  app.delete("/api/admin/invitations/:invitationId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { invitationId } = req.params;
+      await storage.deleteInvitation(invitationId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN PANEL - ACTIVITY LOGS
+  // =====================================
+  
+  // Get all activity logs - Admin only
+  app.get("/api/admin/activity-logs", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = await storage.getActivityLogs(limit);
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get activity logs for specific company - Admin only
+  app.get("/api/admin/clients/:clientId/activity-logs", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = await storage.getActivityLogsByCompany(clientId, limit);
+      res.json(logs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN PANEL - CLIENT NOTES (Internal)
+  // =====================================
+  
+  // Get notes for a client - Admin only
+  app.get("/api/admin/clients/:clientId/notes", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const notes = await storage.getClientNotes(clientId);
+      res.json(notes);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create note for a client - Admin only
+  app.post("/api/admin/clients/:clientId/notes", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const authorId = (req as any).user.id;
+      
+      const note = await storage.createClientNote({
+        companyId: clientId,
+        authorId,
+        content: req.body.content,
+        isPinned: req.body.isPinned || false,
+      });
+      
+      res.status(201).json(note);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update note - Admin only
+  app.patch("/api/admin/notes/:noteId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { noteId } = req.params;
+      const note = await storage.updateClientNote(noteId, req.body);
+      res.json(note);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete note - Admin only
+  app.delete("/api/admin/notes/:noteId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { noteId } = req.params;
+      await storage.deleteClientNote(noteId);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN PANEL - MANAGE DOCUMENTS FOR CLIENTS
+  // =====================================
+  
+  // Admin upload document for client
+  app.post("/api/admin/clients/:clientId/documents", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { clientId } = req.params;
+      const userId = (req as any).user.id;
+      
+      const documentData = {
+        companyId: clientId,
+        name: req.body.name,
+        nameAr: req.body.nameAr || null,
+        category: req.body.category,
+        description: req.body.description || null,
+        fileUrl: req.body.fileUrl || '/uploads/placeholder.pdf',
+        fileName: req.body.fileName || 'document.pdf',
+        fileSize: req.body.fileSize || null,
+        mimeType: req.body.mimeType || 'application/pdf',
+        expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
+        reminderDays: req.body.reminderDays || 30,
+        reminderSent: false,
+        tags: req.body.tags || null,
+        isArchived: false,
+        uploadedBy: userId,
+      };
+      
+      const document = await storage.createDocument(documentData);
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId,
+        companyId: clientId,
+        action: 'create',
+        entityType: 'document',
+        entityId: document.id,
+        description: `Admin uploaded document: ${document.name}`,
+      });
+      
+      res.status(201).json(document);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // PUBLIC - INVITATION ACCEPTANCE
+  // =====================================
+  
+  // Verify invitation token (public endpoint)
+  app.get("/api/invitations/verify/:token", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+      const invitation = await storage.getInvitationByToken(token);
+      
+      if (!invitation) {
+        return res.status(404).json({ message: "Invitation not found" });
+      }
+      
+      if (invitation.status !== 'pending') {
+        return res.status(400).json({ message: `Invitation has been ${invitation.status}` });
+      }
+      
+      if (new Date() > invitation.expiresAt) {
+        return res.status(400).json({ message: "Invitation has expired" });
+      }
+      
+      // Get company details if associated
+      let company = null;
+      if (invitation.companyId) {
+        company = await storage.getCompany(invitation.companyId);
+      }
+      
+      res.json({
+        email: invitation.email,
+        role: invitation.role,
+        company: company ? { id: company.id, name: company.name } : null,
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Accept invitation and create account (public endpoint)
+  app.post("/api/invitations/accept/:token", async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+      const { name, password } = req.body;
+      
+      const invitation = await storage.getInvitationByToken(token);
+      
+      if (!invitation) {
+        return res.status(404).json({ message: "Invitation not found" });
+      }
+      
+      if (invitation.status !== 'pending') {
+        return res.status(400).json({ message: `Invitation has been ${invitation.status}` });
+      }
+      
+      if (new Date() > invitation.expiresAt) {
+        return res.status(400).json({ message: "Invitation has expired" });
+      }
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(invitation.email);
+      if (existingUser) {
+        return res.status(400).json({ message: "User already exists with this email" });
+      }
+      
+      // Create user
+      const passwordHash = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({
+        email: invitation.email,
+        name,
+        password,
+        isAdmin: invitation.role === 'staff',
+        passwordHash,
+      } as any);
+      
+      // If company associated, add user to company
+      if (invitation.companyId) {
+        await storage.createCompanyUser({
+          companyId: invitation.companyId,
+          userId: user.id,
+          role: 'owner', // Client users are owners of their company view
+        });
+      }
+      
+      // Mark invitation as accepted
+      await storage.updateInvitation(invitation.id, {
+        status: 'accepted',
+        acceptedAt: new Date(),
+      });
+      
+      // Log activity
+      await storage.createActivityLog({
+        userId: user.id,
+        companyId: invitation.companyId || null,
+        action: 'create',
+        entityType: 'user',
+        entityId: user.id,
+        description: `User registered via invitation: ${user.email}`,
+      });
+      
+      // Generate token for immediate login
+      const jwtToken = jwt.sign(
+        { userId: user.id, email: user.email },
+        JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN }
+      );
+      
+      const { passwordHash: _, ...safeUser } = user;
+      res.json({ user: safeUser, token: jwtToken });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // =====================================
+  // ADMIN PANEL - AI SETTINGS
+  // =====================================
+  
+  // Get AI settings - Admin only
+  app.get("/api/admin/settings", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      // Return current AI configuration
+      res.json({
+        aiEnabled: !!process.env.OPENAI_API_KEY,
+        categorization: {
+          enabled: true,
+          model: 'gpt-4o',
+        },
+        anomalyDetection: {
+          enabled: true,
+          sensitivity: 'medium',
+        },
+        newsAutoFetch: {
+          enabled: true,
+          intervalMinutes: 30,
+        },
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
