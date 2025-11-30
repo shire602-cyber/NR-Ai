@@ -6207,6 +6207,24 @@ Respond with just the category name, nothing else.`;
     }
   });
 
+  // Update company (admin)
+  app.patch("/api/admin/companies/:companyId", adminMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { companyId } = req.params;
+      const updates = req.body;
+      
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ message: 'Company not found' });
+      }
+      
+      const updatedCompany = await storage.updateCompany(companyId, updates);
+      res.json(updatedCompany);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   // Get audit logs
   app.get("/api/admin/audit-logs", adminMiddleware, async (req: Request, res: Response) => {
     try {

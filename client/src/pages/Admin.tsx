@@ -53,6 +53,8 @@ export default function Admin() {
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [newPlanDialogOpen, setNewPlanDialogOpen] = useState(false);
   const [editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
   // Fetch admin data
   const { data: settings = [], isLoading: settingsLoading } = useQuery<AdminSetting[]>({
@@ -140,6 +142,34 @@ export default function Admin() {
     },
     onError: () => {
       toast({ variant: 'destructive', title: 'Failed to delete plan' });
+    },
+  });
+
+  const updateUserMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<User> }) => {
+      return apiRequest('PATCH', `/api/admin/users/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
+      toast({ title: 'User updated successfully' });
+      setEditingUser(null);
+    },
+    onError: () => {
+      toast({ variant: 'destructive', title: 'Failed to update user' });
+    },
+  });
+
+  const updateCompanyMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Company> }) => {
+      return apiRequest('PATCH', `/api/admin/companies/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/companies'] });
+      toast({ title: 'Company updated successfully' });
+      setEditingCompany(null);
+    },
+    onError: () => {
+      toast({ variant: 'destructive', title: 'Failed to update company' });
     },
   });
 
@@ -597,7 +627,12 @@ export default function Admin() {
                         </TableCell>
                         <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" data-testid={`button-view-user-${user.id}`}>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            data-testid={`button-view-user-${user.id}`}
+                            onClick={() => setEditingUser(user)}
+                          >
                             <Edit2 className="w-4 h-4" />
                           </Button>
                         </TableCell>
@@ -608,6 +643,51 @@ export default function Admin() {
               </Table>
             </CardContent>
           </Card>
+
+          {/* Edit User Dialog */}
+          <Dialog open={!!editingUser} onOpenChange={(open) => !open && setEditingUser(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit User</DialogTitle>
+                <DialogDescription>Update user information</DialogDescription>
+              </DialogHeader>
+              {editingUser && (
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  updateUserMutation.mutate({
+                    id: editingUser.id,
+                    data: {
+                      name: formData.get('name') as string,
+                      email: formData.get('email') as string,
+                      isAdmin: formData.get('isAdmin') === 'on',
+                    }
+                  });
+                }}>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-user-name">Name</Label>
+                      <Input id="edit-user-name" name="name" defaultValue={editingUser.name} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-user-email">Email</Label>
+                      <Input id="edit-user-email" name="email" type="email" defaultValue={editingUser.email} required />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch id="edit-user-admin" name="isAdmin" defaultChecked={editingUser.isAdmin || false} />
+                      <Label htmlFor="edit-user-admin">Admin User</Label>
+                    </div>
+                  </div>
+                  <DialogFooter className="mt-4">
+                    <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
+                    <Button type="submit" disabled={updateUserMutation.isPending}>
+                      {updateUserMutation.isPending ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
 
           {/* Companies Table */}
           <h3 className="text-lg font-semibold mt-8">Companies</h3>
@@ -644,7 +724,12 @@ export default function Admin() {
                         <TableCell>{company.baseCurrency}</TableCell>
                         <TableCell>{new Date(company.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="icon" data-testid={`button-view-company-${company.id}`}>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            data-testid={`button-view-company-${company.id}`}
+                            onClick={() => setEditingCompany(company)}
+                          >
                             <Edit2 className="w-4 h-4" />
                           </Button>
                         </TableCell>
@@ -655,6 +740,62 @@ export default function Admin() {
               </Table>
             </CardContent>
           </Card>
+
+          {/* Edit Company Dialog */}
+          <Dialog open={!!editingCompany} onOpenChange={(open) => !open && setEditingCompany(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Company</DialogTitle>
+                <DialogDescription>Update company information</DialogDescription>
+              </DialogHeader>
+              {editingCompany && (
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.currentTarget);
+                  updateCompanyMutation.mutate({
+                    id: editingCompany.id,
+                    data: {
+                      name: formData.get('name') as string,
+                      trnVatNumber: formData.get('trnVatNumber') as string || null,
+                      baseCurrency: formData.get('baseCurrency') as string,
+                    }
+                  });
+                }}>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-company-name">Company Name</Label>
+                      <Input id="edit-company-name" name="name" defaultValue={editingCompany.name} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-company-trn">TRN/VAT Number</Label>
+                      <Input id="edit-company-trn" name="trnVatNumber" defaultValue={editingCompany.trnVatNumber || ''} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-company-currency">Base Currency</Label>
+                      <Select name="baseCurrency" defaultValue={editingCompany.baseCurrency}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="AED">AED - UAE Dirham</SelectItem>
+                          <SelectItem value="USD">USD - US Dollar</SelectItem>
+                          <SelectItem value="EUR">EUR - Euro</SelectItem>
+                          <SelectItem value="GBP">GBP - British Pound</SelectItem>
+                          <SelectItem value="SAR">SAR - Saudi Riyal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter className="mt-4">
+                    <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>Cancel</Button>
+                    <Button type="submit" disabled={updateCompanyMutation.isPending}>
+                      {updateCompanyMutation.isPending ? 'Saving...' : 'Save Changes'}
+                    </Button>
+                  </DialogFooter>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Settings Tab */}
