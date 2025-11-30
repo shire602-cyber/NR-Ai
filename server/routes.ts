@@ -168,8 +168,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Seed Chart of Accounts for new company
       await seedChartOfAccounts(company.id);
 
-      // Generate token
-      const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      // Generate token - new registrations are admins by default (they're creating their own company)
+      const token = jwt.sign({ userId: user.id, email: user.email, isAdmin: true }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      
+      // Make new registrations admins by default
+      await storage.updateUser(user.id, { isAdmin: true });
       
       res.json({
         token,
@@ -177,6 +180,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: user.id,
           email: user.email,
           name: user.name,
+          isAdmin: true,
         },
         company: {
           id: company.id,
@@ -202,7 +206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
-      const token = jwt.sign({ userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      const token = jwt.sign({ userId: user.id, email: user.email, isAdmin: user.isAdmin === true }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
       
       res.json({
         token,
@@ -210,6 +214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: user.id,
           email: user.email,
           name: user.name,
+          isAdmin: user.isAdmin,
         },
       });
     } catch (error: any) {
