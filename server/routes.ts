@@ -5638,7 +5638,7 @@ Respond with just the category name, nothing else.`;
     }
   });
 
-  // Generate VAT return
+  // Generate VAT return (FTA VAT 201 format with emirate breakdown)
   app.post("/api/companies/:companyId/vat-returns/generate", authMiddleware, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
@@ -5679,12 +5679,67 @@ Respond with just the category name, nothing else.`;
       const dueDate = new Date(endDate);
       dueDate.setDate(dueDate.getDate() + 28);
       
+      // For now, put all sales in Dubai (most common emirate for businesses)
+      // Users can manually adjust the emirate breakdown if needed
       const vatReturn = await storage.createVatReturn({
         companyId,
         periodStart: startDate,
         periodEnd: endDate,
         dueDate,
         status: 'draft',
+        vatStagger: 'quarterly',
+        // Emirate breakdown - default to Dubai for all sales
+        box1aAbuDhabiAmount: 0,
+        box1aAbuDhabiVat: 0,
+        box1aAbuDhabiAdj: 0,
+        box1bDubaiAmount: totalSales,
+        box1bDubaiVat: outputTax,
+        box1bDubaiAdj: 0,
+        box1cSharjahAmount: 0,
+        box1cSharjahVat: 0,
+        box1cSharjahAdj: 0,
+        box1dAjmanAmount: 0,
+        box1dAjmanVat: 0,
+        box1dAjmanAdj: 0,
+        box1eUmmAlQuwainAmount: 0,
+        box1eUmmAlQuwainVat: 0,
+        box1eUmmAlQuwainAdj: 0,
+        box1fRasAlKhaimahAmount: 0,
+        box1fRasAlKhaimahVat: 0,
+        box1fRasAlKhaimahAdj: 0,
+        box1gFujairahAmount: 0,
+        box1gFujairahVat: 0,
+        box1gFujairahAdj: 0,
+        // Other output categories
+        box2TouristRefundAmount: 0,
+        box2TouristRefundVat: 0,
+        box3ReverseChargeAmount: 0,
+        box3ReverseChargeVat: 0,
+        box4ZeroRatedAmount: 0,
+        box5ExemptAmount: 0,
+        box6ImportsAmount: 0,
+        box6ImportsVat: 0,
+        box7ImportsAdjAmount: 0,
+        box7ImportsAdjVat: 0,
+        // Output totals
+        box8TotalAmount: totalSales,
+        box8TotalVat: outputTax,
+        box8TotalAdj: 0,
+        // Input categories
+        box9ExpensesAmount: totalExpenses,
+        box9ExpensesVat: inputTax,
+        box9ExpensesAdj: 0,
+        box10ReverseChargeAmount: 0,
+        box10ReverseChargeVat: 0,
+        // Input totals
+        box11TotalAmount: totalExpenses,
+        box11TotalVat: inputTax,
+        box11TotalAdj: 0,
+        // Net VAT calculation
+        box12TotalDueTax: outputTax,
+        box13RecoverableTax: inputTax,
+        box14PayableTax: outputTax - inputTax,
+        // Legacy fields for backward compatibility
         box1SalesStandard: totalSales,
         box2SalesOtherEmirates: 0,
         box3SalesTaxExempt: 0,
@@ -5717,6 +5772,23 @@ Respond with just the category name, nothing else.`;
         notes: notes || null,
         submittedBy: userId,
         submittedAt: new Date(),
+      });
+      
+      res.json(vatReturn);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update VAT return (for editing draft returns)
+  app.patch("/api/vat-returns/:id", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const updateData = req.body;
+      
+      const vatReturn = await storage.updateVatReturn(id, {
+        ...updateData,
+        updatedAt: new Date(),
       });
       
       res.json(vatReturn);
