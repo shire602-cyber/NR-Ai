@@ -249,32 +249,40 @@ export function AppSidebar() {
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
 
-  // Check admin status directly from token - no state needed
-  const checkAdminStatus = (): { isAdmin: boolean; needsRelogin: boolean } => {
+  // Check user status directly from token - no state needed
+  const checkUserStatus = (): { 
+    isAdmin: boolean; 
+    userType: 'admin' | 'client' | 'customer';
+    needsRelogin: boolean 
+  } => {
     try {
-      const token = getToken(); // Use the correct auth token key
+      const token = getToken();
       if (!token) {
-        return { isAdmin: false, needsRelogin: false };
+        return { isAdmin: false, userType: 'customer', needsRelogin: false };
       }
       const parts = token.split('.');
       if (parts.length !== 3) {
-        return { isAdmin: false, needsRelogin: false };
+        return { isAdmin: false, userType: 'customer', needsRelogin: false };
       }
       const payload = JSON.parse(atob(parts[1]));
       
       // If token doesn't have isAdmin field, it's an old token - needs re-login
       if (payload.isAdmin === undefined) {
-        return { isAdmin: false, needsRelogin: true };
+        return { isAdmin: false, userType: 'customer', needsRelogin: true };
       }
       
-      return { isAdmin: payload.isAdmin === true, needsRelogin: false };
+      return { 
+        isAdmin: payload.isAdmin === true, 
+        userType: payload.userType || 'customer',
+        needsRelogin: false 
+      };
     } catch (error) {
-      return { isAdmin: false, needsRelogin: false };
+      return { isAdmin: false, userType: 'customer', needsRelogin: false };
     }
   };
 
-  // Check admin status on every render
-  const { isAdmin, needsRelogin } = checkAdminStatus();
+  // Check user status on every render
+  const { isAdmin, userType, needsRelogin } = checkUserStatus();
   
   // Handle old token logout in useEffect (can't update state during render)
   useEffect(() => {
@@ -330,61 +338,111 @@ export function AppSidebar() {
       </SidebarHeader>
       
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            {locale === 'ar' ? 'المحاسبة' : 'Accounting'}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {coreItems.map(renderMenuItem)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-        
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            {locale === 'ar' ? 'التقارير' : 'Reports'}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {reportsItems.map(renderMenuItem)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Client Portal View - Simplified view for NR-managed clients */}
+        {userType === 'client' && (
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {locale === 'ar' ? 'لوحة التحكم' : 'Overview'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {renderMenuItem({
+                    title: 'dashboard',
+                    titleEn: 'Dashboard',
+                    titleAr: 'لوحة التحكم',
+                    icon: LayoutDashboard,
+                    url: '/dashboard',
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            {locale === 'ar' ? 'الذكاء الاصطناعي' : 'AI Tools'}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {aiItems.map(renderMenuItem)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {locale === 'ar' ? 'بوابة العميل' : 'My Portal'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {clientPortalItems.map(renderMenuItem)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            {locale === 'ar' ? 'بوابة العميل' : 'Client Portal'}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {clientPortalItems.map(renderMenuItem)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {locale === 'ar' ? 'التقارير' : 'Reports'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {reportsItems.map(renderMenuItem)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
 
-        <SidebarGroup>
-          <SidebarGroupLabel>
-            {locale === 'ar' ? 'الإعدادات' : 'Settings'}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {settingsItems.map(renderMenuItem)}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {/* Customer/Admin View - Full bookkeeping features for self-service SaaS customers */}
+        {(userType === 'customer' || userType === 'admin') && (
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {locale === 'ar' ? 'المحاسبة' : 'Accounting'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {coreItems.map(renderMenuItem)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {locale === 'ar' ? 'التقارير' : 'Reports'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {reportsItems.map(renderMenuItem)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {locale === 'ar' ? 'الذكاء الاصطناعي' : 'AI Tools'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {aiItems.map(renderMenuItem)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {locale === 'ar' ? 'بوابة العميل' : 'Client Portal'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {clientPortalItems.map(renderMenuItem)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {locale === 'ar' ? 'الإعدادات' : 'Settings'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {settingsItems.map(renderMenuItem)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
+
+        {/* Admin Panel - Only for admin users */}
         {isAdmin && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-primary">

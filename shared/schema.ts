@@ -1391,6 +1391,7 @@ export const invitations = pgTable("invitations", {
   email: text("email").notNull(),
   companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("client"), // client | staff
+  userType: text("user_type").notNull().default("client"), // admin | client | customer
   token: text("token").notNull().unique(), // Hashed invitation token
   invitedBy: uuid("invited_by").notNull().references(() => users.id),
   status: text("status").notNull().default("pending"), // pending | accepted | expired | revoked

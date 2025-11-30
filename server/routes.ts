@@ -49,8 +49,26 @@ async function authMiddleware(req: Request, res: Response, next: Function) {
 
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: string; email: string };
-    (req as any).user = { id: decoded.userId, email: decoded.email };
+    const decoded = jwt.verify(token, JWT_SECRET) as { 
+      userId: string; 
+      email: string;
+      isAdmin?: boolean;
+      userType?: string;
+    };
+    
+    // Fetch actual user from database to get authoritative userType (prevents JWT tampering)
+    const user = await storage.getUser(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+    
+    // Use server-side user data, not JWT claims (security: prevents privilege escalation)
+    (req as any).user = { 
+      id: user.id, 
+      email: user.email,
+      isAdmin: user.isAdmin === true,
+      userType: user.userType || 'customer'
+    };
     next();
   } catch (error) {
     return res.status(401).json({ message: 'Invalid or expired token' });
@@ -73,11 +91,62 @@ async function adminMiddleware(req: Request, res: Response, next: Function) {
       return res.status(403).json({ message: 'Admin access required' });
     }
     
-    (req as any).user = { id: decoded.userId, email: decoded.email, isAdmin: true };
+    (req as any).user = { 
+      id: user.id, 
+      email: user.email, 
+      isAdmin: true,
+      userType: user.userType || 'admin'
+    };
     next();
   } catch (error) {
     return res.status(401).json({ message: 'Invalid or expired token' });
   }
+}
+
+// Client-only middleware - restricts access to managed client portal features
+function requireClientMiddleware(req: Request, res: Response, next: Function) {
+  const user = (req as any).user;
+  if (!user) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+  // Admins can access client routes for support purposes
+  if (user.userType === 'client' || user.isAdmin) {
+    next();
+  } else {
+    return res.status(403).json({ message: 'Access restricted to managed clients' });
+  }
+}
+
+// Customer-only middleware - restricts access to full SaaS features
+function requireCustomerMiddleware(req: Request, res: Response, next: Function) {
+  const user = (req as any).user;
+  if (!user) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+  // Admins can access customer routes for support purposes, customers have full access
+  if (user.userType === 'customer' || user.isAdmin) {
+    next();
+  } else {
+    return res.status(403).json({ message: 'Access restricted to SaaS customers' });
+  }
+}
+
+// Flexible userType requirement middleware factory
+function requireUserType(...allowedTypes: string[]) {
+  return function(req: Request, res: Response, next: Function) {
+    const user = (req as any).user;
+    if (!user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+    // Admins can access all routes
+    if (user.isAdmin || allowedTypes.includes(user.userType)) {
+      next();
+    } else {
+      return res.status(403).json({ 
+        message: `Access restricted to: ${allowedTypes.join(', ')}` 
+      });
+    }
+  };
 }
 
 // UAE Chart of Accounts seed data
@@ -138,6 +207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth Routes
   // =====================================
   
+  // Customer self-signup (SaaS customers only - clients must use invitation)
   app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {
       const validated = insertUserSchema.parse(req.body);
@@ -151,18 +221,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Hash password
       const passwordHash = await bcrypt.hash(validated.password, 10);
       
-      // Create user with hashed password
+      // SECURITY: Force userType to 'customer' - never trust client-supplied userType
+      // Self-signup users can only be customers. Clients/admins must use invitation flow.
+      // NOTE: Do NOT pass raw password to storage - only pass the hash
       const user = await storage.createUser({
-        ...validated,
+        name: validated.name,
+        email: validated.email,
+        userType: 'customer', // FORCED: Self-signup users are always customers
+        isAdmin: false, // FORCED: Self-signup users cannot be admins
         passwordHash,
       } as any);
 
-      // Auto-create a default company for this user
+      // Auto-create a default company for this user (marked as 'customer' type)
       const companyName = `${validated.name}'s Company`;
       const company = await storage.createCompany({
         name: companyName,
         baseCurrency: 'AED',
         locale: 'en',
+        companyType: 'customer', // Self-signup companies are customer type (not managed by NR)
       });
 
       // Associate user with company as owner
@@ -175,11 +251,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Seed Chart of Accounts for new company
       await seedChartOfAccounts(company.id);
 
-      // Generate token - new registrations are admins by default (they're creating their own company)
-      const token = jwt.sign({ userId: user.id, email: user.email, isAdmin: true }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      // Create free tier subscription for new customer
+      const now = new Date();
+      const periodEnd = new Date(now);
+      periodEnd.setFullYear(periodEnd.getFullYear() + 100); // Free tier never expires
       
-      // Make new registrations admins by default
-      await storage.updateUser(user.id, { isAdmin: true });
+      await storage.createSubscription({
+        companyId: company.id,
+        planId: 'free',
+        planName: 'Free',
+        status: 'active',
+        currentPeriodStart: now,
+        currentPeriodEnd: periodEnd,
+      });
+
+      // Generate token - customers are not admins
+      const token = jwt.sign({ userId: user.id, email: user.email, isAdmin: false, userType: 'customer' }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
       
       res.json({
         token,
@@ -187,7 +274,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           id: user.id,
           email: user.email,
           name: user.name,
-          isAdmin: true,
+          isAdmin: false,
+          userType: 'customer',
         },
         company: {
           id: company.id,
@@ -215,7 +303,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Ensure isAdmin is a proper boolean
       const isAdminBoolean = user.isAdmin === true || user.isAdmin === 'true' || user.isAdmin === 1;
-      const token = jwt.sign({ userId: user.id, email: user.email, isAdmin: isAdminBoolean }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+      const token = jwt.sign({ 
+        userId: user.id, 
+        email: user.email, 
+        isAdmin: isAdminBoolean,
+        userType: user.userType || 'customer'
+      }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
       
       res.json({
         token,
@@ -224,6 +317,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           email: user.email,
           name: user.name,
           isAdmin: isAdminBoolean,
+          userType: user.userType || 'customer', // Include userType in response
         },
       });
     } catch (error: any) {
@@ -333,7 +427,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Seed Chart of Accounts for company
-  app.post("/api/companies/:id/seed-accounts", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Seed chart of accounts
+  app.post("/api/companies/:id/seed-accounts", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -362,9 +457,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Account Routes
   // =====================================
   
-  app.get("/api/companies/:companyId/accounts", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Full chart of accounts access
+  app.get("/api/companies/:companyId/accounts", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
       const accounts = await storage.getAccountsByCompanyId(companyId);
       res.json(accounts);
     } catch (error: any) {
@@ -372,9 +476,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/companies/:companyId/accounts", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Create accounts
+  app.post("/api/companies/:companyId/accounts", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
       const validated = insertAccountSchema.parse({ ...req.body, companyId });
 
       const account = await storage.createAccount(validated);
@@ -384,7 +497,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/accounts/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Update accounts
+  app.put("/api/accounts/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -409,7 +523,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/accounts/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Delete accounts
+  app.delete("/api/accounts/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -443,7 +558,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get accounts with balances for Chart of Accounts
-  app.get("/api/companies/:companyId/accounts-with-balances", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Accounts with balances
+  app.get("/api/companies/:companyId/accounts-with-balances", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -472,7 +588,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get account ledger
-  app.get("/api/accounts/:id/ledger", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Account ledger
+  app.get("/api/accounts/:id/ledger", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -515,9 +632,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice Routes
   // =====================================
   
-  app.get("/api/companies/:companyId/invoices", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Full bookkeeping invoices (clients use simplified portal)
+  app.get("/api/companies/:companyId/invoices", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       res.json(invoices);
     } catch (error: any) {
@@ -525,13 +651,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/invoices/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Get single invoice
+  app.get("/api/invoices/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
+      const userId = (req as any).user.id;
+      
       const invoice = await storage.getInvoice(id);
       
       if (!invoice) {
         return res.status(404).json({ message: 'Invoice not found' });
+      }
+      
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
       
       // Fetch invoice lines
@@ -544,7 +679,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Check for similar invoices
-  app.post("/api/companies/:companyId/invoices/check-similar", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Check for similar invoices
+  app.post("/api/companies/:companyId/invoices/check-similar", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -600,7 +736,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/companies/:companyId/invoices", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Create invoices
+  app.post("/api/companies/:companyId/invoices", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -722,7 +859,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Post invoice journal entries
-  app.post("/api/invoices/:id/post", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Post invoice to journal
+  app.post("/api/invoices/:id/post", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -763,7 +901,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/invoices/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Update invoice
+  app.put("/api/invoices/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -822,7 +961,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/invoices/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Delete invoice
+  app.delete("/api/invoices/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -847,7 +987,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.patch("/api/invoices/:id/status", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Update invoice status
+  app.patch("/api/invoices/:id/status", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { status, paymentAccountId } = req.body;
@@ -952,7 +1093,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Receipt Routes
   // =====================================
   
-  app.get("/api/companies/:companyId/receipts", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Full receipts/expenses access
+  app.get("/api/companies/:companyId/receipts", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -971,7 +1113,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // Check for similar transactions
-  app.post("/api/companies/:companyId/receipts/check-similar", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Check for similar receipts/transactions
+  app.post("/api/companies/:companyId/receipts/check-similar", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -1062,7 +1205,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/receipts/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Update receipt
+  app.put("/api/receipts/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -1081,7 +1225,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/receipts/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Delete receipt
+  app.delete("/api/receipts/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -1094,7 +1239,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/receipts/:id/post", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Post receipt to journal entry
+  app.post("/api/receipts/:id/post", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -1226,7 +1372,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Journal Entry Routes
   // =====================================
   
-  app.get("/api/companies/:companyId/journal", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Full journal entries access
+  app.get("/api/companies/:companyId/journal", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -1259,7 +1406,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/companies/:companyId/journal", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Create journal entries
+  app.post("/api/companies/:companyId/journal", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -1339,7 +1487,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/journal/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Get journal entry
+  app.get("/api/journal/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -1369,7 +1518,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/journal/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Update journal entry
+  app.put("/api/journal/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -1457,8 +1607,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Post a draft journal entry (makes it immutable)
-  app.post("/api/journal/:id/post", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Post a draft journal entry (makes it immutable)
+  app.post("/api/journal/:id/post", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -1508,8 +1658,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Reverse a posted journal entry (creates a new reversing entry)
-  app.post("/api/journal/:id/reverse", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Reverse a posted journal entry (creates a new reversing entry)
+  app.post("/api/journal/:id/reverse", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -1583,7 +1733,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/journal/:id", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Delete journal entry
+  app.delete("/api/journal/:id", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const userId = (req as any).user.id;
@@ -1630,9 +1781,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI Categorization Route
   // =====================================
   
-  app.post("/api/ai/categorize", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: AI expense categorization
+  app.post("/api/ai/categorize", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const validated = categorizationRequestSchema.parse(req.body);
+      const userId = (req as any).user.id;
+      
+      // Verify company access
+      const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
       
       // Get company's Chart of Accounts
       const accounts = await storage.getAccountsByCompanyId(validated.companyId);
@@ -3522,7 +3681,8 @@ Respond with just the category name, nothing else.`;
   });
   
   // Export invoices to Google Sheets
-  app.post("/api/integrations/google-sheets/export/invoices", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Export invoices to Google Sheets
+  app.post("/api/integrations/google-sheets/export/invoices", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId, spreadsheetId } = req.body;
       if (!companyId) {
@@ -3563,7 +3723,8 @@ Respond with just the category name, nothing else.`;
   });
   
   // Export expenses to Google Sheets
-  app.post("/api/integrations/google-sheets/export/expenses", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Export expenses to Google Sheets
+  app.post("/api/integrations/google-sheets/export/expenses", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId, spreadsheetId } = req.body;
       if (!companyId) {
@@ -3604,7 +3765,8 @@ Respond with just the category name, nothing else.`;
   });
   
   // Export journal entries to Google Sheets
-  app.post("/api/integrations/google-sheets/export/journal-entries", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Export journal entries to Google Sheets
+  app.post("/api/integrations/google-sheets/export/journal-entries", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId, spreadsheetId } = req.body;
       if (!companyId) {
@@ -3664,7 +3826,8 @@ Respond with just the category name, nothing else.`;
   });
   
   // Export chart of accounts to Google Sheets
-  app.post("/api/integrations/google-sheets/export/chart-of-accounts", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Export chart of accounts to Google Sheets
+  app.post("/api/integrations/google-sheets/export/chart-of-accounts", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId, spreadsheetId } = req.body;
       if (!companyId) {
@@ -3836,7 +3999,8 @@ Respond with just the category name, nothing else.`;
   });
 
   // Custom export to Google Sheets (for filtered/custom data from frontend)
-  app.post("/api/integrations/google-sheets/export/custom", authMiddleware, async (req: Request, res: Response) => {
+  // Customer-only: Custom export to Google Sheets
+  app.post("/api/integrations/google-sheets/export/custom", authMiddleware, requireCustomerMiddleware, async (req: Request, res: Response) => {
     try {
       const { companyId, title, sheets } = req.body;
       if (!companyId || !title || !sheets) {
@@ -6752,9 +6916,19 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
   // =====================================
   
   // Get all clients (companies) - Admin only
+  // Get all companies with stats (supports filtering by companyType)
   app.get("/api/admin/clients", adminMiddleware, async (req: Request, res: Response) => {
     try {
-      const companies = await storage.getAllCompanies();
+      const { type } = req.query; // 'client' | 'customer' | undefined (all)
+      
+      let companies;
+      if (type === 'client') {
+        companies = await storage.getClientCompanies();
+      } else if (type === 'customer') {
+        companies = await storage.getCustomerCompanies();
+      } else {
+        companies = await storage.getAllCompanies();
+      }
       
       // Get user counts per company
       const clientsWithStats = await Promise.all(
@@ -6822,6 +6996,7 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
         name: req.body.name,
         baseCurrency: req.body.baseCurrency || "AED",
         locale: req.body.locale || "en",
+        companyType: req.body.companyType || "client", // 'client' for NR-managed, 'customer' for SaaS
         legalStructure: req.body.legalStructure,
         industry: req.body.industry,
         registrationNumber: req.body.registrationNumber,
@@ -7021,6 +7196,7 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
         email: req.body.email,
         companyId: req.body.companyId || null,
         role: req.body.role || 'client',
+        userType: req.body.userType || 'client', // admin | client | customer
         token,
         invitedBy: adminUserId,
         status: 'pending',
@@ -7269,6 +7445,7 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
       res.json({
         email: invitation.email,
         role: invitation.role,
+        userType: invitation.userType,
         company: company ? { id: company.id, name: company.name } : null,
       });
     } catch (error: any) {
@@ -7302,23 +7479,31 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
         return res.status(400).json({ message: "User already exists with this email" });
       }
       
-      // Create user
+      // Create user with appropriate userType from invitation
       const passwordHash = await bcrypt.hash(password, 10);
       const user = await storage.createUser({
         email: invitation.email,
         name,
         password,
-        isAdmin: invitation.role === 'staff',
+        isAdmin: invitation.role === 'staff' || invitation.userType === 'admin',
+        userType: invitation.userType || 'client',
         passwordHash,
       } as any);
       
-      // If company associated, add user to company
+      // If company associated, add user to company and set company type
       if (invitation.companyId) {
         await storage.createCompanyUser({
           companyId: invitation.companyId,
           userId: user.id,
           role: 'owner', // Client users are owners of their company view
         });
+        
+        // Set company type based on user type (client companies are managed by NR)
+        if (invitation.userType === 'client') {
+          await storage.updateCompany(invitation.companyId, {
+            companyType: 'client',
+          });
+        }
       }
       
       // Mark invitation as accepted
@@ -7338,8 +7523,14 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
       });
       
       // Generate token for immediate login
+      const isAdminBoolean = user.isAdmin === true;
       const jwtToken = jwt.sign(
-        { userId: user.id, email: user.email },
+        { 
+          userId: user.id, 
+          email: user.email,
+          isAdmin: isAdminBoolean,
+          userType: user.userType || invitation.userType || 'client'
+        },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES_IN }
       );

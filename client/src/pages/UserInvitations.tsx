@@ -46,7 +46,7 @@ export default function UserInvitations() {
   });
 
   const createInvitationMutation = useMutation({
-    mutationFn: async (data: { email: string; companyId?: string; role: string }) => {
+    mutationFn: async (data: { email: string; companyId?: string; role: string; userType: string }) => {
       return apiRequest('POST', '/api/admin/invitations', data);
     },
     onSuccess: () => {
@@ -124,11 +124,13 @@ export default function UserInvitations() {
     const formData = new FormData(e.currentTarget);
     const email = formData.get('email') as string;
     const role = formData.get('role') as string;
+    const userType = formData.get('userType') as string;
     
     createInvitationMutation.mutate({
       email,
       companyId: selectedCompanyId || undefined,
       role: role || 'client',
+      userType: userType || 'client',
     });
   };
 
@@ -200,13 +202,28 @@ export default function UserInvitations() {
                 </p>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="role">User Role</Label>
-                <Select name="role" defaultValue="client">
-                  <SelectTrigger data-testid="select-invite-role">
-                    <SelectValue placeholder="Select role" />
+                <Label htmlFor="userType">User Type *</Label>
+                <Select name="userType" defaultValue="client">
+                  <SelectTrigger data-testid="select-invite-usertype">
+                    <SelectValue placeholder="Select user type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="client">Client (view their company only)</SelectItem>
+                    <SelectItem value="client">Client (NR-managed portal access)</SelectItem>
+                    <SelectItem value="customer">Customer (full SaaS bookkeeping)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Client: Simplified portal for NR-managed clients. Customer: Full self-service access.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="role">Access Level</Label>
+                <Select name="role" defaultValue="client">
+                  <SelectTrigger data-testid="select-invite-role">
+                    <SelectValue placeholder="Select access level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="client">Standard (view their company only)</SelectItem>
                     <SelectItem value="staff">Staff (admin access)</SelectItem>
                   </SelectContent>
                 </Select>
