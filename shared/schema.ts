@@ -115,16 +115,25 @@ export type CompanyUser = typeof companyUsers.$inferSelect;
 export const accounts = pgTable("accounts", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  code: text("code").notNull(), // Account code: 1010, 2020, etc.
   nameEn: text("name_en").notNull(),
   nameAr: text("name_ar"),
+  description: text("description"), // Optional description
   type: text("type").notNull(), // asset | liability | equity | income | expense
+  subType: text("sub_type"), // current_asset | fixed_asset | current_liability | long_term_liability | null
+  isVatAccount: boolean("is_vat_account").notNull().default(false), // For VAT tracking
+  vatType: text("vat_type"), // input | output | null - for VAT accounts only
+  isSystemAccount: boolean("is_system_account").notNull().default(false), // System accounts cannot be deleted
   isActive: boolean("is_active").notNull().default(true),
+  isArchived: boolean("is_archived").notNull().default(false), // Soft delete / archive
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
 });
 
 export const insertAccountSchema = createInsertSchema(accounts).omit({
   id: true,
   createdAt: true,
+  updatedAt: true,
 });
 
 export type InsertAccount = z.infer<typeof insertAccountSchema>;
