@@ -243,31 +243,26 @@ export function AppSidebar() {
   const { setLocale } = useI18n();
   const [isAdmin, setIsAdmin] = useState(false);
 
-  useEffect(() => {
-    // Check if user is admin from localStorage token
-    const checkAdminStatus = () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-          setIsAdmin(false);
-          return;
-        }
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        console.log('Token payload:', payload);
-        console.log('isAdmin value:', payload.isAdmin);
-        setIsAdmin(payload.isAdmin === true);
-      } catch (error) {
-        console.error('Error checking admin status:', error);
-        setIsAdmin(false);
+  // Check admin status - runs on mount and whenever location changes (e.g., after login redirect)
+  const checkAdminStatus = () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        return false;
       }
-    };
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.isAdmin === true;
+    } catch (error) {
+      return false;
+    }
+  };
 
-    checkAdminStatus();
-    
-    // Listen for storage changes (e.g., login/logout from another tab)
-    window.addEventListener('storage', checkAdminStatus);
-    return () => window.removeEventListener('storage', checkAdminStatus);
-  }, []);
+  // Re-check on every render and location change
+  const currentIsAdmin = checkAdminStatus();
+  
+  useEffect(() => {
+    setIsAdmin(currentIsAdmin);
+  }, [location, currentIsAdmin]);
 
   const handleLogout = () => {
     removeToken();
@@ -369,7 +364,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isAdmin && (
+        {currentIsAdmin && (
           <SidebarGroup>
             <SidebarGroupLabel className="text-primary">
               <Shield className="w-3 h-3 mr-1 inline" />
