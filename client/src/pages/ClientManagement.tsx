@@ -49,6 +49,14 @@ export default function ClientManagement() {
   const [industryFilter, setIndustryFilter] = useState<string>('all');
   const [addClientOpen, setAddClientOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientWithStats | null>(null);
+  
+  // Form state for new client
+  const [newClientForm, setNewClientForm] = useState({
+    industry: '',
+    legalStructure: '',
+    taxRegistrationType: '',
+    vatFilingFrequency: '',
+  });
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
     queryKey: ['/api/admin/clients'],
@@ -62,6 +70,7 @@ export default function ClientManagement() {
       queryClient.invalidateQueries({ queryKey: ['/api/admin/clients'] });
       toast({ title: 'Client created successfully' });
       setAddClientOpen(false);
+      resetNewClientForm();
     },
     onError: (error: any) => {
       toast({ variant: 'destructive', title: 'Failed to create client', description: error.message });
@@ -110,18 +119,27 @@ export default function ClientManagement() {
     const formData = new FormData(e.currentTarget);
     const data = {
       name: formData.get('name'),
-      industry: formData.get('industry') || null,
-      legalStructure: formData.get('legalStructure') || null,
+      industry: newClientForm.industry || null,
+      legalStructure: newClientForm.legalStructure || null,
       registrationNumber: formData.get('registrationNumber') || null,
       businessAddress: formData.get('businessAddress') || null,
       contactEmail: formData.get('contactEmail') || null,
       contactPhone: formData.get('contactPhone') || null,
       websiteUrl: formData.get('websiteUrl') || null,
       trnVatNumber: formData.get('trnVatNumber') || null,
-      taxRegistrationType: formData.get('taxRegistrationType') || null,
-      vatFilingFrequency: formData.get('vatFilingFrequency') || null,
+      taxRegistrationType: newClientForm.taxRegistrationType || null,
+      vatFilingFrequency: newClientForm.vatFilingFrequency || null,
     };
     createClientMutation.mutate(data);
+  };
+  
+  const resetNewClientForm = () => {
+    setNewClientForm({
+      industry: '',
+      legalStructure: '',
+      taxRegistrationType: '',
+      vatFilingFrequency: '',
+    });
   };
 
   const handleUpdateClient = (e: React.FormEvent<HTMLFormElement>) => {
@@ -157,7 +175,7 @@ export default function ClientManagement() {
           <h1 className="text-3xl font-bold" data-testid="text-clients-title">Client Management</h1>
           <p className="text-muted-foreground">Manage all your accounting firm's clients</p>
         </div>
-        <Dialog open={addClientOpen} onOpenChange={setAddClientOpen}>
+        <Dialog open={addClientOpen} onOpenChange={(open) => { setAddClientOpen(open); if (!open) resetNewClientForm(); }}>
           <DialogTrigger asChild>
             <Button data-testid="button-add-client">
               <Plus className="w-4 h-4 mr-2" />
@@ -177,7 +195,7 @@ export default function ClientManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="industry">Industry</Label>
-                  <Select name="industry">
+                  <Select value={newClientForm.industry} onValueChange={(value) => setNewClientForm(prev => ({ ...prev, industry: value }))}>
                     <SelectTrigger data-testid="select-industry">
                       <SelectValue placeholder="Select industry" />
                     </SelectTrigger>
@@ -197,7 +215,7 @@ export default function ClientManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="legalStructure">Legal Structure</Label>
-                  <Select name="legalStructure">
+                  <Select value={newClientForm.legalStructure} onValueChange={(value) => setNewClientForm(prev => ({ ...prev, legalStructure: value }))}>
                     <SelectTrigger data-testid="select-legal-structure">
                       <SelectValue placeholder="Select structure" />
                     </SelectTrigger>
@@ -220,7 +238,7 @@ export default function ClientManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="taxRegistrationType">Tax Registration Type</Label>
-                  <Select name="taxRegistrationType">
+                  <Select value={newClientForm.taxRegistrationType} onValueChange={(value) => setNewClientForm(prev => ({ ...prev, taxRegistrationType: value }))}>
                     <SelectTrigger data-testid="select-tax-type">
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
@@ -233,7 +251,7 @@ export default function ClientManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="vatFilingFrequency">VAT Filing Frequency</Label>
-                  <Select name="vatFilingFrequency">
+                  <Select value={newClientForm.vatFilingFrequency} onValueChange={(value) => setNewClientForm(prev => ({ ...prev, vatFilingFrequency: value }))}>
                     <SelectTrigger data-testid="select-vat-frequency">
                       <SelectValue placeholder="Select frequency" />
                     </SelectTrigger>
