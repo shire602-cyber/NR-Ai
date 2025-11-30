@@ -54,6 +54,11 @@ interface Document {
 }
 
 const DOCUMENT_CATEGORIES = [
+  { value: 'invoice', labelEn: 'Invoice', labelAr: 'فاتورة' },
+  { value: 'bill', labelEn: 'Bill/Expense', labelAr: 'فاتورة مصروفات' },
+  { value: 'receipt', labelEn: 'Receipt', labelAr: 'إيصال' },
+  { value: 'quote', labelEn: 'Quote/Quotation', labelAr: 'عرض سعر' },
+  { value: 'purchase_order', labelEn: 'Purchase Order', labelAr: 'أمر شراء' },
   { value: 'trade_license', labelEn: 'Trade License', labelAr: 'الرخصة التجارية' },
   { value: 'contract', labelEn: 'Contract', labelAr: 'عقد' },
   { value: 'tax_certificate', labelEn: 'Tax Certificate', labelAr: 'شهادة ضريبية' },

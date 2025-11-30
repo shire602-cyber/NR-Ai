@@ -208,6 +208,13 @@ const adminItems = [
     url: '/admin/clients',
   },
   {
+    title: 'clientDocuments',
+    titleEn: 'Client Documents',
+    titleAr: 'مستندات العملاء',
+    icon: FolderArchive,
+    url: '/admin/documents',
+  },
+  {
     title: 'userInvitations',
     titleEn: 'Invitations',
     titleAr: 'الدعوات',
