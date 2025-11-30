@@ -311,33 +311,7 @@ export default function Invoices() {
         })),
       };
 
-      // Check for similar invoices only when creating new (not editing)
-      if (!editingInvoice) {
-        const total = fields.reduce((sum, line) => {
-          const lineTotal = line.quantity * line.unitPrice;
-          return sum + lineTotal + (lineTotal * line.vatRate);
-        }, 0);
-
-        try {
-          const checkResult = await checkSimilarMutation.mutateAsync({
-            customerName: data.customerName,
-            total: total,
-            date: data.date,
-          });
-
-          if (checkResult.hasSimilar && checkResult.similarInvoices.length > 0) {
-            setSimilarInvoices(checkResult.similarInvoices);
-            setPendingInvoiceData(invoiceData);
-            setSimilarWarningOpen(true);
-            return;
-          }
-        } catch (error) {
-          console.error('Error checking for similar invoices:', error);
-          // Continue with save if check fails
-        }
-      }
-
-      // Proceed with save
+      // Proceed with save directly - similar check removed for better UX
       await performInvoiceSave(invoiceData, editingInvoice);
     } catch (error) {
       // Error is handled by mutation callbacks
@@ -427,29 +401,31 @@ export default function Invoices() {
   const isVATRegistered = company?.trnVatNumber && company?.trnVatNumber.length > 0;
 
   const filteredInvoices = useMemo(() => {
-    if (!invoices) return [];
+    if (!invoices || invoices.length === 0) return [];
     if (!dateRange.from && !dateRange.to) return invoices;
     
+    const fromDate = dateRange.from ? startOfDay(dateRange.from) : null;
+    const toDate = dateRange.to ? endOfDay(dateRange.to) : null;
+    
     return invoices.filter(invoice => {
+      if (!invoice.date) return false;
+      
       const invoiceDate = typeof invoice.date === 'string' 
         ? parseISO(invoice.date) 
         : new Date(invoice.date);
       
-      if (dateRange.from && dateRange.to) {
-        return isWithinInterval(invoiceDate, {
-          start: startOfDay(dateRange.from),
-          end: endOfDay(dateRange.to),
-        });
+      if (fromDate && toDate) {
+        return isWithinInterval(invoiceDate, { start: fromDate, end: toDate });
       }
-      if (dateRange.from) {
-        return invoiceDate >= startOfDay(dateRange.from);
+      if (fromDate) {
+        return invoiceDate >= fromDate;
       }
-      if (dateRange.to) {
-        return invoiceDate <= endOfDay(dateRange.to);
+      if (toDate) {
+        return invoiceDate <= toDate;
       }
       return true;
     });
-  }, [invoices, dateRange]);
+  }, [invoices, dateRange.from, dateRange.to]);
 
   const handleExportExcel = () => {
     if (!filteredInvoices.length) {

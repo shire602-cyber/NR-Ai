@@ -184,14 +184,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/health", async (req: Request, res: Response) => {
     try {
+      // Test database connection
+      await storage.getUsers();
+      
       res.status(200).json({
         ok: true,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        database: 'connected',
+        ai: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ? 'configured' : 'not_configured'
       });
     } catch (error) {
       res.status(503).json({
         ok: false,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        error: 'Service unavailable'
       });
     }
   });

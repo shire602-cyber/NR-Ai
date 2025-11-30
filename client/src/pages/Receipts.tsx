@@ -691,27 +691,7 @@ export default function Receipts() {
       return;
     }
 
-    // Check for similar transactions before saving
-    try {
-      const firstReceipt = completedIndices[0].receipt.data!;
-      const checkResult = await checkSimilarMutation.mutateAsync({
-        merchant: firstReceipt.merchant,
-        amount: firstReceipt.total,
-        date: firstReceipt.date,
-      });
-
-      if (checkResult.hasSimilar && checkResult.similarTransactions.length > 0) {
-        setSimilarTransactions(checkResult.similarTransactions);
-        setPendingSaveData(completedIndices);
-        setSimilarWarningOpen(true);
-        return;
-      }
-    } catch (error) {
-      console.error('Error checking for similar transactions:', error);
-      // Continue with save if check fails
-    }
-
-    // Proceed with save
+    // Proceed with save directly - similar check removed for better UX
     await performSave(completedIndices);
   };
 
@@ -814,29 +794,31 @@ export default function Receipts() {
   const saveErrorCount = processedReceipts.filter((r) => r.status === 'save_error').length;
 
   const filteredReceipts = useMemo(() => {
-    if (!receipts) return [];
+    if (!receipts || receipts.length === 0) return [];
     if (!dateRange.from && !dateRange.to) return receipts;
     
+    const fromDate = dateRange.from ? startOfDay(dateRange.from) : null;
+    const toDate = dateRange.to ? endOfDay(dateRange.to) : null;
+    
     return receipts.filter((receipt: any) => {
+      if (!receipt.date) return false;
+      
       const receiptDate = typeof receipt.date === 'string' 
         ? parseISO(receipt.date) 
         : new Date(receipt.date);
       
-      if (dateRange.from && dateRange.to) {
-        return isWithinInterval(receiptDate, {
-          start: startOfDay(dateRange.from),
-          end: endOfDay(dateRange.to),
-        });
+      if (fromDate && toDate) {
+        return isWithinInterval(receiptDate, { start: fromDate, end: toDate });
       }
-      if (dateRange.from) {
-        return receiptDate >= startOfDay(dateRange.from);
+      if (fromDate) {
+        return receiptDate >= fromDate;
       }
-      if (dateRange.to) {
-        return receiptDate <= endOfDay(dateRange.to);
+      if (toDate) {
+        return receiptDate <= toDate;
       }
       return true;
     });
-  }, [receipts, dateRange]);
+  }, [receipts, dateRange.from, dateRange.to]);
 
   const handleExportExcel = () => {
     if (!filteredReceipts.length) {
@@ -1484,6 +1466,7 @@ export default function Receipts() {
                   setSimilarTransactions([]);
                 }}
                 className="flex-1"
+                data-testid="button-cancel-similar-warning"
               >
                 Cancel
               </Button>
@@ -1497,6 +1480,7 @@ export default function Receipts() {
                   setSimilarTransactions([]);
                 }}
                 className="flex-1"
+                data-testid="button-save-anyway"
               >
                 Save Anyway
               </Button>

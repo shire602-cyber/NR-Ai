@@ -48,14 +48,28 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  console.log(`[Environment] Running in ${process.env.NODE_ENV || 'development'} mode`);
+  console.log(`[Database] ${process.env.DATABASE_URL ? 'Connected' : 'No connection string'}`);
+  console.log(`[AI] ${process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ? 'Configured' : 'Not configured'}`);
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    res.status(status).json({ message });
-    throw err;
+    // Only log detailed errors in development
+    if (isDevelopment) {
+      console.error('[Error]', err);
+    }
+
+    res.status(status).json({ message: isProduction ? 'Internal Server Error' : message });
+    if (!isProduction) {
+      throw err;
+    }
   });
 
   // importantly only setup vite in development and after

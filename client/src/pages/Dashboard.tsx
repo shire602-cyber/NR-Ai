@@ -27,9 +27,10 @@ export default function Dashboard() {
     setMounted(true);
   }, []);
 
-  const { data: stats, isLoading: statsLoading } = useQuery<any>({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<any>({
     queryKey: ['/api/companies', selectedCompanyId, 'dashboard/stats'],
     enabled: !!selectedCompanyId,
+    retry: 1,
   });
 
   const { data: recentInvoices, isLoading: invoicesLoading } = useQuery<any[]>({
