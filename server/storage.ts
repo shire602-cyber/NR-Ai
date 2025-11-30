@@ -43,7 +43,12 @@ import type {
   NewsItem, InsertNewsItem,
   Invitation, InsertInvitation,
   ActivityLog, InsertActivityLog,
-  ClientNote, InsertClientNote
+  ClientNote, InsertClientNote,
+  Engagement, InsertEngagement,
+  ServiceInvoice, InsertServiceInvoice,
+  ServiceInvoiceLine, InsertServiceInvoiceLine,
+  FtaEmail, InsertFtaEmail,
+  Subscription, InsertSubscription
 } from "@shared/schema";
 import {
   users,
@@ -90,7 +95,12 @@ import {
   newsItems,
   invitations,
   activityLogs,
-  clientNotes
+  clientNotes,
+  engagements,
+  serviceInvoices,
+  serviceInvoiceLines,
+  ftaEmails,
+  subscriptions
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -425,6 +435,42 @@ export interface IStorage {
 
   // Admin Company Management
   deleteCompany(id: string): Promise<void>;
+
+  // Client Engagements
+  getEngagements(): Promise<Engagement[]>;
+  getEngagementsByCompany(companyId: string): Promise<Engagement[]>;
+  getEngagement(id: string): Promise<Engagement | undefined>;
+  createEngagement(engagement: InsertEngagement): Promise<Engagement>;
+  updateEngagement(id: string, data: Partial<InsertEngagement>): Promise<Engagement>;
+  deleteEngagement(id: string): Promise<void>;
+
+  // Service Invoices (NR billing to clients)
+  getServiceInvoices(companyId?: string): Promise<ServiceInvoice[]>;
+  getServiceInvoice(id: string): Promise<ServiceInvoice | undefined>;
+  createServiceInvoice(invoice: InsertServiceInvoice): Promise<ServiceInvoice>;
+  updateServiceInvoice(id: string, data: Partial<InsertServiceInvoice>): Promise<ServiceInvoice>;
+  deleteServiceInvoice(id: string): Promise<void>;
+
+  // Service Invoice Lines
+  getServiceInvoiceLines(serviceInvoiceId: string): Promise<ServiceInvoiceLine[]>;
+  createServiceInvoiceLine(line: InsertServiceInvoiceLine): Promise<ServiceInvoiceLine>;
+  deleteServiceInvoiceLines(serviceInvoiceId: string): Promise<void>;
+
+  // FTA Emails
+  getFtaEmails(companyId: string): Promise<FtaEmail[]>;
+  createFtaEmail(email: InsertFtaEmail): Promise<FtaEmail>;
+  updateFtaEmail(id: string, data: Partial<InsertFtaEmail>): Promise<FtaEmail>;
+
+  // Customer Subscriptions
+  getSubscription(companyId: string): Promise<Subscription | undefined>;
+  createSubscription(subscription: InsertSubscription): Promise<Subscription>;
+  updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription>;
+
+  // User type management
+  updateUserType(id: string, userType: string): Promise<User>;
+  getUsersByType(userType: string): Promise<User[]>;
+  getClientCompanies(): Promise<Company[]>;
+  getCustomerCompanies(): Promise<Company[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2080,6 +2126,201 @@ export class DatabaseStorage implements IStorage {
   // Admin Company Management
   async deleteCompany(id: string): Promise<void> {
     await db.delete(companies).where(eq(companies.id, id));
+  }
+
+  // Client Engagements
+  async getEngagements(): Promise<Engagement[]> {
+    return await db
+      .select()
+      .from(engagements)
+      .orderBy(desc(engagements.createdAt));
+  }
+
+  async getEngagementsByCompany(companyId: string): Promise<Engagement[]> {
+    return await db
+      .select()
+      .from(engagements)
+      .where(eq(engagements.companyId, companyId))
+      .orderBy(desc(engagements.createdAt));
+  }
+
+  async getEngagement(id: string): Promise<Engagement | undefined> {
+    const [engagement] = await db
+      .select()
+      .from(engagements)
+      .where(eq(engagements.id, id));
+    return engagement || undefined;
+  }
+
+  async createEngagement(insertEngagement: InsertEngagement): Promise<Engagement> {
+    const [engagement] = await db
+      .insert(engagements)
+      .values(insertEngagement)
+      .returning();
+    return engagement;
+  }
+
+  async updateEngagement(id: string, data: Partial<InsertEngagement>): Promise<Engagement> {
+    const [engagement] = await db
+      .update(engagements)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(engagements.id, id))
+      .returning();
+    return engagement;
+  }
+
+  async deleteEngagement(id: string): Promise<void> {
+    await db.delete(engagements).where(eq(engagements.id, id));
+  }
+
+  // Service Invoices (NR billing to clients)
+  async getServiceInvoices(companyId?: string): Promise<ServiceInvoice[]> {
+    if (companyId) {
+      return await db
+        .select()
+        .from(serviceInvoices)
+        .where(eq(serviceInvoices.companyId, companyId))
+        .orderBy(desc(serviceInvoices.createdAt));
+    }
+    return await db
+      .select()
+      .from(serviceInvoices)
+      .orderBy(desc(serviceInvoices.createdAt));
+  }
+
+  async getServiceInvoice(id: string): Promise<ServiceInvoice | undefined> {
+    const [invoice] = await db
+      .select()
+      .from(serviceInvoices)
+      .where(eq(serviceInvoices.id, id));
+    return invoice || undefined;
+  }
+
+  async createServiceInvoice(insertInvoice: InsertServiceInvoice): Promise<ServiceInvoice> {
+    const [invoice] = await db
+      .insert(serviceInvoices)
+      .values(insertInvoice)
+      .returning();
+    return invoice;
+  }
+
+  async updateServiceInvoice(id: string, data: Partial<InsertServiceInvoice>): Promise<ServiceInvoice> {
+    const [invoice] = await db
+      .update(serviceInvoices)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(serviceInvoices.id, id))
+      .returning();
+    return invoice;
+  }
+
+  async deleteServiceInvoice(id: string): Promise<void> {
+    await db.delete(serviceInvoices).where(eq(serviceInvoices.id, id));
+  }
+
+  // Service Invoice Lines
+  async getServiceInvoiceLines(serviceInvoiceId: string): Promise<ServiceInvoiceLine[]> {
+    return await db
+      .select()
+      .from(serviceInvoiceLines)
+      .where(eq(serviceInvoiceLines.serviceInvoiceId, serviceInvoiceId));
+  }
+
+  async createServiceInvoiceLine(insertLine: InsertServiceInvoiceLine): Promise<ServiceInvoiceLine> {
+    const [line] = await db
+      .insert(serviceInvoiceLines)
+      .values(insertLine)
+      .returning();
+    return line;
+  }
+
+  async deleteServiceInvoiceLines(serviceInvoiceId: string): Promise<void> {
+    await db.delete(serviceInvoiceLines).where(eq(serviceInvoiceLines.serviceInvoiceId, serviceInvoiceId));
+  }
+
+  // FTA Emails
+  async getFtaEmails(companyId: string): Promise<FtaEmail[]> {
+    return await db
+      .select()
+      .from(ftaEmails)
+      .where(eq(ftaEmails.companyId, companyId))
+      .orderBy(desc(ftaEmails.receivedAt));
+  }
+
+  async createFtaEmail(insertEmail: InsertFtaEmail): Promise<FtaEmail> {
+    const [email] = await db
+      .insert(ftaEmails)
+      .values(insertEmail)
+      .returning();
+    return email;
+  }
+
+  async updateFtaEmail(id: string, data: Partial<InsertFtaEmail>): Promise<FtaEmail> {
+    const [email] = await db
+      .update(ftaEmails)
+      .set(data)
+      .where(eq(ftaEmails.id, id))
+      .returning();
+    return email;
+  }
+
+  // Customer Subscriptions
+  async getSubscription(companyId: string): Promise<Subscription | undefined> {
+    const [subscription] = await db
+      .select()
+      .from(subscriptions)
+      .where(eq(subscriptions.companyId, companyId));
+    return subscription || undefined;
+  }
+
+  async createSubscription(insertSubscription: InsertSubscription): Promise<Subscription> {
+    const [subscription] = await db
+      .insert(subscriptions)
+      .values(insertSubscription)
+      .returning();
+    return subscription;
+  }
+
+  async updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription> {
+    const [subscription] = await db
+      .update(subscriptions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(subscriptions.id, id))
+      .returning();
+    return subscription;
+  }
+
+  // User type management
+  async updateUserType(id: string, userType: string): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ userType })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async getUsersByType(userType: string): Promise<User[]> {
+    return await db
+      .select()
+      .from(users)
+      .where(eq(users.userType, userType))
+      .orderBy(desc(users.createdAt));
+  }
+
+  async getClientCompanies(): Promise<Company[]> {
+    return await db
+      .select()
+      .from(companies)
+      .where(eq(companies.companyType, 'client'))
+      .orderBy(desc(companies.createdAt));
+  }
+
+  async getCustomerCompanies(): Promise<Company[]> {
+    return await db
+      .select()
+      .from(companies)
+      .where(eq(companies.companyType, 'customer'))
+      .orderBy(desc(companies.createdAt));
   }
 }
 

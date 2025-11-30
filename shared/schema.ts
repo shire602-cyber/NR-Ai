@@ -4,6 +4,14 @@ import { z } from "zod";
 import { sql } from "drizzle-orm";
 
 // ===========================
+// User Types
+// ===========================
+// admin: NR Accounting staff with full access
+// client: Existing NR Accounting clients (invite-only, relationship-based)
+// customer: Self-signup SaaS users (tier-based pricing)
+export type UserType = 'admin' | 'client' | 'customer';
+
+// ===========================
 // Users
 // ===========================
 export const users = pgTable("users", {
@@ -12,6 +20,10 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   isAdmin: boolean("is_admin").notNull().default(false),
+  userType: text("user_type").notNull().default("customer"), // admin | client | customer
+  phone: text("phone"),
+  avatarUrl: text("avatar_url"),
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -35,6 +47,11 @@ export const companies = pgTable("companies", {
   name: text("name").notNull().unique(),
   baseCurrency: text("base_currency").notNull().default("AED"),
   locale: text("locale").notNull().default("en"), // 'en' or 'ar'
+  
+  // Company Type - determines access model
+  companyType: text("company_type").notNull().default("customer"), // client | customer
+  // client = Managed by NR Accounting, invite-only portal access
+  // customer = Self-service SaaS user
   
   // Company Information
   legalStructure: text("legal_structure"), // Sole Proprietorship, LLC, Corporation, Partnership, Other
@@ -1436,3 +1453,202 @@ export const insertClientNoteSchema = createInsertSchema(clientNotes).omit({
 
 export type InsertClientNote = z.infer<typeof insertClientNoteSchema>;
 export type ClientNote = typeof clientNotes.$inferSelect;
+
+// ===========================
+// Client Engagements (NR Accounting managing clients)
+// ===========================
+// Tracks the relationship between NR Accounting and their clients
+export const engagements = pgTable("engagements", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  accountManagerId: uuid("account_manager_id").references(() => users.id), // NR staff assigned
+  
+  // Engagement Details
+  engagementType: text("engagement_type").notNull().default("full_service"), // full_service | vat_only | bookkeeping | advisory
+  status: text("status").notNull().default("active"), // active | on_hold | terminated
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date"),
+  
+  // Service Agreement
+  monthlyFee: real("monthly_fee"),
+  billingCycle: text("billing_cycle").default("monthly"), // monthly | quarterly | annually
+  paymentTerms: integer("payment_terms").default(30), // days
+  
+  // Service Scope
+  servicesIncluded: text("services_included"), // JSON array of services
+  specialInstructions: text("special_instructions"),
+  
+  // Onboarding
+  onboardingCompleted: boolean("onboarding_completed").default(false),
+  onboardingCompletedAt: timestamp("onboarding_completed_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertEngagementSchema = createInsertSchema(engagements).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEngagement = z.infer<typeof insertEngagementSchema>;
+export type Engagement = typeof engagements.$inferSelect;
+
+// ===========================
+// Service Invoices (NR Accounting billing to clients)
+// ===========================
+// Invoices from NR Accounting Services to their managed clients
+export const serviceInvoices = pgTable("service_invoices", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  engagementId: uuid("engagement_id").notNull().references(() => engagements.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Invoice Details
+  invoiceNumber: text("invoice_number").notNull(),
+  invoiceDate: timestamp("invoice_date").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  
+  // Amounts (in AED)
+  subtotal: real("subtotal").notNull().default(0),
+  vatAmount: real("vat_amount").notNull().default(0),
+  total: real("total").notNull().default(0),
+  
+  // Payment
+  status: text("status").notNull().default("draft"), // draft | sent | paid | overdue | void
+  paidAmount: real("paid_amount").default(0),
+  paidAt: timestamp("paid_at"),
+  paymentMethod: text("payment_method"), // bank_transfer | card | cash | cheque
+  paymentReference: text("payment_reference"),
+  
+  // Period
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  
+  // Notes
+  description: text("description"),
+  notes: text("notes"),
+  
+  // PDF
+  pdfUrl: text("pdf_url"),
+  
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertServiceInvoiceSchema = createInsertSchema(serviceInvoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertServiceInvoice = z.infer<typeof insertServiceInvoiceSchema>;
+export type ServiceInvoice = typeof serviceInvoices.$inferSelect;
+
+// ===========================
+// Service Invoice Lines
+// ===========================
+export const serviceInvoiceLines = pgTable("service_invoice_lines", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  serviceInvoiceId: uuid("service_invoice_id").notNull().references(() => serviceInvoices.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: real("quantity").notNull().default(1),
+  unitPrice: real("unit_price").notNull(),
+  vatRate: real("vat_rate").notNull().default(0.05), // UAE 5%
+  amount: real("amount").notNull(), // quantity * unitPrice
+});
+
+export const insertServiceInvoiceLineSchema = createInsertSchema(serviceInvoiceLines).omit({
+  id: true,
+});
+
+export type InsertServiceInvoiceLine = z.infer<typeof insertServiceInvoiceLineSchema>;
+export type ServiceInvoiceLine = typeof serviceInvoiceLines.$inferSelect;
+
+// ===========================
+// FTA Email Sync (for client portal)
+// ===========================
+// Tracks emails synced from FTA for clients
+export const ftaEmails = pgTable("fta_emails", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Email Details
+  subject: text("subject").notNull(),
+  sender: text("sender"),
+  receivedAt: timestamp("received_at").notNull(),
+  
+  // Content
+  bodyText: text("body_text"),
+  bodyHtml: text("body_html"),
+  
+  // Categorization
+  emailType: text("email_type"), // vat_return_confirmation | payment_reminder | tax_notice | assessment | other
+  priority: text("priority").default("normal"), // low | normal | high | urgent
+  
+  // Status
+  isRead: boolean("is_read").default(false),
+  isArchived: boolean("is_archived").default(false),
+  isStarred: boolean("is_starred").default(false),
+  
+  // Attachments
+  hasAttachments: boolean("has_attachments").default(false),
+  attachments: text("attachments"), // JSON array of attachment details
+  
+  // Processing
+  aiSummary: text("ai_summary"),
+  actionRequired: boolean("action_required").default(false),
+  actionDescription: text("action_description"),
+  actionDueDate: timestamp("action_due_date"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertFtaEmailSchema = createInsertSchema(ftaEmails).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFtaEmail = z.infer<typeof insertFtaEmailSchema>;
+export type FtaEmail = typeof ftaEmails.$inferSelect;
+
+// ===========================
+// Customer Subscriptions (SaaS tier tracking)
+// ===========================
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Plan Details
+  planId: text("plan_id").notNull(), // free | starter | professional | enterprise
+  planName: text("plan_name").notNull(),
+  
+  // Billing
+  status: text("status").notNull().default("active"), // active | cancelled | past_due | trialing
+  currentPeriodStart: timestamp("current_period_start").notNull(),
+  currentPeriodEnd: timestamp("current_period_end").notNull(),
+  cancelAtPeriodEnd: boolean("cancel_at_period_end").default(false),
+  
+  // Stripe Integration (if using)
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  
+  // Usage Limits
+  maxUsers: integer("max_users").default(1),
+  maxInvoices: integer("max_invoices").default(50),
+  maxReceipts: integer("max_receipts").default(100),
+  aiCreditsRemaining: integer("ai_credits_remaining").default(100),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
+export type Subscription = typeof subscriptions.$inferSelect;
