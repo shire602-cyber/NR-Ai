@@ -1050,29 +1050,116 @@ export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema
 export type UserSubscription = typeof userSubscriptions.$inferSelect;
 
 // ===========================
-// VAT Returns (for FTA compliance)
+// VAT Returns (for FTA VAT 201 compliance)
+// Matches official FTA VAT 201 Return format
 // ===========================
 export const vatReturns = pgTable("vat_returns", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Period information
   periodStart: timestamp("period_start").notNull(),
   periodEnd: timestamp("period_end").notNull(),
   dueDate: timestamp("due_date").notNull(),
+  taxYearEnd: timestamp("tax_year_end"),
+  vatStagger: text("vat_stagger").default("quarterly"), // quarterly | monthly
   status: text("status").notNull().default("draft"), // draft | pending_review | submitted | filed | amended
-  // Box 1: Sales & Output VAT
-  box1SalesStandard: real("box1_sales_standard").notNull().default(0), // Standard rated supplies in Abu Dhabi
-  box2SalesOtherEmirates: real("box2_sales_other_emirates").notNull().default(0), // Standard rated supplies in other emirates
-  box3SalesTaxExempt: real("box3_sales_tax_exempt").notNull().default(0), // Zero rated supplies
-  box4SalesExempt: real("box4_sales_exempt").notNull().default(0), // Exempt supplies
-  box5TotalOutputTax: real("box5_total_output_tax").notNull().default(0), // Total output tax
-  // Box 6-9: Purchases & Input VAT
-  box6ExpensesStandard: real("box6_expenses_standard").notNull().default(0), // Standard rated expenses
-  box7ExpensesTouristRefund: real("box7_expenses_tourist_refund").notNull().default(0), // Supplies subject to refund
-  box8TotalInputTax: real("box8_total_input_tax").notNull().default(0), // Total recoverable tax
-  box9NetTax: real("box9_net_tax").notNull().default(0), // Total net tax (payable or refundable)
-  // Adjustments
+  
+  // ===== VAT ON SALES AND ALL OTHER OUTPUTS =====
+  // Box 1a-1g: Standard Rated Supplies by Emirate (Amount, VAT, Adjustment)
+  box1aAbuDhabiAmount: real("box1a_abu_dhabi_amount").notNull().default(0),
+  box1aAbuDhabiVat: real("box1a_abu_dhabi_vat").notNull().default(0),
+  box1aAbuDhabiAdj: real("box1a_abu_dhabi_adj").notNull().default(0),
+  
+  box1bDubaiAmount: real("box1b_dubai_amount").notNull().default(0),
+  box1bDubaiVat: real("box1b_dubai_vat").notNull().default(0),
+  box1bDubaiAdj: real("box1b_dubai_adj").notNull().default(0),
+  
+  box1cSharjahAmount: real("box1c_sharjah_amount").notNull().default(0),
+  box1cSharjahVat: real("box1c_sharjah_vat").notNull().default(0),
+  box1cSharjahAdj: real("box1c_sharjah_adj").notNull().default(0),
+  
+  box1dAjmanAmount: real("box1d_ajman_amount").notNull().default(0),
+  box1dAjmanVat: real("box1d_ajman_vat").notNull().default(0),
+  box1dAjmanAdj: real("box1d_ajman_adj").notNull().default(0),
+  
+  box1eUmmAlQuwainAmount: real("box1e_umm_al_quwain_amount").notNull().default(0),
+  box1eUmmAlQuwainVat: real("box1e_umm_al_quwain_vat").notNull().default(0),
+  box1eUmmAlQuwainAdj: real("box1e_umm_al_quwain_adj").notNull().default(0),
+  
+  box1fRasAlKhaimahAmount: real("box1f_ras_al_khaimah_amount").notNull().default(0),
+  box1fRasAlKhaimahVat: real("box1f_ras_al_khaimah_vat").notNull().default(0),
+  box1fRasAlKhaimahAdj: real("box1f_ras_al_khaimah_adj").notNull().default(0),
+  
+  box1gFujairahAmount: real("box1g_fujairah_amount").notNull().default(0),
+  box1gFujairahVat: real("box1g_fujairah_vat").notNull().default(0),
+  box1gFujairahAdj: real("box1g_fujairah_adj").notNull().default(0),
+  
+  // Box 2: Tax Refunds to Tourists
+  box2TouristRefundAmount: real("box2_tourist_refund_amount").notNull().default(0),
+  box2TouristRefundVat: real("box2_tourist_refund_vat").notNull().default(0),
+  
+  // Box 3: Supplies subject to reverse charge
+  box3ReverseChargeAmount: real("box3_reverse_charge_amount").notNull().default(0),
+  box3ReverseChargeVat: real("box3_reverse_charge_vat").notNull().default(0),
+  
+  // Box 4: Zero Rated Supplies
+  box4ZeroRatedAmount: real("box4_zero_rated_amount").notNull().default(0),
+  
+  // Box 5: Exempt Supplies
+  box5ExemptAmount: real("box5_exempt_amount").notNull().default(0),
+  
+  // Box 6: Goods imported into UAE
+  box6ImportsAmount: real("box6_imports_amount").notNull().default(0),
+  box6ImportsVat: real("box6_imports_vat").notNull().default(0),
+  
+  // Box 7: Adjustments to goods imported
+  box7ImportsAdjAmount: real("box7_imports_adj_amount").notNull().default(0),
+  box7ImportsAdjVat: real("box7_imports_adj_vat").notNull().default(0),
+  
+  // Box 8: Totals for Output VAT
+  box8TotalAmount: real("box8_total_amount").notNull().default(0),
+  box8TotalVat: real("box8_total_vat").notNull().default(0),
+  box8TotalAdj: real("box8_total_adj").notNull().default(0),
+  
+  // ===== VAT ON EXPENSES AND ALL OTHER INPUTS =====
+  // Box 9: Standard Rated Expenses
+  box9ExpensesAmount: real("box9_expenses_amount").notNull().default(0),
+  box9ExpensesVat: real("box9_expenses_vat").notNull().default(0),
+  box9ExpensesAdj: real("box9_expenses_adj").notNull().default(0),
+  
+  // Box 10: Supplies subject to reverse charge (input)
+  box10ReverseChargeAmount: real("box10_reverse_charge_amount").notNull().default(0),
+  box10ReverseChargeVat: real("box10_reverse_charge_vat").notNull().default(0),
+  
+  // Box 11: Totals for Input VAT
+  box11TotalAmount: real("box11_total_amount").notNull().default(0),
+  box11TotalVat: real("box11_total_vat").notNull().default(0),
+  box11TotalAdj: real("box11_total_adj").notNull().default(0),
+  
+  // ===== NET VAT DUE =====
+  // Box 12: Total value of due tax for the period
+  box12TotalDueTax: real("box12_total_due_tax").notNull().default(0),
+  
+  // Box 13: Total value of recoverable tax for the period
+  box13RecoverableTax: real("box13_recoverable_tax").notNull().default(0),
+  
+  // Box 14: Payable tax for the period (Box 12 - Box 13)
+  box14PayableTax: real("box14_payable_tax").notNull().default(0),
+  
+  // Legacy fields for backward compatibility
+  box1SalesStandard: real("box1_sales_standard").notNull().default(0),
+  box2SalesOtherEmirates: real("box2_sales_other_emirates").notNull().default(0),
+  box3SalesTaxExempt: real("box3_sales_tax_exempt").notNull().default(0),
+  box4SalesExempt: real("box4_sales_exempt").notNull().default(0),
+  box5TotalOutputTax: real("box5_total_output_tax").notNull().default(0),
+  box6ExpensesStandard: real("box6_expenses_standard").notNull().default(0),
+  box7ExpensesTouristRefund: real("box7_expenses_tourist_refund").notNull().default(0),
+  box8TotalInputTax: real("box8_total_input_tax").notNull().default(0),
+  box9NetTax: real("box9_net_tax").notNull().default(0),
   adjustmentAmount: real("adjustment_amount").default(0),
   adjustmentReason: text("adjustment_reason"),
+  
   // Filing info
   submittedBy: uuid("submitted_by").references(() => users.id),
   submittedAt: timestamp("submitted_at"),
@@ -1081,6 +1168,12 @@ export const vatReturns = pgTable("vat_returns", {
   paymentAmount: real("payment_amount"),
   paymentDate: timestamp("payment_date"),
   notes: text("notes"),
+  
+  // Declaration
+  declarantName: text("declarant_name"),
+  declarantPosition: text("declarant_position"),
+  declarationDate: timestamp("declaration_date"),
+  
   createdBy: uuid("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
