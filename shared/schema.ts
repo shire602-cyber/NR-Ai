@@ -1708,3 +1708,43 @@ export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
 
 export type InsertSubscription = z.infer<typeof insertSubscriptionSchema>;
 export type Subscription = typeof subscriptions.$inferSelect;
+
+// ===========================
+// Data Backups (Financial Records Safeguard)
+// ===========================
+export const backups = pgTable("backups", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Backup Details
+  name: text("name").notNull(),
+  description: text("description"),
+  backupType: text("backup_type").notNull().default("manual"), // manual | scheduled | pre_restore
+  status: text("status").notNull().default("pending"), // pending | in_progress | completed | failed
+  
+  // Data Counts (for verification)
+  accountsCount: integer("accounts_count").default(0),
+  journalEntriesCount: integer("journal_entries_count").default(0),
+  invoicesCount: integer("invoices_count").default(0),
+  receiptsCount: integer("receipts_count").default(0),
+  vatReturnsCount: integer("vat_returns_count").default(0),
+  
+  // Storage
+  dataSnapshot: text("data_snapshot"), // JSON stringified backup data
+  checksum: text("checksum"), // SHA256 for integrity verification
+  sizeBytes: integer("size_bytes").default(0),
+  
+  // Timestamps
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  expiresAt: timestamp("expires_at"), // Auto-cleanup after 90 days
+});
+
+export const insertBackupSchema = createInsertSchema(backups).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertBackup = z.infer<typeof insertBackupSchema>;
+export type Backup = typeof backups.$inferSelect;

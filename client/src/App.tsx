@@ -57,6 +57,8 @@ import UserInvitations from '@/pages/UserInvitations';
 import ActivityLogs from '@/pages/ActivityLogs';
 import AdminDocuments from '@/pages/AdminDocuments';
 import ClientImport from '@/pages/ClientImport';
+import History from '@/pages/History';
+import BackupRestore from '@/pages/BackupRestore';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -154,6 +156,8 @@ function Router() {
           <Route path="/bank-reconciliation" component={BankReconciliation} />
           <Route path="/vat-filing" component={VATFiling} />
           <Route path="/team" component={TeamManagement} />
+          <Route path="/history" component={History} />
+          <Route path="/backup-restore" component={BackupRestore} />
           <Route path="/advanced-reports" component={AdvancedReports} />
           <Route path="/document-vault" component={DocumentVault} />
           <Route path="/tax-return-archive" component={TaxReturnArchive} />

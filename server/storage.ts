@@ -49,7 +49,8 @@ import type {
   ServiceInvoice, InsertServiceInvoice,
   ServiceInvoiceLine, InsertServiceInvoiceLine,
   FtaEmail, InsertFtaEmail,
-  Subscription, InsertSubscription
+  Subscription, InsertSubscription,
+  Backup, InsertBackup
 } from "@shared/schema";
 import {
   users,
@@ -102,7 +103,8 @@ import {
   serviceInvoices,
   serviceInvoiceLines,
   ftaEmails,
-  subscriptions
+  subscriptions,
+  backups
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -484,6 +486,13 @@ export interface IStorage {
   getUsersByType(userType: string): Promise<User[]>;
   getClientCompanies(): Promise<Company[]>;
   getCustomerCompanies(): Promise<Company[]>;
+
+  // Backups
+  getBackupsByCompanyId(companyId: string): Promise<Backup[]>;
+  getBackup(id: string): Promise<Backup | undefined>;
+  createBackup(backup: InsertBackup): Promise<Backup>;
+  updateBackup(id: string, data: Partial<InsertBackup>): Promise<Backup>;
+  deleteBackup(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2447,6 +2456,41 @@ export class DatabaseStorage implements IStorage {
       .from(companies)
       .where(eq(companies.companyType, 'customer'))
       .orderBy(desc(companies.createdAt));
+  }
+
+  // Backups
+  async getBackupsByCompanyId(companyId: string): Promise<Backup[]> {
+    return await db
+      .select()
+      .from(backups)
+      .where(eq(backups.companyId, companyId))
+      .orderBy(desc(backups.createdAt));
+  }
+
+  async getBackup(id: string): Promise<Backup | undefined> {
+    const [backup] = await db.select().from(backups).where(eq(backups.id, id));
+    return backup || undefined;
+  }
+
+  async createBackup(insertBackup: InsertBackup): Promise<Backup> {
+    const [backup] = await db
+      .insert(backups)
+      .values(insertBackup)
+      .returning();
+    return backup;
+  }
+
+  async updateBackup(id: string, data: Partial<InsertBackup>): Promise<Backup> {
+    const [backup] = await db
+      .update(backups)
+      .set(data)
+      .where(eq(backups.id, id))
+      .returning();
+    return backup;
+  }
+
+  async deleteBackup(id: string): Promise<void> {
+    await db.delete(backups).where(eq(backups.id, id));
   }
 }
 

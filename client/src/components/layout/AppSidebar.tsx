@@ -26,7 +26,9 @@ import {
   UserPlus,
   Activity,
   Settings,
-  FileUp
+  FileUp,
+  History,
+  Database
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import {
@@ -176,6 +178,20 @@ const settingsItems = [
     titleAr: 'الفريق',
     icon: Users,
     url: '/team',
+  },
+  {
+    title: 'history',
+    titleEn: 'Activity History',
+    titleAr: 'سجل النشاط',
+    icon: History,
+    url: '/history',
+  },
+  {
+    title: 'backupRestore',
+    titleEn: 'Backup & Restore',
+    titleAr: 'النسخ الاحتياطي',
+    icon: Database,
+    url: '/backup-restore',
   },
   {
     title: 'integrationsHub',
