@@ -306,18 +306,16 @@ export default function AccountLedger() {
                   : ledger?.account.nameEn || 'Account Ledger'
               )}
             </h1>
-            <p className="text-muted-foreground mt-1">
-              {isLoading ? (
-                <Skeleton className="h-4 w-32" />
-              ) : (
-                <>
-                  <Badge variant="outline" className="mr-2">
-                    {ledger?.account.type}
-                  </Badge>
-                  {locale === 'ar' ? 'دفتر الأستاذ' : 'General Ledger'}
-                </>
-              )}
-            </p>
+            {isLoading ? (
+              <Skeleton className="h-4 w-32 mt-1" />
+            ) : (
+              <p className="text-muted-foreground mt-1">
+                <Badge variant="outline" className="mr-2">
+                  {ledger?.account.type}
+                </Badge>
+                {locale === 'ar' ? 'دفتر الأستاذ' : 'General Ledger'}
+              </p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
