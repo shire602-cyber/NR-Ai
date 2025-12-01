@@ -23,6 +23,7 @@ import ChartOfAccounts from '@/pages/ChartOfAccounts';
 import AccountLedger from '@/pages/AccountLedger';
 import Invoices from '@/pages/Invoices';
 import Journal from '@/pages/Journal';
+import JournalEntryDetail from '@/pages/JournalEntryDetail';
 import Reports from '@/pages/Reports';
 import AICFO from '@/pages/AICFO';
 import Receipts from '@/pages/Receipts';
@@ -140,6 +141,7 @@ function Router() {
           <Route path="/accounts/:id/ledger" component={AccountLedger} />
           <Route path="/invoices" component={Invoices} />
           <Route path="/journal" component={Journal} />
+          <Route path="/journal/:id" component={JournalEntryDetail} />
           <Route path="/reports" component={Reports} />
           <Route path="/receipts" component={Receipts} />
           <Route path="/contacts" component={CustomerContacts} />
