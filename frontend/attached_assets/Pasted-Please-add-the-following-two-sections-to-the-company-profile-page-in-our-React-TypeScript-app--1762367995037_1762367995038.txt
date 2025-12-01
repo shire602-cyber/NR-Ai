@@ -1,0 +1,47 @@
+Please add the following two sections to the company profile page in our React + TypeScript app.
+
+Use functional components and TypeScript types. Use tailwind or existing project styling conventions. Ensure all fields are controlled inputs with labels, error validation for required fields, and save logic.
+
+---
+
+📦 SECTION 1: Company Information
+
+Component name: `CompanyInfoSection`
+
+Fields:
+- Company Name (text, required)
+- Legal Structure (dropdown: Sole Proprietorship, LLC, Corporation, Partnership, Other; required)
+- Industry (dropdown with typeahead or free input; optional)
+- Business Registration Number (text, optional)
+- Business Address (textarea or address fields; required)
+- Contact Phone (text, optional)
+- Contact Email (text, optional)
+- Website URL (text, optional)
+- Upload Logo (file upload with preview; optional)
+
+Group into logical blocks with spacing. Use labels and placeholder text where appropriate. Use `<input type="file">` for logo upload and render a thumbnail preview if uploaded.
+
+---
+
+🧾 SECTION 2: Tax & Compliance Settings
+
+Component name: `TaxComplianceSection`
+
+Fields:
+- TRN / VAT Number (text, required if UAE)
+- Tax Registration Type (dropdown: Standard, Flat Rate, Non-registered, Other; optional)
+- VAT Filing Frequency (dropdown: Monthly, Quarterly, Annually; required if VAT registered)
+- Tax Registration Effective Date (date picker; optional)
+- Corporate Tax ID (text, optional)
+
+If country is UAE (you can mock this for now), mark VAT fields as required. Later we can add validation based on location. Ensure dates are ISO compliant and easily parsed.
+
+---
+
+✅ Additional Notes:
+- Wrap both components under a `CompanyProfileForm` container
+- Include a "Save" button at bottom that collects all fields and outputs JSON to console for now
+- Add state validation for required fields (e.g. empty company name or VAT number should show red border and helper text)
+- Ensure responsiveness on mobile
+
+Let me know once this is implemented so I can help build the next section (Accounting Settings and HR).

@@ -1,0 +1,41 @@
+Please apply the following updates to improve the AI-Bookkeeping web app:
+
+1. REMOVE or DELAY the lifetime-deal pop-up. 
+   • Show it only after the user scrolls 50% down or after 15 seconds.
+   • Make sure it never blocks navigation.
+
+2. UPDATE the hero section:  
+   • Headline: “AI bookkeeping that actually understands UAE VAT.”  
+   • Subheading: “Automate invoices, VAT, P&L, and trial balance — built for SMEs in the UAE.”  
+   • Add three small badges: “FTA-Compliant,” “Bank-Grade Security,” “Powered by AI.”  
+   • Keep two main CTAs: “Start free trial” (primary) and “Watch how it works” (secondary).
+
+3. ADD product visuals:  
+   • Show a dashboard screenshot (P&L + VAT summary + AI insights).  
+   • Include a short animated GIF/video showing AI categorising expenses.  
+   • Add 3–4 feature cards for: AI Categorisation, VAT & Tax Compliance, Real-Time Reports, and Accountant Collaboration.
+
+4. ADD “How It Works” section:  
+   • Step 1: Create company (with TRN).  
+   • Step 2: Import bank or card data.  
+   • Step 3: AI categorises and posts entries.  
+   • Step 4: Download VAT/P&L reports.
+
+5. IMPROVE pricing section:  
+   • Keep 3 tiers — Starter (Free), Growth (AED 299), Firm (AED 799).  
+   • Mark Growth as “Most Popular.”  
+   • Add text: “All prices in AED · Cancel anytime · No setup fees.”
+
+6. ADD trust & social proof:  
+   • 2–3 testimonial cards.  
+   • A footer with company address, contact email, privacy policy, and “Made with ❤️ in Dubai.”  
+
+7. FIX navigation & mobile layout:  
+   • Ensure the top menu works smoothly on mobile.  
+   • Retain bilingual (EN/AR) and RTL support.
+
+8. OPTIONAL: Add a small section showing integration logos (“Works with Stripe, PayPal, and Excel”) for credibility.
+
+Use Tailwind or styled components (consistent with the current React codebase).  
+Keep all existing logic, bilingual support, ROI calculator, and data-test-id attributes.  
+Do NOT replace the React framework — just apply these layout, text, and visual updates.

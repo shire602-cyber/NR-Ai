@@ -1,0 +1,495 @@
+here’s a copy-paste starter you can drop into a fresh Replit (Python) to get your AI-bookkeeping MVP running right away.
+
+It gives you:
+
+FastAPI backend
+
+SQLite DB via SQLAlchemy
+
+JWT auth (register/login)
+
+Multi-company support
+
+Chart of Accounts (seeded)
+
+Double-entry journal entries
+
+Basic invoices (with UAE 5% VAT helper)
+
+AI categorize stub (ready to wire to OpenAI later)
+
+1) requirements.txt
+fastapi==0.115.2
+uvicorn[standard]==0.30.6
+SQLAlchemy==2.0.35
+pydantic==2.9.2
+pydantic-settings==2.6.1
+passlib[bcrypt]==1.7.4
+PyJWT==2.9.0
+python-multipart==0.0.12
+
+2) .replit
+language = "python"
+run = "uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+
+3) main.py
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional, Literal, Annotated
+import os
+import jwt
+from passlib.context import CryptContext
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, constr
+from pydantic_settings import BaseSettings
+from sqlalchemy import (
+    create_engine, String, Integer, Float, Boolean, ForeignKey, Text, DateTime, UniqueConstraint,
+    func, event
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, Session
+from sqlalchemy.exc import IntegrityError
+
+# -------------------------
+# Settings / Security
+# -------------------------
+class Settings(BaseSettings):
+    JWT_SECRET: str = "change_me_in_env"
+    JWT_EXP_MIN: int = 24 * 60
+    OPENAI_API_KEY: Optional[str] = None  # reserved for later
+    DB_URL: str = "sqlite:///./app.db"
+
+settings = Settings()
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+auth_scheme = HTTPBearer()
+
+def create_access_token(sub: str) -> str:
+    payload = {
+        "sub": sub,
+        "exp": datetime.now(tz=timezone.utc) + timedelta(minutes=settings.JWT_EXP_MIN),
+        "iat": datetime.now(tz=timezone.utc),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
+
+def verify_token(creds: HTTPAuthorizationCredentials) -> str:
+    try:
+        payload = jwt.decode(creds.credentials, settings.JWT_SECRET, algorithms=["HS256"])
+        return payload["sub"]
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+# -------------------------
+# DB / ORM
+# -------------------------
+class Base(DeclarativeBase): ...
+
+engine = create_engine(settings.DB_URL, echo=False)
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    # relationships
+    companies: Mapped[List["Company"]] = relationship("Company", secondary="company_users", back_populates="users")
+
+class Company(Base):
+    __tablename__ = "companies"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    base_currency: Mapped[str] = mapped_column(String(10), default="AED")
+    locale: Mapped[str] = mapped_column(String(10), default="en")  # 'en' or 'ar'
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    users: Mapped[List[User]] = relationship("User", secondary="company_users", back_populates="companies")
+    accounts: Mapped[List["Account"]] = relationship("Account", back_populates="company", cascade="all, delete-orphan")
+
+class CompanyUser(Base):
+    __tablename__ = "company_users"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    role: Mapped[str] = mapped_column(String(20), default="owner")  # owner | accountant | cfo | employee
+    __table_args__ = (UniqueConstraint("company_id", "user_id", name="uix_company_user"),)
+
+# Chart of Accounts
+class Account(Base):
+    __tablename__ = "accounts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    code: Mapped[str] = mapped_column(String(20))
+    name_en: Mapped[str] = mapped_column(String(255))
+    name_ar: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    type: Mapped[str] = mapped_column(String(30))  # asset, liability, equity, income, expense
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    __table_args__ = (UniqueConstraint("company_id", "code", name="uix_coa_code"),)
+    company: Mapped[Company] = relationship("Company", back_populates="accounts")
+
+# Journal (double-entry)
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    memo: Mapped[Optional[str]] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    lines: Mapped[List["JournalLine"]] = relationship("JournalLine", cascade="all, delete-orphan")
+
+class JournalLine(Base):
+    __tablename__ = "journal_lines"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    entry_id: Mapped[int] = mapped_column(ForeignKey("journal_entries.id", ondelete="CASCADE"))
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    debit: Mapped[float] = mapped_column(Float, default=0.0)
+    credit: Mapped[float] = mapped_column(Float, default=0.0)
+
+# Invoices (simple)
+class Invoice(Base):
+    __tablename__ = "invoices"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"))
+    customer_name: Mapped[str] = mapped_column(String(255))
+    customer_trn: Mapped[Optional[str]] = mapped_column(String(64))
+    number: Mapped[str] = mapped_column(String(50))
+    date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    currency: Mapped[str] = mapped_column(String(10), default="AED")
+    subtotal: Mapped[float] = mapped_column(Float, default=0.0)
+    vat_amount: Mapped[float] = mapped_column(Float, default=0.0)
+    total: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft|sent|paid|void
+
+Base.metadata.create_all(engine)
+
+# -------------------------
+# Pydantic Schemas
+# -------------------------
+class RegisterIn(BaseModel):
+    email: constr(strip_whitespace=True)
+    name: constr(strip_whitespace=True)
+    password: constr(min_length=6)
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class CompanyIn(BaseModel):
+    name: str
+    base_currency: str = "AED"
+    locale: Literal["en","ar"] = "en"
+
+class CompanyOut(BaseModel):
+    id: int
+    name: str
+    base_currency: str
+    locale: str
+
+class AccountIn(BaseModel):
+    code: str
+    name_en: str
+    name_ar: Optional[str] = None
+    type: Literal["asset","liability","equity","income","expense"]
+
+class AccountOut(BaseModel):
+    id: int
+    code: str
+    name_en: str
+    name_ar: Optional[str]
+    type: str
+    is_active: bool
+
+class JournalLineIn(BaseModel):
+    account_id: int
+    debit: float = 0.0
+    credit: float = 0.0
+
+class JournalEntryIn(BaseModel):
+    company_id: int
+    date: datetime
+    memo: Optional[str] = None
+    lines: List[JournalLineIn]
+
+class InvoiceLineIn(BaseModel):
+    description: str
+    qty: float
+    unit_price: float
+    vat_rate: float = 0.05  # UAE standard 5%
+
+class InvoiceIn(BaseModel):
+    company_id: int
+    customer_name: str
+    customer_trn: Optional[str] = None
+    number: str
+    date: datetime
+    currency: str = "AED"
+    lines: List[InvoiceLineIn]
+
+class InvoiceOut(BaseModel):
+    id: int
+    number: str
+    customer_name: str
+    subtotal: float
+    vat_amount: float
+    total: float
+    status: str
+
+# -------------------------
+# FastAPI app
+# -------------------------
+app = FastAPI(title="AI Bookkeeping (Dubai MVP)")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True
+)
+
+def get_db():
+    with Session(engine) as s:
+        yield s
+
+def get_current_user(creds: Annotated[HTTPAuthorizationCredentials, Depends(auth_scheme)], db: Session = Depends(get_db)) -> User:
+    email = verify_token(creds)
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(401, "User not found")
+    return user
+
+# -------------------------
+# Seed minimal UAE Chart of Accounts
+# -------------------------
+UAE_SEED_COA = [
+    ("1000","Cash", None, "asset"),
+    ("1100","Bank", None, "asset"),
+    ("1200","Accounts Receivable", None, "asset"),
+    ("2000","Accounts Payable", None, "liability"),
+    ("2100","VAT Payable", None, "liability"),
+    ("2200","VAT Receivable", None, "asset"),
+    ("3000","Owner’s Equity", None, "equity"),
+    ("4000","Sales Revenue", None, "income"),
+    ("4100","Other Income", None, "income"),
+    ("5000","COGS", None, "expense"),
+    ("5100","Rent Expense", None, "expense"),
+    ("5200","Utilities Expense", None, "expense"),
+    ("5300","Marketing Expense", None, "expense"),
+    ("5400","Office Supplies", None, "expense"),
+]
+
+def seed_coa(db: Session, company_id: int):
+    for code, en, ar, typ in UAE_SEED_COA:
+        exists = db.query(Account).filter_by(company_id=company_id, code=code).first()
+        if not exists:
+            db.add(Account(company_id=company_id, code=code, name_en=en, name_ar=ar, type=typ))
+    db.commit()
+
+# -------------------------
+# Auth
+# -------------------------
+@app.post("/auth/register", response_model=TokenOut)
+def register(body: RegisterIn, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.email == body.email).first():
+        raise HTTPException(400, "Email already registered")
+    user = User(email=body.email, name=body.name, password_hash=pwd_context.hash(body.password))
+    db.add(user); db.commit()
+    token = create_access_token(user.email)
+    return TokenOut(access_token=token)
+
+class LoginIn(BaseModel):
+    email: str
+    password: str
+
+@app.post("/auth/login", response_model=TokenOut)
+def login(body: LoginIn, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == body.email).first()
+    if not user or not pwd_context.verify(body.password, user.password_hash):
+        raise HTTPException(401, "Invalid credentials")
+    token = create_access_token(user.email)
+    return TokenOut(access_token=token)
+
+# -------------------------
+# Companies
+# -------------------------
+@app.post("/companies", response_model=CompanyOut)
+def create_company(body: CompanyIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    comp = Company(name=body.name, base_currency=body.base_currency, locale=body.locale)
+    db.add(comp); db.flush()
+    db.add(CompanyUser(company_id=comp.id, user_id=user.id, role="owner"))
+    db.commit()
+    # seed UAE Chart of Accounts
+    seed_coa(db, comp.id)
+    return CompanyOut(id=comp.id, name=comp.name, base_currency=comp.base_currency, locale=comp.locale)
+
+@app.get("/companies", response_model=List[CompanyOut])
+def list_companies(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    comps = (db.query(Company)
+               .join(CompanyUser, CompanyUser.company_id == Company.id)
+               .filter(CompanyUser.user_id == user.id)
+               .all())
+    return [CompanyOut(id=c.id, name=c.name, base_currency=c.base_currency, locale=c.locale) for c in comps]
+
+# -------------------------
+# Accounts
+# -------------------------
+@app.get("/companies/{company_id}/accounts", response_model=List[AccountOut])
+def list_accounts(company_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    accounts = db.query(Account).filter_by(company_id=company_id, is_active=True).order_by(Account.code).all()
+    return [AccountOut(id=a.id, code=a.code, name_en=a.name_en, name_ar=a.name_ar, type=a.type, is_active=a.is_active) for a in accounts]
+
+@app.post("/companies/{company_id}/accounts", response_model=AccountOut)
+def create_account(company_id: int, body: AccountIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    acc = Account(company_id=company_id, code=body.code, name_en=body.name_en, name_ar=body.name_ar, type=body.type)
+    db.add(acc)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(400, "Account code already exists")
+    return AccountOut(id=acc.id, code=acc.code, name_en=acc.name_en, name_ar=acc.name_ar, type=acc.type, is_active=acc.is_active)
+
+# -------------------------
+# Journal (Double-entry)
+# -------------------------
+@app.post("/journal", status_code=201)
+def post_journal(entry: JournalEntryIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    total_debit = sum([l.debit for l in entry.lines])
+    total_credit = sum([l.credit for l in entry.lines])
+    # Enforce balance
+    if round(total_debit, 2) != round(total_credit, 2):
+        raise HTTPException(400, "Debits must equal credits")
+    je = JournalEntry(company_id=entry.company_id, date=entry.date, memo=entry.memo, created_by=user.id)
+    db.add(je); db.flush()
+    for l in entry.lines:
+        db.add(JournalLine(entry_id=je.id, account_id=l.account_id, debit=l.debit, credit=l.credit))
+    db.commit()
+    return {"id": je.id, "status": "posted"}
+
+# -------------------------
+# VAT helpers (UAE)
+# -------------------------
+def compute_vat_uae(lines: List[InvoiceLineIn]) -> tuple[float,float,float]:
+    subtotal = sum([l.qty * l.unit_price for l in lines])
+    vat_amount = sum([(l.qty * l.unit_price) * l.vat_rate for l in lines])
+    total = subtotal + vat_amount
+    return round(subtotal,2), round(vat_amount,2), round(total,2)
+
+# -------------------------
+# Invoices
+# -------------------------
+@app.post("/invoices", response_model=InvoiceOut, status_code=201)
+def create_invoice(inv: InvoiceIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    subtotal, vat_amount, total = compute_vat_uae(inv.lines)
+    invoice = Invoice(
+        company_id=inv.company_id,
+        customer_name=inv.customer_name,
+        customer_trn=inv.customer_trn,
+        number=inv.number,
+        date=inv.date,
+        currency=inv.currency,
+        subtotal=subtotal,
+        vat_amount=vat_amount,
+        total=total,
+        status="draft"
+    )
+    db.add(invoice); db.commit()
+    return InvoiceOut(id=invoice.id, number=invoice.number, customer_name=invoice.customer_name,
+                      subtotal=invoice.subtotal, vat_amount=invoice.vat_amount, total=invoice.total, status=invoice.status)
+
+@app.get("/companies/{company_id}/invoices", response_model=List[InvoiceOut])
+def list_invoices(company_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.query(Invoice).filter_by(company_id=company_id).order_by(Invoice.date.desc()).all()
+    return [InvoiceOut(id=r.id, number=r.number, customer_name=r.customer_name,
+                       subtotal=r.subtotal, vat_amount=r.vat_amount, total=r.total, status=r.status) for r in rows]
+
+# -------------------------
+# AI Categorize (stub)
+# -------------------------
+class CategorizeIn(BaseModel):
+    company_id: int
+    description: str
+    amount: float
+    currency: str = "AED"
+
+class CategorizeOut(BaseModel):
+    suggested_account_code: str
+    confidence: float
+    reason: str
+
+RULES = [
+    ("*uber*|*taxi*|*careem*", "5300", "Transportation/Marketing"),
+    ("*facebook*|*google ads*|*tiktok*", "5300", "Marketing Expense"),
+    ("*du*|*etisalat*|*utility*|*dewa*", "5200", "Utilities Expense"),
+    ("*rent*|*lease*", "5100", "Rent Expense"),
+    ("*stationery*|*paper*|*ink*|*pens*", "5400", "Office Supplies"),
+]
+
+def simple_rule_match(desc: str) -> Optional[str]:
+    d = desc.lower()
+    for pat, code, _ in RULES:
+        # crude wildcard match
+        tokens = [t for t in pat.split("|")]
+        if any(t.strip("*") in d for t in tokens):
+            return code
+    return None
+
+@app.post("/ai/categorize", response_model=CategorizeOut)
+def ai_categorize(body: CategorizeIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 1) simple heuristic
+    code = simple_rule_match(body.description)
+    if code:
+        return CategorizeOut(suggested_account_code=code, confidence=0.65, reason="Matched business rule")
+
+    # 2) (Optional) plug OpenAI here later for smarter classification per company COA
+    # if settings.OPENAI_API_KEY:
+    #   ...call LLM with COA context and description...
+    #   return CategorizeOut(...)
+
+    # 3) fallback
+    return CategorizeOut(suggested_account_code="5400", confidence=0.25, reason="Fallback to Office Supplies")
+
+# -------------------------
+# Health
+# -------------------------
+@app.get("/health")
+def health():
+    return {"ok": True, "time": datetime.utcnow().isoformat()}
+
+# -------------------------
+# Friendly root message
+# -------------------------
+@app.get("/")
+def root():
+    return {
+        "name": "AI Bookkeeping (Dubai MVP)",
+        "docs": "/docs",
+        "hint": "Register -> create company -> COA auto-seeded -> post invoices/journals."
+    }
+
+How to run (in Replit)
+
+Create a new Python Repl.
+
+Add the three files above (requirements.txt, .replit, main.py).
+
+Replit will auto-install; if not, open Shell and run:
+
+pip install -r requirements.txt
+
+
+Click Run.
+
+Open the webview → go to /docs for Swagger UI.
+
+Quick test flow (in /docs)
+
+POST /auth/register → get access_token.
+
+Authorize (top-right “Authorize” → paste Bearer <token>).
+
+POST /companies with:
+
+{ "name": "Alain Business Center", "base_currency": "AED", "locale": "en" }
+
+
+(Chart of Accounts auto-seeded).
+4. GET /companies/{company_id}/accounts to see COA.
+5. POST /invoices with a couple of lines (VAT auto 5%).
+6. POST /journal to post a balanced double-entry (debits == credits).
+7. POST /ai/categorize to try the categorizer stub.
