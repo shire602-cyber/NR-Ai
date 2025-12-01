@@ -82,6 +82,13 @@ const coreItems = [
     url: '/receipts',
   },
   {
+    title: 'contacts',
+    titleEn: 'Customer Contacts',
+    titleAr: 'جهات الاتصال',
+    icon: Users,
+    url: '/contacts',
+  },
+  {
     title: 'bankReconciliation',
     titleEn: 'Bank Reconciliation',
     titleAr: 'تسوية البنك',

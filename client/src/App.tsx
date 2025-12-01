@@ -26,6 +26,7 @@ import Journal from '@/pages/Journal';
 import Reports from '@/pages/Reports';
 import AICFO from '@/pages/AICFO';
 import Receipts from '@/pages/Receipts';
+import CustomerContacts from '@/pages/CustomerContacts';
 import Landing from '@/pages/Landing';
 import Services from '@/pages/Services';
 import CompanyProfile from '@/pages/CompanyProfile';
@@ -136,6 +137,7 @@ function Router() {
           <Route path="/journal" component={Journal} />
           <Route path="/reports" component={Reports} />
           <Route path="/receipts" component={Receipts} />
+          <Route path="/contacts" component={CustomerContacts} />
           <Route path="/ai-cfo" component={AICFO} />
           <Route path="/ai-features" component={AIFeatures} />
           <Route path="/smart-assistant" component={SmartAssistant} />
