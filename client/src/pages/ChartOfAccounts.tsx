@@ -153,13 +153,10 @@ export default function ChartOfAccounts() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight" data-testid="text-page-title">
-            {locale === 'ar' ? 'دليل الحسابات' : 'Chart of Accounts'}
+            {t.chartOfAccounts}
           </h1>
           <p className="text-muted-foreground mt-1">
-            {locale === 'ar' 
-              ? 'إدارة وعرض جميع الحسابات المالية لشركتك'
-              : 'Manage and view all financial accounts for your company'
-            }
+            {t.chartOfAccountsDescription}
           </p>
         </div>
         <Button 
@@ -168,14 +165,14 @@ export default function ChartOfAccounts() {
           onClick={() => navigate('/journal')}
         >
           <Plus className="h-4 w-4 mr-2" />
-          {locale === 'ar' ? 'إضافة حساب' : 'Add Account'}
+          {t.addAccount}
         </Button>
       </div>
 
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder={locale === 'ar' ? 'البحث في الحسابات...' : 'Search accounts...'}
+          placeholder={t.searchAccounts}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="pl-10"
@@ -206,18 +203,14 @@ export default function ChartOfAccounts() {
             <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">
               {searchQuery 
-                ? (locale === 'ar' ? 'لا توجد نتائج' : 'No results found')
-                : (locale === 'ar' ? 'لا توجد حسابات' : 'No accounts yet')
+                ? t.noResultsFound
+                : t.noAccountsYet
               }
             </h3>
             <p className="text-muted-foreground">
               {searchQuery
-                ? (locale === 'ar' 
-                    ? 'حاول البحث بكلمات مختلفة'
-                    : 'Try searching with different keywords')
-                : (locale === 'ar'
-                    ? 'أضف حسابات لبدء تتبع ماليتك'
-                    : 'Add accounts to start tracking your finances')
+                ? t.tryDifferentKeywords
+                : t.addAccountsToStart
               }
             </p>
           </div>
@@ -258,14 +251,14 @@ export default function ChartOfAccounts() {
                                   {locale === 'ar' ? config.labelAr : config.label}
                                 </CardTitle>
                                 <CardDescription>
-                                  {accounts.length} {locale === 'ar' ? 'حسابات' : 'accounts'}
+                                  {accounts.length} {t.accountsCount}
                                 </CardDescription>
                               </div>
                             </div>
                             <div className="flex items-center gap-4">
                               <div className="text-right">
                                 <p className="text-sm text-muted-foreground">
-                                  {locale === 'ar' ? 'الإجمالي' : 'Total'}
+                                  {t.total}
                                 </p>
                                 <p className={`text-lg font-mono font-semibold ${
                                   typeTotals[type] >= 0 ? 'text-foreground' : 'text-destructive'
@@ -310,7 +303,7 @@ export default function ChartOfAccounts() {
                                   </div>
                                   {!item.account.isActive && (
                                     <Badge variant="secondary" className="shrink-0">
-                                      {locale === 'ar' ? 'غير نشط' : 'Inactive'}
+                                      {t.inactive}
                                     </Badge>
                                   )}
                                 </div>
@@ -345,7 +338,7 @@ export default function ChartOfAccounts() {
       <Card className="mt-6">
         <CardHeader className="py-4">
           <CardTitle className="text-lg">
-            {locale === 'ar' ? 'ملخص الأرصدة' : 'Balance Summary'}
+            {t.balanceSummary}
           </CardTitle>
         </CardHeader>
         <CardContent>

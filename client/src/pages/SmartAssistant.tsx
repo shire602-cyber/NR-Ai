@@ -183,12 +183,10 @@ export default function SmartAssistant() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold" data-testid="text-smart-assistant-title">
-              {locale === 'ar' ? 'المساعد الذكي' : 'Smart Assistant'}
+              {t.smartAssistant}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {locale === 'ar' 
-                ? 'اسأل أي شيء عن بياناتك المالية باللغة الطبيعية'
-                : 'Ask anything about your financial data in plain English'}
+              {t.askAnything}
             </p>
           </div>
         </div>
@@ -201,7 +199,7 @@ export default function SmartAssistant() {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
                 <TrendingUp className="w-4 h-4" />
-                <span className="text-xs font-medium">{locale === 'ar' ? 'الإيرادات' : 'Revenue'}</span>
+                <span className="text-xs font-medium">{t.revenue}</span>
               </div>
               <p className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.revenue || 0, 'AED')}
@@ -212,7 +210,7 @@ export default function SmartAssistant() {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
                 <TrendingDown className="w-4 h-4" />
-                <span className="text-xs font-medium">{locale === 'ar' ? 'المصروفات' : 'Expenses'}</span>
+                <span className="text-xs font-medium">{t.expenses}</span>
               </div>
               <p className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.expenses || 0, 'AED')}
@@ -223,7 +221,7 @@ export default function SmartAssistant() {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400">
                 <DollarSign className="w-4 h-4" />
-                <span className="text-xs font-medium">{locale === 'ar' ? 'المستحق' : 'Outstanding'}</span>
+                <span className="text-xs font-medium">{t.outstanding}</span>
               </div>
               <p className="text-lg font-bold font-mono mt-1">
                 {formatCurrency(stats.outstanding || 0, 'AED')}
@@ -234,7 +232,7 @@ export default function SmartAssistant() {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
                 <FileText className="w-4 h-4" />
-                <span className="text-xs font-medium">{locale === 'ar' ? 'الفواتير' : 'Invoices'}</span>
+                <span className="text-xs font-medium">{t.invoices}</span>
               </div>
               <p className="text-lg font-bold font-mono mt-1">
                 {stats.totalInvoices}
@@ -254,12 +252,10 @@ export default function SmartAssistant() {
                   <Sparkles className="w-8 h-8 text-primary" />
                 </div>
                 <h2 className="text-lg font-medium mb-2">
-                  {locale === 'ar' ? 'مرحباً! كيف يمكنني مساعدتك اليوم؟' : "Hi! How can I help you today?"}
+                  {t.greeting}
                 </h2>
                 <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                  {locale === 'ar' 
-                    ? 'اسألني عن المبيعات، المصروفات، الفواتير، أو أي بيانات مالية أخرى.'
-                    : "Ask me about sales, expenses, invoices, or any other financial data."}
+                  {t.askAboutFinancialData}
                 </p>
               </div>
 
@@ -302,15 +298,15 @@ export default function SmartAssistant() {
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                     {message.role === 'assistant' && message.intent && (
                       <Badge variant="secondary" className="mt-2 text-xs">
-                        {message.intent === 'query' && (locale === 'ar' ? 'استعلام' : 'Query')}
-                        {message.intent === 'advice' && (locale === 'ar' ? 'نصيحة' : 'Advice')}
-                        {message.intent === 'action' && (locale === 'ar' ? 'إجراء' : 'Action')}
+                        {message.intent === 'query' && t.query}
+                        {message.intent === 'advice' && t.advice}
+                        {message.intent === 'action' && t.action}
                       </Badge>
                     )}
                     {message.followUpPrompts && message.followUpPrompts.length > 0 && (
                       <div className="mt-3 space-y-1">
                         <p className="text-xs text-muted-foreground mb-2">
-                          {locale === 'ar' ? 'متابعة مقترحة:' : 'Suggested follow-ups:'}
+                          {t.suggestedFollowUps}
                         </p>
                         {message.followUpPrompts.map((prompt, i) => (
                           <Button
@@ -347,7 +343,7 @@ export default function SmartAssistant() {
                     <div className="flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span className="text-sm text-muted-foreground">
-                        {locale === 'ar' ? 'جاري التحليل...' : 'Analyzing...'}
+                        {t.analyzing}
                       </span>
                     </div>
                   </div>
@@ -366,9 +362,7 @@ export default function SmartAssistant() {
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={locale === 'ar' 
-                ? 'اكتب سؤالك هنا... مثال: "ما هو إجمالي المبيعات هذا الشهر؟"'
-                : 'Type your question... e.g., "What were our total sales this month?"'}
+              placeholder={`${t.typeYourQuestion} ${t.typeYourQuestionExample}`}
               disabled={nlMutation.isPending}
               className="flex-1"
               data-testid="input-smart-assistant-message"
@@ -386,9 +380,7 @@ export default function SmartAssistant() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-2 text-center">
-            {locale === 'ar' 
-              ? 'اضغط Enter للإرسال • يدعم اللغتين العربية والإنجليزية'
-              : 'Press Enter to send • Supports both English and Arabic'}
+            {t.pressEnterToSend}
           </p>
         </form>
       </Card>

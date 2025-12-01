@@ -403,10 +403,10 @@ export default function BankReconciliation() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            {locale === 'ar' ? 'تسوية البنك' : 'Bank Reconciliation'}
+            {t.bankReconciliation}
           </h1>
           <p className="text-muted-foreground">
-            {locale === 'ar' ? 'استيراد ومطابقة معاملات البنك' : 'Import and match bank transactions with your records'}
+            {t.bankReconciliationDescription}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -421,11 +421,11 @@ export default function BankReconciliation() {
             ) : (
               <Sparkles className="w-4 h-4 mr-2" />
             )}
-            {locale === 'ar' ? 'مطابقة تلقائية' : 'Auto-Match'}
+            {t.autoMatch}
           </Button>
           <Button onClick={() => setImportDialogOpen(true)} data-testid="button-import-transactions">
             <Upload className="w-4 h-4 mr-2" />
-            {locale === 'ar' ? 'استيراد' : 'Import CSV'}
+            {t.importCsv}
           </Button>
         </div>
       </div>
@@ -434,7 +434,7 @@ export default function BankReconciliation() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === 'ar' ? 'إجمالي المعاملات' : 'Total Transactions'}
+              {t.totalTransactions}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -444,7 +444,7 @@ export default function BankReconciliation() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === 'ar' ? 'تمت التسوية' : 'Reconciled'}
+              {t.reconciled}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -454,7 +454,7 @@ export default function BankReconciliation() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === 'ar' ? 'غير مسوى' : 'Unreconciled'}
+              {t.unreconciled}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -464,7 +464,7 @@ export default function BankReconciliation() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === 'ar' ? 'صافي المبلغ' : 'Net Amount'}
+              {t.netAmount}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -478,7 +478,7 @@ export default function BankReconciliation() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <CardTitle>{locale === 'ar' ? 'معاملات البنك' : 'Bank Transactions'}</CardTitle>
+            <CardTitle>{t.bankTransactions}</CardTitle>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -487,15 +487,15 @@ export default function BankReconciliation() {
                   onCheckedChange={(checked) => setShowReconciled(checked as boolean)}
                 />
                 <Label htmlFor="show-reconciled" className="text-sm">
-                  {locale === 'ar' ? 'إظهار المسوى' : 'Show Reconciled'}
+                  {t.showReconciled}
                 </Label>
               </div>
               <Select value={selectedBankAccount || 'all'} onValueChange={(val) => setSelectedBankAccount(val === 'all' ? '' : val)}>
                 <SelectTrigger className="w-48" data-testid="select-bank-account">
-                  <SelectValue placeholder={locale === 'ar' ? 'كل الحسابات' : 'All Accounts'} />
+                  <SelectValue placeholder={t.allAccounts} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">{locale === 'ar' ? 'كل الحسابات' : 'All Accounts'}</SelectItem>
+                  <SelectItem value="all">{t.allAccounts}</SelectItem>
                   {bankAccounts.map(account => (
                     <SelectItem key={account.id} value={account.id}>
                       {locale === 'ar' ? account.nameAr || account.nameEn : account.nameEn}
@@ -506,7 +506,7 @@ export default function BankReconciliation() {
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder={locale === 'ar' ? 'بحث...' : 'Search...'}
+                  placeholder={`${t.search}...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9 w-64"
@@ -525,7 +525,7 @@ export default function BankReconciliation() {
             <div className="text-center py-12">
               <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">
-                {locale === 'ar' ? 'لا توجد معاملات. استورد كشف حسابك البنكي للبدء.' : 'No transactions found. Import your bank statement to get started.'}
+                {t.noTransactionsFound}
               </p>
             </div>
           ) : (
@@ -533,12 +533,12 @@ export default function BankReconciliation() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{locale === 'ar' ? 'التاريخ' : 'Date'}</TableHead>
-                    <TableHead>{locale === 'ar' ? 'الوصف' : 'Description'}</TableHead>
-                    <TableHead>{locale === 'ar' ? 'المرجع' : 'Reference'}</TableHead>
-                    <TableHead className="text-right">{locale === 'ar' ? 'المبلغ' : 'Amount'}</TableHead>
-                    <TableHead>{locale === 'ar' ? 'الحالة' : 'Status'}</TableHead>
-                    <TableHead className="text-right">{locale === 'ar' ? 'الإجراءات' : 'Actions'}</TableHead>
+                    <TableHead>{t.date}</TableHead>
+                    <TableHead>{t.description}</TableHead>
+                    <TableHead>{t.reference}</TableHead>
+                    <TableHead className="text-right">{t.amount}</TableHead>
+                    <TableHead>{t.status}</TableHead>
+                    <TableHead className="text-right">{t.actions}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -556,12 +556,12 @@ export default function BankReconciliation() {
                         {transaction.isReconciled ? (
                           <Badge variant="default" className="bg-green-100 text-green-800">
                             <CheckCircle2 className="w-3 h-3 mr-1" />
-                            {locale === 'ar' ? 'مسوى' : 'Reconciled'}
+                            {t.reconciled}
                           </Badge>
                         ) : (
                           <Badge variant="secondary">
                             <XCircle className="w-3 h-3 mr-1" />
-                            {locale === 'ar' ? 'غير مسوى' : 'Unmatched'}
+                            {t.unmatched}
                           </Badge>
                         )}
                       </TableCell>
@@ -574,7 +574,7 @@ export default function BankReconciliation() {
                             data-testid={`button-match-${transaction.id}`}
                           >
                             <Link2 className="w-4 h-4 mr-1" />
-                            {locale === 'ar' ? 'مطابقة' : 'Match'}
+                            {t.match}
                           </Button>
                         )}
                       </TableCell>
@@ -590,19 +590,17 @@ export default function BankReconciliation() {
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{locale === 'ar' ? 'استيراد كشف حساب البنك' : 'Import Bank Statement'}</DialogTitle>
+            <DialogTitle>{t.importBankStatement}</DialogTitle>
             <DialogDescription>
-              {locale === 'ar' 
-                ? 'قم بتحميل ملف CSV أو PDF من البنك لاستيراد المعاملات'
-                : 'Upload a CSV or PDF file from your bank to import transactions'}
+              {t.uploadBankStatement}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>{locale === 'ar' ? 'حساب البنك' : 'Bank Account'}</Label>
+              <Label>{t.bankAccount}</Label>
               <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
                 <SelectTrigger data-testid="select-import-bank-account">
-                  <SelectValue placeholder={locale === 'ar' ? 'اختر الحساب' : 'Select account'} />
+                  <SelectValue placeholder={t.selectAccount} />
                 </SelectTrigger>
                 <SelectContent>
                   {bankAccounts.map(account => (
@@ -614,7 +612,7 @@ export default function BankReconciliation() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>{locale === 'ar' ? 'ملف كشف الحساب (CSV أو PDF)' : 'Bank Statement File (CSV or PDF)'}</Label>
+              <Label>{t.bankStatementFile}</Label>
               <Input
                 type="file"
                 accept=".csv,.pdf,application/pdf"
@@ -640,20 +638,20 @@ export default function BankReconciliation() {
               )}
             </div>
             <div className="bg-muted/50 p-3 rounded-md text-sm space-y-2">
-              <p className="font-medium">{locale === 'ar' ? 'الصيغ المدعومة:' : 'Supported formats:'}</p>
+              <p className="font-medium">{t.supportedFormats}</p>
               <div className="flex items-center gap-2 text-xs">
                 <FileSpreadsheet className="w-4 h-4 text-green-500" />
                 <span>CSV: Date, Description, Amount, Reference</span>
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <FileText className="w-4 h-4 text-red-500" />
-                <span>PDF: {locale === 'ar' ? 'كشوف حساب البنك (استخراج AI)' : 'Bank statements (AI extraction)'}</span>
+                <span>PDF: {t.bankStatementsAI}</span>
               </div>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportDialogOpen(false)} disabled={isImporting}>
-              {locale === 'ar' ? 'إلغاء' : 'Cancel'}
+              {t.cancel}
             </Button>
             <Button 
               onClick={handleImport} 
@@ -661,7 +659,7 @@ export default function BankReconciliation() {
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {locale === 'ar' ? 'استيراد' : 'Import'}
+              {t.import}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -670,7 +668,7 @@ export default function BankReconciliation() {
       <Dialog open={matchDialogOpen} onOpenChange={setMatchDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{locale === 'ar' ? 'مطابقة المعاملة' : 'Match Transaction'}</DialogTitle>
+            <DialogTitle>{t.matchTransaction}</DialogTitle>
             <DialogDescription>
               {selectedTransaction && (
                 <span>
@@ -686,7 +684,7 @@ export default function BankReconciliation() {
               </div>
             ) : matchSuggestions && matchSuggestions.length > 0 ? (
               <div className="space-y-2">
-                <Label>{locale === 'ar' ? 'المطابقات المقترحة' : 'Suggested Matches'}</Label>
+                <Label>{t.suggestedMatches}</Label>
                 {matchSuggestions.map((suggestion, idx) => (
                   <Card 
                     key={`${suggestion.type}-${suggestion.id}`} 
@@ -722,16 +720,14 @@ export default function BankReconciliation() {
               <div className="text-center py-8">
                 <ArrowRightLeft className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                 <p className="text-muted-foreground">
-                  {locale === 'ar' 
-                    ? 'لم يتم العثور على مطابقات تلقائية. يمكنك إنشاء قيد يدوي.'
-                    : 'No automatic matches found. You can create a manual journal entry.'}
+                  {t.noMatchesFound}
                 </p>
               </div>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setMatchDialogOpen(false)}>
-              {locale === 'ar' ? 'إغلاق' : 'Close'}
+              {t.close}
             </Button>
           </DialogFooter>
         </DialogContent>
