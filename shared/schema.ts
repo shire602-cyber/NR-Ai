@@ -69,6 +69,7 @@ export const companies = pgTable("companies", {
   vatFilingFrequency: text("vat_filing_frequency"), // Monthly, Quarterly, Annually
   taxRegistrationDate: timestamp("tax_registration_date"),
   corporateTaxId: text("corporate_tax_id"),
+  emirate: text("emirate").default("dubai"), // abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah
   
   // Invoice Customization
   invoiceShowLogo: boolean("invoice_show_logo").notNull().default(true),
@@ -249,6 +250,7 @@ export const invoiceLines = pgTable("invoice_lines", {
   quantity: real("quantity").notNull(),
   unitPrice: real("unit_price").notNull(),
   vatRate: real("vat_rate").notNull().default(0.05), // UAE standard 5%
+  vatSupplyType: text("vat_supply_type").default("standard_rated"), // standard_rated | zero_rated | exempt | out_of_scope
 });
 
 export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({

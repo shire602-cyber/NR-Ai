@@ -6174,6 +6174,22 @@ Respond with just the category name, nothing else.`;
         return res.status(403).json({ message: 'Access denied' });
       }
       
+      // Get company information for emirate and VAT registration
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ message: 'Company not found' });
+      }
+      
+      // Validate VAT registration
+      if (!company.trnVatNumber) {
+        return res.status(400).json({ 
+          message: 'Company must have a TRN/VAT number to generate VAT returns. Please update your company profile.',
+          code: 'NO_TRN'
+        });
+      }
+      
+      const companyEmirate = company.emirate || 'dubai';
+      
       // Calculate VAT from invoices and receipts
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
@@ -6181,14 +6197,39 @@ Respond with just the category name, nothing else.`;
       const startDate = new Date(periodStart);
       const endDate = new Date(periodEnd);
       
-      // Calculate output tax from invoices
+      // Filter invoices for the period
       const periodInvoices = invoices.filter(inv => {
         const invDate = new Date(inv.date);
-        return invDate >= startDate && invDate <= endDate;
+        return invDate >= startDate && invDate <= endDate && inv.status !== 'void';
       });
       
-      const totalSales = periodInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
-      const outputTax = periodInvoices.reduce((sum, inv) => sum + inv.vatAmount, 0);
+      // Fetch all invoice lines for categorization by VAT supply type
+      let standardRatedAmount = 0;
+      let standardRatedVat = 0;
+      let zeroRatedAmount = 0;
+      let exemptAmount = 0;
+      
+      for (const invoice of periodInvoices) {
+        const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
+        
+        for (const line of lines) {
+          const lineAmount = line.quantity * line.unitPrice;
+          const lineVat = lineAmount * (line.vatRate || 0);
+          const supplyType = (line as any).vatSupplyType || 'standard_rated';
+          
+          if (supplyType === 'zero_rated' || line.vatRate === 0) {
+            // Zero-rated supplies (exports, international services)
+            zeroRatedAmount += lineAmount;
+          } else if (supplyType === 'exempt') {
+            // Exempt supplies (financial services, residential rent, etc.)
+            exemptAmount += lineAmount;
+          } else {
+            // Standard rated (5% VAT)
+            standardRatedAmount += lineAmount;
+            standardRatedVat += lineVat;
+          }
+        }
+      }
       
       // Calculate input tax from receipts
       const periodReceipts = receipts.filter(rec => {
@@ -6199,85 +6240,135 @@ Respond with just the category name, nothing else.`;
       const totalExpenses = periodReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
       const inputTax = periodReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
       
-      // Due date is 28 days after period end
+      // Due date is 28 days after period end (FTA requirement)
       const dueDate = new Date(endDate);
       dueDate.setDate(dueDate.getDate() + 28);
       
-      // For now, put all sales in Dubai (most common emirate for businesses)
-      // Users can manually adjust the emirate breakdown if needed
+      // Determine VAT stagger from company settings or default to quarterly
+      const vatStagger = company.vatFilingFrequency === 'Monthly' ? 'monthly' : 'quarterly';
+      
+      // Initialize emirate breakdown - all to company's registered emirate
+      const emirateBreakdown = {
+        box1aAbuDhabiAmount: 0, box1aAbuDhabiVat: 0, box1aAbuDhabiAdj: 0,
+        box1bDubaiAmount: 0, box1bDubaiVat: 0, box1bDubaiAdj: 0,
+        box1cSharjahAmount: 0, box1cSharjahVat: 0, box1cSharjahAdj: 0,
+        box1dAjmanAmount: 0, box1dAjmanVat: 0, box1dAjmanAdj: 0,
+        box1eUmmAlQuwainAmount: 0, box1eUmmAlQuwainVat: 0, box1eUmmAlQuwainAdj: 0,
+        box1fRasAlKhaimahAmount: 0, box1fRasAlKhaimahVat: 0, box1fRasAlKhaimahAdj: 0,
+        box1gFujairahAmount: 0, box1gFujairahVat: 0, box1gFujairahAdj: 0,
+      };
+      
+      // Assign standard rated sales to company's emirate
+      switch (companyEmirate) {
+        case 'abu_dhabi':
+          emirateBreakdown.box1aAbuDhabiAmount = standardRatedAmount;
+          emirateBreakdown.box1aAbuDhabiVat = standardRatedVat;
+          break;
+        case 'sharjah':
+          emirateBreakdown.box1cSharjahAmount = standardRatedAmount;
+          emirateBreakdown.box1cSharjahVat = standardRatedVat;
+          break;
+        case 'ajman':
+          emirateBreakdown.box1dAjmanAmount = standardRatedAmount;
+          emirateBreakdown.box1dAjmanVat = standardRatedVat;
+          break;
+        case 'umm_al_quwain':
+          emirateBreakdown.box1eUmmAlQuwainAmount = standardRatedAmount;
+          emirateBreakdown.box1eUmmAlQuwainVat = standardRatedVat;
+          break;
+        case 'ras_al_khaimah':
+          emirateBreakdown.box1fRasAlKhaimahAmount = standardRatedAmount;
+          emirateBreakdown.box1fRasAlKhaimahVat = standardRatedVat;
+          break;
+        case 'fujairah':
+          emirateBreakdown.box1gFujairahAmount = standardRatedAmount;
+          emirateBreakdown.box1gFujairahVat = standardRatedVat;
+          break;
+        case 'dubai':
+        default:
+          emirateBreakdown.box1bDubaiAmount = standardRatedAmount;
+          emirateBreakdown.box1bDubaiVat = standardRatedVat;
+          break;
+      }
+      
+      // Calculate totals
+      const totalOutputAmount = standardRatedAmount + zeroRatedAmount + exemptAmount;
+      const totalOutputVat = standardRatedVat;
+      
       const vatReturn = await storage.createVatReturn({
         companyId,
         periodStart: startDate,
         periodEnd: endDate,
         dueDate,
         status: 'draft',
-        vatStagger: 'quarterly',
-        // Emirate breakdown - default to Dubai for all sales
-        box1aAbuDhabiAmount: 0,
-        box1aAbuDhabiVat: 0,
-        box1aAbuDhabiAdj: 0,
-        box1bDubaiAmount: totalSales,
-        box1bDubaiVat: outputTax,
-        box1bDubaiAdj: 0,
-        box1cSharjahAmount: 0,
-        box1cSharjahVat: 0,
-        box1cSharjahAdj: 0,
-        box1dAjmanAmount: 0,
-        box1dAjmanVat: 0,
-        box1dAjmanAdj: 0,
-        box1eUmmAlQuwainAmount: 0,
-        box1eUmmAlQuwainVat: 0,
-        box1eUmmAlQuwainAdj: 0,
-        box1fRasAlKhaimahAmount: 0,
-        box1fRasAlKhaimahVat: 0,
-        box1fRasAlKhaimahAdj: 0,
-        box1gFujairahAmount: 0,
-        box1gFujairahVat: 0,
-        box1gFujairahAdj: 0,
-        // Other output categories
+        vatStagger,
+        // Emirate breakdown from company registration
+        ...emirateBreakdown,
+        // Box 2: Tourist Refund Scheme (manual entry needed)
         box2TouristRefundAmount: 0,
         box2TouristRefundVat: 0,
+        // Box 3: Reverse charge supplies (imports requiring reverse charge)
         box3ReverseChargeAmount: 0,
         box3ReverseChargeVat: 0,
-        box4ZeroRatedAmount: 0,
-        box5ExemptAmount: 0,
+        // Box 4: Zero-rated supplies (exports, international services)
+        box4ZeroRatedAmount: zeroRatedAmount,
+        // Box 5: Exempt supplies (financial services, residential rent)
+        box5ExemptAmount: exemptAmount,
+        // Box 6: Imports subject to VAT
         box6ImportsAmount: 0,
         box6ImportsVat: 0,
+        // Box 7: Adjustments for imports
         box7ImportsAdjAmount: 0,
         box7ImportsAdjVat: 0,
-        // Output totals
-        box8TotalAmount: totalSales,
-        box8TotalVat: outputTax,
+        // Box 8: Total output amounts and VAT
+        box8TotalAmount: totalOutputAmount,
+        box8TotalVat: totalOutputVat,
         box8TotalAdj: 0,
-        // Input categories
+        // Box 9: Standard rated expenses (input VAT recovery)
         box9ExpensesAmount: totalExpenses,
         box9ExpensesVat: inputTax,
         box9ExpensesAdj: 0,
+        // Box 10: Reverse charge on imports (input side)
         box10ReverseChargeAmount: 0,
         box10ReverseChargeVat: 0,
-        // Input totals
+        // Box 11: Total input amounts and VAT
         box11TotalAmount: totalExpenses,
         box11TotalVat: inputTax,
         box11TotalAdj: 0,
-        // Net VAT calculation
-        box12TotalDueTax: outputTax,
+        // Box 12-14: VAT calculations
+        box12TotalDueTax: totalOutputVat,
         box13RecoverableTax: inputTax,
-        box14PayableTax: outputTax - inputTax,
+        box14PayableTax: totalOutputVat - inputTax,
         // Legacy fields for backward compatibility
-        box1SalesStandard: totalSales,
+        box1SalesStandard: standardRatedAmount,
         box2SalesOtherEmirates: 0,
-        box3SalesTaxExempt: 0,
-        box4SalesExempt: 0,
-        box5TotalOutputTax: outputTax,
+        box3SalesTaxExempt: zeroRatedAmount,
+        box4SalesExempt: exemptAmount,
+        box5TotalOutputTax: totalOutputVat,
         box6ExpensesStandard: totalExpenses,
         box7ExpensesTouristRefund: 0,
         box8TotalInputTax: inputTax,
-        box9NetTax: outputTax - inputTax,
+        box9NetTax: totalOutputVat - inputTax,
         createdBy: userId,
       });
       
-      res.status(201).json(vatReturn);
+      // Return with additional metadata for the UI
+      res.status(201).json({
+        ...vatReturn,
+        _metadata: {
+          invoicesProcessed: periodInvoices.length,
+          receiptsProcessed: periodReceipts.length,
+          companyEmirate,
+          trnNumber: company.trnVatNumber,
+          standardRatedSales: standardRatedAmount,
+          zeroRatedSales: zeroRatedAmount,
+          exemptSales: exemptAmount,
+          totalInputVat: inputTax,
+          netVatPayable: totalOutputVat - inputTax,
+        }
+      });
     } catch (error: any) {
+      console.error('[VAT] Error generating VAT return:', error);
       res.status(500).json({ message: error.message });
     }
   });
