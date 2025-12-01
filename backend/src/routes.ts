@@ -52,10 +52,10 @@ const openai = new OpenAI({
 
 // Model selection based on provider
 // - OpenRouter/Replit: Use cheap Llama model
-// - OpenAI: Use gpt-4o-mini (cheapest capable model)
+// - OpenAI: Use gpt-3.5-turbo (reliable and cost-effective)
 const AI_MODEL = (isReplitEnv || hasOpenRouter) 
   ? "meta-llama/llama-3.2-3b-instruct" 
-  : "gpt-4o-mini";
+  : "gpt-3.5-turbo";
 
 const AI_CONFIGURED = isReplitEnv || hasOpenAI || hasOpenRouter;
 
