@@ -192,13 +192,20 @@ export default function ClientManagement() {
           <h1 className="text-3xl font-bold" data-testid="text-clients-title">Client Management</h1>
           <p className="text-muted-foreground">Manage all your accounting firm's clients</p>
         </div>
-        <Dialog open={addClientOpen} onOpenChange={(open) => { setAddClientOpen(open); if (!open) resetForm(); }}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-client">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Client
+        <div className="flex items-center gap-2">
+          <Link href="/admin/import">
+            <Button variant="outline" data-testid="button-import-clients">
+              <Upload className="w-4 h-4 mr-2" />
+              Import from Excel
             </Button>
-          </DialogTrigger>
+          </Link>
+          <Dialog open={addClientOpen} onOpenChange={(open) => { setAddClientOpen(open); if (!open) resetForm(); }}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-add-client">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Client
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add New Client</DialogTitle>
@@ -343,7 +350,8 @@ export default function ClientManagement() {
               </DialogFooter>
             </form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
       <Card>
