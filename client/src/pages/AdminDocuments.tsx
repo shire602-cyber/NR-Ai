@@ -33,8 +33,7 @@ import {
 
 interface Company {
   id: string;
-  nameEn: string;
-  nameAr: string | null;
+  name: string;
   trnNumber: string | null;
 }
 
@@ -275,7 +274,7 @@ export default function AdminDocuments() {
                 <SelectItem key={company.id} value={company.id}>
                   <div className="flex items-center gap-2">
                     <Building2 className="w-4 h-4" />
-                    <span>{company.nameEn}</span>
+                    <span>{company.name}</span>
                     {company.trnNumber && (
                       <span className="text-muted-foreground text-xs">
                         (TRN: {company.trnNumber})
@@ -380,7 +379,7 @@ export default function AdminDocuments() {
               ) : filteredDocuments.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No documents found for {selectedCompany?.nameEn}</p>
+                  <p>No documents found for {selectedCompany?.name}</p>
                   <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
                     Upload a document
                   </Button>
@@ -492,7 +491,7 @@ export default function AdminDocuments() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5" />
-              Upload Document for {selectedCompany?.nameEn}
+              Upload Document for {selectedCompany?.name}
             </DialogTitle>
             <DialogDescription>
               Add an invoice, bill, or other document for this client
