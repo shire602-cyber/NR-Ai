@@ -2,14 +2,13 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "cd backend && npm run build",
-    "startCommand": "NODE_ENV=production node backend/build/index.js"
+    "buildCommand": "cd backend && npm install && npm run build"
   },
   "deploy": {
+    "startCommand": "NODE_ENV=production node backend/build/index.js",
     "runtime": "V2",
     "numReplicas": 1,
     "sleepApplication": false,
-    "useLegacyStacker": false,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
   }
