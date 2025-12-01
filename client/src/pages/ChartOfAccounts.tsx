@@ -295,11 +295,6 @@ export default function ChartOfAccounts() {
                                         ? item.account.nameAr 
                                         : item.account.nameEn}
                                     </p>
-                                    {locale !== 'ar' && item.account.nameAr && (
-                                      <p className="text-sm text-muted-foreground truncate" dir="rtl">
-                                        {item.account.nameAr}
-                                      </p>
-                                    )}
                                   </div>
                                   {!item.account.isActive && (
                                     <Badge variant="secondary" className="shrink-0">
