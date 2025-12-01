@@ -8,6 +8,7 @@ import type {
   Invoice, InsertInvoice,
   InvoiceLine, InsertInvoiceLine,
   Receipt, InsertReceipt,
+  CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
   IntegrationSync, InsertIntegrationSync,
   WhatsappConfig, InsertWhatsappConfig,
@@ -60,6 +61,7 @@ import {
   invoices,
   invoiceLines,
   receipts,
+  customerContacts,
   waitlist,
   integrationSyncs,
   whatsappConfigs,
@@ -214,6 +216,16 @@ export interface IStorage {
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
   updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt>;
   deleteReceipt(id: string): Promise<void>;
+  
+  // Customer Contacts
+  getCustomerContact(id: string): Promise<CustomerContact | undefined>;
+  getCustomerContactsByCompanyId(companyId: string): Promise<CustomerContact[]>;
+  getCustomerContactByEmail(companyId: string, email: string): Promise<CustomerContact | undefined>;
+  getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined>;
+  createCustomerContact(contact: InsertCustomerContact): Promise<CustomerContact>;
+  createBulkCustomerContacts(contacts: InsertCustomerContact[]): Promise<CustomerContact[]>;
+  updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact>;
+  deleteCustomerContact(id: string): Promise<void>;
   
   // Waitlist
   createWaitlistEntry(entry: InsertWaitlist): Promise<Waitlist>;
@@ -1006,6 +1018,54 @@ export class DatabaseStorage implements IStorage {
 
   async deleteReceipt(id: string): Promise<void> {
     await db.delete(receipts).where(eq(receipts.id, id));
+  }
+
+  // Customer Contacts
+  async getCustomerContact(id: string): Promise<CustomerContact | undefined> {
+    const [contact] = await db.select().from(customerContacts).where(eq(customerContacts.id, id));
+    return contact;
+  }
+
+  async getCustomerContactsByCompanyId(companyId: string): Promise<CustomerContact[]> {
+    return await db.select().from(customerContacts)
+      .where(and(eq(customerContacts.companyId, companyId), eq(customerContacts.isActive, true)))
+      .orderBy(desc(customerContacts.createdAt));
+  }
+
+  async getCustomerContactByEmail(companyId: string, email: string): Promise<CustomerContact | undefined> {
+    const [contact] = await db.select().from(customerContacts)
+      .where(and(eq(customerContacts.companyId, companyId), eq(customerContacts.email, email)));
+    return contact;
+  }
+
+  async getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined> {
+    const [contact] = await db.select().from(customerContacts)
+      .where(and(eq(customerContacts.companyId, companyId), eq(customerContacts.trnNumber, trn)));
+    return contact;
+  }
+
+  async createCustomerContact(insertContact: InsertCustomerContact): Promise<CustomerContact> {
+    const [contact] = await db.insert(customerContacts).values(insertContact).returning();
+    return contact;
+  }
+
+  async createBulkCustomerContacts(contactsData: InsertCustomerContact[]): Promise<CustomerContact[]> {
+    if (contactsData.length === 0) return [];
+    const created = await db.insert(customerContacts).values(contactsData).returning();
+    return created;
+  }
+
+  async updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact> {
+    const [contact] = await db.update(customerContacts)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(customerContacts.id, id))
+      .returning();
+    if (!contact) throw new Error('Customer contact not found');
+    return contact;
+  }
+
+  async deleteCustomerContact(id: string): Promise<void> {
+    await db.delete(customerContacts).where(eq(customerContacts.id, id));
   }
 
   // Waitlist

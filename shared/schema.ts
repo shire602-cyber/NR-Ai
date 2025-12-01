@@ -289,6 +289,37 @@ export type InsertReceipt = z.infer<typeof insertReceiptSchema>;
 export type Receipt = typeof receipts.$inferSelect;
 
 // ===========================
+// Customer Contacts (for invoicing)
+// ===========================
+export const customerContacts = pgTable("customer_contacts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  nameAr: text("name_ar"),
+  email: text("email"),
+  phone: text("phone"),
+  trnNumber: text("trn_number"),
+  address: text("address"),
+  city: text("city"),
+  country: text("country").default("UAE"),
+  contactPerson: text("contact_person"),
+  paymentTerms: integer("payment_terms").default(30),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
+});
+
+export const insertCustomerContactSchema = createInsertSchema(customerContacts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCustomerContact = z.infer<typeof insertCustomerContactSchema>;
+export type CustomerContact = typeof customerContacts.$inferSelect;
+
+// ===========================
 // Additional Types for Frontend
 // ===========================
 
