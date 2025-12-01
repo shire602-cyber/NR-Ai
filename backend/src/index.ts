@@ -68,7 +68,16 @@ app.use((req, res, next) => {
   
   console.log(`[Environment] Running in ${process.env.NODE_ENV || 'development'} mode`);
   console.log(`[Database] ${process.env.DATABASE_URL ? 'Connected' : 'No connection string'}`);
-  console.log(`[AI] ${process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY || process.env.OPENAI_API_KEY ? 'Configured' : 'Not configured'}`);
+  
+  // Check AI configuration
+  const aiProvider = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY 
+    ? 'Replit AI (OpenRouter)' 
+    : process.env.OPENROUTER_API_KEY 
+      ? 'OpenRouter' 
+      : process.env.OPENAI_API_KEY 
+        ? 'OpenAI' 
+        : 'Not configured';
+  console.log(`[AI] ${aiProvider}`);
   console.log(`[CORS] Allowing origin: ${FRONTEND_URL}`);
   
   const server = await registerRoutes(app);

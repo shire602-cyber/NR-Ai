@@ -29,17 +29,35 @@ import * as googleSheets from "./integrations/googleSheets.js";
 const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h";
 
-// Initialize AI client using OpenRouter with ultra-cheap Llama 3.2 model
-// This uses Replit's AI Integrations service, which provides OpenRouter-compatible API access without requiring your own API key.
+// Initialize AI client - supports multiple providers:
+// 1. Replit's AI Integrations (OpenRouter) - automatic in Replit environment
+// 2. Direct OpenAI API - set OPENAI_API_KEY
+// 3. OpenRouter directly - set OPENROUTER_API_KEY
+const isReplitEnv = !!process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY;
+const hasOpenAI = !!process.env.OPENAI_API_KEY;
+const hasOpenRouter = !!process.env.OPENROUTER_API_KEY;
+
 const openai = new OpenAI({
-  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
-  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+  baseURL: isReplitEnv 
+    ? process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL 
+    : hasOpenRouter 
+      ? "https://openrouter.ai/api/v1"
+      : undefined, // Uses OpenAI default
+  apiKey: isReplitEnv 
+    ? process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY 
+    : hasOpenRouter
+      ? process.env.OPENROUTER_API_KEY
+      : process.env.OPENAI_API_KEY || "not-configured",
 });
 
-// Llama 3.2 3B - Absolute cheapest AI model available (~20x cheaper than DeepSeek)
-// Pricing: $0.06 input / $0.08 output per 1M tokens (vs DeepSeek's $0.56/$1.10)
-// Using 3B version for better quality while staying ultra-cheap
-const AI_MODEL = "meta-llama/llama-3.2-3b-instruct";
+// Model selection based on provider
+// - OpenRouter/Replit: Use cheap Llama model
+// - OpenAI: Use gpt-4o-mini (cheapest capable model)
+const AI_MODEL = (isReplitEnv || hasOpenRouter) 
+  ? "meta-llama/llama-3.2-3b-instruct" 
+  : "gpt-4o-mini";
+
+const AI_CONFIGURED = isReplitEnv || hasOpenAI || hasOpenRouter;
 
 // Authentication middleware
 async function authMiddleware(req: Request, res: Response, next: Function) {
@@ -7380,14 +7398,14 @@ Respond with just the category name, nothing else.`;
   // AUTOMATIC REGULATORY NEWS FETCHING
   // =====================================
   
-  // Function to fetch UAE regulatory/tax news using OpenAI with retry logic
+  // Function to fetch UAE regulatory/tax news using AI with retry logic
   async function fetchAndStoreRegulatoryNews(retryCount = 0): Promise<void> {
     const MAX_RETRIES = 3;
     const RETRY_DELAY_MS = 5000; // 5 seconds
     
-    // Check if OpenAI API key is available
-    if (!process.env.OPENAI_API_KEY) {
-      console.warn('[Regulatory News] OpenAI API key not configured, skipping news fetch');
+    // Check if any AI provider is configured
+    if (!AI_CONFIGURED) {
+      console.warn('[Regulatory News] No AI provider configured (set OPENAI_API_KEY or OPENROUTER_API_KEY), skipping news fetch');
       return;
     }
     
