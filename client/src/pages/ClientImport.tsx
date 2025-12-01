@@ -51,11 +51,10 @@ export default function ClientImport() {
 
   const previewMutation = useMutation({
     mutationFn: async (fileData: string) => {
-      const response = await apiRequest('POST', '/api/admin/import/preview', { 
+      return await apiRequest('POST', '/api/admin/import/preview', { 
         fileData, 
         fileName: file?.name 
       });
-      return response.json();
     },
     onSuccess: (data: PreviewData) => {
       setPreviewData(data);
@@ -68,11 +67,10 @@ export default function ClientImport() {
 
   const importMutation = useMutation({
     mutationFn: async (data: any[]) => {
-      const response = await apiRequest('POST', '/api/admin/import/clients', { 
+      return await apiRequest('POST', '/api/admin/import/clients', { 
         data,
         createInvitations,
       });
-      return response.json();
     },
     onSuccess: (result: ImportResult) => {
       setImportResults(result);
