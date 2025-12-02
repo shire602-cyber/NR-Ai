@@ -1,0 +1,203 @@
+[Region: us-east4]
+ 
+╭─────────────────╮
+│ Railpack 0.15.1 │
+╰─────────────────╯
+ 
+↳ Detected Node
+↳ Using npm package manager
+ 
+Packages
+──────────
+node  │  22.21.1  │  railpack default (22)
+ 
+Steps
+──────────
+▸ install
+$ npm ci
+ 
+▸ build
+$ cd backend && npm install && npm run build
+ 
+Deploy
+──────────
+$ cd backend && node dist/src/index.js
+ 
+ 
+Successfully prepared Railpack plan for build
+ 
+ 
+context: vbt8-2Tf6
+
+load build definition from railpack-plan.json
+0ms
+
+install mise packages: node
+2s
+mise node@22.21.1 ✓ installed
+
+install apt packages: libatomic1
+2s
+Processing triggers for libc-bin (2.36-9+deb12u13) ...
+
+library/alpine:pull token for registry-1.docker.io
+0ms
+
+mkdir -p /app/node_modules/.cache
+150ms
+
+copy backend/package.json, frontend/package-lock.json, frontend/package.json, package-lock.json, package.json
+140ms
+
+npm ci
+17s
+Run `npm audit` for details.
+
+copy /mise/shims, /mise/installs, /usr/local/bin/mise, /etc/mise/config.toml, /root/.local/state/mise cached
+0ms
+
+copy / /app, .
+401ms
+
+cd backend && npm install && npm run build
+46s
+npm warn config production Use `--omit=dev` instead.
+npm warn ERESOLVE overriding peer dependency
+npm warn deprecated intersection-observer@0.12.2: The Intersection Observer polyfill is no longer needed and can safely be removed. Intersection Observer has been Baseline since 2019.
+npm warn deprecated @esbuild-kit/esm-loader@2.6.5: Merged into tsx: https://tsx.is
+npm warn deprecated @esbuild-kit/core-utils@3.3.2: Merged into tsx: https://tsx.is
+npm warn deprecated core-js@2.6.12: core-js@<3.23.3 is no longer maintained and not recommended for usage due to the number of issues. Because of the V8 engine whims, feature detection in old core-js versions could cause a slowdown up to 100x even if nothing is polyfilled. Some versions have web compatibility issues. Please, upgrade your dependencies to the actual version of core-js.
+added 417 packages, and audited 418 packages in 34s
+5 vulnerabilities (4 moderate, 1 high)
+To address all issues possible (including breaking changes), run:
+  npm audit fix --force
+Some issues need review, and may require choosing
+a different dependency.
+Run `npm audit` for details.
+npm warn config production Use `--omit=dev` instead.
+> nr-ai-backend@1.0.0 build
+> tsc
+shared/schema.ts(159,14): error TS7022: 'journalEntries' implicitly has type 'any' because it does not have a type annotation and is referenced directly or indirectly in its own initializer.
+
+shared/schema.ts(171,57): error TS7024: Function implicitly has return type 'any' because it does not have a return type annotation and is referenced directly or indirectly in one of its return expressions.
+
+src/routes.ts(154,49): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean './defaultChartOfAccounts.js'?
+
+src/routes.ts(188,21): error TS2551: Property 'getUsers' does not exist on type 'DatabaseStorage'. Did you mean 'getUser'?
+
+src/routes.ts(304,55): error TS2367: This comparison appears to be unintentional because the types 'boolean' and 'string' have no overlap.
+
+src/routes.ts(304,82): error TS2367: This comparison appears to be unintentional because the types 'boolean' and 'number' have no overlap.
+
+src/routes.ts(603,9): error TS2353: Object literal may only specify known properties, and 'updatedAt' does not exist in type 'Partial<{ code: string; type: string; companyId: string; nameEn: string; nameAr?: string | null | undefined; description?: string | null | undefined; subType?: string | null | undefined; isVatAccount?: boolean | undefined; vatType?: string | ... 1 more ... | undefined; isSystemAccount?: boolean | undefined; isActive...'.
+
+src/routes.ts(900,11): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(902,11): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(903,11): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(904,11): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(905,11): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(906,11): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(984,11): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(986,11): error TS2322: Type 'Date' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+  Type 'Date' is missing the following properties from type 'unknown[]': length, pop, push, concat, and 29 more.
+src/routes.ts(1141,13): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1142,13): error TS2322: Type 'Date' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+  Type 'Date' is missing the following properties from type 'unknown[]': length, pop, push, concat, and 29 more.
+src/routes.ts(1143,13): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1144,13): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1145,13): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1146,13): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1147,13): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1418,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1419,9): error TS2322: Type 'Date' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+  Type 'Date' is missing the following properties from type 'unknown[]': length, pop, push, concat, and 29 more.
+src/routes.ts(1420,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1421,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1422,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1423,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1424,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1427,9): error TS2322: Type 'Date' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+  Type 'Date' is missing the following properties from type 'unknown[]': length, pop, push, concat, and 29 more.
+src/routes.ts(1563,15): error TS2353: Object literal may only specify known properties, and 'isVatRegistered' does not exist in type 'Partial<{ name: string; companyId: string; email?: string | null | undefined; phone?: string | null | undefined; nameAr?: string | null | undefined; isActive?: boolean | undefined; trnNumber?: string | ... 1 more ... | undefined; ... 5 more ...; notes?: string | ... 1 more ... | undefined; }>'.
+
+src/routes.ts(1935,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1937,9): error TS2322: Type 'Date' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+  Type 'Date' is missing the following properties from type 'unknown[]': length, pop, push, concat, and 29 more.
+src/routes.ts(1979,9): error TS2322: Type 'Date' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+  Type 'Date' is missing the following properties from type 'unknown[]': length, pop, push, concat, and 29 more.
+src/routes.ts(1980,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1981,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1982,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1983,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1984,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1985,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(1989,9): error TS2322: Type 'Date' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+  Type 'Date' is missing the following properties from type 'unknown[]': length, pop, push, concat, and 29 more.
+src/routes.ts(2005,9): error TS2322: Type 'string' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+src/routes.ts(2007,9): error TS2322: Type 'Date' is not assignable to type '[any, ...any[]] | unknown[] | null | undefined'.
+
+  Type 'Date' is missing the following properties from type 'unknown[]': length, pop, push, concat, and 29 more.
+src/routes.ts(3801,40): error TS2769: No overload matches this call.
+
+  Overload 1 of 5, '(value: string | number | Date): Date', gave the following error.
+    Argument of type 'string | null' is not assignable to parameter of type 'string | number | Date'.
+      Type 'null' is not assignable to type 'string | number | Date'.
+  Overload 2 of 5, '(vd: VarDate): Date', gave the following error.
+    Argument of type 'string | null' is not assignable to parameter of type 'VarDate'.
+      Type 'null' is not assignable to type 'VarDate'.
+  Overload 3 of 5, '(value: string | number): Date', gave the following error.
+    Argument of type 'string | null' is not assignable to parameter of type 'string | number'.
+      Type 'null' is not assignable to type 'string | number'.
+src/routes.ts(5129,41): error TS2551: Property 'getEcommerceIntegration' does not exist on type 'DatabaseStorage'. Did you mean 'getEcommerceIntegrations'?
+
+src/routes.ts(5160,41): error TS2551: Property 'getEcommerceIntegration' does not exist on type 'DatabaseStorage'. Did you mean 'getEcommerceIntegrations'?
+
+src/routes.ts(5288,42): error TS2551: Property 'getCompanyUsersByUserId' does not exist on type 'DatabaseStorage'. Did you mean 'getCompaniesByUserId'?
+
+src/routes.ts(5289,41): error TS7006: Parameter 'cu' implicitly has an 'any' type.
+
+src/routes.ts(8303,13): error TS2561: Object literal may only specify known properties, but 'trnNumber' does not exist in type '{ name: string; baseCurrency?: string | undefined; locale?: string | undefined; companyType?: string | undefined; legalStructure?: string | null | undefined; industry?: string | null | undefined; ... 18 more ...; invoiceFooterNote?: string | ... 1 more ... | undefined; }'. Did you mean to write 'trnVatNumber'?
+
+src/routes.ts(8336,17): error TS2353: Object literal may only specify known properties, and 'createdBy' does not exist in type '{ email: string; expiresAt: Date; token: string; invitedBy: string; userType?: string | undefined; status?: string | undefined; companyId?: string | null | undefined; role?: string | undefined; acceptedAt?: Date | ... 1 more ... | undefined; }'.
+
+src/storage.ts(866,11): error TS2488: Type 'any[] | QueryResult<never>' must have a '[Symbol.iterator]()' method that returns an iterator.
+
+src/storage.ts(1368,5): error TS2322: Type '({ id: string; entryId: string; accountId: string; debit: number; credit: number; } | { id: string; entryId: string; accountId: string; debit: number; credit: number; })[]' is not assignable to type '{ id: string; description: string | null; entryId: string; accountId: string; debit: number; credit: number; isReconciled: boolean; reconciledAt: Date | null; reconciledBy: string | null; bankTransactionId: string | null; }[]'.
+
+  Type '{ id: string; entryId: string; accountId: string; debit: number; credit: number; } | { id: string; entryId: string; accountId: string; debit: number; credit: number; }' is not assignable to type '{ id: string; description: string | null; entryId: string; accountId: string; debit: number; credit: number; isReconciled: boolean; reconciledAt: Date | null; reconciledBy: string | null; bankTransactionId: string | null; }'.
+    Type '{ id: string; entryId: string; accountId: string; debit: number; credit: number; }' is missing the following properties from type '{ id: string; description: string | null; entryId: string; accountId: string; debit: number; credit: number; isReconciled: boolean; reconciledAt: Date | null; reconciledBy: string | null; bankTransactionId: string | null; }': description, isReconciled, reconciledAt, reconciledBy, bankTransactionId
+ERROR: failed to build: failed to solve: process "sh -c cd backend && npm install && npm run build" did not complete successfully: exit code: 2
