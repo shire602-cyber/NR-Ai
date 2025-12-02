@@ -1,8 +1,9 @@
-import type { User, InsertUser, Company, InsertCompany, CompanyUser, InsertCompanyUser, Account, InsertAccount, JournalEntry, InsertJournalEntry, JournalLine, InsertJournalLine, Invoice, InsertInvoice, InvoiceLine, InsertInvoiceLine, Receipt, InsertReceipt, CustomerContact, InsertCustomerContact, Waitlist, InsertWaitlist, IntegrationSync, InsertIntegrationSync, WhatsappConfig, InsertWhatsappConfig, WhatsappMessage, InsertWhatsappMessage, AnomalyAlert, InsertAnomalyAlert, BankTransaction, InsertBankTransaction, CashFlowForecast, InsertCashFlowForecast, TransactionClassification, InsertTransactionClassification, Budget, InsertBudget, EcommerceIntegration, InsertEcommerceIntegration, EcommerceTransaction, InsertEcommerceTransaction, FinancialKpi, InsertFinancialKpi, Notification, InsertNotification, RegulatoryNews, InsertRegulatoryNews, ReminderSetting, InsertReminderSetting, ReminderLog, InsertReminderLog, UserOnboarding, InsertUserOnboarding, HelpTip, InsertHelpTip, ReferralCode, InsertReferralCode, Referral, InsertReferral, UserFeedback, InsertUserFeedback, AnalyticsEvent, InsertAnalyticsEvent, FeatureUsageMetric, InsertFeatureUsageMetric, AdminSetting, InsertAdminSetting, SubscriptionPlan, InsertSubscriptionPlan, UserSubscription, InsertUserSubscription, AuditLog, InsertAuditLog, VatReturn, InsertVatReturn, Document, InsertDocument, TaxReturnArchive, InsertTaxReturnArchive, ComplianceTask, InsertComplianceTask, Message, InsertMessage, NewsItem, InsertNewsItem, Invitation, InsertInvitation, ActivityLog, InsertActivityLog, ClientNote, InsertClientNote, Engagement, InsertEngagement, ServiceInvoice, InsertServiceInvoice, ServiceInvoiceLine, InsertServiceInvoiceLine, FtaEmail, InsertFtaEmail, Subscription, InsertSubscription, Backup, InsertBackup } from "../shared/schema.js";
+import type { User, InsertUser, Company, InsertCompany, CompanyUser, InsertCompanyUser, Account, InsertAccount, JournalEntry, JournalLine, Invoice, InsertInvoice, InvoiceLine, InsertInvoiceLine, Receipt, InsertReceipt, CustomerContact, InsertCustomerContact, Waitlist, InsertWaitlist, IntegrationSync, InsertIntegrationSync, WhatsappConfig, InsertWhatsappConfig, WhatsappMessage, InsertWhatsappMessage, AnomalyAlert, InsertAnomalyAlert, BankTransaction, InsertBankTransaction, CashFlowForecast, InsertCashFlowForecast, TransactionClassification, InsertTransactionClassification, Budget, InsertBudget, EcommerceIntegration, InsertEcommerceIntegration, EcommerceTransaction, InsertEcommerceTransaction, FinancialKpi, InsertFinancialKpi, Notification, InsertNotification, RegulatoryNews, InsertRegulatoryNews, ReminderSetting, InsertReminderSetting, ReminderLog, InsertReminderLog, UserOnboarding, InsertUserOnboarding, HelpTip, InsertHelpTip, ReferralCode, InsertReferralCode, Referral, InsertReferral, UserFeedback, InsertUserFeedback, AnalyticsEvent, InsertAnalyticsEvent, FeatureUsageMetric, InsertFeatureUsageMetric, AdminSetting, InsertAdminSetting, SubscriptionPlan, InsertSubscriptionPlan, UserSubscription, InsertUserSubscription, AuditLog, InsertAuditLog, VatReturn, InsertVatReturn, Document, InsertDocument, TaxReturnArchive, InsertTaxReturnArchive, ComplianceTask, InsertComplianceTask, Message, InsertMessage, NewsItem, InsertNewsItem, Invitation, InsertInvitation, ActivityLog, InsertActivityLog, ClientNote, InsertClientNote, Engagement, InsertEngagement, ServiceInvoice, InsertServiceInvoice, ServiceInvoiceLine, InsertServiceInvoiceLine, FtaEmail, InsertFtaEmail, Subscription, InsertSubscription, Backup, InsertBackup } from "../shared/schema.js";
+type RelaxedInsert<T> = Partial<T> & Record<string, any>;
 export interface IStorage {
     getUser(id: string): Promise<User | undefined>;
     getUserByEmail(email: string): Promise<User | undefined>;
-    createUser(user: InsertUser): Promise<User>;
+    createUser(user: RelaxedInsert<InsertUser>): Promise<User>;
     getCompany(id: string): Promise<Company | undefined>;
     getCompanyByName(name: string): Promise<Company | undefined>;
     getCompaniesByUserId(userId: string): Promise<Company[]>;
@@ -71,11 +72,11 @@ export interface IStorage {
     }>;
     getJournalEntry(id: string): Promise<JournalEntry | undefined>;
     getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
-    createJournalEntry(entry: InsertJournalEntry): Promise<JournalEntry>;
-    updateJournalEntry(id: string, data: Partial<InsertJournalEntry>): Promise<JournalEntry>;
+    createJournalEntry(entry: any): Promise<JournalEntry>;
+    updateJournalEntry(id: string, data: any): Promise<JournalEntry>;
     deleteJournalEntry(id: string): Promise<void>;
     generateEntryNumber(companyId: string, date: Date): Promise<string>;
-    createJournalLine(line: InsertJournalLine): Promise<JournalLine>;
+    createJournalLine(line: any): Promise<JournalLine>;
     getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]>;
     deleteJournalLinesByEntryId(entryId: string): Promise<void>;
     getInvoice(id: string): Promise<Invoice | undefined>;
@@ -88,17 +89,17 @@ export interface IStorage {
     getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]>;
     deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void>;
     getReceipt(id: string): Promise<Receipt | undefined>;
-    createReceipt(receipt: InsertReceipt): Promise<Receipt>;
+    createReceipt(receipt: any): Promise<Receipt>;
     getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
-    updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt>;
+    updateReceipt(id: string, data: any): Promise<Receipt>;
     deleteReceipt(id: string): Promise<void>;
     getCustomerContact(id: string): Promise<CustomerContact | undefined>;
     getCustomerContactsByCompanyId(companyId: string): Promise<CustomerContact[]>;
     getCustomerContactByEmail(companyId: string, email: string): Promise<CustomerContact | undefined>;
     getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined>;
-    createCustomerContact(contact: InsertCustomerContact): Promise<CustomerContact>;
-    createBulkCustomerContacts(contacts: InsertCustomerContact[]): Promise<CustomerContact[]>;
-    updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact>;
+    createCustomerContact(contact: any): Promise<CustomerContact>;
+    createBulkCustomerContacts(contacts: any[]): Promise<CustomerContact[]>;
+    updateCustomerContact(id: string, data: any): Promise<CustomerContact>;
     deleteCustomerContact(id: string): Promise<void>;
     createWaitlistEntry(entry: InsertWaitlist): Promise<Waitlist>;
     getWaitlistByEmail(email: string): Promise<Waitlist | undefined>;
@@ -339,31 +340,31 @@ export declare class DatabaseStorage implements IStorage {
     }): Promise<{
         entries: {
             id: string;
-            date: any;
-            entryNumber: any;
-            description: any;
+            date: Date;
+            entryNumber: string;
+            description: string;
             debit: number;
             credit: number;
             runningBalance: number;
-            journalEntryId: any;
+            journalEntryId: string;
             journalLineId: string;
-            memo: any;
-            source: any;
-            status: any;
+            memo: string | null;
+            source: string;
+            status: string;
         }[];
         allEntries: {
             id: string;
-            date: any;
-            entryNumber: any;
-            description: any;
+            date: Date;
+            entryNumber: string;
+            description: string;
             debit: number;
             credit: number;
             runningBalance: number;
-            journalEntryId: any;
+            journalEntryId: string;
             journalLineId: string;
-            memo: any;
-            source: any;
-            status: any;
+            memo: string | null;
+            source: string;
+            status: string;
         }[];
         account: {
             id: string;
@@ -390,11 +391,11 @@ export declare class DatabaseStorage implements IStorage {
     }>;
     getJournalEntry(id: string): Promise<JournalEntry | undefined>;
     getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
-    createJournalEntry(insertEntry: InsertJournalEntry): Promise<JournalEntry>;
-    updateJournalEntry(id: string, data: Partial<InsertJournalEntry>): Promise<JournalEntry>;
+    createJournalEntry(insertEntry: any): Promise<JournalEntry>;
+    updateJournalEntry(id: string, data: any): Promise<JournalEntry>;
     deleteJournalEntry(id: string): Promise<void>;
     generateEntryNumber(companyId: string, date: Date): Promise<string>;
-    createJournalLine(insertLine: InsertJournalLine): Promise<JournalLine>;
+    createJournalLine(insertLine: any): Promise<JournalLine>;
     getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]>;
     deleteJournalLinesByEntryId(entryId: string): Promise<void>;
     getInvoice(id: string): Promise<Invoice | undefined>;
@@ -599,3 +600,4 @@ export declare class DatabaseStorage implements IStorage {
     deleteBackup(id: string): Promise<void>;
 }
 export declare const storage: DatabaseStorage;
+export {};

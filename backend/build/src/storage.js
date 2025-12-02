@@ -296,33 +296,34 @@ export class DatabaseStorage {
     }
     // Journal Entries
     async getJournalEntry(id) {
-        const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
-        return entry || undefined;
+        const results = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+        return results[0] || undefined;
     }
     async getJournalEntriesByCompanyId(companyId) {
-        return await db
+        const results = await db
             .select()
             .from(journalEntries)
             .where(eq(journalEntries.companyId, companyId))
             .orderBy(desc(journalEntries.date));
+        return results;
     }
     async createJournalEntry(insertEntry) {
-        const [entry] = await db
+        const results = await db
             .insert(journalEntries)
             .values(insertEntry)
             .returning();
-        return entry;
+        return results[0];
     }
     async updateJournalEntry(id, data) {
-        const [entry] = await db
+        const results = await db
             .update(journalEntries)
             .set(data)
             .where(eq(journalEntries.id, id))
             .returning();
-        if (!entry) {
+        if (!results[0]) {
             throw new Error('Journal entry not found');
         }
-        return entry;
+        return results[0];
     }
     async deleteJournalEntry(id) {
         await db.delete(journalEntries).where(eq(journalEntries.id, id));
@@ -738,17 +739,12 @@ export class DatabaseStorage {
     }
     // Journal Lines (for analytics)
     async getJournalLinesByCompanyId(companyId) {
-        return await db
-            .select({
-            id: journalLines.id,
-            entryId: journalLines.entryId,
-            accountId: journalLines.accountId,
-            debit: journalLines.debit,
-            credit: journalLines.credit,
-        })
+        const results = await db
+            .select()
             .from(journalLines)
             .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
             .where(eq(journalEntries.companyId, companyId));
+        return results.map(r => r.journal_lines);
     }
     // Budgets
     async getBudgetsByCompanyId(companyId, year, month) {

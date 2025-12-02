@@ -134,7 +134,7 @@ function requireUserType(...allowedTypes) {
     };
 }
 // Import comprehensive UAE Chart of Accounts
-import { createDefaultAccountsForCompany } from "./defaultChartOfAccounts";
+import { createDefaultAccountsForCompany } from "./defaultChartOfAccounts.js";
 async function seedChartOfAccounts(companyId) {
     // Check if company already has accounts
     const hasAccounts = await storage.companyHasAccounts(companyId);
@@ -163,8 +163,8 @@ export async function registerRoutes(app) {
     // =====================================
     app.get("/health", async (req, res) => {
         try {
-            // Test database connection
-            await storage.getUsers();
+            // Test database connection by fetching a simple query
+            await storage.getCompany("health-check-test");
             res.status(200).json({
                 ok: true,
                 timestamp: new Date().toISOString(),
@@ -265,7 +265,7 @@ export async function registerRoutes(app) {
                 return res.status(401).json({ message: 'Invalid credentials' });
             }
             // Ensure isAdmin is a proper boolean
-            const isAdminBoolean = user.isAdmin === true || user.isAdmin === 'true' || user.isAdmin === 1;
+            const isAdminBoolean = user.isAdmin === true;
             const token = jwt.sign({
                 userId: user.id,
                 email: user.email,
@@ -529,8 +529,7 @@ export async function registerRoutes(app) {
             }
             const unarchivedAccount = await storage.updateAccount(id, {
                 isArchived: false,
-                isActive: true,
-                updatedAt: new Date()
+                isActive: true
             });
             res.json(unarchivedAccount);
         }
@@ -1362,7 +1361,6 @@ export async function registerRoutes(app) {
                             address: contact.address || null,
                             city: contact.city || null,
                             country: contact.country || 'UAE',
-                            isVatRegistered: !!contact.trnNumber || !!contact.trn,
                         });
                         results.updated++;
                     }
@@ -1377,7 +1375,6 @@ export async function registerRoutes(app) {
                             address: contact.address || null,
                             city: contact.city || null,
                             country: contact.country || 'UAE',
-                            isVatRegistered: !!contact.trnNumber || !!contact.trn,
                             isActive: true,
                         });
                     }
@@ -3364,6 +3361,8 @@ Respond with just the category name, nothing else.`;
                     return true;
                 });
                 receipts = receipts.filter(receipt => {
+                    if (!receipt.date)
+                        return true;
                     const receiptDate = new Date(receipt.date);
                     if (start && receiptDate < start)
                         return false;
@@ -4545,7 +4544,8 @@ Respond with just the category name, nothing else.`;
             const { integrationId } = req.params;
             const userId = req.user?.id;
             // Verify integration exists and user has access
-            const integration = await storage.getEcommerceIntegration(integrationId);
+            const integrations = await storage.getEcommerceIntegrations(integrationId);
+            const integration = integrations[0];
             if (!integration) {
                 return res.status(404).json({ message: 'Integration not found' });
             }
@@ -4572,7 +4572,8 @@ Respond with just the category name, nothing else.`;
         try {
             const { integrationId } = req.params;
             const { isActive } = req.body;
-            const integration = await storage.getEcommerceIntegration(integrationId);
+            const allIntegrations = await storage.getEcommerceIntegrations(integrationId);
+            const integration = allIntegrations[0];
             if (!integration) {
                 return res.status(404).json({ message: 'Integration not found' });
             }
@@ -4692,8 +4693,8 @@ Respond with just the category name, nothing else.`;
         try {
             const userId = req.user?.id;
             // Check if user is an owner/admin of any company (simple authorization)
-            const companyUsers = await storage.getCompanyUsersByUserId(userId);
-            const isAdmin = companyUsers.some(cu => cu.role === 'owner' || cu.role === 'cfo');
+            const companies = await storage.getCompaniesByUserId(userId);
+            const isAdmin = companies.length > 0;
             if (!isAdmin) {
                 return res.status(403).json({ message: 'Admin access required to create regulatory news' });
             }
@@ -5752,7 +5753,7 @@ Respond with just the category name, nothing else.`;
                     continue;
                 // Try to find matching journal entries
                 for (const je of journalEntries) {
-                    const jeDesc = je.description?.toLowerCase() || '';
+                    const jeDesc = je.memo?.toLowerCase() || '';
                     const txnSearchTerm = txnDesc.substring(0, 20);
                     // Check for description match or date proximity
                     const descMatch = jeDesc && txnSearchTerm && jeDesc.includes(txnSearchTerm);
@@ -5804,7 +5805,7 @@ Respond with just the category name, nothing else.`;
                     suggestions.push({
                         type: 'journal',
                         id: je.id,
-                        description: je.description,
+                        description: je.memo || 'Journal Entry',
                         amount: totalAmount,
                         date: je.date,
                         confidence: 0.8
@@ -7433,7 +7434,7 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
                         contactPhone: row.phone || null,
                         contactEmail: row.email || null,
                         websiteUrl: row.website || null,
-                        trnNumber: row.trn || null,
+                        trnVatNumber: row.trn || null,
                     });
                     results.success.push({
                         id: company.id,
@@ -7462,7 +7463,7 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
                                 userType: 'client',
                                 token,
                                 expiresAt,
-                                createdBy: userId,
+                                invitedBy: userId,
                                 status: 'pending',
                             });
                             results.invitations.push({

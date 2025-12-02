@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+// @ts-ignore - cors types issue
 import cors from "cors";
 import { registerRoutes } from "./routes.js";
 

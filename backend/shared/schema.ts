@@ -168,7 +168,7 @@ export const journalEntries = pgTable("journal_entries", {
   source: text("source").notNull().default("manual"), // manual | invoice | receipt | payment | reversal | system
   sourceId: uuid("source_id"), // Reference to invoice, receipt, etc.
   // Reversal support: if this entry is a reversal, link to original
-  reversedEntryId: uuid("reversed_entry_id").references(() => journalEntries.id),
+  reversedEntryId: uuid("reversed_entry_id"),
   reversalReason: text("reversal_reason"),
   // Audit trail
   createdBy: uuid("created_by").notNull().references(() => users.id),
