@@ -340,31 +340,31 @@ export declare class DatabaseStorage implements IStorage {
     }): Promise<{
         entries: {
             id: string;
-            date: Date;
-            entryNumber: string;
-            description: string;
+            date: any;
+            entryNumber: any;
+            description: any;
             debit: number;
             credit: number;
             runningBalance: number;
-            journalEntryId: string;
+            journalEntryId: any;
             journalLineId: string;
-            memo: string | null;
-            source: string;
-            status: string;
+            memo: any;
+            source: any;
+            status: any;
         }[];
         allEntries: {
             id: string;
-            date: Date;
-            entryNumber: string;
-            description: string;
+            date: any;
+            entryNumber: any;
+            description: any;
             debit: number;
             credit: number;
             runningBalance: number;
-            journalEntryId: string;
+            journalEntryId: any;
             journalLineId: string;
-            memo: string | null;
-            source: string;
-            status: string;
+            memo: any;
+            source: any;
+            status: any;
         }[];
         account: {
             id: string;

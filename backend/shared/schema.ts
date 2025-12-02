@@ -156,7 +156,7 @@ export type Account = typeof accounts.$inferSelect;
 // ===========================
 // Journal Entries
 // ===========================
-export const journalEntries = pgTable("journal_entries", {
+export const journalEntries: any = pgTable("journal_entries", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   entryNumber: text("entry_number").notNull(), // Auto-generated: JE-YYYYMMDD-001
