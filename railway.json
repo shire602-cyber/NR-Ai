@@ -5,7 +5,7 @@
     "buildCommand": "cd backend && npm install && npm run build"
   },
   "deploy": {
-    "startCommand": "NODE_ENV=production node backend/build/index.js",
+    "startCommand": "NODE_ENV=production node backend/dist/src/index.js",
     "runtime": "V2",
     "numReplicas": 1,
     "sleepApplication": false
