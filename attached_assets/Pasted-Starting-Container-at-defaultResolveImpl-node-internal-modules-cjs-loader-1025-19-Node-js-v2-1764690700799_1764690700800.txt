@@ -1,0 +1,101 @@
+Starting Container
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+Node.js v22.21.1
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+node:internal/modules/cjs/loader:1386
+    at node:internal/main/run_main_module:36:49 {
+  throw err;
+  code: 'MODULE_NOT_FOUND',
+  ^
+Error: Cannot find module '/app/backend/dist/src/index.js'
+  requireStack: []
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+}
+Node.js v22.21.1
+node:internal/modules/cjs/loader:1386
+  throw err;
+  ^
+Error: Cannot find module '/app/backend/dist/src/index.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+Error: Cannot find module '/app/backend/dist/src/index.js'
+}
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+Node.js v22.21.1
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+node:internal/modules/cjs/loader:1386
+  throw err;
+  ^
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+node:internal/modules/cjs/loader:1386
+  throw err;
+  ^
+Error: Cannot find module '/app/backend/dist/src/index.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+Node.js v22.21.1
+node:internal/modules/cjs/loader:1386
+  throw err;
+  ^
+Error: Cannot find module '/app/backend/dist/src/index.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+Node.js v22.21.1
+}
+node:internal/modules/cjs/loader:1386
+  throw err;
+  ^
+Error: Cannot find module '/app/backend/dist/src/index.js'
+Node.js v22.21.1
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+node:internal/modules/cjs/loader:1386
+  throw err;
+  ^
+Error: Cannot find module '/app/backend/dist/src/index.js'
