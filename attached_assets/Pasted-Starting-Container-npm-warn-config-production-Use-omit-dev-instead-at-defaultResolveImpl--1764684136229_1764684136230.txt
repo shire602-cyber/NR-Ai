@@ -1,0 +1,94 @@
+Starting Container
+npm warn config production Use `--omit=dev` instead.
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+> nr-ai-backend@1.0.0 start
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at node:internal/main/run_main_module:36:49 {
+> node dist/index.js
+  code: 'MODULE_NOT_FOUND',
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+Node.js v22.21.1
+node:internal/modules/cjs/loader:1386
+  requireStack: []
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+npm warn config production Use `--omit=dev` instead.
+}
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+  throw err;
+  ^
+> nr-ai-backend@1.0.0 start
+Error: Cannot find module '/app/backend/dist/index.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+> node dist/index.js
+node:internal/modules/cjs/loader:1386
+  throw err;
+  ^
+Error: Cannot find module '/app/backend/dist/index.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+Node.js v22.21.1
+npm warn config production Use `--omit=dev` instead.
+> nr-ai-backend@1.0.0 start
+> node dist/index.js
+node:internal/modules/cjs/loader:1386
+  throw err;
+  ^
+Error: Cannot find module '/app/backend/dist/index.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: []
+}
+Node.js v22.21.1
+npm warn config production Use `--omit=dev` instead.
+> nr-ai-backend@1.0.0 start
+> node dist/index.js
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
+node:internal/modules/cjs/loader:1386
+  code: 'MODULE_NOT_FOUND',
+  throw err;
+  requireStack: []
+  ^
+}
+Node.js v22.21.1
+Error: Cannot find module '/app/backend/dist/index.js'
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+npm warn config production Use `--omit=dev` instead.
+> nr-ai-backend@1.0.0 start
+> node dist/index.js
+node:internal/modules/cjs/loader:1386
+  throw err;
+}
+  ^
+Node.js v22.21.1
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1030:22)
+Error: Cannot find module '/app/backend/dist/index.js'
+    at Function._load (node:internal/modules/cjs/loader:1192:37)
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:237:24)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1025:19)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)
+    at node:internal/main/run_main_module:36:49 {
