@@ -169,7 +169,7 @@ function requireUserType(...allowedTypes: string[]) {
 }
 
 // Import comprehensive UAE Chart of Accounts
-import { createDefaultAccountsForCompany } from "./defaultChartOfAccounts";
+import { createDefaultAccountsForCompany } from "./defaultChartOfAccounts.js";
 
 async function seedChartOfAccounts(companyId: string): Promise<{ created: number; alreadyExisted: boolean }> {
   // Check if company already has accounts
@@ -202,8 +202,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   app.get("/health", async (req: Request, res: Response) => {
     try {
-      // Test database connection
-      await storage.getUsers();
+      // Test database connection by fetching a simple query
+      await storage.getCompany("health-check-test");
       
       res.status(200).json({
         ok: true,
