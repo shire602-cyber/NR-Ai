@@ -2,12 +2,12 @@
   "name": "nr-ai-backend",
   "version": "1.0.0",
   "type": "module",
-  "main": "build/index.js",
+  "main": "dist/src/index.js",
   "license": "MIT",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node build/index.js",
+    "start": "node dist/src/index.js",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
