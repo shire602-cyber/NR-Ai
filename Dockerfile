@@ -2,23 +2,22 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Copy backend package files
-COPY backend/package*.json ./
+# Force cache bust - v2
+ARG CACHEBUST=2
 
-# Install ALL dependencies (including dev for TypeScript)
+# Copy ALL backend files at once to ensure consistency
+COPY backend/ ./
+
+# Install dependencies
 RUN npm install
-
-# Copy shared schema from inside backend (required by backend imports)
-COPY backend/shared/ ./shared/
-
-# Copy backend source
-COPY backend/src/ ./src/
-COPY backend/tsconfig.json ./
 
 # Build TypeScript
 RUN npm run build
 
-# Expose port (Railway uses PORT env var)
+# Debug: List files to verify structure
+RUN echo "=== Checking build output ===" && ls -la dist/src/ && ls -la dist/shared/ 2>/dev/null || echo "No dist/shared"
+
+# Expose port
 EXPOSE 8080
 
 # Start the server
