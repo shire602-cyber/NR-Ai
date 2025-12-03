@@ -4,32 +4,9 @@ import cors from "cors";
 import { registerRoutes } from "./routes.js";
 const app = express();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const VERCEL_PROJECT_NAME = process.env.VERCEL_PROJECT_NAME || 'nr-ai';
+// Simple CORS - allow all origins in production for now (can restrict later)
 app.use(cors({
-    origin: function (origin, callback) {
-        const allowedOrigins = [
-            FRONTEND_URL,
-            'http://localhost:5173',
-            'http://localhost:3000',
-            'http://localhost:5000',
-        ];
-        // Allow requests with no origin (mobile apps, curl, etc)
-        if (!origin) {
-            return callback(null, true);
-        }
-        // Allow Vercel preview URLs for this specific project only
-        // Pattern: project-name-hash-username.vercel.app
-        if (origin.endsWith('.vercel.app') && origin.includes(VERCEL_PROJECT_NAME)) {
-            return callback(null, true);
-        }
-        // Allow explicitly listed origins
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        // Log rejected origins for debugging
-        console.log(`[CORS] Rejected origin: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
-    },
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -83,7 +60,7 @@ app.use((req, res, next) => {
                 ? 'OpenAI'
                 : 'Not configured';
     console.log(`[AI] ${aiProvider}`);
-    console.log(`[CORS] Allowing origins: ${FRONTEND_URL} + ${VERCEL_PROJECT_NAME}*.vercel.app`);
+    console.log(`[CORS] Allowing all origins`);
     const server = await registerRoutes(app);
     app.use((err, _req, res, _next) => {
         const status = err.status || err.statusCode || 500;
