@@ -1,0 +1,88 @@
+Go to your frontend code (likely in Register.tsx or auth.tsx) and make sure the fetch() uses this exact URL:
+
+fetch('https://nr-ai-backend-production.up.railway.app/api/register', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    name,
+    email,
+    password,
+  }),
+})
+  .then((res) => res.json())
+  .then((data) => {
+    console.log('Success:', data);
+  })
+  .catch((error) => {
+    console.error('Error:', error);
+  });
+
+
+Don't use /api/register or localhost or any other path. Use the full URL above.
+
+✅ 2. Confirm Backend Route Exists
+
+Go to your backend routes.ts or wherever you define routes and make sure you have this:
+
+app.post('/api/register', async (req, res) => {
+  const { name, email, password } = req.body;
+
+  // Dummy logic or actual DB save here
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Missing fields' });
+  }
+
+  // Simulate success
+  return res.status(200).json({ message: 'User registered successfully' });
+});
+
+
+✅ Must be /api/register
+✅ Must return JSON (use res.json(...))
+🚫 Do not redirect or send HTML
+
+✅ 3. Allow JSON Body Parsing
+
+Make sure this is in your Express setup (index.ts or similar):
+
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+app.use(cors());
+app.use(express.json()); // ← this line is CRUCIAL
+
+✅ 4. Test Manually with curl
+
+To confirm your backend is working:
+
+curl -X POST https://nr-ai-backend-production.up.railway.app/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"name": "John", "email": "john@example.com", "password": "123456"}'
+
+
+You should see a clean JSON response:
+
+{
+  "message": "User registered successfully"
+}
+
+
+If you see HTML instead, then the backend route isn’t matching — meaning either:
+
+The frontend is hitting the wrong path
+
+The backend route is incorrectly defined (e.g. /register instead of /api/register)
+
+✅ 5. Double-Check Vercel Environment
+
+If you're deploying frontend via Vercel, make sure you’ve set:
+
+NEXT_PUBLIC_API_URL=https://nr-ai-backend-production.up.railway.app
+
+
+Then in your code:
+
+fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/register`, ...)
