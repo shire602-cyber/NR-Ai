@@ -8,8 +8,8 @@ COPY backend/package*.json ./
 # Install ALL dependencies (including dev for TypeScript)
 RUN npm install
 
-# Copy shared schema (required by backend imports)
-COPY shared/ ./shared/
+# Copy shared schema from inside backend (required by backend imports)
+COPY backend/shared/ ./shared/
 
 # Copy backend source
 COPY backend/src/ ./src/
