@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+*.md
+.env*
+client
+server
+shared
+attached_assets
+*.log

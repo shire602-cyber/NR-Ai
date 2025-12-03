@@ -2,23 +2,22 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# Force cache bust - v2
-ARG CACHEBUST=2
+# Copy package files first for better caching
+COPY backend/package*.json ./
 
-# Copy ALL backend files at once to ensure consistency
-COPY backend/ ./
-
-# Install dependencies
+# Install ALL dependencies
 RUN npm install
+
+# Copy source files (excluding node_modules, dist via .dockerignore)
+COPY backend/src/ ./src/
+COPY backend/shared/ ./shared/
+COPY backend/tsconfig.json ./
 
 # Build TypeScript
 RUN npm run build
 
-# Debug: List files to verify structure
-RUN echo "=== Checking build output ===" && ls -la dist/src/ && ls -la dist/shared/ 2>/dev/null || echo "No dist/shared"
+# Verify build output exists
+RUN ls -la dist/src/index.js dist/shared/schema.js
 
-# Expose port
-EXPOSE 8080
-
-# Start the server
-CMD ["node", "dist/src/index.js"]
+# Use npm start script
+CMD ["npm", "start"]
