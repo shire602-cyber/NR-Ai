@@ -1,4 +1,3 @@
-import { createServer } from "http";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import OpenAI from "openai";
@@ -7788,6 +7787,5 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
             res.status(500).json({ message: error.message });
         }
     });
-    const httpServer = createServer(app);
-    return httpServer;
+    // Routes registered - server is started in index.ts with app.listen()
 }

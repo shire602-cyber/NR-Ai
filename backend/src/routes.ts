@@ -1,5 +1,4 @@
 import type { Express, Request, Response } from "express";
-import { createServer, type Server } from "http";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import OpenAI from "openai";
@@ -195,7 +194,7 @@ async function seedChartOfAccounts(companyId: string): Promise<{ created: number
   }
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express): Promise<void> {
   // =====================================
   // Health Check Route
   // =====================================
@@ -8729,6 +8728,5 @@ Make the news items realistic, current, and relevant to UAE businesses. Include 
     }
   });
 
-  const httpServer = createServer(app);
-  return httpServer;
+  // Routes registered - server is started in index.ts with app.listen()
 }

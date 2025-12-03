@@ -103,7 +103,7 @@ process.on('unhandledRejection', (reason, promise) => {
     });
     
     console.log('[Server] Registering routes...');
-    const server = await registerRoutes(app);
+    await registerRoutes(app);
     console.log('[Server] Routes registered');
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -120,7 +120,8 @@ process.on('unhandledRejection', (reason, promise) => {
     const port = parseInt(process.env.PORT || '5000', 10);
     console.log(`[Server] Starting to listen on port ${port}...`);
     
-    server.listen(port, "0.0.0.0", () => {
+    // Use app.listen directly instead of httpServer
+    const server = app.listen(port, "0.0.0.0", () => {
       log(`API server running on port ${port}`);
       console.log('[Server] Server is ready to accept connections');
     });
