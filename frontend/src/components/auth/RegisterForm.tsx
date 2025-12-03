@@ -9,6 +9,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
+import { apiUrl } from '@/lib/api';
 import { UserPlus } from 'lucide-react';
 
 const registerSchema = z.object({
@@ -40,7 +41,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/auth/register', {
+      const response = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

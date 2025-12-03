@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Gift, Sparkles, X } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { apiUrl } from '@/lib/api';
 
 interface EmailPopupProps {
   open: boolean;
@@ -33,7 +34,7 @@ export function EmailPopup({ open, onClose, locale = 'en' }: EmailPopupProps) {
     setLoading(true);
     
     try {
-      const response = await fetch('/api/waitlist', {
+      const response = await fetch(apiUrl('/api/waitlist'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, source: 'popup' }),
