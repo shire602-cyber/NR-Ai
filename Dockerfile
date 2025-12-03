@@ -16,8 +16,12 @@ COPY backend/tsconfig.json ./
 # Build TypeScript
 RUN npm run build
 
-# Verify build output exists
-RUN ls -la dist/src/index.js dist/shared/schema.js
+# Debug: Show entire dist structure
+RUN echo "=== Full dist structure ===" && find dist -type f && echo "=== End structure ==="
+
+# Verify critical files exist
+RUN test -f dist/src/index.js || (echo "ERROR: dist/src/index.js missing" && exit 1)
+RUN test -f dist/shared/schema.js || (echo "ERROR: dist/shared/schema.js missing" && exit 1)
 
 # Use npm start script
 CMD ["npm", "start"]
