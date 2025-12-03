@@ -82,6 +82,11 @@ app.use((req, res, next) => {
   console.log(`[AI] ${aiProvider}`);
   console.log(`[CORS] Allowing all origins`);
   
+  // Root route - simple ping that doesn't need database
+  app.get('/', (_req, res) => {
+    res.json({ message: 'NR AI Backend API', version: '1.0.3' });
+  });
+  
   // Health check BEFORE routes so it always responds
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
