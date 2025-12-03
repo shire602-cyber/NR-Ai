@@ -22,6 +22,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/api';
 
 interface PreviewData {
   fileName: string;
@@ -136,7 +137,7 @@ export default function ClientImport() {
   const downloadTemplate = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('/api/admin/import/template', {
+      const response = await fetch(apiUrl('/api/admin/import/template'), {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

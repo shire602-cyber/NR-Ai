@@ -14,6 +14,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/api';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { exportToExcel, exportToGoogleSheets, prepareReceiptsForExport } from '@/lib/export';
 import Tesseract from 'tesseract.js';
@@ -631,7 +632,7 @@ export default function Receipts() {
     if (!companyId) return null;
     
     try {
-      const response = await fetch('/api/ai/categorize', {
+      const response = await fetch(apiUrl('/api/ai/categorize'), {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
