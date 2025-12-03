@@ -64,49 +64,72 @@ app.use((req, res, next) => {
   next();
 });
 
+// Global error handlers
+process.on('uncaughtException', (error) => {
+  console.error('[FATAL] Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 (async () => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  
-  console.log(`[Environment] Running in ${process.env.NODE_ENV || 'development'} mode`);
-  console.log(`[Database] ${process.env.DATABASE_URL ? 'Connected' : 'No connection string'}`);
-  
-  // Check AI configuration
-  const aiProvider = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY 
-    ? 'Replit AI (OpenRouter)' 
-    : process.env.OPENROUTER_API_KEY 
-      ? 'OpenRouter' 
-      : process.env.OPENAI_API_KEY 
-        ? 'OpenAI' 
-        : 'Not configured';
-  console.log(`[AI] ${aiProvider}`);
-  console.log(`[CORS] Allowing all origins`);
-  
-  // Root route - simple ping that doesn't need database
-  app.get('/', (_req, res) => {
-    res.json({ message: 'NR AI Backend API', version: '1.0.3' });
-  });
-  
-  // Health check BEFORE routes so it always responds
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
-  
-  const server = await registerRoutes(app);
+  try {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isDevelopment = process.env.NODE_ENV === 'development';
+    
+    console.log(`[Environment] Running in ${process.env.NODE_ENV || 'development'} mode`);
+    console.log(`[Database] ${process.env.DATABASE_URL ? 'Connected' : 'No connection string'}`);
+    
+    // Check AI configuration
+    const aiProvider = process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY 
+      ? 'Replit AI (OpenRouter)' 
+      : process.env.OPENROUTER_API_KEY 
+        ? 'OpenRouter' 
+        : process.env.OPENAI_API_KEY 
+          ? 'OpenAI' 
+          : 'Not configured';
+    console.log(`[AI] ${aiProvider}`);
+    console.log(`[CORS] Allowing all origins`);
+    
+    // Root route - simple ping that doesn't need database
+    app.get('/', (_req, res) => {
+      res.json({ message: 'NR AI Backend API', version: '1.0.3' });
+    });
+    
+    // Health check BEFORE routes so it always responds
+    app.get('/health', (_req, res) => {
+      res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    });
+    
+    console.log('[Server] Registering routes...');
+    const server = await registerRoutes(app);
+    console.log('[Server] Routes registered');
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
 
-    if (isDevelopment) {
-      console.error('[Error]', err);
-    }
+      if (isDevelopment) {
+        console.error('[Error]', err);
+      }
 
-    res.status(status).json({ message: isProduction ? 'Internal Server Error' : message });
-  });
+      res.status(status).json({ message: isProduction ? 'Internal Server Error' : message });
+    });
 
-  const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen(port, "0.0.0.0", () => {
-    log(`API server running on port ${port}`);
-  });
+    const port = parseInt(process.env.PORT || '5000', 10);
+    console.log(`[Server] Starting to listen on port ${port}...`);
+    
+    server.listen(port, "0.0.0.0", () => {
+      log(`API server running on port ${port}`);
+      console.log('[Server] Server is ready to accept connections');
+    });
+    
+    server.on('error', (error) => {
+      console.error('[Server] Server error:', error);
+    });
+  } catch (error) {
+    console.error('[FATAL] Server startup failed:', error);
+    process.exit(1);
+  }
 })();
