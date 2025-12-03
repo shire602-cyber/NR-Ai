@@ -82,6 +82,11 @@ app.use((req, res, next) => {
   console.log(`[AI] ${aiProvider}`);
   console.log(`[CORS] Allowing all origins`);
   
+  // Health check BEFORE routes so it always responds
+  app.get('/health', (_req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+  
   const server = await registerRoutes(app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -93,21 +98,10 @@ app.use((req, res, next) => {
     }
 
     res.status(status).json({ message: isProduction ? 'Internal Server Error' : message });
-    if (!isProduction) {
-      throw err;
-    }
-  });
-
-  app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
   const port = parseInt(process.env.PORT || '5000', 10);
-  server.listen({
-    port,
-    host: "0.0.0.0",
-    reusePort: true,
-  }, () => {
+  server.listen(port, "0.0.0.0", () => {
     log(`API server running on port ${port}`);
   });
 })();
