@@ -108,7 +108,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
 ];
 
 export function OnboardingWizard() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   const [showWizard, setShowWizard] = useState(false);
 
   const { data: onboarding, isLoading } = useQuery<UserOnboarding>({
@@ -117,7 +117,45 @@ export function OnboardingWizard() {
 
   const completeMutation = useMutation({
     mutationFn: (step: string) => apiRequest('POST', '/api/onboarding/complete-step', { step }),
-    onSuccess: () => {
+    onMutate: async (step: string) => {
+      await queryClient.cancelQueries({ queryKey: ['/api/onboarding'] });
+      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(['/api/onboarding']);
+      
+      const stepToField: Record<string, keyof UserOnboarding> = {
+        welcome: 'hasCompletedWelcome',
+        company: 'hasCreatedCompany',
+        accounts: 'hasSetupChartOfAccounts',
+        invoice: 'hasCreatedFirstInvoice',
+        receipt: 'hasUploadedFirstReceipt',
+        reports: 'hasViewedReports',
+        ai: 'hasExploredAI',
+        reminders: 'hasConfiguredReminders',
+      };
+      
+      if (previousOnboarding) {
+        const field = stepToField[step];
+        const newData = { ...previousOnboarding, [field]: true };
+        let newCurrentStep = 0;
+        if (newData.hasCompletedWelcome) newCurrentStep++;
+        if (newData.hasCreatedCompany) newCurrentStep++;
+        if (newData.hasSetupChartOfAccounts) newCurrentStep++;
+        if (newData.hasCreatedFirstInvoice) newCurrentStep++;
+        if (newData.hasUploadedFirstReceipt) newCurrentStep++;
+        if (newData.hasViewedReports) newCurrentStep++;
+        if (newData.hasExploredAI) newCurrentStep++;
+        if (newData.hasConfiguredReminders) newCurrentStep++;
+        newData.currentStep = newCurrentStep;
+        newData.isOnboardingComplete = newCurrentStep >= 8;
+        queryClient.setQueryData(['/api/onboarding'], newData);
+      }
+      return { previousOnboarding };
+    },
+    onError: (_err, _step, context) => {
+      if (context?.previousOnboarding) {
+        queryClient.setQueryData(['/api/onboarding'], context.previousOnboarding);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/onboarding'] });
     },
   });
@@ -197,7 +235,7 @@ export function OnboardingWizard() {
 }
 
 export function OnboardingProgress() {
-  const [location, setLocation] = useLocation();
+  const [, setLocation] = useLocation();
   
   const { data: onboarding, isLoading } = useQuery<UserOnboarding>({
     queryKey: ['/api/onboarding'],
@@ -205,7 +243,45 @@ export function OnboardingProgress() {
 
   const completeMutation = useMutation({
     mutationFn: (step: string) => apiRequest('POST', '/api/onboarding/complete-step', { step }),
-    onSuccess: () => {
+    onMutate: async (step: string) => {
+      await queryClient.cancelQueries({ queryKey: ['/api/onboarding'] });
+      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(['/api/onboarding']);
+      
+      const stepToField: Record<string, keyof UserOnboarding> = {
+        welcome: 'hasCompletedWelcome',
+        company: 'hasCreatedCompany',
+        accounts: 'hasSetupChartOfAccounts',
+        invoice: 'hasCreatedFirstInvoice',
+        receipt: 'hasUploadedFirstReceipt',
+        reports: 'hasViewedReports',
+        ai: 'hasExploredAI',
+        reminders: 'hasConfiguredReminders',
+      };
+      
+      if (previousOnboarding) {
+        const field = stepToField[step];
+        const newData = { ...previousOnboarding, [field]: true };
+        let newCurrentStep = 0;
+        if (newData.hasCompletedWelcome) newCurrentStep++;
+        if (newData.hasCreatedCompany) newCurrentStep++;
+        if (newData.hasSetupChartOfAccounts) newCurrentStep++;
+        if (newData.hasCreatedFirstInvoice) newCurrentStep++;
+        if (newData.hasUploadedFirstReceipt) newCurrentStep++;
+        if (newData.hasViewedReports) newCurrentStep++;
+        if (newData.hasExploredAI) newCurrentStep++;
+        if (newData.hasConfiguredReminders) newCurrentStep++;
+        newData.currentStep = newCurrentStep;
+        newData.isOnboardingComplete = newCurrentStep >= 8;
+        queryClient.setQueryData(['/api/onboarding'], newData);
+      }
+      return { previousOnboarding };
+    },
+    onError: (_err, _step, context) => {
+      if (context?.previousOnboarding) {
+        queryClient.setQueryData(['/api/onboarding'], context.previousOnboarding);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/onboarding'] });
     },
   });
