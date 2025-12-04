@@ -249,9 +249,12 @@ export async function registerRoutes(app: Express): Promise<void> {
       } as any);
 
       // Auto-create a default company for this user (marked as 'customer' type)
+      // Add timestamp to ensure uniqueness if user re-registers
+      const timestamp = Date.now().toString(36);
       const companyName = `${validated.name}'s Company`;
+      const uniqueCompanyName = `${companyName} (${timestamp})`;
       const company = await storage.createCompany({
-        name: companyName,
+        name: uniqueCompanyName,
         baseCurrency: 'AED',
         locale: 'en',
         companyType: 'customer', // Self-signup companies are customer type (not managed by NR)
@@ -5549,7 +5552,6 @@ Respond with just the category name, nothing else.`;
     try {
       const userId = (req as any).user?.id;
       
-      // Validate input with comprehensive schema
       const validationSchema = z.object({
         step: z.enum(['welcome', 'company', 'accounts', 'invoice', 'receipt', 'reports', 'ai', 'reminders']),
       });
@@ -5570,11 +5572,36 @@ Respond with just the category name, nothing else.`;
       
       const field = stepMap[step];
       if (!field) {
-        return res.status(400).json({ message: 'Invalid step', errors: [{ field: 'step', message: 'Step must be one of: welcome, company, accounts, invoice, receipt, reports, ai, reminders' }] });
+        return res.status(400).json({ message: 'Invalid step' });
       }
+      
+      const existingOnboarding = await storage.getUserOnboarding(userId);
+      if (!existingOnboarding) {
+        return res.status(404).json({ message: 'Onboarding not found' });
+      }
+      
+      const updatedData = {
+        ...existingOnboarding,
+        [field]: true,
+      };
+      
+      let currentStep = 0;
+      if (updatedData.hasCompletedWelcome) currentStep++;
+      if (updatedData.hasCreatedCompany) currentStep++;
+      if (updatedData.hasSetupChartOfAccounts) currentStep++;
+      if (updatedData.hasCreatedFirstInvoice) currentStep++;
+      if (updatedData.hasUploadedFirstReceipt) currentStep++;
+      if (updatedData.hasViewedReports) currentStep++;
+      if (updatedData.hasExploredAI) currentStep++;
+      if (updatedData.hasConfiguredReminders) currentStep++;
+      
+      const isComplete = currentStep >= 8;
       
       const onboarding = await storage.updateUserOnboarding(userId, {
         [field]: true,
+        currentStep,
+        isOnboardingComplete: isComplete,
+        completedAt: isComplete ? new Date() : undefined,
       });
       
       res.json(onboarding);

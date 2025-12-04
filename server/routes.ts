@@ -232,9 +232,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } as any);
 
       // Auto-create a default company for this user (marked as 'customer' type)
+      // Add timestamp to ensure uniqueness if user re-registers
+      const timestamp = Date.now().toString(36);
       const companyName = `${validated.name}'s Company`;
+      const uniqueCompanyName = `${companyName} (${timestamp})`;
       const company = await storage.createCompany({
-        name: companyName,
+        name: uniqueCompanyName,
         baseCurrency: 'AED',
         locale: 'en',
         companyType: 'customer', // Self-signup companies are customer type (not managed by NR)
