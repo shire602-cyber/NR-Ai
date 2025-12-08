@@ -29,17 +29,17 @@ import * as googleSheets from "./integrations/googleSheets";
 const JWT_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 const JWT_EXPIRES_IN = "24h";
 
-// Initialize AI client using OpenRouter with ultra-cheap Llama 3.2 model
-// This uses Replit's AI Integrations service, which provides OpenRouter-compatible API access without requiring your own API key.
+// LOCAL DEVELOPMENT VERSION - Uses OpenAI directly (GPT-3.5 or GPT-4)
+// Add OPENAI_API_KEY to your .env file to use this
 const openai = new OpenAI({
-  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
-  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Llama 3.2 3B - Absolute cheapest AI model available (~20x cheaper than DeepSeek)
-// Pricing: $0.06 input / $0.08 output per 1M tokens (vs DeepSeek's $0.56/$1.10)
-// Using 3B version for better quality while staying ultra-cheap
-const AI_MODEL = "meta-llama/llama-3.2-3b-instruct";
+// Choose your model:
+// - "gpt-3.5-turbo" = Cheaper, faster, good for most tasks (~$0.50-$1.50 per 1M tokens)
+// - "gpt-4" = More capable, slower, better for complex tasks (~$30-$60 per 1M tokens)
+// - "gpt-4-turbo" = Balance of capability and cost (~$10-$30 per 1M tokens)
+const AI_MODEL = "gpt-3.5-turbo";
 
 // Authentication middleware
 async function authMiddleware(req: Request, res: Response, next: Function) {
@@ -182,22 +182,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Health Check Route
   // =====================================
   
-  app.get("/health", async (req: Request, res: Response) => {
+  app.get("/health", async (_req: Request, res: Response) => {
     try {
-      // Test database connection
-      await storage.getUsers();
+      // Test database connection by attempting a simple query
+      // This will throw if database is unavailable
+      await storage.getUserByEmail('health-check@test.com');
       
+      // If we reach here, database connection is working
+      
+      // All services are healthy
       res.status(200).json({
+        status: "ok",
         ok: true,
         timestamp: new Date().toISOString(),
-        database: 'connected',
-        ai: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY ? 'configured' : 'not_configured'
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || "development",
+        services: {
+          database: "connected",
+          openai: process.env.OPENAI_API_KEY ? "configured" : "not configured",
+        },
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Database connection failed - service unavailable
       res.status(503).json({
+        status: "error",
         ok: false,
         timestamp: new Date().toISOString(),
-        error: 'Service unavailable'
+        uptime: process.uptime(),
+        environment: process.env.NODE_ENV || "development",
+        services: {
+          database: "disconnected",
+          openai: process.env.OPENAI_API_KEY ? "configured" : "not configured",
+        },
+        error: error.message || "Service unavailable",
       });
     }
   });
@@ -3083,12 +3100,25 @@ RULES:
 - Format numbers properly with thousand separators
 - For date ranges, interpret "this month" as current calendar month, "last month" as previous calendar month, "this year" as current calendar year
 - When suggesting actions, explain what the user should do but don't claim to have done it
+- IMPORTANT: When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact NR Accounting Services at +971507042270 for personalized professional assistance
 
 RESPONSE FORMAT:
 Respond naturally in conversational language. Include:
 1. Direct answer to the question
 2. Relevant context or insights if helpful
 3. Suggestions for follow-up questions or actions if appropriate
+4. When professional advice is needed, suggest contacting NR Accounting Services at +971507042270
+
+PROFESSIONAL ADVICE GUIDANCE:
+Whenever a user asks about:
+- Complex tax matters or tax planning
+- Legal compliance issues
+- Advanced financial strategies
+- Business structure advice
+- Professional accounting services
+- Or any topic requiring expert consultation
+
+Always conclude with: "For personalized professional advice on this matter, I recommend contacting NR Accounting Services at +971507042270. They can provide expert guidance tailored to your specific situation."
 
 Current date: ${new Date().toISOString().split('T')[0]}
 Company: ${company.name}`;
@@ -3140,6 +3170,258 @@ Company: ${company.name}`;
     } catch (error: any) {
       console.error('NL Gateway error:', error);
       res.status(500).json({ message: error.message || 'Failed to process query' });
+    }
+  });
+
+  // Enhanced /api/ask endpoint with streaming support
+  app.post("/api/ask", authMiddleware, async (req: Request, res: Response) => {
+    const startTime = Date.now();
+    let fullResponse = '';
+    let conversationId: string | undefined;
+    let isStreaming = false; // Track if we're in streaming mode (headers sent)
+    
+    try {
+      const userId = (req as any).user.id;
+
+      // Validate input with Zod schema
+      const validationSchema = z.object({
+        message: z.string().min(1, 'Message is required').max(10000, 'Message is too long'),
+        companyId: z.string().uuid('Invalid company ID format').optional(),
+        model: z.enum(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo']).optional().default('gpt-3.5-turbo'),
+        systemPrompt: z.string().max(2000, 'System prompt too long').optional(),
+        stream: z.boolean().optional().default(false),
+      });
+
+      const validated = validationSchema.parse(req.body);
+
+      // If companyId is provided, verify access
+      if (validated.companyId) {
+        const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+      }
+
+      // Check if OpenAI API key is configured
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(500).json({ message: 'OpenAI API key is not configured' });
+      }
+
+      const systemPrompt = validated.systemPrompt || 
+        `You are a helpful AI assistant for accounting and financial management. Provide clear, accurate, and professional responses.
+
+IMPORTANT GUIDELINES:
+- When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact NR Accounting Services at +971507042270 for personalized professional assistance.
+- For complex tax matters, legal compliance, advanced financial strategies, business structure advice, or any topic requiring expert consultation, always suggest: "For personalized professional advice on this matter, I recommend contacting NR Accounting Services at +971507042270. They can provide expert guidance tailored to your specific situation."`;
+
+      // Setup streaming if requested
+      if (validated.stream) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+        isStreaming = true; // Mark that headers are committed
+
+        try {
+          const stream = await openai.chat.completions.create({
+            model: validated.model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: validated.message }
+            ],
+            temperature: 0.7,
+            max_tokens: 2000,
+            stream: true,
+          });
+
+          // Stream the response
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || '';
+            if (content) {
+              fullResponse += content;
+              res.write(`data: ${JSON.stringify({ content, done: false })}\n\n`);
+            }
+          }
+        } catch (streamError: any) {
+          // Error occurred during streaming - headers already sent, must use SSE format
+          console.error('/api/ask streaming error:', streamError);
+          
+          // Send error as SSE message
+          const errorMessage = streamError.message || 'An error occurred while streaming the response';
+          res.write(`data: ${JSON.stringify({ 
+            error: true, 
+            message: errorMessage,
+            done: true 
+          })}\n\n`);
+          res.end();
+          
+          // Store error conversation
+          try {
+            await storage.createAiConversation({
+              userId,
+              companyId: validated.companyId || null,
+              prompt: validated.message,
+              response: fullResponse || 'Error: ' + errorMessage,
+              model: validated.model,
+              systemPrompt: validated.systemPrompt || null,
+              responseTime: Date.now() - startTime,
+              error: errorMessage,
+            });
+          } catch (dbError) {
+            console.error('Failed to store error conversation:', dbError);
+          }
+          
+          return; // Exit early, response already sent
+        }
+
+        // Store conversation BEFORE sending completion signal to avoid race condition
+        // The client will refetch history when it receives done: true, so we need the
+        // conversation to already be in the database at that point
+        const responseTime = Date.now() - startTime;
+        try {
+          await storage.createAiConversation({
+            userId,
+            companyId: validated.companyId || null,
+            prompt: validated.message,
+            response: fullResponse,
+            model: validated.model,
+            systemPrompt: validated.systemPrompt || null,
+            responseTime,
+          });
+        } catch (dbError) {
+          console.error('Failed to store conversation:', dbError);
+          // Continue even if storage fails - still send completion signal
+        }
+
+        // Send completion signal after database storage completes
+        res.write(`data: ${JSON.stringify({ content: '', done: true })}\n\n`);
+        res.end();
+      } else {
+        // Non-streaming response
+        const response = await openai.chat.completions.create({
+          model: validated.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: validated.message }
+          ],
+          temperature: 0.7,
+          max_tokens: 2000,
+        });
+
+        const assistantMessage = response.choices[0]?.message?.content || 'I could not process your request.';
+        const responseTime = Date.now() - startTime;
+        const tokensUsed = response.usage?.total_tokens;
+
+        // Store conversation
+        const conversation = await storage.createAiConversation({
+          userId,
+          companyId: validated.companyId || null,
+          prompt: validated.message,
+          response: assistantMessage,
+          model: validated.model,
+          systemPrompt: validated.systemPrompt || null,
+          responseTime,
+          tokensUsed: tokensUsed || null,
+        });
+        conversationId = conversation.id;
+
+        res.json({
+          response: assistantMessage,
+          model: validated.model,
+          timestamp: new Date().toISOString(),
+          conversationId,
+          tokensUsed,
+          responseTime,
+        });
+      }
+    } catch (error: any) {
+      console.error('/api/ask error:', error);
+      
+      // Check if headers have already been sent (streaming mode)
+      // If headers are committed, we cannot send JSON responses - must use SSE format
+      if (isStreaming || res.headersSent) {
+        // Headers already committed - send error as SSE message
+        const errorMessage = error.message || 'Failed to process request';
+        try {
+          res.write(`data: ${JSON.stringify({ 
+            error: true, 
+            message: errorMessage,
+            done: true 
+          })}\n\n`);
+          res.end();
+        } catch (writeError) {
+          // Response already ended or connection closed - log but don't throw
+          console.error('Failed to send SSE error message:', writeError);
+        }
+        
+        // Store error conversation if we have partial data
+        // Use optional chaining since validated might not exist if error occurred early
+        try {
+          const userId = (req as any).user?.id;
+          if (userId) {
+            await storage.createAiConversation({
+              userId,
+              companyId: (validated as any)?.companyId || null,
+              prompt: (validated as any)?.message || 'Unknown',
+              response: fullResponse || 'Error: ' + errorMessage,
+              model: (validated as any)?.model || 'gpt-3.5-turbo',
+              systemPrompt: (validated as any)?.systemPrompt || null,
+              responseTime: Date.now() - startTime,
+              error: errorMessage,
+            });
+          }
+        } catch (dbError) {
+          console.error('Failed to store error conversation:', dbError);
+        }
+        return; // Exit early, response already sent
+      }
+      
+      // Headers not sent yet - can send normal JSON response
+      // Handle Zod validation errors
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ 
+          message: 'Validation error', 
+          errors: error.errors.map(e => ({ path: e.path.join('.'), message: e.message }))
+        });
+      }
+
+      // Handle OpenAI API errors
+      if (error.status) {
+        const statusCode = error.status >= 400 && error.status < 600 ? error.status : 500;
+        return res.status(statusCode).json({ 
+          message: error.message || 'OpenAI API error',
+          error: error.error?.message || error.message,
+        });
+      }
+      
+      res.status(500).json({ message: error.message || 'Failed to process request' });
+    }
+  });
+
+  // Get conversation history
+  app.get("/api/ask/history", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user.id;
+      const { companyId } = req.query;
+      // Validate and parse limit parameter with fallback, matching pattern used elsewhere
+      const limit = parseInt(req.query.limit as string) || 50;
+
+      let conversations;
+      if (companyId && typeof companyId === 'string') {
+        // Verify access
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: 'Access denied' });
+        }
+        conversations = await storage.getAiConversationsByCompanyId(companyId, limit);
+      } else {
+        conversations = await storage.getAiConversationsByUserId(userId, limit);
+      }
+
+      res.json(conversations);
+    } catch (error: any) {
+      console.error('/api/ask/history error:', error);
+      res.status(500).json({ message: error.message || 'Failed to fetch history' });
     }
   });
 
@@ -4405,24 +4687,41 @@ Respond with just the category name, nothing else.`;
 
   // WhatsApp Webhook Verification (GET) - For Meta webhook setup
   app.get("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
+    try {
+      const mode = req.query['hub.mode'];
+      const token = req.query['hub.verify_token'];
+      const challenge = req.query['hub.challenge'];
 
-    // For initial setup, we accept any verification token
-    // In production, this should validate against stored webhook_verify_token
-    if (mode === 'subscribe') {
-      console.log('WhatsApp webhook verified');
-      return res.status(200).send(challenge);
+      console.log('[WhatsApp Webhook] Verification request:', { mode, token: token ? '***' : 'missing', challenge: challenge ? 'present' : 'missing' });
+
+      if (mode === 'subscribe') {
+        // Try to validate token against stored configs
+        // For now, accept any token for initial setup, but log it
+        console.log('[WhatsApp Webhook] Webhook verified successfully');
+        return res.status(200).send(challenge);
+      }
+
+      console.log('[WhatsApp Webhook] Verification failed: invalid mode');
+      res.status(403).json({ message: 'Forbidden' });
+    } catch (error: any) {
+      console.error('[WhatsApp Webhook] Verification error:', error);
+      res.status(500).json({ message: 'Internal server error' });
     }
-
-    res.status(403).json({ message: 'Forbidden' });
   });
 
   // WhatsApp Webhook (POST) - Receive messages
   app.post("/api/webhooks/whatsapp", async (req: Request, res: Response) => {
     try {
       const body = req.body;
+
+      console.log('[WhatsApp Webhook] Received webhook:', {
+        object: body.object,
+        entryCount: body.entry?.length || 0,
+        timestamp: new Date().toISOString(),
+      });
+      
+      // Log full webhook payload for debugging (first 1000 chars)
+      console.log('[WhatsApp Webhook] Full payload:', JSON.stringify(body).substring(0, 1000));
 
       // Acknowledge receipt immediately (WhatsApp requires quick response)
       res.status(200).send('EVENT_RECEIVED');
@@ -4435,15 +4734,22 @@ Respond with just the category name, nothing else.`;
               const value = change.value;
               const messages = value.messages || [];
               
+              console.log(`[WhatsApp Webhook] Processing ${messages.length} message(s)`);
+              
               for (const message of messages) {
                 await processWhatsAppMessage(message, value.metadata);
               }
+            } else {
+              console.log(`[WhatsApp Webhook] Ignoring change field: ${change.field}`);
             }
           }
         }
+      } else {
+        console.log(`[WhatsApp Webhook] Unknown object type: ${body.object}`);
       }
-    } catch (error) {
-      console.error('WhatsApp webhook error:', error);
+    } catch (error: any) {
+      console.error('[WhatsApp Webhook] Error:', error);
+      console.error('[WhatsApp Webhook] Error stack:', error.stack);
       // Still return 200 to prevent retries
       res.status(200).send('ERROR_LOGGED');
     }
@@ -4452,32 +4758,66 @@ Respond with just the category name, nothing else.`;
   // Process incoming WhatsApp message
   async function processWhatsAppMessage(message: any, metadata: any) {
     try {
+      console.log('[WhatsApp Webhook] Processing message:', {
+        messageId: message.id,
+        from: message.from,
+        type: message.type,
+        hasText: !!message.text?.body,
+        metadata: metadata ? {
+          phone_number_id: metadata.phone_number_id,
+          display_phone_number: metadata.display_phone_number,
+        } : 'missing',
+      });
+
       const phoneNumberId = metadata?.phone_number_id;
       
+      if (!phoneNumberId) {
+        console.error('[WhatsApp Webhook] Missing phone_number_id in metadata. Full metadata:', JSON.stringify(metadata));
+        console.error('[WhatsApp Webhook] Available metadata keys:', metadata ? Object.keys(metadata) : 'metadata is null/undefined');
+        return;
+      }
+
       // Find company by phone number ID
-      // For now, we'll use a simple approach - in production, map phone numbers to companies
+      const config = await storage.getWhatsappConfigByPhoneNumberId(phoneNumberId);
+      if (!config) {
+        console.error(`[WhatsApp Webhook] No configuration found for phone number ID: ${phoneNumberId}`);
+        console.error('[WhatsApp Webhook] Available phone number IDs in database:', 'Check database for configured phone numbers');
+        return;
+      }
+
+      console.log('[WhatsApp Webhook] Found config for company:', config.companyId);
+
       const messageData = {
+        companyId: config.companyId,
         waMessageId: message.id,
         from: message.from,
         to: phoneNumberId,
-        messageType: message.type,
-        content: message.text?.body || null,
-        mediaId: message.image?.id || message.document?.id || null,
+        messageType: message.type || 'text',
+        content: message.text?.body || message.caption || null,
+        mediaId: message.image?.id || message.document?.id || message.video?.id || message.audio?.id || null,
         direction: 'inbound' as const,
         status: 'received' as const,
       };
 
-      console.log('Received WhatsApp message:', messageData);
+      console.log('Received WhatsApp message:', {
+        from: messageData.from,
+        type: messageData.messageType,
+        hasContent: !!messageData.content,
+        companyId: messageData.companyId,
+      });
+      
+      // Save the message to database
+      await storage.createWhatsappMessage(messageData);
       
       // TODO: In full implementation:
-      // 1. Look up company by phone number ID
-      // 2. Download media if present
-      // 3. Run OCR on images
-      // 4. Use AI to categorize expenses
-      // 5. Create receipt/expense entry
+      // 1. Download media if present
+      // 2. Run OCR on images
+      // 3. Use AI to categorize expenses
+      // 4. Create receipt/expense entry
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error processing WhatsApp message:', error);
+      console.error('Error details:', error.message, error.stack);
     }
   }
 
@@ -4620,6 +4960,245 @@ Respond with just the category name, nothing else.`;
     }
   });
 
+  // Send custom WhatsApp message
+  app.post("/api/integrations/whatsapp/send-message", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { to, message } = req.body;
+      if (!to || !message) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Phone number and message are required',
+          hint: 'Phone number should be in international format without + sign (e.g., 971501234567)'
+        });
+      }
+
+      // Validate phone number format
+      const phoneValidation = formatPhoneNumber(to);
+      if (!phoneValidation.valid) {
+        return res.status(400).json({ 
+          success: false,
+          error: phoneValidation.error || 'Invalid phone number format'
+        });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+
+      const companyId = companies[0].id;
+      const whatsappConfig = await storage.getWhatsappConfig(companyId);
+      if (!whatsappConfig || !whatsappConfig.isActive || !whatsappConfig.phoneNumberId || !whatsappConfig.accessToken) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'WhatsApp configuration is missing or inactive. Please configure WhatsApp in Admin Settings.' 
+        });
+      }
+
+      const result = await sendWhatsAppMessage(
+        whatsappConfig.phoneNumberId,
+        whatsappConfig.accessToken,
+        phoneValidation.formatted,
+        message
+      );
+
+      if (result.success) {
+        // Log the message
+        try {
+          await storage.createWhatsappMessage({
+            companyId,
+            waMessageId: result.messageId || 'unknown',
+            from: whatsappConfig.phoneNumberId,
+            to: phoneValidation.formatted,
+            messageType: 'text',
+            content: message,
+            direction: 'outbound',
+            status: 'sent',
+          });
+        } catch (logError: any) {
+          console.error('Failed to log WhatsApp message:', logError);
+          // Don't fail the request if logging fails
+        }
+
+        return res.json({ success: true, messageId: result.messageId });
+      } else {
+        return res.status(400).json({ success: false, error: result.error || 'Failed to send WhatsApp message' });
+      }
+    } catch (error: any) {
+      console.error('Error in send-message endpoint:', error);
+      // Ensure we always return JSON, never HTML
+      const errorMessage = error.message || 'Internal server error';
+      return res.status(500).json({ 
+        success: false,
+        error: errorMessage.includes('<!DOCTYPE') || errorMessage.includes('<html') 
+          ? 'Server error occurred. Please try again.' 
+          : errorMessage 
+      });
+    }
+  });
+
+  // Reply to WhatsApp message
+  app.post("/api/integrations/whatsapp/reply", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const { messageId, reply } = req.body;
+      if (!messageId || !reply) {
+        return res.status(400).json({ message: 'Message ID and reply are required' });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+
+      const companyId = companies[0].id;
+      const originalMessage = await storage.getWhatsappMessage(messageId);
+      if (!originalMessage || originalMessage.companyId !== companyId) {
+        return res.status(404).json({ message: 'Message not found' });
+      }
+
+      const whatsappConfig = await storage.getWhatsappConfig(companyId);
+      if (!whatsappConfig || !whatsappConfig.isActive || !whatsappConfig.phoneNumberId || !whatsappConfig.accessToken) {
+        return res.status(400).json({ message: 'WhatsApp configuration is missing or inactive' });
+      }
+
+      // Validate phone number format from original message
+      const phoneValidation = formatPhoneNumber(originalMessage.from);
+      if (!phoneValidation.valid) {
+        return res.status(400).json({ 
+          success: false,
+          error: phoneValidation.error || 'Invalid phone number format in original message'
+        });
+      }
+
+      const result = await sendWhatsAppMessage(
+        whatsappConfig.phoneNumberId,
+        whatsappConfig.accessToken,
+        phoneValidation.formatted,
+        reply
+      );
+
+      if (result.success) {
+        // Log the reply
+        try {
+          await storage.createWhatsappMessage({
+            companyId,
+            waMessageId: result.messageId || 'unknown',
+            from: whatsappConfig.phoneNumberId,
+            to: originalMessage.from,
+            messageType: 'text',
+            content: reply,
+            direction: 'outbound',
+            status: 'sent',
+          });
+        } catch (logError: any) {
+          console.error('Failed to log WhatsApp reply:', logError);
+          // Don't fail the request if logging fails
+        }
+
+        return res.json({ success: true, messageId: result.messageId });
+      } else {
+        return res.status(400).json({ success: false, error: result.error || 'Failed to send WhatsApp reply' });
+      }
+    } catch (error: any) {
+      console.error('Error in reply endpoint:', error);
+      const errorMessage = error.message || 'Internal server error';
+      return res.status(500).json({ 
+        success: false,
+        error: errorMessage.includes('<!DOCTYPE') || errorMessage.includes('<html') 
+          ? 'Server error occurred. Please try again.' 
+          : errorMessage 
+      });
+    }
+  });
+
+  // Test WhatsApp configuration
+  app.post("/api/integrations/whatsapp/test", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+
+      const companyId = companies[0].id;
+      const whatsappConfig = await storage.getWhatsappConfig(companyId);
+      if (!whatsappConfig || !whatsappConfig.isActive || !whatsappConfig.phoneNumberId || !whatsappConfig.accessToken) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'WhatsApp configuration is missing or inactive. Please configure WhatsApp in Admin Settings.' 
+        });
+      }
+
+      // Get test phone number from request body, or return error
+      const { testPhoneNumber } = req.body;
+      if (!testPhoneNumber) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Test phone number is required. Please provide a phone number in international format (e.g., 971501234567)',
+          hint: 'You can test by sending to your own WhatsApp number. Use international format without + sign.'
+        });
+      }
+
+      // Validate phone number format
+      const phoneValidation = formatPhoneNumber(testPhoneNumber);
+      if (!phoneValidation.valid) {
+        return res.status(400).json({ 
+          success: false,
+          error: phoneValidation.error || 'Invalid phone number format',
+          hint: 'Use international format without + sign (e.g., 971501234567)'
+        });
+      }
+
+      const testMessage = 'Test message from Muhasib.ai - If you receive this, your WhatsApp integration is working!';
+      
+      console.log(`[WhatsApp Test] Sending test message to ${phoneValidation.formatted}`);
+      
+      const result = await sendWhatsAppMessage(
+        whatsappConfig.phoneNumberId,
+        whatsappConfig.accessToken,
+        phoneValidation.formatted,
+        testMessage
+      );
+
+      if (result.success) {
+        return res.json({ 
+          success: true, 
+          message: 'WhatsApp configuration is valid and working. Test message sent successfully!',
+          messageId: result.messageId,
+          sentTo: phoneValidation.formatted
+        });
+      } else {
+        return res.status(400).json({ 
+          success: false, 
+          error: result.error || 'Failed to send test message',
+          errorCode: result.errorCode,
+          errorType: result.errorType,
+          details: 'Common issues: 1) Phone number not registered with Meta, 2) Invalid Access Token, 3) Phone Number ID mismatch, 4) Account not approved for sending messages'
+        });
+      }
+    } catch (error: any) {
+      console.error('Error in WhatsApp test endpoint:', error);
+      return res.status(500).json({ 
+        success: false,
+        error: error.message || 'Internal server error' 
+      });
+    }
+  });
+
   // Get WhatsApp integration status (for dashboard)
   app.get("/api/integrations/whatsapp/status", authMiddleware, async (req: Request, res: Response) => {
     try {
@@ -4647,6 +5226,125 @@ Respond with just the category name, nothing else.`;
       });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  // WhatsApp Diagnostic Endpoint - Comprehensive troubleshooting
+  app.get("/api/integrations/whatsapp/diagnose", authMiddleware, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) {
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.json({
+          configured: false,
+          issues: ['No company found'],
+          recommendations: ['Please create a company first']
+        });
+      }
+
+      const companyId = companies[0].id;
+      const config = await storage.getWhatsappConfig(companyId);
+
+      const diagnostics: any = {
+        configured: !!config,
+        isActive: config?.isActive || false,
+        hasPhoneNumberId: !!config?.phoneNumberId,
+        hasAccessToken: !!config?.accessToken,
+        phoneNumberId: config?.phoneNumberId || 'Not set',
+        hasBusinessAccountId: !!config?.businessAccountId,
+        issues: [] as string[],
+        recommendations: [] as string[],
+        webhookUrl: `${req.protocol}://${req.get('host')}/api/webhooks/whatsapp`,
+      };
+
+      // Check configuration completeness
+      if (!config) {
+        diagnostics.issues.push('WhatsApp configuration not found');
+        diagnostics.recommendations.push('Go to Admin Settings and configure WhatsApp');
+        return res.json(diagnostics);
+      }
+
+      if (!config.phoneNumberId) {
+        diagnostics.issues.push('Phone Number ID is missing');
+        diagnostics.recommendations.push('Add your Phone Number ID from Meta Business Manager');
+      }
+
+      if (!config.accessToken) {
+        diagnostics.issues.push('Access Token is missing');
+        diagnostics.recommendations.push('Add your Access Token from Meta Business Manager');
+      }
+
+      if (!config.isActive) {
+        diagnostics.issues.push('WhatsApp integration is inactive');
+        diagnostics.recommendations.push('Enable the WhatsApp integration in Admin Settings');
+      }
+
+      // Test API connectivity if we have credentials
+      if (config.phoneNumberId && config.accessToken && config.isActive) {
+        try {
+          // Try to get phone number info from Meta API
+          const testResponse = await fetch(`https://graph.facebook.com/v21.0/${config.phoneNumberId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${config.accessToken}`,
+            },
+          });
+
+          if (testResponse.ok) {
+            const phoneInfo = await testResponse.json();
+            diagnostics.phoneNumberInfo = {
+              verifiedName: phoneInfo.verified_name,
+              displayPhoneNumber: phoneInfo.display_phone_number,
+              qualityRating: phoneInfo.quality_rating,
+            };
+            diagnostics.apiConnection = 'Connected';
+          } else {
+            const errorData = await testResponse.json().catch(() => ({}));
+            diagnostics.apiConnection = 'Failed';
+            diagnostics.apiError = errorData.error?.message || `HTTP ${testResponse.status}`;
+            diagnostics.issues.push(`API connection failed: ${diagnostics.apiError}`);
+            
+            if (testResponse.status === 401) {
+              diagnostics.recommendations.push('Access Token may be expired or invalid. Generate a new token in Meta Business Manager');
+            } else if (testResponse.status === 404) {
+              diagnostics.recommendations.push('Phone Number ID not found. Verify it matches your Meta Business Manager');
+            }
+          }
+        } catch (apiError: any) {
+          diagnostics.apiConnection = 'Error';
+          diagnostics.apiError = apiError.message;
+          diagnostics.issues.push(`API test failed: ${apiError.message}`);
+        }
+      }
+
+      // Webhook configuration recommendations
+      diagnostics.webhookSetup = {
+        url: diagnostics.webhookUrl,
+        verifyToken: config.webhookVerifyToken ? 'Set' : 'Not set',
+        instructions: [
+          '1. Go to Meta Business Manager > WhatsApp > Configuration',
+          '2. Add Webhook URL: ' + diagnostics.webhookUrl,
+          `3. Set Verify Token: ${config.webhookVerifyToken || 'any-value-you-want'}`,
+          '4. Subscribe to "messages" field',
+          '5. Save and verify the webhook'
+        ]
+      };
+
+      if (!config.webhookVerifyToken) {
+        diagnostics.recommendations.push('Set a webhook verify token for better security');
+      }
+
+      return res.json(diagnostics);
+    } catch (error: any) {
+      console.error('Error in WhatsApp diagnose endpoint:', error);
+      return res.status(500).json({ 
+        error: error.message || 'Internal server error',
+        issues: ['Failed to run diagnostics']
+      });
     }
   });
 
@@ -5367,8 +6065,11 @@ Respond with just the category name, nothing else.`;
         sendEmail: z.boolean().optional(),
         sendSms: z.boolean().optional(),
         sendInApp: z.boolean().optional(),
+        sendWhatsapp: z.boolean().optional(),
         emailSubject: z.string().max(200).optional(),
         emailTemplate: z.string().max(5000).optional(),
+        smsTemplate: z.string().max(5000).optional(),
+        whatsappTemplate: z.string().max(5000).optional(),
       });
       
       const validated = validationSchema.parse(req.body);
@@ -5415,11 +6116,128 @@ Respond with just the category name, nothing else.`;
     }
   });
 
+  // Helper function to send WhatsApp message via Meta API
+  // Helper function to validate and format phone numbers for WhatsApp
+  function formatPhoneNumber(phone: string): { valid: boolean; formatted: string; error?: string } {
+    // Remove all non-digit characters except leading +
+    let cleaned = phone.trim().replace(/[^\d+]/g, '');
+    
+    // Remove leading + if present
+    cleaned = cleaned.replace(/^\+/, '');
+    
+    // Remove any remaining non-digit characters
+    cleaned = cleaned.replace(/\D/g, '');
+    
+    // Validate length (international numbers are typically 7-15 digits)
+    if (cleaned.length < 7 || cleaned.length > 15) {
+      return {
+        valid: false,
+        formatted: cleaned,
+        error: `Phone number must be 7-15 digits (got ${cleaned.length}). Please use international format without + (e.g., 971501234567)`
+      };
+    }
+    
+    // Check if it starts with 0 (local format - not valid for WhatsApp)
+    if (cleaned.startsWith('0')) {
+      return {
+        valid: false,
+        formatted: cleaned,
+        error: 'Phone number cannot start with 0. Please use international format (e.g., 971501234567)'
+      };
+    }
+    
+    return { valid: true, formatted: cleaned };
+  }
+
+  async function sendWhatsAppMessage(phoneNumberId: string, accessToken: string, to: string, message: string): Promise<{ success: boolean; messageId?: string; error?: string; errorCode?: string; errorType?: string }> {
+    try {
+      // Validate and format phone number
+      const phoneValidation = formatPhoneNumber(to);
+      if (!phoneValidation.valid) {
+        return {
+          success: false,
+          error: phoneValidation.error || 'Invalid phone number format'
+        };
+      }
+      
+      const formattedTo = phoneValidation.formatted;
+      
+      console.log(`[WhatsApp] Attempting to send message to ${formattedTo} via phone number ID ${phoneNumberId}`);
+      
+      const requestBody = {
+        messaging_product: 'whatsapp',
+        to: formattedTo,
+        type: 'text',
+        text: {
+          body: message,
+        },
+      };
+      
+      // Use latest stable API version (v21.0 as of 2024)
+      // v18.0 may be deprecated, updating to v21.0 for better compatibility
+      const response = await fetch(`https://graph.facebook.com/v21.0/${phoneNumberId}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      console.log(`[WhatsApp] API Response status: ${response.status} ${response.statusText}`);
+
+      // Check content type before parsing JSON
+      const contentType = response.headers.get('content-type');
+      let data: any;
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await response.json();
+        console.log('[WhatsApp] API Response data:', JSON.stringify(data).substring(0, 500));
+      } else {
+        // If not JSON, read as text to get error message
+        const text = await response.text();
+        console.error('[WhatsApp] API returned non-JSON response:', text.substring(0, 500));
+        return { 
+          success: false, 
+          error: `WhatsApp API error (${response.status}): ${response.statusText}. Response: ${text.substring(0, 200)}` 
+        };
+      }
+      
+      if (response.ok && data.messages && data.messages[0]) {
+        console.log(`[WhatsApp] Message sent successfully. Message ID: ${data.messages[0].id}`);
+        return { success: true, messageId: data.messages[0].id };
+      } else {
+        const errorDetails = data.error || {};
+        const errorMessage = errorDetails.message || 
+                           errorDetails.error_user_msg || 
+                           errorDetails.error_subcode || 
+                           JSON.stringify(errorDetails) ||
+                           'Failed to send WhatsApp message';
+        console.error('[WhatsApp] API Error:', JSON.stringify(errorDetails));
+        console.error('[WhatsApp] Error Code:', errorDetails.code, 'Type:', errorDetails.type);
+        return { 
+          success: false, 
+          error: errorMessage,
+        };
+      }
+    } catch (error: any) {
+      console.error('[WhatsApp] Send error:', error);
+      console.error('[WhatsApp] Error stack:', error.stack);
+      // Ensure error message doesn't contain HTML
+      let errorMessage = error.message || 'Failed to send WhatsApp message';
+      if (errorMessage.includes('<!DOCTYPE') || errorMessage.includes('<html')) {
+        errorMessage = 'Failed to send WhatsApp message. Please check your configuration and try again.';
+      }
+      return { success: false, error: errorMessage };
+    }
+  }
+
   // Send manual reminder
   app.post("/api/invoices/:invoiceId/send-reminder", authMiddleware, async (req: Request, res: Response) => {
     try {
       const { invoiceId } = req.params;
       const userId = (req as any).user?.id;
+      const { channels = ['in_app'] } = req.body; // Default to in-app only
       
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
@@ -5431,32 +6249,163 @@ Respond with just the category name, nothing else.`;
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Create in-app notification for the reminder
-      await storage.createNotification({
-        userId,
-        companyId: invoice.companyId,
-        type: 'payment_due',
-        title: 'Payment Reminder Sent',
-        message: `Reminder sent for invoice ${invoice.number} to ${invoice.customerName}`,
-        priority: 'normal',
-        relatedEntityType: 'invoice',
-        relatedEntityId: invoiceId,
-        actionUrl: `/invoices/${invoiceId}`,
-      });
-
-      // Log the reminder
-      const log = await storage.createReminderLog({
-        companyId: invoice.companyId,
-        reminderType: 'invoice_overdue',
-        relatedEntityType: 'invoice',
-        relatedEntityId: invoiceId,
-        channel: 'in_app',
-        status: 'sent',
-        attemptNumber: 1,
-        sentAt: new Date(),
-      });
+      // Get reminder settings for this company
+      const reminderSettings = await storage.getReminderSettingsByCompanyId(invoice.companyId);
+      const invoiceReminderSetting = reminderSettings.find(s => s.reminderType === 'invoice_overdue' || s.reminderType === 'invoice_due_soon');
       
-      res.json({ message: 'Reminder sent successfully', log });
+      const logs: any[] = [];
+
+      // Send WhatsApp if enabled
+      if (channels.includes('whatsapp') || invoiceReminderSetting?.sendWhatsapp) {
+        const whatsappConfig = await storage.getWhatsappConfig(invoice.companyId);
+        const reminderType = invoiceReminderSetting?.reminderType || 'invoice_overdue';
+        
+        // Track if WhatsApp was explicitly requested
+        const whatsappExplicitlyRequested = channels.includes('whatsapp');
+        let whatsappFailed = false;
+        let whatsappError = '';
+        
+        if (!whatsappConfig || !whatsappConfig.isActive || !whatsappConfig.phoneNumberId || !whatsappConfig.accessToken) {
+          whatsappFailed = true;
+          whatsappError = 'WhatsApp configuration is missing or inactive';
+        } else {
+          // Get customer phone number from customer contacts
+          const customerContacts = await storage.getCustomerContactsByCompanyId(invoice.companyId);
+          const customerContact = customerContacts.find(c => c.name === invoice.customerName);
+          const customerPhone = customerContact?.phone;
+          
+          if (!customerPhone) {
+            whatsappFailed = true;
+            whatsappError = 'Customer phone number not found';
+          } else {
+            // Format message with template
+            // Calculate due date (invoice date + payment terms, default 30 days)
+            const invoiceDate = new Date(invoice.date);
+            const paymentTerms = customerContact?.paymentTerms || 30;
+            const dueDate = new Date(invoiceDate);
+            dueDate.setDate(dueDate.getDate() + paymentTerms);
+            
+            let message = invoiceReminderSetting?.whatsappTemplate || 
+              `Hello ${invoice.customerName || 'Customer'}, this is a reminder that invoice ${invoice.number} for AED ${invoice.total.toFixed(2)} is due on ${dueDate.toLocaleDateString()}. Please make payment at your earliest convenience.`;
+            
+            // Replace placeholders
+            message = message
+              .replace(/\{\{customer_name\}\}/g, invoice.customerName || 'Customer')
+              .replace(/\{\{invoice_number\}\}/g, invoice.number)
+              .replace(/\{\{amount\}\}/g, `AED ${invoice.total.toFixed(2)}`)
+              .replace(/\{\{due_date\}\}/g, dueDate.toLocaleDateString());
+            
+            // Validate phone number before sending
+            const phoneValidation = formatPhoneNumber(customerPhone);
+            if (!phoneValidation.valid) {
+              whatsappFailed = true;
+              whatsappError = phoneValidation.error || 'Invalid customer phone number format';
+            } else {
+              const whatsappResult = await sendWhatsAppMessage(
+                whatsappConfig.phoneNumberId,
+                whatsappConfig.accessToken,
+                phoneValidation.formatted,
+                message
+              );
+              
+              if (whatsappResult.success) {
+                // Log WhatsApp message
+                await storage.createWhatsappMessage({
+                  companyId: invoice.companyId,
+                  waMessageId: whatsappResult.messageId || 'unknown',
+                  from: whatsappConfig.phoneNumberId,
+                  to: phoneValidation.formatted,
+                  messageType: 'text',
+                  content: message,
+                  direction: 'outbound',
+                  status: 'sent',
+                });
+              
+                logs.push(await storage.createReminderLog({
+                  companyId: invoice.companyId,
+                  reminderType: reminderType,
+                  relatedEntityType: 'invoice',
+                  relatedEntityId: invoiceId,
+                  channel: 'whatsapp',
+                  status: 'sent',
+                  attemptNumber: 1,
+                  sentAt: new Date(),
+                }));
+              } else {
+                whatsappFailed = true;
+                whatsappError = whatsappResult.error || 'Failed to send WhatsApp message';
+              // Only log failure here if WhatsApp was explicitly requested
+              // Otherwise, the log will be created later for non-explicit failures
+              if (whatsappExplicitlyRequested) {
+                logs.push(await storage.createReminderLog({
+                  companyId: invoice.companyId,
+                  reminderType: reminderType,
+                  relatedEntityType: 'invoice',
+                  relatedEntityId: invoiceId,
+                  channel: 'whatsapp',
+                  status: 'failed',
+                  attemptNumber: 1,
+                  sentAt: new Date(),
+                  errorMessage: whatsappError,
+                }));
+              }
+              }
+            }
+          }
+        }
+        
+        // If WhatsApp was explicitly requested but failed, return error
+        if (whatsappExplicitlyRequested && whatsappFailed) {
+          return res.status(400).json({ 
+            message: `WhatsApp reminder failed: ${whatsappError}`,
+            logs 
+          });
+        }
+        
+        // Log failure even if not explicitly requested (for tracking)
+        if (!whatsappExplicitlyRequested && whatsappFailed) {
+          logs.push(await storage.createReminderLog({
+            companyId: invoice.companyId,
+            reminderType: reminderType,
+            relatedEntityType: 'invoice',
+            relatedEntityId: invoiceId,
+            channel: 'whatsapp',
+            status: 'failed',
+            attemptNumber: 1,
+            sentAt: new Date(),
+            errorMessage: whatsappError,
+          }));
+        }
+      }
+
+      // Create in-app notification for the reminder
+      if (channels.includes('in_app') || invoiceReminderSetting?.sendInApp) {
+        await storage.createNotification({
+          userId,
+          companyId: invoice.companyId,
+          type: 'payment_due',
+          title: 'Payment Reminder Sent',
+          message: `Reminder sent for invoice ${invoice.number} to ${invoice.customerName}`,
+          priority: 'normal',
+          relatedEntityType: 'invoice',
+          relatedEntityId: invoiceId,
+          actionUrl: `/invoices/${invoiceId}`,
+        });
+
+        const reminderType = invoiceReminderSetting?.reminderType || 'invoice_overdue';
+        logs.push(await storage.createReminderLog({
+          companyId: invoice.companyId,
+          reminderType: reminderType,
+          relatedEntityType: 'invoice',
+          relatedEntityId: invoiceId,
+          channel: 'in_app',
+          status: 'sent',
+          attemptNumber: 1,
+          sentAt: new Date(),
+        }));
+      }
+      
+      res.json({ message: 'Reminder sent successfully', logs });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

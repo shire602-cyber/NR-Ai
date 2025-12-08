@@ -12,6 +12,7 @@ import { useI18n } from '@/lib/i18n';
 import { getToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { User } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // Pages
 import NotFound from '@/pages/not-found';
@@ -26,6 +27,7 @@ import Journal from '@/pages/Journal';
 import JournalEntryDetail from '@/pages/JournalEntryDetail';
 import Reports from '@/pages/Reports';
 import AICFO from '@/pages/AICFO';
+import AIChat from '@/pages/AIChat';
 import Receipts from '@/pages/Receipts';
 import CustomerContacts from '@/pages/CustomerContacts';
 import Landing from '@/pages/Landing';
@@ -68,6 +70,7 @@ import BackupRestore from '@/pages/BackupRestore';
 import { OnboardingWizard } from '@/components/Onboarding';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
   const style = {
     '--sidebar-width': '16rem',
     '--sidebar-width-icon': '3rem',
@@ -78,17 +81,42 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
-          <header className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-10">
+          <motion.header 
+            className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-10"
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
             <SidebarTrigger data-testid="button-sidebar-toggle" />
+            </motion.div>
             <Link href="/company-profile">
-              <Button variant="ghost" size="sm" data-testid="button-profile">
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Button variant="ghost" size="sm" data-testid="button-profile" className="transition-all duration-200">
                 <User className="w-4 h-4 mr-2" />
                 Profile
               </Button>
+              </motion.div>
             </Link>
-          </header>
+          </motion.header>
           <main className="flex-1 overflow-auto p-8">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={location}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.3, ease: "easeOut" }}
+              >
             {children}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>
@@ -115,17 +143,39 @@ function Router() {
   
   // Landing page (public only)
   if (location === '/' && !token) {
-    return <Landing />;
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div
+          key="landing"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Landing />
+        </motion.div>
+      </AnimatePresence>
+    );
   }
   
   // Public routes (no sidebar)
   if (location === '/login' || location === '/register' || location === '/services') {
     return (
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={location}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.3 }}
+        >
       <Switch>
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
         <Route path="/services" component={Services} />
       </Switch>
+        </motion.div>
+      </AnimatePresence>
     );
   }
 
@@ -148,6 +198,7 @@ function Router() {
           <Route path="/ai-cfo" component={AICFO} />
           <Route path="/ai-features" component={AIFeatures} />
           <Route path="/smart-assistant" component={SmartAssistant} />
+          <Route path="/ai-chat" component={AIChat} />
           <Route path="/advanced-analytics" component={AdvancedAnalytics} />
           <Route path="/integrations" component={Integrations} />
           <Route path="/integrations-hub" component={IntegrationsHub} />

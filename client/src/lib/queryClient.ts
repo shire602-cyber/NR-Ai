@@ -4,8 +4,26 @@ import { apiUrl } from "./api";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let errorMessage = res.statusText;
+    try {
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const json = await res.json();
+        errorMessage = json.message || json.error || JSON.stringify(json);
+      } else {
+        const text = await res.text();
+        // If it's HTML, try to extract meaningful error or just use status
+        if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+          errorMessage = `${res.status}: ${res.statusText}`;
+        } else {
+          errorMessage = text.substring(0, 200); // Limit error message length
+        }
+      }
+    } catch {
+      // If parsing fails, use status text
+      errorMessage = res.statusText;
+    }
+    throw new Error(errorMessage);
   }
 }
 

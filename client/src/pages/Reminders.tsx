@@ -29,6 +29,7 @@ import {
   Send,
   AlertTriangle
 } from 'lucide-react';
+import { SiWhatsapp } from 'react-icons/si';
 import type { ReminderSetting, ReminderLog } from '@shared/schema';
 
 const REMINDER_TYPES = [
@@ -52,8 +53,10 @@ export default function Reminders() {
     sendEmail: true,
     sendSms: false,
     sendInApp: true,
+    sendWhatsapp: false,
     emailSubject: '',
     emailTemplate: '',
+    whatsappTemplate: '',
   });
 
   const { data: settings, isLoading: settingsLoading } = useQuery<ReminderSetting[]>({
@@ -109,6 +112,8 @@ export default function Reminders() {
         return <Mail className="w-4 h-4" />;
       case 'sms':
         return <MessageSquare className="w-4 h-4" />;
+      case 'whatsapp':
+        return <SiWhatsapp className="w-4 h-4 text-green-500" />;
       case 'in_app':
         return <Bell className="w-4 h-4" />;
       default:
@@ -216,7 +221,7 @@ export default function Reminders() {
 
               <div className="space-y-4">
                 <Label>Channels</Label>
-                <div className="flex gap-6">
+                <div className="flex gap-6 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={newSetting.sendInApp}
@@ -247,6 +252,16 @@ export default function Reminders() {
                       <MessageSquare className="w-4 h-4" /> SMS
                     </Label>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={newSetting.sendWhatsapp}
+                      onCheckedChange={(checked) => setNewSetting({ ...newSetting, sendWhatsapp: checked })}
+                      data-testid="switch-whatsapp"
+                    />
+                    <Label className="flex items-center gap-1">
+                      <SiWhatsapp className="w-4 h-4 text-green-500" /> WhatsApp
+                    </Label>
+                  </div>
                 </div>
               </div>
 
@@ -273,6 +288,22 @@ export default function Reminders() {
                   Use placeholders: {'{{customer_name}}'}, {'{{invoice_number}}'}, {'{{amount}}'}, {'{{due_date}}'}
                 </p>
               </div>
+
+              {newSetting.sendWhatsapp && (
+                <div className="space-y-2">
+                  <Label>WhatsApp Template (optional)</Label>
+                  <Textarea
+                    placeholder="Hello {{customer_name}}, This is a reminder that invoice {{invoice_number}} for {{amount}} is due on {{due_date}}."
+                    value={newSetting.whatsappTemplate}
+                    onChange={(e) => setNewSetting({ ...newSetting, whatsappTemplate: e.target.value })}
+                    rows={4}
+                    data-testid="input-whatsapp-template"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Use placeholders: {'{{customer_name}}'}, {'{{invoice_number}}'}, {'{{amount}}'}, {'{{due_date}}'}
+                  </p>
+                </div>
+              )}
 
               <Button 
                 onClick={() => createSettingMutation.mutate(newSetting)}
@@ -373,6 +404,9 @@ export default function Reminders() {
                         )}
                         {setting.sendSms && (
                           <Badge variant="outline"><MessageSquare className="w-3 h-3 mr-1" />SMS</Badge>
+                        )}
+                        {setting.sendWhatsapp && (
+                          <Badge variant="outline"><SiWhatsapp className="w-3 h-3 mr-1 text-green-500" />WhatsApp</Badge>
                         )}
                       </div>
                     </CardContent>

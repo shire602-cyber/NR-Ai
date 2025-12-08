@@ -50,7 +50,8 @@ import type {
   ServiceInvoiceLine, InsertServiceInvoiceLine,
   FtaEmail, InsertFtaEmail,
   Subscription, InsertSubscription,
-  Backup, InsertBackup
+  Backup, InsertBackup,
+  AiConversation, InsertAiConversation
 } from "@shared/schema";
 import {
   users,
@@ -104,7 +105,8 @@ import {
   serviceInvoiceLines,
   ftaEmails,
   subscriptions,
-  backups
+  backups,
+  aiConversations
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
@@ -240,12 +242,14 @@ export interface IStorage {
 
   // WhatsApp Configuration
   getWhatsappConfig(companyId: string): Promise<WhatsappConfig | undefined>;
+  getWhatsappConfigByPhoneNumberId(phoneNumberId: string): Promise<WhatsappConfig | undefined>;
   createWhatsappConfig(config: InsertWhatsappConfig): Promise<WhatsappConfig>;
   updateWhatsappConfig(id: string, data: Partial<InsertWhatsappConfig>): Promise<WhatsappConfig>;
 
   // WhatsApp Messages
   createWhatsappMessage(message: InsertWhatsappMessage): Promise<WhatsappMessage>;
   getWhatsappMessagesByCompanyId(companyId: string): Promise<WhatsappMessage[]>;
+  getWhatsappMessage(id: string): Promise<WhatsappMessage | undefined>;
   updateWhatsappMessage(id: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage>;
 
   // AI Anomaly Alerts
@@ -493,6 +497,13 @@ export interface IStorage {
   createBackup(backup: InsertBackup): Promise<Backup>;
   updateBackup(id: string, data: Partial<InsertBackup>): Promise<Backup>;
   deleteBackup(id: string): Promise<void>;
+  
+  // AI Conversations
+  createAiConversation(conversation: InsertAiConversation): Promise<AiConversation>;
+  getAiConversationsByUserId(userId: string, limit?: number): Promise<AiConversation[]>;
+  getAiConversationsByCompanyId(companyId: string, limit?: number): Promise<AiConversation[]>;
+  getAiConversation(id: string): Promise<AiConversation | undefined>;
+  deleteAiConversation(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1128,6 +1139,14 @@ export class DatabaseStorage implements IStorage {
     return config || undefined;
   }
 
+  async getWhatsappConfigByPhoneNumberId(phoneNumberId: string): Promise<WhatsappConfig | undefined> {
+    const [config] = await db
+      .select()
+      .from(whatsappConfigs)
+      .where(eq(whatsappConfigs.phoneNumberId, phoneNumberId));
+    return config || undefined;
+  }
+
   async createWhatsappConfig(insertConfig: InsertWhatsappConfig): Promise<WhatsappConfig> {
     const [config] = await db
       .insert(whatsappConfigs)
@@ -1163,6 +1182,14 @@ export class DatabaseStorage implements IStorage {
       .from(whatsappMessages)
       .where(eq(whatsappMessages.companyId, companyId))
       .orderBy(desc(whatsappMessages.createdAt));
+  }
+
+  async getWhatsappMessage(id: string): Promise<WhatsappMessage | undefined> {
+    const [message] = await db
+      .select()
+      .from(whatsappMessages)
+      .where(eq(whatsappMessages.id, id));
+    return message || undefined;
   }
 
   async updateWhatsappMessage(id: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage> {
@@ -2491,6 +2518,45 @@ export class DatabaseStorage implements IStorage {
 
   async deleteBackup(id: string): Promise<void> {
     await db.delete(backups).where(eq(backups.id, id));
+  }
+
+  // AI Conversations
+  async createAiConversation(conversation: InsertAiConversation): Promise<AiConversation> {
+    const [result] = await db
+      .insert(aiConversations)
+      .values(conversation)
+      .returning();
+    return result;
+  }
+
+  async getAiConversationsByUserId(userId: string, limit: number = 50): Promise<AiConversation[]> {
+    return await db
+      .select()
+      .from(aiConversations)
+      .where(eq(aiConversations.userId, userId))
+      .orderBy(desc(aiConversations.createdAt))
+      .limit(limit);
+  }
+
+  async getAiConversationsByCompanyId(companyId: string, limit: number = 50): Promise<AiConversation[]> {
+    return await db
+      .select()
+      .from(aiConversations)
+      .where(eq(aiConversations.companyId, companyId))
+      .orderBy(desc(aiConversations.createdAt))
+      .limit(limit);
+  }
+
+  async getAiConversation(id: string): Promise<AiConversation | undefined> {
+    const [conversation] = await db
+      .select()
+      .from(aiConversations)
+      .where(eq(aiConversations.id, id));
+    return conversation || undefined;
+  }
+
+  async deleteAiConversation(id: string): Promise<void> {
+    await db.delete(aiConversations).where(eq(aiConversations.id, id));
   }
 }
 

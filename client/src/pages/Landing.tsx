@@ -45,6 +45,8 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
+import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+import { ScrollReveal, StaggerContainer, StaggerItem, Floating, hoverScale, hoverLift } from '@/lib/animations';
 
 export default function Landing() {
   const { locale, setLocale } = useI18n();
@@ -275,29 +277,100 @@ export default function Landing() {
       
       {/* Premium Animated Background */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[128px] animate-pulse" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/15 rounded-full blur-[128px] animate-pulse" style={{ animationDelay: '1s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-500/10 rounded-full blur-[128px] animate-pulse" style={{ animationDelay: '2s' }} />
+        <motion.div 
+          className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/20 rounded-full blur-[128px]"
+          animate={{
+            scale: [1, 1.2, 1],
+            opacity: [0.3, 0.5, 0.3],
+            x: [0, 50, 0],
+            y: [0, 30, 0],
+          }}
+          transition={{
+            duration: 8,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+        />
+        <motion.div 
+          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/15 rounded-full blur-[128px]"
+          animate={{
+            scale: [1, 1.3, 1],
+            opacity: [0.2, 0.4, 0.2],
+            x: [0, -40, 0],
+            y: [0, -50, 0],
+          }}
+          transition={{
+            duration: 10,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: 1
+          }}
+        />
+        <motion.div 
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-cyan-500/10 rounded-full blur-[128px]"
+          animate={{
+            scale: [1, 1.1, 1],
+            opacity: [0.1, 0.3, 0.1],
+            rotate: [0, 180, 360],
+          }}
+          transition={{
+            duration: 15,
+            repeat: Infinity,
+            ease: "linear"
+          }}
+        />
       </div>
 
       {/* NAVBAR */}
-      <header className="sticky top-0 z-50 bg-background/60 backdrop-blur-2xl border-b border-white/10">
+      <motion.header 
+        className="sticky top-0 z-50 bg-background/60 backdrop-blur-2xl border-b border-white/10"
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
         <div className="container max-w-7xl mx-auto px-6 lg:px-8 h-20 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 group" data-testid="link-logo">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center shadow-lg shadow-primary/25 group-hover:shadow-primary/40 transition-shadow">
+            <motion.div 
+              className="relative"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <motion.div 
+                className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center shadow-lg shadow-primary/25"
+                whileHover={{ 
+                  boxShadow: "0 10px 40px -10px hsl(var(--primary) / 0.5)",
+                  rotate: [0, -5, 5, -5, 0]
+                }}
+                transition={{ duration: 0.5 }}
+              >
                 <Briefcase className="w-5 h-5 text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background animate-pulse" />
-            </div>
-            <div className="flex flex-col">
+              </motion.div>
+              <motion.div 
+                className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background"
+                animate={{
+                  scale: [1, 1.2, 1],
+                  opacity: [1, 0.7, 1],
+                }}
+                transition={{
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "easeInOut"
+                }}
+              />
+            </motion.div>
+            <motion.div 
+              className="flex flex-col"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+            >
               <span className="font-bold text-xl leading-none tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
                 Muhasib.ai
               </span>
               <span className="text-[10px] text-muted-foreground font-medium tracking-wider uppercase">
                 {locale === 'en' ? 'by NR Accounting Services' : 'من NR Accounting Services'}
               </span>
-            </div>
+            </motion.div>
           </Link>
           
           {/* Desktop Navigation */}
@@ -314,29 +387,57 @@ export default function Landing() {
           </nav>
 
           {/* Desktop Actions */}
-          <div className="hidden lg:flex items-center gap-4">
+          <motion.div 
+            className="hidden lg:flex items-center gap-4"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+          >
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Button 
               variant="ghost" 
               size="sm"
               onClick={toggleLanguage}
-              className="font-semibold"
+                className="font-semibold transition-all duration-200"
               data-testid="button-language-toggle"
+              >
+                <motion.div
+                  animate={{ rotate: [0, 360] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
             >
               <Globe className="w-4 h-4 mr-2" />
+                </motion.div>
               {t.nav.languageToggle}
             </Button>
+            </motion.div>
             <Link href="/login">
-              <Button variant="ghost" size="sm" data-testid="button-login">
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button variant="ghost" size="sm" data-testid="button-login" className="transition-all duration-200">
                 {t.nav.login}
               </Button>
+              </motion.div>
             </Link>
             <Link href="/register">
-              <Button size="sm" className="bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 shadow-lg shadow-primary/25" data-testid="button-get-started">
+              <motion.div 
+                whileHover={{ scale: 1.05, boxShadow: "0 10px 40px -10px hsl(var(--primary) / 0.4)" }}
+                whileTap={{ scale: 0.95 }}
+              >
+                <Button 
+                  size="sm" 
+                  className="bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 shadow-lg shadow-primary/25 transition-all duration-200" 
+                  data-testid="button-get-started"
+                >
                 {t.nav.getStarted}
+                  <motion.div
+                    animate={{ x: [0, 4, 0] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  >
                 <ArrowRight className="w-4 h-4 ml-2" />
+                  </motion.div>
               </Button>
+              </motion.div>
             </Link>
-          </div>
+          </motion.div>
 
           {/* Mobile Menu Button */}
           <button
@@ -381,16 +482,24 @@ export default function Landing() {
             </nav>
           </div>
         )}
-      </header>
+      </motion.header>
 
       {/* HERO SECTION */}
       <section className="relative overflow-hidden pt-16 pb-24 lg:pt-24 lg:pb-32" data-testid="section-hero">
         <div className="container max-w-7xl mx-auto px-6 lg:px-8 relative">
           <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
             {/* Text Content */}
-            <div className={`max-w-2xl ${mounted ? 'animate-in fade-in slide-in-from-bottom-8' : 'opacity-0'}`} style={{ animationDuration: '800ms' }}>
+            <ScrollReveal direction="up" delay={0.2}>
+              <div className="max-w-2xl">
               {/* Trust Badge */}
-              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/10 to-violet-500/10 border border-primary/20 mb-8" data-testid="badge-trust">
+                <motion.div 
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/10 to-violet-500/10 border border-primary/20 mb-8"
+                  data-testid="badge-trust"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  whileHover={{ scale: 1.05 }}
+                >
                 <div className="flex -space-x-2">
                   {[1, 2, 3, 4].map((i) => (
                     <div key={i} className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-violet-600 border-2 border-background flex items-center justify-center">
@@ -404,33 +513,96 @@ export default function Landing() {
                     <Star key={i} className="w-3 h-3 fill-yellow-500 text-yellow-500" />
                   ))}
                 </div>
-              </div>
+              </motion.div>
               
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold tracking-tight mb-4 leading-[1.1]" data-testid="hero-headline">
-                <span className="bg-gradient-to-r from-foreground via-foreground to-foreground/50 bg-clip-text text-transparent">
+              <motion.h1 
+                className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold tracking-tight mb-4 leading-[1.1]" 
+                data-testid="hero-headline"
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.3 }}
+              >
+                <motion.span 
+                  className="bg-gradient-to-r from-foreground via-foreground to-foreground/50 bg-clip-text text-transparent"
+                  animate={{
+                    backgroundPosition: ['0% 50%', '100% 50%', '0% 50%'],
+                  }}
+                  transition={{
+                    duration: 5,
+                    repeat: Infinity,
+                    ease: "linear"
+                  }}
+                  style={{ backgroundSize: '200% 200%' }}
+                >
                   {t.hero.headline}
-                </span>
-              </h1>
-              <p className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-6 bg-gradient-to-r from-primary via-violet-500 to-cyan-500 bg-clip-text text-transparent" data-testid="hero-headline-accent">
+                </motion.span>
+              </motion.h1>
+              <motion.p 
+                className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-6 bg-gradient-to-r from-primary via-violet-500 to-cyan-500 bg-clip-text text-transparent animate-gradient" 
+                data-testid="hero-headline-accent"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.4 }}
+              >
                 {t.hero.headlineAccent}
-              </p>
+              </motion.p>
               
-              <p className="text-lg lg:text-xl text-muted-foreground leading-relaxed mb-10 max-w-xl" data-testid="hero-subheadline">
+              <motion.p 
+                className="text-lg lg:text-xl text-muted-foreground leading-relaxed mb-10 max-w-xl" 
+                data-testid="hero-subheadline"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.5 }}
+              >
                 {t.hero.subheadline}
-              </p>
+              </motion.p>
 
-              <div className="flex flex-col sm:flex-row gap-4 mb-8">
+              <motion.div 
+                className="flex flex-col sm:flex-row gap-4 mb-8"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.6 }}
+              >
                 <Link href="/register">
-                  <Button size="lg" className="w-full sm:w-auto px-8 py-7 text-base font-semibold bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 shadow-2xl shadow-primary/30 hover:shadow-primary/40 transition-all hover:scale-[1.02]" data-testid="hero-button-start-trial">
+                  <motion.div
+                    whileHover={{ scale: 1.05, boxShadow: "0 20px 60px -10px hsl(var(--primary) / 0.5)" }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <Button 
+                      size="lg" 
+                      className="w-full sm:w-auto px-8 py-7 text-base font-semibold bg-gradient-to-r from-primary to-violet-600 hover:from-primary/90 hover:to-violet-600/90 shadow-2xl shadow-primary/30 transition-all" 
+                      data-testid="hero-button-start-trial"
+                    >
                     {t.hero.ctaPrimary}
+                      <motion.div
+                        animate={{ x: [0, 5, 0] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      >
                     <ArrowRight className="w-5 h-5 ml-2" />
+                      </motion.div>
                   </Button>
+                  </motion.div>
                 </Link>
-                <Button size="lg" variant="outline" className="w-full sm:w-auto px-8 py-7 text-base font-semibold border-2 hover:bg-white/5" data-testid="hero-button-watch-demo">
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button 
+                    size="lg" 
+                    variant="outline" 
+                    className="w-full sm:w-auto px-8 py-7 text-base font-semibold border-2 hover:bg-white/5 transition-all" 
+                    data-testid="hero-button-watch-demo"
+                  >
+                    <motion.div
+                      animate={{ scale: [1, 1.1, 1] }}
+                      transition={{ duration: 2, repeat: Infinity }}
+                    >
                   <Play className="w-5 h-5 mr-2" />
+                    </motion.div>
                   {t.hero.ctaSecondary}
                 </Button>
-              </div>
+                </motion.div>
+              </motion.div>
 
               <div className="flex flex-wrap items-center gap-6 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
@@ -442,14 +614,32 @@ export default function Landing() {
                   <span>{t.hero.cancelAnytime}</span>
                 </div>
               </div>
-            </div>
+              </div>
+            </ScrollReveal>
 
             {/* Hero Visual - Premium 3D Dashboard Preview */}
-            <div className={`relative lg:block ${mounted ? 'animate-in fade-in slide-in-from-right-8' : 'opacity-0'}`} style={{ animationDuration: '800ms', animationDelay: '200ms' }} data-testid="hero-visual">
-              {/* Main Dashboard Card */}
-              <div className="relative">
-                <div className="absolute inset-0 bg-gradient-to-r from-primary/30 to-violet-500/30 rounded-3xl blur-2xl transform rotate-2" />
-                <div className="relative rounded-2xl border border-white/20 bg-gradient-to-br from-card/90 to-card/50 backdrop-blur-xl p-6 shadow-2xl">
+            <ScrollReveal direction="right" delay={0.4}>
+              <div className="relative lg:block" data-testid="hero-visual">
+                {/* Main Dashboard Card */}
+                <Floating intensity={15} duration={4}>
+                  <div className="relative">
+                    <motion.div 
+                      className="absolute inset-0 bg-gradient-to-r from-primary/30 to-violet-500/30 rounded-3xl blur-2xl transform rotate-2"
+                      animate={{
+                        rotate: [2, 4, 2],
+                        scale: [1, 1.05, 1],
+                      }}
+                      transition={{
+                        duration: 6,
+                        repeat: Infinity,
+                        ease: "easeInOut"
+                      }}
+                    />
+                    <motion.div 
+                      className="relative rounded-2xl border border-white/20 bg-gradient-to-br from-card/90 to-card/50 backdrop-blur-xl p-6 shadow-2xl"
+                      whileHover={{ scale: 1.02, rotate: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
                   {/* Dashboard Header */}
                   <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/10">
                     <div className="flex items-center gap-3">
@@ -511,18 +701,43 @@ export default function Landing() {
                       </div>
                     ))}
                   </div>
-                </div>
-              </div>
+                  </motion.div>
+                  </div>
+                </Floating>
               
               {/* Floating Elements */}
-              <div className="absolute -top-6 -right-6 w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-xl shadow-green-500/30 flex items-center justify-center animate-bounce" style={{ animationDuration: '3s' }}>
+              <Floating intensity={20} duration={3}>
+                <motion.div 
+                  className="absolute -top-6 -right-6 w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-xl shadow-green-500/30 flex items-center justify-center"
+                  whileHover={{ scale: 1.1, rotate: 360 }}
+                  transition={{ duration: 0.5 }}
+                >
                 <TrendingUp className="w-8 h-8 text-white" />
+                </motion.div>
+              </Floating>
+              <Floating intensity={15} duration={2}>
+                <motion.div 
+                  className="absolute -bottom-4 -left-4 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 shadow-xl shadow-violet-500/30 flex items-center gap-2"
+                  animate={{
+                    boxShadow: [
+                      "0 10px 40px -10px hsl(262 83% 58% / 0.3)",
+                      "0 20px 60px -10px hsl(262 83% 58% / 0.5)",
+                      "0 10px 40px -10px hsl(262 83% 58% / 0.3)",
+                    ],
+                    scale: [1, 1.05, 1],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                >
+                  <Zap className="w-4 h-4 text-white" />
+                  <span className="text-white text-sm font-medium">99.8% Accurate</span>
+                </motion.div>
+              </Floating>
               </div>
-              <div className="absolute -bottom-4 -left-4 px-4 py-2 rounded-xl bg-gradient-to-r from-violet-500 to-purple-600 shadow-xl shadow-violet-500/30 flex items-center gap-2 animate-pulse">
-                <Zap className="w-4 h-4 text-white" />
-                <span className="text-white text-sm font-medium">99.8% Accurate</span>
-              </div>
-            </div>
+            </ScrollReveal>
           </div>
         </div>
       </section>
@@ -546,29 +761,47 @@ export default function Landing() {
       {/* STATS SECTION */}
       <section className="py-20 lg:py-24" data-testid="section-stats">
         <div className="container max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
+          <StaggerContainer className="grid grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
             {[
               { value: '50,000+', label: t.stats.invoices, icon: FileText, color: 'from-blue-500 to-cyan-500' },
               { value: '99.8%', label: t.stats.accuracy, icon: Target, color: 'from-green-500 to-emerald-500' },
               { value: '87%', label: t.stats.timeSaved, icon: Timer, color: 'from-orange-500 to-amber-500' },
               { value: '500+', label: t.stats.businesses, icon: Building2, color: 'from-violet-500 to-purple-500' },
             ].map((stat, i) => (
-              <div 
-                key={i} 
-                className={`text-center group ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : 'opacity-0'}`}
-                style={{ animationDuration: '600ms', animationDelay: `${i * 100}ms` }}
-                data-testid={`stat-${i}`}
+              <StaggerItem key={i} data-testid={`stat-${i}`}>
+                <motion.div 
+                  className="text-center group"
+                  whileHover={hoverLift}
               >
-                <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}>
+                  <motion.div 
+                    className={`w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center shadow-lg`}
+                    whileHover={hoverScale}
+                    animate={{
+                      boxShadow: [
+                        `0 10px 30px -10px hsl(var(--primary) / 0.2)`,
+                        `0 20px 50px -10px hsl(var(--primary) / 0.4)`,
+                        `0 10px 30px -10px hsl(var(--primary) / 0.2)`,
+                      ]
+                    }}
+                    transition={{
+                      boxShadow: { duration: 2, repeat: Infinity, ease: 'easeInOut' }
+                    }}
+                  >
                   <stat.icon className="w-7 h-7 text-white" />
-                </div>
-                <div className="text-4xl lg:text-5xl font-bold font-mono mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+                  </motion.div>
+                  <motion.div 
+                    className="text-4xl lg:text-5xl font-bold font-mono mb-2 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent"
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ duration: 0.5, delay: i * 0.1 + 0.3, type: "spring" }}
+                  >
                   {stat.value}
-                </div>
+                  </motion.div>
                 <div className="text-sm text-muted-foreground">{stat.label}</div>
-              </div>
+                </motion.div>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 
@@ -588,26 +821,51 @@ export default function Landing() {
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+          <StaggerContainer className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
             {features.map((feature, index) => (
-              <Card 
-                key={index} 
-                className={`group relative overflow-hidden p-8 border border-white/10 bg-white/[0.02] backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/20 transition-all duration-500 hover:-translate-y-1 ${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : 'opacity-0'}`}
-                style={{ animationDuration: '600ms', animationDelay: `${index * 100}ms` }}
-                data-testid={`feature-card-${index}`}
-              >
-                <div className={`absolute inset-0 bg-gradient-to-br ${feature.color} opacity-0 group-hover:opacity-5 transition-opacity duration-500`} />
-                <div className={`relative w-14 h-14 rounded-2xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+              <StaggerItem key={index} data-testid={`feature-card-${index}`}>
+                <motion.div
+                  whileHover={hoverLift}
+                  transition={{ duration: 0.3 }}
+                >
+                  <Card className="group relative overflow-hidden p-8 border border-white/10 bg-white/[0.02] backdrop-blur-sm hover:bg-white/[0.05] hover:border-white/20 transition-all duration-500">
+                    <motion.div 
+                      className={`absolute inset-0 bg-gradient-to-br ${feature.color}`}
+                      initial={{ opacity: 0 }}
+                      whileHover={{ opacity: 0.05 }}
+                      transition={{ duration: 0.5 }}
+                    />
+                    <motion.div 
+                      className={`relative w-14 h-14 rounded-2xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-6 shadow-lg`}
+                      whileHover={hoverScale}
+                      animate={{
+                        boxShadow: [
+                          `0 10px 30px -10px hsl(var(--primary) / 0.2)`,
+                          `0 20px 50px -10px hsl(var(--primary) / 0.4)`,
+                          `0 10px 30px -10px hsl(var(--primary) / 0.2)`,
+                        ]
+                      }}
+                      transition={{
+                        boxShadow: { duration: 2, repeat: Infinity, ease: 'easeInOut' }
+                      }}
+                    >
                   <feature.icon className="w-7 h-7 text-white" />
-                </div>
+                    </motion.div>
                 <h3 className="text-xl font-semibold mb-3 group-hover:text-primary transition-colors">{feature.title}</h3>
                 <p className="text-muted-foreground leading-relaxed">{feature.description}</p>
-                <div className="absolute bottom-6 right-6 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <motion.div 
+                      className="absolute bottom-6 right-6"
+                      initial={{ opacity: 0, scale: 0 }}
+                      whileHover={{ opacity: 1, scale: 1, rotate: 45 }}
+                      transition={{ duration: 0.3 }}
+                    >
                   <ArrowUpRight className="w-5 h-5 text-primary" />
-                </div>
+                    </motion.div>
               </Card>
+                </motion.div>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerContainer>
         </div>
       </section>
 

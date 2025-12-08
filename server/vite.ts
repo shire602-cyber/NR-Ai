@@ -3,8 +3,34 @@ import fs from "fs";
 import path from "path";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
-import viteConfig from "../vite.config";
 import { nanoid } from "nanoid";
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Helper to get project root safely, avoiding temp/worktree path issues
+function getProjectRoot(): string {
+  try {
+    const resolvedRoot = path.resolve(__dirname, '..');
+    
+    // Check if path is in a temp directory or worktree
+    const normalizedPath = path.normalize(resolvedRoot).toLowerCase();
+    const isTempPath = normalizedPath.includes('temp') || normalizedPath.includes('bugbot');
+    const isWorktreePath = normalizedPath.includes('.cursor') && normalizedPath.includes('worktrees');
+    
+    // Validate path is not a temp directory or worktree
+    if (path.isAbsolute(resolvedRoot) && !isTempPath && !isWorktreePath) {
+      return path.normalize(resolvedRoot);
+    }
+  } catch (error) {
+    // Fall through to process.cwd()
+  }
+  // Always use process.cwd() as fallback to get the actual working directory
+  // This prevents issues with worktrees and symlinks
+  return process.cwd();
+}
 
 const viteLogger = createLogger();
 
@@ -26,6 +52,16 @@ export async function setupVite(app: Express, server: Server) {
     allowedHosts: true as const,
   };
 
+  // Dynamically import vite config to handle top-level await
+  let viteConfig;
+  try {
+    viteConfig = (await import("../vite.config.js")).default;
+  } catch (error) {
+    // If import fails, use inline config
+    console.log('[Vite] Using inline config (vite.config import failed)');
+    viteConfig = {};
+  }
+
   const vite = await createViteServer({
     ...viteConfig,
     configFile: false,
@@ -33,7 +69,8 @@ export async function setupVite(app: Express, server: Server) {
       ...viteLogger,
       error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
+        // Don't exit on Vite errors - let the server continue running
+        // The error will be shown but the server should still serve the app
       },
     },
     server: serverOptions,
@@ -45,9 +82,9 @@ export async function setupVite(app: Express, server: Server) {
     const url = req.originalUrl;
 
     try {
+      const projectRoot = getProjectRoot();
       const clientTemplate = path.resolve(
-        import.meta.dirname,
-        "..",
+        projectRoot,
         "client",
         "index.html",
       );
@@ -68,7 +105,11 @@ export async function setupVite(app: Express, server: Server) {
 }
 
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(import.meta.dirname, "public");
+  // Resolve from project root (where package.json is located)
+  // This matches vite.config.ts: outDir: path.resolve(__dirname, "dist/public")
+  // Use safe project root resolution to avoid temp/worktree path issues
+  const projectRoot = getProjectRoot();
+  const distPath = path.resolve(projectRoot, "dist", "public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(

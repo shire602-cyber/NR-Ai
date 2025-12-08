@@ -31,6 +31,7 @@ import {
   Database
 } from 'lucide-react';
 import { useLocation } from 'wouter';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sidebar,
   SidebarContent,
@@ -65,6 +66,7 @@ const reportsItems = [
 const aiItems = [
   { title: 'aiCfo', icon: Bot, url: '/ai-cfo' },
   { title: 'aiFeatures', icon: Sparkles, url: '/ai-features' },
+  { title: 'aiChat', icon: MessageSquare, url: '/ai-chat' },
 ];
 
 const clientPortalItems = [
@@ -160,33 +162,82 @@ export function AppSidebar() {
     
     return (
       <SidebarMenuItem key={item.url}>
+        <motion.div
+          whileHover={{ x: 4 }}
+          transition={{ duration: 0.2 }}
+        >
         <SidebarMenuButton 
           isActive={isActive}
           onClick={() => setLocation(item.url)}
           data-testid={`link-${item.title}`}
+            className="relative group transition-all duration-200"
+          >
+            <motion.div
+              className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full"
+              initial={{ scaleY: 0 }}
+              animate={{ scaleY: isActive ? 1 : 0 }}
+              transition={{ duration: 0.2 }}
+            />
+            <motion.div
+              whileHover={{ scale: 1.1 }}
+              transition={{ duration: 0.2 }}
         >
           <Icon className="w-4 h-4" />
-          <span>{label}</span>
+            </motion.div>
+            <motion.span
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              {label}
+            </motion.span>
         </SidebarMenuButton>
+        </motion.div>
       </SidebarMenuItem>
     );
   };
 
   return (
     <Sidebar>
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.4 }}
+      >
       <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+          <motion.div 
+            className="flex items-center gap-2"
+            whileHover={{ scale: 1.02 }}
+            transition={{ duration: 0.2 }}
+          >
+            <motion.div 
+              className="w-8 h-8 rounded-md bg-primary flex items-center justify-center"
+              whileHover={{ rotate: [0, -10, 10, -10, 0] }}
+              transition={{ duration: 0.5 }}
+            >
             <Wallet className="w-5 h-5 text-primary-foreground" />
-          </div>
+            </motion.div>
           <div>
-            <div className="font-semibold text-sm">Muhasib.ai</div>
-            <div className="text-xs text-muted-foreground">
+              <motion.div 
+                className="font-semibold text-sm"
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.1 }}
+              >
+                Muhasib.ai
+              </motion.div>
+              <motion.div 
+                className="text-xs text-muted-foreground"
+                initial={{ opacity: 0, y: -5 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: 0.2 }}
+              >
               {t.smartAccounting || 'Smart Accounting'}
+              </motion.div>
             </div>
-          </div>
-        </div>
+          </motion.div>
       </SidebarHeader>
+      </motion.div>
       
       <SidebarContent>
         {/* Client Portal View - Simplified view for NR-managed clients */}
@@ -304,25 +355,45 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-4 space-y-2">
+        <motion.div
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
         <Button
           variant="outline"
-          className="w-full justify-start"
+            className="w-full justify-start transition-all duration-200"
           onClick={toggleLanguage}
           data-testid="button-language-toggle"
+          >
+            <motion.div
+              animate={{ rotate: [0, 360] }}
+              transition={{ duration: 0.5, delay: 0.2 }}
         >
           <Languages className="w-4 h-4 mr-2" />
+            </motion.div>
           {locale === 'en' ? 'Arabic' : 'English'}
         </Button>
+        </motion.div>
         
+        <motion.div
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+        >
         <Button
           variant="ghost"
-          className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+            className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10 transition-all duration-200"
           onClick={handleLogout}
           data-testid="button-logout"
+          >
+            <motion.div
+              whileHover={{ x: -2 }}
+              transition={{ duration: 0.2 }}
         >
           <LogOut className="w-4 h-4 mr-2" />
+            </motion.div>
           {t.logout || 'Logout'}
         </Button>
+        </motion.div>
       </SidebarFooter>
     </Sidebar>
   );

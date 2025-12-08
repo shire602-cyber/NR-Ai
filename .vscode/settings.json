@@ -1,0 +1,26 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "typescript.disableAutomaticTypeAcquisition": true,
+  "files.watcherExclude": {
+    "**/Temp/**": true,
+    "**/bugbot-*/**": true,
+    "**/.cursor/worktrees/**": true,
+    "**/node_modules/.cache/**": true,
+    "**/AppData/Local/Temp/**": true
+  },
+  "search.exclude": {
+    "**/Temp/**": true,
+    "**/bugbot-*/**": true,
+    "**/.cursor/worktrees/**": true,
+    "**/node_modules/.cache/**": true,
+    "**/AppData/Local/Temp/**": true
+  },
+  "files.exclude": {
+    "**/Temp/**": true,
+    "**/bugbot-*/**": true,
+    "**/AppData/Local/Temp/**": true
+  },
+  "cursor.chat.enabled": false,
+  "cursor.autocomplete.enabled": true
+}

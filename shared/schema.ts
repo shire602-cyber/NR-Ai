@@ -168,10 +168,10 @@ export const journalEntries = pgTable("journal_entries", {
   source: text("source").notNull().default("manual"), // manual | invoice | receipt | payment | reversal | system
   sourceId: uuid("source_id"), // Reference to invoice, receipt, etc.
   // Reversal support: if this entry is a reversal, link to original
-  reversedEntryId: uuid("reversed_entry_id").references(() => journalEntries.id),
+  reversedEntryId: uuid("reversed_entry_id").references((): any => journalEntries.id),
   reversalReason: text("reversal_reason"),
   // Audit trail
-  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdBy: uuid("created_by").notNull().references((): any => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   postedBy: uuid("posted_by").references(() => users.id),
   postedAt: timestamp("posted_at"),
@@ -774,10 +774,12 @@ export const reminderSettings = pgTable("reminder_settings", {
   sendEmail: boolean("send_email").notNull().default(true),
   sendSms: boolean("send_sms").notNull().default(false),
   sendInApp: boolean("send_in_app").notNull().default(true),
+  sendWhatsapp: boolean("send_whatsapp").notNull().default(false),
   // Template customization
   emailSubject: text("email_subject"),
   emailTemplate: text("email_template"),
   smsTemplate: text("sms_template"),
+  whatsappTemplate: text("whatsapp_template"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -1748,3 +1750,34 @@ export const insertBackupSchema = createInsertSchema(backups).omit({
 
 export type InsertBackup = z.infer<typeof insertBackupSchema>;
 export type Backup = typeof backups.$inferSelect;
+
+// ===========================
+// AI Conversations (Chat History)
+// ===========================
+export const aiConversations = pgTable("ai_conversations", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  
+  // Conversation Details
+  prompt: text("prompt").notNull(),
+  response: text("response").notNull(),
+  model: text("model").notNull().default("gpt-3.5-turbo"), // gpt-3.5-turbo | gpt-4 | gpt-4-turbo
+  systemPrompt: text("system_prompt"), // Custom system prompt if provided
+  
+  // Metadata
+  tokensUsed: integer("tokens_used"), // If available from OpenAI
+  responseTime: integer("response_time"), // Milliseconds
+  error: text("error"), // Error message if request failed
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertAiConversationSchema = createInsertSchema(aiConversations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertAiConversation = z.infer<typeof insertAiConversationSchema>;
+export type AiConversation = typeof aiConversations.$inferSelect;

@@ -1,0 +1,20 @@
+# Ignore temp directories and worktrees to prevent path issues
+**/Temp/**
+**/bugbot-*/
+**/.cursor/worktrees/**
+**/node_modules/.cache/**
+**/dist/**
+**/uploads/**
+**/AppData/Local/Temp/**
+
+# Build artifacts
+*.tsbuildinfo
+*.log
+*.cache
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Cursor worktrees
+.cursor/worktrees/

@@ -55,10 +55,72 @@ export default function Admin() {
   const [editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
+  const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState('');
+  const [whatsappAccessToken, setWhatsappAccessToken] = useState('');
+  const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState('');
+  const [whatsappWebhookVerifyToken, setWhatsappWebhookVerifyToken] = useState('');
+  const [phoneNumberEdited, setPhoneNumberEdited] = useState(false);
+  
+  // System settings state
+  const [systemSettings, setSystemSettings] = useState({
+    defaultCurrency: 'AED',
+    defaultVatRate: '5',
+    freeAiCredits: '50',
+    trialPeriod: '14',
+    aiCategorization: true,
+    ocrScanning: true,
+    whatsappIntegration: false,
+    smartAssistant: true,
+    referralProgram: true,
+    supportEmail: '',
+    fromEmail: '',
+    sendWelcomeEmail: true,
+    paymentReminders: true,
+  });
 
   // Fetch admin data
   const { data: settings = [], isLoading: settingsLoading } = useQuery<AdminSetting[]>({
     queryKey: ['/api/admin/settings'],
+    onSuccess: (data) => {
+      // Load settings into state
+      const settingsMap = data.reduce((acc, setting) => {
+        acc[setting.key] = setting.value;
+        return acc;
+      }, {} as Record<string, string>);
+      
+      setSystemSettings(prev => ({
+        ...prev,
+        defaultCurrency: settingsMap['system.defaultCurrency'] || prev.defaultCurrency,
+        defaultVatRate: settingsMap['system.defaultVatRate'] || prev.defaultVatRate,
+        freeAiCredits: settingsMap['system.freeAiCredits'] || prev.freeAiCredits,
+        trialPeriod: settingsMap['system.trialPeriod'] || prev.trialPeriod,
+        // For boolean settings, check if the key exists first, then convert string to boolean
+        // This ensures 'false' values are properly applied instead of falling back to previous state
+        aiCategorization: 'feature.aiCategorization' in settingsMap 
+          ? settingsMap['feature.aiCategorization'] === 'true' 
+          : prev.aiCategorization,
+        ocrScanning: 'feature.ocrScanning' in settingsMap 
+          ? settingsMap['feature.ocrScanning'] === 'true' 
+          : prev.ocrScanning,
+        whatsappIntegration: 'feature.whatsappIntegration' in settingsMap 
+          ? settingsMap['feature.whatsappIntegration'] === 'true' 
+          : prev.whatsappIntegration,
+        smartAssistant: 'feature.smartAssistant' in settingsMap 
+          ? settingsMap['feature.smartAssistant'] === 'true' 
+          : prev.smartAssistant,
+        referralProgram: 'feature.referralProgram' in settingsMap 
+          ? settingsMap['feature.referralProgram'] === 'true' 
+          : prev.referralProgram,
+        supportEmail: settingsMap['notification.supportEmail'] || prev.supportEmail,
+        fromEmail: settingsMap['notification.fromEmail'] || prev.fromEmail,
+        sendWelcomeEmail: 'notification.sendWelcomeEmail' in settingsMap 
+          ? settingsMap['notification.sendWelcomeEmail'] === 'true' 
+          : prev.sendWelcomeEmail,
+        paymentReminders: 'notification.paymentReminders' in settingsMap 
+          ? settingsMap['notification.paymentReminders'] === 'true' 
+          : prev.paymentReminders,
+      }));
+    },
   });
 
   const { data: plans = [], isLoading: plansLoading } = useQuery<SubscriptionPlan[]>({
@@ -89,6 +151,30 @@ export default function Admin() {
     queryKey: ['/api/admin/stats'],
   });
 
+  // Fetch WhatsApp configuration
+  const { data: whatsappConfig, isLoading: whatsappConfigLoading } = useQuery<{
+    configured: boolean;
+    isActive: boolean;
+    phoneNumberId?: string;
+    businessAccountId?: string;
+    hasAccessToken: boolean;
+    companyId: string;
+    configId?: string;
+  }>({
+    queryKey: ['/api/integrations/whatsapp/config'],
+    onSuccess: (data) => {
+      // Only populate phone number if user hasn't manually edited it
+      if (data.configured && data.phoneNumberId && !phoneNumberEdited) {
+        setWhatsappPhoneNumberId(data.phoneNumberId);
+      }
+      // Populate business account ID if available
+      if (data.configured && data.businessAccountId) {
+        setWhatsappBusinessAccountId(data.businessAccountId);
+      }
+      // Don't set access token from response (it's not returned for security)
+    },
+  });
+
   // Mutations
   const updateSettingMutation = useMutation({
     mutationFn: async (setting: { key: string; value: string }) => {
@@ -101,6 +187,43 @@ export default function Admin() {
     },
     onError: () => {
       toast({ variant: 'destructive', title: 'Failed to update setting' });
+    },
+  });
+
+  // Save all system settings
+  const saveSystemSettingsMutation = useMutation({
+    mutationFn: async (settingsToSave: typeof systemSettings) => {
+      const settings = [
+        { key: 'system.defaultCurrency', value: settingsToSave.defaultCurrency },
+        { key: 'system.defaultVatRate', value: settingsToSave.defaultVatRate },
+        { key: 'system.freeAiCredits', value: settingsToSave.freeAiCredits },
+        { key: 'system.trialPeriod', value: settingsToSave.trialPeriod },
+        { key: 'feature.aiCategorization', value: settingsToSave.aiCategorization.toString() },
+        { key: 'feature.ocrScanning', value: settingsToSave.ocrScanning.toString() },
+        { key: 'feature.whatsappIntegration', value: settingsToSave.whatsappIntegration.toString() },
+        { key: 'feature.smartAssistant', value: settingsToSave.smartAssistant.toString() },
+        { key: 'feature.referralProgram', value: settingsToSave.referralProgram.toString() },
+        { key: 'notification.supportEmail', value: settingsToSave.supportEmail },
+        { key: 'notification.fromEmail', value: settingsToSave.fromEmail },
+        { key: 'notification.sendWelcomeEmail', value: settingsToSave.sendWelcomeEmail.toString() },
+        { key: 'notification.paymentReminders', value: settingsToSave.paymentReminders.toString() },
+      ];
+      
+      // Save all settings in parallel
+      await Promise.all(
+        settings.map(setting => apiRequest('PUT', '/api/admin/settings', setting))
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/settings'] });
+      toast({ title: 'System settings saved successfully' });
+    },
+    onError: (error: any) => {
+      toast({ 
+        variant: 'destructive', 
+        title: 'Failed to save settings',
+        description: error?.message || 'Please try again'
+      });
     },
   });
 
@@ -142,6 +265,32 @@ export default function Admin() {
     },
     onError: () => {
       toast({ variant: 'destructive', title: 'Failed to delete plan' });
+    },
+  });
+
+  // WhatsApp configuration mutation
+  const saveWhatsappConfigMutation = useMutation({
+    mutationFn: async (config: { 
+      phoneNumberId: string; 
+      accessToken?: string; 
+      businessAccountId?: string; 
+      webhookVerifyToken?: string; 
+    }) => {
+      return apiRequest('POST', '/api/integrations/whatsapp/config', config);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/config'] });
+      toast({ title: 'WhatsApp configuration saved successfully' });
+      // Clear sensitive fields after saving (for security)
+      setWhatsappAccessToken('');
+      setWhatsappWebhookVerifyToken('');
+    },
+    onError: (error: any) => {
+      toast({ 
+        variant: 'destructive', 
+        title: 'Failed to save WhatsApp configuration',
+        description: error?.message || 'Please check your credentials and try again'
+      });
     },
   });
 
@@ -818,7 +967,11 @@ export default function Admin() {
                       <p className="font-medium">AI Transaction Categorization</p>
                       <p className="text-sm text-muted-foreground">Use AI to automatically categorize transactions</p>
                     </div>
-                    <Switch defaultChecked data-testid="switch-ai-categorization" />
+                    <Switch 
+                      checked={systemSettings.aiCategorization}
+                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, aiCategorization: checked }))}
+                      data-testid="switch-ai-categorization" 
+                    />
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between">
@@ -826,7 +979,11 @@ export default function Admin() {
                       <p className="font-medium">OCR Receipt Scanning</p>
                       <p className="text-sm text-muted-foreground">Extract data from receipt images</p>
                     </div>
-                    <Switch defaultChecked data-testid="switch-ocr-scanning" />
+                    <Switch 
+                      checked={systemSettings.ocrScanning}
+                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, ocrScanning: checked }))}
+                      data-testid="switch-ocr-scanning" 
+                    />
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between">
@@ -834,7 +991,11 @@ export default function Admin() {
                       <p className="font-medium">WhatsApp Integration</p>
                       <p className="text-sm text-muted-foreground">Allow WhatsApp receipt ingestion</p>
                     </div>
-                    <Switch data-testid="switch-whatsapp-integration" />
+                    <Switch 
+                      checked={systemSettings.whatsappIntegration}
+                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, whatsappIntegration: checked }))}
+                      data-testid="switch-whatsapp-integration" 
+                    />
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between">
@@ -842,7 +1003,11 @@ export default function Admin() {
                       <p className="font-medium">Smart Assistant</p>
                       <p className="text-sm text-muted-foreground">Natural language financial queries</p>
                     </div>
-                    <Switch defaultChecked data-testid="switch-smart-assistant" />
+                    <Switch 
+                      checked={systemSettings.smartAssistant}
+                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, smartAssistant: checked }))}
+                      data-testid="switch-smart-assistant" 
+                    />
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between">
@@ -850,7 +1015,11 @@ export default function Admin() {
                       <p className="font-medium">Referral Program</p>
                       <p className="text-sm text-muted-foreground">Enable user referral rewards</p>
                     </div>
-                    <Switch defaultChecked data-testid="switch-referral-program" />
+                    <Switch 
+                      checked={systemSettings.referralProgram}
+                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, referralProgram: checked }))}
+                      data-testid="switch-referral-program" 
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -865,7 +1034,10 @@ export default function Admin() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Default Currency</Label>
-                      <Select defaultValue="AED">
+                      <Select 
+                        value={systemSettings.defaultCurrency}
+                        onValueChange={(value) => setSystemSettings(prev => ({ ...prev, defaultCurrency: value }))}
+                      >
                         <SelectTrigger data-testid="select-default-currency">
                           <SelectValue />
                         </SelectTrigger>
@@ -880,20 +1052,49 @@ export default function Admin() {
                     </div>
                     <div className="space-y-2">
                       <Label>Default VAT Rate (%)</Label>
-                      <Input type="number" defaultValue="5" data-testid="input-vat-rate" />
+                      <Input 
+                        type="number" 
+                        value={systemSettings.defaultVatRate}
+                        onChange={(e) => setSystemSettings(prev => ({ ...prev, defaultVatRate: e.target.value }))}
+                        data-testid="input-vat-rate" 
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>AI Credits Per Free User</Label>
-                      <Input type="number" defaultValue="50" data-testid="input-free-ai-credits" />
+                      <Input 
+                        type="number" 
+                        value={systemSettings.freeAiCredits}
+                        onChange={(e) => setSystemSettings(prev => ({ ...prev, freeAiCredits: e.target.value }))}
+                        data-testid="input-free-ai-credits" 
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label>Trial Period (Days)</Label>
-                      <Input type="number" defaultValue="14" data-testid="input-trial-period" />
+                      <Input 
+                        type="number" 
+                        value={systemSettings.trialPeriod}
+                        onChange={(e) => setSystemSettings(prev => ({ ...prev, trialPeriod: e.target.value }))}
+                        data-testid="input-trial-period" 
+                      />
                     </div>
                   </div>
-                  <Button className="mt-4" data-testid="button-save-system-settings">
-                    <Save className="w-4 h-4 mr-2" />
-                    Save Settings
+                  <Button 
+                    className="mt-4" 
+                    data-testid="button-save-system-settings"
+                    onClick={() => saveSystemSettingsMutation.mutate(systemSettings)}
+                    disabled={saveSystemSettingsMutation.isPending}
+                  >
+                    {saveSystemSettingsMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Save Settings
+                      </>
+                    )}
                   </Button>
                 </CardContent>
               </Card>
@@ -907,26 +1108,63 @@ export default function Admin() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label>Support Email</Label>
-                    <Input type="email" placeholder="support@muhasib.ai" data-testid="input-support-email" />
+                    <Input 
+                      type="email" 
+                      placeholder="support@muhasib.ai" 
+                      value={systemSettings.supportEmail}
+                      onChange={(e) => setSystemSettings(prev => ({ ...prev, supportEmail: e.target.value }))}
+                      data-testid="input-support-email" 
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>From Email (Notifications)</Label>
-                    <Input type="email" placeholder="noreply@muhasib.ai" data-testid="input-from-email" />
+                    <Input 
+                      type="email" 
+                      placeholder="noreply@muhasib.ai" 
+                      value={systemSettings.fromEmail}
+                      onChange={(e) => setSystemSettings(prev => ({ ...prev, fromEmail: e.target.value }))}
+                      data-testid="input-from-email" 
+                    />
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Send Welcome Email</p>
                       <p className="text-sm text-muted-foreground">Email new users upon registration</p>
                     </div>
-                    <Switch defaultChecked data-testid="switch-welcome-email" />
+                    <Switch 
+                      checked={systemSettings.sendWelcomeEmail}
+                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, sendWelcomeEmail: checked }))}
+                      data-testid="switch-welcome-email" 
+                    />
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Payment Reminder Emails</p>
                       <p className="text-sm text-muted-foreground">Send late payment reminders</p>
                     </div>
-                    <Switch defaultChecked data-testid="switch-payment-reminders" />
+                    <Switch 
+                      checked={systemSettings.paymentReminders}
+                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, paymentReminders: checked }))}
+                      data-testid="switch-payment-reminders" 
+                    />
                   </div>
+                  <Button 
+                    className="mt-4" 
+                    onClick={() => saveSystemSettingsMutation.mutate(systemSettings)}
+                    disabled={saveSystemSettingsMutation.isPending}
+                  >
+                    {saveSystemSettingsMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Save Notification Settings
+                      </>
+                    )}
+                  </Button>
                 </CardContent>
               </Card>
             </>
@@ -979,19 +1217,108 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700">Not Configured</Badge>
+                  {whatsappConfigLoading ? (
+                    <Badge variant="outline">Loading...</Badge>
+                  ) : whatsappConfig?.configured && whatsappConfig?.isActive ? (
+                    <Badge variant="outline" className="bg-green-50 text-green-700">Active</Badge>
+                  ) : whatsappConfig?.configured ? (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700">Inactive</Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700">Not Configured</Badge>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Phone Number ID</Label>
-                  <Input placeholder="Enter Phone Number ID" data-testid="input-whatsapp-phone" />
+                  <Input 
+                    placeholder="Enter Phone Number ID" 
+                    value={whatsappPhoneNumberId}
+                    onChange={(e) => {
+                      setWhatsappPhoneNumberId(e.target.value);
+                      setPhoneNumberEdited(true);
+                    }}
+                    data-testid="input-whatsapp-phone" 
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Access Token</Label>
-                  <Input type="password" placeholder="Enter Access Token" data-testid="input-whatsapp-token" />
+                  <Input 
+                    type="password" 
+                    placeholder={whatsappConfig?.hasAccessToken ? "Enter new token to update" : "Enter Access Token"}
+                    value={whatsappAccessToken}
+                    onChange={(e) => setWhatsappAccessToken(e.target.value)}
+                    data-testid="input-whatsapp-token" 
+                  />
+                  {whatsappConfig?.hasAccessToken && (
+                    <p className="text-xs text-muted-foreground">
+                      Token is already configured. Enter a new token to update it.
+                    </p>
+                  )}
                 </div>
-                <Button className="w-full" data-testid="button-save-whatsapp">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Configuration
+                <div className="space-y-2">
+                  <Label>Business Account ID (Optional)</Label>
+                  <Input 
+                    placeholder="Enter Business Account ID from Meta Business Manager"
+                    value={whatsappBusinessAccountId}
+                    onChange={(e) => setWhatsappBusinessAccountId(e.target.value)}
+                    data-testid="input-whatsapp-business-id" 
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Found in Meta Business Manager → WhatsApp → Configuration
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Webhook Verify Token (Optional)</Label>
+                  <Input 
+                    type="password"
+                    placeholder="Enter webhook verify token (or leave empty)"
+                    value={whatsappWebhookVerifyToken}
+                    onChange={(e) => setWhatsappWebhookVerifyToken(e.target.value)}
+                    data-testid="input-whatsapp-webhook-token" 
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Used to verify webhook requests from Meta. Can be any value you choose.
+                  </p>
+                </div>
+                <Button 
+                  className="w-full" 
+                  data-testid="button-save-whatsapp"
+                  onClick={() => {
+                    if (!whatsappPhoneNumberId.trim()) {
+                      toast({ 
+                        variant: 'destructive', 
+                        title: 'Validation Error',
+                        description: 'Phone Number ID is required'
+                      });
+                      return;
+                    }
+                    if (!whatsappAccessToken.trim() && !whatsappConfig?.hasAccessToken) {
+                      toast({ 
+                        variant: 'destructive', 
+                        title: 'Validation Error',
+                        description: 'Access Token is required'
+                      });
+                      return;
+                    }
+                    saveWhatsappConfigMutation.mutate({
+                      phoneNumberId: whatsappPhoneNumberId.trim(),
+                      accessToken: whatsappAccessToken.trim() || undefined,
+                      businessAccountId: whatsappBusinessAccountId.trim() || undefined,
+                      webhookVerifyToken: whatsappWebhookVerifyToken.trim() || undefined,
+                    });
+                  }}
+                  disabled={saveWhatsappConfigMutation.isPending}
+                >
+                  {saveWhatsappConfigMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Save Configuration
+                    </>
+                  )}
                 </Button>
               </CardContent>
             </Card>
