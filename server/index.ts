@@ -93,6 +93,9 @@ async function bootstrap() {
   // Register all API routes
   const server = await registerRoutes(app);
 
+  // ─── API 404 handler (before static/SPA fallback) ───────
+  app.use('/api/*', notFoundHandler);
+
   // ─── Error handling (MUST be after routes) ───────────────
   app.use(globalErrorHandler);
 
@@ -104,9 +107,6 @@ async function bootstrap() {
     serveStatic(app);
     log.info('Serving static files');
   }
-
-  // 404 handler for unmatched API routes (after static serving)
-  app.use('/api/*', notFoundHandler);
 
   // ─── Start listening ─────────────────────────────────────
   const port = env.PORT;
