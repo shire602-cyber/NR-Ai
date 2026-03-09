@@ -1,17 +1,23 @@
 import express, { type Express } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { createServer as createViteServer, createLogger } from 'vite';
 import { type Server } from 'http';
-import { nanoid } from 'nanoid';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 
-const viteLogger = createLogger();
-
+/**
+ * Set up Vite dev server (development only).
+ * Uses dynamic imports so vite/nanoid are NOT loaded in production.
+ */
 export async function setupVite(app: Express, server: Server) {
+  // Dynamic imports — these packages are devDependencies
+  const { createServer: createViteServer, createLogger } = await import('vite');
+  const { nanoid } = await import('nanoid');
+
+  const viteLogger = createLogger();
+
   const vite = await createViteServer({
     configFile: path.resolve(projectRoot, 'vite.config.ts'),
     customLogger: {
@@ -48,6 +54,10 @@ export async function setupVite(app: Express, server: Server) {
   });
 }
 
+/**
+ * Serve static production build (production only).
+ * No dev dependencies required.
+ */
 export function serveStatic(app: Express) {
   const distPath = path.resolve(projectRoot, 'dist', 'public');
 
