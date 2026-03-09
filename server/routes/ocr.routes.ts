@@ -5,14 +5,11 @@ import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
 
-// OpenAI client for AI-powered receipt extraction
-const openai = new OpenAI({
-  apiKey: getEnv().OPENAI_API_KEY,
-});
-
-const AI_MODEL = 'gpt-3.5-turbo';
-
 export function registerOCRRoutes(app: Express) {
+  // Initialize OpenAI client inside the function (after env is validated)
+  const apiKey = getEnv().OPENAI_API_KEY;
+  const openai = apiKey ? new OpenAI({ apiKey }) : null;
+  const AI_MODEL = getEnv().AI_MODEL;
   // ===========================
   // OCR Processing Endpoint
   // ===========================

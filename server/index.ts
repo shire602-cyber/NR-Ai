@@ -127,7 +127,8 @@ async function bootstrap() {
 }
 
 bootstrap().catch((error) => {
-  log.fatal({ error }, 'Failed to start server');
+  console.error('FATAL: Failed to start server:', error);
+  log.fatal({ err: error, message: error?.message, stack: error?.stack }, 'Failed to start server');
   process.exit(1);
 });
 
