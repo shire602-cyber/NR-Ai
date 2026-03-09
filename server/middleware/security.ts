@@ -116,9 +116,13 @@ export function applySecurityMiddleware(app: Express): void {
   });
 
   // ─── HTTPS Enforcement (production only) ──────────────────
+  // Only redirect when x-forwarded-proto is explicitly 'http'.
+  // Internal health checks (Docker/Railway) have no x-forwarded-proto header,
+  // so they must pass through without redirect.
   if (isProduction()) {
     app.use((req: Request, res: Response, next: NextFunction) => {
-      if (req.headers['x-forwarded-proto'] !== 'https') {
+      const proto = req.headers['x-forwarded-proto'];
+      if (proto && proto !== 'https' && req.path !== '/health') {
         return res.redirect(301, `https://${req.hostname}${req.url}`);
       }
       next();
