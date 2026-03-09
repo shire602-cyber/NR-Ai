@@ -3,17 +3,17 @@
 # Multi-stage build for optimal size
 # ===================================
 
-# Stage 1: Install dependencies
+# Stage 1: Install production dependencies
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --ignore-scripts || npm install --omit=dev --ignore-scripts
 
 # Stage 2: Build the application
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci || npm install
 COPY . .
 RUN npm run build
 
