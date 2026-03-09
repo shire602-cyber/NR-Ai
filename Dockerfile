@@ -1,27 +1,52 @@
-FROM node:22-alpine
+# ===================================
+# Muhasib.ai Production Dockerfile
+# Multi-stage build for optimal size
+# ===================================
 
+# Stage 1: Install dependencies
+FROM node:20-alpine AS deps
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-# Copy package files first for better caching
-COPY backend/package*.json ./
-
-# Install ALL dependencies
-RUN npm install
-
-# Copy source files (excluding node_modules, dist via .dockerignore)
-COPY backend/src/ ./src/
-COPY backend/shared/ ./shared/
-COPY backend/tsconfig.json ./
-
-# Build TypeScript
+# Stage 2: Build the application
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
 RUN npm run build
 
-# Debug: Show entire dist structure
-RUN echo "=== Full dist structure ===" && find dist -type f && echo "=== End structure ==="
+# Stage 3: Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
 
-# Verify critical files exist
-RUN test -f dist/src/index.js || (echo "ERROR: dist/src/index.js missing" && exit 1)
-RUN test -f dist/shared/schema.js || (echo "ERROR: dist/shared/schema.js missing" && exit 1)
+ENV NODE_ENV=production
 
-# Use npm start script
-CMD ["npm", "start"]
+# Create non-root user for security
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 muhasib
+
+# Copy production dependencies
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy built application
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package.json ./
+
+# Copy shared schema (needed at runtime by drizzle)
+COPY --from=builder /app/shared ./shared
+COPY --from=builder /app/drizzle.config.ts ./
+COPY --from=builder /app/migrations ./migrations
+
+# Create uploads directory
+RUN mkdir -p uploads && chown -R muhasib:nodejs uploads
+
+USER muhasib
+
+EXPOSE 5000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+
+CMD ["node", "dist/index.js"]

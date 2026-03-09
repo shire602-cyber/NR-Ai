@@ -1,10 +1,41 @@
+# Dependencies
 node_modules
+
+# Build output
 dist
-!backend/dist
+
+# Environment
+.env
+.env.local
+.env.production
+
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.cursor
+*.swp
+
+# Build artifacts
 server/public
 vite.config.ts.*
 *.tar.gz
-node_modules/.cache
 *.tsbuildinfo
+node_modules/.cache
+
+# Uploads
 uploads
+
+# Logs
+*.log
+logs/
+
+# Coverage
+coverage
+
+# Replit (legacy)
+.replit
+replit.md
+*.nix
