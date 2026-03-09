@@ -66,13 +66,15 @@ export function validateEnv(): Env {
 }
 
 /**
- * Get validated environment. Must call validateEnv() first.
+ * Get validated environment.
+ * Auto-validates on first call (lazy initialization).
+ * This prevents module evaluation ordering issues in bundled builds.
  */
 export function getEnv(): Env {
   if (!_env) {
-    throw new Error('Environment not validated. Call validateEnv() first.');
+    validateEnv();
   }
-  return _env;
+  return _env!;
 }
 
 /**
