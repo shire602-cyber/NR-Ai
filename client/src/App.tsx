@@ -64,6 +64,7 @@ const ClientTasks = lazy(() => import('@/pages/ClientTasks'));
 const ClientDetails = lazy(() => import('@/pages/ClientDetails'));
 const History = lazy(() => import('@/pages/History'));
 const BackupRestore = lazy(() => import('@/pages/BackupRestore'));
+const TrialBalance = lazy(() => import('@/pages/TrialBalance'));
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -192,6 +193,7 @@ function Router() {
           <Route path="/journal" component={Journal} />
           <Route path="/journal/:id" component={JournalEntryDetail} />
           <Route path="/reports" component={Reports} />
+          <Route path="/trial-balance" component={TrialBalance} />
           <Route path="/receipts" component={Receipts} />
           <Route path="/contacts" component={CustomerContacts} />
           <Route path="/ai-cfo" component={AICFO} />

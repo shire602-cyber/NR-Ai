@@ -167,6 +167,7 @@ export const t = {
     // Reports
     profitLoss: 'Profit & Loss',
     balanceSheet: 'Balance Sheet',
+    trialBalance: 'Trial Balance',
     vatSummary: 'VAT Summary',
     export: 'Export',
     
@@ -388,6 +389,7 @@ export const t = {
     // Reports
     profitLoss: 'الأرباح والخسائر',
     balanceSheet: 'الميزانية العمومية',
+    trialBalance: 'ميزان المراجعة',
     vatSummary: 'ملخص ضريبة القيمة المضافة',
     export: 'تصدير',
     

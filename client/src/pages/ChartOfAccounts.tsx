@@ -162,7 +162,7 @@ export default function ChartOfAccounts() {
         <Button 
           size="default"
           data-testid="button-add-account"
-          onClick={() => navigate('/journal')}
+          onClick={() => navigate('/accounts')}
         >
           <Plus className="h-4 w-4 mr-2" />
           {t.addAccount}
@@ -238,7 +238,7 @@ export default function ChartOfAccounts() {
                     <Collapsible open={isExpanded} onOpenChange={() => toggleType(type)}>
                       <CollapsibleTrigger asChild>
                         <CardHeader 
-                          className={`py-4 cursor-pointer hover-elevate ${config.bgClass}`}
+                          className={`py-4 cursor-pointer transition-colors hover:brightness-95 ${config.bgClass}`}
                           data-testid={`button-toggle-${type}`}
                         >
                           <div className="flex items-center justify-between gap-4">

@@ -149,9 +149,10 @@ export default function Accounts() {
     deleteMutation.mutate(accountId);
   };
 
-  const filteredAccounts = accounts?.filter(acc => 
+  const filteredAccounts = accounts?.filter(acc =>
     acc.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (acc.nameAr && acc.nameAr.includes(searchTerm))
+    (acc.nameAr && acc.nameAr.includes(searchTerm)) ||
+    (acc.code && acc.code.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const groupedAccounts = filteredAccounts?.reduce((acc, account) => {
@@ -285,6 +286,7 @@ export default function Accounts() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="font-semibold w-24">Code</TableHead>
                   <TableHead className="font-semibold">{t.accountName}</TableHead>
                   <TableHead className="font-semibold">{t.type}</TableHead>
                   <TableHead className="text-center font-semibold">Status</TableHead>
@@ -295,6 +297,11 @@ export default function Accounts() {
                 {filteredAccounts && filteredAccounts.length > 0 ? (
                   filteredAccounts.map((account) => (
                     <TableRow key={account.id} data-testid={`account-row-${account.id}`}>
+                      <TableCell>
+                        {account.code && (
+                          <span className="font-mono text-sm text-muted-foreground">{account.code}</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {locale === 'ar' && account.nameAr ? account.nameAr : account.nameEn}
                       </TableCell>
@@ -360,7 +367,7 @@ export default function Accounts() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       {t.noData}
                     </TableCell>
                   </TableRow>

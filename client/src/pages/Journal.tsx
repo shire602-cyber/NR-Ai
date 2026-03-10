@@ -268,11 +268,17 @@ export default function Journal() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-3xl font-semibold mb-2">{t.journal}</h1>
-          <p className="text-muted-foreground">Double-entry journal with automatic balance validation</p>
-        </div>
+      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-purple-600/10 via-violet-500/5 to-transparent border border-purple-500/20 p-4 md:p-6 lg:p-8">
+        <div className="relative z-10 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-lg bg-purple-600/20">
+              <BookMarked className="w-6 h-6 text-purple-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t.journal}</h1>
+              <p className="text-muted-foreground mt-1">Double-entry journal with automatic balance validation</p>
+            </div>
+          </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) {
@@ -510,6 +516,7 @@ export default function Journal() {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {isLoading ? (

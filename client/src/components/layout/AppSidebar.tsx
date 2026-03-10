@@ -27,7 +27,8 @@ import {
   Settings,
   FileUp,
   History,
-  Database
+  Database,
+  Scale
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -59,6 +60,7 @@ const coreItems = [
 
 const reportsItems = [
   { title: 'reports', icon: BarChart3, url: '/reports' },
+  { title: 'trialBalance', icon: Scale, url: '/trial-balance' },
   { title: 'vatFiling', icon: FileCheck, url: '/vat-filing' },
 ];
 

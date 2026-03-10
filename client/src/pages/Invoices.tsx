@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
+import { format, isWithinInterval, parseISO, startOfDay, endOfDay, addDays, isBefore, startOfToday } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,7 +27,7 @@ import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from '@/lib/export';
-import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
+import { Plus, FileText, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, DollarSign, Clock, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import type { Invoice, Company } from '@shared/schema';
 import { cn } from '@/lib/utils';
@@ -40,12 +40,23 @@ const invoiceLineSchema = z.object({
   vatRate: z.coerce.number().default(0.05),
 });
 
+const PAYMENT_TERMS_OPTIONS = [
+  { value: 'receipt', label: 'Due on Receipt', days: 0 },
+  { value: 'net15', label: 'Net 15', days: 15 },
+  { value: 'net30', label: 'Net 30', days: 30 },
+  { value: 'net45', label: 'Net 45', days: 45 },
+  { value: 'net60', label: 'Net 60', days: 60 },
+  { value: 'custom', label: 'Custom', days: null },
+] as const;
+
 const invoiceSchema = z.object({
   companyId: z.string().uuid(),
   number: z.string().min(1, 'Invoice number is required'),
   customerName: z.string().min(1, 'Customer name is required'),
   customerTrn: z.string().optional(),
   date: z.date(),
+  paymentTerms: z.string().default('net30'),
+  dueDate: z.date().optional(),
   currency: z.string().default('AED'),
   lines: z.array(invoiceLineSchema).min(1, 'At least one line item is required'),
 });
@@ -97,6 +108,8 @@ export default function Invoices() {
       customerName: '',
       customerTrn: '',
       date: new Date(),
+      paymentTerms: 'net30',
+      dueDate: addDays(new Date(), 30),
       currency: 'AED',
       lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     },
@@ -131,6 +144,8 @@ export default function Invoices() {
         customerName: '',
         customerTrn: '',
         date: new Date(),
+        paymentTerms: 'net30',
+        dueDate: addDays(new Date(), 30),
         currency: 'AED',
         lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
       });
@@ -161,6 +176,8 @@ export default function Invoices() {
         customerName: '',
         customerTrn: '',
         date: new Date(),
+        paymentTerms: 'net30',
+        dueDate: addDays(new Date(), 30),
         currency: 'AED',
         lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
       });
@@ -272,6 +289,8 @@ export default function Invoices() {
         customerName: fullInvoice.customerName,
         customerTrn: fullInvoice.customerTrn || '',
         date: new Date(fullInvoice.date),
+        paymentTerms: fullInvoice.paymentTerms || 'custom',
+        dueDate: fullInvoice.dueDate ? new Date(fullInvoice.dueDate) : undefined,
         currency: fullInvoice.currency,
         lines: fullInvoice.lines || [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
       });
@@ -292,6 +311,8 @@ export default function Invoices() {
       customerName: '',
       customerTrn: '',
       date: new Date(),
+      paymentTerms: 'net30',
+      dueDate: addDays(new Date(), 30),
       currency: 'AED',
       lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
     });
@@ -427,6 +448,17 @@ export default function Invoices() {
     });
   }, [invoices, dateRange.from, dateRange.to]);
 
+  const invoiceStats = useMemo(() => {
+    const list = filteredInvoices || [];
+    const totalCount = list.length;
+    const totalAmount = list.reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+    const paidAmount = list
+      .filter(inv => inv.status === 'paid')
+      .reduce((sum, inv) => sum + (Number(inv.total) || 0), 0);
+    const outstandingAmount = totalAmount - paidAmount;
+    return { totalCount, totalAmount, paidAmount, outstandingAmount };
+  }, [filteredInvoices]);
+
   const handleExportExcel = () => {
     if (!filteredInvoices.length) {
       toast({ variant: 'destructive', title: 'No data', description: 'No invoices to export' });
@@ -479,9 +511,19 @@ export default function Invoices() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold mb-2">{t.invoices}</h1>
-        <p className="text-muted-foreground">Manage invoices and customize their appearance</p>
+      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-blue-600/10 via-indigo-500/5 to-transparent border border-blue-500/20 p-4 md:p-6 lg:p-8">
+        <div className="absolute inset-0 bg-grid-white/5" style={{ backgroundSize: '20px 20px' }} />
+        <div className="relative z-10 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-lg bg-blue-600/20">
+              <FileText className="w-6 h-6 text-blue-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{t.invoices}</h1>
+              <p className="text-muted-foreground mt-1">Create and manage professional UAE-compliant invoices</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -531,6 +573,54 @@ export default function Invoices() {
             </CardContent>
           </Card>
 
+          {/* Invoice Summary Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                  <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Invoices</p>
+                  <p className="text-2xl font-bold">{invoiceStats.totalCount}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+                  <DollarSign className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Amount</p>
+                  <p className="text-2xl font-bold">{formatCurrency(invoiceStats.totalAmount, 'AED', locale)}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30">
+                  <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Paid Amount</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">{formatCurrency(invoiceStats.paidAmount, 'AED', locale)}</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                  <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Outstanding</p>
+                  <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{formatCurrency(invoiceStats.outstandingAmount, 'AED', locale)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <div className="flex items-center justify-end flex-wrap gap-4">
             <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
@@ -542,6 +632,8 @@ export default function Invoices() {
               customerName: '',
               customerTrn: '',
               date: new Date(),
+              paymentTerms: 'net30',
+              dueDate: addDays(new Date(), 30),
               currency: 'AED',
               lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
             });
@@ -602,7 +694,92 @@ export default function Invoices() {
                             <Calendar
                               mode="single"
                               selected={field.value}
-                              onSelect={field.onChange}
+                              onSelect={(date) => {
+                                field.onChange(date);
+                                // Auto-recalculate due date based on current payment terms
+                                if (date) {
+                                  const currentTerms = form.getValues('paymentTerms');
+                                  const term = PAYMENT_TERMS_OPTIONS.find(t => t.value === currentTerms);
+                                  if (term && term.days !== null) {
+                                    form.setValue('dueDate', addDays(date, term.days));
+                                  }
+                                }
+                              }}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="paymentTerms"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Payment Terms</FormLabel>
+                        <Select
+                          value={field.value}
+                          onValueChange={(val) => {
+                            field.onChange(val);
+                            const term = PAYMENT_TERMS_OPTIONS.find(t => t.value === val);
+                            if (term && term.days !== null) {
+                              const invoiceDate = form.getValues('date') || new Date();
+                              form.setValue('dueDate', addDays(invoiceDate, term.days));
+                            }
+                          }}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-payment-terms">
+                              <SelectValue placeholder="Select terms" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {PAYMENT_TERMS_OPTIONS.map((term) => (
+                              <SelectItem key={term.value} value={term.value}>
+                                {term.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="dueDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Due Date</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                className={cn(
+                                  'w-full justify-start text-left font-normal',
+                                  !field.value && 'text-muted-foreground'
+                                )}
+                                data-testid="button-due-date-picker"
+                              >
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {field.value ? format(field.value, 'PPP') : <span>Pick a due date</span>}
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0">
+                            <Calendar
+                              mode="single"
+                              selected={field.value}
+                              onSelect={(date) => {
+                                field.onChange(date);
+                                form.setValue('paymentTerms', 'custom');
+                              }}
                               initialFocus
                             />
                           </PopoverContent>
@@ -800,6 +977,7 @@ export default function Invoices() {
                   <TableHead className="font-semibold">{t.invoiceNumber}</TableHead>
                   <TableHead className="font-semibold">{t.customerName}</TableHead>
                   <TableHead className="font-semibold">{t.date}</TableHead>
+                  <TableHead className="font-semibold">Due Date</TableHead>
                   <TableHead className="font-semibold text-right">{t.total}</TableHead>
                   <TableHead className="font-semibold text-center">{t.status}</TableHead>
                   <TableHead className="font-semibold text-center">Actions</TableHead>
@@ -812,6 +990,22 @@ export default function Invoices() {
                       <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
                       <TableCell>{invoice.customerName}</TableCell>
                       <TableCell className="text-muted-foreground">{formatDate(invoice.date, locale)}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">
+                            {(invoice as any).dueDate ? formatDate((invoice as any).dueDate, locale) : '--'}
+                          </span>
+                          {(invoice as any).dueDate && invoice.status !== 'paid' && invoice.status !== 'void' && isBefore(
+                            new Date((invoice as any).dueDate),
+                            startOfToday()
+                          ) && (
+                            <Badge variant="destructive" className="text-xs px-1.5 py-0.5 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />
+                              Overdue
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-right font-mono font-medium">
                         {formatCurrency(invoice.total, invoice.currency, locale)}
                       </TableCell>
@@ -932,7 +1126,7 @@ export default function Invoices() {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       {t.noData}
                     </TableCell>
                   </TableRow>

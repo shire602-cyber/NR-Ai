@@ -400,33 +400,36 @@ export default function BankReconciliation() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            {t.bankReconciliation}
-          </h1>
-          <p className="text-muted-foreground">
-            {t.bankReconciliationDescription}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => autoReconcileMutation.mutate()}
-            disabled={autoReconcileMutation.isPending}
-            data-testid="button-auto-reconcile"
-          >
-            {autoReconcileMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4 mr-2" />
-            )}
-            {t.autoMatch}
-          </Button>
-          <Button onClick={() => setImportDialogOpen(true)} data-testid="button-import-transactions">
-            <Upload className="w-4 h-4 mr-2" />
-            {t.importCsv}
-          </Button>
+      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-cyan-600/10 via-teal-500/5 to-transparent border border-cyan-500/20 p-4 md:p-6 lg:p-8">
+        <div className="relative z-10 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-lg bg-cyan-600/20">
+              <Building2 className="w-6 h-6 text-cyan-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight" data-testid="text-page-title">{t.bankReconciliation}</h1>
+              <p className="text-muted-foreground mt-1">{t.bankReconciliationDescription}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => autoReconcileMutation.mutate()}
+              disabled={autoReconcileMutation.isPending}
+              data-testid="button-auto-reconcile"
+            >
+              {autoReconcileMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              {t.autoMatch}
+            </Button>
+            <Button onClick={() => setImportDialogOpen(true)} data-testid="button-import-transactions">
+              <Upload className="w-4 h-4 mr-2" />
+              {t.importCsv}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -688,7 +691,7 @@ export default function BankReconciliation() {
                 {matchSuggestions.map((suggestion, idx) => (
                   <Card 
                     key={`${suggestion.type}-${suggestion.id}`} 
-                    className="cursor-pointer hover-elevate"
+                    className="cursor-pointer transition-all hover:shadow-md"
                     onClick={() => handleReconcile(suggestion.id, suggestion.type)}
                   >
                     <CardContent className="p-4 flex items-center justify-between">

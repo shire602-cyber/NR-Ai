@@ -22,7 +22,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet, Receipt } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -873,16 +873,21 @@ export default function Receipts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold mb-2">Receipt Scanner</h1>
-          <p className="text-muted-foreground">
-            Upload receipts for AI extraction or enter manually
-          </p>
+      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-emerald-600/10 via-green-500/5 to-transparent border border-emerald-500/20 p-4 md:p-6 lg:p-8">
+        <div className="relative z-10 flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-lg bg-emerald-600/20">
+              <Receipt className="w-6 h-6 text-emerald-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Receipt Scanner</h1>
+              <p className="text-muted-foreground mt-1">Upload receipts for AI extraction or enter manually</p>
+            </div>
+          </div>
+          <Button onClick={() => setManualExpenseDialogOpen(true)} data-testid="button-add-manual-expense">
+            + Add Expense Manually
+          </Button>
         </div>
-        <Button onClick={() => setManualExpenseDialogOpen(true)} data-testid="button-add-manual-expense">
-          + Add Expense Manually
-        </Button>
       </div>
 
       {/* Upload Section */}
@@ -1247,7 +1252,7 @@ export default function Receipts() {
               {filteredReceipts.map((receipt: any) => (
                 <div
                   key={receipt.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover-elevate"
+                  className="flex items-center justify-between p-4 border rounded-lg transition-colors hover:bg-accent/50"
                   data-testid={`receipt-${receipt.id}`}
                 >
                   <div className="flex items-center gap-4">
