@@ -20,7 +20,19 @@ export function applySecurityMiddleware(app: Express): void {
   app.use(
     helmet({
       contentSecurityPolicy: isProduction()
-        ? undefined // Use helmet defaults in production
+        ? {
+            directives: {
+              defaultSrc: ["'self'"],
+              scriptSrc: ["'self'"],
+              styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+              fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+              imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+              connectSrc: ["'self'", 'https://api.openai.com'],
+              frameSrc: ["'none'"],
+              objectSrc: ["'none'"],
+              workerSrc: ["'self'", 'blob:'],
+            },
+          }
         : false, // Disable CSP in development (Vite HMR needs inline scripts)
       crossOriginEmbedderPolicy: false, // Allow embedding (PDF viewers, etc.)
     })
