@@ -88,7 +88,8 @@ export function globalErrorHandler(
   );
 
   res.status(500).json({
-    message: isProduction() ? 'Internal Server Error' : err.message,
+    message: err.message,
+    ...(err.stack ? { hint: err.stack.split('\n')[0] } : {}),
   });
 }
 
