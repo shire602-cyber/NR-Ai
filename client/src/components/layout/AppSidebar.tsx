@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -9,7 +9,6 @@ import {
   LogOut,
   Receipt,
   Bot,
-  Plug,
   MessageSquare,
   Building2,
   FileCheck,
@@ -81,8 +80,7 @@ const settingsItems = [
   { title: 'teamManagement', icon: Users, url: '/team' },
   { title: 'history', icon: History, url: '/history' },
   { title: 'backupRestore', icon: Database, url: '/backup-restore' },
-  { title: 'integrationsHub', icon: ShoppingCart, url: '/integrations-hub' },
-  { title: 'integrations', icon: Plug, url: '/integrations' },
+  { title: 'integrations', icon: ShoppingCart, url: '/integrations-hub' },
   { title: 'whatsappInbox', icon: MessageSquare, url: '/whatsapp' },
 ];
 
@@ -134,8 +132,8 @@ export function AppSidebar() {
     }
   };
 
-  // Check user status on every render
-  const { isAdmin, userType, needsRelogin } = checkUserStatus();
+  // Memoize user status so JWT is not parsed on every render
+  const { isAdmin, userType, needsRelogin } = useMemo(() => checkUserStatus(), []);
   
   // Handle old token logout in useEffect (can't update state during render)
   useEffect(() => {
@@ -365,12 +363,7 @@ export function AppSidebar() {
           onClick={toggleLanguage}
           data-testid="button-language-toggle"
           >
-            <motion.div
-              animate={{ rotate: [0, 360] }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-        >
           <Languages className="w-4 h-4 mr-2" />
-            </motion.div>
           {locale === 'en' ? 'Arabic' : 'English'}
         </Button>
         </motion.div>

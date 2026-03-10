@@ -218,7 +218,7 @@ export default function AdvancedAnalytics() {
   return (
     <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
       {/* Header */}
-      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-blue-600/10 via-purple-600/5 to-transparent border border-blue-600/20 p-8">
+      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-blue-600/10 via-purple-600/5 to-transparent border border-blue-600/20 p-4 md:p-6 lg:p-8">
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-3 rounded-lg bg-blue-600/20">

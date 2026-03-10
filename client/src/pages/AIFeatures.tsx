@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -54,16 +54,11 @@ export default function AIFeatures() {
   const [, navigate] = useLocation();
   const { companyId } = useDefaultCompany();
   const { toast } = useToast();
-  const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<AnomalyAlert | null>(null);
   const [resolutionNote, setResolutionNote] = useState('');
   const [categorizationOpen, setCategorizationOpen] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const { data: anomalyAlerts, isLoading: alertsLoading, refetch: refetchAlerts } = useQuery<AnomalyAlert[]>({
     queryKey: ['/api/companies', companyId, 'anomaly-alerts'],

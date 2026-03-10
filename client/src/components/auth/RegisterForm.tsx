@@ -57,7 +57,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       
       toast({
         title: 'Account created!',
-        description: 'Welcome to AI Bookkeeping. Let\'s get started!',
+        description: 'Welcome to Muhasib.ai. Let\'s get started!',
       });
     } catch (error: any) {
       toast({

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Switch, Route, useLocation, Link } from 'wouter';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -8,63 +8,62 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { useI18n } from '@/lib/i18n';
 import { getToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Pages
-import NotFound from '@/pages/not-found';
-import Login from '@/pages/Login';
-import Register from '@/pages/Register';
-import Dashboard from '@/pages/Dashboard';
-import Accounts from '@/pages/Accounts';
-import ChartOfAccounts from '@/pages/ChartOfAccounts';
-import AccountLedger from '@/pages/AccountLedger';
-import Invoices from '@/pages/Invoices';
-import Journal from '@/pages/Journal';
-import JournalEntryDetail from '@/pages/JournalEntryDetail';
-import Reports from '@/pages/Reports';
-import AICFO from '@/pages/AICFO';
-import AIChat from '@/pages/AIChat';
-import Receipts from '@/pages/Receipts';
-import CustomerContacts from '@/pages/CustomerContacts';
-import Landing from '@/pages/Landing';
-import Services from '@/pages/Services';
-import CompanyProfile from '@/pages/CompanyProfile';
-import Integrations from '@/pages/Integrations';
-import WhatsAppDashboard from '@/pages/WhatsAppDashboard';
-import AIFeatures from '@/pages/AIFeatures';
-import SmartAssistant from '@/pages/SmartAssistant';
-import AdvancedAnalytics from '@/pages/AdvancedAnalytics';
-import IntegrationsHub from '@/pages/IntegrationsHub';
-import Notifications from '@/pages/Notifications';
-import Reminders from '@/pages/Reminders';
-import Referrals from '@/pages/Referrals';
-import Feedback from '@/pages/Feedback';
-import Analytics from '@/pages/Analytics';
-import Admin from '@/pages/Admin';
-import BankReconciliation from '@/pages/BankReconciliation';
-import VATFiling from '@/pages/VATFiling';
-import TeamManagement from '@/pages/TeamManagement';
-import AdvancedReports from '@/pages/AdvancedReports';
-import DocumentVault from '@/pages/DocumentVault';
-import TaxReturnArchive from '@/pages/TaxReturnArchive';
-import ComplianceCalendar from '@/pages/ComplianceCalendar';
-import TaskCenter from '@/pages/TaskCenter';
-import UAENewsFeed from '@/pages/UAENewsFeed';
-import AdminDashboard from '@/pages/AdminDashboard';
-import ClientManagement from '@/pages/ClientManagement';
-import UserInvitations from '@/pages/UserInvitations';
-import ActivityLogs from '@/pages/ActivityLogs';
-import AdminDocuments from '@/pages/AdminDocuments';
-import ClientImport from '@/pages/ClientImport';
-import ClientDocuments from '@/pages/ClientDocuments';
-import ClientTasks from '@/pages/ClientTasks';
-import ClientDetails from '@/pages/ClientDetails';
-import History from '@/pages/History';
-import BackupRestore from '@/pages/BackupRestore';
+// Pages (lazy-loaded for code splitting)
+const NotFound = lazy(() => import('@/pages/not-found'));
+const Login = lazy(() => import('@/pages/Login'));
+const Register = lazy(() => import('@/pages/Register'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Accounts = lazy(() => import('@/pages/Accounts'));
+const ChartOfAccounts = lazy(() => import('@/pages/ChartOfAccounts'));
+const AccountLedger = lazy(() => import('@/pages/AccountLedger'));
+const Invoices = lazy(() => import('@/pages/Invoices'));
+const Journal = lazy(() => import('@/pages/Journal'));
+const JournalEntryDetail = lazy(() => import('@/pages/JournalEntryDetail'));
+const Reports = lazy(() => import('@/pages/Reports'));
+const AICFO = lazy(() => import('@/pages/AICFO'));
+const AIChat = lazy(() => import('@/pages/AIChat'));
+const Receipts = lazy(() => import('@/pages/Receipts'));
+const CustomerContacts = lazy(() => import('@/pages/CustomerContacts'));
+const Landing = lazy(() => import('@/pages/Landing'));
+const Services = lazy(() => import('@/pages/Services'));
+const CompanyProfile = lazy(() => import('@/pages/CompanyProfile'));
+const Integrations = lazy(() => import('@/pages/Integrations'));
+const WhatsAppDashboard = lazy(() => import('@/pages/WhatsAppDashboard'));
+const AIFeatures = lazy(() => import('@/pages/AIFeatures'));
+const SmartAssistant = lazy(() => import('@/pages/SmartAssistant'));
+const AdvancedAnalytics = lazy(() => import('@/pages/AdvancedAnalytics'));
+const IntegrationsHub = lazy(() => import('@/pages/IntegrationsHub'));
+const Notifications = lazy(() => import('@/pages/Notifications'));
+const Reminders = lazy(() => import('@/pages/Reminders'));
+const Referrals = lazy(() => import('@/pages/Referrals'));
+const Feedback = lazy(() => import('@/pages/Feedback'));
+const Analytics = lazy(() => import('@/pages/Analytics'));
+const Admin = lazy(() => import('@/pages/Admin'));
+const BankReconciliation = lazy(() => import('@/pages/BankReconciliation'));
+const VATFiling = lazy(() => import('@/pages/VATFiling'));
+const TeamManagement = lazy(() => import('@/pages/TeamManagement'));
+const AdvancedReports = lazy(() => import('@/pages/AdvancedReports'));
+const DocumentVault = lazy(() => import('@/pages/DocumentVault'));
+const TaxReturnArchive = lazy(() => import('@/pages/TaxReturnArchive'));
+const ComplianceCalendar = lazy(() => import('@/pages/ComplianceCalendar'));
+const TaskCenter = lazy(() => import('@/pages/TaskCenter'));
+const UAENewsFeed = lazy(() => import('@/pages/UAENewsFeed'));
+const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
+const ClientManagement = lazy(() => import('@/pages/ClientManagement'));
+const UserInvitations = lazy(() => import('@/pages/UserInvitations'));
+const ActivityLogs = lazy(() => import('@/pages/ActivityLogs'));
+const AdminDocuments = lazy(() => import('@/pages/AdminDocuments'));
+const ClientImport = lazy(() => import('@/pages/ClientImport'));
+const ClientDocuments = lazy(() => import('@/pages/ClientDocuments'));
+const ClientTasks = lazy(() => import('@/pages/ClientTasks'));
+const ClientDetails = lazy(() => import('@/pages/ClientDetails'));
+const History = lazy(() => import('@/pages/History'));
+const BackupRestore = lazy(() => import('@/pages/BackupRestore'));
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -105,7 +104,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </motion.div>
             </Link>
           </motion.header>
-          <main className="flex-1 overflow-auto p-8">
+          <main className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
             <AnimatePresence mode="wait">
               <motion.div
                 key={location}
@@ -232,7 +231,6 @@ function Router() {
           <Route path="/admin/import" component={ClientImport} />
           <Route path="/admin/activity-logs" component={ActivityLogs} />
           <Route path="/admin/users" component={Admin} />
-          <Route path="/admin" component={Admin} />
           
           <Route component={NotFound} />
         </Switch>
@@ -242,18 +240,13 @@ function Router() {
 }
 
 export default function App() {
-  const { locale, setLocale } = useI18n();
-
-  useEffect(() => {
-    // Initialize locale settings
-    setLocale(locale);
-  }, []);
-
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <Router />
+          <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>}>
+            <Router />
+          </Suspense>
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>

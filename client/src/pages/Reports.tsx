@@ -148,29 +148,34 @@ export default function Reports() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-3xl font-semibold mb-2">{t.reports}</h1>
-          <p className="text-muted-foreground">Financial reports and VAT summaries</p>
+      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-blue-600/10 via-blue-500/5 to-transparent border border-blue-500/20 p-4 md:p-6 lg:p-8">
+        <div className="relative z-10">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex-1 min-w-0">
+              <h1 className="text-3xl font-semibold mb-2">{t.reports}</h1>
+              <p className="text-muted-foreground">Financial reports and VAT summaries</p>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={isExporting} data-testid="button-export">
+                  <Download className="w-4 h-4 mr-2" />
+                  {isExporting ? 'Exporting...' : t.export}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Export to Excel
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
+                  <SiGooglesheets className="w-4 h-4 mr-2" />
+                  Export to Google Sheets
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" disabled={isExporting} data-testid="button-export">
-              <Download className="w-4 h-4 mr-2" />
-              {isExporting ? 'Exporting...' : t.export}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Export to Excel
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
-              <SiGooglesheets className="w-4 h-4 mr-2" />
-              Export to Google Sheets
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full -mr-32 -mt-32 blur-3xl" />
       </div>
 
       <Card>
@@ -266,6 +271,13 @@ export default function Reports() {
                   <div>
                     <h3 className="font-semibold mb-3 text-green-600 dark:text-green-400">Revenue</h3>
                     <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[100px]">Code</TableHead>
+                          <TableHead>Account</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
                       <TableBody>
                         {profitLoss?.revenue?.map((item, index) => (
                           <TableRow key={item.accountCode || `revenue-${index}`}>
@@ -289,6 +301,13 @@ export default function Reports() {
                   <div>
                     <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">Expenses</h3>
                     <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[100px]">Code</TableHead>
+                          <TableHead>Account</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
                       <TableBody>
                         {profitLoss?.expenses?.map((item, index) => (
                           <TableRow key={item.accountCode || `expense-${index}`}>
@@ -309,7 +328,7 @@ export default function Reports() {
                     </Table>
                   </div>
 
-                  <div className="border-t-4 pt-4">
+                  <div className="border-t-4 pt-4 mt-2 bg-muted/30 rounded-lg p-4">
                     <div className="flex justify-between items-center text-lg font-semibold">
                       <span>Net Profit</span>
                       <span className={`font-mono ${(profitLoss?.netProfit ?? 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -319,6 +338,9 @@ export default function Reports() {
                   </div>
                 </div>
               )}
+              <p className="text-xs text-muted-foreground mt-6 pt-4 border-t text-center">
+                Generated by Muhasib.ai • FTA-Compliant Report
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -341,6 +363,13 @@ export default function Reports() {
                   <div>
                     <h3 className="font-semibold mb-3 text-blue-600 dark:text-blue-400">Assets</h3>
                     <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[100px]">Code</TableHead>
+                          <TableHead>Account</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
                       <TableBody>
                         {balanceSheet?.assets?.map((item, index) => (
                           <TableRow key={item.accountCode || `asset-${index}`}>
@@ -364,6 +393,13 @@ export default function Reports() {
                   <div>
                     <h3 className="font-semibold mb-3 text-red-600 dark:text-red-400">Liabilities</h3>
                     <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[100px]">Code</TableHead>
+                          <TableHead>Account</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
                       <TableBody>
                         {balanceSheet?.liabilities?.map((item, index) => (
                           <TableRow key={item.accountCode || `liability-${index}`}>
@@ -387,6 +423,13 @@ export default function Reports() {
                   <div>
                     <h3 className="font-semibold mb-3 text-purple-600 dark:text-purple-400">Equity</h3>
                     <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[100px]">Code</TableHead>
+                          <TableHead>Account</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                        </TableRow>
+                      </TableHeader>
                       <TableBody>
                         {balanceSheet?.equity?.map((item, index) => (
                           <TableRow key={item.accountCode || `equity-${index}`}>
@@ -408,6 +451,9 @@ export default function Reports() {
                   </div>
                 </div>
               )}
+              <p className="text-xs text-muted-foreground mt-6 pt-4 border-t text-center">
+                Generated by Muhasib.ai • FTA-Compliant Report
+              </p>
             </CardContent>
           </Card>
         </TabsContent>
@@ -457,7 +503,7 @@ export default function Reports() {
                     </div>
                   </div>
 
-                  <div className="border-t-4 pt-6">
+                  <div className="border-t-4 pt-4 mt-2 bg-muted/30 rounded-lg p-4">
                     <div className="flex justify-between items-center text-lg font-semibold">
                       <span>Net VAT Payable to FTA</span>
                       <span className={`font-mono ${(vatSummary?.netVATPayable ?? 0) >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
@@ -466,13 +512,16 @@ export default function Reports() {
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {(vatSummary?.netVATPayable ?? 0) >= 0 
-                        ? 'Amount to be paid to the Federal Tax Authority' 
+                      {(vatSummary?.netVATPayable ?? 0) >= 0
+                        ? 'Amount to be paid to the Federal Tax Authority'
                         : 'Amount to be refunded by the Federal Tax Authority'}
                     </p>
                   </div>
                 </div>
               )}
+              <p className="text-xs text-muted-foreground mt-6 pt-4 border-t text-center">
+                Generated by Muhasib.ai • FTA-Compliant Report
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

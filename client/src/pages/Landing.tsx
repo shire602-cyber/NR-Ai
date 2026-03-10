@@ -50,12 +50,10 @@ import { ScrollReveal, StaggerContainer, StaggerItem, Floating, hoverScale, hove
 
 export default function Landing() {
   const { locale, setLocale } = useI18n();
-  const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 
   useEffect(() => {
-    setMounted(true);
     const interval = setInterval(() => {
       setActiveTestimonial((prev) => (prev + 1) % 3);
     }, 5000);
@@ -129,8 +127,8 @@ export default function Landing() {
       icon: Bot,
       title: locale === 'en' ? 'AI Expense Categorization' : 'تصنيف المصروفات بالذكاء الاصطناعي',
       description: locale === 'en' 
-        ? 'GPT-4o instantly categorizes your expenses with 99.8% accuracy. No manual entry needed.'
-        : 'GPT-4o يصنف مصروفاتك فوراً بدقة 99.8%. لا حاجة لإدخال يدوي.',
+        ? 'AI instantly categorizes your expenses with 99.8% accuracy. No manual entry needed.'
+        : 'الذكاء الاصطناعي يصنف مصروفاتك فوراً بدقة 99.8%. لا حاجة لإدخال يدوي.',
       color: 'from-violet-500 to-purple-600',
       bgColor: 'bg-violet-500/10',
     },
@@ -268,9 +266,6 @@ export default function Landing() {
     },
   ];
 
-  const logos = [
-    'Emirates NBD', 'ADNOC', 'Etisalat', 'Dubai Holding', 'Majid Al Futtaim', 'Emaar'
-  ];
 
   return (
     <div className={`min-h-screen bg-background ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
@@ -401,12 +396,7 @@ export default function Landing() {
                 className="font-semibold transition-all duration-200"
               data-testid="button-language-toggle"
               >
-                <motion.div
-                  animate={{ rotate: [0, 360] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-            >
               <Globe className="w-4 h-4 mr-2" />
-                </motion.div>
               {t.nav.languageToggle}
             </Button>
             </motion.div>
@@ -587,20 +577,22 @@ export default function Landing() {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <Button 
-                    size="lg" 
-                    variant="outline" 
-                    className="w-full sm:w-auto px-8 py-7 text-base font-semibold border-2 hover:bg-white/5 transition-all" 
-                    data-testid="hero-button-watch-demo"
-                  >
-                    <motion.div
-                      animate={{ scale: [1, 1.1, 1] }}
-                      transition={{ duration: 2, repeat: Infinity }}
+                  <a href="mailto:info@nraccounting.ae?subject=Demo Request">
+                    <Button
+                      size="lg"
+                      variant="outline"
+                      className="w-full sm:w-auto px-8 py-7 text-base font-semibold border-2 hover:bg-white/5 transition-all"
+                      data-testid="hero-button-watch-demo"
                     >
-                  <Play className="w-5 h-5 mr-2" />
-                    </motion.div>
-                  {t.hero.ctaSecondary}
-                </Button>
+                      <motion.div
+                        animate={{ scale: [1, 1.1, 1] }}
+                        transition={{ duration: 2, repeat: Infinity }}
+                      >
+                        <Play className="w-5 h-5 mr-2" />
+                      </motion.div>
+                      {t.hero.ctaSecondary}
+                    </Button>
+                  </a>
                 </motion.div>
               </motion.div>
 
@@ -647,7 +639,7 @@ export default function Landing() {
                       <div className="w-3 h-3 rounded-full bg-yellow-500" />
                       <div className="w-3 h-3 rounded-full bg-green-500" />
                     </div>
-                    <div className="text-xs text-muted-foreground font-mono">dashboard.bookkeep.ai</div>
+                    <div className="text-xs text-muted-foreground font-mono">dashboard.muhasib.ai</div>
                   </div>
                   
                   {/* Stats Row */}
@@ -742,18 +734,14 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* LOGOS / SOCIAL PROOF */}
+      {/* SOCIAL PROOF */}
       <section className="py-12 border-y border-white/10 bg-white/[0.02]" data-testid="section-logos">
         <div className="container max-w-7xl mx-auto px-6 lg:px-8">
-          <p className="text-center text-sm text-muted-foreground mb-8">
-            {locale === 'en' ? 'Trusted by leading UAE businesses' : 'موثوق من الشركات الإماراتية الرائدة'}
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-8 lg:gap-16 opacity-50">
-            {logos.map((logo, i) => (
-              <div key={i} className="text-lg font-bold text-muted-foreground tracking-wider">
-                {logo}
-              </div>
-            ))}
+          <div className="flex items-center justify-center gap-3">
+            <Building2 className="w-5 h-5 text-primary" />
+            <p className="text-center text-base font-medium text-muted-foreground">
+              {locale === 'en' ? 'Trusted by 500+ UAE businesses' : 'موثوق من 500+ شركة إماراتية'}
+            </p>
           </div>
         </div>
       </section>
@@ -1014,9 +1002,11 @@ export default function Landing() {
                   <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
-              <Button size="lg" variant="outline" className="w-full sm:w-auto px-10 py-7 text-lg font-semibold border-2 bg-white/5 hover:bg-white/10 backdrop-blur-sm" data-testid="cta-button-sales">
-                {t.cta.secondary}
-              </Button>
+              <a href="mailto:info@nraccounting.ae?subject=Sales Inquiry">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto px-10 py-7 text-lg font-semibold border-2 bg-white/5 hover:bg-white/10 backdrop-blur-sm" data-testid="cta-button-sales">
+                  {t.cta.secondary}
+                </Button>
+              </a>
             </div>
 
             <p className="text-sm text-muted-foreground" data-testid="cta-guarantee">
@@ -1087,7 +1077,7 @@ export default function Landing() {
 
           <div className="pt-8 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-sm text-muted-foreground">
-              © 2025 Muhasib.ai by NR Accounting Services. {locale === 'en' ? 'All rights reserved.' : 'جميع الحقوق محفوظة.'}
+              © {new Date().getFullYear()} Muhasib.ai by NR Accounting Services. {locale === 'en' ? 'All rights reserved.' : 'جميع الحقوق محفوظة.'}
             </div>
             <div className="flex items-center gap-6 text-sm text-muted-foreground">
               <a href="#" className="hover:text-foreground transition-colors">{locale === 'en' ? 'Privacy Policy' : 'سياسة الخصوصية'}</a>

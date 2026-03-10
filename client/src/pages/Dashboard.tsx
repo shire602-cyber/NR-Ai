@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,12 +22,6 @@ import { ScrollReveal, StaggerContainer, StaggerItem, hoverScale, hoverLift } fr
 export default function Dashboard() {
   const { t, locale } = useTranslation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery<any>({
     queryKey: ['/api/companies', selectedCompanyId, 'dashboard/stats'],
     enabled: !!selectedCompanyId,
@@ -73,7 +66,7 @@ export default function Dashboard() {
       className="h-full"
     >
     <Link href={href}>
-        <div className="h-full p-6 rounded-lg border bg-gradient-to-br hover-elevate active-elevate-2 transition-all duration-300 cursor-pointer group overflow-hidden relative hover-lift">
+        <div className="h-full p-6 rounded-lg border bg-gradient-to-br active-elevate-2 transition-all duration-300 cursor-pointer group overflow-hidden relative">
           <motion.div 
             className="absolute inset-0 bg-gradient-to-br from-white/0 to-white/5 dark:from-white/0 dark:to-white/5"
             whileHover={{ opacity: 1 }}
@@ -114,7 +107,7 @@ export default function Dashboard() {
       transition={{ duration: 0.5, delay, ease: [0.6, -0.05, 0.01, 0.99] }}
       whileHover={hoverLift}
     >
-      <Card className="overflow-hidden relative group hover-elevate active-elevate-2 transition-all duration-300 hover-lift">
+      <Card className="overflow-hidden relative group active-elevate-2 transition-all duration-300">
         <motion.div 
           className="absolute inset-0 bg-gradient-to-br from-white/0 via-white/0 to-white/5 dark:from-white/0 dark:via-white/0 dark:to-white/5"
           initial={{ opacity: 0 }}
@@ -172,10 +165,16 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
+      {statsError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+          Failed to load dashboard data. Please try refreshing.
+        </div>
+      )}
+
       {/* Hero Section */}
       <ScrollReveal direction="down" delay={0.1}>
         <motion.div 
-          className="relative overflow-hidden rounded-2xl p-8 mb-8 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 dark:from-primary/5 dark:via-transparent dark:to-accent/10 border border-primary/10 dark:border-primary/5"
+          className="relative overflow-hidden rounded-2xl p-4 md:p-6 lg:p-8 mb-8 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 dark:from-primary/5 dark:via-transparent dark:to-accent/10 border border-primary/10 dark:border-primary/5"
           whileHover={{ scale: 1.01 }}
           transition={{ duration: 0.3 }}
         >
@@ -252,7 +251,7 @@ export default function Dashboard() {
             whileHover={{ scale: 1.01 }}
             transition={{ duration: 0.3 }}
           >
-            <Card className="relative overflow-hidden bg-gradient-to-br from-primary/15 to-accent/5 dark:from-primary/10 dark:to-accent/5 border-primary/20 hover-elevate transition-all group hover-lift">
+            <Card className="relative overflow-hidden bg-gradient-to-br from-primary/15 to-accent/5 dark:from-primary/10 dark:to-accent/5 border-primary/20 transition-all group">
               <motion.div 
                 className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent"
                 initial={{ opacity: 0, x: '-100%' }}
@@ -366,7 +365,7 @@ export default function Dashboard() {
         {/* Revenue & Expenses Trend */}
         <ScrollReveal direction="left" delay={0.2}>
           <motion.div whileHover={hoverLift}>
-            <Card className="overflow-hidden hover-elevate transition-all hover-lift">
+            <Card className="overflow-hidden transition-all">
           <CardHeader className="border-b">
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-lg">
@@ -424,7 +423,7 @@ export default function Dashboard() {
         {/* Expense Breakdown */}
         <ScrollReveal direction="right" delay={0.2}>
           <motion.div whileHover={hoverLift}>
-            <Card className="overflow-hidden hover-elevate transition-all hover-lift">
+            <Card className="overflow-hidden transition-all">
           <CardHeader className="border-b">
             <CardTitle className="flex items-center gap-2 text-lg">
               <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-orange-100 to-amber-100 dark:from-orange-900/20 dark:to-amber-900/20 flex items-center justify-center">
@@ -551,7 +550,7 @@ export default function Dashboard() {
         {/* Recent Invoices */}
         <ScrollReveal direction="left" delay={0.3}>
           <motion.div whileHover={hoverLift}>
-            <Card className="overflow-hidden hover-elevate transition-all hover-lift">
+            <Card className="overflow-hidden transition-all">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 border-b">
             <CardTitle className="flex items-center gap-2 text-lg">
               <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
@@ -629,7 +628,7 @@ export default function Dashboard() {
         {/* Recent Transactions */}
         <ScrollReveal direction="right" delay={0.35}>
           <motion.div whileHover={hoverLift}>
-            <Card className="overflow-hidden hover-elevate transition-all hover-lift">
+            <Card className="overflow-hidden transition-all">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4 border-b">
             <CardTitle className="flex items-center gap-2 text-lg">
               <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">

@@ -114,6 +114,7 @@ export default function AICFO() {
     { q: "Revenue forecast for next quarter?", icon: "🔮" },
   ];
 
+  // TODO: Replace with actual monthly data from API
   const chartData = [
     { month: 'Jan', revenue: 45000, expenses: 38000 },
     { month: 'Feb', revenue: 52000, expenses: 41000 },
@@ -130,6 +131,7 @@ export default function AICFO() {
     { category: 'Q4', profit: 28 },
   ];
 
+  // Note: Sample data for demonstration — replace with actual expense data from API
   const expenseBreakdown = [
     { name: 'Salaries', value: 35000, percentage: 31 },
     { name: 'Operations', value: 28000, percentage: 25 },
@@ -199,7 +201,7 @@ export default function AICFO() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-8">
+      <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/20 p-4 md:p-6 lg:p-8">
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-3 rounded-lg bg-primary/20">
@@ -208,7 +210,7 @@ export default function AICFO() {
             <div>
               <h1 className="text-3xl font-bold">AI CFO & Financial Advisor</h1>
               <p className="text-muted-foreground mt-1">
-                Real-time financial intelligence powered by GPT-4o
+                Real-time financial intelligence powered by Muhasib AI
               </p>
             </div>
           </div>
@@ -253,7 +255,11 @@ export default function AICFO() {
                       {Math.round(kpi.value)}%
                     </div>
                     <div className="flex items-center gap-1 mt-2">
-                      <ArrowUp className={`w-3 h-3 ${kpi.trend >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
+                      {kpi.trend >= 0 ? (
+                        <ArrowUp className="w-3 h-3 text-green-600 dark:text-green-400" />
+                      ) : (
+                        <ArrowDown className="w-3 h-3 text-red-600 dark:text-red-400" />
+                      )}
                       <span className={`text-xs font-medium ${kpi.trend >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {Math.abs(kpi.trend).toFixed(1)}% {kpi.trend >= 0 ? 'increase' : 'decrease'}
                       </span>
@@ -364,10 +370,10 @@ export default function AICFO() {
         <TabsContent value="analytics" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Revenue vs Expenses Chart */}
-            <Card className="hover-elevate">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-base">Revenue vs Expenses Trend</CardTitle>
-                <CardDescription>Last 6 months performance</CardDescription>
+                <CardDescription>Last 6 months performance (Sample Data)</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -397,7 +403,7 @@ export default function AICFO() {
             </Card>
 
             {/* Profit Margin Trend */}
-            <Card className="hover-elevate">
+            <Card>
               <CardHeader>
                 <CardTitle className="text-base">Profit Margin Trend</CardTitle>
                 <CardDescription>Quarterly performance</CardDescription>
@@ -421,7 +427,7 @@ export default function AICFO() {
           </div>
 
           {/* Expense Breakdown */}
-          <Card className="hover-elevate">
+          <Card>
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <PieChart className="w-4 h-4" />
@@ -527,8 +533,8 @@ export default function AICFO() {
                     </p>
                     <div className="w-full space-y-2">
                       <p className="text-xs font-semibold text-muted-foreground mb-3">Quick Questions:</p>
-                      <div className="grid gap-2">
-                        {quickQuestions.slice(0, 3).map((item, i) => (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {quickQuestions.map((item, i) => (
                           <Button
                             key={i}
                             variant="outline"
