@@ -140,6 +140,8 @@ export interface ServiceRecommendation {
 /**
  * Identify cross-sell opportunities across all active clients.
  * Returns services each client doesn't currently have but could benefit from.
+ *
+ * Uses batch-loaded engagements to avoid N+1 queries.
  */
 export async function identifyOpportunities(): Promise<ServiceRecommendation[]> {
   const recommendations: ServiceRecommendation[] = [];
@@ -147,14 +149,24 @@ export async function identifyOpportunities(): Promise<ServiceRecommendation[]> 
   try {
     const allCompanies = await storage.getAllCompaniesWithContacts();
 
+    // Batch-load all engagements in one query, grouped by company
+    const allEngagements = await storage.getEngagements();
+    const engagementsByCompany = new Map<string, typeof allEngagements>();
+    for (const eng of allEngagements) {
+      const arr = engagementsByCompany.get(eng.companyId) || [];
+      arr.push(eng);
+      engagementsByCompany.set(eng.companyId, arr);
+    }
+
     for (const company of allCompanies) {
       try {
         const companyId = company.id;
         const companyName = company.name;
         const locale = company.locale || 'en';
 
-        // Get existing services from engagement
-        const existingServices = await getClientServices(companyId);
+        // Get existing services from pre-loaded engagements
+        const companyEngagements = engagementsByCompany.get(companyId) || [];
+        const existingServices = deriveServicesFromEngagements(companyEngagements);
 
         // Find services the client doesn't have
         for (const service of SERVICE_CATALOG) {
@@ -189,7 +201,41 @@ export async function identifyOpportunities(): Promise<ServiceRecommendation[]> 
 }
 
 /**
+ * Derive service IDs from a list of engagements (pure function, no DB calls).
+ */
+function deriveServicesFromEngagements(engagements: any[]): Set<string> {
+  const services = new Set<string>();
+
+  for (const engagement of engagements) {
+    if (engagement.status !== 'active') continue;
+
+    // Map engagement type to services
+    const type = engagement.engagementType;
+    for (const service of SERVICE_CATALOG) {
+      if (service.includedIn.includes(type)) {
+        services.add(service.id);
+      }
+    }
+
+    // Check servicesIncluded JSON
+    if (engagement.servicesIncluded) {
+      try {
+        const included = JSON.parse(engagement.servicesIncluded);
+        if (Array.isArray(included)) {
+          included.forEach((s: string) => services.add(s));
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return services;
+}
+
+/**
  * Get the set of service IDs a client currently has.
+ * Used by individual lookups (fallback path).
  */
 async function getClientServices(companyId: string): Promise<Set<string>> {
   const services = new Set<string>();
@@ -302,9 +348,13 @@ export async function generateCampaignMessages(campaignId: string): Promise<numb
   const openai = await getOpenAIClientForCrossSell();
   let generated = 0;
 
+  // Batch-load all companies once (fixes N+1 query)
+  const allCompanies = await storage.getAllCompaniesWithContacts();
+  const companyMap = new Map(allCompanies.map(c => [c.id, c]));
+
   for (const target of targets) {
     try {
-      const company = await storage.getCompany(target.companyId);
+      const company = companyMap.get(target.companyId) || await storage.getCompany(target.companyId);
       if (!company) continue;
 
       const locale = company.locale || 'en';

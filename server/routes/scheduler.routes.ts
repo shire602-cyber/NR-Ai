@@ -44,7 +44,7 @@ export function registerSchedulerRoutes(app: Express) {
     const result = await triggerJob(name);
 
     if (result.success) {
-      log.info({ job: name, admin: (req as any).user?.email }, 'Job manually triggered by admin');
+      log.info({ job: name, admin: req.user?.email }, 'Job manually triggered by admin');
       res.json({ message: `Job '${name}' triggered successfully` });
     } else {
       res.status(404).json({ message: result.error });
@@ -123,7 +123,7 @@ export function registerSchedulerRoutes(app: Express) {
       log.error({ error: err.message }, 'WhatsApp Web init failed');
     });
 
-    log.info({ admin: (req as any).user?.email }, 'WhatsApp Web connection initiated by admin');
+    log.info({ admin: req.user?.email }, 'WhatsApp Web connection initiated by admin');
     res.json({ message: 'Connection initiated. Check /api/admin/whatsapp-web/qr for QR code.', status: 'connecting' });
   }));
 
@@ -132,7 +132,7 @@ export function registerSchedulerRoutes(app: Express) {
     const { disconnectWhatsAppWeb } = await import('../services/whatsappWeb');
     await disconnectWhatsAppWeb();
 
-    log.info({ admin: (req as any).user?.email }, 'WhatsApp Web disconnected by admin');
+    log.info({ admin: req.user?.email }, 'WhatsApp Web disconnected by admin');
     res.json({ message: 'WhatsApp Web disconnected', status: 'disconnected' });
   }));
 
@@ -148,7 +148,7 @@ export function registerSchedulerRoutes(app: Express) {
     const result = await sendWhatsAppWebMessage(phone, message);
 
     if (result.success) {
-      log.info({ admin: (req as any).user?.email, phone }, 'Test WhatsApp message sent');
+      log.info({ admin: req.user?.email, phone }, 'Test WhatsApp message sent');
       res.json({ success: true, messageId: result.messageId });
     } else {
       res.status(400).json({ success: false, error: result.error });
@@ -172,7 +172,7 @@ export function registerSchedulerRoutes(app: Express) {
       ...(isActive !== undefined && { isActive }),
     });
 
-    log.info({ templateId: id, admin: (req as any).user?.email }, 'Message template updated');
+    log.info({ templateId: id, admin: req.user?.email }, 'Message template updated');
     res.json(updated);
   }));
 
@@ -193,7 +193,7 @@ export function registerSchedulerRoutes(app: Express) {
       channel: channel || 'whatsapp',
     });
 
-    log.info({ templateId: template.id, admin: (req as any).user?.email }, 'Message template created');
+    log.info({ templateId: template.id, admin: req.user?.email }, 'Message template created');
     res.json(template);
   }));
 
@@ -261,7 +261,7 @@ export function registerSchedulerRoutes(app: Express) {
       ...(businessHoursEnd !== undefined && { businessHoursEnd }),
     });
 
-    log.info({ admin: (req as any).user?.email }, 'WhatsApp Web settings updated');
+    log.info({ admin: req.user?.email }, 'WhatsApp Web settings updated');
     res.json({ message: 'Settings updated' });
   }));
 
@@ -329,13 +329,13 @@ export function registerSchedulerRoutes(app: Express) {
   // ── Approve a translation (MUST be before /news/:id) ──
   app.post('/api/admin/news/translations/:id/approve', authMiddleware, adminMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const adminUserId = (req as any).user?.id;
+    const adminUserId = req.user!.id;
 
     const translation = await storage.approveNewsTranslation(id, adminUserId);
     if (!translation) {
       return res.status(404).json({ message: 'Translation not found' });
     }
-    log.info({ translationId: id, admin: (req as any).user?.email }, 'Translation approved');
+    log.info({ translationId: id, admin: req.user?.email }, 'Translation approved');
     res.json(translation);
   }));
 
@@ -354,7 +354,7 @@ export function registerSchedulerRoutes(app: Express) {
       return res.status(404).json({ message: 'Translation not found' });
     }
 
-    log.info({ translationId: id, admin: (req as any).user?.email }, 'Translation updated');
+    log.info({ translationId: id, admin: req.user?.email }, 'Translation updated');
     res.json(updated);
   }));
 
@@ -387,7 +387,7 @@ export function registerSchedulerRoutes(app: Express) {
       results[lang] = translation ? 'translated' : 'failed';
     }
 
-    log.info({ newsId: id, admin: (req as any).user?.email, results }, 'News translations triggered');
+    log.info({ newsId: id, admin: req.user?.email, results }, 'News translations triggered');
     res.json({ message: 'Translations generated', results });
   }));
 
@@ -459,7 +459,7 @@ export function registerSchedulerRoutes(app: Express) {
     }
 
     log.info(
-      { newsId: id, queued, skipped, admin: (req as any).user?.email },
+      { newsId: id, queued, skipped, admin: req.user?.email },
       'News distribution queued',
     );
 
@@ -556,10 +556,10 @@ export function registerSchedulerRoutes(app: Express) {
       name,
       description,
       targetCompanyIds,
-      createdBy: (req as any).user?.id,
+      createdBy: req.user!.id,
     });
 
-    log.info({ campaignId: campaign.id, admin: (req as any).user?.email }, 'Cross-sell campaign created');
+    log.info({ campaignId: campaign.id, admin: req.user?.email }, 'Cross-sell campaign created');
     res.json(campaign);
   }));
 
@@ -569,7 +569,7 @@ export function registerSchedulerRoutes(app: Express) {
     const { generateCampaignMessages } = await import('../services/crossSelling');
     const generated = await generateCampaignMessages(id);
 
-    log.info({ campaignId: id, generated, admin: (req as any).user?.email }, 'Campaign messages generated');
+    log.info({ campaignId: id, generated, admin: req.user?.email }, 'Campaign messages generated');
     res.json({ message: `Generated ${generated} personalized messages`, generated });
   }));
 
@@ -577,10 +577,10 @@ export function registerSchedulerRoutes(app: Express) {
   app.post('/api/admin/cross-sell/campaigns/:id/execute', authMiddleware, adminMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const { executeCampaign } = await import('../services/crossSelling');
-    const result = await executeCampaign(id, (req as any).user?.id);
+    const result = await executeCampaign(id, req.user!.id);
 
     log.info(
-      { campaignId: id, admin: (req as any).user?.email, ...result },
+      { campaignId: id, admin: req.user?.email, ...result },
       'Cross-sell campaign executed',
     );
 
@@ -604,7 +604,7 @@ export function registerSchedulerRoutes(app: Express) {
     }
 
     await storage.deleteCrossSellCampaign(id);
-    log.info({ campaignId: id, admin: (req as any).user?.email }, 'Draft campaign deleted');
+    log.info({ campaignId: id, admin: req.user?.email }, 'Draft campaign deleted');
     res.json({ message: 'Campaign deleted' });
   }));
 }

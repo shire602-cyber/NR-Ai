@@ -30,13 +30,23 @@ const MAX_BATCH_SIZE = 20;
 const RETRY_BASE_DELAY_MS = 60_000; // 1 minute base retry delay
 const STALE_SENDING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
-/** Allowed base directories for document attachments */
-const ALLOWED_DOCUMENT_DIRS = [
+/** Allowed base directories for document attachments (no shared dirs like /tmp) */
+export const ALLOWED_DOCUMENT_DIRS = [
   path.resolve(process.cwd(), 'uploads'),
   path.resolve(process.cwd(), 'documents'),
   path.resolve(process.cwd(), 'invoices'),
-  '/tmp',
 ];
+
+/**
+ * Check if a resolved file path is within allowed directories.
+ * Exported for testing.
+ */
+export function isPathAllowed(filePath: string): boolean {
+  const resolvedPath = path.resolve(filePath);
+  return ALLOWED_DOCUMENT_DIRS.some(dir =>
+    resolvedPath.startsWith(dir + path.sep) || resolvedPath === dir
+  );
+}
 
 // ── Core Functions ──────────────────────────────────────────────
 
@@ -172,10 +182,10 @@ export async function processMessageQueue(): Promise<{
       continue;
     }
 
-    // Re-check daily limit before each send
-    const currentSession = await storage.getWhatsappWebSession();
-    if (currentSession && currentSession.messagesSentToday >= dailyLimit) {
-      log.info('Daily limit reached during processing, stopping');
+    // Re-check daily limit using tracked count (avoids N DB queries per batch)
+    const sentSoFar = (session?.messagesSentToday ?? 0) + stats.sent;
+    if (sentSoFar >= dailyLimit) {
+      log.info({ sent: sentSoFar, limit: dailyLimit }, 'Daily limit reached during processing, stopping');
       break;
     }
 
@@ -191,11 +201,9 @@ export async function processMessageQueue(): Promise<{
       if (item.messageType === 'document' && item.mediaUrl) {
         // ── Validate file path before reading (prevent path traversal) ──
         const resolvedPath = path.resolve(item.mediaUrl);
-        const isAllowed = ALLOWED_DOCUMENT_DIRS.some(dir =>
-          resolvedPath.startsWith(dir + path.sep) || resolvedPath === dir
-        );
+        const allowed = isPathAllowed(item.mediaUrl);
 
-        if (!isAllowed) {
+        if (!allowed) {
           log.error(
             { id: item.id, path: item.mediaUrl },
             'Document path outside allowed directories — rejecting'
@@ -314,8 +322,9 @@ export async function getQueueStats(): Promise<{
 /**
  * Check if current time is within business hours.
  * Uses configurable hours from the DB session.
+ * Exported for testing.
  */
-function isWithinBusinessHours(startHour: number, endHour: number): boolean {
+export function isWithinBusinessHours(startHour: number, endHour: number): boolean {
   const now = new Date();
   const uaeOffset = 4 * 60; // UAE is UTC+4
   const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();

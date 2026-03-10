@@ -134,7 +134,8 @@ async function bootstrap() {
       log.info('✓ Database migrations complete');
     }
   } catch (migrationError: any) {
-    log.error({ error: migrationError.message, stack: migrationError.stack }, 'Database migration failed');
+    log.fatal({ error: migrationError.message, stack: migrationError.stack }, 'Database migration failed — aborting startup');
+    process.exit(1);
   }
 
   // ─── Initialize Background Scheduler ─────────────────────

@@ -117,6 +117,7 @@ import {
   scheduledJobs,
   messageTemplates,
   whatsappWebSessions,
+  whatsappAuthKeys,
   messageQueue,
   newsTranslations,
   crossSellCampaigns,
@@ -547,6 +548,8 @@ export interface IStorage {
   getAllScheduledJobs(): Promise<ScheduledJob[]>;
   /** Get reminder logs filtered by entity (for efficient dedup) */
   getReminderLogsByEntity(entityId: string, entityType: string): Promise<ReminderLog[]>;
+  /** Batch get reminder logs for multiple entities of a given type */
+  getReminderLogsByEntityType(entityType: string): Promise<ReminderLog[]>;
 
   // ── Message Templates ───────────────────────────────────
   getMessageTemplate(name: string, language: string): Promise<MessageTemplate | undefined>;
@@ -2765,7 +2768,10 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     return await db.select().from(serviceInvoices).where(
       and(
-        eq(serviceInvoices.status, 'sent'),
+        or(
+          eq(serviceInvoices.status, 'sent'),
+          eq(serviceInvoices.status, 'overdue')
+        ),
         lte(serviceInvoices.dueDate, now)
       )
     ).orderBy(asc(serviceInvoices.dueDate));
@@ -2849,6 +2855,18 @@ export class DatabaseStorage implements IStorage {
           eq(reminderLogs.relatedEntityType, entityType),
         )
       )
+      .orderBy(desc(reminderLogs.createdAt));
+  }
+
+  /**
+   * Batch-load all reminder logs for a given entity type.
+   * Used to avoid N+1 queries when processing multiple entities.
+   */
+  async getReminderLogsByEntityType(entityType: string): Promise<ReminderLog[]> {
+    return await db
+      .select()
+      .from(reminderLogs)
+      .where(eq(reminderLogs.relatedEntityType, entityType))
       .orderBy(desc(reminderLogs.createdAt));
   }
 
@@ -2948,8 +2966,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateMessageQueueItem(id: string, data: Partial<InsertMessageQueue>): Promise<void> {
+    // Automatically track when status changes for accurate stale recovery
+    const updateData: Record<string, any> = { ...data };
+    if ('status' in data) {
+      updateData.statusChangedAt = new Date();
+    }
     await db.update(messageQueue)
-      .set(data)
+      .set(updateData)
       .where(eq(messageQueue.id, id));
   }
 
@@ -2974,11 +2997,15 @@ export class DatabaseStorage implements IStorage {
   async recoverStaleSendingMessages(thresholdMs: number): Promise<number> {
     const cutoff = new Date(Date.now() - thresholdMs);
     const result = await db.update(messageQueue)
-      .set({ status: 'queued', lastError: 'Recovered from stale sending state' })
+      .set({
+        status: 'queued',
+        lastError: 'Recovered from stale sending state',
+        statusChangedAt: new Date(),
+      })
       .where(
         and(
           eq(messageQueue.status, 'sending'),
-          lte(messageQueue.createdAt, cutoff)
+          lte(messageQueue.statusChangedAt, cutoff)
         )
       )
       .returning();

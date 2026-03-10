@@ -12,11 +12,15 @@
  */
 
 import OpenAI from 'openai';
+import pLimit from 'p-limit';
 import { createLogger } from '../config/logger';
 import { getOpenAIKey, getAIModel } from '../config/settings';
 import { storage } from '../storage';
 import { sanitizeForAI } from '../utils/locale';
 import type { RegulatoryNews, NewsTranslation } from '@shared/schema';
+
+/** Concurrency limiter for OpenAI API calls (prevents rate limit errors) */
+const openaiLimiter = pLimit(3);
 
 const log = createLogger('translation');
 
@@ -157,10 +161,13 @@ export async function translateNewsArticle(
   const context = `Category: ${news.category}. Source: ${news.source || 'UAE regulatory'}`;
 
   // Translate title and summary (and content if available)
+  // Rate-limited to avoid OpenAI API throttling
   const [translatedTitle, translatedSummary, translatedContent] = await Promise.all([
-    translateText(news.title, targetLanguage, context),
-    translateText(news.summary, targetLanguage, context),
-    news.content ? translateText(news.content, targetLanguage, context) : Promise.resolve(null),
+    openaiLimiter(() => translateText(news.title, targetLanguage, context)),
+    openaiLimiter(() => translateText(news.summary, targetLanguage, context)),
+    news.content
+      ? openaiLimiter(() => translateText(news.content!, targetLanguage, context))
+      : Promise.resolve(null),
   ]);
 
   if (!translatedTitle || !translatedSummary) {
@@ -235,24 +242,28 @@ export async function approveTranslation(
 
 /**
  * Get the best available translation for a news article in a given language.
- * Falls back to English if requested language is unavailable.
+ * Only returns approved translations by default. Falls back to English.
+ *
+ * @param requireApproved - If true (default), only return approved translations.
+ *   Set to false for admin preview where unapproved content is acceptable.
  */
 export async function getBestTranslation(
   newsId: string,
   preferredLanguage: SupportedLanguage,
+  requireApproved: boolean = true,
 ): Promise<NewsTranslation | null> {
   // Try preferred language first
   const preferred = await storage.getNewsTranslation(newsId, preferredLanguage);
   if (preferred && preferred.isApproved) return preferred;
 
-  // Fall back to English
+  // Fall back to English (auto-approved)
   if (preferredLanguage !== 'en') {
     const english = await storage.getNewsTranslation(newsId, 'en');
-    if (english) return english;
+    if (english && english.isApproved) return english;
   }
 
-  // If nothing approved, return the preferred even if unapproved
-  if (preferred) return preferred;
+  // Only return unapproved content if explicitly allowed (e.g., admin preview)
+  if (!requireApproved && preferred) return preferred;
 
   return null;
 }

@@ -1900,6 +1900,21 @@ export type InsertWhatsappWebSession = z.infer<typeof insertWhatsappWebSessionSc
 export type WhatsappWebSession = typeof whatsappWebSessions.$inferSelect;
 
 // ===========================
+// WhatsApp Auth Keys (Durable signal protocol key storage for Baileys)
+// ===========================
+export const whatsappAuthKeys = pgTable("whatsapp_auth_keys", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: uuid("session_id").notNull().references(() => whatsappWebSessions.id, { onDelete: 'cascade' }),
+  keyType: text("key_type").notNull(),   // pre-key, session, sender-key, etc.
+  keyId: text("key_id").notNull(),       // The specific key identifier
+  keyData: text("key_data").notNull(),   // JSON-serialized key data
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type WhatsappAuthKey = typeof whatsappAuthKeys.$inferSelect;
+
+// ===========================
 // Message Queue (Outbound message queue for rate-limited sending)
 // ===========================
 export const messageQueue = pgTable("message_queue", {
@@ -1932,12 +1947,15 @@ export const messageQueue = pgTable("message_queue", {
   scheduledFor: timestamp("scheduled_for"), // null = send ASAP (within business hours)
   sentAt: timestamp("sent_at"),
 
+  // Timestamps
+  statusChangedAt: timestamp("status_changed_at").defaultNow(), // When status last changed (for stale recovery)
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const insertMessageQueueSchema = createInsertSchema(messageQueue).omit({
   id: true,
   createdAt: true,
+  statusChangedAt: true,
 });
 
 export type InsertMessageQueue = z.infer<typeof insertMessageQueueSchema>;

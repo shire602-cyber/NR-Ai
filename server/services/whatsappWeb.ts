@@ -5,21 +5,17 @@
  * Connects via WebSocket to WhatsApp servers using your personal number.
  *
  * Features:
- * - QR code authentication (scan once, session persists)
- * - Session persistence in PostgreSQL
+ * - QR code authentication (scan once, session persists in PostgreSQL)
+ * - Durable auth state in DB (survives deploys on ephemeral infra)
  * - Auto-reconnect on disconnection
  * - Connection health monitoring
  * - Rate-limited message sending
- *
- * Usage:
- *   import { getWhatsAppClient, sendWhatsAppWebMessage } from './whatsappWeb';
- *   const client = getWhatsAppClient();
- *   await sendWhatsAppWebMessage('971501234567', 'Hello!');
+ * - Cached phone→company lookup for inbound messages
+ * - Init mutex to prevent duplicate sockets
  */
 
 import makeWASocket, {
   DisconnectReason,
-  useMultiFileAuthState,
   WASocket,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
@@ -28,17 +24,13 @@ import makeWASocket, {
   BaileysEventMap,
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import pino from 'pino';
 import { createLogger } from '../config/logger';
 import { storage } from '../storage';
 import { EventEmitter } from 'events';
+import { usePostgresAuthState, clearPostgresAuthState } from './whatsappAuthState';
 
 const log = createLogger('whatsapp-web');
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const AUTH_DIR = path.resolve(__dirname, '..', '..', '.whatsapp-auth');
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -66,6 +58,24 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY_MS = 5000; // 5 seconds
 
+/** Mutex flag to prevent concurrent initialization */
+let initInProgress = false;
+
+/** Session ID used for auth state operations */
+let currentSessionId: string | null = null;
+
+// ── Phone→Company Cache ────────────────────────────────────────
+
+interface CachedCompanyLookup {
+  map: Map<string, { id: string; name: string }>;
+  loadedAt: number;
+}
+let companyPhoneCache: CachedCompanyLookup | null = null;
+const COMPANY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/** Minimum digits required for phone suffix matching */
+const MIN_PHONE_MATCH_DIGITS = 9;
+
 // Event emitter for connection state changes
 export const whatsappEvents = new EventEmitter();
 
@@ -74,26 +84,32 @@ export const whatsappEvents = new EventEmitter();
 /**
  * Initialize the WhatsApp Web connection.
  * Creates a Baileys socket, handles QR code generation,
- * and manages session persistence.
+ * and manages session persistence via PostgreSQL.
+ *
+ * Uses a mutex to prevent concurrent initialization.
  */
 export async function initWhatsAppWeb(): Promise<void> {
+  // Mutex: prevent concurrent initialization creating duplicate sockets
+  if (initInProgress) {
+    log.warn('WhatsApp Web initialization already in progress, skipping');
+    return;
+  }
+
   if (socket) {
     log.warn('WhatsApp Web already initialized, skipping');
     return;
   }
+
+  initInProgress = true;
 
   log.info('Initializing WhatsApp Web connection...');
   connectionStatus = 'connecting';
   whatsappEvents.emit('status', connectionStatus);
 
   try {
-    // Ensure auth directory exists
-    if (!fs.existsSync(AUTH_DIR)) {
-      fs.mkdirSync(AUTH_DIR, { recursive: true });
-    }
-
-    // Load or create auth state
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    // Load auth state from PostgreSQL (survives deploys)
+    const { state, saveCreds, sessionId } = await usePostgresAuthState('default');
+    currentSessionId = sessionId;
 
     // Get latest Baileys version
     const { version } = await fetchLatestBaileysVersion();
@@ -162,6 +178,7 @@ export async function initWhatsAppWeb(): Promise<void> {
         } catch (e) { /* ignore */ }
 
         socket = null;
+        initInProgress = false; // Release mutex for reconnection
 
         if (shouldReconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
           reconnectAttempts++;
@@ -176,10 +193,12 @@ export async function initWhatsAppWeb(): Promise<void> {
           }, RECONNECT_DELAY_MS * reconnectAttempts);
         } else if (statusCode === DisconnectReason.loggedOut) {
           log.warn('Logged out of WhatsApp. Need to re-scan QR code.');
-          // Clear auth state on logout
-          try {
-            fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-          } catch (e) { /* ignore */ }
+          // Clear auth state from DB on logout
+          if (currentSessionId) {
+            clearPostgresAuthState(currentSessionId).catch(e => {
+              log.error({ error: (e as Error).message }, 'Failed to clear auth state on logout');
+            });
+          }
         }
       }
 
@@ -212,10 +231,10 @@ export async function initWhatsAppWeb(): Promise<void> {
       }
     });
 
-    // Save credentials on update
+    // Save credentials on update (to PostgreSQL)
     socket.ev.on('creds.update', saveCreds);
 
-    // Handle incoming messages (for future use)
+    // Handle incoming messages
     socket.ev.on('messages.upsert', async (m) => {
       // Only process new messages, not history sync
       if (m.type !== 'notify') return;
@@ -231,17 +250,9 @@ export async function initWhatsAppWeb(): Promise<void> {
 
         log.info({ from, hasContent: !!content }, 'Received WhatsApp message');
 
-        // Try to resolve company from sender phone number
+        // Resolve company from sender phone using cached lookup
         try {
-          const companies = await storage.getAllCompaniesWithContacts();
-          const cleanedFrom = from.replace(/\D/g, '');
-          const matchedCompany = companies.find((c) => {
-            const companyPhone = (c.contactPhone || '').replace(/\D/g, '');
-            return companyPhone && (
-              cleanedFrom.endsWith(companyPhone) ||
-              companyPhone.endsWith(cleanedFrom)
-            );
-          });
+          const matchedCompany = await resolveCompanyByPhone(from);
 
           if (matchedCompany) {
             await storage.createWhatsappMessage({
@@ -257,7 +268,6 @@ export async function initWhatsAppWeb(): Promise<void> {
               status: 'received',
             });
           } else {
-            // Log unmatched messages without DB insert (companyId is NOT NULL)
             log.info({ from }, 'Received message from unrecognized number — skipping DB log');
           }
         } catch (e: any) {
@@ -266,11 +276,14 @@ export async function initWhatsAppWeb(): Promise<void> {
       }
     });
 
+    initInProgress = false; // Release mutex on successful setup
+
   } catch (error: any) {
     log.error({ error: error.message }, 'Failed to initialize WhatsApp Web');
     connectionStatus = 'disconnected';
     lastError = error.message;
     socket = null;
+    initInProgress = false; // Release mutex on failure
     whatsappEvents.emit('status', connectionStatus);
     throw error;
   }
@@ -394,12 +407,15 @@ export async function disconnectWhatsAppWeb(): Promise<void> {
     log.info('Disconnecting WhatsApp Web...');
     // Use socket.end() instead of socket.logout() to preserve session.
     // logout() permanently invalidates the session, requiring QR re-scan.
-    socket.end(undefined);
+    try {
+      socket.end(undefined);
+    } catch (e) { /* ignore close errors */ }
     socket = null;
     connectionStatus = 'disconnected';
     currentQR = null;
     connectedPhoneNumber = null;
     connectedPushName = null;
+    initInProgress = false;
     whatsappEvents.emit('status', connectionStatus);
 
     try {
@@ -416,6 +432,87 @@ export async function disconnectWhatsAppWeb(): Promise<void> {
  */
 export function isWhatsAppConnected(): boolean {
   return connectionStatus === 'connected' && socket !== null;
+}
+
+/**
+ * Invalidate the company phone cache.
+ * Call this when companies are created/updated/deleted.
+ */
+export function invalidateCompanyPhoneCache(): void {
+  companyPhoneCache = null;
+}
+
+// ── Phone Resolution ─────────────────────────────────────────────
+
+/**
+ * Normalize a phone number to digits-only, stripping country code prefix if needed.
+ * Returns the last N significant digits for comparison.
+ */
+export function normalizePhoneForMatch(phone: string): string {
+  return phone.replace(/\D/g, '');
+}
+
+/**
+ * Resolve a company from a sender phone number.
+ * Uses a cached phone→company map with TTL-based invalidation.
+ * Phone matching requires at least MIN_PHONE_MATCH_DIGITS to avoid false positives.
+ */
+async function resolveCompanyByPhone(
+  senderPhone: string
+): Promise<{ id: string; name: string } | null> {
+  const cleanedSender = normalizePhoneForMatch(senderPhone);
+  if (cleanedSender.length < 7) return null;
+
+  // Refresh cache if stale or missing
+  if (
+    !companyPhoneCache ||
+    Date.now() - companyPhoneCache.loadedAt > COMPANY_CACHE_TTL_MS
+  ) {
+    try {
+      const companies = await storage.getAllCompaniesWithContacts();
+      const map = new Map<string, { id: string; name: string }>();
+
+      for (const company of companies) {
+        if (!company.contactPhone) continue;
+        const cleaned = normalizePhoneForMatch(company.contactPhone);
+        if (cleaned.length >= 7) {
+          map.set(cleaned, { id: company.id, name: company.name });
+        }
+      }
+
+      companyPhoneCache = { map, loadedAt: Date.now() };
+    } catch (err: any) {
+      log.warn({ error: err.message }, 'Failed to refresh company phone cache');
+      return null;
+    }
+  }
+
+  // 1. Try exact match first
+  const exact = companyPhoneCache.map.get(cleanedSender);
+  if (exact) return exact;
+
+  // 2. Try suffix match with minimum length constraint
+  //    Only match if both numbers share at least MIN_PHONE_MATCH_DIGITS digits
+  for (const [companyPhone, company] of companyPhoneCache.map) {
+    const shorter = Math.min(cleanedSender.length, companyPhone.length);
+    const longer = Math.max(cleanedSender.length, companyPhone.length);
+
+    // Only attempt suffix match if the shorter number has enough digits
+    if (shorter < MIN_PHONE_MATCH_DIGITS) continue;
+
+    // Check if the shorter number is a suffix of the longer one
+    const senderSuffix = cleanedSender.slice(-shorter);
+    const companySuffix = companyPhone.slice(-shorter);
+
+    if (senderSuffix === companySuffix) {
+      // Additional safety: the difference in length should only be a country code (1-3 digits)
+      if (longer - shorter <= 3) {
+        return company;
+      }
+    }
+  }
+
+  return null;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────

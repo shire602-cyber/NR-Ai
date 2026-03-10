@@ -11,6 +11,7 @@
  * - Uses atomic UPDATE ... WHERE status != 'running' to claim jobs
  * - Only one instance can run a job at a time
  * - Stale "running" jobs are auto-recovered after timeout
+ * - Fails closed: jobs do NOT run when DB claim cannot be verified
  */
 
 import cron from 'node-cron';
@@ -149,7 +150,7 @@ export async function triggerJob(jobName: string): Promise<{ success: boolean; e
 }
 
 /**
- * Get status of all registered jobs.
+ * Get status of all registered jobs (single batch query).
  */
 export async function getJobStatuses(): Promise<Array<{
   name: string;
@@ -164,15 +165,22 @@ export async function getJobStatuses(): Promise<Array<{
   lastError: string | null;
   lastDurationMs: number | null;
 }>> {
+  // Batch-load all job records in one query
+  let allDbRecords: Array<any> = [];
+  try {
+    allDbRecords = await storage.getAllScheduledJobs();
+  } catch {
+    // DB might be unreachable
+  }
+
+  const dbRecordMap = new Map(
+    allDbRecords.map((r: any) => [r.jobName, r])
+  );
+
   const statuses = [];
 
   for (const [name, entry] of registeredJobs) {
-    let dbRecord;
-    try {
-      dbRecord = await storage.getScheduledJobByName(name);
-    } catch {
-      // DB might not have the record yet
-    }
+    const dbRecord = dbRecordMap.get(name);
 
     statuses.push({
       name,
@@ -206,6 +214,9 @@ export function getRegisteredJobNames(): string[] {
  *
  * Uses an atomic UPDATE ... WHERE status != 'running' pattern so that
  * only one instance can claim and run a job at a time.
+ *
+ * FAIL CLOSED: If the DB is unreachable, the job is NOT executed.
+ * This prevents unsafe concurrent execution in multi-instance deployments.
  */
 async function executeJob(jobName: string): Promise<void> {
   const entry = registeredJobs.get(jobName);
@@ -215,13 +226,16 @@ async function executeJob(jobName: string): Promise<void> {
   }
 
   // ── Atomic claim: UPDATE WHERE status != 'running' ──────────
+  // FAIL CLOSED: If DB is down, do NOT run the job.
   let claimed = false;
   try {
     claimed = await storage.claimScheduledJob(jobName);
   } catch (err: any) {
-    log.warn({ job: jobName, error: err.message }, 'Could not claim job via DB');
-    // If DB is down, still try to run (single-instance assumption)
-    claimed = true;
+    log.error(
+      { job: jobName, error: err.message },
+      'Cannot claim job — DB unreachable. Skipping execution (fail closed).'
+    );
+    return; // Do NOT run when claim cannot be verified
   }
 
   if (!claimed) {
@@ -234,13 +248,24 @@ async function executeJob(jobName: string): Promise<void> {
   log.info({ job: jobName, timeoutMs }, 'Job execution started');
 
   try {
-    // ── Execute with timeout ───────────────────────────────────
-    await Promise.race([
-      entry.definition.handler(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Job '${jobName}' timed out after ${timeoutMs}ms`)), timeoutMs)
-      ),
-    ]);
+    // ── Execute with timeout (properly cleaned up) ──────────────
+    let timeoutTimer: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutTimer = setTimeout(
+        () => reject(new Error(`Job '${jobName}' timed out after ${timeoutMs}ms`)),
+        timeoutMs
+      );
+    });
+
+    try {
+      await Promise.race([
+        entry.definition.handler(),
+        timeoutPromise,
+      ]);
+    } finally {
+      // Always clear the timer to prevent leaks
+      clearTimeout(timeoutTimer!);
+    }
 
     const durationMs = Date.now() - startTime;
     log.info({ job: jobName, durationMs }, 'Job execution completed');

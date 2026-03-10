@@ -128,6 +128,24 @@ export function sanitizeForAI(text: string, maxLength = 10000): string {
 }
 
 /**
+ * Build a Map<companyId, Company> for O(1) lookup.
+ * Fetches all companies in a single query to avoid N+1 queries in loops.
+ *
+ * Shared by: documentReminders, paymentReminders, and any job
+ * that iterates over entities with a companyId FK.
+ */
+export async function buildCompanyMap(): Promise<Map<string, any>> {
+  // Lazy import to avoid circular dependency with storage
+  const { storage } = await import('../storage');
+  const companies = await storage.getAllCompaniesWithContacts();
+  const map = new Map<string, any>();
+  for (const company of companies) {
+    map.set(company.id, company);
+  }
+  return map;
+}
+
+/**
  * Resolve template placeholders like {{key}} with values.
  * Uses literal string matching (no regex injection risk).
  */

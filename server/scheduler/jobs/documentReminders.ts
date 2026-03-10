@@ -24,8 +24,8 @@ import {
   formatDate,
   daysUntil,
   priorityFromDays,
+  buildCompanyMap,
 } from '../../utils/locale';
-import type { Company } from '@shared/schema';
 
 const log = createLogger('job:document-reminders');
 
@@ -186,21 +186,3 @@ export async function runDocumentReminders(): Promise<void> {
   log.info({ remindersQueued }, 'Document reminder scan complete');
 }
 
-// ── Helpers ─────────────────────────────────────────────────────
-
-/**
- * Build a Map<companyId, Company> for O(1) lookup.
- * Fetches all companies in a single query to avoid N+1.
- */
-async function buildCompanyMap(): Promise<Map<string, Company>> {
-  const map = new Map<string, Company>();
-  try {
-    const companies = await storage.getAllCompaniesWithContacts();
-    for (const company of companies) {
-      map.set(company.id, company);
-    }
-  } catch (err: any) {
-    log.error({ error: err.message }, 'Failed to load companies for reminder scan');
-  }
-  return map;
-}

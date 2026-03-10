@@ -18,11 +18,18 @@ export interface AuthUser {
 
 /**
  * Extend Express Request to include authenticated user.
+ * Also augments Express.User so Passport-typed `req.user` carries our fields.
+ *
+ * Note: Express.User uses wider types (string for userType) to remain
+ * compatible with the Drizzle DB schema which types userType as string.
  */
 declare global {
   namespace Express {
-    interface Request {
-      user?: AuthUser;
+    interface User {
+      id: string;
+      email: string;
+      isAdmin: boolean;
+      userType: string;
     }
   }
 }
