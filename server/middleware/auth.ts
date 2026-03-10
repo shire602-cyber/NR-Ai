@@ -163,11 +163,23 @@ export function requireUserType(...allowedTypes: string[]) {
 
 /**
  * Generate a JWT token for a user.
+ * Includes isAdmin and userType so the frontend sidebar can determine
+ * menu visibility without an extra API call.
  */
-export function generateToken(user: { id: string; email: string }): string {
+export function generateToken(user: {
+  id: string;
+  email: string;
+  isAdmin?: boolean | null;
+  userType?: string | null;
+}): string {
   const env = getEnv();
   return jwt.sign(
-    { userId: user.id, email: user.email },
+    {
+      userId: user.id,
+      email: user.email,
+      isAdmin: user.isAdmin === true,
+      userType: user.userType || 'customer',
+    },
     env.JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -176,7 +188,12 @@ export function generateToken(user: { id: string; email: string }): string {
 /**
  * Generate a refresh token (longer-lived).
  */
-export function generateRefreshToken(user: { id: string; email: string }): string {
+export function generateRefreshToken(user: {
+  id: string;
+  email: string;
+  isAdmin?: boolean | null;
+  userType?: string | null;
+}): string {
   const env = getEnv();
   return jwt.sign(
     { userId: user.id, email: user.email, type: 'refresh' },
