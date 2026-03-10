@@ -90,6 +90,28 @@ if (!fs.existsSync(uploadsDir)) {
 async function bootstrap() {
   log.info({ environment: env.NODE_ENV, port: env.PORT }, 'Starting server');
 
+  // ─── Auto-migrate database on startup ──────────────────────
+  try {
+    const { migrate } = await import('drizzle-orm/node-postgres/migrator');
+    const { db } = await import('./db');
+    const migrationsPath = path.resolve(projectRoot, 'migrations');
+    if (fs.existsSync(migrationsPath)) {
+      log.info('Running database migrations...');
+      await migrate(db, { migrationsFolder: migrationsPath });
+      log.info('✓ Database migrations complete');
+    }
+  } catch (migrationError: any) {
+    log.error({ error: migrationError.message }, 'Database migration failed — attempting drizzle push fallback');
+    // If migrations fail, try drizzle-kit push as fallback
+    try {
+      const { execSync } = await import('child_process');
+      execSync('npx drizzle-kit push --force', { cwd: projectRoot, stdio: 'pipe' });
+      log.info('✓ Database schema pushed via drizzle-kit');
+    } catch (pushError: any) {
+      log.error({ error: pushError.message }, 'Database schema push also failed — tables may not exist');
+    }
+  }
+
   // Register all API routes
   const server = await registerRoutes(app);
 
