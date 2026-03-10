@@ -80,18 +80,6 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// Temporary diagnostic endpoint — check DB connectivity + tables
-app.get('/api/diagnostics', async (_req, res) => {
-  try {
-    const { pool } = await import('./db');
-    const result = await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename");
-    const tables = result.rows.map((r: any) => r.tablename);
-    res.json({ status: 'connected', tableCount: tables.length, tables });
-  } catch (err: any) {
-    res.status(500).json({ status: 'error', message: err.message });
-  }
-});
-
 // ─── Ensure required directories exist ───────────────────────
 const uploadsDir = path.resolve(projectRoot, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
