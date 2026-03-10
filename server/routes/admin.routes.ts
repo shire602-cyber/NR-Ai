@@ -11,6 +11,7 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import { clearSettingsCache } from '../config/settings';
 
 const logger = createLogger('admin-routes');
 
@@ -82,18 +83,60 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(400).json({ message: 'Key and value required' });
       }
 
+      // Auto-detect category from key prefix
+      const category = key.startsWith('integrations.') ? 'integrations'
+        : key.startsWith('feature.') ? 'features'
+        : key.startsWith('notification.') ? 'notifications'
+        : key.startsWith('pricing.') ? 'pricing'
+        : 'system';
+
       const existing = await storage.getAdminSettingByKey(key);
       if (existing) {
         const setting = await storage.updateAdminSetting(key, value);
+        // Clear settings cache so new values take effect immediately
+        clearSettingsCache();
         res.json(setting);
       } else {
         const setting = await storage.createAdminSetting({
           key,
           value,
-          category: 'system',
+          category,
         });
+        clearSettingsCache();
         res.json(setting);
       }
+    })
+  );
+
+  // Bulk update settings (for integration forms that save multiple keys at once)
+  router.put(
+    '/admin/settings/bulk',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { settings } = req.body;
+      if (!settings || !Array.isArray(settings)) {
+        return res.status(400).json({ message: 'settings array required' });
+      }
+
+      const results = [];
+      for (const { key, value } of settings) {
+        if (!key || value === undefined) continue;
+
+        const category = key.startsWith('integrations.') ? 'integrations'
+          : key.startsWith('feature.') ? 'features'
+          : key.startsWith('notification.') ? 'notifications'
+          : key.startsWith('pricing.') ? 'pricing'
+          : 'system';
+
+        const existing = await storage.getAdminSettingByKey(key);
+        if (existing) {
+          results.push(await storage.updateAdminSetting(key, value));
+        } else {
+          results.push(await storage.createAdminSetting({ key, value, category }));
+        }
+      }
+
+      clearSettingsCache();
+      res.json(results);
     })
   );
 

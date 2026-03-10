@@ -10,24 +10,28 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 import { categorizationRequestSchema } from '../../shared/schema';
+import { getOpenAIKey, getAIModel as getAIModelSetting } from '../config/settings';
 
 const log = createLogger('ai');
 
 // =============================================
-// AI client initialisation
+// AI client initialisation (DB-first, env fallback)
 // =============================================
 
-function createOpenAIClient(): OpenAI | null {
-  const apiKey = getEnv().OPENAI_API_KEY;
+/**
+ * Get an OpenAI client per-request.
+ * Reads API key from adminSettings DB table first, env fallback.
+ */
+async function getOpenAIClient(): Promise<OpenAI | null> {
+  const apiKey = await getOpenAIKey();
   if (!apiKey) {
-    log.warn('OPENAI_API_KEY not set — AI features will be disabled');
     return null;
   }
   return new OpenAI({ apiKey });
 }
 
-function getAIModel(): string {
-  return getEnv().AI_MODEL;
+async function resolveAIModel(): Promise<string> {
+  return getAIModelSetting();
 }
 
 // =============================================
@@ -35,8 +39,10 @@ function getAIModel(): string {
 // =============================================
 
 export function registerAIRoutes(app: Express) {
-  const openai = createOpenAIClient();
-  const AI_MODEL = getAIModel();
+  // Legacy: still create at startup for backward compat, but per-request is preferred
+  const envApiKey = getEnv().OPENAI_API_KEY;
+  let openai: OpenAI | null = envApiKey ? new OpenAI({ apiKey: envApiKey }) : null;
+  const AI_MODEL = getEnv().AI_MODEL;
 
   // =====================================
   // AI Categorization Route
@@ -1156,10 +1162,13 @@ Company: ${company.name}`;
         }
       }
 
-      // Check if OpenAI API key is configured
-      if (!process.env.OPENAI_API_KEY) {
-        return res.status(500).json({ message: 'OpenAI API key is not configured' });
+      // Check if OpenAI API key is configured (DB-first, env fallback)
+      const aiClient = await getOpenAIClient();
+      if (!aiClient) {
+        return res.status(500).json({ message: 'OpenAI API key is not configured. Set it in Admin Settings > Integrations.' });
       }
+      // Use DB-resolved client for this request
+      openai = aiClient;
 
       const systemPrompt = validated.systemPrompt ||
         `You are a helpful AI assistant for accounting and financial management. Provide clear, accurate, and professional responses.

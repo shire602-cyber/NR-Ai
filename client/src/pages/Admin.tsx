@@ -60,6 +60,12 @@ export default function Admin() {
   const [whatsappBusinessAccountId, setWhatsappBusinessAccountId] = useState('');
   const [whatsappWebhookVerifyToken, setWhatsappWebhookVerifyToken] = useState('');
   const [phoneNumberEdited, setPhoneNumberEdited] = useState(false);
+
+  // Integration settings state (saved to adminSettings DB table)
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
+  const [openaiModel, setOpenaiModel] = useState('gpt-4o');
+  const [stripePublicKey, setStripePublicKey] = useState('');
+  const [stripeSecretKey, setStripeSecretKey] = useState('');
   
   // System settings state
   const [systemSettings, setSystemSettings] = useState({
@@ -116,10 +122,19 @@ export default function Admin() {
         sendWelcomeEmail: 'notification.sendWelcomeEmail' in settingsMap 
           ? settingsMap['notification.sendWelcomeEmail'] === 'true' 
           : prev.sendWelcomeEmail,
-        paymentReminders: 'notification.paymentReminders' in settingsMap 
-          ? settingsMap['notification.paymentReminders'] === 'true' 
+        paymentReminders: 'notification.paymentReminders' in settingsMap
+          ? settingsMap['notification.paymentReminders'] === 'true'
           : prev.paymentReminders,
       }));
+
+      // Load integration settings
+      if (settingsMap['integrations.openai_api_key']) {
+        setOpenaiApiKey(''); // Don't display stored key for security; show placeholder
+      }
+      if (settingsMap['integrations.ai_model']) {
+        setOpenaiModel(settingsMap['integrations.ai_model']);
+      }
+      // Stripe keys: don't populate for security
     },
   });
 
@@ -223,6 +238,24 @@ export default function Admin() {
         variant: 'destructive', 
         title: 'Failed to save settings',
         description: error?.message || 'Please try again'
+      });
+    },
+  });
+
+  // Save integration settings (OpenAI, Stripe) to admin_settings DB table
+  const saveIntegrationMutation = useMutation({
+    mutationFn: async (integrationSettings: { key: string; value: string }[]) => {
+      return apiRequest('PUT', '/api/admin/settings/bulk', { settings: integrationSettings });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/settings'] });
+      toast({ title: 'Integration settings saved successfully' });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Failed to save integration settings',
+        description: error?.message || 'Please try again',
       });
     },
   });
@@ -1187,19 +1220,58 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700">Not Configured</Badge>
+                  {settings.some(s => s.key === 'integrations.stripe_secret_key' && s.value) ? (
+                    <Badge variant="outline" className="bg-green-50 text-green-700">Configured</Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700">Not Configured</Badge>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Stripe Public Key</Label>
-                  <Input type="password" placeholder="pk_live_..." data-testid="input-stripe-public" />
+                  <Input
+                    type="password"
+                    placeholder={settings.some(s => s.key === 'integrations.stripe_public_key' && s.value) ? "Enter new key to update" : "pk_live_..."}
+                    value={stripePublicKey}
+                    onChange={(e) => setStripePublicKey(e.target.value)}
+                    data-testid="input-stripe-public"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Stripe Secret Key</Label>
-                  <Input type="password" placeholder="sk_live_..." data-testid="input-stripe-secret" />
+                  <Input
+                    type="password"
+                    placeholder={settings.some(s => s.key === 'integrations.stripe_secret_key' && s.value) ? "Enter new key to update" : "sk_live_..."}
+                    value={stripeSecretKey}
+                    onChange={(e) => setStripeSecretKey(e.target.value)}
+                    data-testid="input-stripe-secret"
+                  />
                 </div>
-                <Button className="w-full" data-testid="button-save-stripe">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Configuration
+                <Button
+                  className="w-full"
+                  data-testid="button-save-stripe"
+                  disabled={saveIntegrationMutation.isPending}
+                  onClick={() => {
+                    const integrationSettings = [];
+                    if (stripePublicKey.trim()) {
+                      integrationSettings.push({ key: 'integrations.stripe_public_key', value: stripePublicKey.trim() });
+                    }
+                    if (stripeSecretKey.trim()) {
+                      integrationSettings.push({ key: 'integrations.stripe_secret_key', value: stripeSecretKey.trim() });
+                    }
+                    if (integrationSettings.length === 0) {
+                      toast({ variant: 'destructive', title: 'Enter at least one key to save' });
+                      return;
+                    }
+                    saveIntegrationMutation.mutate(integrationSettings);
+                    setStripePublicKey('');
+                    setStripeSecretKey('');
+                  }}
+                >
+                  {saveIntegrationMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+                  ) : (
+                    <><Save className="w-4 h-4 mr-2" /> Save Configuration</>
+                  )}
                 </Button>
               </CardContent>
             </Card>
@@ -1336,15 +1408,25 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">Connected</Badge>
+                  {settings.some(s => s.key === 'integrations.openai_api_key' && s.value) ? (
+                    <Badge variant="outline" className="bg-green-50 text-green-700">Configured</Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700">Not Configured</Badge>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>API Key</Label>
-                  <Input type="password" placeholder="sk-..." data-testid="input-openai-key" />
+                  <Input
+                    type="password"
+                    placeholder={settings.some(s => s.key === 'integrations.openai_api_key' && s.value) ? "Enter new key to update" : "sk-..."}
+                    value={openaiApiKey}
+                    onChange={(e) => setOpenaiApiKey(e.target.value)}
+                    data-testid="input-openai-key"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Model</Label>
-                  <Select defaultValue="gpt-4o">
+                  <Select value={openaiModel} onValueChange={setOpenaiModel}>
                     <SelectTrigger data-testid="select-openai-model">
                       <SelectValue />
                     </SelectTrigger>
@@ -1355,9 +1437,25 @@ export default function Admin() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Button className="w-full" data-testid="button-save-openai">
-                  <Save className="w-4 h-4 mr-2" />
-                  Save Configuration
+                <Button
+                  className="w-full"
+                  data-testid="button-save-openai"
+                  disabled={saveIntegrationMutation.isPending}
+                  onClick={() => {
+                    const integrationSettings = [];
+                    if (openaiApiKey.trim()) {
+                      integrationSettings.push({ key: 'integrations.openai_api_key', value: openaiApiKey.trim() });
+                    }
+                    integrationSettings.push({ key: 'integrations.ai_model', value: openaiModel });
+                    saveIntegrationMutation.mutate(integrationSettings);
+                    setOpenaiApiKey('');
+                  }}
+                >
+                  {saveIntegrationMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+                  ) : (
+                    <><Save className="w-4 h-4 mr-2" /> Save Configuration</>
+                  )}
                 </Button>
               </CardContent>
             </Card>
@@ -1375,10 +1473,15 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">Connected</Badge>
+                  {settings.some(s => (s.key === 'integrations.google_sa_email' || s.key === 'integrations.google_client_id') && s.value) ? (
+                    <Badge variant="outline" className="bg-green-50 text-green-700">Configured</Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-amber-50 text-amber-700">Not Configured</Badge>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Google Sheets integration is configured and ready to use.
+                  Configure Google Sheets credentials in your environment variables or contact your admin.
+                  Supports Service Account or OAuth2 authentication.
                 </p>
                 <Button variant="outline" className="w-full" data-testid="button-test-sheets">
                   <RefreshCw className="w-4 h-4 mr-2" />

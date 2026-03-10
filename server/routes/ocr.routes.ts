@@ -4,11 +4,12 @@ import OpenAI from 'openai';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
+import { getOpenAIKey, getAIModel as getAIModelSetting } from '../config/settings';
 
 export function registerOCRRoutes(app: Express) {
-  // Initialize OpenAI client inside the function (after env is validated)
-  const apiKey = getEnv().OPENAI_API_KEY;
-  const openai = apiKey ? new OpenAI({ apiKey }) : null;
+  // Legacy: initialize at startup for backward compat
+  const envApiKey = getEnv().OPENAI_API_KEY;
+  let openai: OpenAI | null = envApiKey ? new OpenAI({ apiKey: envApiKey }) : null;
   const AI_MODEL = getEnv().AI_MODEL;
   // ===========================
   // OCR Processing Endpoint
@@ -55,6 +56,13 @@ export function registerOCRRoutes(app: Express) {
       'Rent', 'Marketing', 'Equipment', 'Professional Services',
       'Insurance', 'Maintenance', 'Communication', 'Other'
     ];
+
+    // Resolve OpenAI client from DB settings (DB-first, env fallback)
+    const dbApiKey = await getOpenAIKey();
+    if (dbApiKey) {
+      openai = new OpenAI({ apiKey: dbApiKey });
+    }
+    const resolvedModel = await getAIModelSetting();
 
     // Try to use AI to extract structured data from text
     if (sanitizedContent) {

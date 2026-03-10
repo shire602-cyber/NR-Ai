@@ -2,9 +2,12 @@
 // Supports two authentication modes:
 //   1. Google Service Account (GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)
 //   2. OAuth2 with refresh token (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN)
+//
+// Credentials are resolved DB-first (adminSettings table) with env var fallback.
 
 import { google, sheets_v4 } from 'googleapis';
 import type { JWT, OAuth2Client } from 'google-auth-library';
+import { getGoogleSheetsCredentials } from '../config/settings';
 
 // ---------------------------------------------------------------------------
 // Authentication helpers
@@ -14,11 +17,15 @@ import type { JWT, OAuth2Client } from 'google-auth-library';
  * Determine which credential set is available and return an authenticated
  * Google Auth client.  Service-account credentials take priority because they
  * do not expire in the same way as user OAuth tokens.
+ *
+ * Reads from adminSettings DB first, then falls back to process.env.
  */
-function getAuthClient(): JWT | OAuth2Client {
+async function getAuthClient(): Promise<JWT | OAuth2Client> {
+  const creds = await getGoogleSheetsCredentials();
+
   // --- Service Account path ---
-  const saEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const saKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  const saEmail = creds.serviceAccountEmail;
+  const saKey = creds.serviceAccountKey;
 
   if (saEmail && saKey) {
     // The private key in env vars typically has literal "\n" – convert to real newlines.
@@ -38,9 +45,9 @@ function getAuthClient(): JWT | OAuth2Client {
   }
 
   // --- OAuth2 refresh-token path ---
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN;
+  const clientId = creds.clientId;
+  const clientSecret = creds.clientSecret;
+  const refreshToken = creds.refreshToken;
 
   if (clientId && clientSecret && refreshToken) {
     const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
@@ -50,7 +57,8 @@ function getAuthClient(): JWT | OAuth2Client {
 
   throw new Error(
     'Google Sheets credentials not configured. ' +
-    'Provide either GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, ' +
+    'Set them in Admin Settings > Integrations, or provide env vars: ' +
+    'GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, ' +
     'or GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN.',
   );
 }
@@ -60,7 +68,7 @@ function getAuthClient(): JWT | OAuth2Client {
 // ---------------------------------------------------------------------------
 
 export async function getGoogleSheetsClient(): Promise<sheets_v4.Sheets> {
-  const auth = getAuthClient();
+  const auth = await getAuthClient();
 
   // For JWT (service account) we need to authorize once to obtain a token.
   if ('authorize' in auth) {
