@@ -137,6 +137,17 @@ async function bootstrap() {
     log.error({ error: migrationError.message, stack: migrationError.stack }, 'Database migration failed');
   }
 
+  // ─── Initialize Background Scheduler ─────────────────────
+  try {
+    const { registerAllJobs } = await import('./scheduler/jobs/index');
+    const { startScheduler } = await import('./scheduler/index');
+    registerAllJobs();
+    await startScheduler();
+    log.info('✓ Background scheduler started');
+  } catch (schedulerError: any) {
+    log.error({ error: schedulerError.message }, 'Failed to start scheduler (non-fatal)');
+  }
+
   // Register all API routes
   const server = await registerRoutes(app);
 
@@ -180,15 +191,17 @@ bootstrap().catch((error) => {
 });
 
 // ─── Graceful shutdown ───────────────────────────────────────
-process.on('SIGTERM', () => {
-  log.info('SIGTERM received. Shutting down gracefully...');
+async function gracefulShutdown(signal: string) {
+  log.info(`${signal} received. Shutting down gracefully...`);
+  try {
+    const { stopScheduler } = await import('./scheduler/index');
+    stopScheduler();
+  } catch { /* ignore */ }
   process.exit(0);
-});
+}
 
-process.on('SIGINT', () => {
-  log.info('SIGINT received. Shutting down...');
-  process.exit(0);
-});
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 process.on('unhandledRejection', (reason) => {
   log.error({ reason }, 'Unhandled promise rejection');

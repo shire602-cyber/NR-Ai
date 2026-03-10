@@ -46,7 +46,7 @@ export const companies = pgTable("companies", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull().unique(),
   baseCurrency: text("base_currency").notNull().default("AED"),
-  locale: text("locale").notNull().default("en"), // 'en' or 'ar'
+  locale: text("locale").notNull().default("en"), // 'en', 'ar', or 'so' (Somali)
   
   // Company Type - determines access model
   companyType: text("company_type").notNull().default("customer"), // client | customer
@@ -1781,3 +1781,268 @@ export const insertAiConversationSchema = createInsertSchema(aiConversations).om
 
 export type InsertAiConversation = z.infer<typeof insertAiConversationSchema>;
 export type AiConversation = typeof aiConversations.$inferSelect;
+
+// ===========================
+// Scheduled Jobs (Background Job Tracking)
+// ===========================
+export const scheduledJobs = pgTable("scheduled_jobs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // Job Identity
+  jobName: text("job_name").notNull(), // e.g., 'document_reminders', 'payment_reminders', 'news_fetch'
+  jobType: text("job_type").notNull().default("cron"), // cron | one_time | manual
+  cronExpression: text("cron_expression"), // e.g., '0 9 * * *' = daily at 9 AM
+
+  // Execution State
+  status: text("status").notNull().default("pending"), // pending | running | completed | failed | disabled
+  lastRunAt: timestamp("last_run_at"),
+  nextRunAt: timestamp("next_run_at"),
+  lastError: text("last_error"),
+
+  // Execution Stats
+  runCount: integer("run_count").notNull().default(0),
+  failCount: integer("fail_count").notNull().default(0),
+  lastDurationMs: integer("last_duration_ms"),
+
+  // Configuration
+  isEnabled: boolean("is_enabled").notNull().default(true),
+  config: text("config"), // JSON config for the job (e.g., batch size, rate limits)
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertScheduledJobSchema = createInsertSchema(scheduledJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertScheduledJob = z.infer<typeof insertScheduledJobSchema>;
+export type ScheduledJob = typeof scheduledJobs.$inferSelect;
+
+// ===========================
+// Message Templates (WhatsApp/SMS/Email)
+// ===========================
+export const messageTemplates = pgTable("message_templates", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // Template Identity
+  name: text("name").notNull(), // e.g., 'document_reminder', 'invoice_notification'
+  category: text("category").notNull().default("general"), // general | reminder | invoice | news | promotion
+  language: text("language").notNull().default("en"), // en | ar | so (Somali)
+
+  // Content
+  subject: text("subject"), // For email templates
+  body: text("body").notNull(), // Template body with placeholders like {{clientName}}, {{amount}}
+
+  // Channel
+  channel: text("channel").notNull().default("whatsapp"), // whatsapp | email | sms | in_app
+
+  // State
+  isActive: boolean("is_active").notNull().default(true),
+  isDefault: boolean("is_default").notNull().default(false), // System default template
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertMessageTemplateSchema = createInsertSchema(messageTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertMessageTemplate = z.infer<typeof insertMessageTemplateSchema>;
+export type MessageTemplate = typeof messageTemplates.$inferSelect;
+
+// ===========================
+// WhatsApp Web Session (Baileys auth state persistence)
+// ===========================
+export const whatsappWebSessions = pgTable("whatsapp_web_sessions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // Session Identity
+  sessionName: text("session_name").notNull().default("default"),
+
+  // Connection State
+  status: text("status").notNull().default("disconnected"), // disconnected | connecting | qr_ready | connected
+  phoneNumber: text("phone_number"), // Connected phone number
+  pushName: text("push_name"), // WhatsApp display name
+
+  // Auth State (stored as JSON)
+  authState: text("auth_state"), // JSON serialized auth credentials
+
+  // Statistics
+  messagesSentToday: integer("messages_sent_today").notNull().default(0),
+  lastMessageAt: timestamp("last_message_at"),
+  lastConnectedAt: timestamp("last_connected_at"),
+  lastDisconnectedAt: timestamp("last_disconnected_at"),
+
+  // Configuration
+  dailyMessageLimit: integer("daily_message_limit").notNull().default(100),
+  messageDelayMs: integer("message_delay_ms").notNull().default(3000), // 3 seconds between messages
+  businessHoursStart: integer("business_hours_start").notNull().default(9), // 9 AM
+  businessHoursEnd: integer("business_hours_end").notNull().default(18), // 6 PM
+  timezone: text("timezone").notNull().default("Asia/Dubai"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertWhatsappWebSessionSchema = createInsertSchema(whatsappWebSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertWhatsappWebSession = z.infer<typeof insertWhatsappWebSessionSchema>;
+export type WhatsappWebSession = typeof whatsappWebSessions.$inferSelect;
+
+// ===========================
+// Message Queue (Outbound message queue for rate-limited sending)
+// ===========================
+export const messageQueue = pgTable("message_queue", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // Recipient
+  recipientPhone: text("recipient_phone").notNull(), // International format: 971501234567
+  recipientName: text("recipient_name"),
+
+  // Content
+  messageType: text("message_type").notNull().default("text"), // text | document | image
+  content: text("content").notNull(), // Message body
+  mediaUrl: text("media_url"), // URL or path to media file
+  mediaFileName: text("media_file_name"), // File name for documents
+
+  // Context
+  companyId: uuid("company_id").references(() => companies.id),
+  templateId: uuid("template_id").references(() => messageTemplates.id),
+  relatedEntityType: text("related_entity_type"), // invoice | compliance_task | news | promotion
+  relatedEntityId: uuid("related_entity_id"),
+
+  // Queue State
+  status: text("status").notNull().default("queued"), // queued | sending | sent | failed | cancelled
+  priority: integer("priority").notNull().default(5), // 1 = highest, 10 = lowest
+  attempts: integer("attempts").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  lastError: text("last_error"),
+
+  // Scheduling
+  scheduledFor: timestamp("scheduled_for"), // null = send ASAP (within business hours)
+  sentAt: timestamp("sent_at"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertMessageQueueSchema = createInsertSchema(messageQueue).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertMessageQueue = z.infer<typeof insertMessageQueueSchema>;
+export type MessageQueueItem = typeof messageQueue.$inferSelect;
+
+// ===========================
+// News Translations (cached AI translations)
+// ===========================
+export const newsTranslations = pgTable("news_translations", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  newsId: uuid("news_id").notNull().references(() => regulatoryNews.id, { onDelete: "cascade" }),
+  language: text("language").notNull(), // so | ar | en
+  title: text("title").notNull(),
+  summary: text("summary").notNull(),
+  content: text("content"),
+
+  // Review
+  isApproved: boolean("is_approved").notNull().default(false),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  uniqueNewsLang: unique().on(t.newsId, t.language),
+}));
+
+export const insertNewsTranslationSchema = createInsertSchema(newsTranslations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertNewsTranslation = z.infer<typeof insertNewsTranslationSchema>;
+export type NewsTranslation = typeof newsTranslations.$inferSelect;
+
+// ===========================
+// Cross-Sell Campaigns (admin-approved service promotions)
+// ===========================
+export const crossSellCampaigns = pgTable("cross_sell_campaigns", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  // Campaign info
+  name: text("name").notNull(),
+  description: text("description"),
+  serviceName: text("service_name").notNull(), // e.g. "Corporate Tax Filing", "Payroll Management"
+  serviceDescription: text("service_description").notNull(),
+  targetCriteria: text("target_criteria"), // JSON: rule criteria used to select targets
+
+  // Status
+  status: text("status").notNull().default("draft"), // draft | pending_approval | approved | sending | completed | cancelled
+  approvedBy: uuid("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdBy: uuid("created_by").references(() => users.id),
+
+  // Metrics
+  targetCount: integer("target_count").notNull().default(0),
+  sentCount: integer("sent_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  respondedCount: integer("responded_count").notNull().default(0),
+  convertedCount: integer("converted_count").notNull().default(0),
+
+  // Schedule
+  scheduledFor: timestamp("scheduled_for"),
+  completedAt: timestamp("completed_at"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertCrossSellCampaignSchema = createInsertSchema(crossSellCampaigns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCrossSellCampaign = z.infer<typeof insertCrossSellCampaignSchema>;
+export type CrossSellCampaign = typeof crossSellCampaigns.$inferSelect;
+
+// ===========================
+// Cross-Sell Campaign Targets (individual client targets per campaign)
+// ===========================
+export const crossSellTargets = pgTable("cross_sell_targets", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+
+  campaignId: uuid("campaign_id").notNull().references(() => crossSellCampaigns.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").notNull().references(() => companies.id),
+
+  // Personalized message (can be AI-generated)
+  personalizedMessage: text("personalized_message"),
+
+  // Status
+  status: text("status").notNull().default("pending"), // pending | queued | sent | failed | responded | converted
+  queueItemId: uuid("queue_item_id"), // Reference to message_queue item
+  sentAt: timestamp("sent_at"),
+  respondedAt: timestamp("responded_at"),
+  convertedAt: timestamp("converted_at"),
+  lastError: text("last_error"),
+
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertCrossSellTargetSchema = createInsertSchema(crossSellTargets).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCrossSellTarget = z.infer<typeof insertCrossSellTargetSchema>;
+export type CrossSellTarget = typeof crossSellTargets.$inferSelect;

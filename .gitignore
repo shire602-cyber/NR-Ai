@@ -28,6 +28,9 @@ node_modules/.cache
 # Uploads
 uploads
 
+# WhatsApp Web auth session (Baileys)
+.whatsapp-auth
+
 # Logs
 *.log
 logs/

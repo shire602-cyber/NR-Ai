@@ -51,7 +51,14 @@ import type {
   FtaEmail, InsertFtaEmail,
   Subscription, InsertSubscription,
   Backup, InsertBackup,
-  AiConversation, InsertAiConversation
+  AiConversation, InsertAiConversation,
+  ScheduledJob, InsertScheduledJob,
+  MessageTemplate, InsertMessageTemplate,
+  WhatsappWebSession, InsertWhatsappWebSession,
+  MessageQueueItem, InsertMessageQueue,
+  NewsTranslation, InsertNewsTranslation,
+  CrossSellCampaign, InsertCrossSellCampaign,
+  CrossSellTarget, InsertCrossSellTarget
 } from "@shared/schema";
 import {
   users,
@@ -106,10 +113,17 @@ import {
   ftaEmails,
   subscriptions,
   backups,
-  aiConversations
+  aiConversations,
+  scheduledJobs,
+  messageTemplates,
+  whatsappWebSessions,
+  messageQueue,
+  newsTranslations,
+  crossSellCampaigns,
+  crossSellTargets
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, asc, sql, lte, gte, ne, or, isNull, isNotNull } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -314,8 +328,19 @@ export interface IStorage {
   
   // Regulatory News
   getRegulatoryNews(): Promise<RegulatoryNews[]>;
+  getRegulatoryNewsById(id: string): Promise<RegulatoryNews | undefined>;
   createRegulatoryNews(news: InsertRegulatoryNews): Promise<RegulatoryNews>;
-  
+  updateRegulatoryNews(id: string, data: Partial<InsertRegulatoryNews>): Promise<RegulatoryNews>;
+
+  // News Translations
+  getNewsTranslation(newsId: string, language: string): Promise<NewsTranslation | undefined>;
+  getNewsTranslationsByNewsId(newsId: string): Promise<NewsTranslation[]>;
+  createNewsTranslation(data: InsertNewsTranslation): Promise<NewsTranslation>;
+  updateNewsTranslation(id: string, data: Partial<InsertNewsTranslation>): Promise<NewsTranslation>;
+  approveNewsTranslation(id: string, reviewedBy: string): Promise<NewsTranslation>;
+  getUnapprovedTranslations(): Promise<NewsTranslation[]>;
+  getAllNewsTranslations(): Promise<NewsTranslation[]>;
+
   // Reminder Settings
   getReminderSettingsByCompanyId(companyId: string): Promise<ReminderSetting[]>;
   createReminderSetting(setting: InsertReminderSetting): Promise<ReminderSetting>;
@@ -504,6 +529,59 @@ export interface IStorage {
   getAiConversationsByCompanyId(companyId: string, limit?: number): Promise<AiConversation[]>;
   getAiConversation(id: string): Promise<AiConversation | undefined>;
   deleteAiConversation(id: string): Promise<void>;
+
+  // ── Cross-Company Queries (for scheduler jobs) ───────────
+  getUpcomingComplianceTasks(daysAhead: number): Promise<ComplianceTask[]>;
+  getExpiringDocuments(daysAhead: number): Promise<Document[]>;
+  getAllCompaniesWithContacts(): Promise<Company[]>;
+  getOverdueServiceInvoices(): Promise<ServiceInvoice[]>;
+
+  // ── Scheduled Jobs ──────────────────────────────────────
+  getScheduledJobByName(jobName: string): Promise<ScheduledJob | undefined>;
+  createScheduledJob(job: InsertScheduledJob): Promise<ScheduledJob>;
+  updateScheduledJobStatus(jobName: string, data: Partial<InsertScheduledJob>): Promise<void>;
+  /** Atomic claim: UPDATE WHERE status != 'running'. Returns true if claimed. */
+  claimScheduledJob(jobName: string): Promise<boolean>;
+  incrementJobRunCount(jobName: string): Promise<void>;
+  incrementJobFailCount(jobName: string): Promise<void>;
+  getAllScheduledJobs(): Promise<ScheduledJob[]>;
+  /** Get reminder logs filtered by entity (for efficient dedup) */
+  getReminderLogsByEntity(entityId: string, entityType: string): Promise<ReminderLog[]>;
+
+  // ── Message Templates ───────────────────────────────────
+  getMessageTemplate(name: string, language: string): Promise<MessageTemplate | undefined>;
+  getMessageTemplatesByCategory(category: string): Promise<MessageTemplate[]>;
+  getAllMessageTemplates(): Promise<MessageTemplate[]>;
+  createMessageTemplate(template: InsertMessageTemplate): Promise<MessageTemplate>;
+  updateMessageTemplate(id: string, data: Partial<InsertMessageTemplate>): Promise<MessageTemplate>;
+  deleteMessageTemplate(id: string): Promise<void>;
+
+  // ── WhatsApp Web Session ────────────────────────────────
+  getWhatsappWebSession(): Promise<WhatsappWebSession | undefined>;
+  updateWhatsappWebSession(data: Partial<InsertWhatsappWebSession>): Promise<void>;
+  resetWhatsappDailyCounter(): Promise<void>;
+  incrementWhatsappMessageCount(): Promise<void>;
+
+  // ── Message Queue ───────────────────────────────────────
+  createMessageQueueItem(item: InsertMessageQueue): Promise<MessageQueueItem>;
+  getMessageQueueItem(id: string): Promise<MessageQueueItem | undefined>;
+  getQueuedMessages(limit: number): Promise<MessageQueueItem[]>;
+  updateMessageQueueItem(id: string, data: Partial<InsertMessageQueue>): Promise<void>;
+  getMessageQueueStats(): Promise<{ queued: number; sending: number; sent: number; failed: number; cancelled: number }>;
+  recoverStaleSendingMessages(thresholdMs: number): Promise<number>;
+
+  // ── Cross-Sell Campaigns ──────────────────────────────
+  getCrossSellCampaign(id: string): Promise<CrossSellCampaign | undefined>;
+  getAllCrossSellCampaigns(): Promise<CrossSellCampaign[]>;
+  createCrossSellCampaign(campaign: InsertCrossSellCampaign): Promise<CrossSellCampaign>;
+  updateCrossSellCampaign(id: string, data: Partial<InsertCrossSellCampaign>): Promise<CrossSellCampaign>;
+  deleteCrossSellCampaign(id: string): Promise<void>;
+
+  // ── Cross-Sell Targets ────────────────────────────────
+  getCrossSellTargetsByCampaign(campaignId: string): Promise<CrossSellTarget[]>;
+  createCrossSellTarget(target: InsertCrossSellTarget): Promise<CrossSellTarget>;
+  updateCrossSellTarget(id: string, data: Partial<InsertCrossSellTarget>): Promise<CrossSellTarget>;
+  bulkCreateCrossSellTargets(targets: InsertCrossSellTarget[]): Promise<CrossSellTarget[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1591,12 +1669,91 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(regulatoryNews.publishedAt));
   }
 
+  async getRegulatoryNewsById(id: string): Promise<RegulatoryNews | undefined> {
+    const [news] = await db.select().from(regulatoryNews).where(eq(regulatoryNews.id, id));
+    return news || undefined;
+  }
+
   async createRegulatoryNews(insertNews: InsertRegulatoryNews): Promise<RegulatoryNews> {
     const [news] = await db
       .insert(regulatoryNews)
       .values(insertNews)
       .returning();
     return news;
+  }
+
+  async updateRegulatoryNews(id: string, data: Partial<InsertRegulatoryNews>): Promise<RegulatoryNews> {
+    const [news] = await db
+      .update(regulatoryNews)
+      .set(data)
+      .where(eq(regulatoryNews.id, id))
+      .returning();
+    return news;
+  }
+
+  // News Translations
+  async getNewsTranslation(newsId: string, language: string): Promise<NewsTranslation | undefined> {
+    const [translation] = await db
+      .select()
+      .from(newsTranslations)
+      .where(and(
+        eq(newsTranslations.newsId, newsId),
+        eq(newsTranslations.language, language),
+      ));
+    return translation || undefined;
+  }
+
+  async getNewsTranslationsByNewsId(newsId: string): Promise<NewsTranslation[]> {
+    return await db
+      .select()
+      .from(newsTranslations)
+      .where(eq(newsTranslations.newsId, newsId))
+      .orderBy(asc(newsTranslations.language));
+  }
+
+  async createNewsTranslation(data: InsertNewsTranslation): Promise<NewsTranslation> {
+    const [translation] = await db
+      .insert(newsTranslations)
+      .values(data)
+      .returning();
+    return translation;
+  }
+
+  async updateNewsTranslation(id: string, data: Partial<InsertNewsTranslation>): Promise<NewsTranslation> {
+    const [translation] = await db
+      .update(newsTranslations)
+      .set(data)
+      .where(eq(newsTranslations.id, id))
+      .returning();
+    return translation;
+  }
+
+  async approveNewsTranslation(id: string, reviewedBy: string): Promise<NewsTranslation> {
+    const [translation] = await db
+      .update(newsTranslations)
+      .set({
+        isApproved: true,
+        reviewedBy,
+        reviewedAt: new Date(),
+      })
+      .where(eq(newsTranslations.id, id))
+      .returning();
+    return translation;
+  }
+
+  async getUnapprovedTranslations(): Promise<NewsTranslation[]> {
+    return await db
+      .select()
+      .from(newsTranslations)
+      .where(eq(newsTranslations.isApproved, false))
+      .orderBy(desc(newsTranslations.createdAt));
+  }
+
+  async getAllNewsTranslations(): Promise<NewsTranslation[]> {
+    return await db
+      .select()
+      .from(newsTranslations)
+      .orderBy(asc(newsTranslations.newsId), asc(newsTranslations.language));
   }
 
   // Reminder Settings
@@ -2557,6 +2714,336 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAiConversation(id: string): Promise<void> {
     await db.delete(aiConversations).where(eq(aiConversations.id, id));
+  }
+
+  // ── Cross-Company Queries (for scheduler jobs) ─────────────
+
+  async getUpcomingComplianceTasks(daysAhead: number): Promise<ComplianceTask[]> {
+    const now = new Date();
+    const futureDate = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+    return await db.select().from(complianceTasks).where(
+      and(
+        lte(complianceTasks.dueDate, futureDate),
+        gte(complianceTasks.dueDate, now),
+        ne(complianceTasks.status, 'completed'),
+        ne(complianceTasks.status, 'cancelled'),
+        or(
+          eq(complianceTasks.reminderSent, false),
+          isNull(complianceTasks.reminderSent)
+        )
+      )
+    ).orderBy(asc(complianceTasks.dueDate));
+  }
+
+  async getExpiringDocuments(daysAhead: number): Promise<Document[]> {
+    const now = new Date();
+    const futureDate = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000);
+    return await db.select().from(documents).where(
+      and(
+        isNotNull(documents.expiryDate),
+        lte(documents.expiryDate, futureDate),
+        gte(documents.expiryDate, now),
+        or(
+          eq(documents.reminderSent, false),
+          isNull(documents.reminderSent)
+        ),
+        or(
+          eq(documents.isArchived, false),
+          isNull(documents.isArchived)
+        )
+      )
+    ).orderBy(asc(documents.expiryDate));
+  }
+
+  async getAllCompaniesWithContacts(): Promise<Company[]> {
+    return await db.select().from(companies)
+      .where(isNotNull(companies.contactPhone))
+      .orderBy(asc(companies.name));
+  }
+
+  async getOverdueServiceInvoices(): Promise<ServiceInvoice[]> {
+    const now = new Date();
+    return await db.select().from(serviceInvoices).where(
+      and(
+        eq(serviceInvoices.status, 'sent'),
+        lte(serviceInvoices.dueDate, now)
+      )
+    ).orderBy(asc(serviceInvoices.dueDate));
+  }
+
+  // ── Scheduled Jobs ────────────────────────────────────────────
+
+  async getScheduledJobByName(jobName: string): Promise<ScheduledJob | undefined> {
+    const [job] = await db.select().from(scheduledJobs).where(eq(scheduledJobs.jobName, jobName));
+    return job || undefined;
+  }
+
+  async createScheduledJob(job: InsertScheduledJob): Promise<ScheduledJob> {
+    const [created] = await db.insert(scheduledJobs).values(job).returning();
+    return created;
+  }
+
+  async updateScheduledJobStatus(jobName: string, data: Partial<InsertScheduledJob>): Promise<void> {
+    await db.update(scheduledJobs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(scheduledJobs.jobName, jobName));
+  }
+
+  async incrementJobRunCount(jobName: string): Promise<void> {
+    await db.update(scheduledJobs)
+      .set({
+        runCount: sql`${scheduledJobs.runCount} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduledJobs.jobName, jobName));
+  }
+
+  async incrementJobFailCount(jobName: string): Promise<void> {
+    await db.update(scheduledJobs)
+      .set({
+        failCount: sql`${scheduledJobs.failCount} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(scheduledJobs.jobName, jobName));
+  }
+
+  async getAllScheduledJobs(): Promise<ScheduledJob[]> {
+    return await db.select().from(scheduledJobs).orderBy(asc(scheduledJobs.jobName));
+  }
+
+  /**
+   * Atomic job claim: UPDATE ... WHERE status != 'running'.
+   * Returns true if this caller successfully claimed the job.
+   * Prevents two instances from running the same job simultaneously.
+   */
+  async claimScheduledJob(jobName: string): Promise<boolean> {
+    const result = await db
+      .update(scheduledJobs)
+      .set({
+        status: 'running',
+        lastRunAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(scheduledJobs.jobName, jobName),
+          ne(scheduledJobs.status, 'running'),
+        )
+      )
+      .returning();
+
+    return result.length > 0;
+  }
+
+  /**
+   * Get reminder logs filtered by entity type and ID.
+   * More efficient than fetching all logs for a company and filtering in memory.
+   */
+  async getReminderLogsByEntity(entityId: string, entityType: string): Promise<ReminderLog[]> {
+    return await db
+      .select()
+      .from(reminderLogs)
+      .where(
+        and(
+          eq(reminderLogs.relatedEntityId, entityId),
+          eq(reminderLogs.relatedEntityType, entityType),
+        )
+      )
+      .orderBy(desc(reminderLogs.createdAt));
+  }
+
+  // ── Message Templates ─────────────────────────────────────────
+
+  async getMessageTemplate(name: string, language: string): Promise<MessageTemplate | undefined> {
+    const [template] = await db.select().from(messageTemplates).where(
+      and(
+        eq(messageTemplates.name, name),
+        eq(messageTemplates.language, language),
+        eq(messageTemplates.isActive, true)
+      )
+    );
+    return template || undefined;
+  }
+
+  async getMessageTemplatesByCategory(category: string): Promise<MessageTemplate[]> {
+    return await db.select().from(messageTemplates)
+      .where(eq(messageTemplates.category, category))
+      .orderBy(asc(messageTemplates.name), asc(messageTemplates.language));
+  }
+
+  async getAllMessageTemplates(): Promise<MessageTemplate[]> {
+    return await db.select().from(messageTemplates)
+      .orderBy(asc(messageTemplates.name), asc(messageTemplates.language));
+  }
+
+  async createMessageTemplate(template: InsertMessageTemplate): Promise<MessageTemplate> {
+    const [created] = await db.insert(messageTemplates).values(template).returning();
+    return created;
+  }
+
+  async updateMessageTemplate(id: string, data: Partial<InsertMessageTemplate>): Promise<MessageTemplate> {
+    const [updated] = await db.update(messageTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(messageTemplates.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteMessageTemplate(id: string): Promise<void> {
+    await db.delete(messageTemplates).where(eq(messageTemplates.id, id));
+  }
+
+  // ── WhatsApp Web Session ──────────────────────────────────────
+
+  async getWhatsappWebSession(): Promise<WhatsappWebSession | undefined> {
+    const [session] = await db.select().from(whatsappWebSessions).limit(1);
+    return session || undefined;
+  }
+
+  async updateWhatsappWebSession(data: Partial<InsertWhatsappWebSession>): Promise<void> {
+    const existing = await this.getWhatsappWebSession();
+    if (existing) {
+      await db.update(whatsappWebSessions)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(whatsappWebSessions.id, existing.id));
+    } else {
+      await db.insert(whatsappWebSessions).values({
+        sessionName: 'default',
+        ...data,
+      });
+    }
+  }
+
+  async resetWhatsappDailyCounter(): Promise<void> {
+    await db.update(whatsappWebSessions)
+      .set({ messagesSentToday: 0, updatedAt: new Date() });
+  }
+
+  async incrementWhatsappMessageCount(): Promise<void> {
+    await db.update(whatsappWebSessions)
+      .set({
+        messagesSentToday: sql`${whatsappWebSessions.messagesSentToday} + 1`,
+        lastMessageAt: new Date(),
+        updatedAt: new Date(),
+      });
+  }
+
+  // ── Message Queue ─────────────────────────────────────────────
+
+  async createMessageQueueItem(item: InsertMessageQueue): Promise<MessageQueueItem> {
+    const [created] = await db.insert(messageQueue).values(item).returning();
+    return created;
+  }
+
+  async getMessageQueueItem(id: string): Promise<MessageQueueItem | undefined> {
+    const [item] = await db.select().from(messageQueue).where(eq(messageQueue.id, id));
+    return item || undefined;
+  }
+
+  async getQueuedMessages(limit: number): Promise<MessageQueueItem[]> {
+    return await db.select().from(messageQueue)
+      .where(eq(messageQueue.status, 'queued'))
+      .orderBy(asc(messageQueue.priority), asc(messageQueue.createdAt))
+      .limit(limit);
+  }
+
+  async updateMessageQueueItem(id: string, data: Partial<InsertMessageQueue>): Promise<void> {
+    await db.update(messageQueue)
+      .set(data)
+      .where(eq(messageQueue.id, id));
+  }
+
+  async getMessageQueueStats(): Promise<{ queued: number; sending: number; sent: number; failed: number; cancelled: number }> {
+    const results = await db
+      .select({
+        status: messageQueue.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(messageQueue)
+      .groupBy(messageQueue.status);
+
+    const stats = { queued: 0, sending: 0, sent: 0, failed: 0, cancelled: 0 };
+    for (const row of results) {
+      if (row.status in stats) {
+        (stats as any)[row.status] = row.count;
+      }
+    }
+    return stats;
+  }
+
+  async recoverStaleSendingMessages(thresholdMs: number): Promise<number> {
+    const cutoff = new Date(Date.now() - thresholdMs);
+    const result = await db.update(messageQueue)
+      .set({ status: 'queued', lastError: 'Recovered from stale sending state' })
+      .where(
+        and(
+          eq(messageQueue.status, 'sending'),
+          lte(messageQueue.createdAt, cutoff)
+        )
+      )
+      .returning();
+    return result.length;
+  }
+
+  // ── Cross-Sell Campaigns ─────────────────────────────────────
+
+  async getCrossSellCampaign(id: string): Promise<CrossSellCampaign | undefined> {
+    const [campaign] = await db.select().from(crossSellCampaigns).where(eq(crossSellCampaigns.id, id));
+    return campaign || undefined;
+  }
+
+  async getAllCrossSellCampaigns(): Promise<CrossSellCampaign[]> {
+    return await db
+      .select()
+      .from(crossSellCampaigns)
+      .orderBy(desc(crossSellCampaigns.createdAt));
+  }
+
+  async createCrossSellCampaign(campaign: InsertCrossSellCampaign): Promise<CrossSellCampaign> {
+    const [created] = await db.insert(crossSellCampaigns).values(campaign).returning();
+    return created;
+  }
+
+  async updateCrossSellCampaign(id: string, data: Partial<InsertCrossSellCampaign>): Promise<CrossSellCampaign> {
+    const [updated] = await db
+      .update(crossSellCampaigns)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(crossSellCampaigns.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteCrossSellCampaign(id: string): Promise<void> {
+    await db.delete(crossSellCampaigns).where(eq(crossSellCampaigns.id, id));
+  }
+
+  // ── Cross-Sell Targets ───────────────────────────────────────
+
+  async getCrossSellTargetsByCampaign(campaignId: string): Promise<CrossSellTarget[]> {
+    return await db
+      .select()
+      .from(crossSellTargets)
+      .where(eq(crossSellTargets.campaignId, campaignId))
+      .orderBy(asc(crossSellTargets.createdAt));
+  }
+
+  async createCrossSellTarget(target: InsertCrossSellTarget): Promise<CrossSellTarget> {
+    const [created] = await db.insert(crossSellTargets).values(target).returning();
+    return created;
+  }
+
+  async updateCrossSellTarget(id: string, data: Partial<InsertCrossSellTarget>): Promise<CrossSellTarget> {
+    const [updated] = await db
+      .update(crossSellTargets)
+      .set(data)
+      .where(eq(crossSellTargets.id, id))
+      .returning();
+    return updated;
+  }
+
+  async bulkCreateCrossSellTargets(targets: InsertCrossSellTarget[]): Promise<CrossSellTarget[]> {
+    if (targets.length === 0) return [];
+    return await db.insert(crossSellTargets).values(targets).returning();
   }
 }
 

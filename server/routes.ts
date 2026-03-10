@@ -37,6 +37,7 @@ import { registerVATRoutes } from './routes/vat.routes';
 import { registerTeamRoutes } from './routes/team.routes';
 import { registerPortalRoutes } from './routes/portal.routes';
 import { registerAdminRoutes } from './routes/admin.routes';
+import { registerSchedulerRoutes } from './routes/scheduler.routes';
 
 const log = createLogger('routes');
 
@@ -82,6 +83,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Admin Panel ────────────────────────────────────────
   registerAdminRoutes(app);
+
+  // ─── Scheduler & WhatsApp Web ─────────────────────────
+  registerSchedulerRoutes(app);
 
   log.info('All route modules registered');
 

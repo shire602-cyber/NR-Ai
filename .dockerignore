@@ -16,3 +16,4 @@ replit.md
 *.nix
 .cursor
 *.log
+.whatsapp-auth
