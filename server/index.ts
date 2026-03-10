@@ -92,24 +92,48 @@ async function bootstrap() {
 
   // ─── Auto-migrate database on startup ──────────────────────
   try {
-    const { migrate } = await import('drizzle-orm/node-postgres/migrator');
-    const { db } = await import('./db');
-    const migrationsPath = path.resolve(projectRoot, 'migrations');
-    if (fs.existsSync(migrationsPath)) {
-      log.info('Running database migrations...');
-      await migrate(db, { migrationsFolder: migrationsPath });
+    const { pool } = await import('./db');
+    const migrationsDir = path.resolve(projectRoot, 'migrations');
+    if (fs.existsSync(migrationsDir)) {
+      // Create migration tracking table if it doesn't exist
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
+          id SERIAL PRIMARY KEY,
+          hash TEXT NOT NULL,
+          created_at BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW()) * 1000)
+        )
+      `);
+
+      // Get already-applied migrations
+      const applied = await pool.query('SELECT hash FROM "__drizzle_migrations"');
+      const appliedHashes = new Set(applied.rows.map((r: any) => r.hash));
+
+      // Read and apply SQL migration files in order
+      const sqlFiles = fs.readdirSync(migrationsDir)
+        .filter((f: string) => f.endsWith('.sql'))
+        .sort();
+
+      for (const file of sqlFiles) {
+        const hash = file.replace('.sql', '');
+        if (appliedHashes.has(hash)) {
+          continue; // Already applied
+        }
+        const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf-8');
+        log.info(`Applying migration: ${file}`);
+        // Split on statement breakpoints and execute each
+        const statements = sql.split('--> statement-breakpoint').filter((s: string) => s.trim());
+        for (const stmt of statements) {
+          if (stmt.trim()) {
+            await pool.query(stmt);
+          }
+        }
+        await pool.query('INSERT INTO "__drizzle_migrations" (hash) VALUES ($1)', [hash]);
+        log.info(`✓ Applied migration: ${file}`);
+      }
       log.info('✓ Database migrations complete');
     }
   } catch (migrationError: any) {
-    log.error({ error: migrationError.message }, 'Database migration failed — attempting drizzle push fallback');
-    // If migrations fail, try drizzle-kit push as fallback
-    try {
-      const { execSync } = await import('child_process');
-      execSync('npx drizzle-kit push --force', { cwd: projectRoot, stdio: 'pipe' });
-      log.info('✓ Database schema pushed via drizzle-kit');
-    } catch (pushError: any) {
-      log.error({ error: pushError.message }, 'Database schema push also failed — tables may not exist');
-    }
+    log.error({ error: migrationError.message, stack: migrationError.stack }, 'Database migration failed');
   }
 
   // Register all API routes
