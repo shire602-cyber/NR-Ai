@@ -114,6 +114,11 @@ async function bootstrap() {
         .filter((f: string) => f.endsWith('.sql'))
         .sort();
 
+      // PostgreSQL error codes for "already exists" scenarios that are safe to skip
+      // 42P07 = duplicate_table, 42P16 = invalid_table_definition (duplicate column),
+      // 42701 = duplicate_column, 42710 = duplicate_object, 23505 = unique_violation (duplicate constraint)
+      const SAFE_PG_CODES = new Set(['42P07', '42P16', '42701', '42710', '23505']);
+
       for (const file of sqlFiles) {
         const hash = file.replace('.sql', '');
         if (appliedHashes.has(hash)) {
@@ -125,9 +130,25 @@ async function bootstrap() {
         const statements = sql.split('--> statement-breakpoint').filter((s: string) => s.trim());
         for (const stmt of statements) {
           if (stmt.trim()) {
-            await pool.query(stmt);
+            try {
+              await pool.query(stmt);
+            } catch (stmtErr: any) {
+              // If the object already exists (table, column, constraint, index),
+              // this migration was likely applied outside the tracking system.
+              // Log a warning and continue to the next statement.
+              if (SAFE_PG_CODES.has(stmtErr.code)) {
+                log.warn(
+                  { migration: file, pgCode: stmtErr.code, detail: stmtErr.message },
+                  'Migration statement skipped — object already exists',
+                );
+              } else {
+                // Real failure (syntax error, connection lost, etc.) — propagate
+                throw stmtErr;
+              }
+            }
           }
         }
+        // Record as applied so it won't be retried
         await pool.query('INSERT INTO "__drizzle_migrations" (hash) VALUES ($1)', [hash]);
         log.info(`✓ Applied migration: ${file}`);
       }
