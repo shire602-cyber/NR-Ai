@@ -28,7 +28,12 @@ import {
   FileUp,
   History,
   Database,
-  Scale
+  Scale,
+  Timer,
+  Smartphone,
+  Newspaper as NewspaperIcon,
+  TrendingUp,
+  FileText as FileTextIcon
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -94,6 +99,11 @@ const adminItems = [
   { title: 'clientImport', icon: FileUp, url: '/admin/import' },
   { title: 'userManagement', icon: Users, url: '/admin/users' },
   { title: 'activityLogs', icon: Activity, url: '/admin/activity-logs' },
+  { title: 'scheduler', icon: Timer, url: '/admin/scheduler' },
+  { title: 'whatsappAdmin', icon: Smartphone, url: '/admin/whatsapp-admin' },
+  { title: 'newsTranslations', icon: NewspaperIcon, url: '/admin/news' },
+  { title: 'crossSelling', icon: TrendingUp, url: '/admin/cross-sell' },
+  { title: 'messageTemplates', icon: FileTextIcon, url: '/admin/templates' },
   { title: 'systemSettings', icon: Settings, url: '/admin' },
 ];
 

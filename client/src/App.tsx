@@ -65,6 +65,11 @@ const ClientDetails = lazy(() => import('@/pages/ClientDetails'));
 const History = lazy(() => import('@/pages/History'));
 const BackupRestore = lazy(() => import('@/pages/BackupRestore'));
 const TrialBalance = lazy(() => import('@/pages/TrialBalance'));
+const AdminScheduler = lazy(() => import('@/pages/AdminScheduler'));
+const AdminWhatsApp = lazy(() => import('@/pages/AdminWhatsApp'));
+const AdminNews = lazy(() => import('@/pages/AdminNews'));
+const AdminCrossSell = lazy(() => import('@/pages/AdminCrossSell'));
+const AdminTemplates = lazy(() => import('@/pages/AdminTemplates'));
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -233,7 +238,12 @@ function Router() {
           <Route path="/admin/import" component={ClientImport} />
           <Route path="/admin/activity-logs" component={ActivityLogs} />
           <Route path="/admin/users" component={Admin} />
-          
+          <Route path="/admin/scheduler" component={AdminScheduler} />
+          <Route path="/admin/whatsapp-admin" component={AdminWhatsApp} />
+          <Route path="/admin/news" component={AdminNews} />
+          <Route path="/admin/cross-sell" component={AdminCrossSell} />
+          <Route path="/admin/templates" component={AdminTemplates} />
+
           <Route component={NotFound} />
         </Switch>
       </ProtectedLayout>
