@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  BookMarked, 
-  BarChart3, 
+import {
+  LayoutDashboard,
+  FileText,
+  BookMarked,
+  BarChart3,
   Sparkles,
   Languages,
   LogOut,
@@ -31,9 +31,7 @@ import {
   Scale,
   Timer,
   Smartphone,
-  Newspaper as NewspaperIcon,
   TrendingUp,
-  FileText as FileTextIcon
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -101,9 +99,9 @@ const adminItems = [
   { title: 'activityLogs', icon: Activity, url: '/admin/activity-logs' },
   { title: 'scheduler', icon: Timer, url: '/admin/scheduler' },
   { title: 'whatsappAdmin', icon: Smartphone, url: '/admin/whatsapp-admin' },
-  { title: 'newsTranslations', icon: NewspaperIcon, url: '/admin/news' },
+  { title: 'newsTranslations', icon: Newspaper, url: '/admin/news' },
   { title: 'crossSelling', icon: TrendingUp, url: '/admin/cross-sell' },
-  { title: 'messageTemplates', icon: FileTextIcon, url: '/admin/templates' },
+  { title: 'messageTemplates', icon: FileText, url: '/admin/templates' },
   { title: 'systemSettings', icon: Settings, url: '/admin' },
 ];
 
