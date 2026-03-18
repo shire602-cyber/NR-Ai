@@ -250,6 +250,17 @@ export const t = {
     uploadReceiptsDescription: 'Drag & drop receipt images or click to browse (supports bulk upload)',
     recentExpenses: 'Recent Expenses',
     recentExpensesDescription: 'Previously scanned and saved expenses',
+
+    // New modules
+    payroll: 'Payroll & WPS',
+    hrPayroll: 'HR & Payroll',
+    billPay: 'Bill Pay',
+    fixedAssets: 'Fixed Assets',
+    budgeting: 'Budgets',
+    expenseClaims: 'Expense Claims',
+    cashFlowForecast: 'Cash Flow Forecast',
+    anomalyDetection: 'Anomaly Detection',
+    autoReconcile: 'Smart Reconcile',
   },
   ar: {
     // Navigation
@@ -474,6 +485,17 @@ export const t = {
     uploadReceiptsDescription: 'اسحب وأفلت صور الإيصالات أو انقر للتصفح (يدعم الرفع المتعدد)',
     recentExpenses: 'المصروفات الأخيرة',
     recentExpensesDescription: 'المصروفات الممسوحة والمحفوظة مسبقاً',
+
+    // New modules
+    payroll: 'الرواتب والحماية',
+    hrPayroll: 'الموارد البشرية والرواتب',
+    billPay: 'دفع الفواتير',
+    fixedAssets: 'الأصول الثابتة',
+    budgeting: 'الميزانيات',
+    expenseClaims: 'مطالبات المصروفات',
+    cashFlowForecast: 'توقعات التدفق النقدي',
+    anomalyDetection: 'كشف الحالات الشاذة',
+    autoReconcile: 'التسوية الذكية',
   },
 };
 

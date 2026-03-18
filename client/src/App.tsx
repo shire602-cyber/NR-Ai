@@ -70,6 +70,19 @@ import PublicInvoiceView from '@/pages/PublicInvoiceView';
 import CustomerPortal from '@/pages/CustomerPortal';
 import RecurringInvoices from '@/pages/RecurringInvoices';
 import Inventory from '@/pages/Inventory';
+import Payroll from '@/pages/Payroll';
+import BillPay from '@/pages/BillPay';
+import FixedAssets from '@/pages/FixedAssets';
+import Budgets from '@/pages/Budgets';
+import ExpenseClaims from '@/pages/ExpenseClaims';
+import CashFlowForecast from '@/pages/CashFlowForecast';
+import AnomalyDetection from '@/pages/AnomalyDetection';
+import AutoReconcile from '@/pages/AutoReconcile';
+
+import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
+import { MobileNav } from '@/components/MobileNav';
+import '@/styles/rtl.css';
+import '@/styles/mobile.css';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
@@ -204,6 +217,14 @@ function Router() {
           <Route path="/receipts" component={Receipts} />
           <Route path="/contacts" component={CustomerContacts} />
           <Route path="/inventory" component={Inventory} />
+          <Route path="/payroll" component={Payroll} />
+          <Route path="/bill-pay" component={BillPay} />
+          <Route path="/fixed-assets" component={FixedAssets} />
+          <Route path="/budgets" component={Budgets} />
+          <Route path="/expense-claims" component={ExpenseClaims} />
+          <Route path="/cashflow-forecast" component={CashFlowForecast} />
+          <Route path="/anomaly-detection" component={AnomalyDetection} />
+          <Route path="/auto-reconcile" component={AutoReconcile} />
           <Route path="/ai-cfo" component={AICFO} />
           <Route path="/ai-features" component={AIFeatures} />
           <Route path="/smart-assistant" component={SmartAssistant} />
@@ -264,6 +285,8 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <Router />
+          <PWAInstallPrompt />
+          <MobileNav />
           <Toaster />
         </TooltipProvider>
       </QueryClientProvider>

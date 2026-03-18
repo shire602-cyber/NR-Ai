@@ -41,6 +41,14 @@ import { registerPortalPublicRoutes } from './routes/portal.public.routes';
 import { registerAdminRoutes } from './routes/admin.routes';
 import { registerRecurringInvoiceRoutes } from './routes/recurring-invoices.routes';
 import { registerInventoryRoutes } from './routes/inventory.routes';
+import { registerPayrollRoutes } from './routes/payroll.routes';
+import { registerBillPayRoutes } from './routes/bill-pay.routes';
+import { registerFixedAssetRoutes } from './routes/fixed-assets.routes';
+import { registerBudgetRoutes } from './routes/budgets.routes';
+import { registerExpenseClaimRoutes } from './routes/expense-claims.routes';
+import { registerCashFlowRoutes } from './routes/cashflow.routes';
+import { registerAnomalyRoutes } from './routes/anomaly.routes';
+import { registerAutoReconcileRoutes } from './routes/auto-reconcile.routes';
 
 const log = createLogger('routes');
 
@@ -58,9 +66,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerJournalRoutes(app);
   registerInventoryRoutes(app);
 
+  // ─── HR & Payroll ───────────────────────────────────────
+  registerPayrollRoutes(app);
+  registerExpenseClaimRoutes(app);
+
+  // ─── Accounts Payable ───────────────────────────────────
+  registerBillPayRoutes(app);
+
+  // ─── Asset Management ───────────────────────────────────
+  registerFixedAssetRoutes(app);
+  registerBudgetRoutes(app);
+
   // ─── AI & Intelligence ──────────────────────────────────
   registerAIRoutes(app);
   registerOCRRoutes(app);
+  registerCashFlowRoutes(app);
+  registerAnomalyRoutes(app);
+  registerAutoReconcileRoutes(app);
 
   // ─── Reporting & Analytics ──────────────────────────────
   registerDashboardRoutes(app);

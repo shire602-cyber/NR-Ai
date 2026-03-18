@@ -1,0 +1,578 @@
+/**
+ * Comprehensive RTL (Right-to-Left) stylesheet for Muhasib.ai
+ *
+ * All rules are scoped under [dir="rtl"] so they only activate when the
+ * document direction is set to RTL (Arabic mode).
+ *
+ * Covers:
+ *  - Arabic font stack (Google Fonts Cairo)
+ *  - Base directional overrides
+ *  - shadcn/ui component adjustments
+ *  - Tables, forms, sidebar, dialogs, badges, tooltips
+ *  - Number display (LTR-in-RTL)
+ *  - Scrollbar positioning
+ *  - Framer Motion sidebar animation fix
+ */
+
+/* ── Google Fonts ─────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Noto+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+
+/* ══════════════════════════════════════════════════════════════════════
+   1. BASE / TYPOGRAPHY
+   ══════════════════════════════════════════════════════════════════════ */
+
+[dir="rtl"] {
+  font-family: 'Cairo', 'Noto Sans Arabic', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  text-align: right;
+}
+
+[dir="rtl"] body {
+  font-family: 'Cairo', 'Noto Sans Arabic', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Slightly larger line-height for Arabic readability */
+[dir="rtl"] p,
+[dir="rtl"] span,
+[dir="rtl"] label,
+[dir="rtl"] li,
+[dir="rtl"] td,
+[dir="rtl"] th {
+  line-height: 1.8;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   2. NUMBERS — keep LTR even inside RTL context
+   ══════════════════════════════════════════════════════════════════════ */
+
+[dir="rtl"] .ltr-num,
+[dir="rtl"] [data-ltr-num],
+[dir="rtl"] input[type="number"],
+[dir="rtl"] input[type="tel"],
+[dir="rtl"] input[inputmode="numeric"],
+[dir="rtl"] input[inputmode="decimal"],
+[dir="rtl"] .tabular-nums {
+  direction: ltr;
+  unicode-bidi: embed;
+  text-align: right;
+}
+
+/* Currency and financial figures */
+[dir="rtl"] .currency-amount,
+[dir="rtl"] [data-currency] {
+  direction: ltr;
+  unicode-bidi: embed;
+  text-align: right;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   3. LAYOUT — flex & grid directional flips
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Flip horizontal flex containers */
+[dir="rtl"] .flex-row,
+[dir="rtl"] .flex.items-center,
+[dir="rtl"] .inline-flex {
+  /* The browser already flips flex-direction:row in RTL context.
+     We ensure no explicit LTR overrides break this. */
+}
+
+/* Gap utilities with margin — swap left/right */
+[dir="rtl"] .ml-auto { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .mr-auto { margin-right: 0; margin-left: auto; }
+
+[dir="rtl"] .ml-1 { margin-left: 0; margin-right: 0.25rem; }
+[dir="rtl"] .ml-2 { margin-left: 0; margin-right: 0.5rem; }
+[dir="rtl"] .ml-3 { margin-left: 0; margin-right: 0.75rem; }
+[dir="rtl"] .ml-4 { margin-left: 0; margin-right: 1rem; }
+[dir="rtl"] .ml-6 { margin-left: 0; margin-right: 1.5rem; }
+[dir="rtl"] .ml-8 { margin-left: 0; margin-right: 2rem; }
+
+[dir="rtl"] .mr-1 { margin-right: 0; margin-left: 0.25rem; }
+[dir="rtl"] .mr-2 { margin-right: 0; margin-left: 0.5rem; }
+[dir="rtl"] .mr-3 { margin-right: 0; margin-left: 0.75rem; }
+[dir="rtl"] .mr-4 { margin-right: 0; margin-left: 1rem; }
+[dir="rtl"] .mr-6 { margin-right: 0; margin-left: 1.5rem; }
+[dir="rtl"] .mr-8 { margin-right: 0; margin-left: 2rem; }
+
+/* Padding directional swaps */
+[dir="rtl"] .pl-1 { padding-left: 0; padding-right: 0.25rem; }
+[dir="rtl"] .pl-2 { padding-left: 0; padding-right: 0.5rem; }
+[dir="rtl"] .pl-3 { padding-left: 0; padding-right: 0.75rem; }
+[dir="rtl"] .pl-4 { padding-left: 0; padding-right: 1rem; }
+[dir="rtl"] .pl-6 { padding-left: 0; padding-right: 1.5rem; }
+[dir="rtl"] .pl-8 { padding-left: 0; padding-right: 2rem; }
+
+[dir="rtl"] .pr-1 { padding-right: 0; padding-left: 0.25rem; }
+[dir="rtl"] .pr-2 { padding-right: 0; padding-left: 0.5rem; }
+[dir="rtl"] .pr-3 { padding-right: 0; padding-left: 0.75rem; }
+[dir="rtl"] .pr-4 { padding-right: 0; padding-left: 1rem; }
+[dir="rtl"] .pr-6 { padding-right: 0; padding-left: 1.5rem; }
+[dir="rtl"] .pr-8 { padding-right: 0; padding-left: 2rem; }
+
+/* Text alignment swaps */
+[dir="rtl"] .text-left { text-align: right; }
+[dir="rtl"] .text-right { text-align: left; }
+
+/* Float swaps */
+[dir="rtl"] .float-left { float: right; }
+[dir="rtl"] .float-right { float: left; }
+
+/* Border-radius directional swaps */
+[dir="rtl"] .rounded-l { border-radius: 0 var(--radius) var(--radius) 0; }
+[dir="rtl"] .rounded-r { border-radius: var(--radius) 0 0 var(--radius); }
+[dir="rtl"] .rounded-tl { border-top-left-radius: 0; border-top-right-radius: var(--radius); }
+[dir="rtl"] .rounded-tr { border-top-right-radius: 0; border-top-left-radius: var(--radius); }
+[dir="rtl"] .rounded-bl { border-bottom-left-radius: 0; border-bottom-right-radius: var(--radius); }
+[dir="rtl"] .rounded-br { border-bottom-right-radius: 0; border-bottom-left-radius: var(--radius); }
+
+/* Border directional swaps */
+[dir="rtl"] .border-l { border-left: none; border-right: 1px solid; }
+[dir="rtl"] .border-r { border-right: none; border-left: 1px solid; }
+[dir="rtl"] .border-l-2 { border-left: none; border-right: 2px solid; }
+[dir="rtl"] .border-r-2 { border-right: none; border-left: 2px solid; }
+
+/* Absolute / fixed position swaps */
+[dir="rtl"] .left-0 { left: auto; right: 0; }
+[dir="rtl"] .right-0 { right: auto; left: 0; }
+[dir="rtl"] .left-1 { left: auto; right: 0.25rem; }
+[dir="rtl"] .right-1 { right: auto; left: 0.25rem; }
+[dir="rtl"] .left-2 { left: auto; right: 0.5rem; }
+[dir="rtl"] .right-2 { right: auto; left: 0.5rem; }
+[dir="rtl"] .left-4 { left: auto; right: 1rem; }
+[dir="rtl"] .right-4 { right: auto; left: 1rem; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   4. SIDEBAR
+   ══════════════════════════════════════════════════════════════════════ */
+
+[dir="rtl"] [data-sidebar="sidebar"] {
+  border-right: none;
+  border-left: 1px solid hsl(var(--sidebar-border));
+}
+
+/* Sidebar active indicator — flip to right edge */
+[dir="rtl"] [data-sidebar="sidebar"] .absolute.left-0 {
+  left: auto;
+  right: 0;
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+
+/* Sidebar menu icon spacing */
+[dir="rtl"] [data-sidebar="menu-button"] svg {
+  margin-right: 0;
+  margin-left: 0.5rem;
+}
+
+/* Sidebar group label icon */
+[dir="rtl"] [data-sidebar="group-label"] svg {
+  margin-right: 0;
+  margin-left: 0.25rem;
+}
+
+/* Sidebar collapse / expand animation direction */
+[dir="rtl"] [data-sidebar="sidebar"][data-state="collapsed"] {
+  transform: translateX(0);
+}
+
+/* Fix Framer Motion sidebar hover animation direction */
+[dir="rtl"] [data-sidebar="sidebar"] [data-sidebar="menu-button"]:hover {
+  transform: translateX(-4px);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   5. TABLES
+   ══════════════════════════════════════════════════════════════════════ */
+
+[dir="rtl"] table {
+  text-align: right;
+}
+
+[dir="rtl"] th {
+  text-align: right;
+}
+
+[dir="rtl"] td {
+  text-align: right;
+}
+
+/* Numeric columns stay LTR-aligned */
+[dir="rtl"] td.numeric,
+[dir="rtl"] th.numeric,
+[dir="rtl"] td[data-numeric],
+[dir="rtl"] th[data-numeric],
+[dir="rtl"] .table-numeric {
+  direction: ltr;
+  unicode-bidi: embed;
+  text-align: left;
+}
+
+/* Table action column (buttons) — flip to left */
+[dir="rtl"] td:last-child,
+[dir="rtl"] th:last-child {
+  text-align: left;
+}
+
+[dir="rtl"] td:first-child,
+[dir="rtl"] th:first-child {
+  text-align: right;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   6. FORMS & INPUTS
+   ══════════════════════════════════════════════════════════════════════ */
+
+[dir="rtl"] input,
+[dir="rtl"] textarea,
+[dir="rtl"] select {
+  text-align: right;
+}
+
+/* Email and URL fields should remain LTR */
+[dir="rtl"] input[type="email"],
+[dir="rtl"] input[type="url"] {
+  direction: ltr;
+  text-align: left;
+}
+
+/* Search input icon positioning */
+[dir="rtl"] .relative > input + svg,
+[dir="rtl"] .relative > svg + input {
+  /* Search icon flipped to right side */
+}
+
+/* Input with leading icon — swap padding */
+[dir="rtl"] input.pl-10,
+[dir="rtl"] input.pl-8 {
+  padding-left: 0.75rem;
+  padding-right: 2.5rem;
+}
+
+/* Input with trailing icon — swap padding */
+[dir="rtl"] input.pr-10,
+[dir="rtl"] input.pr-8 {
+  padding-right: 0.75rem;
+  padding-left: 2.5rem;
+}
+
+/* Form labels */
+[dir="rtl"] label {
+  text-align: right;
+}
+
+/* Form error messages */
+[dir="rtl"] [role="alert"],
+[dir="rtl"] .form-message {
+  text-align: right;
+}
+
+/* Checkbox / Radio — label after input in LTR becomes label before input */
+[dir="rtl"] .flex.items-center > input[type="checkbox"],
+[dir="rtl"] .flex.items-center > input[type="radio"] {
+  margin-right: 0;
+  margin-left: 0.5rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   7. SHADCN/UI COMPONENTS
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Dialog / AlertDialog ───────────────────────────────────────────── */
+[dir="rtl"] [role="dialog"] {
+  text-align: right;
+}
+
+[dir="rtl"] [role="dialog"] .flex.justify-end {
+  justify-content: flex-start;
+}
+
+[dir="rtl"] [role="alertdialog"] {
+  text-align: right;
+}
+
+/* Dialog close button — flip to left */
+[dir="rtl"] [role="dialog"] button[data-dismiss],
+[dir="rtl"] [role="dialog"] .absolute.right-4.top-4 {
+  right: auto;
+  left: 1rem;
+}
+
+/* ── Sheet (slide-in panel) ─────────────────────────────────────────── */
+[dir="rtl"] [data-state="open"][data-side="right"] {
+  /* Sheet from right in LTR becomes sheet from left in RTL */
+}
+
+/* ── Select / Dropdown ──────────────────────────────────────────────── */
+[dir="rtl"] [role="listbox"] {
+  text-align: right;
+}
+
+[dir="rtl"] [role="option"] {
+  text-align: right;
+}
+
+/* Select trigger chevron */
+[dir="rtl"] [role="combobox"] svg {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* ── Dropdown Menu ──────────────────────────────────────────────────── */
+[dir="rtl"] [role="menu"] {
+  text-align: right;
+}
+
+[dir="rtl"] [role="menuitem"] {
+  text-align: right;
+}
+
+[dir="rtl"] [role="menuitem"] svg {
+  margin-right: 0;
+  margin-left: 0.5rem;
+}
+
+/* Dropdown menu shortcut indicator */
+[dir="rtl"] [role="menuitem"] .ml-auto {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* ── Popover ────────────────────────────────────────────────────────── */
+[dir="rtl"] [data-radix-popper-content-wrapper] {
+  text-align: right;
+}
+
+/* ── Tooltip ────────────────────────────────────────────────────────── */
+[dir="rtl"] [role="tooltip"] {
+  text-align: right;
+}
+
+/* ── Tabs ───────────────────────────────────────────────────────────── */
+[dir="rtl"] [role="tablist"] {
+  /* Tabs naturally flip in RTL */
+}
+
+/* ── Accordion ──────────────────────────────────────────────────────── */
+[dir="rtl"] [data-state][data-orientation="vertical"] > button {
+  text-align: right;
+}
+
+/* Accordion chevron icon — flip rotation direction */
+[dir="rtl"] [data-state="open"] > button svg {
+  transform: rotate(180deg);
+}
+
+/* ── Badge / Chip ───────────────────────────────────────────────────── */
+[dir="rtl"] .badge,
+[dir="rtl"] [data-badge] {
+  /* Badge positioning (e.g., notification dot) flips */
+}
+
+/* Notification badge on top-right becomes top-left */
+[dir="rtl"] .absolute.-top-1.-right-1,
+[dir="rtl"] .absolute.-top-2.-right-2 {
+  right: auto;
+  left: -0.25rem;
+}
+
+/* ── Card ───────────────────────────────────────────────────────────── */
+[dir="rtl"] .card-header,
+[dir="rtl"] [data-slot="card-header"] {
+  text-align: right;
+}
+
+/* ── Breadcrumb ─────────────────────────────────────────────────────── */
+[dir="rtl"] nav[aria-label="breadcrumb"] ol {
+  direction: rtl;
+}
+
+/* Breadcrumb separator — flip chevron */
+[dir="rtl"] nav[aria-label="breadcrumb"] svg {
+  transform: scaleX(-1);
+}
+
+/* ── Pagination ─────────────────────────────────────────────────────── */
+[dir="rtl"] nav[aria-label="pagination"] svg {
+  transform: scaleX(-1);
+}
+
+/* ── Progress bar ───────────────────────────────────────────────────── */
+[dir="rtl"] [role="progressbar"] > div {
+  transform-origin: right;
+}
+
+/* ── Toast / Notification ───────────────────────────────────────────── */
+[dir="rtl"] [data-sonner-toaster],
+[dir="rtl"] [role="status"] {
+  text-align: right;
+}
+
+[dir="rtl"] [data-sonner-toast] [data-close-button] {
+  right: auto;
+  left: 0;
+}
+
+/* ── Command palette ────────────────────────────────────────────────── */
+[dir="rtl"] [cmdk-root] {
+  text-align: right;
+}
+
+[dir="rtl"] [cmdk-input] {
+  text-align: right;
+}
+
+[dir="rtl"] [cmdk-item] svg {
+  margin-right: 0;
+  margin-left: 0.5rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   8. ICONS — flip directional icons
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Flip chevrons, arrows, and directional icons */
+[dir="rtl"] .lucide-chevron-right,
+[dir="rtl"] .lucide-chevron-left,
+[dir="rtl"] .lucide-arrow-right,
+[dir="rtl"] .lucide-arrow-left,
+[dir="rtl"] .lucide-arrow-right-circle,
+[dir="rtl"] .lucide-arrow-left-circle,
+[dir="rtl"] .lucide-move-right,
+[dir="rtl"] .lucide-move-left,
+[dir="rtl"] .lucide-chevrons-right,
+[dir="rtl"] .lucide-chevrons-left,
+[dir="rtl"] .lucide-log-out,
+[dir="rtl"] .lucide-log-in,
+[dir="rtl"] .lucide-external-link,
+[dir="rtl"] .lucide-undo,
+[dir="rtl"] .lucide-redo {
+  transform: scaleX(-1);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   9. CHARTS (recharts / chart.js)
+   ══════════════════════════════════════════════════════════════════════ */
+
+[dir="rtl"] .recharts-wrapper {
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
+[dir="rtl"] .recharts-tooltip-wrapper {
+  direction: rtl;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   10. SCROLLBAR POSITIONING
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Move scrollbar to the left in RTL */
+[dir="rtl"] {
+  scrollbar-gutter: stable;
+}
+
+[dir="rtl"] ::-webkit-scrollbar {
+  /* Scrollbar on left side — handled natively by RTL direction */
+}
+
+/* Custom scrollbar track — explicit for scroll areas */
+[dir="rtl"] [data-radix-scroll-area-viewport] {
+  direction: rtl;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   11. ANIMATION DIRECTION FIXES
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Framer Motion X translations should be mirrored */
+[dir="rtl"] .slide-in-from-left {
+  --tw-enter-translate-x: 100%;
+}
+
+[dir="rtl"] .slide-in-from-right {
+  --tw-enter-translate-x: -100%;
+}
+
+[dir="rtl"] .slide-out-to-left {
+  --tw-exit-translate-x: 100%;
+}
+
+[dir="rtl"] .slide-out-to-right {
+  --tw-exit-translate-x: -100%;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   12. PRINT STYLES
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media print {
+  [dir="rtl"] {
+    font-family: 'Cairo', 'Noto Sans Arabic', serif;
+  }
+
+  [dir="rtl"] table {
+    direction: rtl;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   13. UTILITY CLASSES
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Force LTR within an RTL context (for code, URLs, etc.) */
+[dir="rtl"] .force-ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: left;
+}
+
+/* Force RTL within an LTR context */
+.force-rtl {
+  direction: rtl;
+  unicode-bidi: isolate;
+  text-align: right;
+}
+
+/* Bidirectional text isolation */
+[dir="rtl"] .bidi-isolate {
+  unicode-bidi: isolate;
+}
+
+/* Flip an element horizontally in RTL */
+[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}
+
+/* Keep element unflipped in RTL context (useful for logos, images) */
+[dir="rtl"] .rtl-preserve {
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   14. RESPONSIVE RTL ADJUSTMENTS
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  [dir="rtl"] [data-sidebar="sidebar"] {
+    /* Mobile sidebar slides from right */
+    transform-origin: right;
+  }
+
+  /* Mobile navigation bottom bar */
+  [dir="rtl"] .fixed.bottom-0 {
+    direction: rtl;
+  }
+}
+
+@media (min-width: 769px) {
+  /* Desktop: ensure main content respects RTL with sidebar */
+  [dir="rtl"] .md\:pl-64 {
+    padding-left: 0;
+    padding-right: 16rem;
+  }
+
+  [dir="rtl"] .md\:ml-64 {
+    margin-left: 0;
+    margin-right: 16rem;
+  }
+}

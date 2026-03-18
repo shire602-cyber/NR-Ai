@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  BookMarked, 
-  BarChart3, 
+import {
+  LayoutDashboard,
+  FileText,
+  BookMarked,
+  BarChart3,
   Sparkles,
   Languages,
   LogOut,
@@ -28,7 +28,15 @@ import {
   Settings,
   FileUp,
   History,
-  Database
+  Database,
+  Banknote,
+  CreditCard,
+  Landmark,
+  PieChart,
+  ClipboardList,
+  TrendingUp,
+  ShieldAlert,
+  Zap
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -54,14 +62,22 @@ const coreItems = [
   { title: 'journal', icon: BookMarked, url: '/journal' },
   { title: 'invoices', icon: FileText, url: '/invoices' },
   { title: 'recurringInvoices', icon: CalendarDays, url: '/recurring-invoices' },
+  { title: 'billPay', icon: CreditCard, url: '/bill-pay' },
   { title: 'receipts', icon: Receipt, url: '/receipts' },
+  { title: 'expenseClaims', icon: ClipboardList, url: '/expense-claims' },
   { title: 'contacts', icon: Users, url: '/contacts' },
   { title: 'inventory', icon: ShoppingCart, url: '/inventory' },
+  { title: 'fixedAssets', icon: Landmark, url: '/fixed-assets' },
   { title: 'bankReconciliation', icon: Building2, url: '/bank-reconciliation' },
+];
+
+const hrItems = [
+  { title: 'payroll', icon: Banknote, url: '/payroll' },
 ];
 
 const reportsItems = [
   { title: 'reports', icon: BarChart3, url: '/reports' },
+  { title: 'budgeting', icon: PieChart, url: '/budgets' },
   { title: 'vatFiling', icon: FileCheck, url: '/vat-filing' },
   { title: 'corporateTax', icon: FileCheck, url: '/corporate-tax' },
 ];
@@ -70,6 +86,9 @@ const aiItems = [
   { title: 'aiCfo', icon: Bot, url: '/ai-cfo' },
   { title: 'aiFeatures', icon: Sparkles, url: '/ai-features' },
   { title: 'aiChat', icon: MessageSquare, url: '/ai-chat' },
+  { title: 'cashFlowForecast', icon: TrendingUp, url: '/cashflow-forecast' },
+  { title: 'anomalyDetection', icon: ShieldAlert, url: '/anomaly-detection' },
+  { title: 'autoReconcile', icon: Zap, url: '/auto-reconcile' },
 ];
 
 const clientPortalItems = [
@@ -295,6 +314,17 @@ export function AppSidebar() {
               </SidebarGroupContent>
             </SidebarGroup>
             
+            <SidebarGroup>
+              <SidebarGroupLabel>
+                {(t as any).hrPayroll || 'HR & Payroll'}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {hrItems.map(renderMenuItem)}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
             <SidebarGroup>
               <SidebarGroupLabel>
                 {t.reportsSection || 'Reports'}
