@@ -118,7 +118,7 @@ export default function SmartAssistant() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'Failed to process your question',
+        description: error?.message || 'Failed to process your question',
       });
     },
   });

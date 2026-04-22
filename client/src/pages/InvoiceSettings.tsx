@@ -82,7 +82,7 @@ export default function InvoiceSettings() {
       toast({
         variant: 'destructive',
         title: 'Failed to update settings',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });

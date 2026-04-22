@@ -208,7 +208,7 @@ export default function FixedAssets() {
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -224,7 +224,7 @@ export default function FixedAssets() {
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -236,7 +236,7 @@ export default function FixedAssets() {
       toast({ title: 'Asset Deleted', description: 'The fixed asset has been deleted.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -251,7 +251,7 @@ export default function FixedAssets() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -271,7 +271,7 @@ export default function FixedAssets() {
       disposeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -289,7 +289,7 @@ export default function FixedAssets() {
       depRunForm.reset({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 

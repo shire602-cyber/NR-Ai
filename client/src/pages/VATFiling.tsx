@@ -165,7 +165,7 @@ export default function VATFiling() {
       toast({
         variant: 'destructive',
         title: 'Generation Failed',
-        description: error.message || 'Failed to generate VAT return',
+        description: error?.message || 'Failed to generate VAT return',
       });
     },
   });
@@ -185,7 +185,7 @@ export default function VATFiling() {
       toast({
         variant: 'destructive',
         title: 'Update Failed',
-        description: error.message || 'Failed to update VAT return',
+        description: error?.message || 'Failed to update VAT return',
       });
     },
   });
@@ -206,7 +206,7 @@ export default function VATFiling() {
       toast({
         variant: 'destructive',
         title: 'Submission Failed',
-        description: error.message || 'Failed to submit VAT return',
+        description: error?.message || 'Failed to submit VAT return',
       });
     },
   });

@@ -49,7 +49,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Registration failed');
+        throw new Error(error?.message || 'Registration failed');
       }
 
       const result = await response.json();
@@ -63,7 +63,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       toast({
         variant: 'destructive',
         title: 'Registration failed',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     } finally {
       setIsLoading(false);

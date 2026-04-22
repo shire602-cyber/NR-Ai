@@ -47,7 +47,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Login failed');
+        throw new Error(error?.message || 'Login failed');
       }
 
       const result = await response.json();
@@ -61,7 +61,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       toast({
         variant: 'destructive',
         title: 'Login failed',
-        description: error.message || 'Please check your credentials and try again.',
+        description: error?.message || 'Please check your credentials and try again.',
       });
     } finally {
       setIsLoading(false);

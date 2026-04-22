@@ -55,7 +55,7 @@ export default function UserInvitations() {
       setInviteDialogOpen(false);
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to send invitation', description: error.message });
+      toast({ variant: 'destructive', title: 'Failed to send invitation', description: error?.message });
     },
   });
 
@@ -68,7 +68,7 @@ export default function UserInvitations() {
       toast({ title: 'Invitation revoked' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to revoke invitation', description: error.message });
+      toast({ variant: 'destructive', title: 'Failed to revoke invitation', description: error?.message });
     },
   });
 
@@ -81,7 +81,7 @@ export default function UserInvitations() {
       toast({ title: 'Invitation resent successfully' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to resend invitation', description: error.message });
+      toast({ variant: 'destructive', title: 'Failed to resend invitation', description: error?.message });
     },
   });
 
@@ -94,7 +94,7 @@ export default function UserInvitations() {
       toast({ title: 'Invitation deleted' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to delete invitation', description: error.message });
+      toast({ variant: 'destructive', title: 'Failed to delete invitation', description: error?.message });
     },
   });
 

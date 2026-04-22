@@ -335,7 +335,7 @@ export default function BillPay() {
       resetBillForm();
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create bill', description: error.message || 'Please try again.' });
+      toast({ variant: 'destructive', title: 'Failed to create bill', description: error?.message || 'Please try again.' });
     },
   });
 
@@ -360,7 +360,7 @@ export default function BillPay() {
       resetBillForm();
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to update bill', description: error.message || 'Please try again.' });
+      toast({ variant: 'destructive', title: 'Failed to update bill', description: error?.message || 'Please try again.' });
     },
   });
 
@@ -371,7 +371,7 @@ export default function BillPay() {
       toast({ title: 'Bill deleted', description: 'Vendor bill has been deleted.' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to delete bill', description: error.message || 'Please try again.' });
+      toast({ variant: 'destructive', title: 'Failed to delete bill', description: error?.message || 'Please try again.' });
     },
   });
 
@@ -382,7 +382,7 @@ export default function BillPay() {
       toast({ title: 'Bill approved', description: 'The bill has been approved.' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to approve bill', description: error.message || 'Please try again.' });
+      toast({ variant: 'destructive', title: 'Failed to approve bill', description: error?.message || 'Please try again.' });
     },
   });
 
@@ -411,7 +411,7 @@ export default function BillPay() {
       });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to record payment', description: error.message || 'Please try again.' });
+      toast({ variant: 'destructive', title: 'Failed to record payment', description: error?.message || 'Please try again.' });
     },
   });
 
@@ -459,7 +459,7 @@ export default function BillPay() {
       });
       setBillDialogOpen(true);
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to load bill details.' });
+      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to load bill details.' });
     }
   };
 

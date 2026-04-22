@@ -123,7 +123,7 @@ export default function DocumentVault() {
       toast({
         variant: 'destructive',
         title: locale === 'ar' ? 'فشل الرفع' : 'Upload Failed',
-        description: error.message,
+        description: error?.message,
       });
     },
   });

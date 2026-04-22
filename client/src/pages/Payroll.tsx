@@ -294,7 +294,7 @@ export default function Payroll() {
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -309,7 +309,7 @@ export default function Payroll() {
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -320,7 +320,7 @@ export default function Payroll() {
       toast({ title: 'Employee Deleted', description: 'The employee has been removed.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -334,7 +334,7 @@ export default function Payroll() {
       payrollRunForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -349,7 +349,7 @@ export default function Payroll() {
       toast({ title: 'Payroll Calculated', description: 'Payroll items have been generated from active employees.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -364,7 +364,7 @@ export default function Payroll() {
       toast({ title: 'Payroll Approved', description: 'The payroll run has been approved and items marked as paid.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -381,7 +381,7 @@ export default function Payroll() {
       setEditingItemId(null);
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -392,7 +392,7 @@ export default function Payroll() {
       setGratuityResult(data);
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -484,7 +484,7 @@ export default function Payroll() {
       });
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.message || 'Failed to generate SIF');
+        throw new Error(err?.message || 'Failed to generate SIF');
       }
       const blob = await response.blob();
       const disposition = response.headers.get('Content-Disposition');
@@ -502,7 +502,7 @@ export default function Payroll() {
 
       toast({ title: 'SIF Downloaded', description: 'WPS SIF file has been downloaded.' });
     } catch (err: any) {
-      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+      toast({ title: 'Error', description: err?.message, variant: 'destructive' });
     }
   };
 

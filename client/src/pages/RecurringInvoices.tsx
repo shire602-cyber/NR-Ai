@@ -107,7 +107,7 @@ export default function RecurringInvoices() {
       toast({ title: 'Recurring invoice created', description: 'The recurring invoice template has been created.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -132,7 +132,7 @@ export default function RecurringInvoices() {
       toast({ title: 'Recurring invoice updated', description: 'The recurring invoice template has been updated.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -144,7 +144,7 @@ export default function RecurringInvoices() {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'recurring-invoices'] });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -157,7 +157,7 @@ export default function RecurringInvoices() {
       toast({ title: 'Deleted', description: 'Recurring invoice has been deleted.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 

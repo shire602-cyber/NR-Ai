@@ -108,7 +108,7 @@ export default function CorporateTax() {
       toast({
         variant: 'destructive',
         title: 'Calculation Failed',
-        description: error.message || 'Failed to calculate corporate tax',
+        description: error?.message || 'Failed to calculate corporate tax',
       });
     },
   });
@@ -149,7 +149,7 @@ export default function CorporateTax() {
       toast({
         variant: 'destructive',
         title: 'Save Failed',
-        description: error.message || 'Failed to save draft',
+        description: error?.message || 'Failed to save draft',
       });
     },
   });
@@ -169,7 +169,7 @@ export default function CorporateTax() {
       toast({
         variant: 'destructive',
         title: 'Update Failed',
-        description: error.message || 'Failed to update status',
+        description: error?.message || 'Failed to update status',
       });
     },
   });
@@ -186,7 +186,7 @@ export default function CorporateTax() {
       toast({
         variant: 'destructive',
         title: 'Delete Failed',
-        description: error.message || 'Failed to remove return',
+        description: error?.message || 'Failed to remove return',
       });
     },
   });

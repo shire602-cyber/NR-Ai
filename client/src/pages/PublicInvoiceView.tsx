@@ -111,7 +111,7 @@ export default function PublicInvoiceView() {
 
   // Error state
   if (error || !data) {
-    const message = error instanceof Error ? error.message : 'Invoice not found';
+    const message = error instanceof Error ? error?.message : 'Invoice not found';
     const isExpired = message.includes('expired');
 
     return (

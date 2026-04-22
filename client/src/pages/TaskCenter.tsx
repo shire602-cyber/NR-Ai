@@ -115,7 +115,7 @@ export default function TaskCenter() {
       toast({
         variant: 'destructive',
         title: locale === 'ar' ? 'فشل الإنشاء' : 'Creation Failed',
-        description: error.message,
+        description: error?.message,
       });
     },
   });

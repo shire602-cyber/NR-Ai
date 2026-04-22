@@ -96,7 +96,7 @@ export default function ClientManagement() {
       resetForm();
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create client', description: error.message });
+      toast({ variant: 'destructive', title: 'Failed to create client', description: error?.message });
     },
   });
 
@@ -110,7 +110,7 @@ export default function ClientManagement() {
       setEditingClient(null);
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to update client', description: error.message });
+      toast({ variant: 'destructive', title: 'Failed to update client', description: error?.message });
     },
   });
 
@@ -123,7 +123,7 @@ export default function ClientManagement() {
       toast({ title: 'Client deleted successfully' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to delete client', description: error.message });
+      toast({ variant: 'destructive', title: 'Failed to delete client', description: error?.message });
     },
   });
 

@@ -104,7 +104,7 @@ export default function TaxReturnArchive() {
       toast({
         variant: 'destructive',
         title: locale === 'ar' ? 'فشل الإضافة' : 'Failed to Add',
-        description: error.message,
+        description: error?.message,
       });
     },
   });

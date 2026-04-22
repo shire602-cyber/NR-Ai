@@ -152,7 +152,7 @@ export default function Integrations() {
     onError: (error: Error) => {
       toast({
         title: locale === 'en' ? 'Export failed' : 'فشل التصدير',
-        description: error.message,
+        description: error?.message,
         variant: 'destructive',
       });
     },
@@ -176,7 +176,7 @@ export default function Integrations() {
     onError: (error: Error) => {
       toast({
         title: locale === 'en' ? 'Import failed' : 'فشل الاستيراد',
-        description: error.message,
+        description: error?.message,
         variant: 'destructive',
       });
     },

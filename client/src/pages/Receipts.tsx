@@ -147,7 +147,7 @@ export default function Receipts() {
       toast({
         variant: 'destructive',
         title: 'Failed to update receipt',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });
@@ -171,7 +171,7 @@ export default function Receipts() {
       toast({
         variant: 'destructive',
         title: 'Failed to post expense',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });
@@ -201,7 +201,7 @@ export default function Receipts() {
       toast({
         variant: 'destructive',
         title: 'Failed to create expense',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });
@@ -229,7 +229,7 @@ export default function Receipts() {
       toast({
         variant: 'destructive',
         title: 'Failed to create account',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });
@@ -253,7 +253,7 @@ export default function Receipts() {
       toast({
         variant: 'destructive',
         title: 'Failed to delete expense',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });
@@ -511,7 +511,7 @@ export default function Receipts() {
         updated[index] = { 
           ...updated[index], 
           status: 'error', 
-          error: error.message || 'OCR processing failed. Try a clearer image.',
+          error: error?.message || 'OCR processing failed. Try a clearer image.',
           progress: 0 
         };
         return updated;
@@ -743,7 +743,7 @@ export default function Receipts() {
         console.error('Failed to save receipt:', error);
         
         // Extract error message
-        const errorMessage = error.message || 'Failed to save to database';
+        const errorMessage = error?.message || 'Failed to save to database';
         
         // Mark this receipt as failed to save
         setProcessedReceipts((prev) => {

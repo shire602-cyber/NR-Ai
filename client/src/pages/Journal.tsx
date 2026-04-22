@@ -113,7 +113,7 @@ export default function Journal() {
       toast({
         variant: 'destructive',
         title: 'Failed to post entry',
-        description: error.message || 'Please check that debits equal credits.',
+        description: error?.message || 'Please check that debits equal credits.',
       });
     },
   });
@@ -143,7 +143,7 @@ export default function Journal() {
       toast({
         variant: 'destructive',
         title: 'Failed to update entry',
-        description: error.message || 'Please check that debits equal credits.',
+        description: error?.message || 'Please check that debits equal credits.',
       });
     },
   });
@@ -162,7 +162,7 @@ export default function Journal() {
       toast({
         variant: 'destructive',
         title: 'Failed to post entry',
-        description: error.message,
+        description: error?.message,
       });
     },
   });
@@ -181,7 +181,7 @@ export default function Journal() {
       toast({
         variant: 'destructive',
         title: 'Failed to reverse entry',
-        description: error.message,
+        description: error?.message,
       });
     },
   });
@@ -200,7 +200,7 @@ export default function Journal() {
       toast({
         variant: 'destructive',
         title: 'Failed to delete entry',
-        description: error.message,
+        description: error?.message,
       });
     },
   });
@@ -227,7 +227,7 @@ export default function Journal() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'Failed to load journal entry details.',
+        description: error?.message || 'Failed to load journal entry details.',
       });
     }
   };

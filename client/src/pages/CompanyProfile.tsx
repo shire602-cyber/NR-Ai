@@ -127,7 +127,7 @@ export default function CompanyProfile() {
       toast({
         variant: 'destructive',
         title: 'Failed to update profile',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });

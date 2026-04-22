@@ -137,7 +137,7 @@ export default function IntegrationsHub() {
       setConfigForm({ platform: '' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to connect integration' });
+      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to connect integration' });
     },
   });
 
@@ -154,7 +154,7 @@ export default function IntegrationsHub() {
       toast({ title: 'Sync Started', description: 'Data synchronization is in progress' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Sync Failed', description: error.message || 'Failed to sync data' });
+      toast({ variant: 'destructive', title: 'Sync Failed', description: error?.message || 'Failed to sync data' });
     },
   });
 
@@ -169,7 +169,7 @@ export default function IntegrationsHub() {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/ecommerce', companyId] });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to update integration' });
+      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to update integration' });
     },
   });
 

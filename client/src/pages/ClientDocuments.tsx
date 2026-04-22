@@ -132,7 +132,7 @@ export default function ClientDocuments() {
       toast({
         variant: 'destructive',
         title: 'Upload Failed',
-        description: error.message,
+        description: error?.message,
       });
     },
   });

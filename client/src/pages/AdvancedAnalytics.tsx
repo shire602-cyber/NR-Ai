@@ -123,7 +123,7 @@ export default function AdvancedAnalytics() {
       toast({ title: 'Forecast Generated', description: 'AI has generated new cash flow predictions' });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Error', description: error.message || 'Failed to generate forecast' });
+      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to generate forecast' });
     },
   });
 

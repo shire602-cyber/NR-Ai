@@ -243,7 +243,7 @@ export default function ExpenseClaims() {
       claimForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -259,7 +259,7 @@ export default function ExpenseClaims() {
       claimForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -271,7 +271,7 @@ export default function ExpenseClaims() {
       toast({ title: 'Claim Deleted', description: 'The expense claim has been deleted.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -283,7 +283,7 @@ export default function ExpenseClaims() {
       toast({ title: 'Claim Submitted', description: 'Your expense claim has been submitted for review.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -298,7 +298,7 @@ export default function ExpenseClaims() {
       reviewForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -313,7 +313,7 @@ export default function ExpenseClaims() {
       reviewForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -328,7 +328,7 @@ export default function ExpenseClaims() {
       paymentForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -388,7 +388,7 @@ export default function ExpenseClaims() {
       });
       setClaimDialogOpen(true);
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     }
   };
 
@@ -398,7 +398,7 @@ export default function ExpenseClaims() {
       setViewingClaim(fullClaim);
       setViewDialogOpen(true);
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     }
   };
 

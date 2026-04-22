@@ -57,7 +57,7 @@ export default function Companies() {
       toast({
         variant: 'destructive',
         title: 'Failed to create company',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });

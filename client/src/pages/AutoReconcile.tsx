@@ -89,7 +89,7 @@ export default function AutoReconcile() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: 'Scan failed', description: error.message, variant: 'destructive' });
+      toast({ title: 'Scan failed', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -119,7 +119,7 @@ export default function AutoReconcile() {
       scanMutation.mutate();
     },
     onError: (error: Error) => {
-      toast({ title: 'Apply failed', description: error.message, variant: 'destructive' });
+      toast({ title: 'Apply failed', description: error?.message, variant: 'destructive' });
     },
   });
 

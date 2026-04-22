@@ -122,7 +122,7 @@ export default function ClientTasks() {
       toast({
         variant: 'destructive',
         title: 'Creation Failed',
-        description: error.message,
+        description: error?.message,
       });
     },
   });

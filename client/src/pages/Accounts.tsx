@@ -78,7 +78,7 @@ export default function Accounts() {
       toast({
         variant: 'destructive',
         title: 'Failed to create account',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });
@@ -100,7 +100,7 @@ export default function Accounts() {
       toast({
         variant: 'destructive',
         title: 'Failed to update account',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });
@@ -119,7 +119,7 @@ export default function Accounts() {
       toast({
         variant: 'destructive',
         title: 'Failed to delete account',
-        description: error.message || 'Please try again.',
+        description: error?.message || 'Please try again.',
       });
     },
   });

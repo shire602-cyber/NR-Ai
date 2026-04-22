@@ -93,7 +93,7 @@ export default function AnomalyDetection() {
       toast({ title: 'Anomaly dismissed', description: 'The anomaly has been removed from the list.' });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 

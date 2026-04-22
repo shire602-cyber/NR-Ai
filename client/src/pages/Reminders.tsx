@@ -78,7 +78,7 @@ export default function Reminders() {
       toast({ title: 'Reminder setting created' });
     },
     onError: (error: any) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 

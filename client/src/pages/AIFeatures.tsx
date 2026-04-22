@@ -89,7 +89,7 @@ export default function AIFeatures() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to scan for anomalies',
+        description: error?.message || 'Failed to scan for anomalies',
         variant: 'destructive',
       });
     },
@@ -109,7 +109,7 @@ export default function AIFeatures() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to generate forecast',
+        description: error?.message || 'Failed to generate forecast',
         variant: 'destructive',
       });
     },
@@ -132,7 +132,7 @@ export default function AIFeatures() {
     onError: (error: any) => {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to resolve alert',
+        description: error?.message || 'Failed to resolve alert',
         variant: 'destructive',
       });
     },

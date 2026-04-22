@@ -87,7 +87,7 @@ export default function AICFO() {
       toast({
         variant: 'destructive',
         title: 'AI CFO Error',
-        description: error.message || 'Failed to get advice',
+        description: error?.message || 'Failed to get advice',
       });
     },
   });

@@ -129,7 +129,7 @@ export default function AIChat() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to get response');
+        throw new Error(error?.message || 'Failed to get response');
       }
 
       const reader = response.body?.getReader();
@@ -242,7 +242,7 @@ export default function AIChat() {
         toast({
           variant: 'destructive',
           title: 'Error',
-          description: error.message || 'Failed to get response',
+          description: error?.message || 'Failed to get response',
         });
         // Preserve partial content but mark message as error and stop streaming
         setMessages(prev => prev.map(msg => 
@@ -251,7 +251,7 @@ export default function AIChat() {
                 ...msg, 
                 streaming: false, 
                 error: true,
-                content: msg.content || 'Error: Failed to get response. ' + (error.message || 'Unknown error occurred.')
+                content: msg.content || 'Error: Failed to get response. ' + (error?.message || 'Unknown error occurred.')
               }
             : msg
         ));
@@ -284,7 +284,7 @@ export default function AIChat() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: error.message || 'Failed to get response',
+        description: error?.message || 'Failed to get response',
       });
     },
   });

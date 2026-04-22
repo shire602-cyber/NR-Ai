@@ -158,7 +158,7 @@ export default function BankReconciliation() {
       toast({
         variant: 'destructive',
         title: 'Import Failed',
-        description: error.message || 'Failed to import transactions',
+        description: error?.message || 'Failed to import transactions',
       });
     },
   });
@@ -179,7 +179,7 @@ export default function BankReconciliation() {
       toast({
         variant: 'destructive',
         title: 'Reconciliation Failed',
-        description: error.message || 'Failed to reconcile transaction',
+        description: error?.message || 'Failed to reconcile transaction',
       });
     },
   });
@@ -197,7 +197,7 @@ export default function BankReconciliation() {
       toast({
         variant: 'destructive',
         title: 'Auto-Reconciliation Failed',
-        description: error.message || 'Failed to auto-reconcile',
+        description: error?.message || 'Failed to auto-reconcile',
       });
     },
   });
@@ -364,7 +364,7 @@ export default function BankReconciliation() {
       toast({
         variant: 'destructive',
         title: 'Import Failed',
-        description: error.message || 'Failed to process the file',
+        description: error?.message || 'Failed to process the file',
       });
     } finally {
       setIsImporting(false);

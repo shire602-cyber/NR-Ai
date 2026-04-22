@@ -166,7 +166,7 @@ export default function MonthEndClose() {
       return apiRequest('GET', `/api/companies/${companyId}/month-end/ai-validation?period=${period}`);
     },
     onError: (error: Error) => {
-      toast({ title: 'Validation Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Validation Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -186,7 +186,7 @@ export default function MonthEndClose() {
       refetchChecklist();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 
@@ -204,7 +204,7 @@ export default function MonthEndClose() {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/month-end/history`] });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
     },
   });
 

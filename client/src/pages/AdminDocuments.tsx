@@ -130,7 +130,7 @@ export default function AdminDocuments() {
       toast({
         variant: 'destructive',
         title: 'Upload Failed',
-        description: error.message,
+        description: error?.message,
       });
     },
   });

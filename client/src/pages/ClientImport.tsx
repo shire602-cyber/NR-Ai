@@ -62,7 +62,7 @@ export default function ClientImport() {
       toast({ title: `Found ${data.totalRows} records in ${data.fileName}` });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to parse file', description: error.message });
+      toast({ variant: 'destructive', title: 'Failed to parse file', description: error?.message });
     },
   });
 
@@ -83,7 +83,7 @@ export default function ClientImport() {
       });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Import failed', description: error.message });
+      toast({ variant: 'destructive', title: 'Import failed', description: error?.message });
     },
   });
 
@@ -157,7 +157,7 @@ export default function ClientImport() {
       
       toast({ title: 'Template downloaded successfully' });
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Download failed', description: error.message });
+      toast({ variant: 'destructive', title: 'Download failed', description: error?.message });
     }
   };
 
