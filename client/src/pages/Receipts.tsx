@@ -1543,11 +1543,16 @@ export default function Receipts() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                        <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
+                        <SelectItem value="Meals">Meals</SelectItem>
                         <SelectItem value="Travel">Travel</SelectItem>
                         <SelectItem value="Utilities">Utilities</SelectItem>
                         <SelectItem value="Marketing">Marketing</SelectItem>
-                        <SelectItem value="Software">Software</SelectItem>
+                        <SelectItem value="Equipment">Equipment</SelectItem>
+                        <SelectItem value="Professional Services">Professional Services</SelectItem>
+                        <SelectItem value="Communication">Communication</SelectItem>
+                        <SelectItem value="Maintenance">Maintenance</SelectItem>
+                        <SelectItem value="Insurance">Insurance</SelectItem>
+                        <SelectItem value="Rent">Rent</SelectItem>
                         <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>
