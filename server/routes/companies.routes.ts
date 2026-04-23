@@ -86,6 +86,31 @@ export function registerCompanyRoutes(app: Express) {
     res.json(company);
   }));
 
+  // PUT is an alias for PATCH — some clients send PUT for full updates
+  app.put("/api/companies/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const updateData = { ...req.body };
+    if (updateData.taxRegistrationDate) {
+      if (typeof updateData.taxRegistrationDate === 'string') {
+        updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
+      } else if (!(updateData.taxRegistrationDate instanceof Date)) {
+        updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
+      }
+    } else {
+      delete updateData.taxRegistrationDate;
+    }
+
+    const company = await storage.updateCompany(id, updateData);
+    res.json(company);
+  }));
+
   app.patch("/api/companies/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;

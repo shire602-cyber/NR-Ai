@@ -337,17 +337,11 @@ export function registerDashboardRoutes(app: Express) {
   // Dashboard Routes
   // =====================================
 
-  app.get("/api/dashboard/stats", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const { companyId } = req.query;
-    if (!companyId) {
-      return res.json({ revenue: 0, expenses: 0, outstanding: 0, totalInvoices: 0, totalEntries: 0 });
-    }
+  async function getDashboardStats(companyId: string) {
+    const invoices = await storage.getInvoicesByCompanyId(companyId);
+    const accounts = await storage.getAccountsByCompanyId(companyId);
+    const entries = await storage.getJournalEntriesByCompanyId(companyId);
 
-    const invoices = await storage.getInvoicesByCompanyId(companyId as string);
-    const accounts = await storage.getAccountsByCompanyId(companyId as string);
-    const entries = await storage.getJournalEntriesByCompanyId(companyId as string);
-
-    // Calculate revenue and expenses from journal entries
     const balances = new Map<string, number>();
     for (const entry of entries) {
       const lines = await storage.getJournalLinesByEntryId(entry.id);
@@ -367,13 +361,30 @@ export function registerDashboardRoutes(app: Express) {
       .filter(inv => inv.status === 'sent' || inv.status === 'draft')
       .reduce((sum, inv) => sum + inv.total, 0);
 
-    res.json({
+    return {
       revenue: balances.get('income') || 0,
       expenses: balances.get('expense') || 0,
       outstanding,
       totalInvoices: invoices.length,
       totalEntries: entries.length,
-    });
+    };
+  }
+
+  app.get("/api/dashboard/stats", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.query;
+    if (!companyId) {
+      return res.json({ revenue: 0, expenses: 0, outstanding: 0, totalInvoices: 0, totalEntries: 0 });
+    }
+    res.json(await getDashboardStats(companyId as string));
+  }));
+
+  // Alias used by the frontend
+  app.get("/api/dashboard/summary", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.query;
+    if (!companyId) {
+      return res.json({ revenue: 0, expenses: 0, outstanding: 0, totalInvoices: 0, totalEntries: 0 });
+    }
+    res.json(await getDashboardStats(companyId as string));
   }));
 
   app.get("/api/dashboard/recent-invoices", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
