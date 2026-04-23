@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 
 import express from 'express';
 import session from 'express-session';
-import MemoryStore from 'memorystore';
+import connectPgSimple from 'connect-pg-simple';
 import passport from 'passport';
 
 import { validateEnv, isProduction, isDevelopment } from './config/env';
@@ -44,11 +44,13 @@ app.use(
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 
 // ─── Session configuration ───────────────────────────────────
-const MemoryStoreSession = MemoryStore(session);
+const PgSession = connectPgSimple(session);
 app.use(
   session({
-    store: new MemoryStoreSession({
-      checkPeriod: 86400000, // Prune expired entries every 24h
+    store: new PgSession({
+      conString: env.DATABASE_URL,
+      tableName: 'session',
+      createTableIfMissing: true,
     }),
     secret: env.SESSION_SECRET,
     resave: false,
