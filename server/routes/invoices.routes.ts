@@ -346,7 +346,7 @@ export function registerInvoiceRoutes(app: Express) {
     const userId = (req as any).user.id;
 
     // Validate status
-    const validStatuses = ['draft', 'sent', 'paid', 'void'];
+    const validStatuses = ['draft', 'sent', 'paid', 'partial', 'void'];
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({ message: 'Invalid status. Must be one of: draft, sent, paid, void' });
     }
@@ -618,6 +618,264 @@ export function registerInvoiceRoutes(app: Express) {
         logoUrl: company.logoUrl,
       },
     });
+  }));
+
+  // =====================================
+  // Recurring Invoice Control
+  // =====================================
+
+  // POST /api/companies/:companyId/invoices/:invoiceId/set-recurring
+  app.post("/api/companies/:companyId/invoices/:invoiceId/set-recurring", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId, invoiceId } = req.params;
+    const userId = (req as any).user.id;
+    const { isRecurring, recurringInterval, nextRecurringDate, recurringEndDate } = req.body;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice || invoice.companyId !== companyId) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    if (isRecurring && !['weekly', 'monthly', 'quarterly', 'yearly'].includes(recurringInterval)) {
+      return res.status(400).json({ message: 'recurringInterval must be weekly, monthly, quarterly, or yearly' });
+    }
+
+    const updated = await storage.updateInvoice(invoiceId, {
+      isRecurring: !!isRecurring,
+      recurringInterval: isRecurring ? recurringInterval : null,
+      nextRecurringDate: isRecurring && nextRecurringDate ? new Date(nextRecurringDate) : null,
+      recurringEndDate: recurringEndDate ? new Date(recurringEndDate) : null,
+    } as any);
+
+    res.json(updated);
+  }));
+
+  // =====================================
+  // Invoice Payments
+  // =====================================
+
+  // GET /api/companies/:companyId/invoices/:invoiceId/payments
+  app.get("/api/companies/:companyId/invoices/:invoiceId/payments", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId, invoiceId } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice || invoice.companyId !== companyId) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    const payments = await storage.getInvoicePaymentsByInvoiceId(invoiceId);
+    res.json(payments);
+  }));
+
+  // POST /api/companies/:companyId/invoices/:invoiceId/payments
+  app.post("/api/companies/:companyId/invoices/:invoiceId/payments", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId, invoiceId } = req.params;
+    const userId = (req as any).user.id;
+    const { amount, date, method, reference, notes, paymentAccountId } = req.body;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice || invoice.companyId !== companyId) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'Payment amount must be positive' });
+    }
+
+    if (!paymentAccountId) {
+      return res.status(400).json({ message: 'paymentAccountId is required' });
+    }
+
+    const paymentAccount = await storage.getAccount(paymentAccountId);
+    if (!paymentAccount || paymentAccount.companyId !== companyId || paymentAccount.type !== 'asset') {
+      return res.status(400).json({ message: 'Invalid payment account — must be an asset (cash/bank) account' });
+    }
+
+    const paymentDate = date ? new Date(date) : new Date();
+
+    // Create journal entry: Debit Cash/Bank, Credit Accounts Receivable
+    const accounts = await storage.getAccountsByCompanyId(companyId);
+    const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+
+    let journalEntryId: string | undefined;
+    if (accountsReceivable) {
+      const entryNumber = await storage.generateEntryNumber(companyId, paymentDate);
+      const entry = await storage.createJournalEntry({
+        companyId,
+        date: paymentDate,
+        memo: `Payment received for Invoice ${invoice.number} - ${method || 'bank'}`,
+        entryNumber,
+        status: 'posted',
+        source: 'payment',
+        sourceId: invoice.id,
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: paymentDate,
+      });
+
+      await storage.createJournalLine({
+        entryId: entry.id,
+        accountId: paymentAccountId,
+        debit: amount,
+        credit: 0,
+        description: `Payment received - Invoice ${invoice.number}`,
+      });
+
+      await storage.createJournalLine({
+        entryId: entry.id,
+        accountId: accountsReceivable.id,
+        debit: 0,
+        credit: amount,
+        description: `Clear A/R - Invoice ${invoice.number}`,
+      });
+
+      journalEntryId = entry.id;
+    }
+
+    const payment = await storage.createInvoicePayment({
+      invoiceId,
+      companyId,
+      amount,
+      date: paymentDate,
+      method: method || 'bank',
+      reference: reference || null,
+      notes: notes || null,
+      paymentAccountId,
+      journalEntryId: journalEntryId || null,
+      createdBy: userId,
+    } as any);
+
+    // Auto-update invoice status based on total payments
+    const totalPaid = await storage.getInvoicePaidTotal(invoiceId);
+    const newStatus = totalPaid >= invoice.total ? 'paid' : 'partial';
+    if (invoice.status !== newStatus && invoice.status !== 'void') {
+      await storage.updateInvoiceStatus(invoiceId, newStatus);
+    }
+
+    res.status(201).json({ payment, totalPaid, status: newStatus });
+  }));
+
+  // =====================================
+  // Credit Notes
+  // =====================================
+
+  // POST /api/companies/:companyId/invoices/:invoiceId/credit-note
+  app.post("/api/companies/:companyId/invoices/:invoiceId/credit-note", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId, invoiceId } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    const original = await storage.getInvoice(invoiceId);
+    if (!original || original.companyId !== companyId) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    if (original.invoiceType === 'credit_note') {
+      return res.status(400).json({ message: 'Cannot create a credit note of a credit note' });
+    }
+
+    const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
+
+    // Generate credit note number
+    const cnNumber = `CN-${original.number}`;
+
+    const creditNote = await storage.createInvoice({
+      companyId,
+      number: cnNumber,
+      customerName: original.customerName,
+      customerTrn: original.customerTrn || undefined,
+      date: new Date(),
+      currency: original.currency,
+      subtotal: -original.subtotal,
+      vatAmount: -original.vatAmount,
+      total: -original.total,
+      status: 'sent',
+      invoiceType: 'credit_note',
+      originalInvoiceId: invoiceId,
+    } as any);
+
+    for (const line of originalLines) {
+      await storage.createInvoiceLine({
+        invoiceId: creditNote.id,
+        description: `[Credit] ${line.description}`,
+        quantity: -line.quantity,
+        unitPrice: line.unitPrice,
+        vatRate: line.vatRate,
+        vatSupplyType: line.vatSupplyType || undefined,
+      } as any);
+    }
+
+    // Reverse journal entry: Debit Sales Revenue + VAT, Credit Accounts Receivable
+    const accounts = await storage.getAccountsByCompanyId(companyId);
+    const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+    const salesRevenue = accounts.find(a => a.isSystemAccount && a.type === 'income' && (a.code === '4010' || a.code === '4020'));
+    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === '2020');
+
+    if (accountsReceivable && salesRevenue) {
+      const now = new Date();
+      const entryNumber = await storage.generateEntryNumber(companyId, now);
+
+      // Find the original invoice's journal entry to reverse
+      const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      const originalEntry = allEntries.find(e => e.sourceId === invoiceId && e.source === 'invoice');
+
+      const entry = await storage.createJournalEntry({
+        companyId,
+        date: now,
+        memo: `Credit Note ${cnNumber} - reversal of Invoice ${original.number}`,
+        entryNumber,
+        status: 'posted',
+        source: 'invoice',
+        sourceId: creditNote.id,
+        reversedEntryId: originalEntry?.id || null,
+        reversalReason: 'Credit note issued',
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: now,
+      } as any);
+
+      // Debit Sales Revenue (reverse the credit)
+      await storage.createJournalLine({
+        entryId: entry.id,
+        accountId: salesRevenue.id,
+        debit: original.subtotal,
+        credit: 0,
+        description: `Reverse revenue - ${cnNumber}`,
+      });
+
+      // Debit VAT Payable if applicable
+      if (original.vatAmount > 0 && vatPayable) {
+        await storage.createJournalLine({
+          entryId: entry.id,
+          accountId: vatPayable.id,
+          debit: original.vatAmount,
+          credit: 0,
+          description: `Reverse VAT - ${cnNumber}`,
+        });
+      }
+
+      // Credit Accounts Receivable (reduce the A/R)
+      await storage.createJournalLine({
+        entryId: entry.id,
+        accountId: accountsReceivable.id,
+        debit: 0,
+        credit: original.total,
+        description: `Reduce A/R - ${cnNumber}`,
+      });
+    }
+
+    res.status(201).json(creditNote);
   }));
 
   // Public: Download PDF by share token (NO auth required)

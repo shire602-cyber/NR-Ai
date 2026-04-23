@@ -28,9 +28,9 @@ import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from '@/lib/export';
-import { Plus, FileText, FileCode, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, Send } from 'lucide-react';
+import { Plus, FileText, FileCode, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, Send, DollarSign, RefreshCw, RotateCcw } from 'lucide-react';
 import { SiGooglesheets, SiWhatsapp } from 'react-icons/si';
-import type { Invoice, Company, CustomerContact } from '@shared/schema';
+import type { Invoice, Company, CustomerContact, InvoicePayment } from '@shared/schema';
 import { MESSAGE_TEMPLATES, fillTemplate, openWhatsApp } from '@/lib/whatsapp-templates';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
@@ -80,6 +80,25 @@ export default function Invoices() {
   const [pendingInvoiceData, setPendingInvoiceData] = useState<any>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+
+  // Recurring invoice dialog state
+  const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
+  const [invoiceForRecurring, setInvoiceForRecurring] = useState<Invoice | null>(null);
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [recurringInterval, setRecurringInterval] = useState('monthly');
+  const [recurringNextDate, setRecurringNextDate] = useState<Date | undefined>(undefined);
+  const [recurringEndDate, setRecurringEndDate] = useState<Date | undefined>(undefined);
+
+  // Payment tracking dialog state
+  const [addPaymentDialogOpen, setAddPaymentDialogOpen] = useState(false);
+  const [viewPaymentsDialogOpen, setViewPaymentsDialogOpen] = useState(false);
+  const [invoiceForPaymentDetail, setInvoiceForPaymentDetail] = useState<Invoice | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('bank');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
+  const [paymentAccountForAdd, setPaymentAccountForAdd] = useState('');
+  const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
@@ -235,8 +254,52 @@ export default function Invoices() {
   });
 
   const checkSimilarMutation = useMutation({
-    mutationFn: (data: any) => 
+    mutationFn: (data: any) =>
       apiRequest('POST', `/api/companies/${selectedCompanyId}/invoices/check-similar`, data),
+  });
+
+  const setRecurringMutation = useMutation({
+    mutationFn: ({ invoiceId, data }: { invoiceId: string; data: any }) =>
+      apiRequest('POST', `/api/companies/${selectedCompanyId}/invoices/${invoiceId}/set-recurring`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
+      toast({ title: 'Recurring settings saved' });
+      setRecurringDialogOpen(false);
+      setInvoiceForRecurring(null);
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Failed to save recurring settings', description: error?.message });
+    },
+  });
+
+  const addPaymentMutation = useMutation({
+    mutationFn: ({ invoiceId, data }: { invoiceId: string; data: any }) =>
+      apiRequest('POST', `/api/companies/${selectedCompanyId}/invoices/${invoiceId}/payments`, data),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
+      toast({ title: 'Payment recorded', description: `Status updated to ${result.status}` });
+      setAddPaymentDialogOpen(false);
+      setInvoiceForPaymentDetail(null);
+      setPaymentAmount('');
+      setPaymentReference('');
+      setPaymentNotes('');
+      setPaymentAccountForAdd('');
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Failed to record payment', description: error?.message });
+    },
+  });
+
+  const createCreditNoteMutation = useMutation({
+    mutationFn: (invoiceId: string) =>
+      apiRequest('POST', `/api/companies/${selectedCompanyId}/invoices/${invoiceId}/credit-note`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
+      toast({ title: 'Credit note created', description: 'A credit note has been created and the journal entry reversed.' });
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Failed to create credit note', description: error?.message });
+    },
   });
 
   const handleStatusChange = (invoice: Invoice, newStatus: string) => {
@@ -352,6 +415,7 @@ export default function Invoices() {
   const getStatusBadgeColor = (status: string) => {
     switch (status) {
       case 'paid': return 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400';
+      case 'partial': return 'bg-teal-100 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400';
       case 'sent': return 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400';
       case 'void': return 'bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400';
       default: return 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400';
@@ -859,6 +923,9 @@ export default function Invoices() {
                             <SelectItem value="paid" data-testid={`status-option-paid-${invoice.id}`}>
                               {t.paid}
                             </SelectItem>
+                            <SelectItem value="partial" data-testid={`status-option-partial-${invoice.id}`}>
+                              Partial
+                            </SelectItem>
                             <SelectItem value="void" data-testid={`status-option-void-${invoice.id}`}>
                               {t.void}
                             </SelectItem>
@@ -1021,6 +1088,75 @@ export default function Invoices() {
                           >
                             <FileCode className="w-4 h-4 text-blue-500" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Add Payment"
+                            onClick={() => {
+                              setInvoiceForPaymentDetail(invoice);
+                              setPaymentAmount('');
+                              setPaymentAccountForAdd('');
+                              setPaymentMethod('bank');
+                              setPaymentReference('');
+                              setPaymentNotes('');
+                              setAddPaymentDialogOpen(true);
+                            }}
+                            data-testid={`button-add-payment-${invoice.id}`}
+                          >
+                            <DollarSign className="w-4 h-4 text-green-600" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="View Payments"
+                            onClick={async () => {
+                              setInvoiceForPaymentDetail(invoice);
+                              try {
+                                const payments = await apiRequest('GET', `/api/companies/${selectedCompanyId}/invoices/${invoice.id}/payments`);
+                                setInvoicePayments(payments);
+                                setViewPaymentsDialogOpen(true);
+                              } catch (e: any) {
+                                toast({ variant: 'destructive', title: 'Error', description: e?.message });
+                              }
+                            }}
+                            data-testid={`button-view-payments-${invoice.id}`}
+                          >
+                            <FileText className="w-4 h-4 text-blue-500" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title="Set Recurring"
+                            onClick={() => {
+                              setInvoiceForRecurring(invoice);
+                              setRecurringEnabled((invoice as any).isRecurring || false);
+                              setRecurringInterval((invoice as any).recurringInterval || 'monthly');
+                              const next = (invoice as any).nextRecurringDate;
+                              setRecurringNextDate(next ? new Date(next) : undefined);
+                              const end = (invoice as any).recurringEndDate;
+                              setRecurringEndDate(end ? new Date(end) : undefined);
+                              setRecurringDialogOpen(true);
+                            }}
+                            data-testid={`button-set-recurring-${invoice.id}`}
+                          >
+                            <RefreshCw className={`w-4 h-4 ${(invoice as any).isRecurring ? 'text-purple-500' : 'text-muted-foreground'}`} />
+                          </Button>
+                          {(invoice as any).invoiceType !== 'credit_note' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title="Create Credit Note"
+                              onClick={() => {
+                                if (window.confirm(`Create a credit note for Invoice ${invoice.number}? This will reverse the journal entry.`)) {
+                                  createCreditNoteMutation.mutate(invoice.id);
+                                }
+                              }}
+                              disabled={createCreditNoteMutation.isPending}
+                              data-testid={`button-credit-note-${invoice.id}`}
+                            >
+                              <RotateCcw className="w-4 h-4 text-orange-500" />
+                            </Button>
+                          )}
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
                               <Button
@@ -1387,6 +1523,257 @@ export default function Invoices() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Set Recurring Dialog */}
+      <Dialog open={recurringDialogOpen} onOpenChange={setRecurringDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-purple-500" />
+              Recurring Invoice Settings
+            </DialogTitle>
+            <DialogDescription>
+              Configure automatic recurring copies for Invoice {invoiceForRecurring?.number}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div>
+                <p className="font-medium">Enable Recurring</p>
+                <p className="text-sm text-muted-foreground">Automatically create new invoice copies on schedule</p>
+              </div>
+              <Switch checked={recurringEnabled} onCheckedChange={setRecurringEnabled} />
+            </div>
+
+            {recurringEnabled && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Frequency</label>
+                  <Select value={recurringInterval} onValueChange={setRecurringInterval}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="quarterly">Quarterly</SelectItem>
+                      <SelectItem value="yearly">Yearly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Next Run Date</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start text-left font-normal">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {recurringNextDate ? format(recurringNextDate, 'PPP') : 'Pick a date'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={recurringNextDate} onSelect={setRecurringNextDate} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">End Date (optional)</label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-full justify-start text-left font-normal">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {recurringEndDate ? format(recurringEndDate, 'PPP') : 'No end date'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar mode="single" selected={recurringEndDate} onSelect={setRecurringEndDate} initialFocus />
+                    </PopoverContent>
+                  </Popover>
+                  {recurringEndDate && (
+                    <Button variant="ghost" size="sm" onClick={() => setRecurringEndDate(undefined)} className="text-xs text-muted-foreground">
+                      Clear end date
+                    </Button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => setRecurringDialogOpen(false)} className="flex-1">Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!invoiceForRecurring) return;
+                setRecurringMutation.mutate({
+                  invoiceId: invoiceForRecurring.id,
+                  data: {
+                    isRecurring: recurringEnabled,
+                    recurringInterval: recurringEnabled ? recurringInterval : null,
+                    nextRecurringDate: recurringEnabled && recurringNextDate ? recurringNextDate.toISOString() : null,
+                    recurringEndDate: recurringEndDate ? recurringEndDate.toISOString() : null,
+                  },
+                });
+              }}
+              disabled={setRecurringMutation.isPending || (recurringEnabled && !recurringNextDate)}
+              className="flex-1"
+            >
+              {setRecurringMutation.isPending ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Payment Dialog */}
+      <Dialog open={addPaymentDialogOpen} onOpenChange={setAddPaymentDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-green-600" />
+              Record Payment
+            </DialogTitle>
+            <DialogDescription>
+              Record a payment received for Invoice {invoiceForPaymentDetail?.number} (Total: {invoiceForPaymentDetail ? formatCurrency(invoiceForPaymentDetail.total, invoiceForPaymentDetail.currency, locale) : ''})
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Amount</label>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                className="font-mono"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Payment Method</label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bank">Bank Transfer</SelectItem>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="cheque">Cheque</SelectItem>
+                  <SelectItem value="online">Online Payment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Deposit Account</label>
+              {paymentAccounts.length > 0 ? (
+                <Select value={paymentAccountForAdd} onValueChange={setPaymentAccountForAdd}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select account..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {paymentAccounts.map((acc) => (
+                      <SelectItem key={acc.id} value={acc.id}>
+                        {acc.code} — {acc.nameEn}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>No cash/bank accounts found. Create one in Chart of Accounts.</AlertDescription>
+                </Alert>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Reference (optional)</label>
+              <Input placeholder="e.g. Bank ref, cheque no." value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Notes (optional)</label>
+              <Input placeholder="Additional notes" value={paymentNotes} onChange={(e) => setPaymentNotes(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => setAddPaymentDialogOpen(false)} className="flex-1">Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!invoiceForPaymentDetail || !paymentAmount || !paymentAccountForAdd) return;
+                addPaymentMutation.mutate({
+                  invoiceId: invoiceForPaymentDetail.id,
+                  data: {
+                    amount: parseFloat(paymentAmount),
+                    method: paymentMethod,
+                    paymentAccountId: paymentAccountForAdd,
+                    reference: paymentReference || undefined,
+                    notes: paymentNotes || undefined,
+                    date: new Date().toISOString(),
+                  },
+                });
+              }}
+              disabled={addPaymentMutation.isPending || !paymentAmount || !paymentAccountForAdd}
+              className="flex-1"
+            >
+              {addPaymentMutation.isPending ? 'Recording...' : 'Record Payment'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Payments Dialog */}
+      <Dialog open={viewPaymentsDialogOpen} onOpenChange={setViewPaymentsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Payment History — Invoice {invoiceForPaymentDetail?.number}</DialogTitle>
+            <DialogDescription>
+              All payments recorded for this invoice
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {invoicePayments.length === 0 ? (
+              <p className="text-center text-muted-foreground py-6">No payments recorded yet.</p>
+            ) : (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Method</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {invoicePayments.map((p: InvoicePayment) => (
+                      <TableRow key={p.id}>
+                        <TableCell>{formatDate(p.date, locale)}</TableCell>
+                        <TableCell className="capitalize">{p.method}</TableCell>
+                        <TableCell className="text-muted-foreground">{p.reference || '—'}</TableCell>
+                        <TableCell className="text-right font-mono font-medium">
+                          {formatCurrency(p.amount, invoiceForPaymentDetail?.currency || 'AED', locale)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="flex justify-between pt-2 border-t font-semibold">
+                  <span>Total Paid</span>
+                  <span className="font-mono">
+                    {formatCurrency(
+                      invoicePayments.reduce((s: number, p: InvoicePayment) => s + p.amount, 0),
+                      invoiceForPaymentDetail?.currency || 'AED',
+                      locale
+                    )}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+          <Button variant="outline" onClick={() => setViewPaymentsDialogOpen(false)} className="w-full mt-2">Close</Button>
         </DialogContent>
       </Dialog>
 
