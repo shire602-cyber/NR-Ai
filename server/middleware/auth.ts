@@ -164,10 +164,15 @@ export function requireUserType(...allowedTypes: string[]) {
 /**
  * Generate a JWT token for a user.
  */
-export function generateToken(user: { id: string; email: string }): string {
+export function generateToken(user: { id: string; email: string; isAdmin?: boolean; userType?: string }): string {
   const env = getEnv();
   return jwt.sign(
-    { userId: user.id, email: user.email },
+    {
+      userId: user.id,
+      email: user.email,
+      isAdmin: user.isAdmin === true,
+      userType: user.userType || 'customer',
+    },
     env.JWT_SECRET,
     { expiresIn: '24h' }
   );
