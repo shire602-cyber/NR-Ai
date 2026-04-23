@@ -35,11 +35,15 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 interface ExtractedData {
   merchant?: string;
   date?: string;
-  total?: number;
+  invoiceNumber?: string | null;
+  subtotal?: number;
+  vatPercentage?: number;
   vatAmount?: number;
+  total?: number;
   currency?: string;
   rawText: string;
   category?: string;
+  lineItems?: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
   confidence?: number;
 }
 
@@ -492,10 +496,16 @@ export default function Receipts() {
           parsed = {
             merchant: result.merchant || 'Unknown Merchant',
             date: result.date || new Date().toISOString().split('T')[0],
-            total: result.amount || 0,
+            invoiceNumber: result.invoiceNumber || null,
+            subtotal: result.subtotal || result.amount || 0,
+            vatPercentage: result.vatPercentage || 5,
             vatAmount: result.vatAmount || 0,
+            total: result.total || result.amount || 0,
+            currency: result.currency || 'AED',
             category: result.category || 'Other',
+            lineItems: result.lineItems || [],
             rawText: result.rawText || '',
+            confidence: result.confidence || 0.85,
           };
           setProcessedReceipts((prev) => {
             const updated = [...prev];
@@ -661,14 +671,20 @@ export default function Receipts() {
       date = new Date().toISOString().split('T')[0];
     }
 
+    // Derive subtotal from total and VAT
+    const derivedSubtotal = vatAmount > 0 && total > 0 ? parseFloat((total - vatAmount).toFixed(2)) : parseFloat((total / 1.05).toFixed(2));
+    const derivedVat = vatAmount > 0 ? vatAmount : parseFloat((total - derivedSubtotal).toFixed(2));
+
     return {
       merchant: merchant || 'Unknown Merchant',
       date,
+      subtotal: derivedSubtotal,
+      vatPercentage: 5,
+      vatAmount: derivedVat,
       total,
-      vatAmount,
       currency: 'AED',
       rawText: text,
-      confidence: 0.85,
+      confidence: 0.5,
     };
   };
 
@@ -765,12 +781,16 @@ export default function Receipts() {
           companyId: companyId,
           merchant: receipt.data!.merchant || 'Unknown',
           date: receipt.data!.date || new Date().toISOString().split('T')[0],
-          amount: Number(receipt.data!.total) || 0,
+          invoiceNumber: receipt.data!.invoiceNumber || null,
+          amount: Number(receipt.data!.subtotal ?? receipt.data!.total) || 0,
           vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,
+          vatPercentage: receipt.data!.vatPercentage ?? 5,
+          total: Number(receipt.data!.total) || 0,
           category: receipt.data!.category || 'Uncategorized',
           currency: receipt.data!.currency || 'AED',
           imageData: receipt.preview,
           rawText: receipt.data!.rawText,
+          lineItems: receipt.data!.lineItems || [],
         };
 
         await apiRequest('POST', `/api/companies/${companyId}/receipts`, receiptData);
@@ -1160,7 +1180,7 @@ export default function Receipts() {
                     {receipt.status === 'completed' && receipt.data && (
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                          <Label className="text-xs">Merchant</Label>
+                          <Label className="text-xs">Merchant / Supplier</Label>
                           <Input
                             value={receipt.data.merchant || ''}
                             onChange={(e) =>
@@ -1184,16 +1204,55 @@ export default function Receipts() {
                           />
                         </div>
 
+                        {receipt.data.invoiceNumber && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-xs">Invoice / Receipt Number</Label>
+                            <Input
+                              value={receipt.data.invoiceNumber || ''}
+                              onChange={(e) =>
+                                updateReceiptData(index, { invoiceNumber: e.target.value })
+                              }
+                              className="h-8 font-mono"
+                            />
+                          </div>
+                        )}
+
                         <div className="space-y-1">
-                          <Label className="text-xs">Amount</Label>
+                          <Label className="text-xs">Subtotal (excl. VAT)</Label>
                           <Input
                             type="number"
                             step="0.01"
-                            value={receipt.data.total || ''}
+                            value={receipt.data.subtotal ?? receipt.data.total ?? ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { subtotal: parseFloat(e.target.value) })
+                            }
+                            className="h-8"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs">VAT ({receipt.data.vatPercentage ?? 5}%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={receipt.data.vatAmount ?? ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { vatAmount: parseFloat(e.target.value) })
+                            }
+                            className="h-8"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={receipt.data.total ?? ''}
                             onChange={(e) =>
                               updateReceiptData(index, { total: parseFloat(e.target.value) })
                             }
-                            className="h-8"
+                            className="h-8 font-semibold"
                             data-testid={`input-amount-${index}`}
                           />
                         </div>
@@ -1211,26 +1270,45 @@ export default function Receipts() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                              <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
+                              <SelectItem value="Meals">Meals &amp; Entertainment</SelectItem>
                               <SelectItem value="Travel">Travel</SelectItem>
                               <SelectItem value="Utilities">Utilities</SelectItem>
                               <SelectItem value="Marketing">Marketing</SelectItem>
-                              <SelectItem value="Software">Software</SelectItem>
+                              <SelectItem value="Equipment">Equipment</SelectItem>
+                              <SelectItem value="Communication">Communication</SelectItem>
+                              <SelectItem value="Professional Services">Professional Services</SelectItem>
+                              <SelectItem value="Insurance">Insurance</SelectItem>
+                              <SelectItem value="Maintenance">Maintenance</SelectItem>
+                              <SelectItem value="Rent">Rent</SelectItem>
                               <SelectItem value="Other">Other</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
 
+                        {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
+                          <div className="col-span-2 space-y-1">
+                            <Label className="text-xs">Line Items</Label>
+                            <div className="rounded border text-xs divide-y">
+                              {receipt.data.lineItems.map((item, i) => (
+                                <div key={i} className="flex justify-between px-2 py-1">
+                                  <span className="truncate max-w-[60%]">{item.description}</span>
+                                  <span className="text-muted-foreground ml-2">
+                                    {item.quantity > 1 ? `×${item.quantity}  ` : ''}{item.total.toFixed(2)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {receipt.data.confidence && (
                           <div className="col-span-2">
                             <p className="text-xs text-muted-foreground">
-                              OCR Confidence: {Math.round(receipt.data.confidence * 100)}%
-                              {receipt.data.category && (
-                                <Badge variant="secondary" className="ml-2">
-                                  <Sparkles className="w-2 h-2 mr-1" />
-                                  AI
-                                </Badge>
-                              )}
+                              AI Confidence: {Math.round(receipt.data.confidence * 100)}%
+                              <Badge variant="secondary" className="ml-2">
+                                <Sparkles className="w-2 h-2 mr-1" />
+                                GPT-4o Vision
+                              </Badge>
                             </p>
                           </div>
                         )}
