@@ -117,7 +117,7 @@ import {
   inventoryMovements
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte } from "drizzle-orm";
+import { eq, and, desc, lte, isNull } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -572,12 +572,12 @@ export class DatabaseStorage implements IStorage {
 
   // Companies
   async getCompany(id: string): Promise<Company | undefined> {
-    const [company] = await db.select().from(companies).where(eq(companies.id, id));
+    const [company] = await db.select().from(companies).where(and(eq(companies.id, id), isNull(companies.deletedAt)));
     return company || undefined;
   }
 
   async getCompanyByName(name: string): Promise<Company | undefined> {
-    const [company] = await db.select().from(companies).where(eq(companies.name, name));
+    const [company] = await db.select().from(companies).where(and(eq(companies.name, name), isNull(companies.deletedAt)));
     return company || undefined;
   }
 
@@ -586,8 +586,8 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(companies)
       .innerJoin(companyUsers, eq(companies.id, companyUsers.companyId))
-      .where(eq(companyUsers.userId, userId));
-    
+      .where(and(eq(companyUsers.userId, userId), isNull(companies.deletedAt)));
+
     return results.map((r: any) => r.companies);
   }
 
@@ -2024,7 +2024,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllCompanies(): Promise<Company[]> {
-    return await db.select().from(companies).orderBy(desc(companies.createdAt));
+    return await db.select().from(companies).where(isNull(companies.deletedAt)).orderBy(desc(companies.createdAt));
   }
 
   // VAT Returns
@@ -2394,7 +2394,7 @@ export class DatabaseStorage implements IStorage {
 
   // Admin Company Management
   async deleteCompany(id: string): Promise<void> {
-    await db.delete(companies).where(eq(companies.id, id));
+    await db.update(companies).set({ deletedAt: new Date(), isActive: false }).where(eq(companies.id, id));
   }
 
   // Client Engagements
@@ -2580,7 +2580,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(companies)
-      .where(eq(companies.companyType, 'client'))
+      .where(and(eq(companies.companyType, 'client'), isNull(companies.deletedAt)))
       .orderBy(desc(companies.createdAt));
   }
 
@@ -2588,7 +2588,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(companies)
-      .where(eq(companies.companyType, 'customer'))
+      .where(and(eq(companies.companyType, 'customer'), isNull(companies.deletedAt)))
       .orderBy(desc(companies.createdAt));
   }
 

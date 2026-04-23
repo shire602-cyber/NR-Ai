@@ -60,7 +60,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
     receipts.forEach(rec => {
       if (rec.date) {
-        const month = rec.date.slice(0, 7);
+        const month = (rec.date instanceof Date ? rec.date.toISOString() : String(rec.date)).slice(0, 7);
         if (!monthlyData[month]) monthlyData[month] = { inflow: 0, outflow: 0 };
         monthlyData[month].outflow += (rec.amount || 0) + (rec.vatAmount || 0);
       }

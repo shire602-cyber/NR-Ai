@@ -132,7 +132,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
           severity: 'critical',
           description: `Receipt from ${receipt.merchant || 'Unknown'} for AED ${receipt.amount.toLocaleString()} is ${(receipt.amount / avgReceiptAmount).toFixed(1)}x the average receipt amount (AED ${avgReceiptAmount.toLocaleString()}).`,
           amount: receipt.amount,
-          date: receipt.date || new Date().toISOString().split('T')[0],
+          date: receipt.date ? (receipt.date instanceof Date ? receipt.date.toISOString().split('T')[0] : String(receipt.date)) : new Date().toISOString().split('T')[0],
           relatedId: receipt.id,
           relatedType: 'receipt',
         });
@@ -209,7 +209,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
         severity: 'info',
         description: `Receipt from ${receipt.merchant || 'Unknown'} has a perfectly round amount of AED ${receipt.amount.toLocaleString()}. Round amounts may indicate estimates rather than actual transactions.`,
         amount: receipt.amount,
-        date: receipt.date || new Date().toISOString().split('T')[0],
+        date: receipt.date ? (receipt.date instanceof Date ? receipt.date.toISOString().split('T')[0] : String(receipt.date)) : new Date().toISOString().split('T')[0],
         relatedId: receipt.id,
         relatedType: 'receipt',
       });
@@ -260,7 +260,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
           severity: 'warning',
           description: `${curr.merchant} billed AED ${curr.amount!.toLocaleString()} twice within ${Math.ceil(daysDiff)} day(s). This may be a duplicate charge.`,
           amount: curr.amount!,
-          date: curr.date,
+          date: curr.date ? (curr.date instanceof Date ? curr.date.toISOString().split('T')[0] : String(curr.date)) : new Date().toISOString().split('T')[0],
           relatedId: curr.id,
           relatedType: 'receipt',
         });
