@@ -18,7 +18,6 @@ import { apiUrl } from '@/lib/api';
 import { getAuthHeaders } from '@/lib/auth';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { exportToExcel, exportToGoogleSheets, prepareReceiptsForExport } from '@/lib/export';
-import Tesseract from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
@@ -469,16 +468,38 @@ export default function Receipts() {
     });
 
     try {
-      // Strategy 1: Backend AI Vision OCR (GPT-4o)
-      const toBase64 = (file: File): Promise<string> =>
+      // Convert any image format (including HEIC from iOS) to JPEG via canvas
+      // so GPT-4o always receives a supported format.
+      const convertToJpeg = (file: File): Promise<string> =>
         new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
+          const img = new Image();
+          const objectUrl = URL.createObjectURL(file);
+          img.onload = () => {
+            const MAX_DIM = 2048;
+            let w = img.naturalWidth;
+            let h = img.naturalHeight;
+            if (w > MAX_DIM || h > MAX_DIM) {
+              const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
+              w = Math.round(w * ratio);
+              h = Math.round(h * ratio);
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { reject(new Error('Canvas not available')); return; }
+            ctx.drawImage(img, 0, 0, w, h);
+            URL.revokeObjectURL(objectUrl);
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error('Failed to load image'));
+          };
+          img.src = objectUrl;
         });
 
-      const imageData = await toBase64(receipt.file);
+      const imageData = await convertToJpeg(receipt.file);
 
       setProcessedReceipts((prev) => {
         const updated = [...prev];
@@ -486,85 +507,39 @@ export default function Receipts() {
         return updated;
       });
 
-      let parsed: ExtractedData | null = null;
+      const response = await fetch(apiUrl('/api/ocr/process'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ imageData }),
+      });
 
-      try {
-        const response = await fetch(apiUrl('/api/ocr/process'), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(),
-          },
-          body: JSON.stringify({ imageData }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          parsed = {
-            merchant: result.merchant || 'Unknown Merchant',
-            date: result.date || new Date().toISOString().split('T')[0],
-            invoiceNumber: result.invoiceNumber || null,
-            subtotal: result.subtotal ?? result.amount ?? 0,
-            vatPercent: result.vatPercent ?? 5,
-            vatAmount: result.vatAmount ?? 0,
-            total: result.total ?? (result.subtotal ?? result.amount ?? 0) + (result.vatAmount ?? 0),
-            currency: result.currency || 'AED',
-            category: result.category || 'Other',
-            lineItems: result.lineItems || [],
-            rawText: result.rawText || '',
-            confidence: result.confidence ?? 0.95,
-          };
-          setProcessedReceipts((prev) => {
-            const updated = [...prev];
-            updated[index] = { ...updated[index], progress: 90 };
-            return updated;
-          });
-        } else {
-          const errBody = await response.json().catch(() => ({}));
-          console.error('[OCR] Backend error:', response.status, errBody);
-        }
-      } catch (backendError) {
-        console.warn('[OCR] Backend Vision failed, falling back to Tesseract:', backendError);
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.message || `OCR service error (${response.status})`);
       }
 
-      // Strategy 2: Tesseract fallback
-      if (!parsed) {
-        const result = await Tesseract.recognize(receipt.file, 'eng', {
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              setProcessedReceipts((prev) => {
-                const updated = [...prev];
-                updated[index] = { ...updated[index], progress: 40 + Math.round(m.progress * 50) };
-                return updated;
-              });
-            }
-          },
-        });
-
-        const text = result.data.text;
-        if (!text || text.trim().length < 10) {
-          throw new Error('Could not extract readable text from image. Try a clearer photo.');
-        }
-
-        parsed = parseReceiptText(text);
-        if (!parsed.merchant && !parsed.total) {
-          parsed.merchant = 'Unknown Merchant';
-          parsed.total = 0;
-        }
-
-        if (parsed.merchant || parsed.total) {
-          try {
-            const category = await categorizeWithAI(parsed);
-            if (category) parsed.category = category;
-          } catch (aiError) {
-            console.error('AI categorization failed, continuing without it:', aiError);
-          }
-        }
-      }
+      const result = await response.json();
+      const parsed: ExtractedData = {
+        merchant: result.merchant || 'Unknown Merchant',
+        date: result.date || new Date().toISOString().split('T')[0],
+        invoiceNumber: result.invoiceNumber || null,
+        subtotal: result.subtotal ?? result.amount ?? 0,
+        vatPercent: result.vatPercent ?? 5,
+        vatAmount: result.vatAmount ?? 0,
+        total: result.total ?? (result.subtotal ?? result.amount ?? 0) + (result.vatAmount ?? 0),
+        currency: result.currency || 'AED',
+        category: result.category || 'Other',
+        lineItems: result.lineItems || [],
+        rawText: result.rawText || '',
+        confidence: result.confidence ?? 0.95,
+      };
 
       setProcessedReceipts((prev) => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], status: 'completed', data: parsed!, progress: 100 };
+        updated[index] = { ...updated[index], status: 'completed', data: parsed, progress: 100 };
         return updated;
       });
 
