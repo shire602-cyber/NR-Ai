@@ -216,6 +216,38 @@ export function registerFixedAssetRoutes(app: Express) {
       [newAccDep, newNBV, id]
     );
 
+    // Create journal entry: Debit Depreciation Expense, Credit Accumulated Depreciation
+    if (monthlyDepreciation > 0) {
+      const companyAccounts = await storage.getAccountsByCompanyId(asset.company_id);
+      const depExpenseAccount = companyAccounts.find(a => a.code === '5100' && a.isSystemAccount);
+      const accDepAccount = companyAccounts.find(a => a.code === '1240' && a.isSystemAccount);
+
+      if (depExpenseAccount && accDepAccount) {
+        const entryDate = new Date();
+        const entryNumber = await storage.generateEntryNumber(asset.company_id, entryDate);
+        await storage.createJournalEntry(
+          {
+            companyId: asset.company_id,
+            date: entryDate,
+            memo: `Depreciation: ${asset.asset_name}`,
+            entryNumber,
+            status: 'posted',
+            source: 'system',
+            sourceId: id,
+            createdBy: userId,
+            postedBy: userId,
+            postedAt: entryDate,
+          },
+          [
+            { accountId: depExpenseAccount.id, debit: monthlyDepreciation, credit: 0, description: `Depreciation - ${asset.asset_name}` },
+            { accountId: accDepAccount.id, debit: 0, credit: monthlyDepreciation, description: `Accumulated depreciation - ${asset.asset_name}` },
+          ]
+        );
+      } else {
+        log.warn({ assetId: id }, 'Depreciation journal entry skipped: system accounts 5100/1240 not found');
+      }
+    }
+
     const updated = await pool.query(`SELECT * FROM fixed_assets WHERE id = $1`, [id]);
     log.info({ assetId: id, monthlyDepreciation, newAccDep, newNBV }, 'Depreciation recorded');
     res.json({
@@ -288,6 +320,36 @@ export function registerFixedAssetRoutes(app: Express) {
         `UPDATE fixed_assets SET accumulated_depreciation = $1, net_book_value = $2 WHERE id = $3`,
         [newAccDep, newNBV, asset.id]
       );
+
+      // Create journal entry: Debit Depreciation Expense, Credit Accumulated Depreciation
+      const companyAccounts = await storage.getAccountsByCompanyId(companyId);
+      const depExpenseAccount = companyAccounts.find(a => a.code === '5100' && a.isSystemAccount);
+      const accDepAccount = companyAccounts.find(a => a.code === '1240' && a.isSystemAccount);
+
+      if (depExpenseAccount && accDepAccount) {
+        const entryDate = new Date(year, month - 1, 1);
+        const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
+        await storage.createJournalEntry(
+          {
+            companyId,
+            date: entryDate,
+            memo: `Depreciation: ${asset.asset_name} (${month}/${year})`,
+            entryNumber,
+            status: 'posted',
+            source: 'system',
+            sourceId: asset.id,
+            createdBy: userId,
+            postedBy: userId,
+            postedAt: new Date(),
+          },
+          [
+            { accountId: depExpenseAccount.id, debit: monthlyDepreciation, credit: 0, description: `Depreciation - ${asset.asset_name}` },
+            { accountId: accDepAccount.id, debit: 0, credit: monthlyDepreciation, description: `Accumulated depreciation - ${asset.asset_name}` },
+          ]
+        );
+      } else {
+        log.warn({ assetId: asset.id }, 'Depreciation journal entry skipped: system accounts 5100/1240 not found');
+      }
 
       results.push({
         assetId: asset.id,

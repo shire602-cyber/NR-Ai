@@ -162,9 +162,12 @@ export function registerInvoiceRoutes(app: Express) {
 
     // Revenue recognition: create journal entry immediately when invoice is raised
     const accounts = await storage.getAccountsByCompanyId(companyId);
-    const accountsReceivable = accounts.find(a => a.nameEn === 'Accounts Receivable');
-    const salesRevenue = accounts.find(a => a.nameEn === 'Sales Revenue');
-    const vatPayable = accounts.find(a => a.nameEn === 'VAT Payable');
+    // Look up by code/type to avoid fragile name-string matching
+    const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+    const salesRevenue = accounts.find(
+      a => a.isSystemAccount && a.type === 'income' && (a.code === '4010' || a.code === '4020')
+    );
+    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === '2020');
 
     if (accountsReceivable && salesRevenue) {
       // Generate entry number atomically via storage helper
@@ -382,7 +385,7 @@ export function registerInvoiceRoutes(app: Express) {
       }
 
       const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
-      const accountsReceivable = accounts.find(a => a.nameEn === 'Accounts Receivable');
+      const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
 
       if (accountsReceivable) {
         // Generate entry number atomically via storage helper

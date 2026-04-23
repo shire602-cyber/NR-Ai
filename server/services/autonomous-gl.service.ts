@@ -493,6 +493,16 @@ async function createJournalEntryForQueueItem(
     throw new Error('No bank account found for journal entry');
   }
 
+  // Resolve the company owner's user ID to satisfy the FK constraint on created_by
+  const { rows: ownerRows } = await pool.query(
+    `SELECT user_id FROM company_users WHERE company_id = $1 AND role = 'owner' LIMIT 1`,
+    [companyId]
+  );
+  const systemUserId = ownerRows[0]?.user_id;
+  if (!systemUserId) {
+    throw new Error(`No owner user found for company ${companyId} — cannot create auto-posted journal entry`);
+  }
+
   // Create the journal entry (posted directly since it's auto-posted)
   const { rows: [entry] } = await pool.query(
     `INSERT INTO journal_entries
@@ -505,9 +515,7 @@ async function createJournalEntryForQueueItem(
       txnDate,
       `AI Auto-Posted: ${item.description}`,
       item.bank_transaction_id,
-      // Use a system user ID — for auto-posted entries we use a placeholder
-      // In production this would be a dedicated system user
-      '00000000-0000-0000-0000-000000000000',
+      systemUserId,
     ]
   );
 

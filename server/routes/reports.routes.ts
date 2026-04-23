@@ -224,8 +224,9 @@ export function registerReportRoutes(app: Express) {
       return d >= previousStart && d <= previousEnd;
     });
 
-    const currentRevenue = currentInvoices.reduce((sum, inv) => sum + inv.total, 0);
-    const previousRevenue = previousInvoices.reduce((sum, inv) => sum + inv.total, 0);
+    // Use subtotal (excl. VAT) to avoid inflating revenue with collected tax
+    const currentRevenue = currentInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
+    const previousRevenue = previousInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
     const currentExpenses = currentReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
     const previousExpenses = previousReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
 

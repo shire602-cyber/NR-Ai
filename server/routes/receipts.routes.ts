@@ -161,7 +161,9 @@ export function registerReceiptRoutes(app: Express) {
     }
 
     // Validate amount is present and positive
-    const totalAmount = (receipt.amount || 0) + (receipt.vatAmount || 0);
+    const subtotal = receipt.amount || 0;
+    const vatAmount = receipt.vatAmount || 0;
+    const totalAmount = subtotal + vatAmount;
     if (totalAmount <= 0) {
       return res.status(400).json({ message: 'Receipt amount must be greater than zero' });
     }
@@ -192,12 +194,14 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(400).json({ message: 'Payment account must be a cash or bank account (asset)' });
     }
 
-    // TODO: Wrap in database transaction to ensure atomicity
-    // For now, we'll proceed with the journal entry creation
-    // In production, this should be wrapped in a transaction
-    // NOTE: The operations below (journal entry creation, journal line creation,
-    // and receipt update) need to be wrapped in a database transaction to prevent
-    // partial writes if any step fails mid-way.
+    // Look up VAT Recoverable (Input VAT) account by vatType to avoid hardcoded name matching
+    let vatRecoverableAccount = null;
+    if (vatAmount > 0) {
+      const companyAccounts = await storage.getAccountsByCompanyId(receipt.companyId);
+      vatRecoverableAccount = companyAccounts.find(
+        a => a.isVatAccount && a.vatType === 'input' && a.isActive
+      ) || null;
+    }
 
     // Parse date safely
     let entryDate: Date;
@@ -215,37 +219,63 @@ export function registerReceiptRoutes(app: Express) {
     // Generate entry number atomically via storage helper
     const entryNumber = await storage.generateEntryNumber(receipt.companyId, entryDate);
 
-    // Create journal entry for the receipt
-    const entry = await storage.createJournalEntry({
-      companyId: receipt.companyId,
-      date: entryDate,
-      memo: `Receipt: ${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
-      entryNumber,
-      status: 'posted',
-      source: 'receipt',
-      sourceId: receipt.id,
-      createdBy: userId,
-      postedBy: userId,
-      postedAt: new Date(),
-    });
+    // Build journal lines:
+    // If VAT is present and we have a VAT Recoverable account, use 3-line entry
+    // Else use 2-line entry (debit expense full total, credit cash)
+    const journalLineInputs: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
 
-    // Debit: Expense Account (total amount including VAT)
-    await storage.createJournalLine({
-      entryId: entry.id,
-      accountId: expenseAccount.id,
-      debit: totalAmount,
-      credit: 0,
-      description: `${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
-    });
+    if (vatAmount > 0 && vatRecoverableAccount) {
+      // 3-line entry: Debit Expense (subtotal), Debit VAT Recoverable (VAT), Credit Cash (total)
+      journalLineInputs.push({
+        accountId: expenseAccount.id,
+        debit: subtotal,
+        credit: 0,
+        description: `${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
+      });
+      journalLineInputs.push({
+        accountId: vatRecoverableAccount.id,
+        debit: vatAmount,
+        credit: 0,
+        description: `Input VAT - ${receipt.merchant || 'expense'}`,
+      });
+      journalLineInputs.push({
+        accountId: paymentAccount.id,
+        debit: 0,
+        credit: totalAmount,
+        description: `Payment for ${receipt.merchant || 'expense'}`,
+      });
+    } else {
+      // 2-line entry: Debit Expense (total), Credit Cash (total)
+      journalLineInputs.push({
+        accountId: expenseAccount.id,
+        debit: totalAmount,
+        credit: 0,
+        description: `${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
+      });
+      journalLineInputs.push({
+        accountId: paymentAccount.id,
+        debit: 0,
+        credit: totalAmount,
+        description: `Payment for ${receipt.merchant || 'expense'}`,
+      });
+    }
 
-    // Credit: Payment Account (cash/bank)
-    await storage.createJournalLine({
-      entryId: entry.id,
-      accountId: paymentAccount.id,
-      debit: 0,
-      credit: totalAmount,
-      description: `Payment for ${receipt.merchant || 'expense'}`,
-    });
+    // Create journal entry with lines atomically (validates balance & wraps in transaction)
+    const entry = await storage.createJournalEntry(
+      {
+        companyId: receipt.companyId,
+        date: entryDate,
+        memo: `Receipt: ${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
+        entryNumber,
+        status: 'posted',
+        source: 'receipt',
+        sourceId: receipt.id,
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: new Date(),
+      },
+      journalLineInputs
+    );
 
     // Update receipt with posting information
     const updatedReceipt = await storage.updateReceipt(id, {

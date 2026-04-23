@@ -199,7 +199,7 @@ export interface IStorage {
   // Journal Entries
   getJournalEntry(id: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
-  createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }): Promise<JournalEntry>;
+  createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }, lines?: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
   updateJournalEntry(id: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
   deleteJournalEntry(id: string): Promise<void>;
   generateEntryNumber(companyId: string, date: Date): Promise<string>;
@@ -914,7 +914,26 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(journalEntries.date));
   }
 
-  async createJournalEntry(insertEntry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }): Promise<JournalEntry> {
+  async createJournalEntry(
+    insertEntry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
+    lines?: Array<Omit<InsertJournalLine, 'entryId'>>
+  ): Promise<JournalEntry> {
+    if (lines && lines.length > 0) {
+      const totalDebit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
+      const totalCredit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+      if (Math.abs(totalDebit - totalCredit) > 0.01) {
+        throw new Error(
+          `Journal entry is unbalanced: debits ${totalDebit.toFixed(2)} ≠ credits ${totalCredit.toFixed(2)}`
+        );
+      }
+      return await db.transaction(async (tx: typeof db) => {
+        const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
+        for (const line of lines) {
+          await tx.insert(journalLines).values({ ...line, entryId: entry.id });
+        }
+        return entry;
+      });
+    }
     const [entry] = await db
       .insert(journalEntries)
       .values(insertEntry)
