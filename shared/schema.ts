@@ -592,17 +592,44 @@ export type InsertAnomalyAlert = z.infer<typeof insertAnomalyAlertSchema>;
 export type AnomalyAlert = typeof anomalyAlerts.$inferSelect;
 
 // ===========================
+// Bank Accounts (managed bank accounts linked to GL)
+// ===========================
+export const bankAccounts = pgTable("bank_accounts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  nameEn: text("name_en").notNull(), // Display name e.g. "Emirates NBD Current"
+  bankName: text("bank_name").notNull(), // Emirates NBD | ADCB | FAB | Mashreq | Other
+  accountNumber: text("account_number"),
+  iban: text("iban"),
+  currency: text("currency").notNull().default("AED"),
+  glAccountId: uuid("gl_account_id").references(() => accounts.id), // Linked GL account
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertBankAccount = z.infer<typeof insertBankAccountSchema>;
+export type BankAccount = typeof bankAccounts.$inferSelect;
+
+// ===========================
 // Bank Transactions (for reconciliation)
 // ===========================
 export const bankTransactions = pgTable("bank_transactions", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
   bankAccountId: uuid("bank_account_id").references(() => accounts.id), // Links to bank account in COA
+  bankStatementAccountId: uuid("bank_statement_account_id").references(() => bankAccounts.id), // Links to managed bank account
   transactionDate: timestamp("transaction_date").notNull(),
   description: text("description").notNull(),
   amount: real("amount").notNull(), // Positive for credits, negative for debits
+  balance: real("balance"), // Running balance from bank statement
   reference: text("reference"), // Bank reference number
   category: text("category"), // AI-suggested category
+  matchStatus: text("match_status").notNull().default("unmatched"), // matched | suggested | unmatched
   isReconciled: boolean("is_reconciled").notNull().default(false),
   matchedJournalEntryId: uuid("matched_journal_entry_id").references(() => journalEntries.id),
   matchedReceiptId: uuid("matched_receipt_id").references(() => receipts.id),

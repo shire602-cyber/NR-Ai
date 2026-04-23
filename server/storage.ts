@@ -55,7 +55,8 @@ import type {
   RecurringInvoice, InsertRecurringInvoice,
   CorporateTaxReturn, InsertCorporateTaxReturn,
   Product, InsertProduct,
-  InventoryMovement, InsertInventoryMovement
+  InventoryMovement, InsertInventoryMovement,
+  BankAccount, InsertBankAccount
 } from "@shared/schema";
 import {
   users,
@@ -73,6 +74,7 @@ import {
   whatsappConfigs,
   whatsappMessages,
   anomalyAlerts,
+  bankAccounts,
   bankTransactions,
   cashFlowForecasts,
   transactionClassifications,
@@ -274,8 +276,15 @@ export interface IStorage {
   updateAnomalyAlert(id: string, data: Partial<InsertAnomalyAlert>): Promise<AnomalyAlert>;
   resolveAnomalyAlert(id: string, userId: string, note?: string): Promise<AnomalyAlert>;
 
+  // Bank Accounts
+  createBankAccount(account: InsertBankAccount): Promise<BankAccount>;
+  getBankAccountsByCompanyId(companyId: string): Promise<BankAccount[]>;
+  getBankAccountById(id: string): Promise<BankAccount | undefined>;
+  updateBankAccount(id: string, data: Partial<InsertBankAccount>): Promise<BankAccount>;
+
   // Bank Transactions
   createBankTransaction(transaction: InsertBankTransaction): Promise<BankTransaction>;
+  bulkCreateBankTransactions(transactions: InsertBankTransaction[]): Promise<BankTransaction[]>;
   getBankTransactionById(id: string): Promise<BankTransaction | undefined>;
   getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]>;
   getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]>;
@@ -1356,6 +1365,35 @@ export class DatabaseStorage implements IStorage {
     return alert;
   }
 
+  // Bank Accounts
+  async createBankAccount(account: InsertBankAccount): Promise<BankAccount> {
+    const [result] = await db.insert(bankAccounts).values(account).returning();
+    return result;
+  }
+
+  async getBankAccountsByCompanyId(companyId: string): Promise<BankAccount[]> {
+    return await db
+      .select()
+      .from(bankAccounts)
+      .where(eq(bankAccounts.companyId, companyId))
+      .orderBy(bankAccounts.nameEn);
+  }
+
+  async getBankAccountById(id: string): Promise<BankAccount | undefined> {
+    const [result] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, id));
+    return result;
+  }
+
+  async updateBankAccount(id: string, data: Partial<InsertBankAccount>): Promise<BankAccount> {
+    const [result] = await db
+      .update(bankAccounts)
+      .set(data)
+      .where(eq(bankAccounts.id, id))
+      .returning();
+    if (!result) throw new Error('Bank account not found');
+    return result;
+  }
+
   // Bank Transactions
   async createBankTransaction(insertTransaction: InsertBankTransaction): Promise<BankTransaction> {
     const [transaction] = await db
@@ -1363,6 +1401,11 @@ export class DatabaseStorage implements IStorage {
       .values(insertTransaction)
       .returning();
     return transaction;
+  }
+
+  async bulkCreateBankTransactions(transactions: InsertBankTransaction[]): Promise<BankTransaction[]> {
+    if (transactions.length === 0) return [];
+    return await db.insert(bankTransactions).values(transactions).returning();
   }
 
   async getBankTransactionById(id: string): Promise<BankTransaction | undefined> {

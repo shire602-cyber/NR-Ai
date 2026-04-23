@@ -52,6 +52,7 @@ import { registerAutoReconcileRoutes } from './routes/auto-reconcile.routes';
 import { registerAIGLRoutes } from './routes/ai-gl.routes';
 import { registerMonthEndRoutes } from './routes/month-end.routes';
 import { registerAdminHealthRoutes } from './routes/admin-health.routes';
+import { registerBankStatementRoutes } from './routes/bank-statements.routes';
 
 const log = createLogger('routes');
 
@@ -68,6 +69,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerContactRoutes(app);
   registerJournalRoutes(app);
   registerInventoryRoutes(app);
+  registerBankStatementRoutes(app);
 
   // ─── HR & Payroll ───────────────────────────────────────
   registerPayrollRoutes(app);
