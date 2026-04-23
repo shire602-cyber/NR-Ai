@@ -310,7 +310,7 @@ export function registerDashboardRoutes(app: Express) {
     const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
     const netProfit = totalRevenue - totalExpenses;
 
-    res.json({ revenue, expenses, totalRevenue, totalExpenses, netProfit });
+    res.json({ reportCurrency: 'AED', revenue, expenses, totalRevenue, totalExpenses, netProfit });
   }));
 
   app.get("/api/companies/:companyId/reports/balance-sheet", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -362,6 +362,7 @@ export function registerDashboardRoutes(app: Express) {
       .map(a => ({ accountName: a.nameEn, amount: balances.get(a.id) || 0 }));
 
     res.json({
+      reportCurrency: 'AED',
       assets,
       liabilities,
       equity,
@@ -402,8 +403,9 @@ export function registerDashboardRoutes(app: Express) {
     let salesVAT = 0;
     for (const invoice of invoices) {
       if (invoice.status !== 'void') {
-        salesSubtotal += invoice.subtotal;
-        salesVAT += invoice.vatAmount;
+        const rate = invoice.exchangeRate ?? 1;
+        salesSubtotal += invoice.subtotal * rate;
+        salesVAT += invoice.vatAmount * rate;
       }
     }
 
@@ -411,12 +413,14 @@ export function registerDashboardRoutes(app: Express) {
     let purchasesVAT = 0;
     for (const receipt of receipts) {
       if (receipt.posted) {
-        purchasesSubtotal += (receipt.amount || 0);
-        purchasesVAT += (receipt.vatAmount || 0);
+        const rate = receipt.exchangeRate ?? 1;
+        purchasesSubtotal += (receipt.amount || 0) * rate;
+        purchasesVAT += (receipt.vatAmount || 0) * rate;
       }
     }
 
     res.json({
+      reportCurrency: 'AED',
       period: 'Current Period',
       salesSubtotal,
       salesVAT,

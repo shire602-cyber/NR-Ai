@@ -196,9 +196,14 @@ export const journalLines = pgTable("journal_lines", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   entryId: uuid("entry_id").notNull().references(() => journalEntries.id, { onDelete: "cascade" }),
   accountId: uuid("account_id").notNull().references(() => accounts.id),
-  debit: real("debit").notNull().default(0),
-  credit: real("credit").notNull().default(0),
+  debit: real("debit").notNull().default(0),   // Always in base currency (AED)
+  credit: real("credit").notNull().default(0), // Always in base currency (AED)
   description: text("description"), // Line-level description
+  // Foreign currency tracking
+  foreignCurrency: text("foreign_currency"), // null = AED, otherwise ISO code (USD, EUR, etc.)
+  foreignDebit: real("foreign_debit").default(0),   // Original amount in foreign currency
+  foreignCredit: real("foreign_credit").default(0), // Original amount in foreign currency
+  exchangeRate: real("exchange_rate").default(1),   // Rate used: 1 foreignCurrency = X AED
   // Reconciliation support
   isReconciled: boolean("is_reconciled").notNull().default(false),
   reconciledAt: timestamp("reconciled_at"),
@@ -215,6 +220,27 @@ export type InsertJournalLine = z.infer<typeof insertJournalLineSchema>;
 export type JournalLine = typeof journalLines.$inferSelect;
 
 // ===========================
+// Exchange Rates
+// ===========================
+export const exchangeRates = pgTable("exchange_rates", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  baseCurrency: text("base_currency").notNull().default("AED"),
+  targetCurrency: text("target_currency").notNull(),
+  rate: real("rate").notNull(), // How many units of targetCurrency per 1 baseCurrency
+  date: timestamp("date").notNull().defaultNow(),
+  source: text("source").notNull().default("manual"), // manual | api
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertExchangeRateSchema = createInsertSchema(exchangeRates).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertExchangeRate = z.infer<typeof insertExchangeRateSchema>;
+export type ExchangeRate = typeof exchangeRates.$inferSelect;
+
+// ===========================
 // Invoices
 // ===========================
 export const invoices = pgTable("invoices", {
@@ -227,6 +253,8 @@ export const invoices = pgTable("invoices", {
   dueDate: timestamp("due_date"),
   paymentTerms: text("payment_terms").default("net30"),
   currency: text("currency").notNull().default("AED"),
+  exchangeRate: real("exchange_rate").notNull().default(1), // Rate to AED at time of transaction
+  baseCurrencyAmount: real("base_currency_amount").notNull().default(0), // Total in AED
   subtotal: real("subtotal").notNull().default(0),
   vatAmount: real("vat_amount").notNull().default(0),
   total: real("total").notNull().default(0),
@@ -309,6 +337,8 @@ export const receipts = pgTable("receipts", {
   amount: real("amount"),
   vatAmount: real("vat_amount"),
   currency: text("currency").default("AED"),
+  exchangeRate: real("exchange_rate").notNull().default(1), // Rate to AED at time of transaction
+  baseCurrencyAmount: real("base_currency_amount").notNull().default(0), // Amount in AED
   category: text("category"),
   accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
   paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit
@@ -470,6 +500,30 @@ export interface VATSummaryReport {
   purchasesSubtotal: number;
   purchasesVAT: number;
   netVATPayable: number;
+}
+
+export interface UnrealizedFxGainLoss {
+  entityType: 'invoice' | 'payable';
+  entityId: string;
+  entityNumber: string;
+  counterparty: string;
+  currency: string;
+  foreignAmount: number;
+  transactionRate: number;    // Rate when transaction was recorded
+  currentRate: number;        // Latest known rate
+  bookValueAed: number;       // Value at transaction rate
+  currentValueAed: number;    // Value at current rate
+  unrealizedGainLoss: number; // Positive = gain, negative = loss
+}
+
+export interface FxGainsLossesReport {
+  asOf: string;
+  baseCurrency: string;
+  receivables: UnrealizedFxGainLoss[];
+  payables: UnrealizedFxGainLoss[];
+  totalUnrealizedGain: number;
+  totalUnrealizedLoss: number;
+  netUnrealizedGainLoss: number;
 }
 
 // ===========================
