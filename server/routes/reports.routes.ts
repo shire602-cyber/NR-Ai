@@ -2,6 +2,10 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { db } from "../db";
+import { eq, and, gte, lte, inArray, type SQL } from "drizzle-orm";
+import { journalEntries, journalLines, accounts, invoices, invoiceLines, receipts } from "../../shared/schema";
+import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../shared/schema";
 
 /**
  * Register advanced report routes (cash flow, aging, period comparison).
@@ -169,6 +173,169 @@ export function registerReportRoutes(app: Express) {
 
     agingData.push(...Object.values(customerTotals));
     res.json(agingData);
+  }));
+
+  // Trial Balance report
+  app.get("/api/companies/:id/reports/trial-balance", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    const companyId = req.params.id;
+    const { from, to } = req.query as { from?: string; to?: string };
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    // Load all accounts for this company
+    const companyAccounts = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.companyId, companyId));
+
+    // Build date filter conditions for entries
+    const baseCond = and(
+      eq(journalEntries.companyId, companyId),
+      eq(journalEntries.status, 'posted'),
+      from ? gte(journalEntries.date, new Date(from)) : undefined,
+      to ? lte(journalEntries.date, new Date(to)) : undefined,
+    );
+
+    const filteredEntries: Array<{ id: string }> = await db
+      .select({ id: journalEntries.id })
+      .from(journalEntries)
+      .where(baseCond);
+
+    const entryIds = filteredEntries.map((e: { id: string }) => e.id);
+
+    // Load all lines for these entries in one query
+    const lines: JournalLine[] = entryIds.length > 0
+      ? await db.select().from(journalLines).where(inArray(journalLines.entryId, entryIds))
+      : [];
+
+    // Aggregate by account
+    const totalsMap = new Map<string, { totalDebit: number; totalCredit: number }>();
+    for (const line of lines) {
+      const existing = totalsMap.get(line.accountId) ?? { totalDebit: 0, totalCredit: 0 };
+      existing.totalDebit += line.debit ?? 0;
+      existing.totalCredit += line.credit ?? 0;
+      totalsMap.set(line.accountId, existing);
+    }
+
+    // Build result rows for all accounts (including zero-activity accounts)
+    const rows = (companyAccounts as Account[])
+      .sort((a: Account, b: Account) => (a.code ?? '').localeCompare(b.code ?? ''))
+      .map((account: Account) => {
+        const { totalDebit, totalCredit } = totalsMap.get(account.id) ?? { totalDebit: 0, totalCredit: 0 };
+        // Normal balance: debit-normal for asset/expense, credit-normal for liability/equity/income
+        const balance = ['asset', 'expense'].includes(account.type)
+          ? totalDebit - totalCredit
+          : totalCredit - totalDebit;
+        return {
+          accountId: account.id,
+          accountName: account.nameEn,
+          accountCode: account.code,
+          accountType: account.type,
+          totalDebit,
+          totalCredit,
+          balance,
+        };
+      });
+
+    const sumDebits = rows.reduce((s: number, r) => s + r.totalDebit, 0);
+    const sumCredits = rows.reduce((s: number, r) => s + r.totalCredit, 0);
+
+    res.json({
+      rows,
+      totals: {
+        sumDebits,
+        sumCredits,
+        difference: Math.abs(sumDebits - sumCredits),
+      },
+    });
+  }));
+
+  // VAT Return report (UAE)
+  app.get("/api/companies/:id/reports/vat-return", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    const companyId = req.params.id;
+    const { from, to } = req.query as { from?: string; to?: string };
+
+    if (!from || !to) {
+      return res.status(400).json({ message: 'from and to date params are required (YYYY-MM-DD)' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+
+    // Get all invoices in range
+    const periodInvoices: Invoice[] = await db
+      .select()
+      .from(invoices)
+      .where(and(
+        eq(invoices.companyId, companyId),
+        gte(invoices.date, fromDate),
+        lte(invoices.date, toDate),
+      ));
+
+    const invoiceIds = periodInvoices.map((i: Invoice) => i.id);
+
+    const allLines: InvoiceLine[] = invoiceIds.length > 0
+      ? await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds))
+      : [];
+
+    let standardRatedSupplies = 0;
+    let zeroRatedSupplies = 0;
+    let exemptSupplies = 0;
+
+    for (const line of allLines) {
+      const lineTotal = line.quantity * line.unitPrice;
+      const supplyType = line.vatSupplyType ?? 'standard_rated';
+      if (supplyType === 'zero_rated') {
+        zeroRatedSupplies += lineTotal;
+      } else if (supplyType === 'exempt') {
+        exemptSupplies += lineTotal;
+      } else {
+        // standard_rated and out_of_scope treated as standard for Box 1
+        standardRatedSupplies += lineTotal;
+      }
+    }
+
+    const outputVat = standardRatedSupplies * 0.05;
+
+    // Get expenses (receipts) in range with VAT — receipts.date is text (YYYY-MM-DD)
+    const periodReceipts: Receipt[] = await db
+      .select()
+      .from(receipts)
+      .where(and(
+        eq(receipts.companyId, companyId),
+        gte(receipts.date, from),
+        lte(receipts.date, to),
+      ));
+
+    const standardRatedExpenses = periodReceipts.reduce((s: number, r: Receipt) => {
+      const amount = r.amount ?? 0;
+      // Exclude VAT from base if vatAmount is recorded separately
+      const base = r.vatAmount ? amount - r.vatAmount : amount;
+      return s + base;
+    }, 0);
+
+    const inputVat = periodReceipts.reduce((s: number, r: Receipt) => s + (r.vatAmount ?? 0), 0);
+
+    const totalSupplies = standardRatedSupplies + zeroRatedSupplies + exemptSupplies;
+    const netVatDue = outputVat - inputVat;
+
+    res.json({
+      period: { from, to },
+      box1_standardRatedSupplies: standardRatedSupplies,
+      box2_zeroRatedSupplies: zeroRatedSupplies,
+      box3_exemptSupplies: exemptSupplies,
+      box4_totalSupplies: totalSupplies,
+      box5_outputVat: outputVat,
+      box6_standardRatedExpenses: standardRatedExpenses,
+      box7_inputVatRecoverable: inputVat,
+      box8_netVatDue: netVatDue,
+    });
   }));
 
   // Period comparison report - supports both path segment and query param for period

@@ -11,6 +11,9 @@ import { authMiddleware, adminMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import { db } from '../db';
+import { eq, and, desc, gte, lte, like } from 'drizzle-orm';
+import { activityLogs } from '../../shared/schema';
 
 const logger = createLogger('admin-routes');
 
@@ -946,6 +949,48 @@ export function registerAdminRoutes(app: Express): void {
       });
 
       res.status(201).json(document);
+    })
+  );
+
+  // =====================================
+  // ENHANCED AUDIT LOG (with filters + pagination)
+  // =====================================
+
+  router.get(
+    '/admin/audit-log',
+    asyncHandler(async (req: Request, res: Response) => {
+      const {
+        userId: filterUserId,
+        action,
+        entityType,
+        from,
+        to,
+        page,
+        limit: limitParam,
+      } = req.query as Record<string, string | undefined>;
+
+      const limit = Math.min(parseInt(limitParam ?? '50', 10), 500);
+      const offset = (Math.max(parseInt(page ?? '1', 10), 1) - 1) * limit;
+
+      const conditions: any[] = [];
+      if (filterUserId) conditions.push(eq(activityLogs.userId, filterUserId));
+      if (action) conditions.push(eq(activityLogs.action, action));
+      if (entityType) conditions.push(eq(activityLogs.entityType, entityType));
+      if (from) conditions.push(gte(activityLogs.createdAt, new Date(from)));
+      if (to) conditions.push(lte(activityLogs.createdAt, new Date(to)));
+
+      const query = db
+        .select()
+        .from(activityLogs)
+        .orderBy(desc(activityLogs.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const logs = conditions.length > 0
+        ? await query.where(and(...conditions))
+        : await query;
+
+      res.json({ logs, page: parseInt(page ?? '1', 10), limit });
     })
   );
 

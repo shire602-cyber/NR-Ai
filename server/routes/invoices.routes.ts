@@ -178,10 +178,12 @@ export function registerInvoiceRoutes(app: Express) {
         date: invoiceDate,
         memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
         entryNumber,
-        status: 'draft',
+        status: 'posted',
         source: 'invoice',
         sourceId: invoice.id,
         createdBy: userId,
+        postedBy: userId,
+        postedAt: invoiceDate,
       });
 
       // Debit: Accounts Receivable (total)
@@ -397,10 +399,12 @@ export function registerInvoiceRoutes(app: Express) {
           date: now,
           memo: `Payment received for Invoice ${invoice.number}`,
           entryNumber,
-          status: 'draft',
+          status: 'posted',
           source: 'payment',
           sourceId: invoice.id,
           createdBy: userId,
+          postedBy: userId,
+          postedAt: now,
         });
 
         // Debit: Selected payment account (total)

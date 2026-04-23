@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Switch, Route, useLocation, Link } from 'wouter';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -13,12 +13,20 @@ import { getToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
 
-// Pages
+// Eagerly loaded — always needed on first paint
 import NotFound from '@/pages/not-found';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import Dashboard from '@/pages/Dashboard';
+import Landing from '@/pages/Landing';
+import Services from '@/pages/Services';
+import Pricing from '@/pages/Pricing';
+import PublicInvoiceView from '@/pages/PublicInvoiceView';
+import CustomerPortal from '@/pages/CustomerPortal';
+
+// Core accounting — loaded eagerly since most users land here
 import Accounts from '@/pages/Accounts';
 import ChartOfAccounts from '@/pages/ChartOfAccounts';
 import AccountLedger from '@/pages/AccountLedger';
@@ -26,61 +34,71 @@ import Invoices from '@/pages/Invoices';
 import Journal from '@/pages/Journal';
 import JournalEntryDetail from '@/pages/JournalEntryDetail';
 import Reports from '@/pages/Reports';
-import AICFO from '@/pages/AICFO';
-import AIChat from '@/pages/AIChat';
 import Receipts from '@/pages/Receipts';
-import CustomerContacts from '@/pages/CustomerContacts';
-import Landing from '@/pages/Landing';
-import Services from '@/pages/Services';
 import CompanyProfile from '@/pages/CompanyProfile';
-import Integrations from '@/pages/Integrations';
-import WhatsAppDashboard from '@/pages/WhatsAppDashboard';
-import AIFeatures from '@/pages/AIFeatures';
-import SmartAssistant from '@/pages/SmartAssistant';
-import AdvancedAnalytics from '@/pages/AdvancedAnalytics';
-import IntegrationsHub from '@/pages/IntegrationsHub';
-import Notifications from '@/pages/Notifications';
-import Reminders from '@/pages/Reminders';
-import Referrals from '@/pages/Referrals';
-import Feedback from '@/pages/Feedback';
-import Analytics from '@/pages/Analytics';
-import Admin from '@/pages/Admin';
-import BankReconciliation from '@/pages/BankReconciliation';
-import VATFiling from '@/pages/VATFiling';
-import CorporateTax from '@/pages/CorporateTax';
-import TeamManagement from '@/pages/TeamManagement';
-import AdvancedReports from '@/pages/AdvancedReports';
-import DocumentVault from '@/pages/DocumentVault';
-import TaxReturnArchive from '@/pages/TaxReturnArchive';
-import ComplianceCalendar from '@/pages/ComplianceCalendar';
-import TaskCenter from '@/pages/TaskCenter';
-import UAENewsFeed from '@/pages/UAENewsFeed';
-import AdminDashboard from '@/pages/AdminDashboard';
-import ClientManagement from '@/pages/ClientManagement';
-import UserInvitations from '@/pages/UserInvitations';
-import ActivityLogs from '@/pages/ActivityLogs';
-import AdminDocuments from '@/pages/AdminDocuments';
-import ClientImport from '@/pages/ClientImport';
-import ClientDocuments from '@/pages/ClientDocuments';
-import ClientTasks from '@/pages/ClientTasks';
-import ClientDetails from '@/pages/ClientDetails';
-import History from '@/pages/History';
-import BackupRestore from '@/pages/BackupRestore';
-import PublicInvoiceView from '@/pages/PublicInvoiceView';
-import CustomerPortal from '@/pages/CustomerPortal';
-import RecurringInvoices from '@/pages/RecurringInvoices';
-import Inventory from '@/pages/Inventory';
-import Payroll from '@/pages/Payroll';
-import BillPay from '@/pages/BillPay';
-import FixedAssets from '@/pages/FixedAssets';
-import Budgets from '@/pages/Budgets';
-import ExpenseClaims from '@/pages/ExpenseClaims';
-import CashFlowForecast from '@/pages/CashFlowForecast';
-import AnomalyDetection from '@/pages/AnomalyDetection';
-import AutoReconcile from '@/pages/AutoReconcile';
-import AIInbox from '@/pages/AIInbox';
-import MonthEndClose from '@/pages/MonthEndClose';
-import Pricing from '@/pages/Pricing';
+
+// Lazy-loaded pages (large or infrequently visited)
+const Admin = lazy(() => import('@/pages/Admin'));
+const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
+const ClientManagement = lazy(() => import('@/pages/ClientManagement'));
+const ClientDetails = lazy(() => import('@/pages/ClientDetails'));
+const ClientDocuments = lazy(() => import('@/pages/ClientDocuments'));
+const ClientTasks = lazy(() => import('@/pages/ClientTasks'));
+const ClientImport = lazy(() => import('@/pages/ClientImport'));
+const UserInvitations = lazy(() => import('@/pages/UserInvitations'));
+const ActivityLogs = lazy(() => import('@/pages/ActivityLogs'));
+const AdminDocuments = lazy(() => import('@/pages/AdminDocuments'));
+
+const AdvancedReports = lazy(() => import('@/pages/AdvancedReports'));
+const AdvancedAnalytics = lazy(() => import('@/pages/AdvancedAnalytics'));
+const Analytics = lazy(() => import('@/pages/Analytics'));
+
+const Payroll = lazy(() => import('@/pages/Payroll'));
+const FixedAssets = lazy(() => import('@/pages/FixedAssets'));
+const Budgets = lazy(() => import('@/pages/Budgets'));
+const DocumentVault = lazy(() => import('@/pages/DocumentVault'));
+const BillPay = lazy(() => import('@/pages/BillPay'));
+const ExpenseClaims = lazy(() => import('@/pages/ExpenseClaims'));
+const Inventory = lazy(() => import('@/pages/Inventory'));
+const RecurringInvoices = lazy(() => import('@/pages/RecurringInvoices'));
+
+const AICFO = lazy(() => import('@/pages/AICFO'));
+const AIChat = lazy(() => import('@/pages/AIChat'));
+const AIFeatures = lazy(() => import('@/pages/AIFeatures'));
+const AIInbox = lazy(() => import('@/pages/AIInbox'));
+const SmartAssistant = lazy(() => import('@/pages/SmartAssistant'));
+
+const CustomerContacts = lazy(() => import('@/pages/CustomerContacts'));
+const Integrations = lazy(() => import('@/pages/Integrations'));
+const IntegrationsHub = lazy(() => import('@/pages/IntegrationsHub'));
+const WhatsAppDashboard = lazy(() => import('@/pages/WhatsAppDashboard'));
+const Notifications = lazy(() => import('@/pages/Notifications'));
+const Reminders = lazy(() => import('@/pages/Reminders'));
+const Referrals = lazy(() => import('@/pages/Referrals'));
+const Feedback = lazy(() => import('@/pages/Feedback'));
+
+const BankReconciliation = lazy(() => import('@/pages/BankReconciliation'));
+const VATFiling = lazy(() => import('@/pages/VATFiling'));
+const CorporateTax = lazy(() => import('@/pages/CorporateTax'));
+const TeamManagement = lazy(() => import('@/pages/TeamManagement'));
+const TaxReturnArchive = lazy(() => import('@/pages/TaxReturnArchive'));
+const ComplianceCalendar = lazy(() => import('@/pages/ComplianceCalendar'));
+const TaskCenter = lazy(() => import('@/pages/TaskCenter'));
+const UAENewsFeed = lazy(() => import('@/pages/UAENewsFeed'));
+const History = lazy(() => import('@/pages/History'));
+const BackupRestore = lazy(() => import('@/pages/BackupRestore'));
+const CashFlowForecast = lazy(() => import('@/pages/CashFlowForecast'));
+const AnomalyDetection = lazy(() => import('@/pages/AnomalyDetection'));
+const AutoReconcile = lazy(() => import('@/pages/AutoReconcile'));
+const MonthEndClose = lazy(() => import('@/pages/MonthEndClose'));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
 
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
@@ -210,6 +228,7 @@ function Router() {
   return (
     <ProtectedRoute>
       <ProtectedLayout>
+        <Suspense fallback={<PageLoader />}>
         <Switch>
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/company-profile" component={CompanyProfile} />
@@ -276,6 +295,7 @@ function Router() {
           
           <Route component={NotFound} />
         </Switch>
+        </Suspense>
       </ProtectedLayout>
     </ProtectedRoute>
   );
