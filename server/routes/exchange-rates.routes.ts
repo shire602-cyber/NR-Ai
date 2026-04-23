@@ -4,7 +4,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
 import { eq, and, desc, lte } from "drizzle-orm";
 import { exchangeRates, invoices, receipts } from "../../shared/schema";
-import type { UnrealizedFxGainLoss, FxGainsLossesReport } from "../../shared/schema";
+import type { UnrealizedFxGainLoss, FxGainsLossesReport, ExchangeRate, Invoice, Receipt } from "../../shared/schema";
 import { storage } from "../storage";
 
 /**
@@ -86,7 +86,7 @@ export function registerExchangeRateRoutes(app: Express) {
 
       // Deduplicate: keep the latest rate per target currency
       const seen = new Set<string>();
-      const latest = allRates.filter((r) => {
+      const latest = allRates.filter((r: ExchangeRate) => {
         if (seen.has(r.targetCurrency)) return false;
         seen.add(r.targetCurrency);
         return true;
@@ -162,7 +162,7 @@ export function registerExchangeRateRoutes(app: Express) {
         );
 
       const foreignInvoices = openInvoices.filter(
-        (inv) =>
+        (inv: Invoice) =>
           inv.currency !== "AED" &&
           inv.status !== "paid" &&
           inv.status !== "void",
@@ -205,7 +205,7 @@ export function registerExchangeRateRoutes(app: Express) {
         .where(eq(receipts.companyId, companyId));
 
       const foreignReceipts = allReceipts.filter(
-        (r) => r.currency && r.currency !== "AED" && !r.posted,
+        (r: Receipt) => r.currency && r.currency !== "AED" && !r.posted,
       );
 
       const payables: UnrealizedFxGainLoss[] = [];

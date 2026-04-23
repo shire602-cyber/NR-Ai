@@ -15,6 +15,125 @@
       "when": 1765007741865,
       "tag": "0001_loose_whistler",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1765100000000,
+      "tag": "0002_add_whatsapp_reminders",
+      "breakpoints": false
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1765200000000,
+      "tag": "0003_add_invoice_share_token",
+      "breakpoints": false
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1765300000000,
+      "tag": "0004_add_recurring_invoices",
+      "breakpoints": false
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1765400000000,
+      "tag": "0005_add_corporate_tax",
+      "breakpoints": false
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1765500000000,
+      "tag": "0006_add_einvoice_fields",
+      "breakpoints": false
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1765600000000,
+      "tag": "0007_add_inventory",
+      "breakpoints": false
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1765700000000,
+      "tag": "0008_add_portal_access",
+      "breakpoints": false
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1765800000000,
+      "tag": "0009_add_payroll",
+      "breakpoints": false
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1765900000000,
+      "tag": "0010_add_bill_pay",
+      "breakpoints": false
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1766000000000,
+      "tag": "0011_add_fixed_assets",
+      "breakpoints": false
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1766100000000,
+      "tag": "0012_add_budgets",
+      "breakpoints": false
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1766200000000,
+      "tag": "0013_add_expense_claims",
+      "breakpoints": false
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1766300000000,
+      "tag": "0014_add_autonomous_gl",
+      "breakpoints": false
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1766400000000,
+      "tag": "0015_add_exchange_rates",
+      "breakpoints": false
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1766500000000,
+      "tag": "0016_add_bank_accounts",
+      "breakpoints": false
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1766600000000,
+      "tag": "0017_add_invoice_email_fields",
+      "breakpoints": false
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1766700000000,
+      "tag": "0018_add_payments_credit_notes",
+      "breakpoints": false
     }
   ]
 }

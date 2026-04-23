@@ -2805,7 +2805,7 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(invoicePayments)
       .where(eq(invoicePayments.invoiceId, invoiceId));
-    return payments.reduce((sum, p) => sum + p.amount, 0);
+    return payments.reduce((sum: number, p: InvoicePayment) => sum + p.amount, 0);
   }
 
   async getDueInvoicesForRecurring(): Promise<Invoice[]> {
