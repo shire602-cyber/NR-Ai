@@ -20,6 +20,9 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('gpt-3.5-turbo'),
 
+  // === AI / Anthropic (used for OCR vision if set; also accepted via OPENAI_API_KEY with sk-ant- prefix) ===
+  ANTHROPIC_API_KEY: z.string().optional(),
+
   // === Google Sheets Integration ===
   GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().email().optional(),
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: z.string().optional(),

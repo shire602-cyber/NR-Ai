@@ -21,6 +21,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "@hookform/resolvers": "^3.10.0",
     "@neondatabase/serverless": "^0.10.4",
     "@pdfme/generator": "^5.4.6",
