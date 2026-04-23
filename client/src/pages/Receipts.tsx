@@ -452,55 +452,98 @@ export default function Receipts() {
 
     setProcessedReceipts((prev) => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], status: 'processing', progress: 0 };
+      updated[index] = { ...updated[index], status: 'processing', progress: 10 };
       return updated;
     });
 
     try {
-      const result = await Tesseract.recognize(receipt.file, 'eng', {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            setProcessedReceipts((prev) => {
-              const updated = [...prev];
-              updated[index] = { ...updated[index], progress: Math.round(m.progress * 100) };
-              return updated;
-            });
-          }
-        },
+      // Strategy 1: Backend AI Vision OCR (GPT-4o)
+      const toBase64 = (file: File): Promise<string> =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+      const imageData = await toBase64(receipt.file);
+
+      setProcessedReceipts((prev) => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], progress: 40 };
+        return updated;
       });
 
-      const text = result.data.text;
-      
-      // Validate that we got some text
-      if (!text || text.trim().length < 10) {
-        throw new Error('Could not extract readable text from image. Try a clearer photo.');
+      let parsed: ExtractedData | null = null;
+
+      try {
+        const response = await fetch(apiUrl('/api/ocr/process'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          },
+          body: JSON.stringify({ imageData }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          parsed = {
+            merchant: result.merchant || 'Unknown Merchant',
+            date: result.date || new Date().toISOString().split('T')[0],
+            total: result.amount || 0,
+            vatAmount: result.vatAmount || 0,
+            category: result.category || 'Other',
+            rawText: result.rawText || '',
+          };
+          setProcessedReceipts((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], progress: 90 };
+            return updated;
+          });
+        }
+      } catch (backendError) {
+        console.warn('[OCR] Backend Vision failed, falling back to Tesseract:', backendError);
       }
 
-      const parsed = parseReceiptText(text);
+      // Strategy 2: Tesseract fallback
+      if (!parsed) {
+        const result = await Tesseract.recognize(receipt.file, 'eng', {
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              setProcessedReceipts((prev) => {
+                const updated = [...prev];
+                updated[index] = { ...updated[index], progress: 40 + Math.round(m.progress * 50) };
+                return updated;
+              });
+            }
+          },
+        });
 
-      // Validate that we extracted at least some useful data
-      if (!parsed.merchant && !parsed.total) {
-        // Set defaults but keep the raw text for manual editing
-        parsed.merchant = 'Unknown Merchant';
-        parsed.total = 0;
-      }
+        const text = result.data.text;
+        if (!text || text.trim().length < 10) {
+          throw new Error('Could not extract readable text from image. Try a clearer photo.');
+        }
 
-      // AI categorization (only if we have some data to work with)
-      if (parsed.merchant || parsed.total) {
-        try {
-          const category = await categorizeWithAI(parsed);
-          if (category) {
-            parsed.category = category;
+        parsed = parseReceiptText(text);
+        if (!parsed.merchant && !parsed.total) {
+          parsed.merchant = 'Unknown Merchant';
+          parsed.total = 0;
+        }
+
+        if (parsed.merchant || parsed.total) {
+          try {
+            const category = await categorizeWithAI(parsed);
+            if (category) parsed.category = category;
+          } catch (aiError) {
+            console.error('AI categorization failed, continuing without it:', aiError);
           }
-        } catch (aiError) {
-          console.error('AI categorization failed, continuing without it:', aiError);
-          // Don't fail the whole process if AI categorization fails
         }
       }
 
       setProcessedReceipts((prev) => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], status: 'completed', data: parsed, progress: 100 };
+        updated[index] = { ...updated[index], status: 'completed', data: parsed!, progress: 100 };
         return updated;
       });
 
@@ -508,11 +551,11 @@ export default function Receipts() {
       console.error('OCR processing error:', error);
       setProcessedReceipts((prev) => {
         const updated = [...prev];
-        updated[index] = { 
-          ...updated[index], 
-          status: 'error', 
+        updated[index] = {
+          ...updated[index],
+          status: 'error',
           error: error?.message || 'OCR processing failed. Try a clearer image.',
-          progress: 0 
+          progress: 0
         };
         return updated;
       });
