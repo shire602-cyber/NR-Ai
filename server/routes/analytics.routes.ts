@@ -292,7 +292,7 @@ export function registerAnalyticsRoutes(app: Express) {
     const userId = (req as any).user?.id;
 
     // Verify integration exists and user has access
-    const integration = await storage.getEcommerceIntegration(integrationId);
+    const integration = await storage.getEcommerceIntegrationById(integrationId);
     if (!integration) {
       return res.status(404).json({ message: 'Integration not found' });
     }
@@ -319,7 +319,7 @@ export function registerAnalyticsRoutes(app: Express) {
     const { integrationId } = req.params;
     const { isActive } = req.body;
 
-    const integration = await storage.getEcommerceIntegration(integrationId);
+    const integration = await storage.getEcommerceIntegrationById(integrationId);
     if (!integration) {
       return res.status(404).json({ message: 'Integration not found' });
     }

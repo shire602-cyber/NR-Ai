@@ -699,7 +699,7 @@ export function registerAdminRoutes(app: Express): void {
             contactPhone: row.phone || null,
             contactEmail: row.email || null,
             websiteUrl: row.website || null,
-            trnNumber: row.trn || null,
+            trnVatNumber: row.trn || null,
           });
 
           results.success.push({
@@ -732,7 +732,7 @@ export function registerAdminRoutes(app: Express): void {
                 userType: 'client',
                 token,
                 expiresAt,
-                createdBy: userId,
+                invitedBy: userId,
                 status: 'pending',
               });
 

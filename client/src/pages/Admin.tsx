@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { 
   Settings, 
@@ -76,47 +76,46 @@ export default function Admin() {
   // Fetch admin data
   const { data: settings = [], isLoading: settingsLoading } = useQuery<AdminSetting[]>({
     queryKey: ['/api/admin/settings'],
-    onSuccess: (data) => {
-      // Load settings into state
-      const settingsMap = data.reduce((acc, setting) => {
-        acc[setting.key] = setting.value;
-        return acc;
-      }, {} as Record<string, string>);
-      
-      setSystemSettings(prev => ({
-        ...prev,
-        defaultCurrency: settingsMap['system.defaultCurrency'] || prev.defaultCurrency,
-        defaultVatRate: settingsMap['system.defaultVatRate'] || prev.defaultVatRate,
-        freeAiCredits: settingsMap['system.freeAiCredits'] || prev.freeAiCredits,
-        trialPeriod: settingsMap['system.trialPeriod'] || prev.trialPeriod,
-        // For boolean settings, check if the key exists first, then convert string to boolean
-        // This ensures 'false' values are properly applied instead of falling back to previous state
-        aiCategorization: 'feature.aiCategorization' in settingsMap 
-          ? settingsMap['feature.aiCategorization'] === 'true' 
-          : prev.aiCategorization,
-        ocrScanning: 'feature.ocrScanning' in settingsMap 
-          ? settingsMap['feature.ocrScanning'] === 'true' 
-          : prev.ocrScanning,
-        whatsappIntegration: 'feature.whatsappIntegration' in settingsMap 
-          ? settingsMap['feature.whatsappIntegration'] === 'true' 
-          : prev.whatsappIntegration,
-        smartAssistant: 'feature.smartAssistant' in settingsMap 
-          ? settingsMap['feature.smartAssistant'] === 'true' 
-          : prev.smartAssistant,
-        referralProgram: 'feature.referralProgram' in settingsMap 
-          ? settingsMap['feature.referralProgram'] === 'true' 
-          : prev.referralProgram,
-        supportEmail: settingsMap['notification.supportEmail'] || prev.supportEmail,
-        fromEmail: settingsMap['notification.fromEmail'] || prev.fromEmail,
-        sendWelcomeEmail: 'notification.sendWelcomeEmail' in settingsMap 
-          ? settingsMap['notification.sendWelcomeEmail'] === 'true' 
-          : prev.sendWelcomeEmail,
-        paymentReminders: 'notification.paymentReminders' in settingsMap 
-          ? settingsMap['notification.paymentReminders'] === 'true' 
-          : prev.paymentReminders,
-      }));
-    },
   });
+
+  useEffect(() => {
+    if (settings.length === 0) return;
+    const settingsMap = settings.reduce((acc: Record<string, string>, setting: AdminSetting) => {
+      acc[setting.key] = setting.value;
+      return acc;
+    }, {} as Record<string, string>);
+
+    setSystemSettings(prev => ({
+      ...prev,
+      defaultCurrency: settingsMap['system.defaultCurrency'] || prev.defaultCurrency,
+      defaultVatRate: settingsMap['system.defaultVatRate'] || prev.defaultVatRate,
+      freeAiCredits: settingsMap['system.freeAiCredits'] || prev.freeAiCredits,
+      trialPeriod: settingsMap['system.trialPeriod'] || prev.trialPeriod,
+      aiCategorization: 'feature.aiCategorization' in settingsMap
+        ? settingsMap['feature.aiCategorization'] === 'true'
+        : prev.aiCategorization,
+      ocrScanning: 'feature.ocrScanning' in settingsMap
+        ? settingsMap['feature.ocrScanning'] === 'true'
+        : prev.ocrScanning,
+      whatsappIntegration: 'feature.whatsappIntegration' in settingsMap
+        ? settingsMap['feature.whatsappIntegration'] === 'true'
+        : prev.whatsappIntegration,
+      smartAssistant: 'feature.smartAssistant' in settingsMap
+        ? settingsMap['feature.smartAssistant'] === 'true'
+        : prev.smartAssistant,
+      referralProgram: 'feature.referralProgram' in settingsMap
+        ? settingsMap['feature.referralProgram'] === 'true'
+        : prev.referralProgram,
+      supportEmail: settingsMap['notification.supportEmail'] || prev.supportEmail,
+      fromEmail: settingsMap['notification.fromEmail'] || prev.fromEmail,
+      sendWelcomeEmail: 'notification.sendWelcomeEmail' in settingsMap
+        ? settingsMap['notification.sendWelcomeEmail'] === 'true'
+        : prev.sendWelcomeEmail,
+      paymentReminders: 'notification.paymentReminders' in settingsMap
+        ? settingsMap['notification.paymentReminders'] === 'true'
+        : prev.paymentReminders,
+    }));
+  }, [settings]);
 
   const { data: plans = [], isLoading: plansLoading } = useQuery<SubscriptionPlan[]>({
     queryKey: ['/api/admin/plans'],

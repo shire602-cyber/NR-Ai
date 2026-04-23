@@ -382,7 +382,7 @@ export default function AdvancedReports() {
                   <Separator />
                   <div className="flex justify-between font-medium">
                     <span>{locale === 'ar' ? 'الإجمالي' : 'Total'}</span>
-                    <span className="font-mono">{formatCurrency(agingSummary.receivables.total)}</span>
+                    <span className="font-mono">{formatCurrency(agingSummary.receivables.total ?? 0)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -406,7 +406,7 @@ export default function AdvancedReports() {
                   <Separator />
                   <div className="flex justify-between font-medium">
                     <span>{locale === 'ar' ? 'الإجمالي' : 'Total'}</span>
-                    <span className="font-mono">{formatCurrency(agingSummary.payables.total)}</span>
+                    <span className="font-mono">{formatCurrency(agingSummary.payables.total ?? 0)}</span>
                   </div>
                 </div>
               </CardContent>

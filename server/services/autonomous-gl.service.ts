@@ -111,7 +111,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
   const openai = createOpenAIClient();
 
   // 1. Find unreconciled bank transactions that are NOT already in ai_gl_queue
-  const { rows: unreconciledTxns } = await pool.query<BankTransactionRow>(
+  const _unreconciledResult = await pool.query(
     `SELECT bt.*
      FROM bank_transactions bt
      LEFT JOIN ai_gl_queue q ON q.bank_transaction_id = bt.id
@@ -121,28 +121,31 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
      ORDER BY bt.transaction_date DESC`,
     [companyId]
   );
+  const unreconciledTxns: BankTransactionRow[] = _unreconciledResult.rows;
 
   if (unreconciledTxns.length === 0) {
     return { scanned: 0, classified: 0, ruleMatched: 0, aiClassified: 0 };
   }
 
   // 2. Load company rules and chart of accounts
-  const { rows: rules } = await pool.query<AICompanyRule>(
+  const _rulesResult = await pool.query(
     `SELECT * FROM ai_company_rules
      WHERE company_id = $1 AND is_active = true`,
     [companyId]
   );
+  const rules: AICompanyRule[] = _rulesResult.rows;
 
-  const { rows: accounts } = await pool.query<ChartOfAccountRow>(
+  const _accountsResult = await pool.query(
     `SELECT id, code, name_en, name_ar, type, sub_type
      FROM accounts
      WHERE company_id = $1 AND is_active = true AND is_archived = false
      ORDER BY code`,
     [companyId]
   );
+  const accounts: ChartOfAccountRow[] = _accountsResult.rows;
 
   // 3. Load few-shot examples (previously accepted classifications)
-  const { rows: fewShotExamples } = await pool.query<FewShotExample>(
+  const _fewShotResult = await pool.query(
     `SELECT tc.description, tc.amount, a.name_en as account_name, a.code as account_code, tc.suggested_category as category
      FROM transaction_classifications tc
      JOIN accounts a ON a.id = tc.user_selected_account_id
@@ -151,6 +154,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
      LIMIT 10`,
     [companyId]
   );
+  const fewShotExamples: FewShotExample[] = _fewShotResult.rows;
 
   let ruleMatched = 0;
   let aiClassified = 0;
@@ -179,7 +183,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
 
     // 3b. If rule found with confidence > 0.85, use it directly
     if (matchedRule && parseFloat(matchedRule.confidence) > 0.85) {
-      const matchedAccount = accounts.find(a => a.id === matchedRule!.account_id);
+      const matchedAccount = accounts.find((a: any) => a.id === matchedRule!.account_id);
       await pool.query(
         `INSERT INTO ai_gl_queue
          (company_id, bank_transaction_id, description, amount, transaction_date,
@@ -400,7 +404,7 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
   posted: number;
   errors: string[];
 }> {
-  const { rows: highConfItems } = await pool.query<AIGLQueueItem>(
+  const _highConfResult = await pool.query(
     `SELECT q.*, bt.bank_account_id
      FROM ai_gl_queue q
      LEFT JOIN bank_transactions bt ON bt.id = q.bank_transaction_id
@@ -411,6 +415,7 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
      ORDER BY q.transaction_date`,
     [companyId]
   );
+  const highConfItems: AIGLQueueItem[] = _highConfResult.rows;
 
   let posted = 0;
   const errors: string[] = [];
@@ -565,10 +570,11 @@ export async function processUserFeedback(
   userAccountId?: string
 ): Promise<{ success: boolean; message: string }> {
   // Get the queue item
-  const { rows: [item] } = await pool.query<AIGLQueueItem>(
+  const _itemResult = await pool.query(
     `SELECT * FROM ai_gl_queue WHERE id = $1`,
     [queueId]
   );
+  const [item]: AIGLQueueItem[] = _itemResult.rows;
 
   if (!item) {
     return { success: false, message: 'Queue item not found' };
@@ -736,7 +742,7 @@ async function updateRuleFromFeedback(
   const descLower = item.description.toLowerCase();
 
   // Find any matching rule
-  const { rows: matchingRules } = await pool.query<AICompanyRule>(
+  const _matchingRulesResult = await pool.query(
     `SELECT * FROM ai_company_rules
      WHERE company_id = $1
        AND account_id = $2
@@ -748,6 +754,7 @@ async function updateRuleFromFeedback(
      LIMIT 1`,
     [item.company_id, item.suggested_account_id, descLower]
   );
+  const matchingRules: AICompanyRule[] = _matchingRulesResult.rows;
 
   if (matchingRules.length > 0) {
     const rule = matchingRules[0];
@@ -883,4 +890,24 @@ export async function getAIGLStats(companyId: string): Promise<{
     pendingReview,
     rulesCount: parseInt(ruleStats.rules_count, 10) || 0,
   };
+}
+
+/**
+ * Scan and classify transactions for all companies in the system.
+ * Called by the scheduler on a recurring basis.
+ */
+export async function scanAndClassifyAllCompanies(): Promise<void> {
+  const { rows: companies } = await pool.query(
+    `SELECT DISTINCT company_id FROM bank_transactions WHERE is_reconciled = false`
+  );
+  const companyIds: string[] = companies.map((r: any) => r.company_id);
+  for (const companyId of companyIds) {
+    try {
+      await scanAndClassifyTransactions(companyId);
+    } catch (err) {
+      // Log per-company failures but continue with others
+      const log = (await import('../config/logger')).createLogger('autonomous-gl');
+      log.error({ err, companyId }, 'Error scanning company');
+    }
+  }
 }

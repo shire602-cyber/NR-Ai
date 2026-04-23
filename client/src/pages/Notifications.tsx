@@ -271,7 +271,7 @@ export default function Notifications() {
                       </p>
                     )}
                     {news.sourceUrl && (
-                      <Button variant="link" className="p-0 mt-2" asChild>
+                      <Button variant="ghost" className="p-0 mt-2" asChild>
                         <a href={news.sourceUrl} target="_blank" rel="noopener noreferrer">
                           Read more <ChevronRight className="w-4 h-4 ml-1" />
                         </a>

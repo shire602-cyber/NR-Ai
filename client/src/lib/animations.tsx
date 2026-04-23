@@ -79,18 +79,17 @@ export const hoverLift = {
 };
 
 // Scroll-triggered animation component
-export function ScrollReveal({ 
-  children, 
-  delay = 0, 
+export function ScrollReveal({
+  children,
+  delay = 0,
   direction = 'up',
   className = '',
-  ...props
-}: { 
-  children: ReactNode; 
+}: {
+  children: ReactNode;
   delay?: number;
   direction?: 'up' | 'down' | 'left' | 'right';
   className?: string;
-} & React.HTMLAttributes<HTMLDivElement>) {
+}) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
   const controls = useAnimation();
@@ -116,7 +115,6 @@ export function ScrollReveal({
       variants={variants}
       className={className}
       transition={{ delay }}
-      {...props}
     >
       {children}
     </motion.div>
@@ -124,14 +122,13 @@ export function ScrollReveal({
 }
 
 // Stagger children animation wrapper
-export function StaggerContainer({ 
-  children, 
+export function StaggerContainer({
+  children,
   className = '',
-  ...props
-}: { 
-  children: ReactNode; 
+}: {
+  children: ReactNode;
   className?: string;
-} & React.HTMLAttributes<HTMLDivElement>) {
+}) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-50px" });
 
@@ -142,7 +139,6 @@ export function StaggerContainer({
       animate={isInView ? "visible" : "hidden"}
       variants={staggerContainer}
       className={className}
-      {...props}
     >
       {children}
     </motion.div>
@@ -150,16 +146,15 @@ export function StaggerContainer({
 }
 
 // Stagger item component
-export function StaggerItem({ 
-  children, 
+export function StaggerItem({
+  children,
   className = '',
-  ...props
-}: { 
-  children: ReactNode; 
+}: {
+  children: ReactNode;
   className?: string;
-} & React.HTMLAttributes<HTMLDivElement>) {
+}) {
   return (
-    <motion.div variants={staggerItem} className={className} {...props}>
+    <motion.div variants={staggerItem} className={className}>
       {children}
     </motion.div>
   );

@@ -116,7 +116,6 @@ export function registerAccountRoutes(app: Express) {
     const unarchivedAccount = await storage.updateAccount(id, {
       isArchived: false,
       isActive: true,
-      updatedAt: new Date()
     });
     res.json(unarchivedAccount);
   }));

@@ -292,7 +292,7 @@ export default function TaxReturnArchive() {
             <div className="text-center py-12 text-muted-foreground">
               <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>{locale === 'ar' ? 'لا توجد إقرارات ضريبية' : 'No tax returns found'}</p>
-              <Button variant="link" onClick={() => setAddDialogOpen(true)}>
+              <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>
                 {locale === 'ar' ? 'إضافة أول إقرار' : 'Add your first return'}
               </Button>
             </div>

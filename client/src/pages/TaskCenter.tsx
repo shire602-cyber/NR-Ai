@@ -334,7 +334,7 @@ export default function TaskCenter() {
             <div className="text-center py-12 text-muted-foreground">
               <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>{locale === 'ar' ? 'لا توجد مهام' : 'No tasks found'}</p>
-              <Button variant="link" onClick={() => setAddDialogOpen(true)}>
+              <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>
                 {locale === 'ar' ? 'إنشاء أول مهمة' : 'Create your first task'}
               </Button>
             </div>

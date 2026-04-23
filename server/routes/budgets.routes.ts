@@ -355,7 +355,7 @@ export function registerBudgetRoutes(app: Express) {
 
     // Build variance report per budget line
     const monthNames = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-    const varianceLines = budgetLines.map(line => {
+    const varianceLines = budgetLines.map((line: any) => {
       const accountActuals = line.account_id ? actualsByAccountMonth.get(line.account_id) : null;
 
       const monthlyData: Record<string, { budget: number; actual: number; variance: number; variancePercent: number }> = {};

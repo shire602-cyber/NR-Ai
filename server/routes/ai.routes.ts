@@ -43,6 +43,11 @@ export function registerAIRoutes(app: Express) {
     log.warn('AI routes registered without OpenAI — AI endpoints will return 503');
   }
 
+  function getOpenAI(): OpenAI {
+    if (!openai) throw Object.assign(new Error('AI service not configured — set OPENAI_API_KEY'), { status: 503 });
+    return openai;
+  }
+
   // =====================================
   // AI Categorization Route
   // =====================================
@@ -69,7 +74,7 @@ export function registerAIRoutes(app: Express) {
       ).join('\n');
 
       // Use OpenAI to categorize the expense
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
         messages: [
           {
@@ -122,7 +127,7 @@ Amount: ${validated.amount} ${validated.currency}`
       }
 
       // Use OpenAI to parse bank statement transactions
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
         messages: [
           {
@@ -213,7 +218,7 @@ If no valid transactions can be found, return { "transactions": [] }`
       };
 
       // Use OpenAI to provide CFO advice
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
         messages: [
           {
@@ -300,7 +305,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
         `${i + 1}. ${t.description} - Amount: ${t.amount} ${t.currency || 'AED'}`
       ).join('\n');
 
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
         messages: [
           {
@@ -406,7 +411,7 @@ Respond with a JSON object:
         })),
       };
 
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
         messages: [
           {
@@ -578,7 +583,7 @@ Respond with JSON:
         })),
       };
 
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
         messages: [
           {
@@ -804,7 +809,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
         }).reverse(),
       };
 
-      const completion = await openai.chat.completions.create({
+      const completion = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
         messages: [
           {
@@ -1082,7 +1087,7 @@ Always conclude with: "For personalized professional advice on this matter, I re
 Current date: ${new Date().toISOString().split('T')[0]}
 Company: ${company.name}`;
 
-      const response = await openai.chat.completions.create({
+      const response = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
         messages: [
           { role: "system", content: systemPrompt },
@@ -1137,21 +1142,20 @@ Company: ${company.name}`;
     const startTime = Date.now();
     let fullResponse = '';
     let conversationId: string | undefined;
-    let isStreaming = false; // Track if we're in streaming mode (headers sent)
+    let isStreaming = false;
+    const validationSchema = z.object({
+      message: z.string().min(1, 'Message is required').max(10000, 'Message is too long'),
+      companyId: z.string().uuid('Invalid company ID format').optional(),
+      model: z.enum(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo']).optional().default('gpt-3.5-turbo'),
+      systemPrompt: z.string().max(2000, 'System prompt too long').optional(),
+      stream: z.boolean().optional().default(false),
+    });
+    let validated: z.infer<typeof validationSchema> | undefined;
 
     try {
       const userId = (req as any).user.id;
 
-      // Validate input with Zod schema
-      const validationSchema = z.object({
-        message: z.string().min(1, 'Message is required').max(10000, 'Message is too long'),
-        companyId: z.string().uuid('Invalid company ID format').optional(),
-        model: z.enum(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo']).optional().default('gpt-3.5-turbo'),
-        systemPrompt: z.string().max(2000, 'System prompt too long').optional(),
-        stream: z.boolean().optional().default(false),
-      });
-
-      const validated = validationSchema.parse(req.body);
+      validated = validationSchema.parse(req.body);
 
       // If companyId is provided, verify access
       if (validated.companyId) {
@@ -1182,7 +1186,7 @@ IMPORTANT GUIDELINES:
         isStreaming = true; // Mark that headers are committed
 
         try {
-          const stream = await openai.chat.completions.create({
+          const stream = await getOpenAI().chat.completions.create({
             model: validated.model,
             messages: [
               { role: "system", content: systemPrompt },
@@ -1257,7 +1261,7 @@ IMPORTANT GUIDELINES:
         res.end();
       } else {
         // Non-streaming response
-        const response = await openai.chat.completions.create({
+        const response = await getOpenAI().chat.completions.create({
           model: validated.model,
           messages: [
             { role: "system", content: systemPrompt },
@@ -1679,7 +1683,7 @@ ${expenseAccounts.map(a => `- ${a.nameEn}`).join('\n')}
 
 Respond with just the account name, nothing else.`;
 
-          const response = await openai.chat.completions.create({
+          const response = await getOpenAI().chat.completions.create({
             model: AI_MODEL,
             messages: [{ role: "user", content: prompt }],
             temperature: 0.3,
@@ -1714,7 +1718,7 @@ Respond with just the account name, nothing else.`;
 
 Respond with just the category name, nothing else.`;
 
-        const response = await openai.chat.completions.create({
+        const response = await getOpenAI().chat.completions.create({
           model: AI_MODEL,
           messages: [{ role: "user", content: prompt }],
           temperature: 0.3,

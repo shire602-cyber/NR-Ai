@@ -17,12 +17,15 @@ export interface AuthUser {
 }
 
 /**
- * Extend Express Request to include authenticated user.
+ * Augment Express.User so Passport's Request.user picks up our fields.
  */
 declare global {
   namespace Express {
-    interface Request {
-      user?: AuthUser;
+    interface User {
+      id: string;
+      email: string;
+      isAdmin: boolean;
+      userType: string;
     }
   }
 }

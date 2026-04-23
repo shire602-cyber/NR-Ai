@@ -408,7 +408,7 @@ export function registerFixedAssetRoutes(app: Express) {
       totalCost: parseFloat(totals.total_cost),
       totalAccumulatedDepreciation: parseFloat(totals.total_accumulated_depreciation),
       totalNetBookValue: parseFloat(totals.total_net_book_value),
-      byCategory: categoryResult.rows.map(row => ({
+      byCategory: categoryResult.rows.map((row: any) => ({
         category: row.category,
         count: parseInt(row.count),
         totalCost: parseFloat(row.total_cost),

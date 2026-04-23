@@ -406,7 +406,7 @@ export default function Budgets() {
   };
 
   // Watch all month fields to compute annual total in the form
-  const watchedMonths = lineForm.watch(MONTH_KEYS as unknown as string[]);
+  const watchedMonths = lineForm.watch([...MONTH_KEYS]);
   const computedAnnualTotal = MONTH_KEYS.reduce((sum, key, idx) => {
     const val = parseFloat(String(watchedMonths[idx] || 0));
     return sum + (isNaN(val) ? 0 : val);

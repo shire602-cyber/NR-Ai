@@ -289,6 +289,7 @@ export function registerDashboardRoutes(app: Express) {
       });
 
       receipts = receipts.filter(receipt => {
+        if (!receipt.date) return true;
         const receiptDate = new Date(receipt.date);
         if (start && receiptDate < start) return false;
         if (end && receiptDate > end) return false;

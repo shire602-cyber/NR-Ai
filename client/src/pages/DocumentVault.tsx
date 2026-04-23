@@ -320,7 +320,7 @@ export default function DocumentVault() {
             <div className="text-center py-12 text-muted-foreground">
               <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
               <p>{locale === 'ar' ? 'لا توجد مستندات' : 'No documents found'}</p>
-              <Button variant="link" onClick={() => setUploadDialogOpen(true)}>
+              <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
                 {locale === 'ar' ? 'رفع أول مستند' : 'Upload your first document'}
               </Button>
             </div>
