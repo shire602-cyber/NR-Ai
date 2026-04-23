@@ -15,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { apiUrl } from '@/lib/api';
+import { getAuthHeaders } from '@/lib/auth';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { exportToExcel, exportToGoogleSheets, prepareReceiptsForExport } from '@/lib/export';
 import Tesseract from 'tesseract.js';
@@ -481,7 +482,7 @@ export default function Receipts() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            ...getAuthHeaders(),
           },
           body: JSON.stringify({ imageData }),
         });
@@ -677,9 +678,9 @@ export default function Receipts() {
     try {
       const response = await fetch(apiUrl('/api/ai/categorize'), {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           companyId,
