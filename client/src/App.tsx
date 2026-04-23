@@ -147,6 +147,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           </motion.header>
           <main className="flex-1 overflow-auto p-8">
             <RouteGuard>
+            <ErrorBoundary>
             <AnimatePresence mode="wait">
               <motion.div
                 key={location}
@@ -158,6 +159,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             {children}
               </motion.div>
             </AnimatePresence>
+            </ErrorBoundary>
             </RouteGuard>
           </main>
         </div>

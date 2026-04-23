@@ -18,7 +18,7 @@ import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
 import { registerRoutes } from './routes';
 import { setupVite, serveStatic } from './vite';
 import { initScheduler } from './services/scheduler.service';
-import { runMigrations } from './db';
+import { runMigrations, checkDbConnectivity, closePool } from './db';
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -73,13 +73,18 @@ import './auth';
 app.use(requestLogger);
 
 // ─── Health check (before auth, always accessible) ───────────
-app.get('/health', (_req, res) => {
-  res.status(200).json({
-    status: 'ok',
+app.get('/health', async (_req, res) => {
+  const dbOk = await checkDbConnectivity();
+  const status = dbOk ? 'ok' : 'degraded';
+  res.status(dbOk ? 200 : 503).json({
+    status,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: env.NODE_ENV,
     version: '1.0.0',
+    checks: {
+      database: dbOk ? 'ok' : 'error',
+    },
   });
 });
 
@@ -89,6 +94,9 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
   log.info(`Created uploads directory: ${uploadsDir}`);
 }
+
+// ─── Module-level server ref for graceful shutdown ───────────
+let httpServer: any = null;
 
 // ─── Bootstrap application ───────────────────────────────────
 async function bootstrap() {
@@ -102,6 +110,7 @@ async function bootstrap() {
 
   // Register all API routes
   const server = await registerRoutes(app);
+  httpServer = server;
 
   // ─── Background scheduler (engagement automation) ─────
   initScheduler();
@@ -145,15 +154,30 @@ bootstrap().catch((error) => {
 });
 
 // ─── Graceful shutdown ───────────────────────────────────────
-process.on('SIGTERM', () => {
-  log.info('SIGTERM received. Shutting down gracefully...');
-  process.exit(0);
-});
+async function shutdown(signal: string) {
+  log.info(`${signal} received. Shutting down gracefully...`);
 
-process.on('SIGINT', () => {
-  log.info('SIGINT received. Shutting down...');
+  // Stop accepting new connections; wait up to 10s for in-flight requests
+  if (httpServer) {
+    await new Promise<void>((resolve) => {
+      httpServer.close(() => resolve());
+      setTimeout(() => resolve(), 10_000);
+    });
+    log.info('HTTP server closed');
+  }
+
+  try {
+    await closePool();
+    log.info('Database pool closed');
+  } catch (err) {
+    log.error({ err }, 'Error closing database pool');
+  }
+
   process.exit(0);
-});
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 process.on('unhandledRejection', (reason) => {
   log.error({ reason }, 'Unhandled promise rejection');
