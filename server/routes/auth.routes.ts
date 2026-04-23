@@ -191,37 +191,40 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  // Refresh token endpoint
-  router.post(
-    '/auth/refresh-token',
-    asyncHandler(async (req: Request, res: Response) => {
-      const { refreshToken } = req.body;
+  // Refresh token handler (shared by both /auth/refresh-token and /auth/refresh)
+  const handleRefreshToken = asyncHandler(async (req: Request, res: Response) => {
+    const { refreshToken } = req.body;
 
-      if (!refreshToken) {
-        return res.status(400).json({ message: 'Refresh token is required' });
-      }
+    if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token is required' });
+    }
 
-      const payload = verifyRefreshToken(refreshToken);
-      if (!payload) {
-        return res.status(401).json({ message: 'Invalid or expired refresh token' });
-      }
+    const payload = verifyRefreshToken(refreshToken);
+    if (!payload) {
+      return res.status(401).json({ message: 'Invalid or expired refresh token' });
+    }
 
-      // Verify user still exists in DB
-      const user = await storage.getUser(payload.userId);
-      if (!user) {
-        return res.status(401).json({ message: 'User not found' });
-      }
+    // Verify user still exists in DB
+    const user = await storage.getUser(payload.userId);
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
 
-      // Issue new access + refresh tokens
-      const newToken = generateToken(user);
-      const newRefreshToken = generateRefreshToken(user);
+    // Issue new access + refresh tokens
+    const newToken = generateToken(user);
+    const newRefreshToken = generateRefreshToken(user);
 
-      res.json({
-        token: newToken,
-        refreshToken: newRefreshToken,
-      });
-    })
-  );
+    res.json({
+      token: newToken,
+      refreshToken: newRefreshToken,
+    });
+  });
+
+  // Refresh token endpoint (canonical path)
+  router.post('/auth/refresh-token', handleRefreshToken);
+
+  // Alias for frontend compatibility: POST /api/auth/refresh
+  router.post('/auth/refresh', handleRefreshToken);
 
   // =====================================
   // PUBLIC - INVITATION ACCEPTANCE

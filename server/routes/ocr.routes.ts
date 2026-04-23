@@ -70,8 +70,24 @@ Rules:
     // Vision path: image provided
     if (imageData) {
       try {
+        // Validate file type: only JPEG, PNG, WebP, HEIC allowed
+        const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+        const dataUrlForValidation: string = imageData.startsWith('data:') ? imageData : `data:image/jpeg;base64,${imageData}`;
+        const mimeMatch = dataUrlForValidation.match(/^data:([^;]+);base64,/);
+        if (mimeMatch && !ALLOWED_IMAGE_TYPES.includes(mimeMatch[1].toLowerCase())) {
+          return res.status(400).json({ message: 'Invalid file type. Only JPEG, PNG, WebP, and HEIC images are allowed.' });
+        }
+
+        // Validate file size: max 10MB (base64 encodes ~33% overhead, so raw limit ~7.5MB base64 chars)
+        const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB decoded
+        const base64Data = dataUrlForValidation.split(',')[1] || '';
+        const decodedSize = Math.floor(base64Data.length * 0.75);
+        if (decodedSize > MAX_IMAGE_BYTES) {
+          return res.status(400).json({ message: 'Image too large. Maximum size is 10MB.' });
+        }
+
         // imageData may be a full data URL (data:image/...;base64,...) or raw base64
-        const dataUrl: string = imageData.startsWith('data:') ? imageData : `data:image/jpeg;base64,${imageData}`;
+        const dataUrl: string = dataUrlForValidation;
 
         console.log(`[OCR] Sending image to ${VISION_MODEL} vision API`);
 

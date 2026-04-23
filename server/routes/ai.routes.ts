@@ -105,9 +105,28 @@ Amount: ${validated.amount} ${validated.currency}`
 
       const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
 
+      // Validate AI response scope: ensure the suggested account belongs to this company.
+      // Prevents AI hallucinations from referencing accounts outside the company's COA.
+      const suggestedAccount = expenseAccounts.find(
+        (a) =>
+          a.nameEn.toLowerCase() === (aiResponse.accountName || '').toLowerCase() ||
+          (a.nameAr && a.nameAr === aiResponse.accountName)
+      );
+
+      if (!suggestedAccount) {
+        log.warn(
+          { companyId: validated.companyId, accountName: aiResponse.accountName },
+          'AI suggested account not found in company COA'
+        );
+        return res.status(422).json({
+          message: 'AI suggested an account that does not exist in your Chart of Accounts',
+        });
+      }
+
       res.json({
         suggestedAccountCode: aiResponse.accountCode,
-        suggestedAccountName: aiResponse.accountName,
+        suggestedAccountName: suggestedAccount.nameEn,
+        accountId: suggestedAccount.id,
         confidence: aiResponse.confidence,
         reason: aiResponse.reason,
       });

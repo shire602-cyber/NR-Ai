@@ -39,8 +39,28 @@ export function registerPortalRoutes(app: Express) {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
 
-    // For now, accept document metadata directly
-    // In production, this would handle file uploads to storage
+    // Validate file type
+    const ALLOWED_DOC_TYPES = [
+      'application/pdf',
+      'image/jpeg', 'image/png', 'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain', 'text/csv',
+    ];
+    const mimeType: string = req.body.mimeType || 'application/pdf';
+    if (!ALLOWED_DOC_TYPES.includes(mimeType.toLowerCase())) {
+      return res.status(400).json({ message: 'Invalid file type. Allowed: PDF, images, Word, Excel, and text files.' });
+    }
+
+    // Validate file size (max 50MB)
+    const MAX_DOC_SIZE = 50 * 1024 * 1024; // 50MB
+    const fileSize = Number(req.body.fileSize) || 0;
+    if (fileSize > MAX_DOC_SIZE) {
+      return res.status(400).json({ message: 'File too large. Maximum size is 50MB.' });
+    }
+
     const documentData = {
       companyId,
       name: req.body.name || 'Uploaded Document',
@@ -49,8 +69,8 @@ export function registerPortalRoutes(app: Express) {
       description: req.body.description || null,
       fileUrl: req.body.fileUrl || '/uploads/placeholder.pdf',
       fileName: req.body.fileName || 'document.pdf',
-      fileSize: req.body.fileSize || null,
-      mimeType: req.body.mimeType || 'application/pdf',
+      fileSize: fileSize || null,
+      mimeType,
       expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
       reminderDays: req.body.reminderDays || 30,
       reminderSent: false,
