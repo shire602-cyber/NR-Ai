@@ -1,15 +1,37 @@
 import { type Express, type Request, type Response } from 'express';
 import { storage } from '../storage';
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
 
 export function registerOCRRoutes(app: Express) {
-  const apiKey = getEnv().OPENAI_API_KEY;
-  const openai = apiKey ? new OpenAI({ apiKey }) : null;
+  const env = getEnv();
 
-  const VISION_MODEL = 'gpt-4o';
+  // Resolve which API to use.
+  // ANTHROPIC_API_KEY takes explicit precedence.
+  // An OPENAI_API_KEY starting with "sk-ant-" is an Anthropic key that was
+  // misconfigured in the OpenAI slot — use the Anthropic SDK for it directly
+  // rather than letting the OpenAI SDK (which reads OPENAI_BASE_URL) misroute it.
+  const anthropicKey =
+    env.ANTHROPIC_API_KEY ||
+    (env.OPENAI_API_KEY?.startsWith('sk-ant-') ? env.OPENAI_API_KEY : undefined);
+  const openaiKey =
+    env.OPENAI_API_KEY && !env.OPENAI_API_KEY.startsWith('sk-ant-')
+      ? env.OPENAI_API_KEY
+      : undefined;
+
+  const anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
+  // Explicitly pin baseURL so OPENAI_BASE_URL env var cannot silently reroute
+  // requests to a different provider (e.g. Anthropic's OpenAI-compatible endpoint).
+  const openai =
+    !anthropic && openaiKey
+      ? new OpenAI({ apiKey: openaiKey, baseURL: 'https://api.openai.com/v1' })
+      : null;
+
+  const ANTHROPIC_VISION_MODEL = 'claude-sonnet-4-6';
+  const OPENAI_VISION_MODEL = 'gpt-4o';
 
   const VALID_CATEGORIES = [
     'Office Supplies', 'Utilities', 'Travel', 'Meals',
@@ -46,6 +68,109 @@ Rules:
 - currency defaults to AED for UAE receipts
 - Be precise — extract exactly what is printed, do not guess values not on the receipt`;
 
+  // Strip potential markdown code fences that some models add around JSON.
+  function extractJson(raw: string): any {
+    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    return JSON.parse(fenced ? fenced[1].trim() : raw.trim());
+  }
+
+  async function callVision(dataUrl: string): Promise<string> {
+    if (anthropic) {
+      // Anthropic requires raw base64 with an explicit media_type — NOT a data URI.
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
+      if (!match) throw new Error('Invalid image data URL format');
+
+      const mediaType = match[1] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+      const base64Data = match[2];
+
+      console.log(`[OCR] Sending image to ${ANTHROPIC_VISION_MODEL} via Anthropic SDK`);
+
+      const response = await anthropic.messages.create({
+        model: ANTHROPIC_VISION_MODEL,
+        max_tokens: 2000,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: { type: 'base64', media_type: mediaType, data: base64Data },
+              },
+              {
+                type: 'text',
+                text: EXTRACTION_PROMPT + '\n\nReturn ONLY a valid JSON object. No markdown, no explanation.',
+              },
+            ],
+          },
+        ],
+      });
+
+      const block = response.content[0];
+      if (block.type !== 'text') throw new Error('Unexpected response type from Anthropic');
+      return block.text;
+    }
+
+    if (openai) {
+      console.log(`[OCR] Sending image to ${OPENAI_VISION_MODEL} via OpenAI SDK`);
+
+      const aiResponse = await openai.chat.completions.create({
+        model: OPENAI_VISION_MODEL,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
+              { type: 'text', text: EXTRACTION_PROMPT },
+            ],
+          },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 2000,
+      });
+
+      const raw = aiResponse.choices[0]?.message?.content;
+      if (!raw) throw new Error('Empty response from OpenAI vision API');
+      return raw;
+    }
+
+    throw new Error('No vision API client available');
+  }
+
+  async function callTextExtraction(content: string, categories: string[]): Promise<string> {
+    const systemPrompt = `Extract receipt data from text. Return JSON with: merchant, date (YYYY-MM-DD), invoiceNumber, subtotal, vatPercent, vatAmount, total, currency, category, lineItems array. UAE context: 5% VAT, AED currency. Categories: ${categories.join(', ')}`;
+
+    if (anthropic) {
+      const response = await anthropic.messages.create({
+        model: ANTHROPIC_VISION_MODEL,
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: [
+          { role: 'user', content: `Extract receipt data:\n\n${content}\n\nReturn ONLY a valid JSON object.` },
+        ],
+      });
+      const block = response.content[0];
+      if (block.type !== 'text') throw new Error('Unexpected response type from Anthropic');
+      return block.text;
+    }
+
+    if (openai) {
+      const aiResponse = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Extract receipt data:\n\n${content}` },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 1000,
+      });
+      const raw = aiResponse.choices[0]?.message?.content;
+      if (!raw) throw new Error('Empty response from OpenAI');
+      return raw;
+    }
+
+    throw new Error('No text extraction API client available');
+  }
+
   app.post('/api/ocr/process', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     if (!userId) {
@@ -58,13 +183,13 @@ Rules:
     }
     const companyId = companies[0].id;
 
-    const { imageData, content, messageId, mediaId } = req.body;
+    const { imageData, content, messageId } = req.body;
 
     const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
 
-    if (!openai) {
-      console.error('[OCR] OpenAI client not initialized — OPENAI_API_KEY missing');
-      return res.status(503).json({ message: 'OCR service unavailable: missing API key' });
+    if (!anthropic && !openai) {
+      console.error('[OCR] No AI client available — set OPENAI_API_KEY or ANTHROPIC_API_KEY');
+      return res.status(503).json({ message: 'OCR service unavailable: set OPENAI_API_KEY or ANTHROPIC_API_KEY' });
     }
 
     // Vision path: image provided
@@ -89,40 +214,10 @@ Rules:
         // imageData may be a full data URL (data:image/...;base64,...) or raw base64
         const dataUrl: string = dataUrlForValidation;
 
-        console.log(`[OCR] Sending image to ${VISION_MODEL} vision API`);
+        const raw = await callVision(dataUrl);
+        console.log('[OCR] Vision API raw response:', raw.slice(0, 200));
 
-        const aiResponse = await openai.chat.completions.create({
-          model: VISION_MODEL,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: dataUrl,
-                    detail: 'high',
-                  },
-                },
-                {
-                  type: 'text',
-                  text: EXTRACTION_PROMPT,
-                },
-              ],
-            },
-          ],
-          response_format: { type: 'json_object' },
-          max_tokens: 2000,
-        });
-
-        const raw = aiResponse.choices[0]?.message?.content;
-        if (!raw) {
-          throw new Error('Empty response from vision API');
-        }
-
-        console.log('[OCR] Vision API response:', raw);
-
-        const result = JSON.parse(raw);
+        const result = extractJson(raw);
 
         const subtotal = parseFloat(result.subtotal) || 0;
         const vatPercent = parseFloat(result.vatPercent) || 5;
@@ -169,23 +264,9 @@ Rules:
     if (content) {
       const sanitizedContent = String(content).slice(0, 10000);
       try {
-        const aiResponse = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          messages: [
-            {
-              role: 'system',
-              content: `Extract receipt data from text. Return JSON with: merchant, date (YYYY-MM-DD), invoiceNumber, subtotal, vatPercent, vatAmount, total, currency, category, lineItems array. UAE context: 5% VAT, AED currency. Categories: ${VALID_CATEGORIES.join(', ')}`,
-            },
-            {
-              role: 'user',
-              content: `Extract receipt data:\n\n${sanitizedContent}`,
-            },
-          ],
-          response_format: { type: 'json_object' },
-          max_tokens: 1000,
-        });
+        const raw = await callTextExtraction(sanitizedContent, VALID_CATEGORIES);
+        const result = extractJson(raw);
 
-        const result = JSON.parse(aiResponse.choices[0]?.message?.content || '{}');
         const subtotal = parseFloat(result.subtotal) || 0;
         const vatPercent = parseFloat(result.vatPercent) || 5;
         const vatAmount = parseFloat(result.vatAmount) || parseFloat((subtotal * vatPercent / 100).toFixed(2));
