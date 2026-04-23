@@ -18,6 +18,7 @@ import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
 import { registerRoutes } from './routes';
 import { setupVite, serveStatic } from './vite';
 import { initScheduler } from './services/scheduler.service';
+import { runMigrations } from './db';
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -90,6 +91,12 @@ if (!fs.existsSync(uploadsDir)) {
 // ─── Bootstrap application ───────────────────────────────────
 async function bootstrap() {
   log.info({ environment: env.NODE_ENV, port: env.PORT }, 'Starting server');
+
+  // Run database migrations before starting the server
+  const migrationsFolder = path.join(projectRoot, 'migrations');
+  log.info({ migrationsFolder }, 'Running database migrations...');
+  await runMigrations(migrationsFolder);
+  log.info('Database migrations completed successfully');
 
   // Register all API routes
   const server = await registerRoutes(app);

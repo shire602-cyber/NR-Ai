@@ -10,6 +10,7 @@ import {
   generateToken,
   generateRefreshToken,
   verifyRefreshToken,
+  authMiddleware,
 } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { insertUserSchema } from '../../shared/schema';
@@ -341,6 +342,30 @@ export function registerAuthRoutes(app: Express): void {
 
       const { passwordHash: _, ...safeUser } = user;
       res.json({ user: safeUser, token: jwtToken, refreshToken });
+    })
+  );
+
+  // Current user profile
+  router.get(
+    '/auth/me',
+    authMiddleware as any,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      const { passwordHash: _, ...safeUser } = user;
+      res.json(safeUser);
+    })
+  );
+
+  // Logout — invalidates the client-side token (stateless JWT, so just acknowledge)
+  router.post(
+    '/auth/logout',
+    authMiddleware as any,
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json({ message: 'Logged out successfully' });
     })
   );
 
