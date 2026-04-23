@@ -52,6 +52,7 @@ import { registerAutoReconcileRoutes } from './routes/auto-reconcile.routes';
 import { registerAIGLRoutes } from './routes/ai-gl.routes';
 import { registerMonthEndRoutes } from './routes/month-end.routes';
 import { registerAdminHealthRoutes } from './routes/admin-health.routes';
+import { registerExchangeRateRoutes } from './routes/exchange-rates.routes';
 
 const log = createLogger('routes');
 
@@ -111,6 +112,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── UAE Compliance ─────────────────────────────────────
   registerVATRoutes(app);
   registerCorporateTaxRoutes(app);
+  registerExchangeRateRoutes(app);
 
   // ─── Team & Client Portal ──────────────────────────────
   registerTeamRoutes(app);

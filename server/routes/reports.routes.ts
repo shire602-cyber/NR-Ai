@@ -175,7 +175,9 @@ export function registerReportRoutes(app: Express) {
     res.json(agingData);
   }));
 
-  // Trial Balance report
+  // Trial Balance report — all amounts in AED (base currency)
+  // journal_lines.debit/credit are stored in AED; foreign currency
+  // detail is in foreign_debit/foreign_credit/foreign_currency columns.
   app.get("/api/companies/:id/reports/trial-balance", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     const companyId = req.params.id;
@@ -210,12 +212,13 @@ export function registerReportRoutes(app: Express) {
       ? await db.select().from(journalLines).where(inArray(journalLines.entryId, entryIds))
       : [];
 
-    // Aggregate by account
-    const totalsMap = new Map<string, { totalDebit: number; totalCredit: number }>();
+    // Aggregate by account — debit/credit are in AED (base currency)
+    const totalsMap = new Map<string, { totalDebit: number; totalCredit: number; hasForeignLines: boolean }>();
     for (const line of lines) {
-      const existing = totalsMap.get(line.accountId) ?? { totalDebit: 0, totalCredit: 0 };
+      const existing = totalsMap.get(line.accountId) ?? { totalDebit: 0, totalCredit: 0, hasForeignLines: false };
       existing.totalDebit += line.debit ?? 0;
       existing.totalCredit += line.credit ?? 0;
+      if (line.foreignCurrency) existing.hasForeignLines = true;
       totalsMap.set(line.accountId, existing);
     }
 
@@ -223,7 +226,7 @@ export function registerReportRoutes(app: Express) {
     const rows = (companyAccounts as Account[])
       .sort((a: Account, b: Account) => (a.code ?? '').localeCompare(b.code ?? ''))
       .map((account: Account) => {
-        const { totalDebit, totalCredit } = totalsMap.get(account.id) ?? { totalDebit: 0, totalCredit: 0 };
+        const { totalDebit, totalCredit, hasForeignLines } = totalsMap.get(account.id) ?? { totalDebit: 0, totalCredit: 0, hasForeignLines: false };
         // Normal balance: debit-normal for asset/expense, credit-normal for liability/equity/income
         const balance = ['asset', 'expense'].includes(account.type)
           ? totalDebit - totalCredit
@@ -236,6 +239,7 @@ export function registerReportRoutes(app: Express) {
           totalDebit,
           totalCredit,
           balance,
+          hasForeignLines, // indicates FX-converted lines exist for this account
         };
       });
 
@@ -243,6 +247,7 @@ export function registerReportRoutes(app: Express) {
     const sumCredits = rows.reduce((s: number, r) => s + r.totalCredit, 0);
 
     res.json({
+      reportCurrency: 'AED',
       rows,
       totals: {
         sumDebits,
@@ -288,8 +293,16 @@ export function registerReportRoutes(app: Express) {
     let zeroRatedSupplies = 0;
     let exemptSupplies = 0;
 
+    // Build invoice lookup for exchange rates
+    const invoiceRateMap = new Map<string, number>();
+    for (const inv of periodInvoices) {
+      invoiceRateMap.set(inv.id, inv.exchangeRate ?? 1);
+    }
+
     for (const line of allLines) {
-      const lineTotal = line.quantity * line.unitPrice;
+      // Convert line amounts to AED using the parent invoice's exchange rate
+      const rate = invoiceRateMap.get(line.invoiceId) ?? 1;
+      const lineTotal = line.quantity * line.unitPrice * rate;
       const supplyType = line.vatSupplyType ?? 'standard_rated';
       if (supplyType === 'zero_rated') {
         zeroRatedSupplies += lineTotal;
@@ -314,13 +327,17 @@ export function registerReportRoutes(app: Express) {
       ));
 
     const standardRatedExpenses = periodReceipts.reduce((s: number, r: Receipt) => {
-      const amount = r.amount ?? 0;
+      const rate = r.exchangeRate ?? 1;
+      const amount = (r.amount ?? 0) * rate;
       // Exclude VAT from base if vatAmount is recorded separately
-      const base = r.vatAmount ? amount - r.vatAmount : amount;
+      const base = r.vatAmount ? amount - (r.vatAmount * rate) : amount;
       return s + base;
     }, 0);
 
-    const inputVat = periodReceipts.reduce((s: number, r: Receipt) => s + (r.vatAmount ?? 0), 0);
+    const inputVat = periodReceipts.reduce((s: number, r: Receipt) => {
+      const rate = r.exchangeRate ?? 1;
+      return s + (r.vatAmount ?? 0) * rate;
+    }, 0);
 
     const totalSupplies = standardRatedSupplies + zeroRatedSupplies + exemptSupplies;
     const netVatDue = outputVat - inputVat;
