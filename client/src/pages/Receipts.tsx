@@ -32,14 +32,25 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 
+interface LineItem {
+  description: string;
+  quantity?: number | null;
+  unitPrice?: number | null;
+  amount: number;
+}
+
 interface ExtractedData {
   merchant?: string;
   date?: string;
-  total?: number;
+  invoiceNumber?: string | null;
+  subtotal?: number;
+  vatPercent?: number;
   vatAmount?: number;
+  total?: number;
   currency?: string;
   rawText: string;
   category?: string;
+  lineItems?: LineItem[];
   confidence?: number;
 }
 
@@ -492,16 +503,25 @@ export default function Receipts() {
           parsed = {
             merchant: result.merchant || 'Unknown Merchant',
             date: result.date || new Date().toISOString().split('T')[0],
-            total: result.amount || 0,
-            vatAmount: result.vatAmount || 0,
+            invoiceNumber: result.invoiceNumber || null,
+            subtotal: result.subtotal ?? result.amount ?? 0,
+            vatPercent: result.vatPercent ?? 5,
+            vatAmount: result.vatAmount ?? 0,
+            total: result.total ?? (result.subtotal ?? result.amount ?? 0) + (result.vatAmount ?? 0),
+            currency: result.currency || 'AED',
             category: result.category || 'Other',
+            lineItems: result.lineItems || [],
             rawText: result.rawText || '',
+            confidence: result.confidence ?? 0.95,
           };
           setProcessedReceipts((prev) => {
             const updated = [...prev];
             updated[index] = { ...updated[index], progress: 90 };
             return updated;
           });
+        } else {
+          const errBody = await response.json().catch(() => ({}));
+          console.error('[OCR] Backend error:', response.status, errBody);
         }
       } catch (backendError) {
         console.warn('[OCR] Backend Vision failed, falling back to Tesseract:', backendError);
@@ -761,16 +781,20 @@ export default function Receipts() {
     // Save each receipt sequentially with status updates
     for (const { receipt, index } of completedIndices) {
       try {
+        const d = receipt.data!;
         const receiptData = {
           companyId: companyId,
-          merchant: receipt.data!.merchant || 'Unknown',
-          date: receipt.data!.date || new Date().toISOString().split('T')[0],
-          amount: Number(receipt.data!.total) || 0,
-          vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,
-          category: receipt.data!.category || 'Uncategorized',
-          currency: receipt.data!.currency || 'AED',
+          merchant: d.merchant || 'Unknown',
+          date: d.date || new Date().toISOString().split('T')[0],
+          invoiceNumber: d.invoiceNumber || null,
+          amount: Number(d.subtotal ?? d.total) || 0,
+          vatAmount: d.vatAmount ? Number(d.vatAmount) : null,
+          total: Number(d.total) || 0,
+          currency: d.currency || 'AED',
+          category: d.category || 'Uncategorized',
+          lineItems: d.lineItems || [],
           imageData: receipt.preview,
-          rawText: receipt.data!.rawText,
+          rawText: d.rawText,
         };
 
         await apiRequest('POST', `/api/companies/${companyId}/receipts`, receiptData);
@@ -1158,80 +1182,153 @@ export default function Receipts() {
                     )}
 
                     {receipt.status === 'completed' && receipt.data && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Merchant</Label>
-                          <Input
-                            value={receipt.data.merchant || ''}
-                            onChange={(e) =>
-                              updateReceiptData(index, { merchant: e.target.value })
-                            }
-                            className="h-8"
-                            data-testid={`input-merchant-${index}`}
-                          />
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Merchant</Label>
+                            <Input
+                              value={receipt.data.merchant || ''}
+                              onChange={(e) => updateReceiptData(index, { merchant: e.target.value })}
+                              className="h-8"
+                              data-testid={`input-merchant-${index}`}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Date</Label>
+                            <Input
+                              type="date"
+                              value={receipt.data.date || ''}
+                              onChange={(e) => updateReceiptData(index, { date: e.target.value })}
+                              className="h-8"
+                              data-testid={`input-date-${index}`}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Invoice / Receipt #</Label>
+                            <Input
+                              value={receipt.data.invoiceNumber || ''}
+                              onChange={(e) => updateReceiptData(index, { invoiceNumber: e.target.value || null })}
+                              className="h-8"
+                              placeholder="N/A"
+                              data-testid={`input-invoice-${index}`}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Currency</Label>
+                            <Input
+                              value={receipt.data.currency || 'AED'}
+                              onChange={(e) => updateReceiptData(index, { currency: e.target.value })}
+                              className="h-8 font-mono"
+                              data-testid={`input-currency-${index}`}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Subtotal (before VAT)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={receipt.data.subtotal ?? ''}
+                              onChange={(e) => updateReceiptData(index, { subtotal: parseFloat(e.target.value) || 0 })}
+                              className="h-8 font-mono"
+                              data-testid={`input-subtotal-${index}`}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">VAT % / VAT Amount</Label>
+                            <div className="flex gap-1">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={receipt.data.vatPercent ?? 5}
+                                onChange={(e) => updateReceiptData(index, { vatPercent: parseFloat(e.target.value) || 0 })}
+                                className="h-8 font-mono w-20"
+                                placeholder="%"
+                                data-testid={`input-vat-percent-${index}`}
+                              />
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={receipt.data.vatAmount ?? ''}
+                                onChange={(e) => updateReceiptData(index, { vatAmount: parseFloat(e.target.value) || 0 })}
+                                className="h-8 font-mono"
+                                placeholder="VAT amt"
+                                data-testid={`input-vat-amount-${index}`}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={receipt.data.total ?? ''}
+                              onChange={(e) => updateReceiptData(index, { total: parseFloat(e.target.value) || 0 })}
+                              className="h-8 font-mono font-semibold"
+                              data-testid={`input-amount-${index}`}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-xs">Category</Label>
+                            <Select
+                              value={receipt.data.category}
+                              onValueChange={(value) => updateReceiptData(index, { category: value })}
+                            >
+                              <SelectTrigger className="h-8" data-testid={`select-category-${index}`}>
+                                <SelectValue placeholder="Category" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Office Supplies">Office Supplies</SelectItem>
+                                <SelectItem value="Meals">Meals</SelectItem>
+                                <SelectItem value="Travel">Travel</SelectItem>
+                                <SelectItem value="Utilities">Utilities</SelectItem>
+                                <SelectItem value="Marketing">Marketing</SelectItem>
+                                <SelectItem value="Equipment">Equipment</SelectItem>
+                                <SelectItem value="Professional Services">Professional Services</SelectItem>
+                                <SelectItem value="Communication">Communication</SelectItem>
+                                <SelectItem value="Maintenance">Maintenance</SelectItem>
+                                <SelectItem value="Insurance">Insurance</SelectItem>
+                                <SelectItem value="Rent">Rent</SelectItem>
+                                <SelectItem value="Other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
 
-                        <div className="space-y-1">
-                          <Label className="text-xs">Date</Label>
-                          <Input
-                            type="date"
-                            value={receipt.data.date || ''}
-                            onChange={(e) =>
-                              updateReceiptData(index, { date: e.target.value })
-                            }
-                            className="h-8"
-                            data-testid={`input-date-${index}`}
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs">Amount</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={receipt.data.total || ''}
-                            onChange={(e) =>
-                              updateReceiptData(index, { total: parseFloat(e.target.value) })
-                            }
-                            className="h-8"
-                            data-testid={`input-amount-${index}`}
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs">Category</Label>
-                          <Select
-                            value={receipt.data.category}
-                            onValueChange={(value) =>
-                              updateReceiptData(index, { category: value })
-                            }
-                          >
-                            <SelectTrigger className="h-8" data-testid={`select-category-${index}`}>
-                              <SelectValue placeholder="Category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                              <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
-                              <SelectItem value="Travel">Travel</SelectItem>
-                              <SelectItem value="Utilities">Utilities</SelectItem>
-                              <SelectItem value="Marketing">Marketing</SelectItem>
-                              <SelectItem value="Software">Software</SelectItem>
-                              <SelectItem value="Other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
+                        {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-xs">Line Items ({receipt.data.lineItems.length})</Label>
+                            <div className="rounded-md border divide-y text-xs max-h-40 overflow-y-auto">
+                              {receipt.data.lineItems.map((item, i) => (
+                                <div key={i} className="flex justify-between items-center px-3 py-1.5 gap-2">
+                                  <span className="flex-1 truncate text-muted-foreground">{item.description}</span>
+                                  {item.quantity != null && (
+                                    <span className="text-muted-foreground">x{item.quantity}</span>
+                                  )}
+                                  <span className="font-mono font-medium shrink-0">
+                                    {receipt.data?.currency || 'AED'} {item.amount.toFixed(2)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
                         {receipt.data.confidence && (
-                          <div className="col-span-2">
+                          <div className="flex items-center gap-2">
                             <p className="text-xs text-muted-foreground">
-                              OCR Confidence: {Math.round(receipt.data.confidence * 100)}%
-                              {receipt.data.category && (
-                                <Badge variant="secondary" className="ml-2">
-                                  <Sparkles className="w-2 h-2 mr-1" />
-                                  AI
-                                </Badge>
-                              )}
+                              Confidence: {Math.round(receipt.data.confidence * 100)}%
                             </p>
+                            <Badge variant="secondary" className="text-xs">
+                              <Sparkles className="w-2 h-2 mr-1" />
+                              GPT-4o Vision
+                            </Badge>
                           </div>
                         )}
                       </div>
