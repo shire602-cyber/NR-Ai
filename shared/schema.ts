@@ -258,7 +258,7 @@ export const invoices = pgTable("invoices", {
   subtotal: real("subtotal").notNull().default(0),
   vatAmount: real("vat_amount").notNull().default(0),
   total: real("total").notNull().default(0),
-  status: text("status").notNull().default("draft"), // draft | sent | paid | void
+  status: text("status").notNull().default("draft"), // draft | sent | paid | partial | void
   shareToken: text("share_token").unique(),
   shareTokenExpiresAt: timestamp("share_token_expires_at"),
   einvoiceUuid: text("einvoice_uuid"),
@@ -267,6 +267,15 @@ export const invoices = pgTable("invoices", {
   einvoiceStatus: text("einvoice_status"), // null | generated | submitted | accepted | rejected
   reminderCount: integer("reminder_count").notNull().default(0),
   lastReminderSentAt: timestamp("last_reminder_sent_at"),
+  // Invoice type: invoice | credit_note
+  invoiceType: text("invoice_type").notNull().default("invoice"),
+  // For credit notes: link back to the invoice being credited
+  originalInvoiceId: uuid("original_invoice_id"),
+  // Recurring invoice fields
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  recurringInterval: text("recurring_interval"), // weekly | monthly | quarterly | yearly
+  nextRecurringDate: timestamp("next_recurring_date"),
+  recurringEndDate: timestamp("recurring_end_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -297,6 +306,32 @@ export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
 
 export type InsertInvoiceLine = z.infer<typeof insertInvoiceLineSchema>;
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
+
+// ===========================
+// Invoice Payments
+// ===========================
+export const invoicePayments = pgTable("invoice_payments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: uuid("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  amount: real("amount").notNull(),
+  date: timestamp("date").notNull(),
+  method: text("method").notNull().default("bank"), // cash | bank | cheque | online
+  reference: text("reference"),
+  notes: text("notes"),
+  paymentAccountId: uuid("payment_account_id").references(() => accounts.id),
+  journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;
+export type InvoicePayment = typeof invoicePayments.$inferSelect;
 
 // ===========================
 // Recurring Invoices
@@ -448,9 +483,10 @@ export type CustomerContact = typeof customerContacts.$inferSelect;
 // Additional Types for Frontend
 // ===========================
 
-// Complete invoice with lines
+// Complete invoice with lines and payments
 export interface InvoiceWithLines extends Invoice {
   lines: InvoiceLine[];
+  payments?: InvoicePayment[];
 }
 
 // Complete journal entry with lines

@@ -168,7 +168,18 @@ export function initScheduler() {
     }
   });
 
-  log.info('Scheduler initialized — running payment scans every hour, GL scans every 30 minutes');
+  // Run daily at 06:00 UTC: generate recurring invoices that are due
+  cron.schedule('0 6 * * *', async () => {
+    try {
+      log.info('Running daily recurring invoice generation...');
+      await generateDueRecurringInvoices();
+      log.info('Daily recurring invoice generation complete');
+    } catch (err) {
+      log.error({ err }, 'Scheduler error during recurring invoice generation');
+    }
+  });
+
+  log.info('Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC');
 }
 
 // ---------------------------------------------------------------------------
@@ -375,4 +386,104 @@ async function maybeCreateReminder(params: ReminderParams) {
     { companyId: params.companyId, invoiceId: params.invoice.id, rule: params.ruleType },
     `Created payment reminder notification`
   );
+}
+
+// ---------------------------------------------------------------------------
+// Recurring invoice generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Advances a date by the given recurring interval.
+ */
+function advanceByInterval(date: Date, interval: string): Date {
+  const next = new Date(date);
+  switch (interval) {
+    case 'weekly':
+      next.setDate(next.getDate() + 7);
+      break;
+    case 'monthly':
+      next.setMonth(next.getMonth() + 1);
+      break;
+    case 'quarterly':
+      next.setMonth(next.getMonth() + 3);
+      break;
+    case 'yearly':
+      next.setFullYear(next.getFullYear() + 1);
+      break;
+  }
+  return next;
+}
+
+/**
+ * Scans invoices with isRecurring=true and nextRecurringDate <= today,
+ * copies them as new invoices, and advances nextRecurringDate.
+ */
+async function generateDueRecurringInvoices() {
+  const dueInvoices = await storage.getDueInvoicesForRecurring();
+  log.info({ count: dueInvoices.length }, 'Recurring invoices due for generation');
+
+  const today = new Date();
+
+  for (const template of dueInvoices) {
+    try {
+      // Skip if past end date
+      if (template.recurringEndDate && new Date(template.recurringEndDate) < today) {
+        await storage.updateInvoice(template.id, { isRecurring: false } as any);
+        log.info({ invoiceId: template.id }, 'Recurring invoice ended — disabling');
+        continue;
+      }
+
+      const originalLines = await storage.getInvoiceLinesByInvoiceId(template.id);
+      const invoiceDate = new Date();
+
+      // Generate a unique invoice number based on original + timestamp
+      const newNumber = `${template.number}-R${Date.now()}`;
+
+      // Recompute totals from lines
+      let subtotal = 0;
+      let vatAmount = 0;
+      for (const line of originalLines) {
+        const lineTotal = line.quantity * line.unitPrice;
+        subtotal += lineTotal;
+        vatAmount += lineTotal * (line.vatRate || 0.05);
+      }
+      const total = subtotal + vatAmount;
+
+      const newInvoice = await storage.createInvoice({
+        companyId: template.companyId,
+        number: newNumber,
+        customerName: template.customerName,
+        customerTrn: template.customerTrn || undefined,
+        date: invoiceDate,
+        currency: template.currency,
+        subtotal,
+        vatAmount,
+        total,
+        status: 'draft',
+        invoiceType: 'invoice',
+      } as any);
+
+      for (const line of originalLines) {
+        await storage.createInvoiceLine({
+          invoiceId: newInvoice.id,
+          description: line.description,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          vatRate: line.vatRate,
+          vatSupplyType: line.vatSupplyType || undefined,
+        } as any);
+      }
+
+      // Advance the nextRecurringDate on the template
+      const nextDate = advanceByInterval(new Date(template.nextRecurringDate!), template.recurringInterval!);
+      await storage.updateInvoice(template.id, { nextRecurringDate: nextDate } as any);
+
+      log.info(
+        { templateId: template.id, newInvoiceId: newInvoice.id, nextDate },
+        'Generated recurring invoice copy'
+      );
+    } catch (err) {
+      log.error({ err, invoiceId: template.id }, 'Failed to generate recurring invoice copy');
+    }
+  }
 }

@@ -56,7 +56,8 @@ import type {
   CorporateTaxReturn, InsertCorporateTaxReturn,
   Product, InsertProduct,
   InventoryMovement, InsertInventoryMovement,
-  BankAccount, InsertBankAccount
+  BankAccount, InsertBankAccount,
+  InvoicePayment, InsertInvoicePayment
 } from "@shared/schema";
 import {
   users,
@@ -116,7 +117,8 @@ import {
   recurringInvoices,
   corporateTaxReturns,
   products,
-  inventoryMovements
+  inventoryMovements,
+  invoicePayments
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lte } from "drizzle-orm";
@@ -542,6 +544,12 @@ export interface IStorage {
   createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice>;
   updateRecurringInvoice(id: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice>;
   deleteRecurringInvoice(id: string): Promise<void>;
+
+  // Invoice Payments
+  getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]>;
+  createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment>;
+  getInvoicePaidTotal(invoiceId: string): Promise<number>;
+  getDueInvoicesForRecurring(): Promise<Invoice[]>;
 
   // Products / Inventory
   getProductsByCompanyId(companyId: string): Promise<Product[]>;
@@ -2776,6 +2784,40 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRecurringInvoice(id: string): Promise<void> {
     await db.delete(recurringInvoices).where(eq(recurringInvoices.id, id));
+  }
+
+  // Invoice Payments
+  async getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]> {
+    return await db
+      .select()
+      .from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, invoiceId))
+      .orderBy(desc(invoicePayments.createdAt));
+  }
+
+  async createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment> {
+    const [payment] = await db.insert(invoicePayments).values(data).returning();
+    return payment;
+  }
+
+  async getInvoicePaidTotal(invoiceId: string): Promise<number> {
+    const payments = await db
+      .select()
+      .from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, invoiceId));
+    return payments.reduce((sum, p) => sum + p.amount, 0);
+  }
+
+  async getDueInvoicesForRecurring(): Promise<Invoice[]> {
+    return await db
+      .select()
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.isRecurring, true),
+          lte(invoices.nextRecurringDate, new Date())
+        )
+      );
   }
 
   // Products / Inventory
