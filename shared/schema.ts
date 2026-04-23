@@ -224,6 +224,8 @@ export const invoices = pgTable("invoices", {
   customerName: text("customer_name").notNull(),
   customerTrn: text("customer_trn"),
   date: timestamp("date").notNull(),
+  dueDate: timestamp("due_date"),
+  paymentTerms: text("payment_terms").default("net30"),
   currency: text("currency").notNull().default("AED"),
   subtotal: real("subtotal").notNull().default(0),
   vatAmount: real("vat_amount").notNull().default(0),
@@ -235,6 +237,8 @@ export const invoices = pgTable("invoices", {
   einvoiceXml: text("einvoice_xml"),
   einvoiceHash: text("einvoice_hash"),
   einvoiceStatus: text("einvoice_status"), // null | generated | submitted | accepted | rejected
+  reminderCount: integer("reminder_count").notNull().default(0),
+  lastReminderSentAt: timestamp("last_reminder_sent_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

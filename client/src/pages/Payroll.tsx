@@ -37,6 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -218,6 +219,7 @@ export default function Payroll() {
 
   // Search
   const [employeeSearch, setEmployeeSearch] = useState('');
+  const [employeeToDelete, setEmployeeToDelete] = useState<string | null>(null);
 
   // ─── Queries ─────────────────────────────────────────
 
@@ -907,7 +909,7 @@ export default function Payroll() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => deleteEmployeeMutation.mutate(emp.id)}
+                                onClick={() => setEmployeeToDelete(emp.id)}
                                 title="Delete"
                                 className="text-destructive hover:text-destructive"
                               >
@@ -1540,6 +1542,31 @@ export default function Payroll() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!employeeToDelete} onOpenChange={(open) => { if (!open) setEmployeeToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Employee?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this employee record. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (employeeToDelete) {
+                  deleteEmployeeMutation.mutate(employeeToDelete);
+                  setEmployeeToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

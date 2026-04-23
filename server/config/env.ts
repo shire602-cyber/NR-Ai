@@ -33,6 +33,13 @@ const envSchema = z.object({
 
   // === Logging ===
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+
+  // === Email / SMTP (optional — features gracefully degrade if not set) ===
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

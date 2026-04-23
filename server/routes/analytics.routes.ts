@@ -414,4 +414,250 @@ export function registerAnalyticsRoutes(app: Express) {
     const metrics = await storage.getFeatureUsageMetrics(feature as string | undefined);
     res.json(metrics);
   }));
+
+  // =====================================
+  // Company-Scoped Financial Analytics
+  // =====================================
+
+  // GET /api/companies/:companyId/analytics/cash-forecast
+  // Projects cash position at 30, 60, 90 days using historical averages + outstanding items
+  app.get("/api/companies/:companyId/analytics/cash-forecast", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    const { companyId } = req.params;
+
+    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const now = new Date();
+
+    const [invoices, accounts, entries, allLines, receipts] = await Promise.all([
+      storage.getInvoicesByCompanyId(companyId),
+      storage.getAccountsByCompanyId(companyId),
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getJournalLinesByCompanyId(companyId),
+      storage.getReceiptsByCompanyId(companyId),
+    ]);
+
+    const entryDateMap = new Map<string, Date>(entries.map(e => [e.id, new Date(e.date)]));
+    const accountMap = new Map(accounts.map(a => [a.id, a]));
+
+    // Cash/bank account IDs
+    const cashAccountIds = new Set(
+      accounts.filter(a =>
+        a.type === 'asset' && (
+          a.subType === 'current_asset' ||
+          a.nameEn.toLowerCase().includes('cash') ||
+          a.nameEn.toLowerCase().includes('bank')
+        )
+      ).map(a => a.id)
+    );
+
+    // Current cash balance (all-time balance on cash/bank accounts)
+    const allTimeBalance = new Map<string, number>();
+    for (const line of allLines) {
+      const account = accountMap.get(line.accountId);
+      if (!account) continue;
+      const prev = allTimeBalance.get(line.accountId) || 0;
+      if (account.type === 'asset' || account.type === 'expense') {
+        allTimeBalance.set(line.accountId, prev + (line.debit || 0) - (line.credit || 0));
+      } else {
+        allTimeBalance.set(line.accountId, prev + (line.credit || 0) - (line.debit || 0));
+      }
+    }
+
+    let currentCash = 0;
+    for (const [id, bal] of allTimeBalance) {
+      if (cashAccountIds.has(id)) currentCash += bal;
+    }
+
+    // Average monthly income & expenses over last 3 completed months
+    const monthlyIncome: number[] = [0, 0, 0];
+    const monthlyExpenses: number[] = [0, 0, 0];
+
+    for (const line of allLines) {
+      const account = accountMap.get(line.accountId);
+      if (!account) continue;
+      const entryDate = entryDateMap.get(line.entryId);
+      if (!entryDate) continue;
+
+      for (let i = 1; i <= 3; i++) {
+        const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+        if (entryDate >= mStart && entryDate <= mEnd) {
+          if (account.type === 'income') monthlyIncome[i - 1] += (line.credit || 0) - (line.debit || 0);
+          else if (account.type === 'expense') monthlyExpenses[i - 1] += (line.debit || 0) - (line.credit || 0);
+        }
+      }
+    }
+
+    const avgIncome = monthlyIncome.reduce((s, v) => s + v, 0) / 3;
+    const avgExpenses = monthlyExpenses.reduce((s, v) => s + v, 0) / 3;
+    const avgMonthlyNet = avgIncome - avgExpenses;
+
+    // Outstanding receivables weighted by aging probability of collection
+    const collectionProbability = { days0to30: 0.95, days31to60: 0.80, days61to90: 0.60, days90plus: 0.30 };
+    let weightedReceivables = 0;
+    const unpaidInvoices = invoices.filter(inv => inv.status === 'sent');
+    for (const inv of unpaidInvoices) {
+      const daysOld = Math.floor((now.getTime() - new Date(inv.date).getTime()) / 86400000);
+      let prob: number;
+      if (daysOld <= 30) prob = collectionProbability.days0to30;
+      else if (daysOld <= 60) prob = collectionProbability.days31to60;
+      else if (daysOld <= 90) prob = collectionProbability.days61to90;
+      else prob = collectionProbability.days90plus;
+      weightedReceivables += inv.total * prob;
+    }
+
+    // Outstanding payables (unposted receipts)
+    const outstandingPayables = receipts
+      .filter(rec => !rec.posted)
+      .reduce((s, rec) => s + (rec.amount || 0) + (rec.vatAmount || 0), 0);
+
+    // Build 30/60/90-day projections
+    const projections = [30, 60, 90].map(days => {
+      const months = days / 30;
+      // Pro-rata income and expenses; receivables land mostly in month 1, payables in month 1
+      const projectedIncome = avgIncome * months + weightedReceivables * (days <= 30 ? 1 : 1);
+      const projectedExpenses = avgExpenses * months + (days <= 30 ? outstandingPayables : 0);
+      const projectedCash = currentCash + projectedIncome - projectedExpenses;
+      return {
+        days,
+        projectedDate: new Date(now.getTime() + days * 86400000).toISOString().slice(0, 10),
+        projectedCash: Math.max(0, projectedCash),
+        projectedIncome,
+        projectedExpenses,
+      };
+    });
+
+    res.json({
+      currentCash,
+      avgMonthlyIncome: avgIncome,
+      avgMonthlyExpenses: avgExpenses,
+      avgMonthlyNet,
+      weightedReceivables,
+      outstandingPayables,
+      projections,
+    });
+  }));
+
+  // GET /api/companies/:companyId/analytics/profit-trend?months=12
+  // Returns monthly revenue, expenses, and net profit for last N months
+  app.get("/api/companies/:companyId/analytics/profit-trend", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    const { companyId } = req.params;
+    const monthCount = Math.min(Math.max(parseInt(req.query.months as string) || 12, 1), 36);
+
+    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const now = new Date();
+
+    const [accounts, entries, allLines] = await Promise.all([
+      storage.getAccountsByCompanyId(companyId),
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getJournalLinesByCompanyId(companyId),
+    ]);
+
+    const entryDateMap = new Map<string, Date>(entries.map(e => [e.id, new Date(e.date)]));
+    const accountMap = new Map(accounts.map(a => [a.id, a]));
+
+    // Build month buckets: key = "YYYY-MM"
+    const buckets = new Map<string, { revenue: number; expenses: number }>();
+    for (let i = monthCount - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      buckets.set(key, { revenue: 0, expenses: 0 });
+    }
+
+    for (const line of allLines) {
+      const account = accountMap.get(line.accountId);
+      if (!account || (account.type !== 'income' && account.type !== 'expense')) continue;
+      const entryDate = entryDateMap.get(line.entryId);
+      if (!entryDate) continue;
+
+      const key = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
+      const bucket = buckets.get(key);
+      if (!bucket) continue;
+
+      if (account.type === 'income') bucket.revenue += (line.credit || 0) - (line.debit || 0);
+      else if (account.type === 'expense') bucket.expenses += (line.debit || 0) - (line.credit || 0);
+    }
+
+    const trend = Array.from(buckets.entries()).map(([month, { revenue, expenses }]) => ({
+      month,
+      revenue: Math.max(0, revenue),
+      expenses: Math.max(0, expenses),
+      netProfit: revenue - expenses,
+    }));
+
+    res.json(trend);
+  }));
+
+  // GET /api/companies/:companyId/analytics/top-customers?limit=10
+  // Returns top customers by total invoiced amount
+  app.get("/api/companies/:companyId/analytics/top-customers", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    const { companyId } = req.params;
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
+
+    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const invoices = await storage.getInvoicesByCompanyId(companyId);
+
+    const customerTotals = new Map<string, { total: number; invoiceCount: number; paidTotal: number }>();
+    for (const inv of invoices) {
+      if (inv.status === 'void') continue;
+      const name = inv.customerName || 'Unknown';
+      const prev = customerTotals.get(name) || { total: 0, invoiceCount: 0, paidTotal: 0 };
+      prev.total += inv.total;
+      prev.invoiceCount += 1;
+      if (inv.status === 'paid') prev.paidTotal += inv.total;
+      customerTotals.set(name, prev);
+    }
+
+    const topCustomers = Array.from(customerTotals.entries())
+      .map(([name, stats]) => ({ name, ...stats }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, limit);
+
+    res.json(topCustomers);
+  }));
+
+  // GET /api/companies/:companyId/analytics/top-suppliers?limit=10
+  // Returns top suppliers by total receipt/expense amount
+  app.get("/api/companies/:companyId/analytics/top-suppliers", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    const { companyId } = req.params;
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
+
+    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const receipts = await storage.getReceiptsByCompanyId(companyId);
+
+    const supplierTotals = new Map<string, { total: number; receiptCount: number }>();
+    for (const rec of receipts) {
+      const name = rec.merchant || 'Unknown';
+      const prev = supplierTotals.get(name) || { total: 0, receiptCount: 0 };
+      prev.total += (rec.amount || 0) + (rec.vatAmount || 0);
+      prev.receiptCount += 1;
+      supplierTotals.set(name, prev);
+    }
+
+    const topSuppliers = Array.from(supplierTotals.entries())
+      .map(([name, stats]) => ({ name, ...stats }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, limit);
+
+    res.json(topSuppliers);
+  }));
 }

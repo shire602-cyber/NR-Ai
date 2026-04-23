@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
@@ -208,6 +209,8 @@ export default function TeamManagement() {
     });
   };
 
+  const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
+
   const handleRemoveMember = (member: TeamMember) => {
     if (member.role === 'owner') {
       toast({
@@ -217,10 +220,7 @@ export default function TeamManagement() {
       });
       return;
     }
-    
-    if (window.confirm(`Are you sure you want to remove ${member.user.name} from the team?`)) {
-      removeMemberMutation.mutate(member.id);
-    }
+    setMemberToRemove(member);
   };
 
   if (isLoadingCompany) {
@@ -542,6 +542,31 @@ export default function TeamManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!memberToRemove} onOpenChange={(open) => { if (!open) setMemberToRemove(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {memberToRemove?.user?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove {memberToRemove?.user?.name} from the team. They will lose access to this company.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (memberToRemove) {
+                  removeMemberMutation.mutate(memberToRemove.id);
+                  setMemberToRemove(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

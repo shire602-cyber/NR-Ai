@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -64,6 +65,7 @@ export default function RecurringInvoices() {
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<RecurringInvoice | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   const { data: recurringInvoices, isLoading } = useQuery<RecurringInvoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'recurring-invoices'],
@@ -619,7 +621,7 @@ export default function RecurringInvoices() {
                             )}
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            onClick={() => deleteMutation.mutate(item.id)}
+                            onClick={() => setItemToDelete(item.id)}
                             className="text-destructive focus:text-destructive"
                           >
                             <Trash2 className="w-4 h-4 mr-2" />
@@ -635,6 +637,31 @@ export default function RecurringInvoices() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!itemToDelete} onOpenChange={(open) => { if (!open) setItemToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Recurring Invoice?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this recurring invoice schedule. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (itemToDelete) {
+                  deleteMutation.mutate(itemToDelete);
+                  setItemToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

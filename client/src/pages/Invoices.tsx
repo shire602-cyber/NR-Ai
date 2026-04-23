@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -184,6 +185,15 @@ export default function Invoices() {
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status, paymentAccountId }: { id: string; status: string; paymentAccountId?: string }) =>
       apiRequest('PATCH', `/api/invoices/${id}/status`, { status, paymentAccountId }),
+    onMutate: async ({ id, status }) => {
+      await queryClient.cancelQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
+      const previous = queryClient.getQueryData<Invoice[]>(['/api/companies', selectedCompanyId, 'invoices']);
+      queryClient.setQueryData<Invoice[]>(
+        ['/api/companies', selectedCompanyId, 'invoices'],
+        (old) => old?.map((inv) => inv.id === id ? { ...inv, status: status as any } : inv) ?? []
+      );
+      return { previous };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
       toast({
@@ -194,7 +204,10 @@ export default function Invoices() {
       setInvoiceForPayment(null);
       setSelectedPaymentAccount('');
     },
-    onError: (error: any) => {
+    onError: (error: any, _vars, context: any) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['/api/companies', selectedCompanyId, 'invoices'], context.previous);
+      }
       toast({
         variant: 'destructive',
         title: 'Failed to update status',
@@ -1008,27 +1021,57 @@ export default function Invoices() {
                           >
                             <FileCode className="w-4 h-4 text-blue-500" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              if (window.confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) {
-                                deleteMutation.mutate(invoice.id);
-                              }
-                            }}
-                            disabled={deleteMutation.isPending}
-                            data-testid={`button-delete-invoice-${invoice.id}`}
-                          >
-                            <Trash2 className="w-4 h-4 text-destructive" />
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={deleteMutation.isPending}
+                                data-testid={`button-delete-invoice-${invoice.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Invoice {invoice.number}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete this invoice. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteMutation.mutate(invoice.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      {t.noData}
+                    <TableCell colSpan={6}>
+                      <div className="flex flex-col items-center justify-center py-16 text-center">
+                        <FileText className="w-12 h-12 text-muted-foreground/40 mb-4" />
+                        <p className="font-medium text-foreground mb-1">No invoices yet</p>
+                        <p className="text-sm text-muted-foreground mb-6">
+                          {dateRange.from || dateRange.to
+                            ? 'No invoices found in this date range.'
+                            : 'Create your first invoice to get started.'}
+                        </p>
+                        {!dateRange.from && !dateRange.to && (
+                          <Button size="sm" onClick={() => setDialogOpen(true)}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            New Invoice
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

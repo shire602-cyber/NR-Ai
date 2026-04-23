@@ -26,6 +26,7 @@ import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Ima
 import { SiGooglesheets } from 'react-icons/si';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -97,6 +98,7 @@ export default function Receipts() {
   const [pendingSaveData, setPendingSaveData] = useState<any>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+  const [receiptToDelete, setReceiptToDelete] = useState<any>(null);
   const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
   
   const manualExpenseForm = useForm<ReceiptFormData>({
@@ -270,9 +272,7 @@ export default function Receipts() {
   });
 
   const handleDeleteReceipt = (receipt: any) => {
-    if (window.confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
-      deleteMutation.mutate(receipt.id);
-    }
+    setReceiptToDelete(receipt);
   };
 
   const handleEditReceipt = (receipt: any) => {
@@ -1897,6 +1897,31 @@ export default function Receipts() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!receiptToDelete} onOpenChange={(open) => { if (!open) setReceiptToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Expense?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this expense record. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (receiptToDelete) {
+                  deleteMutation.mutate(receiptToDelete.id);
+                  setReceiptToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { insertInvoiceSchema } from '../../shared/schema';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
+import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
 
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
@@ -646,5 +647,128 @@ export function registerInvoiceRoutes(app: Express) {
       'Content-Length': pdfBuffer.length.toString(),
     });
     res.send(pdfBuffer);
+  }));
+
+  // Customer-only: Send invoice by email
+  app.post("/api/companies/:companyId/invoices/:invoiceId/send-email", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId, invoiceId } = req.params;
+    const userId = (req as any).user.id;
+
+    const bodySchema = z.object({
+      to: z.string().email('Invalid email address'),
+      subject: z.string().optional(),
+      message: z.string().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || 'Invalid request' });
+    }
+    const { to, subject, message } = parsed.data;
+
+    if (!hasSmtpConfig()) {
+      return res.status(503).json({
+        message: 'Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.',
+        code: 'SMTP_NOT_CONFIGURED',
+      });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice || invoice.companyId !== companyId) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    const company = await storage.getCompany(companyId);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
+    const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
+
+    await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message);
+
+    await storage.createActivityLog({
+      userId,
+      companyId,
+      action: 'send',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      description: `Invoice ${invoice.number} sent by email to ${to}`,
+      metadata: JSON.stringify({ to, invoiceNumber: invoice.number }),
+    });
+
+    res.json({ message: `Invoice ${invoice.number} sent to ${to}` });
+  }));
+
+  // Customer-only: Send payment reminder email
+  app.post("/api/companies/:companyId/invoices/:invoiceId/send-reminder", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId, invoiceId } = req.params;
+    const userId = (req as any).user.id;
+
+    const bodySchema = z.object({
+      to: z.string().email('Invalid email address'),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: parsed.error.errors[0]?.message || 'Invalid request' });
+    }
+    const { to } = parsed.data;
+
+    if (!hasSmtpConfig()) {
+      return res.status(503).json({
+        message: 'Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.',
+        code: 'SMTP_NOT_CONFIGURED',
+      });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice || invoice.companyId !== companyId) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+
+    if (invoice.status === 'paid' || invoice.status === 'void') {
+      return res.status(400).json({ message: `Cannot send reminder for a ${invoice.status} invoice` });
+    }
+
+    const company = await storage.getCompany(companyId);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+
+    const newReminderCount = (invoice.reminderCount || 0) + 1;
+    const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
+    const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
+
+    await sendPaymentReminderEmail(to, invoice, company, pdfBuffer, newReminderCount);
+
+    await storage.updateInvoice(invoiceId, {
+      reminderCount: newReminderCount,
+      lastReminderSentAt: new Date(),
+    });
+
+    await storage.createActivityLog({
+      userId,
+      companyId,
+      action: 'send',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      description: `Payment reminder #${newReminderCount} sent for invoice ${invoice.number} to ${to}`,
+      metadata: JSON.stringify({ to, reminderCount: newReminderCount, invoiceNumber: invoice.number }),
+    });
+
+    res.json({
+      message: `Payment reminder #${newReminderCount} sent to ${to}`,
+      reminderCount: newReminderCount,
+    });
   }));
 }
