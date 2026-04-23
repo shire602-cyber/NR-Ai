@@ -36,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -181,6 +182,8 @@ export default function Budgets() {
   const [selectedBudget, setSelectedBudget] = useState<BudgetPlan | null>(null);
   const [addLineDialogOpen, setAddLineDialogOpen] = useState(false);
   const [editingLine, setEditingLine] = useState<BudgetLine | null>(null);
+  const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
+  const [lineToDelete, setLineToDelete] = useState<string | null>(null);
 
   // ─── Queries ────────────────────────────────────────────
 
@@ -591,7 +594,7 @@ export default function Budgets() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => deleteBudgetMutation.mutate(budget.id)}
+                                onClick={() => setBudgetToDelete(budget.id)}
                                 title="Delete"
                                 className="text-destructive hover:text-destructive"
                               >
@@ -674,7 +677,7 @@ export default function Budgets() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => deleteLineMutation.mutate(line.id)}
+                                onClick={() => setLineToDelete(line.id)}
                                 title="Delete"
                                 className="text-destructive hover:text-destructive"
                               >
@@ -1046,6 +1049,56 @@ export default function Budgets() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!budgetToDelete} onOpenChange={(open) => { if (!open) setBudgetToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Budget Plan?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this budget plan and all its lines. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (budgetToDelete) {
+                  deleteBudgetMutation.mutate(budgetToDelete);
+                  setBudgetToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!lineToDelete} onOpenChange={(open) => { if (!open) setLineToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Budget Line?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this budget line. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (lineToDelete) {
+                  deleteLineMutation.mutate(lineToDelete);
+                  setLineToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

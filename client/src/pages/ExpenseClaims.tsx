@@ -39,6 +39,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -164,6 +165,7 @@ export default function ExpenseClaims() {
   const [reviewAction, setReviewAction] = useState<'approve' | 'reject'>('approve');
   const [reviewClaimId, setReviewClaimId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [claimToDelete, setClaimToDelete] = useState<string | null>(null);
   const [paymentClaimId, setPaymentClaimId] = useState<string | null>(null);
 
   // ─── Queries ──────────────────────────────────────────
@@ -552,7 +554,7 @@ export default function ExpenseClaims() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => deleteClaimMutation.mutate(claim.id)}
+                            onClick={() => setClaimToDelete(claim.id)}
                             title="Delete"
                             className="text-destructive hover:text-destructive"
                           >
@@ -1239,6 +1241,31 @@ export default function ExpenseClaims() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!claimToDelete} onOpenChange={(open) => { if (!open) setClaimToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Expense Claim?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this expense claim. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (claimToDelete) {
+                  deleteClaimMutation.mutate(claimToDelete);
+                  setClaimToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

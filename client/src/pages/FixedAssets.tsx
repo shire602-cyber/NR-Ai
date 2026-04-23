@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -145,6 +146,7 @@ export default function FixedAssets() {
   const [disposingAsset, setDisposingAsset] = useState<FixedAsset | null>(null);
   const [depRunDialogOpen, setDepRunDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [assetToDelete, setAssetToDelete] = useState<string | null>(null);
 
   // ─── Queries ────────────────────────────────────────────
 
@@ -606,7 +608,7 @@ export default function FixedAssets() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => deleteAssetMutation.mutate(asset.id)}
+                            onClick={() => setAssetToDelete(asset.id)}
                             title="Delete"
                             className="text-destructive hover:text-destructive"
                           >
@@ -989,6 +991,31 @@ export default function FixedAssets() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!assetToDelete} onOpenChange={(open) => { if (!open) setAssetToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Fixed Asset?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this asset record. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (assetToDelete) {
+                  deleteAssetMutation.mutate(assetToDelete);
+                  setAssetToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

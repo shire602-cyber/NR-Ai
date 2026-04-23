@@ -33,6 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -93,6 +94,7 @@ export default function Inventory() {
   const [addStockDialogOpen, setAddStockDialogOpen] = useState(false);
   const [stockProduct, setStockProduct] = useState<Product | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
   // ─── Queries ──────────────────────────────────────────
 
@@ -430,7 +432,7 @@ export default function Inventory() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => deleteProductMutation.mutate(product.id)}
+                                  onClick={() => setProductToDelete(product.id)}
                                   title="Delete"
                                   className="text-destructive hover:text-destructive"
                                 >
@@ -803,6 +805,31 @@ export default function Inventory() {
           </Form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!productToDelete} onOpenChange={(open) => { if (!open) setProductToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Product?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this product from inventory. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (productToDelete) {
+                  deleteProductMutation.mutate(productToDelete);
+                  setProductToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
