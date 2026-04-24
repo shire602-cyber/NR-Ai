@@ -30,6 +30,8 @@ import CustomerPortal from '@/pages/CustomerPortal';
 const ClientPortfolio = lazy(() => import('@/pages/firm/ClientPortfolio'));
 const ClientProfile = lazy(() => import('@/pages/firm/ClientProfile'));
 const StaffManagement = lazy(() => import('@/pages/firm/StaffManagement'));
+const FirmHealth = lazy(() => import('@/pages/firm/FirmHealth'));
+const FirmComms = lazy(() => import('@/pages/firm/FirmComms'));
 
 // Core accounting — loaded eagerly since most users land here
 import Accounts from '@/pages/Accounts';
@@ -326,6 +328,12 @@ function Router() {
           </Route>
           <Route path="/firm/staff">
             <FirmRoute><StaffManagement /></FirmRoute>
+          </Route>
+          <Route path="/firm/health">
+            <FirmRoute><FirmHealth /></FirmRoute>
+          </Route>
+          <Route path="/firm/comms">
+            <FirmRoute><FirmComms /></FirmRoute>
           </Route>
 
           <Route component={NotFound} />

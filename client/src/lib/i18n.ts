@@ -268,6 +268,14 @@ export const t = {
     aiInbox: 'AI Inbox',
     monthEndClose: 'Month-End Close',
     pricing: 'Pricing',
+
+    // Sidebar group titles & new nav items
+    sales: 'Sales',
+    purchases: 'Purchases',
+    nraCenter: 'NRA Center',
+    companyProfile: 'Company Profile',
+    healthDashboard: 'Health Dashboard',
+    communications: 'Communications',
   },
   ar: {
     // Navigation
@@ -510,6 +518,14 @@ export const t = {
     aiInbox: 'صندوق الذكاء الاصطناعي',
     monthEndClose: 'إقفال نهاية الشهر',
     pricing: 'الأسعار',
+
+    // Sidebar group titles & new nav items
+    sales: 'المبيعات',
+    purchases: 'المشتريات',
+    nraCenter: 'مركز NRA',
+    companyProfile: 'ملف الشركة',
+    healthDashboard: 'لوحة الصحة',
+    communications: 'التواصل',
   },
 };
 
