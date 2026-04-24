@@ -146,8 +146,9 @@ const assignStaffSchema = z.object({
 export function registerFirmRoutes(app: Express): void {
   const router = Router();
 
-  router.use(authMiddleware as any);
-  router.use(requireFirmRole());
+  // Scope to /firm prefix so unrelated /api/* paths don't get 403
+  router.use('/firm', authMiddleware as any);
+  router.use('/firm', requireFirmRole());
 
   // ─── GET /api/firm/clients ─────────────────────────────────────────────────
   router.get(

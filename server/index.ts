@@ -18,7 +18,7 @@ import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
 import { registerRoutes } from './routes';
 import { setupVite, serveStatic } from './vite';
 import { initScheduler } from './services/scheduler.service';
-import { runMigrations, checkDbConnectivity, closePool } from './db';
+import { runMigrations, checkDbConnectivity, closePool, ensureCriticalSchema } from './db';
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -111,6 +111,9 @@ async function bootstrap() {
   } catch (migrationErr) {
     log.error({ err: migrationErr }, 'Database migration failed — continuing startup with existing schema');
   }
+
+  // Belt-and-suspenders: ensure critical schema columns exist regardless of migration state
+  await ensureCriticalSchema();
 
   // Register all API routes
   const server = await registerRoutes(app);
