@@ -13,7 +13,7 @@ export interface AuthUser {
   id: string;
   email: string;
   isAdmin: boolean;
-  userType: 'admin' | 'customer' | 'client';
+  userType: 'admin' | 'customer' | 'client' | 'client_portal';
   firmRole: 'firm_owner' | 'firm_admin' | null;
 }
 
