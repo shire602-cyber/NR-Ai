@@ -172,6 +172,8 @@ export const t = {
     aiCategorize: 'AI Categorize',
     aiCfo: 'AI CFO & Financial Advisor',
     aiFeatures: 'AI Automation',
+    aiChat: 'AI Chat',
+    hrPayroll: 'HR & Payroll',
     advancedAnalytics: 'Analytics & Forecasts',
     integrationsHub: 'CRM & E-Commerce',
     integrations: 'Integrations',
@@ -218,6 +220,7 @@ export const t = {
     reference: 'Reference',
     import: 'Import',
     inactive: 'Inactive',
+    profile: 'Profile',
     
     // Chart of Accounts
     chartOfAccountsDescription: 'Manage and view all financial accounts for your company',
@@ -467,6 +470,8 @@ export const t = {
     aiCategorize: 'التصنيف الذكي',
     aiCfo: 'مستشار مالي بالذكاء الاصطناعي',
     aiFeatures: 'الأتمتة الذكية',
+    aiChat: 'محادثة الذكاء الاصطناعي',
+    hrPayroll: 'الموارد البشرية والرواتب',
     advancedAnalytics: 'التحليلات والتوقعات',
     integrationsHub: 'إدارة العملاء والتجارة الإلكترونية',
     integrations: 'التكاملات',
@@ -513,6 +518,7 @@ export const t = {
     reference: 'المرجع',
     import: 'استيراد',
     inactive: 'غير نشط',
+    profile: 'الملف الشخصي',
     
     // Chart of Accounts
     chartOfAccountsDescription: 'إدارة وعرض جميع الحسابات المالية لشركتك',

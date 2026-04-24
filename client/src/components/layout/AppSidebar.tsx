@@ -59,6 +59,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { useTranslation, useI18n } from '@/lib/i18n';
+import { useRTL } from '@/components/RTLProvider';
 import { removeToken, getToken } from '@/lib/auth';
 
 const coreItems = [
@@ -139,6 +140,7 @@ export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
+  const { isRTL, rtlValue } = useRTL();
 
   // Check user status directly from token - no state needed
   const checkUserStatus = (): {
@@ -203,17 +205,17 @@ export function AppSidebar() {
     return (
       <SidebarMenuItem key={item.url}>
         <motion.div
-          whileHover={{ x: 4 }}
+          whileHover={{ x: rtlValue(4, -4) }}
           transition={{ duration: 0.2 }}
         >
-        <SidebarMenuButton 
+        <SidebarMenuButton
           isActive={isActive}
           onClick={() => setLocation(item.url)}
           data-testid={`link-${item.title}`}
             className="relative group transition-all duration-200"
           >
             <motion.div
-              className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full"
+              className={`absolute top-0 bottom-0 w-1 bg-primary ${isRTL ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'}`}
               initial={{ scaleY: 0 }}
               animate={{ scaleY: isActive ? 1 : 0 }}
               transition={{ duration: 0.2 }}
@@ -225,7 +227,7 @@ export function AppSidebar() {
           <Icon className="w-4 h-4" />
             </motion.div>
             <motion.span
-              initial={{ opacity: 0, x: -10 }}
+              initial={{ opacity: 0, x: rtlValue(-10, 10) }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.2 }}
             >
@@ -238,9 +240,9 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar>
+    <Sidebar side={isRTL ? 'right' : 'left'}>
       <motion.div
-        initial={{ opacity: 0, x: -20 }}
+        initial={{ opacity: 0, x: rtlValue(-20, 20) }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.4 }}
       >
@@ -452,7 +454,7 @@ export function AppSidebar() {
           data-testid="button-logout"
           >
             <motion.div
-              whileHover={{ x: -2 }}
+              whileHover={{ x: rtlValue(-2, 2) }}
               transition={{ duration: 0.2 }}
         >
           <LogOut className="w-4 h-4 mr-2" />

@@ -15,7 +15,9 @@
  */
 
 /* ── Google Fonts ─────────────────────────────────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Noto+Sans+Arabic:wght@300;400;500;600;700&display=swap');
+/* Cairo + Noto Sans Arabic are now preloaded in index.html <head>.        */
+/* This @import is kept as a fallback for environments that skip the HTML  */
+/* preload (e.g. Storybook, standalone CSS consumers).                     */
 
 /* ══════════════════════════════════════════════════════════════════════
    1. BASE / TYPOGRAPHY
@@ -80,19 +82,27 @@
 [dir="rtl"] .ml-auto { margin-left: 0; margin-right: auto; }
 [dir="rtl"] .mr-auto { margin-right: 0; margin-left: auto; }
 
-[dir="rtl"] .ml-1 { margin-left: 0; margin-right: 0.25rem; }
-[dir="rtl"] .ml-2 { margin-left: 0; margin-right: 0.5rem; }
-[dir="rtl"] .ml-3 { margin-left: 0; margin-right: 0.75rem; }
-[dir="rtl"] .ml-4 { margin-left: 0; margin-right: 1rem; }
-[dir="rtl"] .ml-6 { margin-left: 0; margin-right: 1.5rem; }
-[dir="rtl"] .ml-8 { margin-left: 0; margin-right: 2rem; }
+[dir="rtl"] .ml-1  { margin-left: 0; margin-right: 0.25rem; }
+[dir="rtl"] .ml-2  { margin-left: 0; margin-right: 0.5rem; }
+[dir="rtl"] .ml-3  { margin-left: 0; margin-right: 0.75rem; }
+[dir="rtl"] .ml-4  { margin-left: 0; margin-right: 1rem; }
+[dir="rtl"] .ml-5  { margin-left: 0; margin-right: 1.25rem; }
+[dir="rtl"] .ml-6  { margin-left: 0; margin-right: 1.5rem; }
+[dir="rtl"] .ml-8  { margin-left: 0; margin-right: 2rem; }
+[dir="rtl"] .ml-10 { margin-left: 0; margin-right: 2.5rem; }
+[dir="rtl"] .ml-12 { margin-left: 0; margin-right: 3rem; }
+[dir="rtl"] .ml-16 { margin-left: 0; margin-right: 4rem; }
 
-[dir="rtl"] .mr-1 { margin-right: 0; margin-left: 0.25rem; }
-[dir="rtl"] .mr-2 { margin-right: 0; margin-left: 0.5rem; }
-[dir="rtl"] .mr-3 { margin-right: 0; margin-left: 0.75rem; }
-[dir="rtl"] .mr-4 { margin-right: 0; margin-left: 1rem; }
-[dir="rtl"] .mr-6 { margin-right: 0; margin-left: 1.5rem; }
-[dir="rtl"] .mr-8 { margin-right: 0; margin-left: 2rem; }
+[dir="rtl"] .mr-1  { margin-right: 0; margin-left: 0.25rem; }
+[dir="rtl"] .mr-2  { margin-right: 0; margin-left: 0.5rem; }
+[dir="rtl"] .mr-3  { margin-right: 0; margin-left: 0.75rem; }
+[dir="rtl"] .mr-4  { margin-right: 0; margin-left: 1rem; }
+[dir="rtl"] .mr-5  { margin-right: 0; margin-left: 1.25rem; }
+[dir="rtl"] .mr-6  { margin-right: 0; margin-left: 1.5rem; }
+[dir="rtl"] .mr-8  { margin-right: 0; margin-left: 2rem; }
+[dir="rtl"] .mr-10 { margin-right: 0; margin-left: 2.5rem; }
+[dir="rtl"] .mr-12 { margin-right: 0; margin-left: 3rem; }
+[dir="rtl"] .mr-16 { margin-right: 0; margin-left: 4rem; }
 
 /* Padding directional swaps */
 [dir="rtl"] .pl-1 { padding-left: 0; padding-right: 0.25rem; }
@@ -125,11 +135,29 @@
 [dir="rtl"] .rounded-bl { border-bottom-left-radius: 0; border-bottom-right-radius: var(--radius); }
 [dir="rtl"] .rounded-br { border-bottom-right-radius: 0; border-bottom-left-radius: var(--radius); }
 
-/* Border directional swaps */
-[dir="rtl"] .border-l { border-left: none; border-right: 1px solid; }
-[dir="rtl"] .border-r { border-right: none; border-left: 1px solid; }
-[dir="rtl"] .border-l-2 { border-left: none; border-right: 2px solid; }
-[dir="rtl"] .border-r-2 { border-right: none; border-left: 2px solid; }
+/* Full-radius directional swaps (used for pill-shaped active indicators, badges, etc.) */
+[dir="rtl"] .rounded-r-full {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-top-left-radius: 9999px;
+  border-bottom-left-radius: 9999px;
+}
+[dir="rtl"] .rounded-l-full {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-top-right-radius: 9999px;
+  border-bottom-right-radius: 9999px;
+}
+[dir="rtl"] .rounded-tl-lg { border-top-left-radius: 0; border-top-right-radius: var(--radius-lg, 0.5rem); }
+[dir="rtl"] .rounded-tr-lg { border-top-right-radius: 0; border-top-left-radius: var(--radius-lg, 0.5rem); }
+
+/* Border directional swaps — use width-only so border-color classes are preserved */
+[dir="rtl"] .border-l { border-left-width: 0; border-right-width: 1px; }
+[dir="rtl"] .border-r { border-right-width: 0; border-left-width: 1px; }
+[dir="rtl"] .border-l-2 { border-left-width: 0; border-right-width: 2px; }
+[dir="rtl"] .border-r-2 { border-right-width: 0; border-left-width: 2px; }
+[dir="rtl"] .border-l-4 { border-left-width: 0; border-right-width: 4px; }
+[dir="rtl"] .border-r-4 { border-right-width: 0; border-left-width: 4px; }
 
 /* Absolute / fixed position swaps */
 [dir="rtl"] .left-0 { left: auto; right: 0; }

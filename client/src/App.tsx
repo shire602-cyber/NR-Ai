@@ -8,7 +8,7 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, useTranslation } from '@/lib/i18n';
 import { getToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { User } from 'lucide-react';
@@ -113,6 +113,7 @@ function PageLoader() {
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
 import { RouteGuard } from '@/components/layout/RouteGuard';
+import { RTLProvider } from '@/components/RTLProvider';
 import '@/styles/rtl.css';
 import '@/styles/mobile.css';
 
@@ -121,6 +122,7 @@ import { OnboardingWizard } from '@/components/Onboarding';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const { t } = useTranslation();
   const style = {
     '--sidebar-width': '16rem',
     '--sidebar-width-icon': '3rem',
@@ -150,7 +152,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               >
                 <Button variant="ghost" size="sm" data-testid="button-profile" className="transition-all duration-200">
                 <User className="w-4 h-4 mr-2" />
-                Profile
+                {t.profile}
               </Button>
               </motion.div>
             </Link>
@@ -368,12 +370,14 @@ export default function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Router />
-          <PWAInstallPrompt />
-          <MobileNav />
-          <Toaster />
-        </TooltipProvider>
+        <RTLProvider>
+          <TooltipProvider>
+            <Router />
+            <PWAInstallPrompt />
+            <MobileNav />
+            <Toaster />
+          </TooltipProvider>
+        </RTLProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );
