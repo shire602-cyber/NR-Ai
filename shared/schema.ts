@@ -2049,3 +2049,54 @@ export const insertAiConversationSchema = createInsertSchema(aiConversations).om
 
 export type InsertAiConversation = z.infer<typeof insertAiConversationSchema>;
 export type AiConversation = typeof aiConversations.$inferSelect;
+
+// ===========================
+// Client Communications
+// ===========================
+export const clientCommunications = pgTable("client_communications", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  channel: text("channel").notNull(), // 'whatsapp' | 'email' | 'sms'
+  direction: text("direction").notNull().default("outbound"), // 'inbound' | 'outbound'
+  recipientPhone: text("recipient_phone"),
+  recipientEmail: text("recipient_email"),
+  subject: text("subject"),
+  body: text("body").notNull(),
+  status: text("status").notNull().default("sent"), // 'sent' | 'delivered' | 'read' | 'failed'
+  templateType: text("template_type"), // 'vat_reminder' | 'invoice' | 'document_request' | 'payment_confirmation' | 'custom'
+  metadata: text("metadata"), // JSON string
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertClientCommunicationSchema = createInsertSchema(clientCommunications).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertClientCommunication = z.infer<typeof insertClientCommunicationSchema>;
+export type ClientCommunication = typeof clientCommunications.$inferSelect;
+
+// ===========================
+// Communication Templates
+// ===========================
+export const communicationTemplates = pgTable("communication_templates", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  channel: text("channel").notNull(), // 'whatsapp' | 'email' | 'sms'
+  templateType: text("template_type").notNull(), // 'vat_reminder' | 'invoice' | 'document_request' | 'payment_confirmation' | 'custom'
+  subjectTemplate: text("subject_template"),
+  bodyTemplate: text("body_template").notNull(),
+  language: text("language").notNull().default("en"), // 'en' | 'ar'
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertCommunicationTemplateSchema = createInsertSchema(communicationTemplates).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertCommunicationTemplate = z.infer<typeof insertCommunicationTemplateSchema>;
+export type CommunicationTemplate = typeof communicationTemplates.$inferSelect;

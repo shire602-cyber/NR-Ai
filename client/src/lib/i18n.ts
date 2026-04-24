@@ -67,6 +67,7 @@ export const t = {
     // NRA Center items
     clientPortfolio: 'Client Portfolio',
     staffManagement: 'Staff Management',
+    bulkOperations: 'Bulk Operations',
 
     // Admin items
     adminDashboard: 'Admin Dashboard',
@@ -268,6 +269,37 @@ export const t = {
     aiInbox: 'AI Inbox',
     monthEndClose: 'Month-End Close',
     pricing: 'Pricing',
+
+    // Communications Hub
+    communicationsHub: 'Communications Hub',
+    inbox: 'Inbox',
+    compose: 'Compose',
+    templates: 'Templates',
+    bulkActions: 'Bulk Actions',
+    sendEmail: 'Send Email',
+    sendWhatsApp: 'Send WhatsApp',
+    recipient: 'Recipient',
+    selectClient: 'Select Client',
+    selectTemplate: 'Select Template',
+    channel: 'Channel',
+    whatsapp: 'WhatsApp',
+    commsLog: 'Communication Log',
+    noCommsYet: 'No communications yet',
+    sendVatReminders: 'Send VAT Reminders',
+    vatRemindersPreview: 'Preview clients with upcoming VAT deadlines',
+    daysAhead: 'Days ahead',
+    sendReminders: 'Send Reminders',
+    previewReminders: 'Preview',
+    bulkRemindSuccess: 'VAT reminders sent',
+    templateName: 'Template Name',
+    templateBody: 'Template Body',
+    subjectTemplate: 'Subject Template',
+    addTemplate: 'Add Template',
+    editTemplate: 'Edit Template',
+    noTemplates: 'No templates yet',
+    templateSaved: 'Template saved',
+    noClientsFound: 'No clients with upcoming VAT deadlines',
+    previewNote: 'Preview only — no messages sent',
   },
   ar: {
     // Navigation
@@ -309,6 +341,7 @@ export const t = {
     // NRA Center items
     clientPortfolio: 'محفظة العملاء',
     staffManagement: 'إدارة الموظفين',
+    bulkOperations: 'العمليات الجماعية',
 
     // Admin items
     adminDashboard: 'لوحة تحكم المدير',
@@ -510,6 +543,37 @@ export const t = {
     aiInbox: 'صندوق الذكاء الاصطناعي',
     monthEndClose: 'إقفال نهاية الشهر',
     pricing: 'الأسعار',
+
+    // Communications Hub
+    communicationsHub: 'مركز الاتصالات',
+    inbox: 'صندوق الوارد',
+    compose: 'إنشاء رسالة',
+    templates: 'القوالب',
+    bulkActions: 'الإجراءات الجماعية',
+    sendEmail: 'إرسال بريد إلكتروني',
+    sendWhatsApp: 'إرسال واتساب',
+    recipient: 'المستلم',
+    selectClient: 'اختر العميل',
+    selectTemplate: 'اختر القالب',
+    channel: 'القناة',
+    whatsapp: 'واتساب',
+    commsLog: 'سجل الاتصالات',
+    noCommsYet: 'لا توجد اتصالات بعد',
+    sendVatReminders: 'إرسال تذكيرات ضريبة القيمة المضافة',
+    vatRemindersPreview: 'معاينة العملاء مع مواعيد ضريبة القيمة المضافة القادمة',
+    daysAhead: 'الأيام القادمة',
+    sendReminders: 'إرسال التذكيرات',
+    previewReminders: 'معاينة',
+    bulkRemindSuccess: 'تم إرسال تذكيرات ضريبة القيمة المضافة',
+    templateName: 'اسم القالب',
+    templateBody: 'نص القالب',
+    subjectTemplate: 'قالب الموضوع',
+    addTemplate: 'إضافة قالب',
+    editTemplate: 'تعديل القالب',
+    noTemplates: 'لا توجد قوالب بعد',
+    templateSaved: 'تم حفظ القالب',
+    noClientsFound: 'لم يتم العثور على عملاء مع مواعيد قادمة',
+    previewNote: 'معاينة فقط — لن يتم إرسال رسائل',
   },
 };
 

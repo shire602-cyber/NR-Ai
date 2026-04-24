@@ -56,6 +56,8 @@ import { registerBankStatementRoutes } from './routes/bank-statements.routes';
 import { registerExchangeRateRoutes } from './routes/exchange-rates.routes';
 import { registerNRARoutes } from './routes/nra.routes';
 import { registerFirmRoutes } from './routes/firm.routes';
+import { registerFirmBulkRoutes } from './routes/firm-bulk.routes';
+import { registerFirmCommsRoutes } from './routes/firm-comms.routes';
 
 const log = createLogger('routes');
 
@@ -130,6 +132,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── NRA Management Center ──────────────────────────────
   registerNRARoutes(app);
   registerFirmRoutes(app);
+  registerFirmBulkRoutes(app);
+  registerFirmCommsRoutes(app);
 
   log.info('All route modules registered');
 

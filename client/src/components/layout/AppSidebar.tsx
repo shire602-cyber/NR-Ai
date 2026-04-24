@@ -127,6 +127,8 @@ const adminItems = [
 const nraItems = [
   { title: 'clientPortfolio', icon: Briefcase, url: '/firm/clients' },
   { title: 'staffManagement', icon: Users, url: '/firm/staff' },
+  { title: 'bulkOperations', icon: Zap, url: '/firm/bulk' },
+  { title: 'communicationsHub', icon: MessageSquare, url: '/firm/comms' },
 ];
 
 export function AppSidebar() {
