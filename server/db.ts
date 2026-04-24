@@ -338,6 +338,66 @@ export async function ensureCriticalSchema(): Promise<void> {
             WHERE cu.company_id = c.id AND cu.user_id = u.id
           )`,
     },
+    // ── 0019 (was missing): companies soft-delete columns [CRITICAL] ─────
+    // Without deleted_at, ALL Drizzle company queries fail (column in schema but not in DB).
+    {
+      name: 'companies.deleted_at',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp`,
+    },
+    {
+      name: 'companies.is_active',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "is_active" boolean NOT NULL DEFAULT true`,
+    },
+    // ── 0028: test_firm_owner@nra.ae seed for endpoint testing ───────────
+    {
+      name: 'seed test_firm_owner@nra.ae',
+      sql: sql`INSERT INTO users (email, name, password_hash, is_admin, user_type, firm_role)
+        VALUES (
+          'test_firm_owner@nra.ae',
+          'Test Firm Owner',
+          '$2b$10$1vXzRdibZKs7X1bF3hLHveIJW/E3RySW8KzE2SR0218tJh/O.zHUm',
+          false,
+          'customer',
+          'firm_owner'
+        )
+        ON CONFLICT (email) DO UPDATE
+          SET password_hash = '$2b$10$1vXzRdibZKs7X1bF3hLHveIJW/E3RySW8KzE2SR0218tJh/O.zHUm',
+              firm_role = 'firm_owner'`,
+    },
+    {
+      name: 'seed NRA Test Company',
+      sql: sql`INSERT INTO companies (name, base_currency, locale, company_type)
+        VALUES ('NRA Test Company', 'AED', 'en', 'customer')
+        ON CONFLICT (name) DO NOTHING`,
+    },
+    {
+      name: 'seed test_firm_owner company link',
+      sql: sql`INSERT INTO company_users (company_id, user_id, role)
+        SELECT c.id, u.id, 'owner'
+        FROM companies c
+        CROSS JOIN users u
+        WHERE c.name = 'NRA Test Company'
+          AND u.email = 'test_firm_owner@nra.ae'
+          AND NOT EXISTS (
+            SELECT 1 FROM company_users cu
+            WHERE cu.company_id = c.id AND cu.user_id = u.id
+          )`,
+    },
+    {
+      name: 'seed NRA Test Company subscription',
+      sql: sql`INSERT INTO subscriptions (company_id, plan_id, plan_name, status, current_period_start, current_period_end)
+        SELECT c.id, 'free', 'Free', 'active', now(), now() + interval '100 years'
+        FROM companies c
+        WHERE c.name = 'NRA Test Company'
+          AND NOT EXISTS (
+            SELECT 1 FROM subscriptions s WHERE s.company_id = c.id
+          )`,
+    },
+    // ── 0020 (was missing): invoice contact_id FK ─────────────────────────
+    {
+      name: 'invoices.contact_id',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "contact_id" uuid REFERENCES "customer_contacts"("id") ON DELETE SET NULL`,
+    },
   ];
 
   let ok = 0;
