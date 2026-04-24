@@ -110,7 +110,7 @@ export function registerInvoiceRoutes(app: Express) {
   app.post("/api/companies/:companyId/invoices", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
-    const { lines, date, ...invoiceData } = req.body;
+    const { lines, date, dueDate, ...invoiceData } = req.body;
 
     // Check if user has access to this company
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -130,8 +130,9 @@ export function registerInvoiceRoutes(app: Express) {
 
     const total = subtotal + vatAmount;
 
-    // Convert date string to Date object if it's a string
+    // Convert date strings to Date objects
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
+    const invoiceDueDate = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
 
     console.log('[Invoices] Creating invoice:', {
       companyId,
@@ -148,6 +149,7 @@ export function registerInvoiceRoutes(app: Express) {
     const invoice = await storage.createInvoice({
       ...invoiceData,
       date: invoiceDate,
+      dueDate: invoiceDueDate,
       companyId,
       subtotal,
       vatAmount,
