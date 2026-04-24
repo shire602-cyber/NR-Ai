@@ -102,11 +102,15 @@ let httpServer: any = null;
 async function bootstrap() {
   log.info({ environment: env.NODE_ENV, port: env.PORT }, 'Starting server');
 
-  // Run database migrations before starting the server
+  // Run database migrations before starting the server (non-fatal: app continues if already up-to-date or migration errors)
   const migrationsFolder = path.join(projectRoot, 'migrations');
   log.info({ migrationsFolder }, 'Running database migrations...');
-  await runMigrations(migrationsFolder);
-  log.info('Database migrations completed successfully');
+  try {
+    await runMigrations(migrationsFolder);
+    log.info('Database migrations completed successfully');
+  } catch (migrationErr) {
+    log.error({ err: migrationErr }, 'Database migration failed — continuing startup with existing schema');
+  }
 
   // Register all API routes
   const server = await registerRoutes(app);
