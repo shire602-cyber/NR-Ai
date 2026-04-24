@@ -25,6 +25,7 @@
     { "idx": 20, "version": "7", "when": 1766900000000, "tag": "0020_repair_firm_roles", "breakpoints": false },
     { "idx": 21, "version": "7", "when": 1767000000000, "tag": "0021_add_communications", "breakpoints": false },
     { "idx": 22, "version": "7", "when": 1767100000000, "tag": "0022_add_firm_leads", "breakpoints": false },
-    { "idx": 23, "version": "7", "when": 1767200000000, "tag": "0023_seed_test_firm_owner", "breakpoints": false }
+    { "idx": 23, "version": "7", "when": 1767200000000, "tag": "0023_seed_test_firm_owner", "breakpoints": false },
+    { "idx": 24, "version": "7", "when": 1767300000000, "tag": "0024_receipt_image_path", "breakpoints": false }
   ]
 }

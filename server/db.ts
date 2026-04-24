@@ -229,6 +229,11 @@ export async function ensureCriticalSchema(): Promise<void> {
         "created_at" timestamp NOT NULL DEFAULT now()
       )`,
     },
+    // ── 0024: receipt image_path column ─────────────────────────────────
+    {
+      name: 'receipts.image_path',
+      sql: sql`ALTER TABLE "receipts" ADD COLUMN IF NOT EXISTS "image_path" text`,
+    },
     // ── 0019/0020: firm_role + firm_staff_assignments ────────────────────
     {
       name: 'users.firm_role',
