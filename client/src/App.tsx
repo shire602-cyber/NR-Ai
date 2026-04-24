@@ -15,16 +15,17 @@ import { User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 
-// Eagerly loaded — always needed on first paint
-import NotFound from '@/pages/not-found';
-import Login from '@/pages/Login';
-import Register from '@/pages/Register';
-import Dashboard from '@/pages/Dashboard';
-import Landing from '@/pages/Landing';
-import Services from '@/pages/Services';
-import Pricing from '@/pages/Pricing';
-import PublicInvoiceView from '@/pages/PublicInvoiceView';
-import CustomerPortal from '@/pages/CustomerPortal';
+// All pages lazy-loaded for route-level code splitting.
+// Layout shell (AppSidebar, ProtectedLayout) is NOT lazy — needed immediately.
+const NotFound = lazy(() => import('@/pages/not-found'));
+const Login = lazy(() => import('@/pages/Login'));
+const Register = lazy(() => import('@/pages/Register'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Landing = lazy(() => import('@/pages/Landing'));
+const Services = lazy(() => import('@/pages/Services'));
+const Pricing = lazy(() => import('@/pages/Pricing'));
+const PublicInvoiceView = lazy(() => import('@/pages/PublicInvoiceView'));
+const CustomerPortal = lazy(() => import('@/pages/CustomerPortal'));
 
 // Firm (NRA Management Center) — lazy loaded
 const ClientPortfolio = lazy(() => import('@/pages/firm/ClientPortfolio'));
@@ -35,16 +36,16 @@ const FirmComms = lazy(() => import('@/pages/firm/FirmComms'));
 const FirmAnalytics = lazy(() => import('@/pages/firm/FirmAnalytics'));
 const LeadPipeline = lazy(() => import('@/pages/firm/LeadPipeline'));
 
-// Core accounting — loaded eagerly since most users land here
-import Accounts from '@/pages/Accounts';
-import ChartOfAccounts from '@/pages/ChartOfAccounts';
-import AccountLedger from '@/pages/AccountLedger';
-import Invoices from '@/pages/Invoices';
-import Journal from '@/pages/Journal';
-import JournalEntryDetail from '@/pages/JournalEntryDetail';
-import Reports from '@/pages/Reports';
-import Receipts from '@/pages/Receipts';
-import CompanyProfile from '@/pages/CompanyProfile';
+// Core accounting
+const Accounts = lazy(() => import('@/pages/Accounts'));
+const ChartOfAccounts = lazy(() => import('@/pages/ChartOfAccounts'));
+const AccountLedger = lazy(() => import('@/pages/AccountLedger'));
+const Invoices = lazy(() => import('@/pages/Invoices'));
+const Journal = lazy(() => import('@/pages/Journal'));
+const JournalEntryDetail = lazy(() => import('@/pages/JournalEntryDetail'));
+const Reports = lazy(() => import('@/pages/Reports'));
+const Receipts = lazy(() => import('@/pages/Receipts'));
+const CompanyProfile = lazy(() => import('@/pages/CompanyProfile'));
 
 // Lazy-loaded pages (large or infrequently visited)
 const Admin = lazy(() => import('@/pages/Admin'));
@@ -214,41 +215,45 @@ function Router() {
   // Landing page (public only)
   if (location === '/' && !token) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key="landing"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Landing />
-        </motion.div>
-      </AnimatePresence>
+      <Suspense fallback={<PageLoader />}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key="landing"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Landing />
+          </motion.div>
+        </AnimatePresence>
+      </Suspense>
     );
   }
   
   // Public routes (no sidebar)
   if (location === '/login' || location === '/register' || location === '/services' || location === '/pricing' || location.startsWith('/view/invoice/') || location.startsWith('/portal/')) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={location}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.3 }}
-        >
-      <Switch>
-        <Route path="/login" component={Login} />
-        <Route path="/register" component={Register} />
-        <Route path="/services" component={Services} />
-        <Route path="/view/invoice/:token" component={PublicInvoiceView} />
-        <Route path="/portal/:token" component={CustomerPortal} />
-        <Route path="/pricing" component={Pricing} />
-      </Switch>
-        </motion.div>
-      </AnimatePresence>
+      <Suspense fallback={<PageLoader />}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Switch>
+              <Route path="/login" component={Login} />
+              <Route path="/register" component={Register} />
+              <Route path="/services" component={Services} />
+              <Route path="/view/invoice/:token" component={PublicInvoiceView} />
+              <Route path="/portal/:token" component={CustomerPortal} />
+              <Route path="/pricing" component={Pricing} />
+            </Switch>
+          </motion.div>
+        </AnimatePresence>
+      </Suspense>
     );
   }
 
