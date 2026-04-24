@@ -10,7 +10,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { db } from '../db';
-import { eq, and, count, sum, max, or, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne } from 'drizzle-orm';
 import {
   companies,
   companyUsers,
@@ -19,6 +19,8 @@ import {
   receipts,
   vatReturns,
   bankTransactions,
+  journalLines,
+  journalEntries,
 } from '../../shared/schema';
 
 const logger = createLogger('firm-routes');
@@ -114,6 +116,148 @@ async function getClientStats(companyId: string) {
         }
       : null,
     assignedStaff: staffRows,
+  };
+}
+
+// ─── Health helpers ────────────────────────────────────────────────────────────
+
+type HealthStatus = 'healthy' | 'attention' | 'critical';
+type VatHealthStatus = 'on-track' | 'due-soon' | 'overdue';
+
+async function computeClientHealth(companyId: string) {
+  const now = new Date();
+
+  const [vatRow, arStats, overdueStats, bankUnrec, bankLastRec, tbStats, lastInvoice, lastReceipt] =
+    await Promise.all([
+      db
+        .select({ status: vatReturns.status, dueDate: vatReturns.dueDate, periodEnd: vatReturns.periodEnd })
+        .from(vatReturns)
+        .where(eq(vatReturns.companyId, companyId))
+        .orderBy(desc(vatReturns.periodEnd))
+        .limit(1)
+        .then((r: { status: string; dueDate: Date; periodEnd: Date }[]) => r[0] || null),
+
+      db
+        .select({ total: sum(invoices.total) })
+        .from(invoices)
+        .where(and(eq(invoices.companyId, companyId), or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial'))))
+        .then((r: { total: string | null }[]) => r[0]),
+
+      db
+        .select({ overdueAmt: sum(invoices.total), overdueCount: count() })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.companyId, companyId),
+            or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial')),
+            lt(invoices.dueDate, now)
+          )
+        )
+        .then((r: { overdueAmt: string | null; overdueCount: number }[]) => r[0]),
+
+      db
+        .select({ cnt: count() })
+        .from(bankTransactions)
+        .where(and(eq(bankTransactions.companyId, companyId), eq(bankTransactions.isReconciled, false)))
+        .then((r: { cnt: number }[]) => r[0]),
+
+      db
+        .select({ lastDate: max(bankTransactions.transactionDate) })
+        .from(bankTransactions)
+        .where(and(eq(bankTransactions.companyId, companyId), eq(bankTransactions.isReconciled, true)))
+        .then((r: { lastDate: Date | null }[]) => r[0]),
+
+      db
+        .select({ totalDebit: sum(journalLines.debit), totalCredit: sum(journalLines.credit) })
+        .from(journalLines)
+        .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+        .where(eq(journalEntries.companyId, companyId))
+        .then((r: { totalDebit: string | null; totalCredit: string | null }[]) => r[0]),
+
+      db
+        .select({ lastDate: max(invoices.createdAt) })
+        .from(invoices)
+        .where(eq(invoices.companyId, companyId))
+        .then((r: { lastDate: Date | null }[]) => r[0]),
+
+      db
+        .select({ lastDate: max(receipts.createdAt) })
+        .from(receipts)
+        .where(eq(receipts.companyId, companyId))
+        .then((r: { lastDate: Date | null }[]) => r[0]),
+    ]);
+
+  // VAT status
+  let vatStatusResult: {
+    nextDueDate: Date | null;
+    daysTilDue: number | null;
+    lastFiledDate: Date | null;
+    status: VatHealthStatus;
+  };
+  if (!vatRow) {
+    vatStatusResult = { nextDueDate: null, daysTilDue: null, lastFiledDate: null, status: 'on-track' };
+  } else {
+    const daysTilDue = Math.ceil((vatRow.dueDate.getTime() - now.getTime()) / 86_400_000);
+    const isFiled = vatRow.status === 'filed' || vatRow.status === 'submitted';
+    vatStatusResult = {
+      nextDueDate: vatRow.dueDate,
+      daysTilDue,
+      lastFiledDate: isFiled ? vatRow.periodEnd : null,
+      status: isFiled ? 'on-track' : daysTilDue < 0 ? 'overdue' : daysTilDue <= 14 ? 'due-soon' : 'on-track',
+    };
+  }
+
+  // AR health
+  const totalOutstanding = Number(arStats?.total ?? 0);
+  const overdueAmount = Number(overdueStats?.overdueAmt ?? 0);
+  const overdueCount = Number(overdueStats?.overdueCount ?? 0);
+  let arStatus: HealthStatus;
+  if (overdueCount === 0) arStatus = 'healthy';
+  else if (overdueAmount > 50_000 || overdueCount > 5) arStatus = 'critical';
+  else arStatus = 'attention';
+
+  // Bank rec status
+  const unreconciledCount = Number(bankUnrec?.cnt ?? 0);
+  const lastRecDate = bankLastRec?.lastDate ?? null;
+  const daysSinceRec = lastRecDate
+    ? Math.ceil((now.getTime() - (lastRecDate as Date).getTime()) / 86_400_000)
+    : null;
+  let bankStatus: HealthStatus;
+  if (unreconciledCount === 0) bankStatus = 'healthy';
+  else if (unreconciledCount > 20 || (daysSinceRec !== null && daysSinceRec > 90)) bankStatus = 'critical';
+  else bankStatus = 'attention';
+
+  // Trial balance
+  const totalDebit = Number(tbStats?.totalDebit ?? 0);
+  const totalCredit = Number(tbStats?.totalCredit ?? 0);
+  const discrepancy = Math.abs(totalDebit - totalCredit);
+  const balanced = discrepancy < 0.01;
+  const tbStatus: HealthStatus = balanced ? 'healthy' : discrepancy > 1_000 ? 'critical' : 'attention';
+
+  // Last activity
+  const activityDates = [lastInvoice?.lastDate, lastReceipt?.lastDate].filter(Boolean) as Date[];
+  const lastActivity =
+    activityDates.length > 0 ? new Date(Math.max(...activityDates.map(d => d.getTime()))) : null;
+
+  // Overall health
+  const hasAnyStatus = (s: string) =>
+    vatStatusResult.status === s ||
+    arStatus === s ||
+    bankStatus === s ||
+    tbStatus === s;
+
+  let overallHealth: HealthStatus;
+  if (hasAnyStatus('critical') || vatStatusResult.status === 'overdue') overallHealth = 'critical';
+  else if (hasAnyStatus('attention') || vatStatusResult.status === 'due-soon') overallHealth = 'attention';
+  else overallHealth = 'healthy';
+
+  return {
+    vatStatus: vatStatusResult,
+    arHealth: { totalOutstanding, overdueAmount, overdueCount, status: arStatus },
+    bankRecStatus: { lastRecDate, daysSinceRec, unreconciledCount, status: bankStatus },
+    trialBalanceStatus: { balanced, discrepancy, status: tbStatus },
+    lastActivity,
+    overallHealth,
   };
 }
 
@@ -403,6 +547,109 @@ export function registerFirmRoutes(app: Express): void {
       );
 
       res.json(staffWithAssignments);
+    })
+  );
+
+  // ─── GET /api/firm/health ────────────────────────────────────────────────────
+  router.get(
+    '/firm/health',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+
+      let clientCompanies: Awaited<ReturnType<typeof storage.getClientCompanies>>;
+      if (accessibleIds === null) {
+        clientCompanies = await storage.getClientCompanies();
+      } else if (accessibleIds.length === 0) {
+        clientCompanies = [];
+      } else {
+        clientCompanies = await db
+          .select()
+          .from(companies)
+          .where(and(eq(companies.companyType, 'client'), inArray(companies.id, accessibleIds)));
+      }
+
+      const clients = await Promise.all(
+        clientCompanies.map(async company => {
+          const health = await computeClientHealth(company.id);
+          return {
+            companyId: company.id,
+            companyName: company.name,
+            trn: company.trnVatNumber,
+            ...health,
+          };
+        })
+      );
+
+      const summary = {
+        totalClients: clients.length,
+        healthy: clients.filter(c => c.overallHealth === 'healthy').length,
+        attention: clients.filter(c => c.overallHealth === 'attention').length,
+        critical: clients.filter(c => c.overallHealth === 'critical').length,
+      };
+
+      res.json({ clients, summary });
+    })
+  );
+
+  // ─── GET /api/firm/health/deadlines ──────────────────────────────────────────
+  router.get(
+    '/firm/health/deadlines',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+
+      let clientCompanies: Awaited<ReturnType<typeof storage.getClientCompanies>>;
+      if (accessibleIds === null) {
+        clientCompanies = await storage.getClientCompanies();
+      } else if (accessibleIds.length === 0) {
+        clientCompanies = [];
+      } else {
+        clientCompanies = await db
+          .select()
+          .from(companies)
+          .where(and(eq(companies.companyType, 'client'), inArray(companies.id, accessibleIds)));
+      }
+
+      const now = new Date();
+      const deadlines: {
+        companyId: string;
+        companyName: string;
+        type: 'vat' | 'corporate-tax' | 'audit';
+        dueDate: Date;
+        daysTilDue: number;
+        status: 'upcoming' | 'due-soon' | 'overdue';
+      }[] = [];
+
+      for (const company of clientCompanies) {
+        const pendingVat = await db
+          .select({ dueDate: vatReturns.dueDate, periodEnd: vatReturns.periodEnd })
+          .from(vatReturns)
+          .where(
+            and(
+              eq(vatReturns.companyId, company.id),
+              ne(vatReturns.status, 'filed'),
+              ne(vatReturns.status, 'submitted')
+            )
+          )
+          .orderBy(desc(vatReturns.dueDate));
+
+        for (const vr of pendingVat) {
+          const daysTilDue = Math.ceil((vr.dueDate.getTime() - now.getTime()) / 86_400_000);
+          deadlines.push({
+            companyId: company.id,
+            companyName: company.name,
+            type: 'vat',
+            dueDate: vr.dueDate,
+            daysTilDue,
+            status: daysTilDue < 0 ? 'overdue' : daysTilDue <= 14 ? 'due-soon' : 'upcoming',
+          });
+        }
+      }
+
+      deadlines.sort((a, b) => a.daysTilDue - b.daysTilDue);
+
+      res.json({ deadlines });
     })
   );
 

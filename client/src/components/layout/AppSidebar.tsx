@@ -125,6 +125,7 @@ const adminItems = [
 ];
 
 const nraItems = [
+  { title: 'healthDashboard', icon: Activity, url: '/firm/health' },
   { title: 'clientPortfolio', icon: Briefcase, url: '/firm/clients' },
   { title: 'staffManagement', icon: Users, url: '/firm/staff' },
 ];

@@ -67,6 +67,25 @@ export const t = {
     // NRA Center items
     clientPortfolio: 'Client Portfolio',
     staffManagement: 'Staff Management',
+    healthDashboard: 'Health Dashboard',
+
+    // Health Dashboard
+    healthDashboardDesc: 'At-a-glance health status for all managed clients',
+    totalClients: 'Total Clients',
+    needsAttention: 'Needs Attention',
+    healthy: 'Healthy',
+    critical: 'Critical',
+    clientHealthTable: 'Client Health Overview',
+    overallHealth: 'Overall Health',
+    client: 'Client',
+    vatStatus: 'VAT Status',
+    arHealth: 'AR Health',
+    bankRec: 'Bank Rec.',
+    trialBalance: 'Trial Balance',
+    lastActivity: 'Last Activity',
+    upcomingDeadlines: 'Upcoming Deadlines',
+    noDeadlines: 'No upcoming deadlines — all clients are on track',
+    noClients: 'No clients found',
 
     // Admin items
     adminDashboard: 'Admin Dashboard',
@@ -309,6 +328,25 @@ export const t = {
     // NRA Center items
     clientPortfolio: 'محفظة العملاء',
     staffManagement: 'إدارة الموظفين',
+    healthDashboard: 'لوحة الصحة',
+
+    // Health Dashboard
+    healthDashboardDesc: 'نظرة شاملة على حالة جميع العملاء المُدارين',
+    totalClients: 'إجمالي العملاء',
+    needsAttention: 'يحتاج انتباه',
+    healthy: 'سليم',
+    critical: 'حرج',
+    clientHealthTable: 'نظرة عامة على صحة العملاء',
+    overallHealth: 'الصحة الإجمالية',
+    client: 'العميل',
+    vatStatus: 'حالة الضريبة',
+    arHealth: 'الذمم المدينة',
+    bankRec: 'التسوية البنكية',
+    trialBalance: 'ميزان المراجعة',
+    lastActivity: 'آخر نشاط',
+    upcomingDeadlines: 'المواعيد القادمة',
+    noDeadlines: 'لا توجد مواعيد قادمة — جميع العملاء في المسار الصحيح',
+    noClients: 'لا توجد عملاء',
 
     // Admin items
     adminDashboard: 'لوحة تحكم المدير',
