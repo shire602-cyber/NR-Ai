@@ -100,6 +100,8 @@ export function registerReceiptRoutes(app: Express) {
       imageDataLength: receiptData.imageData?.length
     });
 
+    // TODO: receipt imageData is stored as base64 in Postgres. Migrate to object storage
+    // (e.g. S3/R2/Supabase Storage) to reduce DB size and improve backup performance.
     const receipt = await storage.createReceipt({
       ...receiptData,
       companyId, // Add companyId from URL params

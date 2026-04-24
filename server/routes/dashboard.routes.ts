@@ -179,11 +179,18 @@ export function registerDashboardRoutes(app: Express) {
   }
 
   app.get("/api/companies/:companyId/dashboard/stats", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    res.json(await getEnhancedDashboardStats(req.params.companyId));
+    const userId = (req as any).user?.id;
+    const { companyId } = req.params;
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+    res.json(await getEnhancedDashboardStats(companyId));
   }));
 
   app.get("/api/companies/:companyId/dashboard/expense-breakdown", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.params;
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const entries = await storage.getJournalEntriesByCompanyId(companyId);
     const accounts = await storage.getAccountsByCompanyId(companyId);
     const expenseAccounts = accounts.filter(a => a.type === 'expense');
@@ -213,7 +220,10 @@ export function registerDashboardRoutes(app: Express) {
   }));
 
   app.get("/api/companies/:companyId/dashboard/monthly-trends", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.params;
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const invoices = await storage.getInvoicesByCompanyId(companyId);
     const entries = await storage.getJournalEntriesByCompanyId(companyId);
     const accounts = await storage.getAccountsByCompanyId(companyId);
@@ -261,9 +271,11 @@ export function registerDashboardRoutes(app: Express) {
   // =====================================
 
   app.get("/api/companies/:companyId/reports/pl", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.params;
     const { startDate, endDate } = req.query;
-
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const accounts = await storage.getAccountsByCompanyId(companyId);
     let entries = await storage.getJournalEntriesByCompanyId(companyId);
 
@@ -314,9 +326,11 @@ export function registerDashboardRoutes(app: Express) {
   }));
 
   app.get("/api/companies/:companyId/reports/balance-sheet", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.params;
     const { startDate, endDate } = req.query;
-
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const accounts = await storage.getAccountsByCompanyId(companyId);
     let entries = await storage.getJournalEntriesByCompanyId(companyId);
 
@@ -373,9 +387,11 @@ export function registerDashboardRoutes(app: Express) {
   }));
 
   app.get("/api/companies/:companyId/reports/vat-summary", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.params;
     const { startDate, endDate } = req.query;
-
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     let invoices = await storage.getInvoicesByCompanyId(companyId);
     let receipts = await storage.getReceiptsByCompanyId(companyId);
 
@@ -435,6 +451,7 @@ export function registerDashboardRoutes(app: Express) {
   // =====================================
 
   app.get("/api/dashboard/stats", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.query;
     if (!companyId) {
       return res.json({
@@ -445,10 +462,13 @@ export function registerDashboardRoutes(app: Express) {
         revenueGrowth: null, expenseGrowth: null, topExpenseCategories: [],
       });
     }
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     res.json(await getEnhancedDashboardStats(companyId as string));
   }));
 
   app.get("/api/dashboard/summary", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.query;
     if (!companyId) {
       return res.json({
@@ -459,20 +479,27 @@ export function registerDashboardRoutes(app: Express) {
         revenueGrowth: null, expenseGrowth: null, topExpenseCategories: [],
       });
     }
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     res.json(await getEnhancedDashboardStats(companyId as string));
   }));
 
   app.get("/api/dashboard/recent-invoices", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.query;
     if (!companyId) return res.json([]);
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const invoices = await storage.getInvoicesByCompanyId(companyId as string);
     res.json(invoices.slice(0, 5));
   }));
 
   app.get("/api/dashboard/expense-breakdown", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.query;
     if (!companyId) return res.json([]);
-
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const accounts = await storage.getAccountsByCompanyId(companyId as string);
     const entries = await storage.getJournalEntriesByCompanyId(companyId as string);
 
