@@ -350,19 +350,8 @@ export async function ensureCriticalSchema(): Promise<void> {
     },
     // ── 0028: test_firm_owner@nra.ae seed for endpoint testing ───────────
     {
-      name: 'seed test_firm_owner@nra.ae',
-      sql: sql`INSERT INTO users (email, name, password_hash, is_admin, user_type, firm_role)
-        VALUES (
-          'test_firm_owner@nra.ae',
-          'Test Firm Owner',
-          '$2b$10$1vXzRdibZKs7X1bF3hLHveIJW/E3RySW8KzE2SR0218tJh/O.zHUm',
-          false,
-          'customer',
-          'firm_owner'
-        )
-        ON CONFLICT (email) DO UPDATE
-          SET password_hash = '$2b$10$1vXzRdibZKs7X1bF3hLHveIJW/E3RySW8KzE2SR0218tJh/O.zHUm',
-              firm_role = 'firm_owner'`,
+      name: 'update test_firm_owner firm_role',
+      sql: sql`UPDATE users SET firm_role = 'firm_owner' WHERE email = 'test_firm_owner@nra.ae'`,
     },
     {
       name: 'seed NRA Test Company',
