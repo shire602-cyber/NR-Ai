@@ -263,19 +263,19 @@ function Router() {
   // Landing page (public only)
   if (location === '/' && !token) {
     return (
-      <Suspense fallback={<PageLoader />}>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key="landing"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-          >
+      <AnimatePresence mode="wait">
+        <motion.div
+          key="landing"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Suspense fallback={<PageLoader />}>
             <LandingPage />
-          </motion.div>
-        </AnimatePresence>
-      </Suspense>
+          </Suspense>
+        </motion.div>
+      </AnimatePresence>
     );
   }
   
@@ -313,15 +313,15 @@ function Router() {
   // Public routes (no sidebar)
   if (location === '/login' || location === '/register' || location === '/services' || location === '/pricing' || location.startsWith('/view/invoice/') || location.startsWith('/portal/')) {
     return (
-      <Suspense fallback={<PageLoader />}>
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.3 }}
-          >
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={location}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Suspense fallback={<PageLoader />}>
             <Switch>
               <Route path="/login" component={Login} />
               <Route path="/register" component={Register} />
@@ -330,9 +330,9 @@ function Router() {
               <Route path="/portal/:token" component={CustomerPortal} />
               <Route path="/pricing" component={Pricing} />
             </Switch>
-          </motion.div>
-        </AnimatePresence>
-      </Suspense>
+          </Suspense>
+        </motion.div>
+      </AnimatePresence>
     );
   }
 
