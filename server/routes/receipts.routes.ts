@@ -91,7 +91,7 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const { imageData, ...receiptData } = req.body;
+    const { imageData, date, ...receiptData } = req.body;
 
     console.log('[Receipts] Creating receipt:', {
       companyId,
@@ -109,8 +109,11 @@ export function registerReceiptRoutes(app: Express) {
       imagePath = await saveReceiptImage(imageData, `${randomUUID()}.jpg`);
     }
 
+    const receiptDate = date ? new Date(date) : null;
+
     const receipt = await storage.createReceipt({
       ...receiptData,
+      date: receiptDate,
       companyId,
       uploadedBy: userId,
       imagePath: imagePath ?? null,
