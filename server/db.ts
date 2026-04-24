@@ -245,6 +245,39 @@ export async function ensureCriticalSchema(): Promise<void> {
           UNIQUE("user_id", "company_id")
       )`,
     },
+    // ── 0023/0024: NRA test firm_owner seed (fallback for migration skip) ──
+    {
+      name: 'seed nra test firm_owner user',
+      sql: sql`INSERT INTO users (email, name, password_hash, is_admin, user_type, firm_role)
+        VALUES (
+          'nra.test.owner@testmail.com',
+          'NRA Test Owner',
+          '$2b$10$17KhNf4OVbKwuWeBLcJop.aECfiBQzfd2XVmAfIZ3AvYLgvhv59ea',
+          false,
+          'customer',
+          'firm_owner'
+        )
+        ON CONFLICT (email) DO UPDATE SET firm_role = 'firm_owner'`,
+    },
+    {
+      name: 'seed nra test firm company',
+      sql: sql`INSERT INTO companies (name, base_currency, locale, company_type)
+        VALUES ('NRA Test Firm', 'AED', 'en', 'customer')
+        ON CONFLICT (name) DO NOTHING`,
+    },
+    {
+      name: 'seed nra test firm company_users link',
+      sql: sql`INSERT INTO company_users (company_id, user_id, role)
+        SELECT c.id, u.id, 'owner'
+        FROM companies c
+        CROSS JOIN users u
+        WHERE c.name = 'NRA Test Firm'
+          AND u.email = 'nra.test.owner@testmail.com'
+          AND NOT EXISTS (
+            SELECT 1 FROM company_users cu
+            WHERE cu.company_id = c.id AND cu.user_id = u.id
+          )`,
+    },
   ];
 
   let ok = 0;
