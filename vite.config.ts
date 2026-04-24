@@ -38,10 +38,26 @@ export default defineConfig({
           if (id.includes('/tesseract')) return 'vendor-ocr';
           // Spreadsheet — only needed for export
           if (id.includes('/xlsx/') || id.includes('/xlsxjs/')) return 'vendor-xlsx';
-          // React core
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) return 'vendor-react';
-          // Everything else from node_modules
-          return 'vendor';
+          // React core + small React-dependent packages that must initialize with React
+          // (CJS interop packages in a separate catch-all chunk can get undefined React
+          // due to ESM initialization order; colocating them with React avoids the issue)
+          if (
+            id.includes('/react/') ||
+            id.includes('/react-dom/') ||
+            id.includes('/scheduler/') ||
+            id.includes('/lucide-react/') ||
+            id.includes('/wouter/') ||
+            id.includes('/zustand/') ||
+            id.includes('/react-hook-form/') ||
+            id.includes('/@hookform/') ||
+            id.includes('/react-day-picker/') ||
+            id.includes('/react-resizable-panels/') ||
+            id.includes('/embla-carousel/') ||
+            id.includes('/next-themes/') ||
+            id.includes('/input-otp/') ||
+            id.includes('/vaul/') ||
+            id.includes('/cmdk/')
+          ) return 'vendor-react';
         },
       },
     },
