@@ -59,6 +59,7 @@ import { registerFirmRoutes } from './routes/firm.routes';
 import { registerFirmBulkRoutes } from './routes/firm-bulk.routes';
 import { registerFirmCommsRoutes } from './routes/firm-comms.routes';
 import { registerFirmAnalyticsRoutes } from './routes/firm-analytics.routes';
+import { registerClientPortalRoutes } from './routes/client-portal.routes';
 
 const log = createLogger('routes');
 
@@ -125,6 +126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerTeamRoutes(app);
   registerPortalRoutes(app);
   registerPortalPublicRoutes(app);
+  registerClientPortalRoutes(app);
 
   // ─── Admin Panel ────────────────────────────────────────
   registerAdminHealthRoutes(app);

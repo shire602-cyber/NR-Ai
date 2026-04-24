@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/AppSidebar';
+import { PortalLayout } from '@/components/layout/PortalLayout';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useI18n } from '@/lib/i18n';
@@ -26,6 +27,13 @@ const Services = lazy(() => import('@/pages/Services'));
 const Pricing = lazy(() => import('@/pages/Pricing'));
 const PublicInvoiceView = lazy(() => import('@/pages/PublicInvoiceView'));
 const CustomerPortal = lazy(() => import('@/pages/CustomerPortal'));
+
+// Client Portal — lazy loaded
+const PortalDashboard = lazy(() => import('@/pages/portal/PortalDashboard'));
+const PortalInvoices = lazy(() => import('@/pages/portal/PortalInvoices'));
+const PortalDocuments = lazy(() => import('@/pages/portal/PortalDocuments'));
+const PortalStatements = lazy(() => import('@/pages/portal/PortalStatements'));
+const PortalMessages = lazy(() => import('@/pages/portal/PortalMessages'));
 
 // Firm (NRA Management Center) — lazy loaded
 const ClientPortfolio = lazy(() => import('@/pages/firm/ClientPortfolio'));
@@ -179,6 +187,23 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Guard: client portal routes require userType 'client_portal' or 'client'
+function PortalRoute({ children }: { children: React.ReactNode }) {
+  const [, navigate] = useLocation();
+  try {
+    const token = getToken();
+    if (!token) { navigate('/login'); return null; }
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (payload.userType !== 'client_portal' && !payload.isAdmin) {
+      navigate('/dashboard'); return null;
+    }
+  } catch {
+    navigate('/login');
+    return null;
+  }
+  return <>{children}</>;
+}
+
 // Guard: firm routes require firmRole (firm_owner or firm_admin) in JWT
 function FirmRoute({ children }: { children: React.ReactNode }) {
   const [, navigate] = useLocation();
@@ -200,10 +225,15 @@ function Router() {
   const [location, setLocation] = useLocation();
   const token = getToken();
   
-  // Redirect authenticated users from landing to dashboard
+  // Redirect authenticated users from landing to their home (portal or main dashboard)
   useEffect(() => {
     if (location === '/' && token) {
-      setLocation('/dashboard');
+      try {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        setLocation(payload.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
+      } catch {
+        setLocation('/dashboard');
+      }
     }
   }, [location, token, setLocation]);
   
@@ -231,6 +261,26 @@ function Router() {
     );
   }
   
+  // Client Portal routes — authenticated, portal layout
+  if (location.startsWith('/client-portal')) {
+    return (
+      <PortalRoute>
+        <PortalLayout>
+          <Suspense fallback={<PageLoader />}>
+            <Switch>
+              <Route path="/client-portal/dashboard" component={PortalDashboard} />
+              <Route path="/client-portal/invoices" component={PortalInvoices} />
+              <Route path="/client-portal/documents" component={PortalDocuments} />
+              <Route path="/client-portal/statements" component={PortalStatements} />
+              <Route path="/client-portal/messages" component={PortalMessages} />
+              <Route component={NotFound} />
+            </Switch>
+          </Suspense>
+        </PortalLayout>
+      </PortalRoute>
+    );
+  }
+
   // Public routes (no sidebar)
   if (location === '/login' || location === '/register' || location === '/services' || location === '/pricing' || location.startsWith('/view/invoice/') || location.startsWith('/portal/')) {
     return (

@@ -9,7 +9,8 @@ import { sql } from "drizzle-orm";
 // admin: NR Accounting staff with full access
 // client: Existing NR Accounting clients (invite-only, relationship-based)
 // customer: Self-signup SaaS users (tier-based pricing)
-export type UserType = 'admin' | 'client' | 'customer';
+// client_portal: NRA-managed company contacts with read-only portal access
+export type UserType = 'admin' | 'client' | 'customer' | 'client_portal';
 
 // firmRole: NRA firm staff roles for internal management center access
 // firm_owner: Full access to all clients in NRA center
@@ -26,7 +27,7 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   passwordHash: text("password_hash").notNull(),
   isAdmin: boolean("is_admin").notNull().default(false),
-  userType: text("user_type").notNull().default("customer"), // admin | client | customer
+  userType: text("user_type").notNull().default("customer"), // admin | client | customer | client_portal
   firmRole: text("firm_role"), // firm_owner | firm_admin | null
   phone: text("phone"),
   avatarUrl: text("avatar_url"),
