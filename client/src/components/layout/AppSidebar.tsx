@@ -22,17 +22,14 @@ import {
   FileUp,
   History,
   Database,
-  Banknote,
   CreditCard,
   Landmark,
   PieChart,
   ClipboardList,
-  TrendingUp,
   ShieldAlert,
   Zap,
   Brain,
   CalendarCheck,
-  Briefcase,
   LineChart,
   Kanban,
   Users,
@@ -57,6 +54,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useTranslation, useI18n } from '@/lib/i18n';
+import { useRTL } from '@/components/RTLProvider';
 import { removeToken, getToken } from '@/lib/auth';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -201,6 +199,7 @@ export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
+  const { isRTL, rtlValue } = useRTL();
 
   const checkUserStatus = (): {
     isAdmin: boolean;
@@ -384,9 +383,9 @@ export function AppSidebar() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <Sidebar>
+    <Sidebar side={isRTL ? 'right' : 'left'}>
       <motion.div
-        initial={{ opacity: 0, x: -20 }}
+        initial={{ opacity: 0, x: rtlValue(-20, 20) }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.4 }}
       >
