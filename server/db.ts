@@ -320,6 +320,11 @@ export async function ensureCriticalSchema(): Promise<void> {
         VALUES ('NRA Test Firm', 'AED', 'en', 'customer')
         ON CONFLICT (name) DO NOTHING`,
     },
+    // ── 0026: onboarding_completed on companies ──────────────────────────
+    {
+      name: 'companies.onboarding_completed',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "onboarding_completed" boolean NOT NULL DEFAULT false`,
+    },
     {
       name: 'seed nra test firm company_users link',
       sql: sql`INSERT INTO company_users (company_id, user_id, role)
