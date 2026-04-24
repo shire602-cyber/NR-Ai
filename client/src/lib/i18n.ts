@@ -64,6 +64,10 @@ export const t = {
     history: 'Activity History',
     backupRestore: 'Backup & Restore',
     
+    // NRA Center items
+    clientPortfolio: 'Client Portfolio',
+    staffManagement: 'Staff Management',
+
     // Admin items
     adminDashboard: 'Admin Dashboard',
     clientManagement: 'Client Management',
@@ -302,6 +306,10 @@ export const t = {
     history: 'سجل النشاط',
     backupRestore: 'النسخ الاحتياطي',
     
+    // NRA Center items
+    clientPortfolio: 'محفظة العملاء',
+    staffManagement: 'إدارة الموظفين',
+
     // Admin items
     adminDashboard: 'لوحة تحكم المدير',
     clientManagement: 'إدارة العملاء',

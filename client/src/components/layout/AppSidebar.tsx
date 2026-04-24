@@ -39,10 +39,7 @@ import {
   Zap,
   Brain,
   CalendarCheck,
-  Briefcase,
-  HeartPulse,
-  Mail,
-  Layers
+  Briefcase
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -127,11 +124,9 @@ const adminItems = [
   { title: 'systemSettings', icon: Settings, url: '/admin' },
 ];
 
-const nraManagementItems = [
-  { title: 'clientPortfolio', icon: Briefcase, url: '/nra/clients' },
-  { title: 'healthDashboard', icon: HeartPulse, url: '/nra/health' },
-  { title: 'communications', icon: Mail, url: '/nra/communications' },
-  { title: 'bulkOperations', icon: Layers, url: '/nra/bulk' },
+const nraItems = [
+  { title: 'clientPortfolio', icon: Briefcase, url: '/firm/clients' },
+  { title: 'staffManagement', icon: Users, url: '/firm/staff' },
 ];
 
 export function AppSidebar() {
@@ -412,7 +407,7 @@ export function AppSidebar() {
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {nraManagementItems.map(renderMenuItem)}
+                {nraItems.map(renderMenuItem)}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
