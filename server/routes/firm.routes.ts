@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
+import { requireFirmRole } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
@@ -21,20 +22,6 @@ import {
 } from '../../shared/schema';
 
 const logger = createLogger('firm-routes');
-
-// ─── Firm middleware ──────────────────────────────────────────────────────────
-// Checks isAdmin for now. When Phase 0 (firmRole) merges, add firmRole check here.
-function firmMiddleware(req: Request, res: Response, next: () => void): void {
-  if (!req.user) {
-    res.status(401).json({ message: 'Authentication required' });
-    return;
-  }
-  if (!req.user.isAdmin) {
-    res.status(403).json({ message: 'Firm access required' });
-    return;
-  }
-  next();
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -160,7 +147,7 @@ export function registerFirmRoutes(app: Express): void {
   const router = Router();
 
   router.use(authMiddleware as any);
-  router.use(firmMiddleware as any);
+  router.use(requireFirmRole());
 
   // ─── GET /api/firm/clients ─────────────────────────────────────────────────
   router.get(

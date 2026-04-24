@@ -174,14 +174,16 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Guard: firm routes require isAdmin in JWT
+// Guard: firm routes require firmRole (firm_owner or firm_admin) in JWT
 function FirmRoute({ children }: { children: React.ReactNode }) {
   const [, navigate] = useLocation();
   try {
     const token = getToken();
     if (!token) { navigate('/login'); return null; }
     const payload = JSON.parse(atob(token.split('.')[1]));
-    if (!payload.isAdmin) { navigate('/dashboard'); return null; }
+    if (payload.firmRole !== 'firm_owner' && payload.firmRole !== 'firm_admin') {
+      navigate('/dashboard'); return null;
+    }
   } catch {
     navigate('/login');
     return null;
