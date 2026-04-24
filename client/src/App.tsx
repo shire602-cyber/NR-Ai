@@ -32,6 +32,7 @@ const ClientPortfolio = lazy(() => import('@/pages/firm/ClientPortfolio'));
 const ClientProfile = lazy(() => import('@/pages/firm/ClientProfile'));
 const StaffManagement = lazy(() => import('@/pages/firm/StaffManagement'));
 const BulkOperations = lazy(() => import('@/pages/firm/BulkOperations'));
+const FirmHealth = lazy(() => import('@/pages/firm/FirmHealth'));
 const FirmComms = lazy(() => import('@/pages/firm/FirmComms'));
 const FirmAnalytics = lazy(() => import('@/pages/firm/FirmAnalytics'));
 const LeadPipeline = lazy(() => import('@/pages/firm/LeadPipeline'));
@@ -338,6 +339,9 @@ function Router() {
           </Route>
           <Route path="/firm/bulk">
             <FirmRoute><BulkOperations /></FirmRoute>
+          </Route>
+          <Route path="/firm/health">
+            <FirmRoute><FirmHealth /></FirmRoute>
           </Route>
           <Route path="/firm/comms">
             <FirmRoute><FirmComms /></FirmRoute>

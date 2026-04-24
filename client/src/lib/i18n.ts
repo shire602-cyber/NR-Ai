@@ -321,6 +321,14 @@ export const t = {
     templateSaved: 'Template saved',
     noClientsFound: 'No clients with upcoming VAT deadlines',
     previewNote: 'Preview only — no messages sent',
+
+    // Sidebar group titles & new nav items
+    sales: 'Sales',
+    purchases: 'Purchases',
+    nraCenter: 'NRA Center',
+    companyProfile: 'Company Profile',
+    healthDashboard: 'Health Dashboard',
+    communications: 'Communications',
   },
   ar: {
     // Navigation
@@ -616,6 +624,14 @@ export const t = {
     templateSaved: 'تم حفظ القالب',
     noClientsFound: 'لم يتم العثور على عملاء مع مواعيد قادمة',
     previewNote: 'معاينة فقط — لن يتم إرسال رسائل',
+
+    // Sidebar group titles & new nav items
+    sales: 'المبيعات',
+    purchases: 'المشتريات',
+    nraCenter: 'مركز NRA',
+    companyProfile: 'ملف الشركة',
+    healthDashboard: 'لوحة الصحة',
+    communications: 'التواصل',
   },
 };
 
