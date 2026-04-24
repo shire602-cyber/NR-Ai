@@ -406,6 +406,9 @@ function Router() {
           <Route path="/admin" component={Admin} />
 
           {/* NRA Firm Management Center */}
+          <Route path="/firm/health">
+            <FirmRoute><FirmHealth /></FirmRoute>
+          </Route>
           <Route path="/firm/clients/:companyId">
             <FirmRoute><ClientProfile /></FirmRoute>
           </Route>

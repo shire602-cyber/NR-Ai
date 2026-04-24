@@ -90,6 +90,23 @@ export const t = {
     clientsPerStaff: 'Clients / Staff',
     avgClientsPerAdmin: 'Avg Clients / Admin',
 
+    // Health Dashboard
+    healthDashboardDesc: 'At-a-glance health status for all managed clients',
+    needsAttention: 'Needs Attention',
+    healthy: 'Healthy',
+    critical: 'Critical',
+    clientHealthTable: 'Client Health Overview',
+    overallHealth: 'Overall Health',
+    client: 'Client',
+    vatStatus: 'VAT Status',
+    arHealth: 'AR Health',
+    bankRec: 'Bank Rec.',
+    trialBalance: 'Trial Balance',
+    lastActivity: 'Last Activity',
+    upcomingDeadlines: 'Upcoming Deadlines',
+    noDeadlines: 'No upcoming deadlines — all clients are on track',
+    noClients: 'No clients found',
+
     // Admin items
     adminDashboard: 'Admin Dashboard',
     clientManagement: 'Client Management',
@@ -395,6 +412,23 @@ export const t = {
     totalStaff: 'إجمالي الموظفين',
     clientsPerStaff: 'العملاء / الموظف',
     avgClientsPerAdmin: 'متوسط العملاء / مسؤول',
+
+    // Health Dashboard
+    healthDashboardDesc: 'نظرة شاملة على حالة جميع العملاء المُدارين',
+    needsAttention: 'يحتاج انتباه',
+    healthy: 'سليم',
+    critical: 'حرج',
+    clientHealthTable: 'نظرة عامة على صحة العملاء',
+    overallHealth: 'الصحة الإجمالية',
+    client: 'العميل',
+    vatStatus: 'حالة الضريبة',
+    arHealth: 'الذمم المدينة',
+    bankRec: 'التسوية البنكية',
+    trialBalance: 'ميزان المراجعة',
+    lastActivity: 'آخر نشاط',
+    upcomingDeadlines: 'المواعيد القادمة',
+    noDeadlines: 'لا توجد مواعيد قادمة — جميع العملاء في المسار الصحيح',
+    noClients: 'لا توجد عملاء',
 
     // Admin items
     adminDashboard: 'لوحة تحكم المدير',
