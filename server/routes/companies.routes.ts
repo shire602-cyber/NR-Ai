@@ -142,6 +142,48 @@ export function registerCompanyRoutes(app: Express) {
     res.json(company);
   }));
 
+  // Mark company onboarding as complete
+  app.post("/api/companies/:id/onboarding/complete", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const company = await storage.updateCompany(id, { onboardingCompleted: true });
+    res.json(company);
+  }));
+
+  // List bank accounts for a company
+  app.get("/api/companies/:id/bank-accounts", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const accounts = await storage.getBankAccountsByCompanyId(id);
+    res.json(accounts);
+  }));
+
+  // Create a bank account for a company
+  app.post("/api/companies/:id/bank-accounts", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const account = await storage.createBankAccount({ ...req.body, companyId: id });
+    res.status(201).json(account);
+  }));
+
   // Seed Chart of Accounts for company
   // Customer-only: Seed chart of accounts
   app.post("/api/companies/:id/seed-accounts", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {

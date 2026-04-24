@@ -87,6 +87,7 @@ const Reminders = lazy(() => import('@/pages/Reminders'));
 const Referrals = lazy(() => import('@/pages/Referrals'));
 const Feedback = lazy(() => import('@/pages/Feedback'));
 
+const Onboarding = lazy(() => import('@/pages/Onboarding'));
 const BankReconciliation = lazy(() => import('@/pages/BankReconciliation'));
 const VATFiling = lazy(() => import('@/pages/VATFiling'));
 const CorporateTax = lazy(() => import('@/pages/CorporateTax'));
@@ -113,6 +114,7 @@ function PageLoader() {
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
 import { RouteGuard } from '@/components/layout/RouteGuard';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import '@/styles/rtl.css';
 import '@/styles/mobile.css';
 
@@ -120,7 +122,15 @@ import '@/styles/mobile.css';
 import { OnboardingWizard } from '@/components/Onboarding';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
+  const { company, isLoading: companyLoading } = useDefaultCompany();
+
+  useEffect(() => {
+    if (!companyLoading && company && !company.onboardingCompleted && location !== '/onboarding') {
+      navigate('/onboarding');
+    }
+  }, [company, companyLoading, location, navigate]);
+
   const style = {
     '--sidebar-width': '16rem',
     '--sidebar-width-icon': '3rem',
@@ -231,6 +241,17 @@ function Router() {
     );
   }
   
+  // Full-page protected route: onboarding wizard (no sidebar)
+  if (location === '/onboarding') {
+    return (
+      <ProtectedRoute>
+        <Suspense fallback={<PageLoader />}>
+          <Onboarding />
+        </Suspense>
+      </ProtectedRoute>
+    );
+  }
+
   // Public routes (no sidebar)
   if (location === '/login' || location === '/register' || location === '/services' || location === '/pricing' || location.startsWith('/view/invoice/') || location.startsWith('/portal/')) {
     return (

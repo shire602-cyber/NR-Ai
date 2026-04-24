@@ -86,7 +86,9 @@ export const companies = pgTable("companies", {
   invoiceShowWebsite: boolean("invoice_show_website").notNull().default(false),
   invoiceCustomTitle: text("invoice_custom_title"), // Custom invoice title, defaults to "Tax Invoice" for VAT registered
   invoiceFooterNote: text("invoice_footer_note"),
-  
+
+  onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
