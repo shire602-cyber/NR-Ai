@@ -409,6 +409,7 @@ export const receipts = pgTable("receipts", {
   posted: boolean("posted").default(false).notNull(), // Whether journal entry has been created
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id), // Link to created journal entry
   imageData: text("image_data"),
+  imagePath: text("image_path"),
   rawText: text("raw_text"),
   uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),

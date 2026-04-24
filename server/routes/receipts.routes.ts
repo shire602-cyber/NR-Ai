@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { insertInvoiceSchema } from '../../shared/schema';
+import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
 // @ts-ignore
 import PDFDocument from 'pdfkit';
 
@@ -89,23 +90,30 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const receiptData = req.body;
+    const { imageData, ...receiptData } = req.body;
 
     console.log('[Receipts] Creating receipt:', {
       companyId,
       userId,
       merchant: receiptData.merchant,
       amount: receiptData.amount,
-      hasImageData: !!receiptData.imageData,
-      imageDataLength: receiptData.imageData?.length
+      hasImageData: !!imageData,
+      imageDataLength: imageData?.length,
     });
 
-    // TODO: receipt imageData is stored as base64 in Postgres. Migrate to object storage
-    // (e.g. S3/R2/Supabase Storage) to reduce DB size and improve backup performance.
+    // Save image to disk; store only the path in Postgres (not the base64 blob)
+    let imagePath: string | undefined;
+    if (imageData) {
+      const { randomUUID } = await import('crypto');
+      imagePath = await saveReceiptImage(imageData, `${randomUUID()}.jpg`);
+    }
+
     const receipt = await storage.createReceipt({
       ...receiptData,
-      companyId, // Add companyId from URL params
+      companyId,
       uploadedBy: userId,
+      imagePath: imagePath ?? null,
+      // imageData intentionally omitted — not stored in Postgres
     });
 
     console.log('[Receipts] Receipt created successfully:', receipt.id);
@@ -130,7 +138,12 @@ export function registerReceiptRoutes(app: Express) {
   // Customer-only: Delete receipt
   app.delete("/api/receipts/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const userId = (req as any).user.id;
+
+    // Remove image file before deleting DB row (best-effort; don't block on failure)
+    const existing = await storage.getReceipt(id);
+    if (existing?.imagePath) {
+      await deleteReceiptImage(existing.imagePath);
+    }
 
     await storage.deleteReceipt(id);
     res.json({ message: 'Receipt deleted successfully' });
@@ -291,6 +304,34 @@ export function registerReceiptRoutes(app: Express) {
 
     console.log('[Receipts] Receipt posted successfully:', id, 'Journal entry:', entry.id);
     res.json(updatedReceipt);
+  }));
+
+  // Customer-only: Serve receipt image (new file-based or legacy base64)
+  app.get("/api/companies/:companyId/receipts/:id/image", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId, id } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    const receipt = await storage.getReceipt(id);
+    if (!receipt || receipt.companyId !== companyId) {
+      return res.status(404).json({ message: 'Receipt not found' });
+    }
+
+    if (receipt.imagePath) {
+      return res.sendFile(resolveImagePath(receipt.imagePath));
+    }
+
+    // Backward compat: legacy records that have base64 imageData but no imagePath
+    if (receipt.imageData) {
+      const raw = receipt.imageData.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(raw, 'base64');
+      res.set('Content-Type', 'image/jpeg');
+      return res.send(buffer);
+    }
+
+    return res.status(404).json({ message: 'No image available for this receipt' });
   }));
 
   // Customer-only: Download receipt as PDF
