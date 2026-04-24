@@ -152,11 +152,16 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
+  const loginSchema = z.object({
+    email: z.string().email('Invalid email address'),
+    password: z.string().min(1, 'Password is required'),
+  });
+
   // Login
   router.post(
     '/auth/login',
     asyncHandler(async (req: Request, res: Response) => {
-      const { email, password } = req.body;
+      const { email, password } = loginSchema.parse(req.body);
 
       const user = await storage.getUserByEmail(email);
       if (!user) {
