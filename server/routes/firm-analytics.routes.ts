@@ -405,6 +405,35 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
     })
   );
 
+  // ─── GET /api/firm/pipeline/leads ────────────────────────────────────────
+  router.get(
+    '/firm/pipeline/leads',
+    asyncHandler(async (_req: Request, res: Response) => {
+      const leads = await db
+        .select({
+          id: firmLeads.id,
+          userId: firmLeads.userId,
+          companyId: firmLeads.companyId,
+          stage: firmLeads.stage,
+          source: firmLeads.source,
+          notes: firmLeads.notes,
+          score: firmLeads.score,
+          convertedAt: firmLeads.convertedAt,
+          createdAt: firmLeads.createdAt,
+          updatedAt: firmLeads.updatedAt,
+          userEmail: users.email,
+          userName: users.name,
+          companyName: companies.name,
+        })
+        .from(firmLeads)
+        .leftJoin(users, eq(users.id, firmLeads.userId))
+        .leftJoin(companies, eq(companies.id, firmLeads.companyId))
+        .orderBy(desc(firmLeads.updatedAt));
+
+      res.json(leads);
+    })
+  );
+
   // ─── POST /api/firm/pipeline/leads ───────────────────────────────────────
   router.post(
     '/firm/pipeline/leads',

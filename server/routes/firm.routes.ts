@@ -10,7 +10,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { db } from '../db';
-import { eq, and, count, sum, max, or, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, count, sum, max, or, desc, inArray, sql, lt, gte, ne, lte } from 'drizzle-orm';
 import {
   companies,
   companyUsers,
@@ -404,6 +404,207 @@ export function registerFirmRoutes(app: Express): void {
       );
 
       res.json(staffWithAssignments);
+    })
+  );
+
+  // ─── GET /api/firm/health ─────────────────────────────────────────────────
+  router.get(
+    '/firm/health',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+
+      let clientList: { id: string; name: string }[];
+      if (accessibleIds === null) {
+        clientList = await db
+          .select({ id: companies.id, name: companies.name })
+          .from(companies)
+          .where(eq(companies.companyType, 'client'));
+      } else if (accessibleIds.length === 0) {
+        return res.json([]);
+      } else {
+        clientList = await db
+          .select({ id: companies.id, name: companies.name })
+          .from(companies)
+          .where(and(eq(companies.companyType, 'client'), inArray(companies.id, accessibleIds)));
+      }
+
+      const clientIds = clientList.map((c: { id: string }) => c.id);
+      if (clientIds.length === 0) return res.json([]);
+
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+      // Latest VAT return per company (subquery join)
+      const latestVatSub = db
+        .select({
+          companyId: vatReturns.companyId,
+          maxPeriodEnd: max(vatReturns.periodEnd).as('max_period_end'),
+        })
+        .from(vatReturns)
+        .where(inArray(vatReturns.companyId, clientIds))
+        .groupBy(vatReturns.companyId)
+        .as('latest_vat');
+
+      const vatRows = await db
+        .select({
+          companyId: vatReturns.companyId,
+          status: vatReturns.status,
+          dueDate: vatReturns.dueDate,
+          periodEnd: vatReturns.periodEnd,
+        })
+        .from(vatReturns)
+        .innerJoin(
+          latestVatSub,
+          and(
+            eq(vatReturns.companyId, latestVatSub.companyId),
+            eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+          )
+        );
+
+      // AR aging buckets per company (overdue invoices only)
+      type ArBucketRow = { companyId: string; days0_30: string | null; days31_60: string | null; days61plus: string | null };
+      const arRows: ArBucketRow[] = await db
+        .select({
+          companyId: invoices.companyId,
+          days0_30: sql<string>`sum(case when ${invoices.dueDate} >= ${thirtyDaysAgo} then ${invoices.total} else 0 end)`,
+          days31_60: sql<string>`sum(case when ${invoices.dueDate} >= ${sixtyDaysAgo} and ${invoices.dueDate} < ${thirtyDaysAgo} then ${invoices.total} else 0 end)`,
+          days61plus: sql<string>`sum(case when ${invoices.dueDate} < ${sixtyDaysAgo} then ${invoices.total} else 0 end)`,
+        })
+        .from(invoices)
+        .where(
+          and(
+            inArray(invoices.companyId, clientIds),
+            or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial')),
+            lt(invoices.dueDate, now)
+          )
+        )
+        .groupBy(invoices.companyId) as ArBucketRow[];
+
+      // Bank reconciliation % per company
+      type BankRow = { companyId: string; total: number; reconciled: string | null };
+      const bankRows: BankRow[] = await db
+        .select({
+          companyId: bankTransactions.companyId,
+          total: count(),
+          reconciled: sql<string>`sum(case when ${bankTransactions.isReconciled} then 1 else 0 end)`,
+        })
+        .from(bankTransactions)
+        .where(inArray(bankTransactions.companyId, clientIds))
+        .groupBy(bankTransactions.companyId) as BankRow[];
+
+      // Build lookup maps
+      type VatRow = { companyId: string; status: string; dueDate: Date; periodEnd: Date };
+      const vatMap = new Map<string, VatRow>(vatRows.map((r: VatRow) => [r.companyId, r]));
+      const arMap = new Map<string, ArBucketRow>(arRows.map((r: ArBucketRow) => [r.companyId, r]));
+      const bankMap = new Map<string, BankRow>(bankRows.map((r: BankRow) => [r.companyId, r]));
+
+      const result = clientList.map((company: { id: string; name: string }) => {
+        const vat = vatMap.get(company.id);
+        const ar = arMap.get(company.id);
+        const bank = bankMap.get(company.id);
+
+        const totalBank = Number(bank?.total ?? 0);
+        const reconciledBank = Number(bank?.reconciled ?? 0);
+
+        return {
+          companyId: company.id,
+          companyName: company.name,
+          vatFiling: vat
+            ? {
+                status: vat.status,
+                dueDate: vat.dueDate,
+                periodEnd: vat.periodEnd,
+                isOverdue:
+                  vat.status !== 'filed' &&
+                  vat.status !== 'submitted' &&
+                  new Date(vat.dueDate) < now,
+              }
+            : null,
+          arAging: {
+            days0_30: Number(ar?.days0_30 ?? 0),
+            days31_60: Number(ar?.days31_60 ?? 0),
+            days61plus: Number(ar?.days61plus ?? 0),
+            totalOverdue:
+              Number(ar?.days0_30 ?? 0) +
+              Number(ar?.days31_60 ?? 0) +
+              Number(ar?.days61plus ?? 0),
+          },
+          bankReconciliationPct:
+            totalBank > 0 ? Math.round((reconciledBank / totalBank) * 100) : null,
+          trialBalanceStatus: 'unknown',
+        };
+      });
+
+      res.json(result);
+    })
+  );
+
+  // ─── GET /api/firm/health/deadlines ──────────────────────────────────────
+  router.get(
+    '/firm/health/deadlines',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+
+      if (accessibleIds !== null && accessibleIds.length === 0) {
+        return res.json([]);
+      }
+
+      const now = new Date();
+      const ninetyDaysOut = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+      const whereClause = and(
+        ne(vatReturns.status, 'filed'),
+        ne(vatReturns.status, 'submitted'),
+        lte(vatReturns.dueDate, ninetyDaysOut),
+        ...(accessibleIds !== null ? [inArray(vatReturns.companyId, accessibleIds)] : [])
+      );
+
+      type DeadlineRow = {
+        companyId: string;
+        companyName: string;
+        vatReturnId: string;
+        status: string;
+        dueDate: Date;
+        periodEnd: Date;
+        isOverdue: boolean;
+        daysUntilDue: number;
+      };
+
+      const rows = await db
+        .select({
+          companyId: vatReturns.companyId,
+          companyName: companies.name,
+          vatReturnId: vatReturns.id,
+          status: vatReturns.status,
+          dueDate: vatReturns.dueDate,
+          periodEnd: vatReturns.periodEnd,
+        })
+        .from(vatReturns)
+        .innerJoin(companies, eq(companies.id, vatReturns.companyId))
+        .where(whereClause)
+        .orderBy(vatReturns.dueDate);
+
+      const deadlines: DeadlineRow[] = rows.map(
+        (r: {
+          companyId: string;
+          companyName: string;
+          vatReturnId: string;
+          status: string;
+          dueDate: Date;
+          periodEnd: Date;
+        }) => ({
+          ...r,
+          isOverdue: new Date(r.dueDate) < now,
+          daysUntilDue: Math.round(
+            (new Date(r.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+          ),
+        })
+      );
+
+      res.json(deadlines);
     })
   );
 
