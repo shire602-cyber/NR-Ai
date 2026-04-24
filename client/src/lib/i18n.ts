@@ -299,7 +299,6 @@ export const t = {
 
     // New modules
     payroll: 'Payroll & WPS',
-    hrPayroll: 'HR & Payroll',
     billPay: 'Bill Pay',
     fixedAssets: 'Fixed Assets',
     budgeting: 'Budgets',
@@ -622,7 +621,6 @@ export const t = {
 
     // New modules
     payroll: 'الرواتب والحماية',
-    hrPayroll: 'الموارد البشرية والرواتب',
     billPay: 'دفع الفواتير',
     fixedAssets: 'الأصول الثابتة',
     budgeting: 'الميزانيات',

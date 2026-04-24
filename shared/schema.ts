@@ -764,12 +764,8 @@ export const bankTransactions = pgTable("bank_transactions", {
   bankStatementAccountId: uuid("bank_statement_account_id").references(() => bankAccounts.id), // Links to managed bank account
   transactionDate: timestamp("transaction_date").notNull(),
   description: text("description").notNull(),
-<<<<<<< HEAD
-  amount: real("amount").notNull(), // Positive for credits, negative for debits
-  balance: real("balance"), // Running balance from bank statement
-=======
   amount: money("amount").notNull(), // Positive for credits, negative for debits
->>>>>>> claude/hopeful-fermi-2c9a2d
+  balance: real("balance"), // Running balance from bank statement
   reference: text("reference"), // Bank reference number
   category: text("category"), // AI-suggested category
   matchStatus: text("match_status").notNull().default("unmatched"), // matched | suggested | unmatched
