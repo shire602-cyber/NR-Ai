@@ -66,11 +66,37 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
 /**
  * Belt-and-suspenders schema guard: ensures critical columns exist regardless
  * of Drizzle migration tracking state. Every statement uses IF NOT EXISTS so
- * it is always safe to re-run. Covers migrations 0015-0020 which may have
+ * it is always safe to re-run. Covers migrations 0003-0020 which may have
  * been tracked-but-not-executed in the production database.
  */
 export async function ensureCriticalSchema(): Promise<void> {
   const steps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
+    // ── 0003: invoice share token ────────────────────────────────────────
+    {
+      name: 'invoices.share_token',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "share_token" text UNIQUE`,
+    },
+    {
+      name: 'invoices.share_token_expires_at',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "share_token_expires_at" timestamp`,
+    },
+    // ── 0006: e-invoice fields ───────────────────────────────────────────
+    {
+      name: 'invoices.einvoice_uuid',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "einvoice_uuid" text`,
+    },
+    {
+      name: 'invoices.einvoice_xml',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "einvoice_xml" text`,
+    },
+    {
+      name: 'invoices.einvoice_hash',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "einvoice_hash" text`,
+    },
+    {
+      name: 'invoices.einvoice_status',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "einvoice_status" text`,
+    },
     // ── 0015: exchange_rate columns ──────────────────────────────────────
     {
       name: 'exchange_rates table',
