@@ -2,7 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
-import { autoReconcileTransactions } from '../services/auto-reconcile.service';
+import { autoReconcileTransactions, getSuggestionsForTransaction } from '../services/auto-reconcile.service';
 import { createLogger } from '../config/logger';
 
 const log = createLogger('bank-statements');
@@ -630,6 +630,132 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       res.json(transactions);
+    })
+  );
+
+  /**
+   * GET /api/companies/:companyId/bank-statements/:tid/suggestions
+   * Return top match suggestions for a single bank transaction.
+   */
+  app.get(
+    '/api/companies/:companyId/bank-statements/:tid/suggestions',
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, tid } = req.params;
+      const userId = (req as any).user.id;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+      const txn = await storage.getBankTransactionById(tid);
+      if (!txn || txn.companyId !== companyId) {
+        return res.status(404).json({ message: 'Bank transaction not found' });
+      }
+
+      const suggestions = await getSuggestionsForTransaction(companyId, tid, 5);
+      res.json(suggestions);
+    })
+  );
+
+  /**
+   * DELETE /api/companies/:companyId/bank-statements/:tid/match
+   * Unmatch a reconciled transaction, resetting it to unmatched status.
+   */
+  app.delete(
+    '/api/companies/:companyId/bank-statements/:tid/match',
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, tid } = req.params;
+      const userId = (req as any).user.id;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+      const txn = await storage.getBankTransactionById(tid);
+      if (!txn || txn.companyId !== companyId) {
+        return res.status(404).json({ message: 'Bank transaction not found' });
+      }
+
+      const updated = await storage.updateBankTransaction(tid, {
+        isReconciled: false,
+        matchStatus: 'unmatched',
+        matchedJournalEntryId: null,
+        matchedReceiptId: null,
+        matchedInvoiceId: null,
+        matchConfidence: null,
+      });
+
+      res.json(updated);
+    })
+  );
+
+  /**
+   * GET /api/companies/:companyId/bank-statements/report
+   * Reconciliation summary report — totals and counts by status.
+   * Optional query params: from (ISO date), to (ISO date), bankAccountId.
+   */
+  app.get(
+    '/api/companies/:companyId/bank-statements/report',
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+      const { from, to, bankAccountId } = req.query;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+      let transactions = await storage.getBankTransactionsByCompanyId(companyId);
+
+      // Optional filters
+      if (bankAccountId && typeof bankAccountId === 'string') {
+        transactions = transactions.filter((t) => t.bankStatementAccountId === bankAccountId);
+      }
+      if (from && typeof from === 'string') {
+        const fromDate = new Date(from);
+        transactions = transactions.filter((t) => new Date(t.transactionDate) >= fromDate);
+      }
+      if (to && typeof to === 'string') {
+        const toDate = new Date(to);
+        transactions = transactions.filter((t) => new Date(t.transactionDate) <= toDate);
+      }
+
+      const reconciled = transactions.filter((t) => t.isReconciled);
+      const unreconciled = transactions.filter((t) => !t.isReconciled);
+      const suggested = unreconciled.filter((t) => t.matchStatus === 'suggested');
+
+      const totalCredits = transactions.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+      const totalDebits = transactions.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+      const reconciledCredits = reconciled.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+      const reconciledDebits = reconciled.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+
+      res.json({
+        period: {
+          from: from || null,
+          to: to || null,
+        },
+        summary: {
+          totalTransactions: transactions.length,
+          reconciledCount: reconciled.length,
+          unreconciledCount: unreconciled.length,
+          suggestedCount: suggested.length,
+          reconciledPct: transactions.length > 0
+            ? Math.round((reconciled.length / transactions.length) * 100)
+            : 0,
+        },
+        amounts: {
+          totalCredits,
+          totalDebits,
+          netAmount: totalCredits - totalDebits,
+          reconciledCredits,
+          reconciledDebits,
+          unreconciledCredits: totalCredits - reconciledCredits,
+          unreconciledDebits: totalDebits - reconciledDebits,
+        },
+      });
     })
   );
 }
