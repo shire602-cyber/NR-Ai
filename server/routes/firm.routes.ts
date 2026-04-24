@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
-import { requireFirmRole } from '../middleware/rbac';
+import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
@@ -152,8 +152,21 @@ export function registerFirmRoutes(app: Express): void {
   // ─── GET /api/firm/clients ─────────────────────────────────────────────────
   router.get(
     '/firm/clients',
-    asyncHandler(async (_req: Request, res: Response) => {
-      const clientCompanies = await storage.getClientCompanies();
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+
+      let clientCompanies: Awaited<ReturnType<typeof storage.getClientCompanies>>;
+      if (accessibleIds === null) {
+        clientCompanies = await storage.getClientCompanies();
+      } else if (accessibleIds.length === 0) {
+        clientCompanies = [];
+      } else {
+        clientCompanies = await db
+          .select()
+          .from(companies)
+          .where(and(eq(companies.companyType, 'client'), inArray(companies.id, accessibleIds)));
+      }
 
       const clientsWithStats = await Promise.all(
         clientCompanies.map(async company => {
@@ -171,6 +184,13 @@ export function registerFirmRoutes(app: Express): void {
     '/firm/clients/:companyId/summary',
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
+      const { id: userId, firmRole } = (req as any).user;
+
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
+        return res.status(403).json({ message: 'Access denied to this client' });
+      }
+
       const company = await storage.getCompany(companyId);
 
       if (!company) {
@@ -258,8 +278,13 @@ export function registerFirmRoutes(app: Express): void {
     '/firm/clients/:companyId',
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
       const validated = updateClientSchema.parse(req.body);
+
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
+        return res.status(403).json({ message: 'Access denied to this client' });
+      }
 
       const company = await storage.getCompany(companyId);
       if (!company) {
