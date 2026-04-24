@@ -21,7 +21,7 @@ const NotFound = lazy(() => import('@/pages/not-found'));
 const Login = lazy(() => import('@/pages/Login'));
 const Register = lazy(() => import('@/pages/Register'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const Landing = lazy(() => import('@/pages/Landing'));
+const LandingPage = lazy(() => import('@/pages/LandingPage'));
 const Services = lazy(() => import('@/pages/Services'));
 const Pricing = lazy(() => import('@/pages/Pricing'));
 const PublicInvoiceView = lazy(() => import('@/pages/PublicInvoiceView'));
@@ -224,7 +224,7 @@ function Router() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
           >
-            <Landing />
+            <LandingPage />
           </motion.div>
         </AnimatePresence>
       </Suspense>
