@@ -61,6 +61,9 @@ export const adminOnlyRoutes = [
   '/admin/import',
   '/admin/users',
   '/admin/activity-logs',
+  '/firm',
+  '/firm/clients',
+  '/firm/staff',
 ];
 
 // Helper to check if a path requires customer type

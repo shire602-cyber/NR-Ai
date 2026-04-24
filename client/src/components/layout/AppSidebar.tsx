@@ -123,6 +123,11 @@ const adminItems = [
   { title: 'systemSettings', icon: Settings, url: '/admin' },
 ];
 
+const firmItems = [
+  { title: 'clientPortfolio', icon: Building2, url: '/firm/clients' },
+  { title: 'staffManagement', icon: Users, url: '/firm/staff' },
+];
+
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
@@ -373,6 +378,21 @@ export function AppSidebar() {
               </SidebarGroupContent>
             </SidebarGroup>
           </>
+        )}
+
+        {/* NRA Management Center - Firm-facing client management */}
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-primary">
+              <Building2 className="w-3 h-3 mr-1 inline" />
+              NRA Center
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {firmItems.map(renderMenuItem)}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
         )}
 
         {/* Admin Panel - Only for admin users */}

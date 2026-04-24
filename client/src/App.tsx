@@ -26,6 +26,11 @@ import Pricing from '@/pages/Pricing';
 import PublicInvoiceView from '@/pages/PublicInvoiceView';
 import CustomerPortal from '@/pages/CustomerPortal';
 
+// Firm (NRA Management Center) — lazy loaded
+const ClientPortfolio = lazy(() => import('@/pages/firm/ClientPortfolio'));
+const ClientProfile = lazy(() => import('@/pages/firm/ClientProfile'));
+const StaffManagement = lazy(() => import('@/pages/firm/StaffManagement'));
+
 // Core accounting — loaded eagerly since most users land here
 import Accounts from '@/pages/Accounts';
 import ChartOfAccounts from '@/pages/ChartOfAccounts';
@@ -169,6 +174,21 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Guard: firm routes require isAdmin in JWT
+function FirmRoute({ children }: { children: React.ReactNode }) {
+  const [, navigate] = useLocation();
+  try {
+    const token = getToken();
+    if (!token) { navigate('/login'); return null; }
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (!payload.isAdmin) { navigate('/dashboard'); return null; }
+  } catch {
+    navigate('/login');
+    return null;
+  }
+  return <>{children}</>;
+}
+
 function Router() {
   const [location, setLocation] = useLocation();
   const token = getToken();
@@ -294,7 +314,18 @@ function Router() {
           <Route path="/admin/activity-logs" component={ActivityLogs} />
           <Route path="/admin/users" component={Admin} />
           <Route path="/admin" component={Admin} />
-          
+
+          {/* NRA Firm Management Center */}
+          <Route path="/firm/clients/:companyId">
+            <FirmRoute><ClientProfile /></FirmRoute>
+          </Route>
+          <Route path="/firm/clients">
+            <FirmRoute><ClientPortfolio /></FirmRoute>
+          </Route>
+          <Route path="/firm/staff">
+            <FirmRoute><StaffManagement /></FirmRoute>
+          </Route>
+
           <Route component={NotFound} />
         </Switch>
         </Suspense>
