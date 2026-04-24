@@ -5,6 +5,7 @@ import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { insertInvoiceSchema } from '../../shared/schema';
 import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
+import { createAndEmitNotification } from '../services/socket.service';
 // @ts-ignore
 import PDFDocument from 'pdfkit';
 
@@ -117,6 +118,19 @@ export function registerReceiptRoutes(app: Express) {
     });
 
     console.log('[Receipts] Receipt created successfully:', receipt.id);
+
+    createAndEmitNotification({
+      userId,
+      companyId,
+      type: 'document_uploaded',
+      title: 'Receipt uploaded',
+      message: `New receipt from ${receipt.merchant || 'unknown merchant'} for ${receipt.amount ?? ''} ${receipt.currency || ''}`.trim(),
+      priority: 'normal',
+      relatedEntityType: 'receipt',
+      relatedEntityId: receipt.id,
+      actionUrl: '/receipts',
+    }).catch(() => {});
+
     res.json(receipt);
   }));
 

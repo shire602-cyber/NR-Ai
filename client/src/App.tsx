@@ -112,6 +112,7 @@ function PageLoader() {
 
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
+import { NotificationBell } from '@/components/NotificationBell';
 import { RouteGuard } from '@/components/layout/RouteGuard';
 import '@/styles/rtl.css';
 import '@/styles/mobile.css';
@@ -143,17 +144,20 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             >
             <SidebarTrigger data-testid="button-sidebar-toggle" />
             </motion.div>
-            <Link href="/company-profile">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <Button variant="ghost" size="sm" data-testid="button-profile" className="transition-all duration-200">
-                <User className="w-4 h-4 mr-2" />
-                Profile
-              </Button>
-              </motion.div>
-            </Link>
+            <div className="flex items-center gap-1">
+              <NotificationBell />
+              <Link href="/company-profile">
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button variant="ghost" size="sm" data-testid="button-profile" className="transition-all duration-200">
+                  <User className="w-4 h-4 mr-2" />
+                  Profile
+                </Button>
+                </motion.div>
+              </Link>
+            </div>
           </motion.header>
           <main className="flex-1 overflow-auto p-8">
             <RouteGuard>

@@ -16,6 +16,7 @@ import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { hasSmtpConfig, sendGenericEmail } from '../services/email.service';
+import { createAndEmitNotification } from '../services/socket.service';
 
 const logger = createLogger('firm-comms-routes');
 
@@ -216,6 +217,18 @@ export function registerFirmCommsRoutes(app: Express): void {
         })
         .returning();
 
+      createAndEmitNotification({
+        userId,
+        companyId: validated.companyId,
+        type: 'communication',
+        title: 'Email sent to client',
+        message: `Email "${validated.subject}" sent to ${validated.recipientEmail}`,
+        priority: 'normal',
+        relatedEntityType: 'communication',
+        relatedEntityId: comm.id,
+        actionUrl: '/firm/comms',
+      }).catch(() => {});
+
       res.json({ success: emailStatus === 'sent', communication: comm, ...(note ? { note } : {}) });
     })
   );
@@ -246,6 +259,18 @@ export function registerFirmCommsRoutes(app: Express): void {
           sentAt: new Date(),
         })
         .returning();
+
+      createAndEmitNotification({
+        userId,
+        companyId: validated.companyId,
+        type: 'communication',
+        title: 'WhatsApp sent to client',
+        message: `WhatsApp message sent to ${validated.recipientPhone}`,
+        priority: 'normal',
+        relatedEntityType: 'communication',
+        relatedEntityId: comm.id,
+        actionUrl: '/firm/comms',
+      }).catch(() => {});
 
       res.json({
         success: true,

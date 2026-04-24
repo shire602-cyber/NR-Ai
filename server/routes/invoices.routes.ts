@@ -8,6 +8,7 @@ import { insertInvoiceSchema } from '../../shared/schema';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
 import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
+import { createAndEmitNotification } from '../services/socket.service';
 
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
@@ -222,6 +223,19 @@ export function registerInvoiceRoutes(app: Express) {
     }
 
     console.log('[Invoices] Invoice created successfully:', invoice.id);
+
+    createAndEmitNotification({
+      userId,
+      companyId,
+      type: 'invoice_created',
+      title: 'Invoice created',
+      message: `Invoice ${invoice.number} for ${invoice.customerName} — ${invoice.total} ${invoice.currency || 'AED'}`,
+      priority: 'normal',
+      relatedEntityType: 'invoice',
+      relatedEntityId: invoice.id,
+      actionUrl: '/invoices',
+    }).catch(() => {});
+
     res.json(invoice);
   }));
 
@@ -433,6 +447,21 @@ export function registerInvoiceRoutes(app: Express) {
     }
 
     console.log('[Invoices] Invoice status updated:', id, status);
+
+    if (status !== oldStatus && (status === 'paid' || status === 'overdue' || status === 'void')) {
+      createAndEmitNotification({
+        userId,
+        companyId: invoice.companyId,
+        type: 'invoice_status_change',
+        title: `Invoice ${status}`,
+        message: `Invoice ${invoice.number} for ${invoice.customerName} marked as ${status}`,
+        priority: status === 'overdue' ? 'high' : 'normal',
+        relatedEntityType: 'invoice',
+        relatedEntityId: id,
+        actionUrl: '/invoices',
+      }).catch(() => {});
+    }
+
     res.json(updatedInvoice);
   }));
 

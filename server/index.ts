@@ -16,6 +16,7 @@ import { applySecurityMiddleware } from './middleware/security';
 import { requestLogger } from './middleware/requestLogger';
 import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
 import { registerRoutes } from './routes';
+import { initSocketServer } from './services/socket.service';
 import { setupVite, serveStatic } from './vite';
 import { initScheduler } from './services/scheduler.service';
 import { runMigrations, checkDbConnectivity, closePool, ensureCriticalSchema } from './db';
@@ -118,6 +119,9 @@ async function bootstrap() {
   // Register all API routes
   const server = await registerRoutes(app);
   httpServer = server;
+
+  // ─── WebSocket (Socket.io) ────────────────────────────
+  initSocketServer(server);
 
   // ─── Background scheduler (engagement automation) ─────
   initScheduler();
