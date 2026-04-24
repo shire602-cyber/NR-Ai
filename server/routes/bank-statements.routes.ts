@@ -4,6 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { autoReconcileTransactions, getSuggestionsForTransaction } from '../services/auto-reconcile.service';
 import { createLogger } from '../config/logger';
+import { createAndEmitNotification } from '../services/socket.service';
 
 const log = createLogger('bank-statements');
 
@@ -442,6 +443,17 @@ export function registerBankStatementRoutes(app: Express) {
 
       // Run AI auto-matching in background (non-blocking)
       autoMatchImportedTransactions(companyId).catch(() => {});
+
+      createAndEmitNotification({
+        userId,
+        companyId,
+        type: 'bank_import',
+        title: 'Bank statement imported',
+        message: `${created.length} transaction(s) imported from ${bankAccount.bankName} (${format} format)`,
+        priority: 'normal',
+        relatedEntityType: 'bank_statement',
+        actionUrl: '/bank-reconciliation',
+      }).catch(() => {});
 
       res.status(201).json({
         imported: created.length,
