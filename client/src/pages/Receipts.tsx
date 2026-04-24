@@ -18,39 +18,32 @@ import { apiUrl } from '@/lib/api';
 import { getAuthHeaders } from '@/lib/auth';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { exportToExcel, exportToGoogleSheets, prepareReceiptsForExport } from '@/lib/export';
+import Tesseract from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet, FileDown } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-
-interface LineItem {
-  description: string;
-  quantity?: number | null;
-  unitPrice?: number | null;
-  amount: number;
-}
 
 interface ExtractedData {
   merchant?: string;
   date?: string;
   invoiceNumber?: string | null;
   subtotal?: number;
-  vatPercent?: number;
+  vatPercentage?: number;
   vatAmount?: number;
   total?: number;
   currency?: string;
   rawText: string;
   category?: string;
-  lineItems?: LineItem[];
+  lineItems?: Array<{ description: string; quantity: number; unitPrice: number; total: number }>;
   confidence?: number;
 }
 
@@ -98,7 +91,6 @@ export default function Receipts() {
   const [pendingSaveData, setPendingSaveData] = useState<any>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
-  const [receiptToDelete, setReceiptToDelete] = useState<any>(null);
   const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
   
   const manualExpenseForm = useForm<ReceiptFormData>({
@@ -272,7 +264,9 @@ export default function Receipts() {
   });
 
   const handleDeleteReceipt = (receipt: any) => {
-    setReceiptToDelete(receipt);
+    if (window.confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
+      deleteMutation.mutate(receipt.id);
+    }
   };
 
   const handleEditReceipt = (receipt: any) => {
@@ -468,38 +462,16 @@ export default function Receipts() {
     });
 
     try {
-      // Convert any image format (including HEIC from iOS) to JPEG via canvas
-      // so GPT-4o always receives a supported format.
-      const convertToJpeg = (file: File): Promise<string> =>
+      // Strategy 1: Backend AI Vision OCR (GPT-4o)
+      const toBase64 = (file: File): Promise<string> =>
         new Promise((resolve, reject) => {
-          const img = new Image();
-          const objectUrl = URL.createObjectURL(file);
-          img.onload = () => {
-            const MAX_DIM = 2048;
-            let w = img.naturalWidth;
-            let h = img.naturalHeight;
-            if (w > MAX_DIM || h > MAX_DIM) {
-              const ratio = Math.min(MAX_DIM / w, MAX_DIM / h);
-              w = Math.round(w * ratio);
-              h = Math.round(h * ratio);
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) { reject(new Error('Canvas not available')); return; }
-            ctx.drawImage(img, 0, 0, w, h);
-            URL.revokeObjectURL(objectUrl);
-            resolve(canvas.toDataURL('image/jpeg', 0.92));
-          };
-          img.onerror = () => {
-            URL.revokeObjectURL(objectUrl);
-            reject(new Error('Failed to load image'));
-          };
-          img.src = objectUrl;
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
         });
 
-      const imageData = await convertToJpeg(receipt.file);
+      const imageData = await toBase64(receipt.file);
 
       setProcessedReceipts((prev) => {
         const updated = [...prev];
@@ -507,39 +479,82 @@ export default function Receipts() {
         return updated;
       });
 
-      const response = await fetch(apiUrl('/api/ocr/process'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(),
-        },
-        body: JSON.stringify({ imageData }),
-      });
+      let parsed: ExtractedData | null = null;
 
-      if (!response.ok) {
-        const errBody = await response.json().catch(() => ({}));
-        throw new Error(errBody.message || `OCR service error (${response.status})`);
+      try {
+        const response = await fetch(apiUrl('/api/ocr/process'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+          },
+          body: JSON.stringify({ imageData }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          parsed = {
+            merchant: result.merchant || 'Unknown Merchant',
+            date: result.date || new Date().toISOString().split('T')[0],
+            invoiceNumber: result.invoiceNumber || null,
+            subtotal: result.subtotal || result.amount || 0,
+            vatPercentage: result.vatPercentage || 5,
+            vatAmount: result.vatAmount || 0,
+            total: result.total || result.amount || 0,
+            currency: result.currency || 'AED',
+            category: result.category || 'Other',
+            lineItems: result.lineItems || [],
+            rawText: result.rawText || '',
+            confidence: result.confidence || 0.85,
+          };
+          setProcessedReceipts((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], progress: 90 };
+            return updated;
+          });
+        }
+      } catch (backendError) {
+        console.warn('[OCR] Backend Vision failed, falling back to Tesseract:', backendError);
       }
 
-      const result = await response.json();
-      const parsed: ExtractedData = {
-        merchant: result.merchant || 'Unknown Merchant',
-        date: result.date || new Date().toISOString().split('T')[0],
-        invoiceNumber: result.invoiceNumber || null,
-        subtotal: result.subtotal ?? result.amount ?? 0,
-        vatPercent: result.vatPercent ?? 5,
-        vatAmount: result.vatAmount ?? 0,
-        total: result.total ?? (result.subtotal ?? result.amount ?? 0) + (result.vatAmount ?? 0),
-        currency: result.currency || 'AED',
-        category: result.category || 'Other',
-        lineItems: result.lineItems || [],
-        rawText: result.rawText || '',
-        confidence: result.confidence ?? 0.95,
-      };
+      // Strategy 2: Tesseract fallback
+      if (!parsed) {
+        const result = await Tesseract.recognize(receipt.file, 'eng', {
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              setProcessedReceipts((prev) => {
+                const updated = [...prev];
+                updated[index] = { ...updated[index], progress: 40 + Math.round(m.progress * 50) };
+                return updated;
+              });
+            }
+          },
+        });
+
+        const text = result.data.text;
+        if (!text || text.trim().length < 10) {
+          throw new Error('Could not extract readable text from image. Try a clearer photo.');
+        }
+
+        parsed = parseReceiptText(text);
+        if (!parsed.merchant && !parsed.total) {
+          parsed.merchant = 'Unknown Merchant';
+          parsed.total = 0;
+        }
+
+        if (parsed.merchant || parsed.total) {
+          try {
+            const category = await categorizeWithAI(parsed);
+            if (category) parsed.category = category;
+          } catch (aiError) {
+            console.error('AI categorization failed, continuing without it:', aiError);
+          }
+        }
+      }
 
       setProcessedReceipts((prev) => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], status: 'completed', data: parsed, progress: 100 };
+        updated[index] = { ...updated[index], status: 'completed', data: parsed!, progress: 100 };
         return updated;
       });
 
@@ -656,14 +671,20 @@ export default function Receipts() {
       date = new Date().toISOString().split('T')[0];
     }
 
+    // Derive subtotal from total and VAT
+    const derivedSubtotal = vatAmount > 0 && total > 0 ? parseFloat((total - vatAmount).toFixed(2)) : parseFloat((total / 1.05).toFixed(2));
+    const derivedVat = vatAmount > 0 ? vatAmount : parseFloat((total - derivedSubtotal).toFixed(2));
+
     return {
       merchant: merchant || 'Unknown Merchant',
       date,
+      subtotal: derivedSubtotal,
+      vatPercentage: 5,
+      vatAmount: derivedVat,
       total,
-      vatAmount,
       currency: 'AED',
       rawText: text,
-      confidence: 0.85,
+      confidence: 0.5,
     };
   };
 
@@ -756,20 +777,20 @@ export default function Receipts() {
     // Save each receipt sequentially with status updates
     for (const { receipt, index } of completedIndices) {
       try {
-        const d = receipt.data!;
         const receiptData = {
           companyId: companyId,
-          merchant: d.merchant || 'Unknown',
-          date: d.date || new Date().toISOString().split('T')[0],
-          invoiceNumber: d.invoiceNumber || null,
-          amount: Number(d.subtotal ?? d.total) || 0,
-          vatAmount: d.vatAmount ? Number(d.vatAmount) : null,
-          total: Number(d.total) || 0,
-          currency: d.currency || 'AED',
-          category: d.category || 'Uncategorized',
-          lineItems: d.lineItems || [],
+          merchant: receipt.data!.merchant || 'Unknown',
+          date: receipt.data!.date || new Date().toISOString().split('T')[0],
+          invoiceNumber: receipt.data!.invoiceNumber || null,
+          amount: Number(receipt.data!.subtotal ?? receipt.data!.total) || 0,
+          vatAmount: receipt.data!.vatAmount ? Number(receipt.data!.vatAmount) : null,
+          vatPercentage: receipt.data!.vatPercentage ?? 5,
+          total: Number(receipt.data!.total) || 0,
+          category: receipt.data!.category || 'Uncategorized',
+          currency: receipt.data!.currency || 'AED',
           imageData: receipt.preview,
-          rawText: d.rawText,
+          rawText: receipt.data!.rawText,
+          lineItems: receipt.data!.lineItems || [],
         };
 
         await apiRequest('POST', `/api/companies/${companyId}/receipts`, receiptData);
@@ -912,39 +933,6 @@ export default function Receipts() {
         description: result.error || 'Failed to export to Google Sheets' 
       });
     }
-  };
-
-  const handleDownloadReceiptPdf = (receipt: any) => {
-    if (!companyId) return;
-    const url = apiUrl(`/api/companies/${companyId}/receipts/${receipt.id}/pdf`);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `receipt-${receipt.id.slice(0, 8)}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  const handleExportPdf = async () => {
-    if (!companyId || !filteredReceipts.length) {
-      toast({ variant: 'destructive', title: 'No data', description: 'No expenses to export' });
-      return;
-    }
-
-    const params = new URLSearchParams();
-    if (dateRange.from) params.set('from', format(dateRange.from, 'yyyy-MM-dd'));
-    if (dateRange.to) params.set('to', format(dateRange.to, 'yyyy-MM-dd'));
-
-    const url = apiUrl(`/api/companies/${companyId}/receipts/export-pdf?${params.toString()}`);
-    const a = document.createElement('a');
-    a.href = url;
-    const dateSuffix = dateRange.from && dateRange.to
-      ? `_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
-      : '';
-    a.download = `receipts${dateSuffix}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
   };
 
   return (
@@ -1190,137 +1178,122 @@ export default function Receipts() {
                     )}
 
                     {receipt.status === 'completed' && receipt.data && (
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <Label className="text-xs">Merchant</Label>
-                            <Input
-                              value={receipt.data.merchant || ''}
-                              onChange={(e) => updateReceiptData(index, { merchant: e.target.value })}
-                              className="h-8"
-                              data-testid={`input-merchant-${index}`}
-                            />
-                          </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Merchant / Supplier</Label>
+                          <Input
+                            value={receipt.data.merchant || ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { merchant: e.target.value })
+                            }
+                            className="h-8"
+                            data-testid={`input-merchant-${index}`}
+                          />
+                        </div>
 
-                          <div className="space-y-1">
-                            <Label className="text-xs">Date</Label>
-                            <Input
-                              type="date"
-                              value={receipt.data.date || ''}
-                              onChange={(e) => updateReceiptData(index, { date: e.target.value })}
-                              className="h-8"
-                              data-testid={`input-date-${index}`}
-                            />
-                          </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Date</Label>
+                          <Input
+                            type="date"
+                            value={receipt.data.date || ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { date: e.target.value })
+                            }
+                            className="h-8"
+                            data-testid={`input-date-${index}`}
+                          />
+                        </div>
 
-                          <div className="space-y-1">
-                            <Label className="text-xs">Invoice / Receipt #</Label>
+                        {receipt.data.invoiceNumber && (
+                          <div className="space-y-1 col-span-2">
+                            <Label className="text-xs">Invoice / Receipt Number</Label>
                             <Input
                               value={receipt.data.invoiceNumber || ''}
-                              onChange={(e) => updateReceiptData(index, { invoiceNumber: e.target.value || null })}
-                              className="h-8"
-                              placeholder="N/A"
-                              data-testid={`input-invoice-${index}`}
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label className="text-xs">Currency</Label>
-                            <Input
-                              value={receipt.data.currency || 'AED'}
-                              onChange={(e) => updateReceiptData(index, { currency: e.target.value })}
+                              onChange={(e) =>
+                                updateReceiptData(index, { invoiceNumber: e.target.value })
+                              }
                               className="h-8 font-mono"
-                              data-testid={`input-currency-${index}`}
                             />
                           </div>
+                        )}
 
-                          <div className="space-y-1">
-                            <Label className="text-xs">Subtotal (before VAT)</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={receipt.data.subtotal ?? ''}
-                              onChange={(e) => updateReceiptData(index, { subtotal: parseFloat(e.target.value) || 0 })}
-                              className="h-8 font-mono"
-                              data-testid={`input-subtotal-${index}`}
-                            />
-                          </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Subtotal (excl. VAT)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={receipt.data.subtotal ?? receipt.data.total ?? ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { subtotal: parseFloat(e.target.value) })
+                            }
+                            className="h-8"
+                          />
+                        </div>
 
-                          <div className="space-y-1">
-                            <Label className="text-xs">VAT % / VAT Amount</Label>
-                            <div className="flex gap-1">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={receipt.data.vatPercent ?? 5}
-                                onChange={(e) => updateReceiptData(index, { vatPercent: parseFloat(e.target.value) || 0 })}
-                                className="h-8 font-mono w-20"
-                                placeholder="%"
-                                data-testid={`input-vat-percent-${index}`}
-                              />
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={receipt.data.vatAmount ?? ''}
-                                onChange={(e) => updateReceiptData(index, { vatAmount: parseFloat(e.target.value) || 0 })}
-                                className="h-8 font-mono"
-                                placeholder="VAT amt"
-                                data-testid={`input-vat-amount-${index}`}
-                              />
-                            </div>
-                          </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">VAT ({receipt.data.vatPercentage ?? 5}%)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={receipt.data.vatAmount ?? ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { vatAmount: parseFloat(e.target.value) })
+                            }
+                            className="h-8"
+                          />
+                        </div>
 
-                          <div className="space-y-1">
-                            <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={receipt.data.total ?? ''}
-                              onChange={(e) => updateReceiptData(index, { total: parseFloat(e.target.value) || 0 })}
-                              className="h-8 font-mono font-semibold"
-                              data-testid={`input-amount-${index}`}
-                            />
-                          </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={receipt.data.total ?? ''}
+                            onChange={(e) =>
+                              updateReceiptData(index, { total: parseFloat(e.target.value) })
+                            }
+                            className="h-8 font-semibold"
+                            data-testid={`input-amount-${index}`}
+                          />
+                        </div>
 
-                          <div className="space-y-1">
-                            <Label className="text-xs">Category</Label>
-                            <Select
-                              value={receipt.data.category}
-                              onValueChange={(value) => updateReceiptData(index, { category: value })}
-                            >
-                              <SelectTrigger className="h-8" data-testid={`select-category-${index}`}>
-                                <SelectValue placeholder="Category" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                                <SelectItem value="Meals">Meals</SelectItem>
-                                <SelectItem value="Travel">Travel</SelectItem>
-                                <SelectItem value="Utilities">Utilities</SelectItem>
-                                <SelectItem value="Marketing">Marketing</SelectItem>
-                                <SelectItem value="Equipment">Equipment</SelectItem>
-                                <SelectItem value="Professional Services">Professional Services</SelectItem>
-                                <SelectItem value="Communication">Communication</SelectItem>
-                                <SelectItem value="Maintenance">Maintenance</SelectItem>
-                                <SelectItem value="Insurance">Insurance</SelectItem>
-                                <SelectItem value="Rent">Rent</SelectItem>
-                                <SelectItem value="Other">Other</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Category</Label>
+                          <Select
+                            value={receipt.data.category}
+                            onValueChange={(value) =>
+                              updateReceiptData(index, { category: value })
+                            }
+                          >
+                            <SelectTrigger className="h-8" data-testid={`select-category-${index}`}>
+                              <SelectValue placeholder="Category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Office Supplies">Office Supplies</SelectItem>
+                              <SelectItem value="Meals">Meals &amp; Entertainment</SelectItem>
+                              <SelectItem value="Travel">Travel</SelectItem>
+                              <SelectItem value="Utilities">Utilities</SelectItem>
+                              <SelectItem value="Marketing">Marketing</SelectItem>
+                              <SelectItem value="Equipment">Equipment</SelectItem>
+                              <SelectItem value="Communication">Communication</SelectItem>
+                              <SelectItem value="Professional Services">Professional Services</SelectItem>
+                              <SelectItem value="Insurance">Insurance</SelectItem>
+                              <SelectItem value="Maintenance">Maintenance</SelectItem>
+                              <SelectItem value="Rent">Rent</SelectItem>
+                              <SelectItem value="Other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
 
                         {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
-                          <div className="space-y-1">
-                            <Label className="text-xs">Line Items ({receipt.data.lineItems.length})</Label>
-                            <div className="rounded-md border divide-y text-xs max-h-40 overflow-y-auto">
+                          <div className="col-span-2 space-y-1">
+                            <Label className="text-xs">Line Items</Label>
+                            <div className="rounded border text-xs divide-y">
                               {receipt.data.lineItems.map((item, i) => (
-                                <div key={i} className="flex justify-between items-center px-3 py-1.5 gap-2">
-                                  <span className="flex-1 truncate text-muted-foreground">{item.description}</span>
-                                  {item.quantity != null && (
-                                    <span className="text-muted-foreground">x{item.quantity}</span>
-                                  )}
-                                  <span className="font-mono font-medium shrink-0">
-                                    {receipt.data?.currency || 'AED'} {item.amount.toFixed(2)}
+                                <div key={i} className="flex justify-between px-2 py-1">
+                                  <span className="truncate max-w-[60%]">{item.description}</span>
+                                  <span className="text-muted-foreground ml-2">
+                                    {item.quantity > 1 ? `×${item.quantity}  ` : ''}{item.total.toFixed(2)}
                                   </span>
                                 </div>
                               ))}
@@ -1329,14 +1302,14 @@ export default function Receipts() {
                         )}
 
                         {receipt.data.confidence && (
-                          <div className="flex items-center gap-2">
+                          <div className="col-span-2">
                             <p className="text-xs text-muted-foreground">
-                              Confidence: {Math.round(receipt.data.confidence * 100)}%
+                              AI Confidence: {Math.round(receipt.data.confidence * 100)}%
+                              <Badge variant="secondary" className="ml-2">
+                                <Sparkles className="w-2 h-2 mr-1" />
+                                GPT-4o Vision
+                              </Badge>
                             </p>
-                            <Badge variant="secondary" className="text-xs">
-                              <Sparkles className="w-2 h-2 mr-1" />
-                              GPT-4o Vision
-                            </Badge>
                           </div>
                         )}
                       </div>
@@ -1372,10 +1345,6 @@ export default function Receipts() {
                 <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-expenses-sheets">
                   <SiGooglesheets className="w-4 h-4 mr-2" />
                   Export to Google Sheets
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportPdf} data-testid="menu-export-expenses-pdf">
-                  <FileDown className="w-4 h-4 mr-2" />
-                  Export to PDF
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1440,15 +1409,6 @@ export default function Receipts() {
                           Post
                         </Button>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleDownloadReceiptPdf(receipt)}
-                        data-testid={`button-pdf-receipt-${receipt.id}`}
-                        title="Download PDF"
-                      >
-                        <FileDown className="w-4 h-4" />
-                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1564,16 +1524,11 @@ export default function Receipts() {
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="Office Supplies">Office Supplies</SelectItem>
-                        <SelectItem value="Meals">Meals</SelectItem>
+                        <SelectItem value="Meals & Entertainment">Meals & Entertainment</SelectItem>
                         <SelectItem value="Travel">Travel</SelectItem>
                         <SelectItem value="Utilities">Utilities</SelectItem>
                         <SelectItem value="Marketing">Marketing</SelectItem>
-                        <SelectItem value="Equipment">Equipment</SelectItem>
-                        <SelectItem value="Professional Services">Professional Services</SelectItem>
-                        <SelectItem value="Communication">Communication</SelectItem>
-                        <SelectItem value="Maintenance">Maintenance</SelectItem>
-                        <SelectItem value="Insurance">Insurance</SelectItem>
-                        <SelectItem value="Rent">Rent</SelectItem>
+                        <SelectItem value="Software">Software</SelectItem>
                         <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>
@@ -1943,31 +1898,6 @@ export default function Receipts() {
           </Form>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={!!receiptToDelete} onOpenChange={(open) => { if (!open) setReceiptToDelete(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Expense?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete this expense record. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (receiptToDelete) {
-                  deleteMutation.mutate(receiptToDelete.id);
-                  setReceiptToDelete(null);
-                }
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

@@ -1,177 +1,19 @@
-import { type Express, type Request, type Response } from 'express';
+import { Router, type Express, type Request, type Response } from 'express';
 import { storage } from '../storage';
 import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
 
 export function registerOCRRoutes(app: Express) {
-  const env = getEnv();
+  const apiKey = getEnv().OPENAI_API_KEY;
+  const openai = apiKey ? new OpenAI({ apiKey }) : null;
 
-  // Resolve which API to use.
-  // ANTHROPIC_API_KEY takes explicit precedence.
-  // An OPENAI_API_KEY starting with "sk-ant-" is an Anthropic key that was
-  // misconfigured in the OpenAI slot — use the Anthropic SDK for it directly
-  // rather than letting the OpenAI SDK (which reads OPENAI_BASE_URL) misroute it.
-  const anthropicKey =
-    env.ANTHROPIC_API_KEY ||
-    (env.OPENAI_API_KEY?.startsWith('sk-ant-') ? env.OPENAI_API_KEY : undefined);
-  const openaiKey =
-    env.OPENAI_API_KEY && !env.OPENAI_API_KEY.startsWith('sk-ant-')
-      ? env.OPENAI_API_KEY
-      : undefined;
+  // ===========================
+  // OCR Processing Endpoint
+  // ===========================
 
-  const anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
-  // Explicitly pin baseURL so OPENAI_BASE_URL env var cannot silently reroute
-  // requests to a different provider (e.g. Anthropic's OpenAI-compatible endpoint).
-  const openai =
-    !anthropic && openaiKey
-      ? new OpenAI({ apiKey: openaiKey, baseURL: 'https://api.openai.com/v1' })
-      : null;
-
-  const ANTHROPIC_VISION_MODEL = 'claude-sonnet-4-6';
-  const OPENAI_VISION_MODEL = 'gpt-4o';
-
-  const VALID_CATEGORIES = [
-    'Office Supplies', 'Utilities', 'Travel', 'Meals',
-    'Rent', 'Marketing', 'Equipment', 'Professional Services',
-    'Insurance', 'Maintenance', 'Communication', 'Other',
-  ];
-
-  const EXTRACTION_PROMPT = `You are an expert receipt/invoice data extraction assistant for UAE businesses.
-Analyze this receipt image carefully and extract EVERY detail visible.
-
-Return a JSON object with EXACTLY these fields:
-{
-  "merchant": "Full business/store name as printed on receipt",
-  "date": "YYYY-MM-DD format",
-  "invoiceNumber": "receipt/invoice/ref number if visible, else null",
-  "subtotal": number (amount before VAT, in original currency),
-  "vatPercent": number (VAT percentage, default 5 for UAE if not shown),
-  "vatAmount": number (VAT amount, calculate from subtotal if not shown),
-  "total": number (final total including VAT),
-  "currency": "AED or other 3-letter code found on receipt",
-  "category": "one of the categories below",
-  "lineItems": [{"description": "item name", "quantity": number_or_null, "unitPrice": number_or_null, "amount": number}],
-  "confidence": number between 0 and 1
-}
-
-Valid categories: ${VALID_CATEGORIES.join(', ')}
-
-Rules:
-- UAE VAT is 5% — if receipt shows 5% or "VAT" without percentage, use 5
-- If subtotal not shown, derive it: subtotal = total - vatAmount
-- If vatAmount not shown, derive it: vatAmount = subtotal * (vatPercent/100)
-- Include ALL line items visible on the receipt
-- For Arabic text: transliterate or translate merchant names to English
-- currency defaults to AED for UAE receipts
-- Be precise — extract exactly what is printed, do not guess values not on the receipt`;
-
-  // Strip potential markdown code fences that some models add around JSON.
-  function extractJson(raw: string): any {
-    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    return JSON.parse(fenced ? fenced[1].trim() : raw.trim());
-  }
-
-  async function callVision(dataUrl: string): Promise<string> {
-    if (anthropic) {
-      // Anthropic requires raw base64 with an explicit media_type — NOT a data URI.
-      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
-      if (!match) throw new Error('Invalid image data URL format');
-
-      const mediaType = match[1] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
-      const base64Data = match[2];
-
-      console.log(`[OCR] Sending image to ${ANTHROPIC_VISION_MODEL} via Anthropic SDK`);
-
-      const response = await anthropic.messages.create({
-        model: ANTHROPIC_VISION_MODEL,
-        max_tokens: 2000,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: mediaType, data: base64Data },
-              },
-              {
-                type: 'text',
-                text: EXTRACTION_PROMPT + '\n\nReturn ONLY a valid JSON object. No markdown, no explanation.',
-              },
-            ],
-          },
-        ],
-      });
-
-      const block = response.content[0];
-      if (block.type !== 'text') throw new Error('Unexpected response type from Anthropic');
-      return block.text;
-    }
-
-    if (openai) {
-      console.log(`[OCR] Sending image to ${OPENAI_VISION_MODEL} via OpenAI SDK`);
-
-      const aiResponse = await openai.chat.completions.create({
-        model: OPENAI_VISION_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
-              { type: 'text', text: EXTRACTION_PROMPT },
-            ],
-          },
-        ],
-        response_format: { type: 'json_object' },
-        max_tokens: 2000,
-      });
-
-      const raw = aiResponse.choices[0]?.message?.content;
-      if (!raw) throw new Error('Empty response from OpenAI vision API');
-      return raw;
-    }
-
-    throw new Error('No vision API client available');
-  }
-
-  async function callTextExtraction(content: string, categories: string[]): Promise<string> {
-    const systemPrompt = `Extract receipt data from text. Return JSON with: merchant, date (YYYY-MM-DD), invoiceNumber, subtotal, vatPercent, vatAmount, total, currency, category, lineItems array. UAE context: 5% VAT, AED currency. Categories: ${categories.join(', ')}`;
-
-    if (anthropic) {
-      const response = await anthropic.messages.create({
-        model: ANTHROPIC_VISION_MODEL,
-        max_tokens: 1000,
-        system: systemPrompt,
-        messages: [
-          { role: 'user', content: `Extract receipt data:\n\n${content}\n\nReturn ONLY a valid JSON object.` },
-        ],
-      });
-      const block = response.content[0];
-      if (block.type !== 'text') throw new Error('Unexpected response type from Anthropic');
-      return block.text;
-    }
-
-    if (openai) {
-      const aiResponse = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Extract receipt data:\n\n${content}` },
-        ],
-        response_format: { type: 'json_object' },
-        max_tokens: 1000,
-      });
-      const raw = aiResponse.choices[0]?.message?.content;
-      if (!raw) throw new Error('Empty response from OpenAI');
-      return raw;
-    }
-
-    throw new Error('No text extraction API client available');
-  }
-
-  app.post('/api/ocr/process', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/ocr/process", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'Unauthorized' });
@@ -183,124 +25,219 @@ Rules:
     }
     const companyId = companies[0].id;
 
-    const { imageData, content, messageId } = req.body;
+    const { messageId, mediaId, content, imageData } = req.body;
 
+    const sanitizedContent = content ? String(content).slice(0, 10000) : '';
     const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
 
-    if (!anthropic && !openai) {
-      console.error('[OCR] No AI client available — set OPENAI_API_KEY or ANTHROPIC_API_KEY');
-      return res.status(503).json({ message: 'OCR service unavailable: set OPENAI_API_KEY or ANTHROPIC_API_KEY' });
+    const defaultResult = {
+      merchant: 'Unknown Merchant',
+      date: new Date().toISOString().split('T')[0],
+      invoiceNumber: null,
+      subtotal: 0,
+      vatPercentage: 5,
+      vatAmount: 0,
+      total: 0,
+      currency: 'AED',
+      category: 'Other',
+      lineItems: [],
+      confidence: 0.3,
+      rawText: sanitizedContent,
+      companyId,
+      messageId: sanitizedMessageId,
+    };
+
+    if (!openai) {
+      return res.json(defaultResult);
     }
 
-    // Vision path: image provided
+    const validCategories = [
+      'Office Supplies', 'Utilities', 'Travel', 'Meals',
+      'Rent', 'Marketing', 'Equipment', 'Professional Services',
+      'Insurance', 'Maintenance', 'Communication', 'Other'
+    ];
+
+    const extractionPrompt = `You are an expert accountant specializing in UAE business receipt and invoice processing. Analyze this receipt/invoice image carefully and extract ALL financial data with high precision.
+
+Extract the following fields. Be extremely precise with numbers — read every digit carefully:
+
+1. merchant: The exact business/supplier name as printed (include LLC, Co., etc.)
+2. date: Transaction date in YYYY-MM-DD format. Check for formats like DD/MM/YYYY, MM-DD-YYYY, written dates (15 Jan 2025), Arabic dates. If not found use today.
+3. invoiceNumber: Invoice/receipt/transaction number or reference (look for "Invoice No", "Receipt No", "Ref", "TRN", "#", bill number, etc.)
+4. subtotal: The amount BEFORE VAT/tax (look for "Subtotal", "Net Amount", "Before Tax", "Excl. VAT"). Number only.
+5. vatPercentage: The VAT/tax rate percentage (default 5 for UAE). Number only.
+6. vatAmount: The exact VAT/tax amount charged (look for "VAT", "Tax Amount", "VAT 5%"). Number only.
+7. total: The FINAL total amount paid including VAT (look for "Total", "Grand Total", "Amount Due", "Total Due", "Net Payable"). This is typically the largest amount. Number only.
+8. currency: Currency code (AED, USD, EUR, etc.). Default AED for UAE receipts.
+9. category: Classify into one of: ${validCategories.join(', ')}
+10. lineItems: Array of items. Each item: { "description": string, "quantity": number, "unitPrice": number, "total": number }
+
+IMPORTANT RULES:
+- The "total" field must be the grand total INCLUDING VAT — the final amount the customer pays
+- If you see only one amount, treat it as the total. Calculate subtotal = total / 1.05 for UAE receipts
+- If subtotal and vatAmount are both found but no total, compute total = subtotal + vatAmount
+- If total and vatAmount are both found but no subtotal, compute subtotal = total - vatAmount
+- For Arabic text: read right-to-left, extract numbers regardless of language
+- Numbers may use commas as thousands separators (1,234.56) — parse correctly
+- Amounts may show as "AED 1,234.56" or "1,234.56 AED" or just "1,234.56"
+- Look for TRN (Tax Registration Number) which indicates a VAT-registered business
+
+Respond ONLY with valid JSON matching this exact structure:
+{
+  "merchant": "string",
+  "date": "YYYY-MM-DD",
+  "invoiceNumber": "string or null",
+  "subtotal": number,
+  "vatPercentage": number,
+  "vatAmount": number,
+  "total": number,
+  "currency": "string",
+  "category": "string",
+  "lineItems": [{"description": "string", "quantity": number, "unitPrice": number, "total": number}],
+  "confidence": number between 0 and 1
+}`;
+
+    // Strategy 1: Vision API with image
     if (imageData) {
       try {
-        // Validate file type: only JPEG, PNG, WebP, HEIC allowed
-        const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
-        const dataUrlForValidation: string = imageData.startsWith('data:') ? imageData : `data:image/jpeg;base64,${imageData}`;
-        const mimeMatch = dataUrlForValidation.match(/^data:([^;]+);base64,/);
-        if (mimeMatch && !ALLOWED_IMAGE_TYPES.includes(mimeMatch[1].toLowerCase())) {
-          return res.status(400).json({ message: 'Invalid file type. Only JPEG, PNG, WebP, and HEIC images are allowed.' });
+        // imageData is a data URL (data:image/jpeg;base64,...) — extract the base64 part
+        let base64Data = imageData;
+        let mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' = 'image/jpeg';
+
+        const dataUrlMatch = imageData.match(/^data:([^;]+);base64,(.+)$/);
+        if (dataUrlMatch) {
+          const mimeType = dataUrlMatch[1];
+          base64Data = dataUrlMatch[2];
+          if (mimeType.includes('png')) mediaType = 'image/png';
+          else if (mimeType.includes('webp')) mediaType = 'image/webp';
+          else if (mimeType.includes('gif')) mediaType = 'image/gif';
+          else mediaType = 'image/jpeg';
         }
 
-        // Validate file size: max 10MB (base64 encodes ~33% overhead, so raw limit ~7.5MB base64 chars)
-        const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10MB decoded
-        const base64Data = dataUrlForValidation.split(',')[1] || '';
-        const decodedSize = Math.floor(base64Data.length * 0.75);
-        if (decodedSize > MAX_IMAGE_BYTES) {
-          return res.status(400).json({ message: 'Image too large. Maximum size is 10MB.' });
-        }
-
-        // imageData may be a full data URL (data:image/...;base64,...) or raw base64
-        const dataUrl: string = dataUrlForValidation;
-
-        const raw = await callVision(dataUrl);
-        console.log('[OCR] Vision API raw response:', raw.slice(0, 200));
-
-        const result = extractJson(raw);
-
-        const subtotal = parseFloat(result.subtotal) || 0;
-        const vatPercent = parseFloat(result.vatPercent) || 5;
-        const vatAmount = parseFloat(result.vatAmount) || parseFloat((subtotal * vatPercent / 100).toFixed(2));
-        const total = parseFloat(result.total) || parseFloat((subtotal + vatAmount).toFixed(2));
-        const category = VALID_CATEGORIES.includes(result.category) ? result.category : 'Other';
-
-        let parsedDate = new Date().toISOString().split('T')[0];
-        if (result.date && /^\d{4}-\d{2}-\d{2}$/.test(result.date)) {
-          parsedDate = result.date;
-        }
-
-        const lineItems = Array.isArray(result.lineItems) ? result.lineItems.map((item: any) => ({
-          description: String(item.description || '').slice(0, 500),
-          quantity: item.quantity != null ? parseFloat(item.quantity) || null : null,
-          unitPrice: item.unitPrice != null ? parseFloat(item.unitPrice) || null : null,
-          amount: parseFloat(item.amount) || 0,
-        })) : [];
-
-        return res.json({
-          merchant: result.merchant ? String(result.merchant).slice(0, 200) : 'Unknown Merchant',
-          date: parsedDate,
-          invoiceNumber: result.invoiceNumber ? String(result.invoiceNumber).slice(0, 100) : null,
-          subtotal,
-          vatPercent,
-          vatAmount,
-          total,
-          amount: subtotal,
-          currency: result.currency ? String(result.currency).slice(0, 3).toUpperCase() : 'AED',
-          category,
-          lineItems,
-          confidence: parseFloat(result.confidence) || 0.95,
-          rawText: '',
-          companyId,
-          messageId: sanitizedMessageId,
+        const visionResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${mediaType};base64,${base64Data}`,
+                    detail: 'high',
+                  },
+                },
+                {
+                  type: 'text',
+                  text: extractionPrompt,
+                },
+              ],
+            },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 1500,
         });
-      } catch (err: any) {
-        console.error('[OCR] Vision extraction failed:', err?.message || err);
-        return res.status(500).json({ message: `OCR extraction failed: ${err?.message || 'Unknown error'}` });
+
+        const raw = visionResponse.choices[0]?.message?.content || '{}';
+        const aiResult = JSON.parse(raw);
+
+        return res.json(buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories));
+      } catch (visionError: any) {
+        console.error('[OCR] Vision API error:', visionError?.message || visionError);
+        // Fall through to text-based extraction
       }
     }
 
-    // Text-only path: fallback when only text content provided
-    if (content) {
-      const sanitizedContent = String(content).slice(0, 10000);
+    // Strategy 2: Text-based extraction (when image not provided or vision failed)
+    if (sanitizedContent) {
       try {
-        const raw = await callTextExtraction(sanitizedContent, VALID_CATEGORIES);
-        const result = extractJson(raw);
-
-        const subtotal = parseFloat(result.subtotal) || 0;
-        const vatPercent = parseFloat(result.vatPercent) || 5;
-        const vatAmount = parseFloat(result.vatAmount) || parseFloat((subtotal * vatPercent / 100).toFixed(2));
-        const total = parseFloat(result.total) || parseFloat((subtotal + vatAmount).toFixed(2));
-        const category = VALID_CATEGORIES.includes(result.category) ? result.category : 'Other';
-
-        let parsedDate = new Date().toISOString().split('T')[0];
-        if (result.date && /^\d{4}-\d{2}-\d{2}$/.test(result.date)) {
-          parsedDate = result.date;
-        }
-
-        return res.json({
-          merchant: result.merchant ? String(result.merchant).slice(0, 200) : 'Unknown Merchant',
-          date: parsedDate,
-          invoiceNumber: result.invoiceNumber ? String(result.invoiceNumber).slice(0, 100) : null,
-          subtotal,
-          vatPercent,
-          vatAmount,
-          total,
-          amount: subtotal,
-          currency: result.currency ? String(result.currency).slice(0, 3).toUpperCase() : 'AED',
-          category,
-          lineItems: [],
-          confidence: 0.85,
-          rawText: sanitizedContent,
-          companyId,
-          messageId: sanitizedMessageId,
+        const textResponse = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content: extractionPrompt,
+            },
+            {
+              role: 'user',
+              content: `Extract receipt data from this OCR text:\n\n${sanitizedContent}`,
+            },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 1500,
         });
-      } catch (err: any) {
-        console.error('[OCR] Text extraction failed:', err?.message || err);
-        return res.status(500).json({ message: `OCR extraction failed: ${err?.message || 'Unknown error'}` });
+
+        const raw = textResponse.choices[0]?.message?.content || '{}';
+        const aiResult = JSON.parse(raw);
+
+        return res.json(buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories));
+      } catch (textError: any) {
+        console.error('[OCR] Text extraction error:', textError?.message || textError);
       }
     }
 
-    return res.status(400).json({ message: 'No image or text content provided' });
+    return res.json(defaultResult);
   }));
+}
+
+function buildResult(
+  aiResult: any,
+  rawText: string,
+  companyId: number,
+  messageId: string | null,
+  validCategories: string[],
+) {
+  const subtotal = parseNonNegative(aiResult.subtotal);
+  const vatAmount = parseNonNegative(aiResult.vatAmount);
+  const vatPercentage = parseNonNegative(aiResult.vatPercentage) || 5;
+  let total = parseNonNegative(aiResult.total);
+
+  // Reconcile amounts if any are missing
+  if (total === 0 && subtotal > 0) {
+    total = parseFloat((subtotal + vatAmount).toFixed(2));
+  }
+  const derivedSubtotal = subtotal > 0 ? subtotal : (total > 0 ? parseFloat((total / (1 + vatPercentage / 100)).toFixed(2)) : 0);
+  const derivedVat = vatAmount > 0 ? vatAmount : parseFloat((derivedSubtotal * vatPercentage / 100).toFixed(2));
+  const derivedTotal = total > 0 ? total : parseFloat((derivedSubtotal + derivedVat).toFixed(2));
+
+  const category = validCategories.includes(aiResult.category) ? aiResult.category : 'Other';
+
+  let parsedDate = new Date().toISOString().split('T')[0];
+  if (aiResult.date && /^\d{4}-\d{2}-\d{2}$/.test(aiResult.date)) {
+    parsedDate = aiResult.date;
+  }
+
+  const lineItems = Array.isArray(aiResult.lineItems)
+    ? aiResult.lineItems.map((item: any) => ({
+        description: String(item.description || '').slice(0, 500),
+        quantity: parseNonNegative(item.quantity) || 1,
+        unitPrice: parseNonNegative(item.unitPrice),
+        total: parseNonNegative(item.total),
+      }))
+    : [];
+
+  return {
+    merchant: aiResult.merchant ? String(aiResult.merchant).slice(0, 200) : 'Unknown Merchant',
+    date: parsedDate,
+    invoiceNumber: aiResult.invoiceNumber ? String(aiResult.invoiceNumber).slice(0, 100) : null,
+    subtotal: derivedSubtotal,
+    vatPercentage,
+    vatAmount: derivedVat,
+    total: derivedTotal,
+    // Legacy field names for backward compatibility with client
+    amount: derivedSubtotal,
+    currency: aiResult.currency ? String(aiResult.currency).slice(0, 10) : 'AED',
+    category,
+    lineItems,
+    confidence: typeof aiResult.confidence === 'number' ? Math.min(1, Math.max(0, aiResult.confidence)) : 0.85,
+    rawText,
+    companyId,
+    messageId,
+  };
+}
+
+function parseNonNegative(val: any): number {
+  if (val === null || val === undefined) return 0;
+  const n = parseFloat(String(val).replace(/,/g, ''));
+  return !isNaN(n) && n >= 0 ? n : 0;
 }
