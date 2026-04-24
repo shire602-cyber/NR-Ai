@@ -145,11 +145,11 @@ export function registerInvoiceRoutes(app: Express) {
       linesCount: lines.length
     });
 
-    // Create invoice
+    // Create invoice (only include dueDate if provided — passing undefined breaks Drizzle)
     const invoice = await storage.createInvoice({
       ...invoiceData,
       date: invoiceDate,
-      dueDate: invoiceDueDate,
+      ...(invoiceDueDate !== undefined ? { dueDate: invoiceDueDate } : {}),
       companyId,
       subtotal,
       vatAmount,
