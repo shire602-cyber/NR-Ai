@@ -316,14 +316,13 @@ export function registerReportRoutes(app: Express) {
 
     const outputVat = standardRatedSupplies * 0.05;
 
-    // Get expenses (receipts) in range with VAT — receipts.date is text (YYYY-MM-DD)
     const periodReceipts: Receipt[] = await db
       .select()
       .from(receipts)
       .where(and(
         eq(receipts.companyId, companyId),
-        gte(receipts.date, from),
-        lte(receipts.date, to),
+        gte(receipts.date, fromDate),
+        lte(receipts.date, toDate),
       ));
 
     const standardRatedExpenses = periodReceipts.reduce((s: number, r: Receipt) => {
