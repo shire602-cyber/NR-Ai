@@ -9,27 +9,34 @@ import {
   clientCommunications,
   communicationTemplates,
   companies,
+  invoices,
   vatReturns,
 } from '../../shared/schema';
 import { authMiddleware } from '../middleware/auth';
 import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
-import { hasSmtpConfig, sendGenericEmail } from '../services/email.service';
+import { sendEmail, renderTemplate } from '../services/emailService';
 
 const logger = createLogger('firm-comms-routes');
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
-const sendEmailSchema = z.object({
-  companyId: z.string().uuid(),
-  recipientEmail: z.string().email(),
-  subject: z.string().min(1),
-  body: z.string().min(1),
-  templateType: z
-    .enum(['vat_reminder', 'invoice', 'document_request', 'payment_confirmation', 'custom'])
-    .optional(),
-});
+const sendEmailSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    recipientEmail: z.string().email(),
+    subject: z.string().min(1).optional(),
+    body: z.string().min(1).optional(),
+    templateType: z
+      .enum(['vat_reminder', 'invoice', 'document_request', 'payment_confirmation', 'custom'])
+      .optional(),
+    templateId: z.string().uuid().optional(),
+    invoiceId: z.string().uuid().optional(),
+  })
+  .refine((d) => (d.subject && d.body) || d.templateId, {
+    message: 'Provide subject+body or a templateId',
+  });
 
 const sendWhatsAppSchema = z.object({
   companyId: z.string().uuid(),
@@ -178,27 +185,58 @@ export function registerFirmCommsRoutes(app: Express): void {
         return res.status(404).json({ message: 'Company not found' });
       }
 
-      let emailStatus: 'sent' | 'failed' = 'sent';
-      let note: string | undefined;
+      // Resolve subject/body — either from request or from a saved template
+      let subject = validated.subject ?? '';
+      let body = validated.body ?? '';
 
-      if (hasSmtpConfig()) {
-        try {
-          await sendGenericEmail(
-            validated.recipientEmail,
-            validated.subject,
-            validated.body,
-            company.name
-          );
-        } catch (err: any) {
-          emailStatus = 'failed';
-          note = err?.message;
-          logger.error(`Email send failed: ${err?.message}`);
+      if (validated.templateId) {
+        const [tmpl] = await db
+          .select()
+          .from(communicationTemplates)
+          .where(eq(communicationTemplates.id, validated.templateId))
+          .limit(1);
+
+        if (!tmpl) {
+          return res.status(404).json({ message: 'Template not found' });
         }
-      } else {
-        emailStatus = 'failed';
-        note = 'SMTP not configured — email logged only';
-        logger.warn('SMTP not configured — email logged but not sent');
+
+        // Build template variable substitutions
+        const vars: Record<string, string> = {
+          companyName: company.name,
+          contactEmail: company.contactEmail ?? '',
+          trnVatNumber: company.trnVatNumber ?? '',
+        };
+
+        // Enrich with invoice data when invoiceId is provided
+        if (validated.invoiceId) {
+          const [inv] = await db
+            .select()
+            .from(invoices)
+            .where(and(eq(invoices.id, validated.invoiceId), eq(invoices.companyId, validated.companyId)))
+            .limit(1);
+
+          if (inv) {
+            vars.invoiceNumber = inv.number;
+            vars.customerName = inv.customerName;
+            vars.invoiceDate = new Date(inv.date).toLocaleDateString('en-AE', { year: 'numeric', month: 'long', day: 'numeric' });
+            vars.dueDate = inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('en-AE', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+            vars.total = `${inv.currency} ${inv.total.toFixed(2)}`;
+            vars.subtotal = `${inv.currency} ${inv.subtotal.toFixed(2)}`;
+            vars.vatAmount = `${inv.currency} ${inv.vatAmount.toFixed(2)}`;
+            vars.currency = inv.currency;
+            vars.invoiceStatus = inv.status;
+          }
+        }
+
+        subject = subject || renderTemplate(tmpl.subjectTemplate ?? tmpl.name, vars);
+        body = body || renderTemplate(tmpl.bodyTemplate, vars);
       }
+
+      if (!subject || !body) {
+        return res.status(400).json({ message: 'Could not resolve subject or body from template' });
+      }
+
+      const result = await sendEmail(validated.recipientEmail, subject, body, { fromName: company.name });
 
       const [comm] = await db
         .insert(clientCommunications)
@@ -208,15 +246,23 @@ export function registerFirmCommsRoutes(app: Express): void {
           channel: 'email',
           direction: 'outbound',
           recipientEmail: validated.recipientEmail,
-          subject: validated.subject,
-          body: validated.body,
-          status: emailStatus,
+          subject,
+          body,
+          status: result.sent ? 'sent' : 'failed',
           templateType: validated.templateType ?? 'custom',
           sentAt: new Date(),
+          ...(validated.templateId || validated.invoiceId
+            ? { metadata: JSON.stringify({ templateId: validated.templateId, invoiceId: validated.invoiceId, provider: result.provider }) }
+            : {}),
         })
         .returning();
 
-      res.json({ success: emailStatus === 'sent', communication: comm, ...(note ? { note } : {}) });
+      res.json({
+        success: result.sent,
+        provider: result.provider,
+        communication: comm,
+        ...(result.error ? { note: result.error } : {}),
+      });
     })
   );
 
@@ -392,19 +438,9 @@ export function registerFirmCommsRoutes(app: Express): void {
           'NR Accounting Team',
         ].join('\n');
 
-        let sent = false;
-        let note: string | undefined;
-
-        if (hasSmtpConfig()) {
-          try {
-            await sendGenericEmail(target.contactEmail, subject, body, 'NR Accounting');
-            sent = true;
-          } catch (err: any) {
-            note = err?.message;
-          }
-        } else {
-          note = 'SMTP not configured';
-        }
+        const result = await sendEmail(target.contactEmail, subject, body, { fromName: 'NR Accounting' });
+        const sent = result.sent;
+        const note = result.error;
 
         await db.insert(clientCommunications).values({
           companyId: target.companyId,
