@@ -161,6 +161,11 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
+    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     // Get stored KPIs
     const kpis = await storage.getFinancialKpis(companyId as string);
     res.json(kpis);
@@ -173,6 +178,11 @@ export function registerAnalyticsRoutes(app: Express) {
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
+    }
+
+    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Generate dynamic insights based on data
@@ -242,16 +252,27 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
+    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     const integrations = await storage.getEcommerceIntegrations(companyId as string);
     res.json(integrations || []);
   }));
 
   // Get e-commerce transactions (MUST be before :integrationId route)
   app.get("/api/integrations/ecommerce/transactions", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { companyId } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
+    }
+
+    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
     }
 
     const transactions = await storage.getEcommerceTransactions(companyId as string);
@@ -297,6 +318,11 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.status(404).json({ message: 'Integration not found' });
     }
 
+    const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     // Update sync status
     await storage.updateEcommerceIntegration(integrationId, {
       syncStatus: 'syncing',
@@ -317,11 +343,17 @@ export function registerAnalyticsRoutes(app: Express) {
   // Toggle e-commerce integration
   app.patch("/api/integrations/ecommerce/:integrationId/toggle", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { integrationId } = req.params;
+    const userId = (req as any).user?.id;
     const { isActive } = req.body;
 
     const integration = await storage.getEcommerceIntegrationById(integrationId);
     if (!integration) {
       return res.status(404).json({ message: 'Integration not found' });
+    }
+
+    const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
+    if (!companyUsers.some(cu => cu.userId === userId)) {
+      return res.status(403).json({ message: 'Access denied' });
     }
 
     await storage.updateEcommerceIntegration(integrationId, { isActive });
