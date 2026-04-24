@@ -201,7 +201,7 @@ function CustomerDashboard() {
       {/* Hero Section */}
       <ScrollReveal direction="down" delay={0.1}>
         <motion.div 
-          className="relative overflow-hidden rounded-2xl p-8 mb-8 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 dark:from-primary/5 dark:via-transparent dark:to-accent/10 border border-primary/10 dark:border-primary/5"
+          className="relative overflow-hidden rounded-2xl p-4 sm:p-8 mb-4 sm:mb-8 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 dark:from-primary/5 dark:via-transparent dark:to-accent/10 border border-primary/10 dark:border-primary/5"
           whileHover={{ scale: 1.01 }}
           transition={{ duration: 0.3 }}
         >
@@ -219,7 +219,7 @@ function CustomerDashboard() {
             }}
           />
           <div className="relative z-10">
-            <div className="flex items-start justify-between flex-wrap gap-6">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
               <motion.div 
                 className="max-w-2xl"
                 initial={{ opacity: 0, x: -20 }}
@@ -227,7 +227,7 @@ function CustomerDashboard() {
                 transition={{ duration: 0.6, delay: 0.2 }}
               >
                 <motion.h1 
-                  className="text-4xl md:text-5xl font-bold mb-3 bg-gradient-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent"
+                  className="text-2xl sm:text-4xl md:text-5xl font-bold mb-3 bg-gradient-to-r from-primary via-primary/80 to-accent bg-clip-text text-transparent"
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: 0.3 }}
@@ -243,8 +243,8 @@ function CustomerDashboard() {
                   Welcome back! Here's your financial overview for <span className="font-semibold text-foreground">{new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' })}</span>.
                 </motion.p>
               </motion.div>
-              <motion.div 
-                className="flex gap-3 flex-wrap justify-end"
+              <motion.div
+                className="flex gap-3 flex-wrap sm:justify-end"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ duration: 0.6, delay: 0.3 }}

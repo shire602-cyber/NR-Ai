@@ -144,9 +144,9 @@ export default function StaffManagement() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Staff Management</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Staff Management</h1>
           <p className="text-muted-foreground mt-1">
             Manage NRA staff assignments across client companies
           </p>
@@ -171,7 +171,7 @@ export default function StaffManagement() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-sm">
+      <div className="relative w-full sm:max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           placeholder="Search staff by name or email..."
@@ -182,7 +182,7 @@ export default function StaffManagement() {
       </div>
 
       {/* Summary row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-muted-foreground">Total Staff</p>

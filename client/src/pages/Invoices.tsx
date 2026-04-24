@@ -564,7 +564,7 @@ export default function Invoices() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-semibold mb-2">{t.invoices}</h1>
+        <h1 className="text-2xl sm:text-3xl font-semibold mb-2">{t.invoices}</h1>
         <p className="text-muted-foreground">Manage invoices and customize their appearance</p>
       </div>
 

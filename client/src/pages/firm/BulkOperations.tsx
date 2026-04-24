@@ -236,6 +236,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
             </div>
           </CardHeader>
           <CardContent>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -294,6 +295,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                 ))}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -340,7 +342,7 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
 
       {queue.length > 0 && (
         <>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card>
               <CardContent className="pt-4">
                 <p className="text-sm text-muted-foreground">Clients in Queue</p>
@@ -365,6 +367,7 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
 
           <Card>
             <CardContent className="p-0">
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -391,6 +394,7 @@ function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         </>
@@ -826,7 +830,8 @@ export default function BulkOperations() {
       </div>
 
       <Tabs defaultValue="ocr">
-        <TabsList className="grid w-full grid-cols-4">
+        <div className="overflow-x-auto">
+        <TabsList className="grid w-full grid-cols-4 min-w-[500px]">
           <TabsTrigger value="ocr">
             <ReceiptIcon className="w-4 h-4 mr-2" />
             Batch OCR
@@ -844,6 +849,7 @@ export default function BulkOperations() {
             Period Close
           </TabsTrigger>
         </TabsList>
+        </div>
 
         <TabsContent value="ocr" className="mt-6">
           <BatchOCRTab clients={clients} />

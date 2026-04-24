@@ -119,12 +119,12 @@ export default function ActivityLogs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-logs-title">Activity Logs</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold" data-testid="text-logs-title">Activity Logs</h1>
           <p className="text-muted-foreground">Complete audit trail of all system activities</p>
         </div>
-        <Button variant="outline" data-testid="button-export-logs">
+        <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
           <Download className="w-4 h-4 mr-2" />
           Export Logs
         </Button>

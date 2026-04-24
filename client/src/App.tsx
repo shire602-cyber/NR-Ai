@@ -150,8 +150,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
-          <motion.header 
-            className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-10"
+          <motion.header
+            className="flex items-center justify-between px-3 py-2 md:p-4 border-b bg-background sticky top-0 z-10"
             initial={{ y: -100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ duration: 0.3 }}
@@ -174,7 +174,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </motion.div>
             </Link>
           </motion.header>
-          <main className="flex-1 overflow-auto p-8">
+          <main className="flex-1 overflow-auto p-4 md:p-8">
             <RouteGuard>
             <ErrorBoundary>
             <AnimatePresence mode="wait">
