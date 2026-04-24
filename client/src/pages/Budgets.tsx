@@ -1007,7 +1007,7 @@ export default function Budgets() {
 
               <div className="border rounded-lg p-4">
                 <h4 className="font-medium mb-3">Monthly Amounts (AED)</h4>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {MONTH_KEYS.map((key, idx) => (
                     <FormField
                       key={key}

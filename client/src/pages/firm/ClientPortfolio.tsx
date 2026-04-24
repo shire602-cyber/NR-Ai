@@ -146,22 +146,22 @@ export default function ClientPortfolio() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Client Portfolio</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Portfolio</h1>
           <p className="text-muted-foreground mt-1">
             {clients.length} client{clients.length !== 1 ? 's' : ''} managed by NRA
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)}>
+        <Button onClick={() => setAddOpen(true)} className="w-full sm:w-auto">
           <Plus className="w-4 h-4 mr-2" />
           Add Client
         </Button>
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="relative flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Search by name or TRN..."
@@ -304,7 +304,7 @@ export default function ClientPortfolio() {
 
       {/* Table view */}
       {view === 'table' && filtered.length > 0 && (
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-lg overflow-hidden overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

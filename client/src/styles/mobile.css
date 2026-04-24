@@ -222,40 +222,9 @@
   }
 }
 
-/* ─── Mobile Sidebar as Full Overlay ─────────────────────────────────────── */
-
-@media (max-width: 767px) {
-  [data-sidebar="sidebar"] {
-    position: fixed !important;
-    inset: 0 !important;
-    z-index: 40 !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    transform: translateX(-100%);
-    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
-  }
-
-  [data-sidebar="sidebar"][data-state="expanded"] {
-    transform: translateX(0);
-  }
-
-  /* Sidebar overlay background */
-  [data-sidebar="sidebar"]::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transition: opacity 0.3s;
-    pointer-events: none;
-    z-index: -1;
-  }
-
-  [data-sidebar="sidebar"][data-state="expanded"]::before {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
+/* ─── Mobile Sidebar ─────────────────────────────────────────────────────── */
+/* shadcn <Sidebar> renders as a <Sheet> (radix dialog portal) on mobile.     */
+/* No custom positioning overrides needed — the Sheet handles it natively.    */
 
 /* ─── Receipt / Camera Scan Optimization ─────────────────────────────────── */
 
@@ -302,6 +271,31 @@
     cursor: pointer;
     width: 100%;
     height: 100%;
+  }
+}
+
+/* ─── Responsive Page Headings ──────────────────────────────────��────────── */
+
+@media (max-width: 767px) {
+  /* Scale down large page titles that don't use responsive Tailwind prefixes */
+  h1.text-3xl,
+  h1.text-4xl,
+  h1.text-5xl {
+    font-size: 1.5rem !important; /* text-2xl */
+    line-height: 2rem !important;
+  }
+
+  /* Page header rows: stack vertically on mobile */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .page-header > button,
+  .page-header > a {
+    width: 100%;
+    justify-content: center;
   }
 }
 
@@ -430,16 +424,7 @@
   }
 }
 
-/* RTL sidebar overlay */
-@media (max-width: 767px) {
-  [dir="rtl"] [data-sidebar="sidebar"] {
-    transform: translateX(100%);
-  }
-
-  [dir="rtl"] [data-sidebar="sidebar"][data-state="expanded"] {
-    transform: translateX(0);
-  }
-}
+/* RTL sidebar: shadcn Sheet handles directionality natively via side="right" */
 
 /* ─── Safe Area Insets (Notch/Dynamic Island) ────────────────────────────── */
 

@@ -244,6 +244,7 @@ function InboxTab() {
               <p>{t.noCommsYet}</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -280,6 +281,7 @@ function InboxTab() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -595,6 +597,7 @@ function TemplatesTab() {
               <p>{t.noTemplates}</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -632,6 +635,7 @@ function TemplatesTab() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -857,16 +861,17 @@ export default function FirmComms() {
   const { t } = useTranslation();
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">{t.communicationsHub}</h1>
+        <h1 className="text-xl sm:text-2xl font-bold">{t.communicationsHub}</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Send emails, manage templates, and track all client communications.
         </p>
       </div>
 
       <Tabs defaultValue="inbox">
-        <TabsList>
+        <div className="overflow-x-auto">
+        <TabsList className="flex w-max">
           <TabsTrigger value="inbox" className="flex items-center gap-1.5">
             <Inbox className="h-4 w-4" />{t.inbox}
           </TabsTrigger>
@@ -880,6 +885,7 @@ export default function FirmComms() {
             <Zap className="h-4 w-4" />{t.bulkActions}
           </TabsTrigger>
         </TabsList>
+        </div>
 
         <div className="mt-6">
           <TabsContent value="inbox"><InboxTab /></TabsContent>
