@@ -22,7 +22,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet, FileDown } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -914,6 +914,39 @@ export default function Receipts() {
     }
   };
 
+  const handleDownloadReceiptPdf = (receipt: any) => {
+    if (!companyId) return;
+    const url = apiUrl(`/api/companies/${companyId}/receipts/${receipt.id}/pdf`);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `receipt-${receipt.id.slice(0, 8)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleExportPdf = async () => {
+    if (!companyId || !filteredReceipts.length) {
+      toast({ variant: 'destructive', title: 'No data', description: 'No expenses to export' });
+      return;
+    }
+
+    const params = new URLSearchParams();
+    if (dateRange.from) params.set('from', format(dateRange.from, 'yyyy-MM-dd'));
+    if (dateRange.to) params.set('to', format(dateRange.to, 'yyyy-MM-dd'));
+
+    const url = apiUrl(`/api/companies/${companyId}/receipts/export-pdf?${params.toString()}`);
+    const a = document.createElement('a');
+    a.href = url;
+    const dateSuffix = dateRange.from && dateRange.to
+      ? `_${format(dateRange.from, 'yyyy-MM-dd')}_to_${format(dateRange.to, 'yyyy-MM-dd')}`
+      : '';
+    a.download = `receipts${dateSuffix}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1340,6 +1373,10 @@ export default function Receipts() {
                   <SiGooglesheets className="w-4 h-4 mr-2" />
                   Export to Google Sheets
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPdf} data-testid="menu-export-expenses-pdf">
+                  <FileDown className="w-4 h-4 mr-2" />
+                  Export to PDF
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -1403,6 +1440,15 @@ export default function Receipts() {
                           Post
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDownloadReceiptPdf(receipt)}
+                        data-testid={`button-pdf-receipt-${receipt.id}`}
+                        title="Download PDF"
+                      >
+                        <FileDown className="w-4 h-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
