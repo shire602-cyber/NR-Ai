@@ -28,6 +28,8 @@
     { "idx": 23, "version": "7", "when": 1767200000000, "tag": "0023_seed_test_firm_owner", "breakpoints": false },
     { "idx": 24, "version": "7", "when": 1767300000000, "tag": "0024_fix_test_firm_owner_role", "breakpoints": false },
     { "idx": 25, "version": "7", "when": 1767400000000, "tag": "0025_receipt_image_path", "breakpoints": false },
-    { "idx": 26, "version": "7", "when": 1767500000000, "tag": "0026_add_onboarding_completed", "breakpoints": false }
+    { "idx": 26, "version": "7", "when": 1767500000000, "tag": "0026_add_onboarding_completed", "breakpoints": false },
+    { "idx": 27, "version": "7", "when": 1767600000000, "tag": "0027_apply_missing_migrations", "breakpoints": false },
+    { "idx": 28, "version": "7", "when": 1767700000000, "tag": "0028_fix_test_credentials", "breakpoints": false }
   ]
 }
