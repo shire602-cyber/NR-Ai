@@ -58,6 +58,7 @@ import { registerNRARoutes } from './routes/nra.routes';
 import { registerFirmRoutes } from './routes/firm.routes';
 import { registerFirmBulkRoutes } from './routes/firm-bulk.routes';
 import { registerFirmCommsRoutes } from './routes/firm-comms.routes';
+import { registerFirmAnalyticsRoutes } from './routes/firm-analytics.routes';
 
 const log = createLogger('routes');
 
@@ -134,6 +135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerFirmRoutes(app);
   registerFirmBulkRoutes(app);
   registerFirmCommsRoutes(app);
+  registerFirmAnalyticsRoutes(app);
 
   log.info('All route modules registered');
 
