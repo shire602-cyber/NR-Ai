@@ -44,7 +44,9 @@ export default defineConfig({
           if (
             id.includes('/react/') ||
             id.includes('/react-dom/') ||
+            id.includes('/react-is/') ||
             id.includes('/scheduler/') ||
+            id.includes('/use-sync-external-store/') ||
             id.includes('/lucide-react/') ||
             id.includes('/wouter/') ||
             id.includes('/zustand/') ||
@@ -56,7 +58,10 @@ export default defineConfig({
             id.includes('/next-themes/') ||
             id.includes('/input-otp/') ||
             id.includes('/vaul/') ||
-            id.includes('/cmdk/')
+            id.includes('/cmdk/') ||
+            id.includes('/class-variance-authority/') ||
+            id.includes('/clsx/') ||
+            id.includes('/tailwind-merge/')
           ) return 'vendor-react';
         },
       },
