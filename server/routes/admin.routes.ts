@@ -59,9 +59,9 @@ async function seedChartOfAccounts(
 export function registerAdminRoutes(app: Express): void {
   const router = Router();
 
-  // Apply auth + admin middleware to all admin routes
-  router.use(authMiddleware as any);
-  router.use(adminMiddleware as any);
+  // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
+  router.use('/admin', authMiddleware as any);
+  router.use('/admin', adminMiddleware as any);
 
   // =====================================
   // ADMIN SETTINGS

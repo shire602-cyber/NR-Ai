@@ -19,9 +19,9 @@ const logger = createLogger('admin-health-routes');
 export function registerAdminHealthRoutes(app: Express): void {
   const router = Router();
 
-  // Apply auth + admin middleware to all routes
-  router.use(authMiddleware as any);
-  router.use(adminMiddleware as any);
+  // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
+  router.use('/admin', authMiddleware as any);
+  router.use('/admin', adminMiddleware as any);
 
   // =========================================
   // GET /api/admin/clients/health-overview
