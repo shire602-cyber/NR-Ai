@@ -63,6 +63,33 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
   }
 }
 
+/**
+ * Belt-and-suspenders schema guard: ensures critical columns added in later
+ * migrations actually exist. Runs raw SQL with IF NOT EXISTS so it is always
+ * safe to re-run regardless of the Drizzle migration tracking state.
+ */
+export async function ensureCriticalSchema(): Promise<void> {
+  try {
+    // Phase 0: firm_role column + firm_staff_assignments table
+    await db.execute(
+      sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "firm_role" text`
+    );
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "firm_staff_assignments" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
+        "assigned_at" timestamp DEFAULT now() NOT NULL,
+        CONSTRAINT "firm_staff_assignments_user_company_unique"
+          UNIQUE("user_id", "company_id")
+      )
+    `);
+    console.log('[db] Critical schema guard: OK');
+  } catch (err) {
+    console.error('[db] Critical schema guard failed:', err);
+  }
+}
+
 /** Ping the database — used by /health and connection validation. */
 export async function checkDbConnectivity(): Promise<boolean> {
   try {
