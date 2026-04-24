@@ -2049,3 +2049,34 @@ export const insertAiConversationSchema = createInsertSchema(aiConversations).om
 
 export type InsertAiConversation = z.infer<typeof insertAiConversationSchema>;
 export type AiConversation = typeof aiConversations.$inferSelect;
+
+// ===========================
+// Firm Leads (NRA Lead Pipeline)
+// ===========================
+export const firmLeads = pgTable("firm_leads", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "set null" }),
+
+  stage: text("stage").notNull().default("prospect"), // prospect | contacted | interested | converted | lost
+  source: text("source").notNull().default("manual"), // saas_signup | referral | manual | website
+
+  notes: text("notes"),
+  score: integer("score").default(50), // 0–100
+
+  convertedAt: timestamp("converted_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertFirmLeadSchema = createInsertSchema(firmLeads).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateFirmLeadSchema = insertFirmLeadSchema.partial();
+
+export type InsertFirmLead = z.infer<typeof insertFirmLeadSchema>;
+export type UpdateFirmLead = z.infer<typeof updateFirmLeadSchema>;
+export type FirmLead = typeof firmLeads.$inferSelect;

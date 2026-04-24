@@ -39,7 +39,9 @@ import {
   Zap,
   Brain,
   CalendarCheck,
-  Briefcase
+  Briefcase,
+  LineChart,
+  Kanban,
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -127,6 +129,8 @@ const adminItems = [
 const nraItems = [
   { title: 'clientPortfolio', icon: Briefcase, url: '/firm/clients' },
   { title: 'staffManagement', icon: Users, url: '/firm/staff' },
+  { title: 'firmAnalytics', icon: LineChart, url: '/firm/analytics' },
+  { title: 'leadPipeline', icon: Kanban, url: '/firm/pipeline' },
 ];
 
 export function AppSidebar() {

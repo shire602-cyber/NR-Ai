@@ -141,6 +141,13 @@
       "when": 1766800000000,
       "tag": "0019_add_firm_roles",
       "breakpoints": false
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1766900000000,
+      "tag": "0020_add_firm_leads",
+      "breakpoints": false
     }
   ]
 }

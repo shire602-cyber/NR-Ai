@@ -67,6 +67,27 @@ export const t = {
     // NRA Center items
     clientPortfolio: 'Client Portfolio',
     staffManagement: 'Staff Management',
+    firmAnalytics: 'Firm Analytics',
+    leadPipeline: 'Lead Pipeline',
+
+    // Firm Analytics
+    firmAnalyticsDesc: 'Revenue, utilization, and client health overview',
+    totalMRR: 'Total MRR',
+    revenueGrowth: 'Revenue Growth',
+    vsLastMonth: 'vs. last 30 days',
+    avgRevenuePerClient: 'Avg Revenue / Client',
+    totalClients: 'Total Clients',
+    staffMembers: 'staff members',
+    revenueByClient: 'Revenue by Client (Top 10)',
+    clientHealthSummary: 'Client Health',
+    healthyClients: 'Healthy',
+    attentionClients: 'Needs Attention',
+    criticalClients: 'Critical',
+    topIssues: 'Top Issues',
+    staffUtilization: 'Staff Utilization',
+    totalStaff: 'Total Staff',
+    clientsPerStaff: 'Clients / Staff',
+    avgClientsPerAdmin: 'Avg Clients / Admin',
 
     // Admin items
     adminDashboard: 'Admin Dashboard',
@@ -309,6 +330,27 @@ export const t = {
     // NRA Center items
     clientPortfolio: 'محفظة العملاء',
     staffManagement: 'إدارة الموظفين',
+    firmAnalytics: 'تحليلات الشركة',
+    leadPipeline: 'خط أنابيب العملاء المحتملين',
+
+    // Firm Analytics
+    firmAnalyticsDesc: 'نظرة عامة على الإيرادات والاستخدام وصحة العملاء',
+    totalMRR: 'إجمالي الإيرادات الشهرية',
+    revenueGrowth: 'نمو الإيرادات',
+    vsLastMonth: 'مقارنة بآخر 30 يوم',
+    avgRevenuePerClient: 'متوسط الإيرادات / العميل',
+    totalClients: 'إجمالي العملاء',
+    staffMembers: 'موظف',
+    revenueByClient: 'الإيرادات حسب العميل (أفضل 10)',
+    clientHealthSummary: 'صحة العملاء',
+    healthyClients: 'سليم',
+    attentionClients: 'يحتاج انتباه',
+    criticalClients: 'حرج',
+    topIssues: 'أبرز المشكلات',
+    staffUtilization: 'استخدام الموظفين',
+    totalStaff: 'إجمالي الموظفين',
+    clientsPerStaff: 'العملاء / الموظف',
+    avgClientsPerAdmin: 'متوسط العملاء / مسؤول',
 
     // Admin items
     adminDashboard: 'لوحة تحكم المدير',
