@@ -11,6 +11,12 @@ import { sql } from "drizzle-orm";
 // customer: Self-signup SaaS users (tier-based pricing)
 export type UserType = 'admin' | 'client' | 'customer';
 
+// firmRole: NRA firm staff roles for internal management center access
+// firm_owner: Full access to all clients in NRA center
+// firm_admin: Access only to assigned client companies
+// null: Regular user — no NRA features visible
+export type FirmRole = 'firm_owner' | 'firm_admin' | null;
+
 // ===========================
 // Users
 // ===========================
@@ -21,6 +27,7 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   isAdmin: boolean("is_admin").notNull().default(false),
   userType: text("user_type").notNull().default("customer"), // admin | client | customer
+  firmRole: text("firm_role"), // firm_owner | firm_admin | null
   phone: text("phone"),
   avatarUrl: text("avatar_url"),
   lastLoginAt: timestamp("last_login_at"),
@@ -109,6 +116,28 @@ export const insertCompanyUserSchema = createInsertSchema(companyUsers).omit({
 
 export type InsertCompanyUser = z.infer<typeof insertCompanyUserSchema>;
 export type CompanyUser = typeof companyUsers.$inferSelect;
+
+// ===========================
+// Firm Staff Assignments
+// ===========================
+// Links firm_admin users to specific client companies they can manage.
+// firm_owner bypasses this table and sees all companies.
+export const firmStaffAssignments = pgTable("firm_staff_assignments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+}, (table) => ({
+  userCompanyUnique: unique().on(table.userId, table.companyId),
+}));
+
+export const insertFirmStaffAssignmentSchema = createInsertSchema(firmStaffAssignments).omit({
+  id: true,
+  assignedAt: true,
+});
+
+export type InsertFirmStaffAssignment = z.infer<typeof insertFirmStaffAssignmentSchema>;
+export type FirmStaffAssignment = typeof firmStaffAssignments.$inferSelect;
 
 // ===========================
 // Chart of Accounts

@@ -38,7 +38,11 @@ import {
   ShieldAlert,
   Zap,
   Brain,
-  CalendarCheck
+  CalendarCheck,
+  Briefcase,
+  HeartPulse,
+  Mail,
+  Layers
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -123,45 +127,54 @@ const adminItems = [
   { title: 'systemSettings', icon: Settings, url: '/admin' },
 ];
 
+const nraManagementItems = [
+  { title: 'clientPortfolio', icon: Briefcase, url: '/nra/clients' },
+  { title: 'healthDashboard', icon: HeartPulse, url: '/nra/health' },
+  { title: 'communications', icon: Mail, url: '/nra/communications' },
+  { title: 'bulkOperations', icon: Layers, url: '/nra/bulk' },
+];
+
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
 
   // Check user status directly from token - no state needed
-  const checkUserStatus = (): { 
-    isAdmin: boolean; 
+  const checkUserStatus = (): {
+    isAdmin: boolean;
     userType: 'admin' | 'client' | 'customer';
-    needsRelogin: boolean 
+    firmRole: 'firm_owner' | 'firm_admin' | null;
+    needsRelogin: boolean;
   } => {
     try {
       const token = getToken();
       if (!token) {
-        return { isAdmin: false, userType: 'customer', needsRelogin: false };
+        return { isAdmin: false, userType: 'customer', firmRole: null, needsRelogin: false };
       }
       const parts = token.split('.');
       if (parts.length !== 3) {
-        return { isAdmin: false, userType: 'customer', needsRelogin: false };
+        return { isAdmin: false, userType: 'customer', firmRole: null, needsRelogin: false };
       }
       const payload = JSON.parse(atob(parts[1]));
-      
+
       // If token doesn't have isAdmin field, it's an old token - needs re-login
       if (payload.isAdmin === undefined) {
-        return { isAdmin: false, userType: 'customer', needsRelogin: true };
+        return { isAdmin: false, userType: 'customer', firmRole: null, needsRelogin: true };
       }
-      
-      return { 
-        isAdmin: payload.isAdmin === true, 
+
+      return {
+        isAdmin: payload.isAdmin === true,
         userType: payload.userType || 'customer',
-        needsRelogin: false 
+        firmRole: payload.firmRole ?? null,
+        needsRelogin: false,
       };
     } catch (error) {
-      return { isAdmin: false, userType: 'customer', needsRelogin: false };
+      return { isAdmin: false, userType: 'customer', firmRole: null, needsRelogin: false };
     }
   };
 
   // Check user status on every render
-  const { isAdmin, userType, needsRelogin } = checkUserStatus();
+  const { isAdmin, userType, firmRole, needsRelogin } = checkUserStatus();
   
   // Handle old token logout in useEffect (can't update state during render)
   useEffect(() => {
@@ -385,6 +398,21 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {adminItems.map(renderMenuItem)}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* NRA Management Center - firm_owner and firm_admin only. Regular users never see this. */}
+        {(firmRole === 'firm_owner' || firmRole === 'firm_admin') && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-amber-600 dark:text-amber-400">
+              <Briefcase className="w-3 h-3 mr-1 inline" />
+              NRA Management
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {nraManagementItems.map(renderMenuItem)}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

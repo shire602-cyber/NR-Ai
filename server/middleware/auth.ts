@@ -14,6 +14,7 @@ export interface AuthUser {
   email: string;
   isAdmin: boolean;
   userType: 'admin' | 'customer' | 'client';
+  firmRole: 'firm_owner' | 'firm_admin' | null;
 }
 
 /**
@@ -26,6 +27,7 @@ declare global {
       email: string;
       isAdmin: boolean;
       userType: string;
+      firmRole: string | null;
     }
   }
 }
@@ -72,6 +74,7 @@ export async function authMiddleware(
       email: user.email,
       isAdmin: user.isAdmin === true,
       userType: (user.userType as AuthUser['userType']) || 'customer',
+      firmRole: (user.firmRole as AuthUser['firmRole']) ?? null,
     };
     next();
   } catch (error) {
@@ -167,7 +170,7 @@ export function requireUserType(...allowedTypes: string[]) {
 /**
  * Generate a JWT token for a user.
  */
-export function generateToken(user: { id: string; email: string; isAdmin?: boolean; userType?: string }): string {
+export function generateToken(user: { id: string; email: string; isAdmin?: boolean; userType?: string; firmRole?: string | null }): string {
   const env = getEnv();
   return jwt.sign(
     {
@@ -175,6 +178,7 @@ export function generateToken(user: { id: string; email: string; isAdmin?: boole
       email: user.email,
       isAdmin: user.isAdmin === true,
       userType: user.userType || 'customer',
+      firmRole: user.firmRole ?? null,
     },
     env.JWT_SECRET,
     { expiresIn: '24h' }

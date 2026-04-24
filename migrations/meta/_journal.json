@@ -134,6 +134,13 @@
       "when": 1766700000000,
       "tag": "0018_add_payments_credit_notes",
       "breakpoints": false
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1766800000000,
+      "tag": "0019_add_firm_roles",
+      "breakpoints": false
     }
   ]
 }
