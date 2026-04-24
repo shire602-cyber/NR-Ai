@@ -306,6 +306,176 @@ export function registerReceiptRoutes(app: Express) {
     res.json(updatedReceipt);
   }));
 
+  // Customer-only: Batch export receipts as multi-page PDF
+  app.get("/api/companies/:companyId/receipts/export-pdf", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.params;
+    const { from, to, category } = req.query as { from?: string; to?: string; category?: string };
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    const company = await storage.getCompany(companyId);
+    if (!company) return res.status(404).json({ message: 'Company not found' });
+
+    let receipts = await storage.getReceiptsByCompanyId(companyId);
+
+    if (from) {
+      const fromDate = new Date(from);
+      receipts = receipts.filter(r => r.date && new Date(r.date) >= fromDate);
+    }
+    if (to) {
+      const toDate = new Date(to);
+      toDate.setHours(23, 59, 59, 999);
+      receipts = receipts.filter(r => r.date && new Date(r.date) <= toDate);
+    }
+    if (category && category !== 'all') {
+      receipts = receipts.filter(r => r.category === category);
+    }
+
+    if (!receipts.length) {
+      return res.status(404).json({ message: 'No receipts found for the given filters' });
+    }
+
+    const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'A4', margin: 50, autoFirstPage: false });
+      const chunks: Buffer[] = [];
+      doc.on('data', (c: Buffer) => chunks.push(c));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const pageWidth = 595.28;
+      const margin = 50;
+      const contentWidth = pageWidth - 2 * margin;
+      const labelColor = '#6B7280';
+      const valueColor = '#111827';
+
+      // Summary page
+      doc.addPage();
+      doc.rect(0, 0, pageWidth, 80).fill('#1E40AF');
+      doc.fontSize(20).fillColor('#FFFFFF').font('Helvetica-Bold');
+      doc.text(company.name, margin, 20, { width: contentWidth });
+      doc.fontSize(12).font('Helvetica');
+      doc.text('EXPENSE RECEIPTS EXPORT', margin, 48, { width: contentWidth });
+
+      let sy = 100;
+      const totalAmount = receipts.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+      const totalVat = receipts.reduce((sum, r) => sum + (r.vatAmount ?? 0), 0);
+      const dateRangeStr = from && to ? `${from} to ${to}` : from ? `From ${from}` : to ? `To ${to}` : 'All time';
+
+      doc.fontSize(11).fillColor(labelColor).font('Helvetica-Bold').text('Export Summary', margin, sy);
+      sy += 20;
+      doc.moveTo(margin, sy).lineTo(margin + contentWidth, sy).stroke('#E5E7EB');
+      sy += 14;
+
+      const summaryRow = (label: string, value: string) => {
+        doc.fontSize(10).fillColor(labelColor).font('Helvetica').text(label, margin, sy, { width: 200 });
+        doc.fontSize(10).fillColor(valueColor).font('Helvetica-Bold').text(value, margin + 200, sy, { width: contentWidth - 200 });
+        sy += 18;
+      };
+
+      summaryRow('Date Range:', dateRangeStr);
+      if (category && category !== 'all') summaryRow('Category:', category);
+      summaryRow('Total Receipts:', receipts.length.toString());
+      summaryRow('Total Amount:', `AED ${totalAmount.toFixed(2)}`);
+      if (totalVat > 0) summaryRow('Total VAT:', `AED ${totalVat.toFixed(2)}`);
+
+      sy += 20;
+      // Summary table header
+      doc.rect(margin, sy, contentWidth, 24).fill('#F3F4F6');
+      doc.fontSize(9).fillColor('#374151').font('Helvetica-Bold');
+      doc.text('#', margin + 4, sy + 7, { width: 24 });
+      doc.text('Date', margin + 30, sy + 7, { width: 70 });
+      doc.text('Merchant', margin + 105, sy + 7, { width: 160 });
+      doc.text('Category', margin + 270, sy + 7, { width: 110 });
+      doc.text('Amount', margin + 385, sy + 7, { width: contentWidth - 385, align: 'right' });
+      sy += 26;
+
+      receipts.forEach((r, idx) => {
+        if (sy > 750) {
+          doc.addPage();
+          sy = margin;
+        }
+        if (idx % 2 === 1) doc.rect(margin, sy - 2, contentWidth, 18).fill('#F9FAFB');
+        doc.fontSize(8).fillColor(valueColor).font('Helvetica');
+        doc.text((idx + 1).toString(), margin + 4, sy, { width: 24 });
+        doc.text(r.date ? new Date(r.date).toLocaleDateString('en-AE') : '-', margin + 30, sy, { width: 70 });
+        doc.text(r.merchant || 'Unknown', margin + 105, sy, { width: 160 });
+        doc.text(r.category || 'Uncategorized', margin + 270, sy, { width: 110 });
+        doc.text(`${r.currency || 'AED'} ${(r.amount ?? 0).toFixed(2)}`, margin + 385, sy, { width: contentWidth - 385, align: 'right' });
+        sy += 16;
+      });
+
+      // Total row
+      sy += 4;
+      doc.moveTo(margin, sy).lineTo(margin + contentWidth, sy).stroke('#E5E7EB');
+      sy += 8;
+      doc.fontSize(9).fillColor('#1E40AF').font('Helvetica-Bold');
+      doc.text('TOTAL', margin + 270, sy, { width: 110 });
+      doc.text(`AED ${totalAmount.toFixed(2)}`, margin + 385, sy, { width: contentWidth - 385, align: 'right' });
+
+      // Individual receipt pages
+      receipts.forEach((r) => {
+        doc.addPage();
+
+        doc.rect(0, 0, pageWidth, 70).fill('#1E40AF');
+        doc.fontSize(16).fillColor('#FFFFFF').font('Helvetica-Bold');
+        doc.text(company.name, margin, 14, { width: contentWidth });
+        doc.fontSize(10).font('Helvetica');
+        doc.text('EXPENSE RECEIPT', margin, 40, { width: contentWidth, align: 'right' });
+
+        let y = 88;
+        const addRow = (label: string, value: string) => {
+          doc.fontSize(9).fillColor(labelColor).font('Helvetica-Bold').text(label, margin, y, { width: 120 });
+          doc.fontSize(9).fillColor(valueColor).font('Helvetica').text(value, margin + 130, y, { width: contentWidth - 130 });
+          y += 18;
+        };
+
+        addRow('Merchant:', r.merchant || 'N/A');
+        addRow('Date:', r.date ? new Date(r.date).toLocaleDateString('en-AE') : 'N/A');
+        addRow('Category:', r.category || 'Uncategorized');
+        addRow('Currency:', r.currency || 'AED');
+        y += 6;
+
+        doc.rect(margin, y, contentWidth, 44).fill('#F9FAFB').stroke('#E5E7EB');
+        doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold');
+        doc.text('Total Amount', margin + 12, y + 8);
+        doc.fontSize(15).fillColor('#1E40AF');
+        doc.text(`${r.currency || 'AED'} ${(r.amount ?? 0).toFixed(2)}`, margin + 12, y + 22, { width: contentWidth - 24, align: 'right' });
+        y += 58;
+
+        if (r.vatAmount && r.vatAmount > 0) {
+          doc.fontSize(9).fillColor(labelColor).font('Helvetica');
+          const base = ((r.amount ?? 0) - r.vatAmount).toFixed(2);
+          doc.text(`Base: ${r.currency || 'AED'} ${base}   VAT: ${r.currency || 'AED'} ${r.vatAmount.toFixed(2)}`, margin, y);
+          y += 18;
+        }
+
+        if (r.rawText) {
+          y += 6;
+          doc.fontSize(9).fillColor(labelColor).font('Helvetica-Bold').text('OCR Text:', margin, y);
+          y += 14;
+          doc.fontSize(8).fillColor(valueColor).font('Helvetica').text(r.rawText.slice(0, 300), margin, y, { width: contentWidth });
+        }
+
+        doc.fontSize(7).fillColor('#9CA3AF').font('Helvetica');
+        doc.text(`Generated by ${company.name} · ${new Date().toLocaleDateString('en-AE')}`, margin, 780, { width: contentWidth, align: 'center' });
+      });
+
+      doc.end();
+    });
+
+    const dateTag = from && to ? `_${from}_to_${to}` : '';
+    const catTag = category && category !== 'all' ? `_${category.replace(/\s+/g, '-')}` : '';
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="receipts${dateTag}${catTag}.pdf"`,
+      'Content-Length': pdfBuffer.length.toString(),
+    });
+    res.send(pdfBuffer);
+  }));
+
   // Customer-only: Serve receipt image (new file-based or legacy base64)
   app.get("/api/companies/:companyId/receipts/:id/image", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { companyId, id } = req.params;
