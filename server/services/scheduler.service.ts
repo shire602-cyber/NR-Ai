@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { storage } from '../storage';
 import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from './period-lock.service';
 
 const log = createLogger('scheduler');
 
@@ -435,6 +436,19 @@ async function generateDueRecurringInvoices() {
 
       const originalLines = await storage.getInvoiceLinesByInvoiceId(template.id);
       const invoiceDate = new Date();
+
+      // Skip generation if the target invoice date is in a locked period —
+      // the resulting invoice would be impossible to post a JE for, and
+      // future-dated invoices for closed periods break VAT/CT reporting.
+      try {
+        await assertPeriodNotLocked(template.companyId, invoiceDate);
+      } catch (err: any) {
+        log.warn(
+          { err: err?.message, templateId: template.id, companyId: template.companyId },
+          'Skipping recurring invoice generation — target period is locked'
+        );
+        continue;
+      }
 
       // Generate a unique invoice number based on original + timestamp
       const newNumber = `${template.number}-R${Date.now()}`;

@@ -58,6 +58,18 @@ export function registerAccountRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
+    // Block account type changes once the account has any journal lines.
+    // Switching e.g. an asset to an income account would silently invert all
+    // historical balances on every report.
+    if (req.body?.type !== undefined && req.body.type !== account.type) {
+      const hasTransactions = await storage.accountHasTransactions(id);
+      if (hasTransactions) {
+        return res.status(422).json({
+          message: 'Cannot change account type — account has existing transactions.',
+        });
+      }
+    }
+
     const updatedAccount = await storage.updateAccount(id, req.body);
     res.json(updatedAccount);
   }));

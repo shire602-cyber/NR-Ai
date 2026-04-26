@@ -9,6 +9,7 @@ import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
 import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
 import { createAndEmitNotification } from '../services/socket.service';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
@@ -132,6 +133,10 @@ export function registerInvoiceRoutes(app: Express) {
 
     // Convert date string to Date object if it's a string
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
+
+    // Block invoice creation in a locked period — invoice creation immediately
+    // posts a revenue-recognition journal entry on this date.
+    await assertPeriodNotLocked(companyId, invoiceDate);
 
     console.log('[Invoices] Creating invoice:', {
       companyId,
@@ -262,6 +267,11 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(400).json({ message: 'No draft entries to post' });
     }
 
+    // Block posting any draft entry into a locked period.
+    for (const entry of invoiceEntries) {
+      await assertPeriodNotLocked(invoice.companyId, entry.date);
+    }
+
     // Post all draft entries
     for (const entry of invoiceEntries) {
       await storage.updateJournalEntry(entry.id, {
@@ -306,6 +316,13 @@ export function registerInvoiceRoutes(app: Express) {
 
     // Convert date string to Date object if it's a string
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
+
+    // Block updates that would touch a locked period (either the invoice's
+    // existing date or the requested new date).
+    await assertPeriodNotLocked(invoice.companyId, invoice.date);
+    if (invoiceDate) {
+      await assertPeriodNotLocked(invoice.companyId, invoiceDate);
+    }
 
     // Update invoice
     const updatedInvoice = await storage.updateInvoice(id, {
@@ -375,6 +392,14 @@ export function registerInvoiceRoutes(app: Express) {
     }
 
     const oldStatus = invoice.status;
+
+    // Status transitions that post journal entries (currently only
+    // draft/sent -> paid) must respect period locks. Block before mutating
+    // status so we don't end up with a status flipped but no JE.
+    if (status === 'paid' && oldStatus !== 'paid') {
+      await assertPeriodNotLocked(invoice.companyId, new Date());
+    }
+
     const updatedInvoice = await storage.updateInvoiceStatus(id, status);
 
     console.log(`[Invoices] Status transition: ${oldStatus} -> ${status} for invoice ${id}`);
@@ -726,6 +751,9 @@ export function registerInvoiceRoutes(app: Express) {
 
     const paymentDate = date ? new Date(date) : new Date();
 
+    // Block payment recording into a locked period.
+    await assertPeriodNotLocked(companyId, paymentDate);
+
     // Create journal entry: Debit Cash/Bank, Credit Accounts Receivable
     const accounts = await storage.getAccountsByCompanyId(companyId);
     const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
@@ -808,6 +836,10 @@ export function registerInvoiceRoutes(app: Express) {
     if (original.invoiceType === 'credit_note') {
       return res.status(400).json({ message: 'Cannot create a credit note of a credit note' });
     }
+
+    // Block credit note creation if today is in a locked period — the credit
+    // note posts a reversing JE on `now`.
+    await assertPeriodNotLocked(companyId, new Date());
 
     const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
 

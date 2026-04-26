@@ -6,6 +6,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { insertInvoiceSchema } from '../../shared/schema';
 import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
 import { createAndEmitNotification } from '../services/socket.service';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 // @ts-ignore
 import PDFDocument from 'pdfkit';
 
@@ -92,6 +93,12 @@ export function registerReceiptRoutes(app: Express) {
     }
 
     const { imageData, ...receiptData } = req.body;
+
+    // Block receipt creation in a locked period — receipts are eventually
+    // posted as journal entries dated on receipt.date.
+    if (receiptData.date) {
+      await assertPeriodNotLocked(companyId, receiptData.date);
+    }
 
     console.log('[Receipts] Creating receipt:', {
       companyId,
@@ -246,6 +253,9 @@ export function registerReceiptRoutes(app: Express) {
     } catch (e) {
       entryDate = new Date();
     }
+
+    // Block posting receipts into a locked period.
+    await assertPeriodNotLocked(receipt.companyId, entryDate);
 
     // Generate entry number atomically via storage helper
     const entryNumber = await storage.generateEntryNumber(receipt.companyId, entryDate);
