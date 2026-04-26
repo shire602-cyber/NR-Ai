@@ -10,17 +10,20 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import passport from 'passport';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 
 import { validateEnv, isProduction, isDevelopment } from './config/env';
 import { createLogger } from './config/logger';
 import { applySecurityMiddleware } from './middleware/security';
 import { requestLogger } from './middleware/requestLogger';
 import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
+import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from './middleware/csrf';
 import { registerRoutes } from './routes';
 import { initSocketServer } from './services/socket.service';
 import { setupVite, serveStatic } from './vite';
 import { initScheduler } from './services/scheduler.service';
-import { runMigrations, checkDbConnectivity, closePool, ensureCriticalSchema } from './db';
+import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from './db';
+import { installGracefulShutdown } from './shutdown';
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -58,6 +61,9 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
+// ─── Cookie parser (must run before CSRF + session) ─────────
+app.use(cookieParser(env.SESSION_SECRET));
+
 // ─── Session configuration ───────────────────────────────────
 const PgSession = connectPgSimple(session);
 app.use(
@@ -87,18 +93,42 @@ import './auth';
 // ─── Request logging ─────────────────────────────────────────
 app.use(requestLogger);
 
+// ─── CSRF token endpoint (public, sets cookie + returns header token) ─
+app.get('/api/csrf-token', csrfTokenHandler);
+
+// ─── CSRF protection on state-changing requests ─────────────
+// Skips Bearer-auth requests and a small allowlist (login/register/portal).
+app.use(csrfProtection);
+
 // ─── Health check (before auth, always accessible) ───────────
+// Liveness probe — process is up. Cheap; safe for orchestrators.
+app.get('/health/live', (_req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
+// Readiness/full health — depends on DB. Reports pool + memory + version.
 app.get('/health', async (_req, res) => {
-  const dbOk = await checkDbConnectivity();
-  const status = dbOk ? 'ok' : 'degraded';
-  res.status(dbOk ? 200 : 503).json({
+  const ping = await pingDb();
+  const status = ping.ok ? 'ok' : 'degraded';
+  const mem = process.memoryUsage();
+  res.status(ping.ok ? 200 : 503).json({
     status,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: env.NODE_ENV,
-    version: '1.0.0',
+    version: process.env.APP_VERSION || '1.0.0',
+    node: process.version,
+    pid: process.pid,
+    memory: {
+      rssMB: Math.round(mem.rss / 1024 / 1024),
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+    },
     checks: {
-      database: dbOk ? 'ok' : 'error',
+      database: ping.ok ? 'ok' : 'error',
+      databaseLatencyMs: ping.latencyMs,
+      databaseError: ping.error,
+      pool: getPoolStats(),
     },
   });
 });
@@ -110,8 +140,9 @@ if (!fs.existsSync(uploadsDir)) {
   log.info(`Created uploads directory: ${uploadsDir}`);
 }
 
-// ─── Module-level server ref for graceful shutdown ───────────
+// ─── Module-level refs for graceful shutdown ─────────────────
 let httpServer: any = null;
+let ioServer: any = null;
 
 // ─── Bootstrap application ───────────────────────────────────
 async function bootstrap() {
@@ -135,13 +166,16 @@ async function bootstrap() {
   httpServer = server;
 
   // ─── WebSocket (Socket.io) ────────────────────────────
-  initSocketServer(server);
+  ioServer = initSocketServer(server);
 
   // ─── Background scheduler (engagement automation) ─────
   initScheduler();
 
   // ─── API 404 handler (before static/SPA fallback) ───────
   app.use('/api/*', notFoundHandler);
+
+  // ─── CSRF error handler runs before global handler ───────
+  app.use(csrfErrorHandler);
 
   // ─── Error handling (MUST be after routes) ───────────────
   app.use(globalErrorHandler);
@@ -171,6 +205,15 @@ async function bootstrap() {
     }
     process.exit(1);
   });
+
+  // ─── Graceful shutdown wired now that servers exist ──────
+  const shutdown = installGracefulShutdown({
+    httpServer,
+    ioServer,
+    closePool,
+  });
+  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+  process.on('SIGINT', () => { void shutdown('SIGINT'); });
 }
 
 bootstrap().catch((error) => {
@@ -178,31 +221,10 @@ bootstrap().catch((error) => {
   process.exit(1);
 });
 
-// ─── Graceful shutdown ───────────────────────────────────────
-async function shutdown(signal: string) {
-  log.info(`${signal} received. Shutting down gracefully...`);
-
-  // Stop accepting new connections; wait up to 10s for in-flight requests
-  if (httpServer) {
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => resolve());
-      setTimeout(() => resolve(), 10_000);
-    });
-    log.info('HTTP server closed');
-  }
-
-  try {
-    await closePool();
-    log.info('Database pool closed');
-  } catch (err) {
-    log.error({ err }, 'Error closing database pool');
-  }
-
-  process.exit(0);
-}
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+// Note: graceful shutdown handlers are wired up inside bootstrap() once
+// httpServer / ioServer references are populated. Until then, signals fall
+// through to the default handler (immediate exit) which is fine — there are
+// no in-flight requests to drain pre-bootstrap.
 
 process.on('unhandledRejection', (reason) => {
   log.error({ reason }, 'Unhandled promise rejection');
