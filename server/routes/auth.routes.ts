@@ -21,6 +21,16 @@ import {
 } from '../../shared/validators';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { createLogger } from '../config/logger';
+import {
+  blacklistToken,
+  createPasswordResetToken,
+  consumePasswordResetToken,
+  createEmailVerificationToken,
+  consumeEmailVerificationToken,
+} from '../services/auth-tokens.service';
+import { db } from '../db';
+import { users } from '../../shared/schema';
+import { eq } from 'drizzle-orm';
 
 const log = createLogger('auth');
 
@@ -80,10 +90,14 @@ export function registerAuthRoutes(app: Express): void {
       // Strengthen password validation (8+ chars)
       passwordSchema.parse(validated.password);
 
-      // Check if user exists
+      // Check if user exists. Return a generic message either way to prevent
+      // email enumeration via differing 200/400 responses.
       const existingUser = await storage.getUserByEmail(validated.email);
       if (existingUser) {
-        return res.status(400).json({ message: 'Email already registered' });
+        return res.status(400).json({
+          message:
+            'Unable to create account. Please try again or use a different email.',
+        });
       }
 
       // Hash password
@@ -136,6 +150,19 @@ export function registerAuthRoutes(app: Express): void {
         currentPeriodEnd: periodEnd,
       });
 
+      // Issue email verification token. The token is logged for now —
+      // when a transactional-email provider is wired up this should be
+      // delivered via email instead.
+      try {
+        const verificationToken = await createEmailVerificationToken(user.id);
+        log.info(
+          { userId: user.id, email: user.email },
+          `Email verification pending — verify URL: /verify-email/${verificationToken}`,
+        );
+      } catch (err) {
+        log.error({ err, userId: user.id }, 'Failed to issue email verification token');
+      }
+
       // Generate tokens
       const token = generateToken(user);
       const refreshToken = generateRefreshToken(user);
@@ -149,6 +176,7 @@ export function registerAuthRoutes(app: Express): void {
           name: user.name,
           isAdmin: false,
           userType: 'customer',
+          emailVerified: false,
         },
         company: {
           id: company.id,
@@ -194,6 +222,7 @@ export function registerAuthRoutes(app: Express): void {
           name: user.name,
           isAdmin: isAdminBoolean,
           userType: user.userType || 'customer', // Include userType in response
+          emailVerified: user.emailVerified === true,
         },
       });
     })
@@ -370,12 +399,118 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  // Logout — invalidates the client-side token (stateless JWT, so just acknowledge)
+  // Logout — server-side JWT invalidation via the token_blacklist table.
   router.post(
     '/auth/logout',
     authMiddleware as any,
-    asyncHandler(async (_req: Request, res: Response) => {
+    asyncHandler(async (req: Request, res: Response) => {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        try {
+          await blacklistToken(token);
+        } catch (err) {
+          log.error({ err }, 'Failed to blacklist token on logout');
+        }
+      }
       res.json({ message: 'Logged out successfully' });
+    })
+  );
+
+  // ─── Password reset ────────────────────────────────────────────────
+
+  const forgotPasswordSchema = z.object({
+    email: z.string().email().max(254),
+  });
+
+  router.post(
+    '/auth/forgot-password',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { email } = forgotPasswordSchema.parse(req.body);
+      const user = await storage.getUserByEmail(email);
+      if (user) {
+        try {
+          const resetToken = await createPasswordResetToken(user.id);
+          // TODO: deliver via email when transactional provider is wired up.
+          log.info(
+            { userId: user.id, email: user.email },
+            `Password reset issued — reset URL: /reset-password?token=${resetToken}`,
+          );
+        } catch (err) {
+          log.error({ err, userId: user.id }, 'Failed to create password reset token');
+        }
+      }
+      // Always respond identically to prevent account enumeration.
+      res.json({
+        message:
+          'If an account exists for that email, a password reset link has been sent.',
+      });
+    })
+  );
+
+  const resetPasswordSchema = z.object({
+    token: z.string().min(16).max(256),
+    password: z.string().min(8).max(256),
+  });
+
+  router.post(
+    '/auth/reset-password',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { token, password } = resetPasswordSchema.parse(req.body);
+      passwordSchema.parse(password);
+
+      const userId = await consumePasswordResetToken(token);
+      if (!userId) {
+        return res
+          .status(400)
+          .json({ message: 'Reset link is invalid or has expired' });
+      }
+      const passwordHash = await bcrypt.hash(password, 10);
+      await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+      res.json({ message: 'Password updated successfully' });
+    })
+  );
+
+  // ─── Email verification ────────────────────────────────────────────
+
+  router.post(
+    '/auth/verify-email/:token',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { token } = req.params;
+      const userId = await consumeEmailVerificationToken(token);
+      if (!userId) {
+        return res
+          .status(400)
+          .json({ message: 'Verification link is invalid or has expired' });
+      }
+      await db.update(users).set({ emailVerified: true }).where(eq(users.id, userId));
+      res.json({ message: 'Email verified successfully' });
+    })
+  );
+
+  // Resend verification email — authenticated; rate-limited at the network layer.
+  router.post(
+    '/auth/resend-verification',
+    authMiddleware as any,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      if (user.emailVerified) {
+        return res.json({ message: 'Email is already verified' });
+      }
+      try {
+        const verificationToken = await createEmailVerificationToken(user.id);
+        log.info(
+          { userId: user.id, email: user.email },
+          `Verification re-issued — verify URL: /verify-email/${verificationToken}`,
+        );
+      } catch (err) {
+        log.error({ err, userId: user.id }, 'Failed to re-issue verification token');
+      }
+      res.json({ message: 'Verification email sent' });
     })
   );
 

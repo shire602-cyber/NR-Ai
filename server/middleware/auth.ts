@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { storage } from '../storage';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
+import { isTokenBlacklisted } from '../services/auth-tokens.service';
 
 const log = createLogger('auth');
 
@@ -60,6 +61,12 @@ export async function authMiddleware(
   const token = authHeader.substring(7);
   try {
     const decoded = jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload;
+
+    // Reject tokens that have been logged out (blacklisted)
+    if (await isTokenBlacklisted(token)) {
+      res.status(401).json({ message: 'Token has been revoked' });
+      return;
+    }
 
     // Always fetch user from DB — never trust JWT claims for authorization
     const user = await storage.getUser(decoded.userId);
