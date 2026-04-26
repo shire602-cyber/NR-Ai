@@ -1,12 +1,71 @@
 import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { validate } from '../middleware/validate';
 import { storage } from '../storage';
 import { pool } from '../db';
 import { createLogger } from '../config/logger';
 import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('bill-pay');
+
+// =====================================
+// Zod schemas
+// =====================================
+
+const billIsoDate = z
+  .string()
+  .min(1)
+  .refine((v) => !Number.isNaN(Date.parse(v)), { message: 'Must be a valid ISO date' });
+
+const billLineItemSchema = z.object({
+  description: z.string().min(1, 'Line description is required').max(500),
+  quantity: z.union([z.number(), z.string()]).optional(),
+  unit_price: z.union([z.number(), z.string()]),
+  vat_rate: z.union([z.number(), z.string()]).optional().nullable(),
+  account_id: z.string().uuid().optional().nullable(),
+});
+
+const billCreateSchema = z.object({
+  vendor_name: z.string().min(1, 'Vendor name is required').max(255),
+  vendor_trn: z.string().max(20).optional().nullable(),
+  bill_number: z.string().max(64).optional().nullable(),
+  bill_date: billIsoDate,
+  due_date: billIsoDate.optional().nullable(),
+  currency: z.string().length(3).optional(),
+  category: z.string().max(64).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+  attachment_url: z.string().url().optional().nullable(),
+  reverse_charge: z.boolean().optional(),
+  line_items: z.array(billLineItemSchema).min(1, 'At least one line item is required'),
+});
+
+const billUpdateSchema = z.object({
+  vendor_name: z.string().min(1).max(255).optional(),
+  vendor_trn: z.string().max(20).optional().nullable(),
+  bill_number: z.string().max(64).optional().nullable(),
+  bill_date: billIsoDate.optional(),
+  due_date: billIsoDate.optional().nullable(),
+  currency: z.string().length(3).optional(),
+  category: z.string().max(64).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+  attachment_url: z.string().url().optional().nullable(),
+  line_items: z.array(billLineItemSchema).min(1).optional(),
+});
+
+const billPaymentSchema = z.object({
+  payment_date: billIsoDate,
+  amount: z
+    .union([z.number(), z.string()])
+    .transform((v) => (typeof v === 'string' ? Number(v) : v))
+    .pipe(z.number().positive('Payment amount must be positive')),
+  payment_method: z
+    .enum(['bank_transfer', 'cash', 'cheque', 'credit_card', 'other'])
+    .optional(),
+  reference: z.string().max(255).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+});
 
 // Resolve a VAT rate (stored as percent in bill_line_items.vat_rate) honouring
 // explicit zero-rated lines. Only treat null/undefined/non-numeric as missing
@@ -125,7 +184,7 @@ export function registerBillPayRoutes(app: Express) {
   }));
 
   // Create bill with line items
-  app.post("/api/companies/:companyId/bills", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/bills", authMiddleware, requireCustomer, validate({ body: billCreateSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = req.user!.id;
 
@@ -147,14 +206,6 @@ export function registerBillPayRoutes(app: Express) {
       line_items,
       reverse_charge,
     } = req.body;
-
-    if (!vendor_name || !bill_date) {
-      return res.status(400).json({ message: 'Vendor name and bill date are required' });
-    }
-
-    if (!line_items || !Array.isArray(line_items) || line_items.length === 0) {
-      return res.status(400).json({ message: 'At least one line item is required' });
-    }
 
     // Reverse charge: when the vendor has no TRN (typically a foreign supplier or
     // unregistered domestic supplier), the buyer self-assesses VAT. Auto-flag when
@@ -232,7 +283,7 @@ export function registerBillPayRoutes(app: Express) {
   }));
 
   // Update bill
-  app.patch("/api/bills/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.patch("/api/bills/:id", authMiddleware, requireCustomer, validate({ body: billUpdateSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = req.user!.id;
 
@@ -415,7 +466,7 @@ export function registerBillPayRoutes(app: Express) {
   }));
 
   // Record payment against bill
-  app.post("/api/bills/:id/payments", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/bills/:id/payments", authMiddleware, requireCustomer, validate({ body: billPaymentSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = req.user!.id;
 
@@ -437,14 +488,7 @@ export function registerBillPayRoutes(app: Express) {
 
     const { payment_date, amount, payment_method, reference, notes } = req.body;
 
-    if (!payment_date || !amount) {
-      return res.status(400).json({ message: 'Payment date and amount are required' });
-    }
-
-    const paymentAmount = Number(amount);
-    if (paymentAmount <= 0) {
-      return res.status(400).json({ message: 'Payment amount must be positive' });
-    }
+    const paymentAmount = amount;
 
     const currentPaid = Number(bill.amount_paid) || 0;
     const totalAmount = Number(bill.total_amount) || 0;
