@@ -4,6 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { pool } from '../db';
 import { createLogger } from '../config/logger';
+import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('bill-pay');
 
@@ -353,6 +354,9 @@ export function registerBillPayRoutes(app: Express) {
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
+
+    // FTA 5-year retention.
+    assertRetentionExpired({ createdAt: bill.created_at, retentionExpiresAt: bill.retention_expires_at }, 'Vendor bill');
 
     // Cascade delete will handle line_items and payments
     await pool.query('DELETE FROM vendor_bills WHERE id = $1', [id]);
