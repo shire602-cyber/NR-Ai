@@ -68,12 +68,24 @@ function extractJson(raw: string): any {
   return JSON.parse(fenced ? fenced[1].trim() : raw.trim());
 }
 
+const ALLOWED_OCR_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
 async function runOCR(
   imageData: string,
   anthropic: Anthropic | null,
   openai: OpenAI | null,
 ): Promise<{ merchant: string; date: string; amount: number; vatAmount: number; currency: string; category: string }> {
-  const dataUrl = imageData.startsWith('data:') ? imageData : `data:image/jpeg;base64,${imageData}`;
+  // Validate MIME type from the data URL prefix; reject unknown/unsafe types up front.
+  // Bare base64 (no data URL prefix) is rejected — clients must declare a MIME type.
+  const dataUrlMatch = imageData.match(/^data:([^;]+);base64,/);
+  if (!dataUrlMatch) {
+    throw Object.assign(new Error('Image must be a data URL with MIME type (e.g. data:image/jpeg;base64,...)'), { status: 400 });
+  }
+  const declaredMime = dataUrlMatch[1].toLowerCase();
+  if (!ALLOWED_OCR_MIME_TYPES.includes(declaredMime)) {
+    throw Object.assign(new Error(`Unsupported image MIME type: ${declaredMime}`), { status: 400 });
+  }
+  const dataUrl = imageData;
 
   let rawText = '';
   if (anthropic) {

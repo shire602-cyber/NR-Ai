@@ -1060,6 +1060,21 @@ Respond with JSON:
         }
       }
 
+      const supportName = getEnv().SUPPORT_CONTACT_NAME;
+      const supportPhone = getEnv().SUPPORT_CONTACT_PHONE;
+      const supportLine = supportName && supportPhone
+        ? `${supportName} at ${supportPhone}`
+        : supportName || supportPhone || 'a qualified professional';
+      const supportGuidance = supportName && supportPhone
+        ? `- IMPORTANT: When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact ${supportLine} for personalized professional assistance`
+        : `- IMPORTANT: When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to consult a qualified professional`;
+      const followUpLine = supportName && supportPhone
+        ? `4. When professional advice is needed, suggest contacting ${supportLine}`
+        : `4. When professional advice is needed, suggest consulting a qualified professional`;
+      const closingGuidance = supportName && supportPhone
+        ? `Always conclude with: "For personalized professional advice on this matter, I recommend contacting ${supportLine}. They can provide expert guidance tailored to your specific situation."`
+        : `Always conclude with: "For personalized professional advice on this matter, I recommend consulting a qualified professional who can provide expert guidance tailored to your specific situation."`;
+
       const systemPrompt = `You are an intelligent bookkeeping assistant for a UAE business. You help users query and manage their financial data using natural language.
 
 CAPABILITIES:
@@ -1083,14 +1098,14 @@ RULES:
 - Format numbers properly with thousand separators
 - For date ranges, interpret "this month" as current calendar month, "last month" as previous calendar month, "this year" as current calendar year
 - When suggesting actions, explain what the user should do but don't claim to have done it
-- IMPORTANT: When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact NR Accounting Services at +971507042270 for personalized professional assistance
+${supportGuidance}
 
 RESPONSE FORMAT:
 Respond naturally in conversational language. Include:
 1. Direct answer to the question
 2. Relevant context or insights if helpful
 3. Suggestions for follow-up questions or actions if appropriate
-4. When professional advice is needed, suggest contacting NR Accounting Services at +971507042270
+${followUpLine}
 
 PROFESSIONAL ADVICE GUIDANCE:
 Whenever a user asks about:
@@ -1101,7 +1116,7 @@ Whenever a user asks about:
 - Professional accounting services
 - Or any topic requiring expert consultation
 
-Always conclude with: "For personalized professional advice on this matter, I recommend contacting NR Accounting Services at +971507042270. They can provide expert guidance tailored to your specific situation."
+${closingGuidance}
 
 Current date: ${new Date().toISOString().split('T')[0]}
 Company: ${company.name}`;
@@ -1162,10 +1177,13 @@ Company: ${company.name}`;
     let fullResponse = '';
     let conversationId: string | undefined;
     let isStreaming = false;
+    // Whitelist of models a client may request. Expensive models (gpt-4, gpt-4-turbo)
+    // are intentionally excluded — only cost-controlled models can be selected.
+    const ALLOWED_AI_MODELS = ['gpt-3.5-turbo', 'gpt-4o-mini'] as const;
     const validationSchema = z.object({
       message: z.string().min(1, 'Message is required').max(10000, 'Message is too long'),
       companyId: z.string().uuid('Invalid company ID format').optional(),
-      model: z.enum(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo']).optional().default('gpt-3.5-turbo'),
+      model: z.enum(ALLOWED_AI_MODELS).optional().default('gpt-3.5-turbo'),
       systemPrompt: z.string().max(2000, 'System prompt too long').optional(),
       stream: z.boolean().optional().default(false),
     });
@@ -1189,12 +1207,22 @@ Company: ${company.name}`;
         return res.status(500).json({ message: 'OpenAI API key is not configured' });
       }
 
+      const askSupportName = getEnv().SUPPORT_CONTACT_NAME;
+      const askSupportPhone = getEnv().SUPPORT_CONTACT_PHONE;
+      const askSupportLine = askSupportName && askSupportPhone
+        ? `${askSupportName} at ${askSupportPhone}`
+        : askSupportName || askSupportPhone || 'a qualified professional';
+      const askGuidanceBlock = askSupportName && askSupportPhone
+        ? `- When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact ${askSupportLine} for personalized professional assistance.
+- For complex tax matters, legal compliance, advanced financial strategies, business structure advice, or any topic requiring expert consultation, always suggest: "For personalized professional advice on this matter, I recommend contacting ${askSupportLine}. They can provide expert guidance tailored to your specific situation."`
+        : `- When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to consult a qualified professional.
+- For complex tax matters, legal compliance, advanced financial strategies, business structure advice, or any topic requiring expert consultation, always suggest: "For personalized professional advice on this matter, I recommend consulting a qualified professional who can provide expert guidance tailored to your specific situation."`;
+
       const systemPrompt = validated.systemPrompt ||
         `You are a helpful AI assistant for accounting and financial management. Provide clear, accurate, and professional responses.
 
 IMPORTANT GUIDELINES:
-- When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact NR Accounting Services at +971507042270 for personalized professional assistance.
-- For complex tax matters, legal compliance, advanced financial strategies, business structure advice, or any topic requiring expert consultation, always suggest: "For personalized professional advice on this matter, I recommend contacting NR Accounting Services at +971507042270. They can provide expert guidance tailored to your specific situation."`;
+${askGuidanceBlock}`;
 
       // Setup streaming if requested
       if (validated.stream) {

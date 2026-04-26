@@ -27,9 +27,25 @@ export function registerPortalRoutes(app: Express) {
   // CLIENT PORTAL - DOCUMENT VAULT
   // =====================================
 
+  // Allowed MIME types for document uploads — checked instead of trusting filename extensions.
+  const ALLOWED_DOC_MIME_TYPES = [
+    'application/pdf',
+    'image/jpeg', 'image/png', 'image/webp',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain', 'text/csv',
+  ];
+
   // Get all documents for a company
   app.get("/api/companies/:companyId/documents", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
+    const userId = (req as any).user?.id;
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
     const documents = await storage.getDocuments(companyId);
     res.json(documents);
   }));
@@ -39,18 +55,14 @@ export function registerPortalRoutes(app: Express) {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
 
-    // Validate file type
-    const ALLOWED_DOC_TYPES = [
-      'application/pdf',
-      'image/jpeg', 'image/png', 'image/webp',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/plain', 'text/csv',
-    ];
-    const mimeType: string = req.body.mimeType || 'application/pdf';
-    if (!ALLOWED_DOC_TYPES.includes(mimeType.toLowerCase())) {
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Validate MIME type — never trust the filename extension alone.
+    const mimeType: string = (req.body.mimeType || 'application/pdf').toString().toLowerCase();
+    if (!ALLOWED_DOC_MIME_TYPES.includes(mimeType)) {
       return res.status(400).json({ message: 'Invalid file type. Allowed: PDF, images, Word, Excel, and text files.' });
     }
 
@@ -86,6 +98,15 @@ export function registerPortalRoutes(app: Express) {
   // Delete document
   app.delete("/api/documents/:documentId", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { documentId } = req.params;
+    const userId = (req as any).user?.id;
+    const document = await storage.getDocument(documentId);
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, document.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
     await storage.deleteDocument(documentId);
     res.json({ success: true });
   }));
@@ -97,6 +118,11 @@ export function registerPortalRoutes(app: Express) {
   // Get tax return archive for a company
   app.get("/api/companies/:companyId/tax-returns-archive", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
+    const userId = (req as any).user?.id;
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
     const returns = await storage.getTaxReturnArchive(companyId);
     res.json(returns);
   }));
@@ -105,6 +131,11 @@ export function registerPortalRoutes(app: Express) {
   app.post("/api/companies/:companyId/tax-returns-archive", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
     const returnData = {
       companyId,
@@ -133,6 +164,11 @@ export function registerPortalRoutes(app: Express) {
   // Get compliance tasks for a company
   app.get("/api/companies/:companyId/compliance-tasks", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
+    const userId = (req as any).user?.id;
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
     const tasks = await storage.getComplianceTasks(companyId);
     res.json(tasks);
   }));
@@ -141,6 +177,11 @@ export function registerPortalRoutes(app: Express) {
   app.post("/api/companies/:companyId/compliance-tasks", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
     const taskData = {
       companyId,
@@ -173,6 +214,15 @@ export function registerPortalRoutes(app: Express) {
     const { taskId } = req.params;
     const userId = (req as any).user.id;
 
+    const existing = await storage.getComplianceTask(taskId);
+    if (!existing) {
+      return res.status(404).json({ message: 'Compliance task not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     const updates: any = {};
     if (req.body.status) {
       updates.status = req.body.status;
@@ -192,6 +242,15 @@ export function registerPortalRoutes(app: Express) {
   // Delete compliance task
   app.delete("/api/compliance-tasks/:taskId", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { taskId } = req.params;
+    const userId = (req as any).user?.id;
+    const existing = await storage.getComplianceTask(taskId);
+    if (!existing) {
+      return res.status(404).json({ message: 'Compliance task not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
     await storage.deleteComplianceTask(taskId);
     res.json({ success: true });
   }));
@@ -203,6 +262,11 @@ export function registerPortalRoutes(app: Express) {
   // Get messages for a company
   app.get("/api/companies/:companyId/messages", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
+    const userId = (req as any).user?.id;
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
     const messages = await storage.getMessages(companyId);
     res.json(messages);
   }));
@@ -211,6 +275,11 @@ export function registerPortalRoutes(app: Express) {
   app.post("/api/companies/:companyId/messages", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
     const messageData = {
       companyId,

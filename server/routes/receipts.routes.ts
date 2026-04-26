@@ -87,7 +87,7 @@ export function registerReceiptRoutes(app: Express) {
     });
   }));
 
-  app.post("/api/companies/:companyId/receipts", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/receipts", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
 
@@ -114,9 +114,21 @@ export function registerReceiptRoutes(app: Express) {
       imageDataLength: imageData?.length,
     }, 'Creating receipt');
 
-    // Save image to disk; store only the path in Postgres (not the base64 blob)
+    // Save image to disk; store only the path in Postgres (not the base64 blob).
+    // Validate MIME type from the data URL — never trust the filename extension.
+    const ALLOWED_RECEIPT_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     let imagePath: string | undefined;
     if (imageData) {
+      if (typeof imageData !== 'string') {
+        return res.status(400).json({ message: 'Invalid image data' });
+      }
+      const dataUrlMatch = imageData.match(/^data:([^;]+);base64,/);
+      const mimeType = dataUrlMatch ? dataUrlMatch[1].toLowerCase() : null;
+      if (!mimeType || !ALLOWED_RECEIPT_MIME.includes(mimeType)) {
+        return res.status(400).json({
+          message: 'Invalid image MIME type. Allowed: JPEG, PNG, WebP, GIF.',
+        });
+      }
       const { randomUUID } = await import('crypto');
       imagePath = await saveReceiptImage(imageData, `${randomUUID()}.jpg`);
     }
@@ -168,6 +180,13 @@ export function registerReceiptRoutes(app: Express) {
     }
 
     const before = await storage.getReceipt(id);
+    if (!before) {
+      return res.status(404).json({ message: 'Receipt not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, before.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
     const updatedReceipt = await storage.updateReceipt(id, req.body);
     await recordAudit({
       userId,
@@ -198,6 +217,10 @@ export function registerReceiptRoutes(app: Express) {
     const existing = await storage.getReceipt(id);
     if (!existing) {
       return res.status(404).json({ message: 'Receipt not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
     }
     // FTA 5-year retention.
     assertRetentionExpired(existing as { createdAt: Date | string; retentionExpiresAt?: Date | string | null }, 'Receipt');
