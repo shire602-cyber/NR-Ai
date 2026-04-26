@@ -3,27 +3,21 @@ import { ZodError } from 'zod';
 import { createLogger } from '../config/logger';
 import { isProduction } from '../config/env';
 import { RetentionViolationError } from '../services/retention.service';
+import { AppError, RetentionError, ValidationError, AuthError } from '../errors';
 
 const log = createLogger('error');
 
-/**
- * Custom application error with status code.
- */
-export class AppError extends Error {
-  public readonly statusCode: number;
-  public readonly isOperational: boolean;
-
-  constructor(message: string, statusCode: number, isOperational = true) {
-    super(message);
-    this.statusCode = statusCode;
-    this.isOperational = isOperational;
-    Object.setPrototypeOf(this, AppError.prototype);
-  }
-}
+// Re-export AppError so existing imports of AppError from this module keep working.
+export { AppError };
 
 /**
  * Global error handler middleware.
  * Must be registered AFTER all routes.
+ *
+ * Returns a consistent error shape:
+ *   { message, code, details? }
+ * In production, stack traces are never returned to the client. They are
+ * always logged via pino with method/url for traceability.
  */
 export function globalErrorHandler(
   err: Error,
@@ -32,58 +26,61 @@ export function globalErrorHandler(
   _next: NextFunction
 ): void {
   // FTA 5-year retention: cannot delete records still inside the window.
+  // Translate the legacy service-thrown error into the new RetentionError.
   if (err instanceof RetentionViolationError) {
-    res.status(err.status).json({
-      message: err.message,
-      code: err.code,
-      retentionExpiresAt: err.retentionExpiresAt,
-    });
+    const re = new RetentionError(err.retentionExpiresAt, 'Record');
+    res.status(re.statusCode).json(re.toJSON());
     return;
   }
 
-  // Handle Zod validation errors
+  if (err instanceof RetentionError) {
+    res.status(err.statusCode).json(err.toJSON());
+    return;
+  }
+
+  // Zod errors thrown directly from handlers — render the same shape that
+  // the validate() middleware produces so the client sees one schema.
   if (err instanceof ZodError) {
-    const errors = err.flatten().fieldErrors;
-    res.status(400).json({
-      message: 'Validation error',
-      errors,
+    const ve = new ValidationError('Validation error', {
+      errors: err.flatten().fieldErrors,
+      formErrors: err.flatten().formErrors,
     });
+    res.status(ve.statusCode).json(ve.toJSON());
     return;
   }
 
-  // Handle AppError (our custom errors)
+  // JWT errors — keep behaviour but emit a typed AuthError.
+  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+    const ae = new AuthError('Invalid or expired token', 'AUTH_INVALID_TOKEN');
+    res.status(ae.statusCode).json(ae.toJSON());
+    return;
+  }
+
+  // Any AppError (or subclass).
   if (err instanceof AppError) {
     if (!err.isOperational) {
-      log.error({ err, method: req.method, url: req.url }, 'Non-operational error');
+      log.error({ err, method: req.method, url: req.url }, 'Non-operational AppError');
+    } else if (err.statusCode >= 500) {
+      log.error({ err: { message: err.message, code: err.code, stack: err.stack }, method: req.method, url: req.url }, 'AppError 5xx');
     }
-    res.status(err.statusCode).json({
-      message: err.message,
-    });
+    res.status(err.statusCode).json(err.toJSON());
     return;
   }
 
-  // Handle JWT errors
-  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
-    res.status(401).json({ message: 'Invalid or expired token' });
-    return;
-  }
-
-  // Handle all other errors
+  // Anything else — unhandled. Always log full detail; never leak stack
+  // to the client in production.
   log.error(
     {
-      err: {
-        message: err.message,
-        stack: err.stack,
-        name: err.name,
-      },
+      err: { message: err.message, stack: err.stack, name: err.name },
       method: req.method,
       url: req.url,
     },
-    'Unhandled error'
+    'Unhandled error',
   );
 
   res.status(500).json({
     message: isProduction() ? 'Internal Server Error' : err.message,
+    code: 'INTERNAL_ERROR',
   });
 }
 
@@ -93,6 +90,7 @@ export function globalErrorHandler(
 export function notFoundHandler(req: Request, res: Response): void {
   res.status(404).json({
     message: `Route ${req.method} ${req.path} not found`,
+    code: 'ROUTE_NOT_FOUND',
   });
 }
 
