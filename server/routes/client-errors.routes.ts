@@ -30,6 +30,7 @@ export function registerClientErrorRoutes(app: Express) {
           ...parsed.data,
           userId,
           ip: req.ip,
+          requestId: req.id,
         },
         'Client-side error reported',
       );

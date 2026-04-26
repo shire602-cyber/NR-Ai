@@ -15,6 +15,7 @@ import cookieParser from 'cookie-parser';
 import { validateEnv, isProduction, isDevelopment } from './config/env';
 import { createLogger } from './config/logger';
 import { applySecurityMiddleware } from './middleware/security';
+import { requestId } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
 import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
 import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from './middleware/csrf';
@@ -36,6 +37,10 @@ const app = express();
 
 // ─── Trust proxy (required behind reverse proxy / Railway / Render) ──
 app.set('trust proxy', 1);
+
+// ─── Correlation ID — must run before logging / security so every
+//     request log line and rate-limit warn carries the same trace ID.
+app.use(requestId);
 
 // ─── Security middleware (helmet, CORS, rate limiting) ──────
 applySecurityMiddleware(app);
