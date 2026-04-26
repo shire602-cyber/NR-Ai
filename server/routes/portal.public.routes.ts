@@ -122,14 +122,14 @@ export function registerPortalPublicRoutes(app: Express) {
       return res.status(410).json({ message: 'This portal link has expired' });
     }
 
-    // Get the invoice
-    const invoice = await storage.getInvoice(invoiceId);
+    // Get the invoice — tenant-scoped to the contact's company.
+    const invoice = await storage.getInvoice(invoiceId, contact.companyId);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
-    // Verify the invoice belongs to this customer and company
-    if (invoice.companyId !== contact.companyId || invoice.customerName.toLowerCase() !== contact.name.toLowerCase()) {
+    // Verify the invoice belongs to this customer
+    if (invoice.customerName.toLowerCase() !== contact.name.toLowerCase()) {
       return res.status(403).json({ message: 'Access denied to this invoice' });
     }
 

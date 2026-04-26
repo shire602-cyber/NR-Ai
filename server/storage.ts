@@ -168,11 +168,11 @@ export interface IStorage {
   hasCompanyAccess(userId: string, companyId: string): Promise<boolean>;
   
   // Accounts
-  getAccount(id: string): Promise<Account | undefined>;
+  getAccount(id: string, companyId: string): Promise<Account | undefined>;
   getAccountsByCompanyId(companyId: string): Promise<Account[]>;
   createAccount(account: InsertAccount): Promise<Account>;
-  updateAccount(id: string, data: Partial<Account>): Promise<Account>;
-  deleteAccount(id: string): Promise<void>;
+  updateAccount(id: string, companyId: string, data: Partial<Account>): Promise<Account>;
+  deleteAccount(id: string, companyId: string): Promise<void>;
   accountHasTransactions(accountId: string): Promise<boolean>;
   
   // Account Ledger & Balance
@@ -226,12 +226,12 @@ export interface IStorage {
   }>;
   
   // Journal Entries
-  getJournalEntry(id: string): Promise<JournalEntry | undefined>;
+  getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
   createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
-  updateJournalEntry(id: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
-  updateJournalEntryWithLines(id: string, data: Partial<JournalEntry>, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
-  deleteJournalEntry(id: string): Promise<void>;
+  updateJournalEntry(id: string, companyId: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
+  updateJournalEntryWithLines(id: string, companyId: string, data: Partial<JournalEntry>, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
+  deleteJournalEntry(id: string, companyId: string): Promise<void>;
   generateEntryNumber(companyId: string, date: Date): Promise<string>;
   
   // Journal Lines
@@ -240,12 +240,12 @@ export interface IStorage {
   deleteJournalLinesByEntryId(entryId: string): Promise<void>;
   
   // Invoices
-  getInvoice(id: string): Promise<Invoice | undefined>;
+  getInvoice(id: string, companyId: string): Promise<Invoice | undefined>;
   getInvoicesByCompanyId(companyId: string): Promise<Invoice[]>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
-  updateInvoice(id: string, data: Partial<InsertInvoice>): Promise<Invoice>;
-  updateInvoiceStatus(id: string, status: string): Promise<Invoice>;
-  deleteInvoice(id: string): Promise<void>;
+  updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice>;
+  updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice>;
+  deleteInvoice(id: string, companyId: string): Promise<void>;
   
   // Invoice Share Token
   getInvoiceByShareToken(token: string): Promise<Invoice | undefined>;
@@ -257,11 +257,11 @@ export interface IStorage {
   deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void>;
   
   // Receipts
-  getReceipt(id: string): Promise<Receipt | undefined>;
+  getReceipt(id: string, companyId: string): Promise<Receipt | undefined>;
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
-  updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt>;
-  deleteReceipt(id: string): Promise<void>;
+  updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt>;
+  deleteReceipt(id: string, companyId: string): Promise<void>;
   
   // Customer Contacts
   getCustomerContact(id: string): Promise<CustomerContact | undefined>;
@@ -313,10 +313,10 @@ export interface IStorage {
   // Bank Transactions
   createBankTransaction(transaction: InsertBankTransaction): Promise<BankTransaction>;
   bulkCreateBankTransactions(transactions: InsertBankTransaction[]): Promise<BankTransaction[]>;
-  getBankTransactionById(id: string): Promise<BankTransaction | undefined>;
+  getBankTransactionById(id: string, companyId: string): Promise<BankTransaction | undefined>;
   getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]>;
   getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]>;
-  updateBankTransaction(id: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
+  updateBankTransaction(id: string, companyId: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
   reconcileBankTransaction(id: string, matchedId: string, matchType: 'journal' | 'receipt' | 'invoice'): Promise<BankTransaction>;
 
   // Cash Flow Forecasts
@@ -335,7 +335,7 @@ export interface IStorage {
   // Budgets
   getBudgetsByCompanyId(companyId: string, year: number, month: number): Promise<Budget[]>;
   createBudget(budget: InsertBudget): Promise<Budget>;
-  updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget>;
+  updateBudget(id: string, companyId: string, data: Partial<InsertBudget>): Promise<Budget>;
 
   // E-Commerce Integrations
   getEcommerceIntegrations(companyId: string): Promise<EcommerceIntegration[]>;
@@ -728,8 +728,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Accounts
-  async getAccount(id: string): Promise<Account | undefined> {
-    const [account] = await db.select().from(accounts).where(eq(accounts.id, id));
+  async getAccount(id: string, companyId: string): Promise<Account | undefined> {
+    const [account] = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)));
     return account || undefined;
   }
 
@@ -745,11 +748,11 @@ export class DatabaseStorage implements IStorage {
     return account;
   }
 
-  async updateAccount(id: string, data: Partial<Account>): Promise<Account> {
+  async updateAccount(id: string, companyId: string, data: Partial<Account>): Promise<Account> {
     const [account] = await db
       .update(accounts)
       .set(data)
-      .where(eq(accounts.id, id))
+      .where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)))
       .returning();
     if (!account) {
       throw new Error('Account not found');
@@ -757,8 +760,10 @@ export class DatabaseStorage implements IStorage {
     return account;
   }
 
-  async deleteAccount(id: string): Promise<void> {
-    await db.delete(accounts).where(eq(accounts.id, id));
+  async deleteAccount(id: string, companyId: string): Promise<void> {
+    await db
+      .delete(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)));
   }
 
   async archiveAccount(id: string): Promise<Account> {
@@ -872,14 +877,17 @@ export class DatabaseStorage implements IStorage {
     return results;
   }
 
-  async getAccountLedger(accountId: string, options?: { 
-    dateStart?: Date; 
-    dateEnd?: Date; 
+  async getAccountLedger(accountId: string, options?: {
+    dateStart?: Date;
+    dateEnd?: Date;
     search?: string;
     limit?: number;
     offset?: number;
   }) {
-    const account = await this.getAccount(accountId);
+    // Existence check; tenant scoping is the caller's responsibility (the
+    // accounts.routes ledger handler resolves the account against the user's
+    // companies before invoking this).
+    const [account] = await db.select().from(accounts).where(eq(accounts.id, accountId));
     if (!account) {
       throw new Error('Account not found');
     }
@@ -989,8 +997,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Journal Entries
-  async getJournalEntry(id: string): Promise<JournalEntry | undefined> {
-    const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+  async getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined> {
+    const [entry] = await db
+      .select()
+      .from(journalEntries)
+      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)));
     return entry || undefined;
   }
 
@@ -1020,11 +1031,11 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async updateJournalEntry(id: string, data: Partial<JournalEntry>): Promise<JournalEntry> {
+  async updateJournalEntry(id: string, companyId: string, data: Partial<JournalEntry>): Promise<JournalEntry> {
     const [entry] = await db
       .update(journalEntries)
       .set(data)
-      .where(eq(journalEntries.id, id))
+      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
       .returning();
     if (!entry) {
       throw new Error('Journal entry not found');
@@ -1034,6 +1045,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateJournalEntryWithLines(
     id: string,
+    companyId: string,
     data: Partial<JournalEntry>,
     lines: Array<Omit<InsertJournalLine, 'entryId'>>
   ): Promise<JournalEntry> {
@@ -1046,7 +1058,7 @@ export class DatabaseStorage implements IStorage {
       const [entry] = await tx
         .update(journalEntries)
         .set(data)
-        .where(eq(journalEntries.id, id))
+        .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
         .returning();
       if (!entry) {
         throw new Error('Journal entry not found');
@@ -1059,8 +1071,10 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async deleteJournalEntry(id: string): Promise<void> {
-    await db.delete(journalEntries).where(eq(journalEntries.id, id));
+  async deleteJournalEntry(id: string, companyId: string): Promise<void> {
+    await db
+      .delete(journalEntries)
+      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)));
   }
 
   async generateEntryNumber(companyId: string, date: Date): Promise<string> {
@@ -1121,8 +1135,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Invoices
-  async getInvoice(id: string): Promise<Invoice | undefined> {
-    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
+  async getInvoice(id: string, companyId: string): Promise<Invoice | undefined> {
+    const [invoice] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)));
     return invoice || undefined;
   }
 
@@ -1142,11 +1159,11 @@ export class DatabaseStorage implements IStorage {
     return invoice;
   }
 
-  async updateInvoice(id: string, data: Partial<InsertInvoice>): Promise<Invoice> {
+  async updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice> {
     const [invoice] = await db
       .update(invoices)
       .set(data)
-      .where(eq(invoices.id, id))
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)))
       .returning();
     if (!invoice) {
       throw new Error('Invoice not found');
@@ -1154,22 +1171,24 @@ export class DatabaseStorage implements IStorage {
     return invoice;
   }
 
-  async updateInvoiceStatus(id: string, status: string): Promise<Invoice> {
+  async updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice> {
     const [invoice] = await db
       .update(invoices)
       .set({ status })
-      .where(eq(invoices.id, id))
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)))
       .returning();
-    
+
     if (!invoice) {
       throw new Error('Invoice not found');
     }
-    
+
     return invoice;
   }
 
-  async deleteInvoice(id: string): Promise<void> {
-    await db.delete(invoices).where(eq(invoices.id, id));
+  async deleteInvoice(id: string, companyId: string): Promise<void> {
+    await db
+      .delete(invoices)
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)));
   }
 
   async getInvoiceByShareToken(token: string): Promise<Invoice | undefined> {
@@ -1202,8 +1221,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Receipts
-  async getReceipt(id: string): Promise<Receipt | undefined> {
-    const [receipt] = await db.select().from(receipts).where(eq(receipts.id, id));
+  async getReceipt(id: string, companyId: string): Promise<Receipt | undefined> {
+    const [receipt] = await db
+      .select()
+      .from(receipts)
+      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
     return receipt || undefined;
   }
 
@@ -1223,11 +1245,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(receipts.createdAt));
   }
 
-  async updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt> {
+  async updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt> {
     const [receipt] = await db
       .update(receipts)
       .set(data)
-      .where(eq(receipts.id, id))
+      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)))
       .returning();
     if (!receipt) {
       throw new Error('Receipt not found');
@@ -1235,8 +1257,10 @@ export class DatabaseStorage implements IStorage {
     return receipt;
   }
 
-  async deleteReceipt(id: string): Promise<void> {
-    await db.delete(receipts).where(eq(receipts.id, id));
+  async deleteReceipt(id: string, companyId: string): Promise<void> {
+    await db
+      .delete(receipts)
+      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
   }
 
   // Customer Contacts
@@ -1526,11 +1550,11 @@ export class DatabaseStorage implements IStorage {
     return await db.insert(bankTransactions).values(transactions).returning();
   }
 
-  async getBankTransactionById(id: string): Promise<BankTransaction | undefined> {
+  async getBankTransactionById(id: string, companyId: string): Promise<BankTransaction | undefined> {
     const [transaction] = await db
       .select()
       .from(bankTransactions)
-      .where(eq(bankTransactions.id, id));
+      .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)));
     return transaction;
   }
 
@@ -1553,11 +1577,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
-  async updateBankTransaction(id: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction> {
+  async updateBankTransaction(id: string, companyId: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction> {
     const [transaction] = await db
       .update(bankTransactions)
       .set(data)
-      .where(eq(bankTransactions.id, id))
+      .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)))
       .returning();
     if (!transaction) {
       throw new Error('Bank transaction not found');
@@ -1673,11 +1697,11 @@ export class DatabaseStorage implements IStorage {
     return budget;
   }
 
-  async updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget> {
+  async updateBudget(id: string, companyId: string, data: Partial<InsertBudget>): Promise<Budget> {
     const [budget] = await db
       .update(budgets)
       .set(data)
-      .where(eq(budgets.id, id))
+      .where(and(eq(budgets.id, id), eq(budgets.companyId, companyId)))
       .returning();
     if (!budget) {
       throw new Error('Budget not found');
