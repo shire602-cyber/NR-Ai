@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { uaeDayStart, uaeDayEnd } from "../utils/date";
+import { uaeDayStart, uaeDayEnd, uaeMonthStart, uaeMonthEnd, uaeYmdParts } from "../utils/date";
 
 // Identifies a "real cash" account — bank, cash on hand, or petty cash.
 // Used by Cash Position and any other view that should ignore non-cash
@@ -26,9 +26,14 @@ export function registerDashboardRoutes(app: Express) {
 
   async function getEnhancedDashboardStats(companyId: string) {
     const now = new Date();
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+    // Period buckets must use UAE-local calendar months. `new Date(y, m, 1)`
+    // anchors at the server's local timezone, which on UTC infrastructure
+    // pushes UAE late-evening activity into the previous month.
+    const currentMonthStart = uaeMonthStart(now);
+    const { year: nowY, month: nowM } = uaeYmdParts(now);
+    const lastMonthAnchor = new Date(Date.UTC(nowY, nowM - 1, 15));
+    const lastMonthStart = uaeMonthStart(lastMonthAnchor);
+    const lastMonthEnd = uaeMonthEnd(lastMonthAnchor);
 
     const [invoices, accounts, allEntries, allLines, receipts] = await Promise.all([
       storage.getInvoicesByCompanyId(companyId),
@@ -85,11 +90,12 @@ export function registerDashboardRoutes(app: Express) {
         else if (account.type === 'expense') lastMonthBalance.set(line.accountId, lb + debit - credit);
       }
 
-      // Burn rate: last 3 completed months' expenses
+      // Burn rate: last 3 completed months' expenses (UAE calendar months).
       if (account.type === 'expense') {
         for (let i = 1; i <= 3; i++) {
-          const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59);
+          const anchor = new Date(Date.UTC(nowY, nowM - i, 15));
+          const mStart = uaeMonthStart(anchor);
+          const mEnd = uaeMonthEnd(anchor);
           if (entryDate >= mStart && entryDate <= mEnd) {
             burnMonthlyTotals[i - 1] += debit - credit;
           }
