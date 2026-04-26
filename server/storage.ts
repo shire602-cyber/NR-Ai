@@ -123,6 +123,7 @@ import {
 import { db } from "./db";
 import { eq, and, desc, lte, isNull, sql } from "drizzle-orm";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
+import { ACCOUNT_CODES } from "./constants";
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
 // Postgres advisory locks accept (int4, int4); pg_advisory_lock(bigint) would
@@ -228,6 +229,9 @@ export interface IStorage {
   // Journal Entries
   getJournalEntry(id: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
+  getPostedJournalEntriesWithLines(
+    companyId: string,
+  ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>>;
   createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
   updateJournalEntry(id: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
   updateJournalEntryWithLines(id: string, data: Partial<JournalEntry>, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
@@ -317,7 +321,12 @@ export interface IStorage {
   getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]>;
   getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]>;
   updateBankTransaction(id: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
-  reconcileBankTransaction(id: string, matchedId: string, matchType: 'journal' | 'receipt' | 'invoice'): Promise<BankTransaction>;
+  reconcileBankTransaction(
+    id: string,
+    matchedId: string,
+    matchType: 'journal' | 'receipt' | 'invoice',
+    createdBy?: string,
+  ): Promise<BankTransaction>;
 
   // Cash Flow Forecasts
   createCashFlowForecast(forecast: InsertCashFlowForecast): Promise<CashFlowForecast>;
@@ -1002,6 +1011,35 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(journalEntries.date));
   }
 
+  async getPostedJournalEntriesWithLines(
+    companyId: string,
+  ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>> {
+    // Single JOIN replaces an N+1 (one query per entry to fetch lines).
+    const rows = await db
+      .select({
+        entry: journalEntries,
+        line: journalLines,
+      })
+      .from(journalEntries)
+      .leftJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
+      .where(and(
+        eq(journalEntries.companyId, companyId),
+        eq(journalEntries.status, 'posted'),
+      ));
+
+    const byId = new Map<string, { entry: JournalEntry; lines: JournalLine[] }>();
+    for (const row of rows) {
+      const entryId = row.entry.id;
+      let bucket = byId.get(entryId);
+      if (!bucket) {
+        bucket = { entry: row.entry, lines: [] };
+        byId.set(entryId, bucket);
+      }
+      if (row.line) bucket.lines.push(row.line);
+    }
+    return Array.from(byId.values());
+  }
+
   async createJournalEntry(
     insertEntry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
     lines: Array<Omit<InsertJournalLine, 'entryId'>>
@@ -1565,7 +1603,18 @@ export class DatabaseStorage implements IStorage {
     return transaction;
   }
 
-  async reconcileBankTransaction(id: string, matchedId: string, matchType: 'journal' | 'receipt' | 'invoice'): Promise<BankTransaction> {
+  async reconcileBankTransaction(
+    id: string,
+    matchedId: string,
+    matchType: 'journal' | 'receipt' | 'invoice',
+    createdBy?: string,
+  ): Promise<BankTransaction> {
+    // Load the bank txn so we have amount/date/bankAccountId for JE posting.
+    const existing = await this.getBankTransactionById(id);
+    if (!existing) {
+      throw new Error('Bank transaction not found');
+    }
+
     const updateData: any = {
       isReconciled: true,
     };
@@ -1576,7 +1625,83 @@ export class DatabaseStorage implements IStorage {
     } else {
       updateData.matchedInvoiceId = matchedId;
     }
-    
+
+    // Reconciliation must produce a journal entry: previously this method only
+    // flipped flags on the bank transaction, leaving the books out of step
+    // with the bank statement. For 'journal' matches the contra entry already
+    // exists, so we just link to it. For 'invoice' / 'receipt' matches we
+    // either link an existing source-derived JE (e.g. one posted by
+    // recordInvoicePayment / receipt posting) or create a fresh
+    // bank-reconciliation JE here.
+    if (
+      createdBy &&
+      matchType !== 'journal' &&
+      !existing.matchedJournalEntryId &&
+      existing.bankAccountId
+    ) {
+      const sourceTag = matchType === 'invoice' ? 'payment' : 'receipt';
+      const sourceEntries = await this.getJournalEntriesBySource(
+        existing.companyId,
+        sourceTag,
+        matchedId,
+      );
+      const linkedExisting = sourceEntries[0];
+
+      if (linkedExisting) {
+        updateData.matchedJournalEntryId = linkedExisting.id;
+      } else {
+        const accounts = await this.getAccountsByCompanyId(existing.companyId);
+        const arAccount = accounts.find(
+          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount,
+        );
+        const apAccount = accounts.find(
+          (a) => a.code === ACCOUNT_CODES.AP && a.isSystemAccount,
+        );
+        const isInflow = Number(existing.amount) > 0;
+        // Inflow: customer paid → Dr Bank, Cr A/R (link to invoice).
+        // Outflow: paid vendor / expense → Dr A/P, Cr Bank (link to receipt).
+        const contraAccount = isInflow ? arAccount : apAccount;
+
+        if (contraAccount) {
+          const absAmount = Math.abs(Number(existing.amount));
+          const txnDate = existing.transactionDate instanceof Date
+            ? existing.transactionDate
+            : new Date(existing.transactionDate);
+          const entryNumber = await this.generateEntryNumber(existing.companyId, txnDate);
+
+          const newEntry = await this.createJournalEntry(
+            {
+              companyId: existing.companyId,
+              entryNumber,
+              date: txnDate,
+              memo: `Bank reconciliation: ${existing.description}`.slice(0, 500),
+              status: 'posted',
+              source: 'bank_reconciliation',
+              sourceId: existing.id,
+              createdBy,
+              postedBy: createdBy,
+              postedAt: new Date(),
+            },
+            [
+              {
+                accountId: existing.bankAccountId,
+                debit: isInflow ? absAmount : 0,
+                credit: isInflow ? 0 : absAmount,
+                description: existing.description,
+              },
+              {
+                accountId: contraAccount.id,
+                debit: isInflow ? 0 : absAmount,
+                credit: isInflow ? absAmount : 0,
+                description: existing.description,
+              },
+            ],
+          );
+          updateData.matchedJournalEntryId = newEntry.id;
+        }
+      }
+    }
+
     const [transaction] = await db
       .update(bankTransactions)
       .set(updateData)

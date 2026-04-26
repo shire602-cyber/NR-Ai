@@ -1,5 +1,6 @@
 import { storage } from '../storage';
 import type { BankTransaction, JournalEntry, JournalLine, Invoice, Receipt, Account } from '../../shared/schema';
+import { ACCOUNT_CODES } from '../constants';
 
 export interface ReconcileMatch {
   bankTransactionId: string;
@@ -162,41 +163,92 @@ function calculateConfidence(
 
 // ─── Shared data loading ────────────────────────────────────────────────────
 
+/**
+ * Per-entry amounts derived from journal lines, used by the scorer.
+ *
+ * `totalDebit` and `totalCredit` are equal in any balanced JE, so they cannot
+ * disambiguate inflow vs outflow on their own — we keep them as a coarse
+ * fallback only. The real signal is the AR/AP-side line amount, which mirrors
+ * the contra side of a bank movement (Dr Bank, Cr AR for inflows; Dr AP, Cr
+ * Bank for outflows). When neither is present we fall back to the largest
+ * non-bank-account line, then finally to the JE total.
+ */
+interface JournalAmounts {
+  totalDebit: number;
+  totalCredit: number;
+  arAmount: number; // sum of credits + debits on AR lines (sign agnostic)
+  apAmount: number;
+  largestNonBankLine: number;
+  description: string;
+}
+
 interface CandidatePool {
   postedEntries: JournalEntry[];
-  journalTotals: Map<string, { totalDebit: number; totalCredit: number; description: string }>;
+  journalAmounts: Map<string, JournalAmounts>;
   invoices: Invoice[];
   receipts: Receipt[];
+  bankGlAccountIds: Set<string>;
 }
 
 async function loadCandidatePool(companyId: string): Promise<CandidatePool> {
-  const [journalEntries, invoices, receipts] = await Promise.all([
-    storage.getJournalEntriesByCompanyId(companyId),
+  const [entriesWithLines, invoices, receipts, accounts, managedBankAccounts] = await Promise.all([
+    storage.getPostedJournalEntriesWithLines(companyId),
     storage.getInvoicesByCompanyId(companyId),
     storage.getReceiptsByCompanyId(companyId),
+    storage.getAccountsByCompanyId(companyId),
+    storage.getBankAccountsByCompanyId(companyId),
   ]);
 
-  const postedEntries = journalEntries.filter((e) => e.status === 'posted');
-
-  const journalTotals = new Map<string, { totalDebit: number; totalCredit: number; description: string }>();
-  await Promise.all(
-    postedEntries.map(async (entry) => {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      let totalDebit = 0;
-      let totalCredit = 0;
-      for (const line of lines) {
-        totalDebit += line.debit || 0;
-        totalCredit += line.credit || 0;
-      }
-      journalTotals.set(entry.id, {
-        totalDebit,
-        totalCredit,
-        description: entry.memo || entry.entryNumber,
-      });
-    })
+  const arAccountIds = new Set(
+    accounts.filter((a) => a.code === ACCOUNT_CODES.AR).map((a) => a.id),
+  );
+  const apAccountIds = new Set(
+    accounts.filter((a) => a.code === ACCOUNT_CODES.AP).map((a) => a.id),
+  );
+  // Bank GL accounts are the cash/bank side of any reconciliation JE — we
+  // exclude them from the "largest non-bank line" fallback so the scorer
+  // doesn't trivially match a JE against itself by its own bank-side amount.
+  const bankGlAccountIds = new Set(
+    managedBankAccounts
+      .map((b) => b.glAccountId)
+      .filter((id): id is string => id !== null),
   );
 
-  return { postedEntries, journalTotals, invoices, receipts };
+  const postedEntries: JournalEntry[] = [];
+  const journalAmounts = new Map<string, JournalAmounts>();
+  for (const { entry, lines } of entriesWithLines) {
+    postedEntries.push(entry);
+
+    let totalDebit = 0;
+    let totalCredit = 0;
+    let arAmount = 0;
+    let apAmount = 0;
+    let largestNonBankLine = 0;
+    for (const line of lines) {
+      const debit = Number(line.debit) || 0;
+      const credit = Number(line.credit) || 0;
+      totalDebit += debit;
+      totalCredit += credit;
+
+      const lineAmount = debit + credit;
+      if (arAccountIds.has(line.accountId)) arAmount += lineAmount;
+      if (apAccountIds.has(line.accountId)) apAmount += lineAmount;
+      if (!bankGlAccountIds.has(line.accountId) && lineAmount > largestNonBankLine) {
+        largestNonBankLine = lineAmount;
+      }
+    }
+
+    journalAmounts.set(entry.id, {
+      totalDebit,
+      totalCredit,
+      arAmount,
+      apAmount,
+      largestNonBankLine,
+      description: entry.memo || entry.entryNumber,
+    });
+  }
+
+  return { postedEntries, journalAmounts, invoices, receipts, bankGlAccountIds };
 }
 
 /**
@@ -217,19 +269,32 @@ function matchTransaction(
   const candidates: ReconcileMatch[] = [];
 
   // Journal entries (match both directions)
+  //
+  // Pick the candidate amount from the relevant non-bank line, NOT from the
+  // JE's debit/credit totals (which are equal in any balanced JE and would
+  // therefore never disambiguate between e.g. a $100 sale-on-credit and a
+  // $100 vendor payment). Inflows (Dr Bank, Cr A/R) match against the AR
+  // line; outflows (Dr A/P, Cr Bank) match against the AP line. JEs without
+  // an AR/AP line fall back to their largest non-bank line, then to the JE
+  // total as a last resort.
   for (const entry of pool.postedEntries) {
     const key = `je-${entry.id}`;
     if (usedCandidates?.has(key)) continue;
 
-    const totals = pool.journalTotals.get(entry.id);
-    if (!totals) continue;
+    const amounts = pool.journalAmounts.get(entry.id);
+    if (!amounts) continue;
 
-    const candidateAmount = isCredit ? totals.totalDebit : totals.totalCredit;
+    const preferred = isCredit ? amounts.arAmount : amounts.apAmount;
+    const candidateAmount = preferred > 0
+      ? preferred
+      : amounts.largestNonBankLine > 0
+        ? amounts.largestNonBankLine
+        : amounts.totalDebit;
     if (candidateAmount === 0) continue;
 
     const entryDate = new Date(entry.date);
     const { score, reasons } = calculateConfidence(
-      bankAmount, candidateAmount, bankDate, entryDate, bankDesc, totals.description
+      bankAmount, candidateAmount, bankDate, entryDate, bankDesc, amounts.description
     );
 
     if (score > 0) {
@@ -244,7 +309,7 @@ function matchTransaction(
         bankDate: txn.transactionDate instanceof Date
           ? txn.transactionDate.toISOString()
           : String(txn.transactionDate),
-        matchedDescription: totals.description,
+        matchedDescription: amounts.description,
         matchedAmount: candidateAmount,
         matchedDate: entry.date instanceof Date
           ? entry.date.toISOString()
@@ -382,10 +447,15 @@ export async function autoReconcileTransactions(companyId: string): Promise<Auto
 
 /**
  * Apply a set of reconciliation matches.
+ *
+ * `userId` is forwarded to `reconcileBankTransaction` so it can post the
+ * bank-reconciliation journal entry (createdBy/postedBy). Without a user the
+ * storage layer will skip JE posting and only flip the bank txn's flags.
  */
 export async function applyReconcileMatches(
   companyId: string,
-  matchIds: { bankTransactionId: string; matchedType: string; matchedId: string }[]
+  matchIds: { bankTransactionId: string; matchedType: string; matchedId: string }[],
+  userId?: string,
 ): Promise<{ applied: number; errors: string[] }> {
   let applied = 0;
   const errors: string[] = [];
@@ -395,7 +465,8 @@ export async function applyReconcileMatches(
       await storage.reconcileBankTransaction(
         match.bankTransactionId,
         match.matchedId,
-        match.matchedType as 'journal' | 'receipt' | 'invoice'
+        match.matchedType as 'journal' | 'receipt' | 'invoice',
+        userId,
       );
       applied++;
     } catch (err: any) {

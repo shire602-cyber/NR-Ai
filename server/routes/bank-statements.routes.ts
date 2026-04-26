@@ -6,6 +6,7 @@ import { autoReconcileTransactions, getSuggestionsForTransaction } from '../serv
 import { createLogger } from '../config/logger';
 import { createAndEmitNotification } from '../services/socket.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { ACCOUNT_CODES } from '../constants';
 
 const log = createLogger('bank-statements');
 
@@ -424,7 +425,7 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       // Map parsed rows to insert records
-      const toInsert = parsed.map((txn) => ({
+      const allRows = parsed.map((txn) => ({
         companyId,
         bankAccountId: bankAccount.glAccountId || null,
         bankStatementAccountId: bankAccountId,
@@ -440,7 +441,36 @@ export function registerBankStatementRoutes(app: Express) {
         importSource: 'csv',
       }));
 
-      const created = await storage.bulkCreateBankTransactions(toInsert);
+      // Dedupe against existing transactions on the same managed bank account.
+      // Re-importing the same statement (or overlapping date ranges) is common,
+      // and bulk-inserting duplicates would corrupt the reconciliation worklist.
+      const existing = await storage.getBankTransactionsByCompanyId(companyId);
+      const dedupeKey = (t: { transactionDate: Date | string; amount: number; reference: string | null }) => {
+        const dateStr = (t.transactionDate instanceof Date ? t.transactionDate : new Date(t.transactionDate))
+          .toISOString()
+          .slice(0, 10);
+        return `${dateStr}|${Number(t.amount).toFixed(2)}|${t.reference ?? ''}`;
+      };
+      const existingKeys = new Set(
+        existing
+          .filter((t) => t.bankStatementAccountId === bankAccountId)
+          .map(dedupeKey)
+      );
+      const toInsert: typeof allRows = [];
+      let skippedDuplicates = 0;
+      for (const row of allRows) {
+        const key = dedupeKey(row);
+        if (existingKeys.has(key)) {
+          skippedDuplicates++;
+          continue;
+        }
+        existingKeys.add(key); // also dedupe within this batch
+        toInsert.push(row);
+      }
+
+      const created = toInsert.length > 0
+        ? await storage.bulkCreateBankTransactions(toInsert)
+        : [];
 
       // Run AI auto-matching in background (non-blocking)
       autoMatchImportedTransactions(companyId).catch(() => {});
@@ -458,9 +488,12 @@ export function registerBankStatementRoutes(app: Express) {
 
       res.status(201).json({
         imported: created.length,
+        skippedDuplicates,
         detectedFormat: format,
         parseErrors: parseErrors.length > 0 ? parseErrors : undefined,
-        message: `Imported ${created.length} transaction(s). Auto-matching running in background.`,
+        message: skippedDuplicates > 0
+          ? `Imported ${created.length} new transaction(s); skipped ${skippedDuplicates} duplicate(s). Auto-matching running in background.`
+          : `Imported ${created.length} transaction(s). Auto-matching running in background.`,
       });
     })
   );
@@ -530,8 +563,89 @@ export function registerBankStatementRoutes(app: Express) {
         return res.status(400).json({ message: 'matchedId is required' });
       }
 
-      const updated = await storage.reconcileBankTransaction(tid, matchedId, matchedType as 'journal' | 'receipt' | 'invoice');
-      await storage.updateBankTransaction(tid, { matchStatus: 'matched' });
+      let updated;
+
+      if (matchedType === 'invoice') {
+        // Matching against an invoice means the customer has paid: we must
+        // record the payment so the invoice's status/totalPaid update and a
+        // proper double-entry JE is posted (Dr Bank, Cr A/R). Just flipping
+        // the bank transaction's columns (the previous behaviour) left
+        // invoices stuck on 'sent' indefinitely.
+        const invoice = await storage.getInvoice(matchedId);
+        if (!invoice || invoice.companyId !== companyId) {
+          return res.status(404).json({ message: 'Invoice not found' });
+        }
+
+        if (!txn.bankAccountId) {
+          return res.status(400).json({
+            message: 'Bank transaction has no linked GL bank account; cannot post payment journal entry.',
+          });
+        }
+
+        const accounts = await storage.getAccountsByCompanyId(companyId);
+        const accountsReceivable = accounts.find(
+          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
+        );
+        if (!accountsReceivable) {
+          return res.status(500).json({ message: 'Accounts Receivable account not found' });
+        }
+
+        const paymentAccount = await storage.getAccount(txn.bankAccountId);
+        if (!paymentAccount) {
+          return res.status(400).json({ message: 'Bank GL account not found' });
+        }
+
+        // Match the unpaid remainder (or what the bank says, whichever is smaller).
+        const previouslyPaid = await storage.getInvoicePaidTotal(matchedId);
+        const remaining = Number(invoice.total) - previouslyPaid;
+        const bankAbs = Math.abs(Number(txn.amount));
+        const paymentAmount = Math.min(remaining, bankAbs);
+
+        await assertPeriodNotLocked(companyId, txn.transactionDate);
+
+        let journalEntryId: string | null = null;
+        if (paymentAmount > 0.005) {
+          try {
+            const result = await storage.recordInvoicePayment({
+              invoiceId: matchedId,
+              companyId,
+              amount: paymentAmount,
+              date: new Date(txn.transactionDate),
+              method: 'bank_reconciliation',
+              reference: txn.reference,
+              notes: `Reconciled from bank statement: ${txn.description}`.slice(0, 500),
+              paymentAccountId: txn.bankAccountId,
+              paymentAccountCurrency: (paymentAccount as any).currency ?? null,
+              receivableAccountId: accountsReceivable.id,
+              createdBy: userId,
+            });
+            journalEntryId = result.journalEntryId;
+          } catch (err: any) {
+            if (err?.code === 'CURRENCY_MISMATCH' || err?.code === 'OVERPAYMENT' || err?.code === 'INVOICE_TERMINAL') {
+              return res.status(422).json({ message: err.message, code: err.code });
+            }
+            throw err;
+          }
+        }
+
+        // Link the bank transaction to the invoice + the payment JE.
+        // Bypass storage.reconcileBankTransaction here so we don't create a
+        // second JE (recordInvoicePayment already posted the canonical one).
+        updated = await storage.updateBankTransaction(tid, {
+          isReconciled: true,
+          matchStatus: 'matched',
+          matchedInvoiceId: matchedId,
+          ...(journalEntryId ? { matchedJournalEntryId: journalEntryId } : {}),
+        });
+      } else {
+        updated = await storage.reconcileBankTransaction(
+          tid,
+          matchedId,
+          matchedType as 'journal' | 'receipt' | 'invoice',
+          userId,
+        );
+        updated = await storage.updateBankTransaction(tid, { matchStatus: 'matched' });
+      }
 
       const { recordAudit } = await import('../services/audit.service');
       await recordAudit({
