@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { validate } from '../middleware/validate';
 import { storage } from '../storage';
 import { autoReconcileTransactions, getSuggestionsForTransaction } from '../services/auto-reconcile.service';
 import { createLogger } from '../config/logger';
@@ -9,6 +11,48 @@ import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { ACCOUNT_CODES } from '../constants';
 
 const log = createLogger('bank-statements');
+
+// =====================================
+// Zod schemas
+// =====================================
+
+const UAE_BANKS = ['Emirates NBD', 'ADCB', 'FAB', 'Mashreq', 'Other'] as const;
+
+const bankAccountCreateSchema = z.object({
+  nameEn: z.string().min(1, 'nameEn is required').max(255),
+  bankName: z.enum(UAE_BANKS, {
+    errorMap: () => ({ message: `bankName must be one of: ${UAE_BANKS.join(', ')}` }),
+  }),
+  accountNumber: z.string().max(64).optional().nullable(),
+  iban: z.string().max(64).optional().nullable(),
+  currency: z.string().length(3).optional(),
+  glAccountId: z.string().uuid().optional().nullable(),
+});
+
+const bankAccountUpdateSchema = z.object({
+  nameEn: z.string().min(1).max(255).optional(),
+  bankName: z.enum(UAE_BANKS).optional(),
+  accountNumber: z.string().max(64).optional().nullable(),
+  iban: z.string().max(64).optional().nullable(),
+  currency: z.string().length(3).optional(),
+  glAccountId: z.string().uuid().optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
+const bankStatementImportSchema = z.object({
+  bankAccountId: z.string().uuid('bankAccountId must be a valid UUID'),
+  csvContent: z.string().min(1, 'csvContent (raw CSV text) is required'),
+});
+
+const bankMatchSchema = z.object({
+  matchedType: z.enum(['invoice', 'receipt', 'journal']),
+  matchedId: z.string().uuid('matchedId must be a valid UUID'),
+});
+
+const bankCreateEntrySchema = z.object({
+  accountId: z.string().uuid('accountId (GL account to debit/credit) must be a valid UUID'),
+  memo: z.string().max(500).optional().nullable(),
+});
 
 // ─── UAE Bank CSV Format Detection ─────────────────────────────────────────
 
@@ -300,6 +344,7 @@ export function registerBankStatementRoutes(app: Express) {
     '/api/companies/:companyId/bank-accounts',
     authMiddleware,
     requireCustomer,
+    validate({ body: bankAccountCreateSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -308,17 +353,6 @@ export function registerBankStatementRoutes(app: Express) {
       if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
       const { nameEn, bankName, accountNumber, iban, currency, glAccountId } = req.body;
-
-      if (!nameEn || !bankName) {
-        return res.status(400).json({ message: 'nameEn and bankName are required' });
-      }
-
-      const validBanks = ['Emirates NBD', 'ADCB', 'FAB', 'Mashreq', 'Other'];
-      if (!validBanks.includes(bankName)) {
-        return res.status(400).json({
-          message: `bankName must be one of: ${validBanks.join(', ')}`,
-        });
-      }
 
       const account = await storage.createBankAccount({
         companyId,
@@ -343,6 +377,7 @@ export function registerBankStatementRoutes(app: Express) {
     '/api/companies/:companyId/bank-accounts/:accountId',
     authMiddleware,
     requireCustomer,
+    validate({ body: bankAccountUpdateSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, accountId } = req.params;
       const userId = (req as any).user.id;
@@ -391,6 +426,7 @@ export function registerBankStatementRoutes(app: Express) {
     '/api/companies/:companyId/bank-statements/import',
     authMiddleware,
     requireCustomer,
+    validate({ body: bankStatementImportSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
@@ -399,13 +435,6 @@ export function registerBankStatementRoutes(app: Express) {
       if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
       const { bankAccountId, csvContent } = req.body;
-
-      if (!bankAccountId) {
-        return res.status(400).json({ message: 'bankAccountId is required' });
-      }
-      if (!csvContent || typeof csvContent !== 'string') {
-        return res.status(400).json({ message: 'csvContent (raw CSV text) is required' });
-      }
 
       // Validate bank account belongs to this company
       const bankAccount = await storage.getBankAccountById(bankAccountId);
@@ -540,6 +569,7 @@ export function registerBankStatementRoutes(app: Express) {
     '/api/companies/:companyId/bank-statements/:tid/match',
     authMiddleware,
     requireCustomer,
+    validate({ body: bankMatchSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, tid } = req.params;
       const userId = (req as any).user.id;
@@ -553,15 +583,6 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       const { matchedType, matchedId } = req.body;
-      const validTypes = ['invoice', 'receipt', 'journal'];
-      if (!matchedType || !validTypes.includes(matchedType)) {
-        return res.status(400).json({
-          message: `matchedType must be one of: ${validTypes.join(', ')}`,
-        });
-      }
-      if (!matchedId) {
-        return res.status(400).json({ message: 'matchedId is required' });
-      }
 
       // Manual reconciliation flips a transaction inside a period to matched —
       // refuse to mutate reconciliation state inside a locked period.
@@ -675,6 +696,7 @@ export function registerBankStatementRoutes(app: Express) {
     '/api/companies/:companyId/bank-statements/:tid/create-entry',
     authMiddleware,
     requireCustomer,
+    validate({ body: bankCreateEntrySchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, tid } = req.params;
       const userId = (req as any).user.id;
@@ -688,9 +710,6 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       const { accountId, memo } = req.body;
-      if (!accountId) {
-        return res.status(400).json({ message: 'accountId (GL account to debit/credit) is required' });
-      }
 
       // Determine debit/credit based on transaction direction
       // Positive amount = credit to bank (inflow) → debit bank GL, credit the specified account

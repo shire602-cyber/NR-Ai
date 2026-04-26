@@ -280,12 +280,6 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(400).json({ message: 'Receipt amount must be greater than zero' });
     }
 
-<<<<<<< HEAD
-    // Get accounts (tenant-scoped to the receipt's company — cross-tenant
-    // accounts simply won't be found).
-    const expenseAccount = await storage.getAccount(accountId, receipt.companyId);
-    const paymentAccount = await storage.getAccount(paymentAccountId, receipt.companyId);
-=======
     // FX: convert foreign-currency receipt amounts to AED for the journal,
     // since journal lines are stored in base currency (AED). Receipts created
     // before FX support default to currency='AED' and exchangeRate=1, so this
@@ -303,10 +297,10 @@ export function registerReceiptRoutes(app: Express) {
     // exactly (avoids 1-cent rounding drift that would fail the JE balance check).
     const totalAmount = subtotal + vatAmount;
 
-    // Get accounts to validate they exist and are correct types
-    const expenseAccount = await storage.getAccount(accountId);
-    const paymentAccount = await storage.getAccount(paymentAccountId);
->>>>>>> origin/fix/uae-timezone-compliance
+    // Get accounts (tenant-scoped to the receipt's company — cross-tenant
+    // accounts simply won't be found) and validate they exist and are correct types.
+    const expenseAccount = await storage.getAccount(accountId, receipt.companyId);
+    const paymentAccount = await storage.getAccount(paymentAccountId, receipt.companyId);
 
     if (!expenseAccount || !paymentAccount) {
       return res.status(404).json({ message: 'Account not found' });
