@@ -26,6 +26,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { VirtualList } from '@/components/VirtualList';
+import { EmptyState } from '@/components/EmptyState';
+import { CardListSkeleton } from '@/components/skeletons';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useForm } from 'react-hook-form';
@@ -1386,11 +1388,7 @@ export default function Receipts() {
             />
           </div>
           {isLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map(i => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
+            <CardListSkeleton count={4} />
           ) : filteredReceipts && filteredReceipts.length > 0 ? (
             <VirtualList
               items={filteredReceipts as any[]}
@@ -1465,9 +1463,15 @@ export default function Receipts() {
               )}
             />
           ) : (
-            <p className="text-center text-muted-foreground py-8">
-              No receipts yet. Upload your first receipt above!
-            </p>
+            <EmptyState
+              icon={Upload}
+              title={dateRange.from || dateRange.to ? 'No receipts in this date range' : 'No receipts yet'}
+              description={
+                dateRange.from || dateRange.to
+                  ? 'Try widening the filter or clearing it to see all receipts.'
+                  : "Upload a photo or PDF of a receipt above and we'll extract the data automatically."
+              }
+            />
           )}
         </CardContent>
       </Card>
