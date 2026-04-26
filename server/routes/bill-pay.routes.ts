@@ -144,6 +144,7 @@ export function registerBillPayRoutes(app: Express) {
       notes,
       attachment_url,
       line_items,
+      reverse_charge,
     } = req.body;
 
     if (!vendor_name || !bill_date) {
@@ -153,6 +154,13 @@ export function registerBillPayRoutes(app: Express) {
     if (!line_items || !Array.isArray(line_items) || line_items.length === 0) {
       return res.status(400).json({ message: 'At least one line item is required' });
     }
+
+    // Reverse charge: when the vendor has no TRN (typically a foreign supplier or
+    // unregistered domestic supplier), the buyer self-assesses VAT. Auto-flag when
+    // not explicitly provided and TRN is absent — gives accountants a default.
+    const billReverseCharge = typeof reverse_charge === 'boolean'
+      ? reverse_charge
+      : !vendor_trn;
 
     // Calculate totals from line items
     let subtotal = 0;
@@ -165,14 +173,17 @@ export function registerBillPayRoutes(app: Express) {
       vatAmount += lineVat;
     }
 
-    const totalAmount = subtotal + vatAmount;
+    // For reverse-charge bills the vendor does not charge VAT — the cash payable
+    // is just the subtotal. The VAT is still tracked for the VAT return (input
+    // and output legs net to zero).
+    const totalAmount = billReverseCharge ? subtotal : subtotal + vatAmount;
 
     const billResult = await pool.query(
       `INSERT INTO vendor_bills (
         company_id, vendor_name, vendor_trn, bill_number, bill_date, due_date,
         currency, subtotal, vat_amount, total_amount, amount_paid, status,
-        category, notes, attachment_url
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        category, notes, attachment_url, reverse_charge
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
         companyId,
@@ -190,6 +201,7 @@ export function registerBillPayRoutes(app: Express) {
         category || null,
         notes || null,
         attachment_url || null,
+        billReverseCharge,
       ]
     );
 
@@ -199,8 +211,8 @@ export function registerBillPayRoutes(app: Express) {
     for (const line of line_items) {
       const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
       await pool.query(
-        `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           bill.id,
           line.description,
@@ -209,6 +221,7 @@ export function registerBillPayRoutes(app: Express) {
           resolveVatRatePercent(line.vat_rate),
           lineAmount.toFixed(2),
           line.account_id || null,
+          billReverseCharge,
         ]
       );
     }
