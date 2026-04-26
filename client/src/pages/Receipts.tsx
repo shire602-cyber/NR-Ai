@@ -25,6 +25,9 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
+import { VirtualList } from '@/components/VirtualList';
+import { EmptyState } from '@/components/EmptyState';
+import { CardListSkeleton } from '@/components/skeletons';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useForm } from 'react-hook-form';
@@ -158,10 +161,18 @@ export default function Receipts() {
   });
 
   const postExpenseMutation = useMutation({
-    mutationFn: ({ id, accountId, paymentAccountId }: { id: string; accountId: string; paymentAccountId: string }) => 
+    mutationFn: ({ id, accountId, paymentAccountId }: { id: string; accountId: string; paymentAccountId: string }) =>
       apiRequest('POST', `/api/receipts/${id}/post`, { accountId, paymentAccountId }),
+    onMutate: async ({ id }) => {
+      const queryKey = ['/api/companies', companyId, 'receipts'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) =>
+        old?.map((r: any) => (r.id === id ? { ...r, posted: true } : r)) ?? [],
+      );
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'journal-entries'] });
       toast({
         title: 'Expense posted successfully',
@@ -172,12 +183,18 @@ export default function Receipts() {
       setSelectedExpenseAccount('');
       setSelectedPaymentAccount('');
     },
-    onError: (error: any) => {
+    onError: (error: any, _vars, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({
         variant: 'destructive',
         title: 'Failed to post expense',
         description: error?.message || 'Please try again.',
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
     },
   });
 
@@ -245,21 +262,33 @@ export default function Receipts() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => 
+    mutationFn: (id: string) =>
       apiRequest('DELETE', `/api/receipts/${id}`),
+    onMutate: async (id: string) => {
+      const queryKey = ['/api/companies', companyId, 'receipts'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) => old?.filter((r: any) => r.id !== id) ?? []);
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
       toast({
         title: 'Expense deleted',
         description: 'The expense has been deleted successfully.',
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, _id, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({
         variant: 'destructive',
         title: 'Failed to delete expense',
         description: error?.message || 'Please try again.',
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
     },
   });
 
@@ -1359,17 +1388,18 @@ export default function Receipts() {
             />
           </div>
           {isLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map(i => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
+            <CardListSkeleton count={4} />
           ) : filteredReceipts && filteredReceipts.length > 0 ? (
-            <div className="space-y-2">
-              {filteredReceipts.map((receipt: any) => (
+            <VirtualList
+              items={filteredReceipts as any[]}
+              estimateSize={88}
+              height={Math.min(720, Math.max(400, filteredReceipts.length * 88))}
+              getKey={(receipt) => receipt.id}
+              className="space-y-2"
+              renderItem={(receipt: any) => (
                 <div
                   key={receipt.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover-elevate"
+                  className="flex items-center justify-between p-4 border rounded-lg hover-elevate mb-2"
                   data-testid={`receipt-${receipt.id}`}
                 >
                   <div className="flex items-center gap-4">
@@ -1430,12 +1460,18 @@ export default function Receipts() {
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            />
           ) : (
-            <p className="text-center text-muted-foreground py-8">
-              No receipts yet. Upload your first receipt above!
-            </p>
+            <EmptyState
+              icon={Upload}
+              title={dateRange.from || dateRange.to ? 'No receipts in this date range' : 'No receipts yet'}
+              description={
+                dateRange.from || dateRange.to
+                  ? 'Try widening the filter or clearing it to see all receipts.'
+                  : "Upload a photo or PDF of a receipt above and we'll extract the data automatically."
+              }
+            />
           )}
         </CardContent>
       </Card>

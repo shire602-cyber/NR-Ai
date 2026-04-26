@@ -45,11 +45,22 @@ export function NotificationBell() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="relative" data-testid="button-notifications">
-          <Bell className="w-4 h-4" />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="relative"
+          data-testid="button-notifications"
+          aria-label={
+            unreadCount > 0
+              ? `Notifications, ${unreadCount} unread`
+              : 'Notifications'
+          }
+        >
+          <Bell className="w-4 h-4" aria-hidden="true" />
           {unreadCount > 0 && (
             <Badge
               variant="destructive"
+              aria-hidden="true"
               className="absolute -top-1 -right-1 h-4 min-w-[1rem] px-1 text-[10px] flex items-center justify-center"
             >
               {unreadCount > 99 ? '99+' : unreadCount}

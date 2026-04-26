@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,6 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -35,6 +36,8 @@ import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from '@/lib/whats
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
+import { TableSkeleton } from '@/components/skeletons';
+import { EmptyState } from '@/components/EmptyState';
 
 const invoiceLineSchema = z.object({
   description: z.string().min(1, 'Description is required'),
@@ -81,6 +84,9 @@ export default function Invoices() {
   const [pendingInvoiceData, setPendingInvoiceData] = useState<any>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+
+  // Virtual scrolling for large invoice lists.
+  const tableScrollRef = useRef<HTMLDivElement>(null);
 
   // Recurring invoice dialog state
   const [recurringDialogOpen, setRecurringDialogOpen] = useState(false);
@@ -245,19 +251,31 @@ export default function Invoices() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => apiRequest('DELETE', `/api/invoices/${id}`),
+    onMutate: async (id: string) => {
+      const queryKey = ['/api/companies', selectedCompanyId, 'invoices'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<Invoice[]>(queryKey);
+      queryClient.setQueryData<Invoice[]>(queryKey, (old) => old?.filter((inv) => inv.id !== id) ?? []);
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
       toast({
         title: t.invoiceDeleted,
         description: t.invoiceDeletedDesc,
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, _id, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({
         variant: 'destructive',
         title: t.deleteFailed,
         description: error?.message || t.tryAgain,
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
     },
   });
 
@@ -882,12 +900,19 @@ export default function Invoices() {
       </div>
 
       {isLoading ? (
-        <Skeleton className="h-96" />
+        <TableSkeleton rows={8} columns={6} />
       ) : (
         <Card>
-          <div className="overflow-x-auto">
+          <div
+            ref={tableScrollRef}
+            className={cn(
+              'overflow-auto',
+              filteredInvoices && filteredInvoices.length > 100 && 'max-h-[720px]',
+            )}
+            style={filteredInvoices && filteredInvoices.length > 100 ? { contain: 'strict' } : undefined}
+          >
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10 bg-card">
                 <TableRow>
                   <TableHead className="font-semibold">{t.invoiceNumber}</TableHead>
                   <TableHead className="font-semibold">{t.customerName}</TableHead>
@@ -897,9 +922,10 @@ export default function Invoices() {
                   <TableHead className="font-semibold text-center">Actions</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {filteredInvoices && filteredInvoices.length > 0 ? (
-                  filteredInvoices.map((invoice) => (
+              <VirtualizedInvoiceRows
+                invoices={filteredInvoices || []}
+                scrollRef={tableScrollRef}
+                renderRow={(invoice) => (
                     <TableRow key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
                       <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
                       <TableCell>{invoice.customerName}</TableCell>
@@ -1194,29 +1220,43 @@ export default function Invoices() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6}>
-                      <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <FileText className="w-12 h-12 text-muted-foreground/40 mb-4" />
-                        <p className="font-medium text-foreground mb-1">No invoices yet</p>
-                        <p className="text-sm text-muted-foreground mb-6">
-                          {dateRange.from || dateRange.to
-                            ? 'No invoices found in this date range.'
-                            : 'Create your first invoice to get started.'}
-                        </p>
-                        {!dateRange.from && !dateRange.to && (
-                          <Button size="sm" onClick={() => setDialogOpen(true)}>
-                            <Plus className="w-4 h-4 mr-2" />
-                            New Invoice
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
+                  )}
+                emptyState={
+                  <TableBody>
+                    <TableRow>
+                      <TableCell colSpan={6} className="p-0">
+                        <EmptyState
+                          icon={FileText}
+                          title={dateRange.from || dateRange.to ? 'No invoices in this date range' : 'No invoices yet'}
+                          description={
+                            dateRange.from || dateRange.to
+                              ? 'Try widening the date filter or clearing it to see all invoices.'
+                              : 'Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically.'
+                          }
+                          primaryAction={
+                            !dateRange.from && !dateRange.to
+                              ? {
+                                  label: 'New invoice',
+                                  icon: Plus,
+                                  onClick: () => setDialogOpen(true),
+                                  testId: 'button-create-first-invoice',
+                                }
+                              : undefined
+                          }
+                          secondaryAction={
+                            dateRange.from || dateRange.to
+                              ? {
+                                  label: 'Clear filter',
+                                  onClick: () => setDateRange({ from: undefined, to: undefined }),
+                                }
+                              : undefined
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                }
+              />
             </Table>
           </div>
         </Card>
@@ -1883,5 +1923,55 @@ export default function Invoices() {
         allowedCategories={["invoice", "payment", "alert"]}
       />
     </div>
+  );
+}
+
+const VIRTUALIZE_THRESHOLD = 100;
+const ROW_ESTIMATE = 64;
+
+interface VirtualizedInvoiceRowsProps {
+  invoices: Invoice[];
+  scrollRef: React.RefObject<HTMLDivElement>;
+  renderRow: (invoice: Invoice) => React.ReactElement;
+  emptyState: React.ReactNode;
+}
+
+function VirtualizedInvoiceRows({ invoices, scrollRef, renderRow, emptyState }: VirtualizedInvoiceRowsProps) {
+  const virtualizer = useVirtualizer({
+    count: invoices.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_ESTIMATE,
+    overscan: 10,
+  });
+
+  if (invoices.length === 0) {
+    return <>{emptyState}</>;
+  }
+
+  // Below the threshold, the cost of measuring exceeds the benefit — render normally.
+  if (invoices.length < VIRTUALIZE_THRESHOLD) {
+    return <TableBody>{invoices.map((invoice) => renderRow(invoice))}</TableBody>;
+  }
+
+  const totalSize = virtualizer.getTotalSize();
+  const virtualItems = virtualizer.getVirtualItems();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+  const paddingBottom =
+    virtualItems.length > 0 ? totalSize - virtualItems[virtualItems.length - 1].end : 0;
+
+  return (
+    <TableBody>
+      {paddingTop > 0 && (
+        <tr aria-hidden="true">
+          <td colSpan={6} style={{ height: paddingTop, padding: 0, border: 0 }} />
+        </tr>
+      )}
+      {virtualItems.map((virtualRow) => renderRow(invoices[virtualRow.index]))}
+      {paddingBottom > 0 && (
+        <tr aria-hidden="true">
+          <td colSpan={6} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+        </tr>
+      )}
+    </TableBody>
   );
 }

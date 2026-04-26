@@ -8,12 +8,13 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { PortalLayout } from '@/components/layout/PortalLayout';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ErrorBoundary, SectionBoundary } from '@/components/ErrorBoundary';
 import { useI18n, useTranslation } from '@/lib/i18n';
 import { getToken } from '@/lib/auth';
 import { User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
+import { PageSkeleton } from '@/components/PageSkeleton';
 
 // All pages lazy-loaded for route-level code splitting.
 // Layout shell (AppSidebar, ProtectedLayout) is NOT lazy — needed immediately.
@@ -111,17 +112,30 @@ const AnomalyDetection = lazy(() => import('@/pages/AnomalyDetection'));
 const AutoReconcile = lazy(() => import('@/pages/AutoReconcile'));
 const MonthEndClose = lazy(() => import('@/pages/MonthEndClose'));
 
-function PageLoader() {
+function PageLoader({ variant }: { variant?: 'list' | 'detail' | 'dashboard' | 'form' | 'minimal' } = {}) {
+  return <PageSkeleton variant={variant ?? 'list'} />;
+}
+
+function MinimalPageLoader() {
   return (
-    <div className="flex items-center justify-center h-64">
+    <div className="flex items-center justify-center h-64" aria-busy="true">
       <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
     </div>
   );
 }
 
+function routeName(location: string): string {
+  const seg = location.split('/').filter(Boolean)[0] ?? 'app';
+  return seg
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
 import { NotificationBell } from '@/components/NotificationBell';
+import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { RouteGuard } from '@/components/layout/RouteGuard';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { RTLProvider } from '@/components/RTLProvider';
@@ -130,6 +144,9 @@ import '@/styles/mobile.css';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
+import { CommandPaletteProvider } from '@/components/CommandPalette';
+import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
+import { SkipLink } from '@/components/SkipLink';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
@@ -150,10 +167,12 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
+      <SkipLink />
       <div className="flex h-screen w-full bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
           <motion.header
+            role="banner"
             className="flex items-center justify-between gap-3 px-3 md:px-6 h-14 border-b border-border/70 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 sticky top-0 z-20"
             initial={{ y: -16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -162,6 +181,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <SidebarTrigger
                 data-testid="button-sidebar-toggle"
+                aria-label="Toggle sidebar"
                 className="text-muted-foreground hover:text-foreground"
               />
               <div className="hidden md:flex items-center gap-2 ps-2 text-xs text-muted-foreground">
@@ -174,7 +194,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
+              <OfflineIndicator />
               <NotificationBell />
               <Link href="/company-profile">
                 <motion.button
@@ -182,6 +203,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   data-testid="button-profile"
+                  aria-label={t.profile}
                   className="group flex items-center gap-2 ps-1.5 pe-3 py-1 rounded-full border border-border/70 bg-card/50 hover:bg-card hover:border-border transition-colors"
                 >
                   <span className="relative flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-xs">
@@ -194,10 +216,9 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </Link>
             </div>
           </motion.header>
-          <main className="flex-1 overflow-auto">
+          <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
-              <ErrorBoundary>
               <AnimatePresence mode="wait">
                 <motion.div
                   key={location}
@@ -206,16 +227,19 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.25, ease: 'easeOut' }}
                 >
-              {children}
+                  <SectionBoundary name={routeName(location)}>
+                    {children}
+                  </SectionBoundary>
                 </motion.div>
               </AnimatePresence>
-              </ErrorBoundary>
               </RouteGuard>
             </div>
           </main>
         </div>
       </div>
       <OnboardingWizard />
+      <CommandPaletteProvider />
+      <GlobalShortcutsProvider />
     </SidebarProvider>
   );
 }
@@ -286,7 +310,7 @@ function Router() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<MinimalPageLoader />}>
             <LandingPage />
           </Suspense>
         </motion.div>
@@ -299,7 +323,7 @@ function Router() {
     return (
       <PortalRoute>
         <PortalLayout>
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<PageLoader variant="dashboard" />}>
             <Switch>
               <Route path="/client-portal/dashboard" component={PortalDashboard} />
               <Route path="/client-portal/invoices" component={PortalInvoices} />
@@ -318,7 +342,7 @@ function Router() {
   if (location === '/onboarding') {
     return (
       <ProtectedRoute>
-        <Suspense fallback={<PageLoader />}>
+        <Suspense fallback={<PageLoader variant="form" />}>
           <Onboarding />
         </Suspense>
       </ProtectedRoute>
@@ -336,7 +360,7 @@ function Router() {
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.3 }}
         >
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<MinimalPageLoader />}>
             <Switch>
               <Route path="/login" component={Login} />
               <Route path="/register" component={Register} />
@@ -355,7 +379,7 @@ function Router() {
   return (
     <ProtectedRoute>
       <ProtectedLayout>
-        <Suspense fallback={<PageLoader />}>
+        <Suspense fallback={<PageLoader variant="list" />}>
         <Switch>
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/company-profile" component={CompanyProfile} />

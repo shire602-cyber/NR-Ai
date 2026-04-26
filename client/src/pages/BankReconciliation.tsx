@@ -231,26 +231,60 @@ export default function BankReconciliation() {
         matchedType: matchedType === 'journal_entry' ? 'journal' : matchedType,
         matchedId,
       }),
+    onMutate: async ({ transactionId, matchedId, matchedType }) => {
+      const queryKey = ['/api/companies', companyId, 'bank-statements'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) =>
+        old?.map((tx: any) =>
+          tx.id === transactionId
+            ? { ...tx, matchedId, matchedType: matchedType === 'journal_entry' ? 'journal' : matchedType, status: 'matched' }
+            : tx,
+        ) ?? [],
+      );
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
       toast({ title: 'Transaction Reconciled', description: 'Bank transaction matched successfully.' });
       setMatchDialogOpen(false);
       setSelectedTransaction(null);
     },
-    onError: (error: any) => {
+    onError: (error: any, _vars, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({ variant: 'destructive', title: 'Reconciliation Failed', description: error?.message });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
     },
   });
 
   const unmatchMutation = useMutation({
     mutationFn: (transactionId: string) =>
       apiRequest('DELETE', `/api/companies/${companyId}/bank-statements/${transactionId}/match`),
+    onMutate: async (transactionId: string) => {
+      const queryKey = ['/api/companies', companyId, 'bank-statements'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) =>
+        old?.map((tx: any) =>
+          tx.id === transactionId ? { ...tx, matchedId: null, matchedType: null, status: 'unmatched' } : tx,
+        ) ?? [],
+      );
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
       toast({ title: 'Match Removed', description: 'Transaction reset to unmatched.' });
     },
-    onError: (error: any) => {
+    onError: (error: any, _id, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({ variant: 'destructive', title: 'Error', description: error?.message });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
     },
   });
 
