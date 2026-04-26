@@ -36,6 +36,8 @@ import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from '@/lib/whats
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
+import { TableSkeleton } from '@/components/skeletons';
+import { EmptyState } from '@/components/EmptyState';
 
 const invoiceLineSchema = z.object({
   description: z.string().min(1, 'Description is required'),
@@ -898,7 +900,7 @@ export default function Invoices() {
       </div>
 
       {isLoading ? (
-        <Skeleton className="h-96" />
+        <TableSkeleton rows={8} columns={6} />
       ) : (
         <Card>
           <div
@@ -1222,22 +1224,34 @@ export default function Invoices() {
                 emptyState={
                   <TableBody>
                     <TableRow>
-                      <TableCell colSpan={6}>
-                        <div className="flex flex-col items-center justify-center py-16 text-center">
-                          <FileText className="w-12 h-12 text-muted-foreground/40 mb-4" />
-                          <p className="font-medium text-foreground mb-1">No invoices yet</p>
-                          <p className="text-sm text-muted-foreground mb-6">
-                            {dateRange.from || dateRange.to
-                              ? 'No invoices found in this date range.'
-                              : 'Create your first invoice to get started.'}
-                          </p>
-                          {!dateRange.from && !dateRange.to && (
-                            <Button size="sm" onClick={() => setDialogOpen(true)}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              New Invoice
-                            </Button>
-                          )}
-                        </div>
+                      <TableCell colSpan={6} className="p-0">
+                        <EmptyState
+                          icon={FileText}
+                          title={dateRange.from || dateRange.to ? 'No invoices in this date range' : 'No invoices yet'}
+                          description={
+                            dateRange.from || dateRange.to
+                              ? 'Try widening the date filter or clearing it to see all invoices.'
+                              : 'Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically.'
+                          }
+                          primaryAction={
+                            !dateRange.from && !dateRange.to
+                              ? {
+                                  label: 'New invoice',
+                                  icon: Plus,
+                                  onClick: () => setDialogOpen(true),
+                                  testId: 'button-create-first-invoice',
+                                }
+                              : undefined
+                          }
+                          secondaryAction={
+                            dateRange.from || dateRange.to
+                              ? {
+                                  label: 'Clear filter',
+                                  onClick: () => setDateRange({ from: undefined, to: undefined }),
+                                }
+                              : undefined
+                          }
+                        />
                       </TableCell>
                     </TableRow>
                   </TableBody>

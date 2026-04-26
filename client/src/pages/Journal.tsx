@@ -24,6 +24,8 @@ import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2, Edit, Ro
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { VirtualList } from '@/components/VirtualList';
+import { EmptyState } from '@/components/EmptyState';
+import { CardListSkeleton } from '@/components/skeletons';
 
 const journalLineSchema = z.object({
   accountId: z.string().uuid('Please select an account'),
@@ -514,7 +516,7 @@ export default function Journal() {
       </div>
 
       {isLoading ? (
-        <Skeleton className="h-96" />
+        <CardListSkeleton count={4} />
       ) : entries && entries.length > 0 ? (
         <VirtualList
           items={entries as any[]}
@@ -694,16 +696,18 @@ export default function Journal() {
         />
       ) : (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <BookMarked className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No journal entries yet</h3>
-            <p className="text-sm text-muted-foreground mb-6">
-              Create your first double-entry journal
-            </p>
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              {t.newEntry}
-            </Button>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={BookMarked}
+              title="No journal entries yet"
+              description="Record your first manual journal entry — every transaction needs at least one debit and one credit."
+              primaryAction={{
+                label: t.newEntry,
+                icon: Plus,
+                onClick: () => setDialogOpen(true),
+                testId: 'button-create-first-journal',
+              }}
+            />
           </CardContent>
         </Card>
       )}

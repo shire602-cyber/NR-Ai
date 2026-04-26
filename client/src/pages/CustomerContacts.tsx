@@ -40,6 +40,8 @@ import * as XLSX from 'xlsx';
 import { SiWhatsapp } from 'react-icons/si';
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
 import { pickWhatsAppNumber } from '@/lib/whatsapp-templates';
+import { EmptyState } from '@/components/EmptyState';
+import { TableSkeleton } from '@/components/skeletons';
 
 interface ImportResult {
   message: string;
@@ -429,17 +431,33 @@ export default function CustomerContacts() {
           <Card>
             <CardContent className="p-0">
               {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <div className="p-4">
+                  <TableSkeleton rows={6} columns={6} />
                 </div>
               ) : filteredContacts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
-                  <p className="text-lg font-medium">No contacts found</p>
-                  <p className="text-muted-foreground text-sm mt-1">
-                    {searchTerm ? 'Try a different search term' : 'Add your first contact or import from Excel'}
-                  </p>
-                </div>
+                <EmptyState
+                  icon={Building2}
+                  title={searchTerm ? 'No matching contacts' : 'No contacts yet'}
+                  description={
+                    searchTerm
+                      ? 'Try a different search term or clear the search.'
+                      : 'Add your first contact, or import a list from an Excel/CSV file.'
+                  }
+                  primaryAction={
+                    searchTerm
+                      ? undefined
+                      : {
+                          label: 'Add contact',
+                          onClick: () => setShowAddDialog(true),
+                          testId: 'button-add-first-contact',
+                        }
+                  }
+                  secondaryAction={
+                    searchTerm
+                      ? { label: 'Clear search', onClick: () => setSearchTerm('') }
+                      : { label: 'Import from Excel', onClick: () => setActiveTab('import') }
+                  }
+                />
               ) : (
                 <VirtualTable<CustomerContact>
                   rows={filteredContacts}
