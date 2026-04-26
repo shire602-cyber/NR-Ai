@@ -2,6 +2,7 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getAuthHeaders } from "./auth";
 import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
+import { isOnline, queueForSync } from "./pwa";
 
 /** Error that carries the HTTP status code — used to decide retry behaviour. */
 export class ApiError extends Error {
@@ -35,6 +36,9 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+/** Mutating methods are eligible for offline queueing. */
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 export async function apiRequest(
   method: string,
   url: string,
@@ -53,10 +57,22 @@ export async function apiRequest(
     headers = await withCsrfHeader(method, headers);
   }
 
-  const res = await fetch(apiUrl(url), {
+  const fullUrl = apiUrl(url);
+  const upperMethod = method.toUpperCase();
+  const body = data ? JSON.stringify(data) : undefined;
+
+  // If we're offline and this is a mutation, queue it for the service worker
+  // to replay once connectivity returns. Reads are not queued — they should
+  // surface a clear error so the UI can render its offline state.
+  if (!isOnline() && MUTATING_METHODS.has(upperMethod)) {
+    await queueForSync({ url: fullUrl, method: upperMethod, headers, body });
+    throw new ApiError('You are offline. This change will sync when you reconnect.', 0);
+  }
+
+  const res = await fetch(fullUrl, {
     method,
     headers,
-    body: data ? JSON.stringify(data) : undefined,
+    body,
     credentials: "include",
   });
 

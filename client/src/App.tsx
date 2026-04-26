@@ -122,6 +122,7 @@ function PageLoader() {
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
 import { NotificationBell } from '@/components/NotificationBell';
+import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { RouteGuard } from '@/components/layout/RouteGuard';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { RTLProvider } from '@/components/RTLProvider';
@@ -174,7 +175,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
+              <OfflineIndicator />
               <NotificationBell />
               <Link href="/company-profile">
                 <motion.button
