@@ -28,21 +28,29 @@ export function registerJournalRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const entries = await storage.getJournalEntriesByCompanyId(companyId);
+    // Three queries total (entries + lines-by-entry-id + accounts) instead
+    // of 1 + N + (N × M). The previous approach issued one round-trip per
+    // journal entry plus one per line just to fetch the account row.
+    const [entries, accounts] = await Promise.all([
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getAccountsByCompanyId(companyId),
+    ]);
+    const allLines = await storage.getJournalLinesByEntryIds(entries.map(e => e.id));
+    const accountById = new Map(accounts.map(a => [a.id, a]));
+    const linesByEntryId = new Map<string, typeof allLines>();
+    for (const line of allLines) {
+      const list = linesByEntryId.get(line.entryId) ?? [];
+      list.push(line);
+      linesByEntryId.set(line.entryId, list);
+    }
 
-    // Fetch lines and accounts for each entry
-    const entriesWithLines = await Promise.all(
-      entries.map(async (entry) => {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        const linesWithAccounts = await Promise.all(
-          lines.map(async (line) => {
-            const account = await storage.getAccount(line.accountId);
-            return { ...line, account };
-          })
-        );
-        return { ...entry, lines: linesWithAccounts };
-      })
-    );
+    const entriesWithLines = entries.map(entry => ({
+      ...entry,
+      lines: (linesByEntryId.get(entry.id) ?? []).map(line => ({
+        ...line,
+        account: accountById.get(line.accountId),
+      })),
+    }));
 
     res.json(entriesWithLines);
   }));

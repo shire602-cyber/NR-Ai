@@ -69,31 +69,29 @@ export function registerVATRoutes(app: Express) {
         && inv.status !== 'cancelled';
     });
 
-    // Fetch all invoice lines for categorization by VAT supply type
+    // Fetch all invoice lines for categorization by VAT supply type — single
+    // batched fetch instead of one per invoice.
     let standardRatedAmount = 0;
     let standardRatedVat = 0;
     let zeroRatedAmount = 0;
     let exemptAmount = 0;
 
-    for (const invoice of periodInvoices) {
-      const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
+    const periodLines = await storage.getInvoiceLinesByInvoiceIds(periodInvoices.map(i => i.id));
+    for (const line of periodLines) {
+      const lineAmount = line.quantity * line.unitPrice;
+      const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
+      const supplyType = (line as any).vatSupplyType || 'standard_rated';
 
-      for (const line of lines) {
-        const lineAmount = line.quantity * line.unitPrice;
-        const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
-        const supplyType = (line as any).vatSupplyType || 'standard_rated';
-
-        if (supplyType === 'zero_rated' || line.vatRate === 0) {
-          // Zero-rated supplies (exports, international services)
-          zeroRatedAmount += lineAmount;
-        } else if (supplyType === 'exempt') {
-          // Exempt supplies (financial services, residential rent, etc.)
-          exemptAmount += lineAmount;
-        } else {
-          // Standard rated (5% VAT)
-          standardRatedAmount += lineAmount;
-          standardRatedVat += lineVat;
-        }
+      if (supplyType === 'zero_rated' || line.vatRate === 0) {
+        // Zero-rated supplies (exports, international services)
+        zeroRatedAmount += lineAmount;
+      } else if (supplyType === 'exempt') {
+        // Exempt supplies (financial services, residential rent, etc.)
+        exemptAmount += lineAmount;
+      } else {
+        // Standard rated (5% VAT)
+        standardRatedAmount += lineAmount;
+        standardRatedVat += lineVat;
       }
     }
 

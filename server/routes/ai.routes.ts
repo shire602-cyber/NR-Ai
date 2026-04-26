@@ -969,30 +969,31 @@ Respond with JSON:
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Gather comprehensive financial context
-      const accounts = await storage.getAccountsByCompanyId(companyId);
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      // Gather comprehensive financial context — parallel + single line fetch.
+      const [accounts, invoices, receipts, entries, allLines] = await Promise.all([
+        storage.getAccountsByCompanyId(companyId),
+        storage.getInvoicesByCompanyId(companyId),
+        storage.getReceiptsByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalLinesByCompanyId(companyId),
+      ]);
+      const accountById = new Map(accounts.map(a => [a.id, a]));
 
-      // Calculate account balances
+      // Calculate account balances in a single pass.
       const accountBalances = new Map<string, { debit: number; credit: number; balance: number }>();
-      for (const entry of entries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        for (const line of lines) {
-          const current = accountBalances.get(line.accountId) || { debit: 0, credit: 0, balance: 0 };
-          current.debit += Number(line.debit) || 0;
-          current.credit += Number(line.credit) || 0;
-          const account = accounts.find(a => a.id === line.accountId);
-          if (account) {
-            if (['asset', 'expense'].includes(account.type)) {
-              current.balance = current.debit - current.credit;
-            } else {
-              current.balance = current.credit - current.debit;
-            }
+      for (const line of allLines) {
+        const current = accountBalances.get(line.accountId) || { debit: 0, credit: 0, balance: 0 };
+        current.debit += Number(line.debit) || 0;
+        current.credit += Number(line.credit) || 0;
+        const account = accountById.get(line.accountId);
+        if (account) {
+          if (['asset', 'expense'].includes(account.type)) {
+            current.balance = current.debit - current.credit;
+          } else {
+            current.balance = current.credit - current.debit;
           }
-          accountBalances.set(line.accountId, current);
         }
+        accountBalances.set(line.accountId, current);
       }
 
       // Prepare financial summary for AI
@@ -1603,16 +1604,14 @@ IMPORTANT GUIDELINES:
         }
       }
 
-      // Collect descriptions from invoice lines
+      // Collect descriptions from invoice lines — single batched query.
       if (!type || type === 'invoice') {
         const invoices = await storage.getInvoicesByCompanyId(companyId as string);
-        for (const invoice of invoices) {
-          const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-          for (const line of lines) {
-            if (line.description) {
-              const key = line.description.toLowerCase().trim();
-              descriptions.set(key, (descriptions.get(key) || 0) + 1);
-            }
+        const allLines = await storage.getInvoiceLinesByInvoiceIds(invoices.map(i => i.id));
+        for (const line of allLines) {
+          if (line.description) {
+            const key = line.description.toLowerCase().trim();
+            descriptions.set(key, (descriptions.get(key) || 0) + 1);
           }
         }
       }
@@ -1666,17 +1665,16 @@ IMPORTANT GUIDELINES:
         );
 
         if (merchantReceipts.length > 0) {
-          // Find most common account used
+          // Single batched fetch instead of one query per receipt.
+          const entryIds = merchantReceipts
+            .map(r => r.journalEntryId)
+            .filter((id): id is string => Boolean(id));
+          const allLines = await storage.getJournalLinesByEntryIds(entryIds);
           const accountCounts = new Map<string, number>();
-          for (const receipt of merchantReceipts) {
-            if (receipt.journalEntryId) {
-              const lines = await storage.getJournalLinesByEntryId(receipt.journalEntryId);
-              for (const line of lines) {
-                const account = accounts.find(a => a.id === line.accountId);
-                if (account && account.type === 'expense') {
-                  accountCounts.set(account.id, (accountCounts.get(account.id) || 0) + 1);
-                }
-              }
+          for (const line of allLines) {
+            const account = accounts.find(a => a.id === line.accountId);
+            if (account && account.type === 'expense') {
+              accountCounts.set(account.id, (accountCounts.get(account.id) || 0) + 1);
             }
           }
 

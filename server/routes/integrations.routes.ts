@@ -183,26 +183,30 @@ export function registerIntegrationRoutes(app: Express) {
       return res.status(400).json({ message: 'Google Sheets not connected' });
     }
 
-    // Fetch journal entries with lines
-    const entries = await storage.getJournalEntriesByCompanyId(companyId);
-    const accounts = await storage.getAccountsByCompanyId(companyId);
+    // Fetch journal entries with lines — single batched join instead of one
+    // round-trip per entry.
+    const [entries, accounts] = await Promise.all([
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getAccountsByCompanyId(companyId),
+    ]);
+    const allLines = await storage.getJournalLinesByEntryIds(entries.map(e => e.id));
+    const accountById = new Map(accounts.map(a => [a.id, a]));
+    const linesByEntryId = new Map<string, typeof allLines>();
+    for (const line of allLines) {
+      const list = linesByEntryId.get(line.entryId) ?? [];
+      list.push(line);
+      linesByEntryId.set(line.entryId, list);
+    }
 
-    // Enrich entries with lines and account info
-    const enrichedEntries = await Promise.all(entries.map(async (entry, index) => {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      return {
-        entryNumber: index + 1,
-        date: entry.date instanceof Date ? entry.date.toISOString().split('T')[0] : entry.date,
-        description: entry.memo || '',
-        lines: lines.map(line => {
-          const account = accounts.find(a => a.id === line.accountId);
-          return {
-            accountName: account?.nameEn || '',
-            debit: line.debit,
-            credit: line.credit,
-          };
-        }),
-      };
+    const enrichedEntries = entries.map((entry, index) => ({
+      entryNumber: index + 1,
+      date: entry.date instanceof Date ? entry.date.toISOString().split('T')[0] : entry.date,
+      description: entry.memo || '',
+      lines: (linesByEntryId.get(entry.id) ?? []).map(line => ({
+        accountName: accountById.get(line.accountId)?.nameEn || '',
+        debit: line.debit,
+        credit: line.credit,
+      })),
     }));
 
     // Export to sheet

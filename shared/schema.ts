@@ -198,6 +198,7 @@ export const accounts = pgTable("accounts", {
   updatedAt: timestamp("updated_at"),
 }, (table) => ({
   companyCodeUnique: unique().on(table.companyId, table.code),
+  companyIdIdx: index("idx_accounts_company_id").on(table.companyId),
 }));
 
 export const insertAccountSchema = createInsertSchema(accounts).omit({
@@ -247,6 +248,8 @@ export const journalEntries = pgTable("journal_entries", {
 }, (table) => ({
   companyEntryUnique: unique().on(table.companyId, table.entryNumber),
   companyIdIdx: index("idx_journal_entries_company_id").on(table.companyId),
+  companyDateIdx: index("idx_journal_entries_company_date").on(table.companyId, table.date),
+  companyStatusIdx: index("idx_journal_entries_company_status").on(table.companyId, table.status),
 }));
 
 export const insertJournalEntrySchema = createInsertSchema(journalEntries).omit({
@@ -350,6 +353,9 @@ export const invoices = pgTable("invoices", {
 }, (table) => ({
   companyNumberUnique: unique("invoices_company_number_unique").on(table.companyId, table.number),
   companyIdIdx: index("idx_invoices_company_id").on(table.companyId),
+  companyDateIdx: index("idx_invoices_company_date").on(table.companyId, table.date),
+  companyStatusIdx: index("idx_invoices_company_status").on(table.companyId, table.status),
+  contactIdIdx: index("idx_invoices_contact_id").on(table.contactId),
 }));
 
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
@@ -371,7 +377,9 @@ export const invoiceLines = pgTable("invoice_lines", {
   unitPrice: money("unit_price").notNull(),
   vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE standard 5%
   vatSupplyType: text("vat_supply_type").default("standard_rated"), // standard_rated | zero_rated | exempt | out_of_scope
-});
+}, (table) => ({
+  invoiceIdIdx: index("idx_invoice_lines_invoice_id").on(table.invoiceId),
+}));
 
 export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
   id: true,
@@ -398,6 +406,7 @@ export const invoicePayments = pgTable("invoice_payments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   invoiceIdIdx: index("idx_invoice_payments_invoice_id").on(table.invoiceId),
+  companyIdIdx: index("idx_invoice_payments_company_id").on(table.companyId),
 }));
 
 export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
@@ -426,7 +435,10 @@ export const recurringInvoices = pgTable("recurring_invoices", {
   lastGeneratedInvoiceId: uuid("last_generated_invoice_id"),
   totalGenerated: integer("total_generated").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_recurring_invoices_company_id").on(table.companyId),
+  nextRunActiveIdx: index("idx_recurring_invoices_next_run_active").on(table.isActive, table.nextRunDate),
+}));
 
 export const insertRecurringInvoiceSchema = createInsertSchema(recurringInvoices).omit({
   id: true,
@@ -462,6 +474,8 @@ export const receipts = pgTable("receipts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   companyIdIdx: index("idx_receipts_company_id").on(table.companyId),
+  companyDateIdx: index("idx_receipts_company_date").on(table.companyId, table.date),
+  companyPostedIdx: index("idx_receipts_company_posted").on(table.companyId, table.posted),
 }));
 
 export const insertReceiptSchema = createInsertSchema(receipts).omit({
@@ -490,7 +504,9 @@ export const products = pgTable("products", {
   lowStockThreshold: integer("low_stock_threshold").default(10),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_products_company_id").on(table.companyId),
+}));
 
 export const insertProductSchema = createInsertSchema(products).omit({
   id: true,
@@ -513,7 +529,10 @@ export const inventoryMovements = pgTable("inventory_movements", {
   reference: text("reference"), // e.g., "Invoice INV-001" or "Manual adjustment"
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  productIdIdx: index("idx_inventory_movements_product_id").on(table.productId),
+  companyIdIdx: index("idx_inventory_movements_company_id").on(table.companyId),
+}));
 
 export const insertInventoryMovementSchema = createInsertSchema(inventoryMovements).omit({
   id: true,
@@ -545,7 +564,9 @@ export const customerContacts = pgTable("customer_contacts", {
   portalAccessExpiresAt: timestamp("portal_access_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_customer_contacts_company_id").on(table.companyId),
+}));
 
 export const insertCustomerContactSchema = createInsertSchema(customerContacts).omit({
   id: true,
@@ -674,7 +695,9 @@ export const integrationSyncs = pgTable("integration_syncs", {
   externalUrl: text("external_url"), // Link to the spreadsheet, etc.
   errorMessage: text("error_message"),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_integration_syncs_company_id").on(table.companyId),
+}));
 
 export const insertIntegrationSyncSchema = createInsertSchema(integrationSyncs).omit({
   id: true,
@@ -697,7 +720,9 @@ export const whatsappConfigs = pgTable("whatsapp_configs", {
   isActive: boolean("is_active").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_whatsapp_configs_company_id").on(table.companyId),
+}));
 
 export const insertWhatsappConfigSchema = createInsertSchema(whatsappConfigs).omit({
   id: true,
@@ -725,7 +750,9 @@ export const whatsappMessages = pgTable("whatsapp_messages", {
   errorMessage: text("error_message"),
   processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_whatsapp_messages_company_id").on(table.companyId),
+}));
 
 export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).omit({
   id: true,
@@ -754,7 +781,10 @@ export const anomalyAlerts = pgTable("anomaly_alerts", {
   resolvedAt: timestamp("resolved_at"),
   resolutionNote: text("resolution_note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_anomaly_alerts_company_id").on(table.companyId),
+  companyResolvedIdx: index("idx_anomaly_alerts_company_resolved").on(table.companyId, table.isResolved),
+}));
 
 export const insertAnomalyAlertSchema = createInsertSchema(anomalyAlerts).omit({
   id: true,
@@ -778,7 +808,9 @@ export const bankAccounts = pgTable("bank_accounts", {
   glAccountId: uuid("gl_account_id").references(() => accounts.id), // Linked GL account
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_bank_accounts_company_id").on(table.companyId),
+}));
 
 export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({
   id: true,
@@ -812,6 +844,8 @@ export const bankTransactions = pgTable("bank_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   bankAccountIdIdx: index("idx_bank_transactions_bank_account_id").on(table.bankAccountId),
+  companyIdIdx: index("idx_bank_transactions_company_id").on(table.companyId),
+  companyMatchStatusIdx: index("idx_bank_transactions_company_match").on(table.companyId, table.matchStatus),
 }));
 
 export const insertBankTransactionSchema = createInsertSchema(bankTransactions).omit({
@@ -836,7 +870,9 @@ export const cashFlowForecasts = pgTable("cash_flow_forecasts", {
   confidenceLevel: real("confidence_level"), // 0-1
   factors: text("factors"), // JSON string of contributing factors
   generatedAt: timestamp("generated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_cash_flow_forecasts_company_id").on(table.companyId),
+}));
 
 export const insertCashFlowForecastSchema = createInsertSchema(cashFlowForecasts).omit({
   id: true,
@@ -862,7 +898,9 @@ export const transactionClassifications = pgTable("transaction_classifications",
   wasAccepted: boolean("was_accepted"), // User feedback for ML improvement
   userSelectedAccountId: uuid("user_selected_account_id").references(() => accounts.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_transaction_classifications_company_id").on(table.companyId),
+}));
 
 export const insertTransactionClassificationSchema = createInsertSchema(transactionClassifications).omit({
   id: true,
@@ -886,7 +924,9 @@ export const budgets = pgTable("budgets", {
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyPeriodIdx: index("idx_budgets_company_period").on(table.companyId, table.year, table.month),
+}));
 
 export const insertBudgetSchema = createInsertSchema(budgets).omit({
   id: true,
@@ -917,7 +957,9 @@ export const ecommerceIntegrations = pgTable("ecommerce_integrations", {
   settings: text("settings"), // JSON config for mapping
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_ecommerce_integrations_company_id").on(table.companyId),
+}));
 
 export const insertEcommerceIntegrationSchema = createInsertSchema(ecommerceIntegrations).omit({
   id: true,
@@ -952,7 +994,10 @@ export const ecommerceTransactions = pgTable("ecommerce_transactions", {
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
   invoiceId: uuid("invoice_id").references(() => invoices.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_ecommerce_transactions_company_id").on(table.companyId),
+  integrationIdIdx: index("idx_ecommerce_transactions_integration_id").on(table.integrationId),
+}));
 
 export const insertEcommerceTransactionSchema = createInsertSchema(ecommerceTransactions).omit({
   id: true,
@@ -978,7 +1023,9 @@ export const financialKpis = pgTable("financial_kpis", {
   trend: text("trend"), // up | down | stable
   benchmark: real("benchmark"), // Industry benchmark
   calculatedAt: timestamp("calculated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_financial_kpis_company_id").on(table.companyId),
+}));
 
 export const insertFinancialKpiSchema = createInsertSchema(financialKpis).omit({
   id: true,
@@ -1008,7 +1055,11 @@ export const notifications = pgTable("notifications", {
   scheduledFor: timestamp("scheduled_for"), // For future notifications
   expiresAt: timestamp("expires_at"), // Auto-dismiss after this date
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_notifications_user_id").on(table.userId),
+  userUnreadIdx: index("idx_notifications_user_unread").on(table.userId, table.isRead),
+  companyIdIdx: index("idx_notifications_company_id").on(table.companyId),
+}));
 
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
@@ -1073,7 +1124,9 @@ export const reminderSettings = pgTable("reminder_settings", {
   whatsappTemplate: text("whatsapp_template"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_reminder_settings_company_id").on(table.companyId),
+}));
 
 export const insertReminderSettingSchema = createInsertSchema(reminderSettings).omit({
   id: true,
@@ -1104,7 +1157,10 @@ export const reminderLogs = pgTable("reminder_logs", {
   deliveredAt: timestamp("delivered_at"),
   openedAt: timestamp("opened_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_reminder_logs_company_id").on(table.companyId),
+  relatedEntityIdx: index("idx_reminder_logs_related_entity").on(table.relatedEntityType, table.relatedEntityId),
+}));
 
 export const insertReminderLogSchema = createInsertSchema(reminderLogs).omit({
   id: true,
@@ -1140,7 +1196,9 @@ export const userOnboarding = pgTable("user_onboarding", {
   dismissedTips: text("dismissed_tips"), // JSON array of dismissed tip IDs
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_user_onboarding_user_id").on(table.userId),
+}));
 
 export const insertUserOnboardingSchema = createInsertSchema(userOnboarding).omit({
   id: true,
@@ -1538,11 +1596,14 @@ export const vatReturns = pgTable("vat_returns", {
   declarantName: text("declarant_name"),
   declarantPosition: text("declarant_position"),
   declarationDate: timestamp("declaration_date"),
-  
+
   createdBy: uuid("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_vat_returns_company_id").on(table.companyId),
+  companyPeriodIdx: index("idx_vat_returns_company_period").on(table.companyId, table.periodStart),
+}));
 
 export const insertVatReturnSchema = createInsertSchema(vatReturns).omit({
   id: true,
@@ -1572,7 +1633,9 @@ export const corporateTaxReturns = pgTable("corporate_tax_returns", {
   filedAt: timestamp("filed_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_corporate_tax_returns_company_id").on(table.companyId),
+}));
 
 export const insertCorporateTaxReturnSchema = createInsertSchema(corporateTaxReturns).omit({
   id: true,
@@ -1595,7 +1658,11 @@ export const auditLogs = pgTable("audit_logs", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_audit_logs_user_id").on(table.userId),
+  resourceIdx: index("idx_audit_logs_resource").on(table.resourceType, table.resourceId),
+  createdAtIdx: index("idx_audit_logs_created_at").on(table.createdAt),
+}));
 
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   id: true,
@@ -1627,7 +1694,9 @@ export const documents = pgTable("documents", {
   uploadedBy: uuid("uploaded_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_documents_company_id").on(table.companyId),
+}));
 
 export const insertDocumentSchema = createInsertSchema(documents).omit({
   id: true,
@@ -1657,7 +1726,9 @@ export const taxReturnArchive = pgTable("tax_return_archive", {
   notes: text("notes"),
   filedBy: uuid("filed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_tax_return_archive_company_id").on(table.companyId),
+}));
 
 export const insertTaxReturnArchiveSchema = createInsertSchema(taxReturnArchive).omit({
   id: true,
@@ -1693,7 +1764,10 @@ export const complianceTasks = pgTable("compliance_tasks", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_compliance_tasks_company_id").on(table.companyId),
+  companyStatusDueIdx: index("idx_compliance_tasks_company_status_due").on(table.companyId, table.status, table.dueDate),
+}));
 
 export const insertComplianceTaskSchema = createInsertSchema(complianceTasks).omit({
   id: true,
@@ -1722,7 +1796,10 @@ export const messages = pgTable("messages", {
   messageType: text("message_type").default("general"), // general | inquiry | update | urgent | system
   isArchived: boolean("is_archived").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_messages_company_id").on(table.companyId),
+  threadIdx: index("idx_messages_thread_id").on(table.threadId),
+}));
 
 export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
@@ -1775,7 +1852,9 @@ export const invitations = pgTable("invitations", {
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_invitations_company_id").on(table.companyId),
+}));
 
 export const insertInvitationSchema = createInsertSchema(invitations).omit({
   id: true,
@@ -1823,7 +1902,9 @@ export const clientNotes = pgTable("client_notes", {
   isPinned: boolean("is_pinned").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_client_notes_company_id").on(table.companyId),
+}));
 
 export const insertClientNoteSchema = createInsertSchema(clientNotes).omit({
   id: true,
@@ -1861,10 +1942,13 @@ export const engagements = pgTable("engagements", {
   // Onboarding
   onboardingCompleted: boolean("onboarding_completed").default(false),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
-  
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_engagements_company_id").on(table.companyId),
+  accountManagerIdx: index("idx_engagements_account_manager_id").on(table.accountManagerId),
+}));
 
 export const insertEngagementSchema = createInsertSchema(engagements).omit({
   id: true,
@@ -1911,11 +1995,14 @@ export const serviceInvoices = pgTable("service_invoices", {
   
   // PDF
   pdfUrl: text("pdf_url"),
-  
+
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_service_invoices_company_id").on(table.companyId),
+  engagementIdIdx: index("idx_service_invoices_engagement_id").on(table.engagementId),
+}));
 
 export const insertServiceInvoiceSchema = createInsertSchema(serviceInvoices).omit({
   id: true,
@@ -1937,7 +2024,9 @@ export const serviceInvoiceLines = pgTable("service_invoice_lines", {
   unitPrice: money("unit_price").notNull(),
   vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE 5%
   amount: money("amount").notNull(), // quantity * unitPrice
-});
+}, (table) => ({
+  serviceInvoiceIdIdx: index("idx_service_invoice_lines_service_invoice_id").on(table.serviceInvoiceId),
+}));
 
 export const insertServiceInvoiceLineSchema = createInsertSchema(serviceInvoiceLines).omit({
   id: true,
@@ -1981,9 +2070,11 @@ export const ftaEmails = pgTable("fta_emails", {
   actionRequired: boolean("action_required").default(false),
   actionDescription: text("action_description"),
   actionDueDate: timestamp("action_due_date"),
-  
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_fta_emails_company_id").on(table.companyId),
+}));
 
 export const insertFtaEmailSchema = createInsertSchema(ftaEmails).omit({
   id: true,
@@ -2013,16 +2104,18 @@ export const subscriptions = pgTable("subscriptions", {
   // Stripe Integration (if using)
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
-  
+
   // Usage Limits
   maxUsers: integer("max_users").default(1),
   maxInvoices: integer("max_invoices").default(50),
   maxReceipts: integer("max_receipts").default(100),
   aiCreditsRemaining: integer("ai_credits_remaining").default(100),
-  
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_subscriptions_company_id").on(table.companyId),
+}));
 
 export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
   id: true,
@@ -2057,13 +2150,15 @@ export const backups = pgTable("backups", {
   dataSnapshot: text("data_snapshot"), // JSON stringified backup data
   checksum: text("checksum"), // SHA256 for integrity verification
   sizeBytes: integer("size_bytes").default(0),
-  
+
   // Timestamps
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   completedAt: timestamp("completed_at"),
   expiresAt: timestamp("expires_at"), // Auto-cleanup after 90 days
-});
+}, (table) => ({
+  companyIdIdx: index("idx_backups_company_id").on(table.companyId),
+}));
 
 export const insertBackupSchema = createInsertSchema(backups).omit({
   id: true,
@@ -2091,10 +2186,13 @@ export const aiConversations = pgTable("ai_conversations", {
   tokensUsed: integer("tokens_used"), // If available from OpenAI
   responseTime: integer("response_time"), // Milliseconds
   error: text("error"), // Error message if request failed
-  
+
   // Timestamps
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_ai_conversations_user_id").on(table.userId),
+  companyIdIdx: index("idx_ai_conversations_company_id").on(table.companyId),
+}));
 
 export const insertAiConversationSchema = createInsertSchema(aiConversations).omit({
   id: true,
@@ -2122,7 +2220,9 @@ export const clientCommunications = pgTable("client_communications", {
   metadata: text("metadata"), // JSON string
   sentAt: timestamp("sent_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_client_communications_company_id").on(table.companyId),
+}));
 
 export const insertClientCommunicationSchema = createInsertSchema(clientCommunications).omit({
   id: true,
@@ -2172,7 +2272,10 @@ export const firmLeads = pgTable("firm_leads", {
   convertedAt: timestamp("converted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_firm_leads_user_id").on(table.userId),
+  stageIdx: index("idx_firm_leads_stage").on(table.stage),
+}));
 
 export const insertFirmLeadSchema = createInsertSchema(firmLeads).omit({
   id: true,

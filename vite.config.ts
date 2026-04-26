@@ -16,7 +16,22 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
     sourcemap: false,
-    rollupOptions: {},
+    // Split heavy third-party deps into their own chunks so the initial
+    // shell stays small and pages that don't need PDF/Excel/charting never
+    // download those libraries. Without this Rollup folds everything into
+    // a single 1+MB vendor bundle.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'wouter'],
+          'vendor-query': ['@tanstack/react-query'],
+          'vendor-charts': ['recharts'],
+          'vendor-pdf': ['jspdf', 'qrcode'],
+          'vendor-xlsx': ['xlsx'],
+          'vendor-motion': ['framer-motion'],
+        },
+      },
+    },
   },
   server: {
     port: 5173,

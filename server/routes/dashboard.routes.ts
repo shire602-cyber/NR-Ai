@@ -216,28 +216,29 @@ export function registerDashboardRoutes(app: Express) {
     const { companyId } = req.params;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-    const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
-    const entries = allEntries.filter(e => e.status === 'posted');
-    const accounts = await storage.getAccountsByCompanyId(companyId);
-    const expenseAccounts = accounts.filter(a => a.type === 'expense');
+
+    // Pull all GL lines for the tenant in a single join, then filter by
+    // posted-entry membership in memory. The previous loop issued one query
+    // per journal entry, which scaled linearly with ledger size.
+    const [allEntries, accounts, allLines] = await Promise.all([
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getAccountsByCompanyId(companyId),
+      storage.getJournalLinesByCompanyId(companyId),
+    ]);
+    const postedEntryIds = new Set(allEntries.filter(e => e.status === 'posted').map(e => e.id));
+    const expenseAccountIds = new Set(accounts.filter(a => a.type === 'expense').map(a => a.id));
+    const accountNameById = new Map(accounts.map(a => [a.id, a.nameEn]));
 
     const balances = new Map<string, number>();
-    for (const entry of entries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account || account.type !== 'expense') continue;
-
-        const current = balances.get(account.id) || 0;
-        balances.set(account.id, current + line.debit - line.credit);
-      }
+    for (const line of allLines) {
+      if (!postedEntryIds.has(line.entryId)) continue;
+      if (!expenseAccountIds.has(line.accountId)) continue;
+      const current = balances.get(line.accountId) || 0;
+      balances.set(line.accountId, current + line.debit - line.credit);
     }
 
-    const breakdown = expenseAccounts
-      .map(account => ({
-        name: account.nameEn,
-        value: balances.get(account.id) || 0,
-      }))
+    const breakdown = Array.from(expenseAccountIds)
+      .map(id => ({ name: accountNameById.get(id)!, value: balances.get(id) || 0 }))
       .filter(item => item.value > 0)
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
@@ -250,11 +251,19 @@ export function registerDashboardRoutes(app: Express) {
     const { companyId } = req.params;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-    const invoices = await storage.getInvoicesByCompanyId(companyId);
-    const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
+
+    // Single batched fetch — issues 4 queries total instead of (months × entries).
+    const [invoices, allEntries, accounts, allLines] = await Promise.all([
+      storage.getInvoicesByCompanyId(companyId),
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getAccountsByCompanyId(companyId),
+      storage.getJournalLinesByCompanyId(companyId),
+    ]);
     // Drafts and voided entries must not influence monthly trend totals.
-    const entries = allEntries.filter(e => e.status === 'posted');
-    const accounts = await storage.getAccountsByCompanyId(companyId);
+    const entryDateById = new Map(
+      allEntries.filter(e => e.status === 'posted').map(e => [e.id, new Date(e.date)]),
+    );
+    const expenseAccountIds = new Set(accounts.filter(a => a.type === 'expense').map(a => a.id));
 
     const months = Array.from({ length: 6 }, (_, i) => {
       const date = new Date();
@@ -266,7 +275,7 @@ export function registerDashboardRoutes(app: Express) {
       };
     });
 
-    const trends = await Promise.all(months.map(async ({ month, monthNum, yearNum }) => {
+    const trends = months.map(({ month, monthNum, yearNum }) => {
       const revenue = invoices
         .filter(inv => {
           if (inv.status === 'draft' || inv.status === 'void' || inv.status === 'cancelled') return false;
@@ -276,21 +285,16 @@ export function registerDashboardRoutes(app: Express) {
         .reduce((sum, inv) => sum + (inv.subtotal || 0), 0);
 
       let expenses = 0;
-      for (const entry of entries) {
-        const entryDate = new Date(entry.date);
-        if (entryDate.getMonth() === monthNum && entryDate.getFullYear() === yearNum) {
-          const lines = await storage.getJournalLinesByEntryId(entry.id);
-          for (const line of lines) {
-            const account = accounts.find(a => a.id === line.accountId);
-            if (account && account.type === 'expense') {
-              expenses += line.debit - line.credit;
-            }
-          }
-        }
+      for (const line of allLines) {
+        if (!expenseAccountIds.has(line.accountId)) continue;
+        const entryDate = entryDateById.get(line.entryId);
+        if (!entryDate) continue;
+        if (entryDate.getMonth() !== monthNum || entryDate.getFullYear() !== yearNum) continue;
+        expenses += line.debit - line.credit;
       }
 
       return { month, revenue, expenses };
-    }));
+    });
 
     res.json(trends);
   }));
@@ -305,38 +309,40 @@ export function registerDashboardRoutes(app: Express) {
     const { startDate, endDate } = req.query;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-    const accounts = await storage.getAccountsByCompanyId(companyId);
     // P&L must reflect only posted journal activity; drafts/voided entries
     // would otherwise inflate revenue and expense totals.
-    let entries = (await storage.getJournalEntriesByCompanyId(companyId))
-      .filter(e => e.status === 'posted');
+    const [accounts, allEntries, allLines] = await Promise.all([
+      storage.getAccountsByCompanyId(companyId),
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getJournalLinesByCompanyId(companyId),
+    ]);
 
-    if (startDate || endDate) {
-      const start = startDate ? uaeDayStart(startDate as string) : null;
-      const end = endDate ? uaeDayEnd(endDate as string) : null;
-
-      entries = entries.filter(entry => {
+    const start = startDate ? uaeDayStart(startDate as string) : null;
+    const end = endDate ? uaeDayEnd(endDate as string) : null;
+    const entries = allEntries
+      .filter(e => e.status === 'posted')
+      .filter(entry => {
+        if (!start && !end) return true;
         const entryDate = new Date(entry.date);
         if (start && entryDate < start) return false;
         if (end && entryDate > end) return false;
         return true;
       });
-    }
 
+    const eligibleEntryIds = new Set(entries.map(e => e.id));
+    const accountById = new Map(accounts.map(a => [a.id, a]));
     const balances = new Map<string, number>();
 
-    for (const entry of entries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account) continue;
+    for (const line of allLines) {
+      if (!eligibleEntryIds.has(line.entryId)) continue;
+      const account = accountById.get(line.accountId);
+      if (!account) continue;
 
-        const current = balances.get(account.id) || 0;
-        if (account.type === 'income') {
-          balances.set(account.id, current + line.credit - line.debit);
-        } else if (account.type === 'expense') {
-          balances.set(account.id, current + line.debit - line.credit);
-        }
+      const current = balances.get(account.id) || 0;
+      if (account.type === 'income') {
+        balances.set(account.id, current + line.credit - line.debit);
+      } else if (account.type === 'expense') {
+        balances.set(account.id, current + line.debit - line.credit);
       }
     }
 
@@ -367,10 +373,13 @@ export function registerDashboardRoutes(app: Express) {
     const { startDate, endDate } = req.query;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-    const accounts = await storage.getAccountsByCompanyId(companyId);
     // Balance sheet must reflect only posted journal activity.
-    const allEntries = (await storage.getJournalEntriesByCompanyId(companyId))
-      .filter(e => e.status === 'posted');
+    const [accounts, allEntriesRaw, allLines] = await Promise.all([
+      storage.getAccountsByCompanyId(companyId),
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getJournalLinesByCompanyId(companyId),
+    ]);
+    const allEntries = allEntriesRaw.filter(e => e.status === 'posted');
 
     // A balance sheet is a *point-in-time* snapshot: every asset, liability
     // and equity balance is cumulative from the inception of the books
@@ -381,46 +390,44 @@ export function registerDashboardRoutes(app: Express) {
     const end = endDate ? uaeDayEnd(endDate as string) : null;
     const start = startDate ? uaeDayStart(startDate as string) : null;
 
-    const balanceSheetEntries = allEntries.filter(entry => {
-      if (!end) return true;
-      return new Date(entry.date) <= end;
-    });
+    const balanceSheetEntryIds = new Set(
+      allEntries
+        .filter(entry => !end || new Date(entry.date) <= end)
+        .map(e => e.id),
+    );
+    const periodEntryIds = new Set(
+      allEntries
+        .filter(entry => {
+          const entryDate = new Date(entry.date);
+          if (start && entryDate < start) return false;
+          if (end && entryDate > end) return false;
+          return true;
+        })
+        .map(e => e.id),
+    );
+    const accountById = new Map(accounts.map(a => [a.id, a]));
 
-    const periodEntries = allEntries.filter(entry => {
-      const entryDate = new Date(entry.date);
-      if (start && entryDate < start) return false;
-      if (end && entryDate > end) return false;
-      return true;
-    });
-
-    // Cumulative balances for asset/liability/equity accounts.
+    // Cumulative balances for asset/liability/equity accounts. Single pass
+    // over allLines avoids per-entry round-trips.
     const balances = new Map<string, number>();
-    for (const entry of balanceSheetEntries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account) continue;
-        if (account.type !== 'asset' && account.type !== 'liability' && account.type !== 'equity') continue;
-
-        const current = balances.get(account.id) || 0;
-        if (account.type === 'asset') {
-          balances.set(account.id, current + line.debit - line.credit);
-        } else {
-          balances.set(account.id, current + line.credit - line.debit);
-        }
-      }
-    }
-
-    // Net income for the period: revenue - expenses. This must roll into
-    // equity for the accounting equation to hold; without it, the
-    // statement reports a phantom imbalance equal to YTD profit.
     let periodRevenue = 0;
     let periodExpenses = 0;
-    for (const entry of periodEntries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account) continue;
+    for (const line of allLines) {
+      const account = accountById.get(line.accountId);
+      if (!account) continue;
+
+      if (balanceSheetEntryIds.has(line.entryId)) {
+        if (account.type === 'asset' || account.type === 'liability' || account.type === 'equity') {
+          const current = balances.get(account.id) || 0;
+          if (account.type === 'asset') {
+            balances.set(account.id, current + line.debit - line.credit);
+          } else {
+            balances.set(account.id, current + line.credit - line.debit);
+          }
+        }
+      }
+
+      if (periodEntryIds.has(line.entryId)) {
         if (account.type === 'income') periodRevenue += (line.credit - line.debit);
         else if (account.type === 'expense') periodExpenses += (line.debit - line.credit);
       }
@@ -573,22 +580,25 @@ export function registerDashboardRoutes(app: Express) {
     if (!companyId) return res.json([]);
     const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-    const accounts = await storage.getAccountsByCompanyId(companyId as string);
-    const entries = (await storage.getJournalEntriesByCompanyId(companyId as string))
-      .filter(e => e.status === 'posted');
+
+    const [accounts, allEntries, allLines] = await Promise.all([
+      storage.getAccountsByCompanyId(companyId as string),
+      storage.getJournalEntriesByCompanyId(companyId as string),
+      storage.getJournalLinesByCompanyId(companyId as string),
+    ]);
+    const postedEntryIds = new Set(allEntries.filter(e => e.status === 'posted').map(e => e.id));
+    const expenseAccounts = new Map(
+      accounts.filter(a => a.type === 'expense').map(a => [a.id, a]),
+    );
 
     const balances = new Map<string, { name: string; value: number }>();
-
-    for (const entry of entries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account || account.type !== 'expense') continue;
-
-        const current = balances.get(account.id) || { name: account.nameEn, value: 0 };
-        current.value += line.debit - line.credit;
-        balances.set(account.id, current);
-      }
+    for (const line of allLines) {
+      if (!postedEntryIds.has(line.entryId)) continue;
+      const account = expenseAccounts.get(line.accountId);
+      if (!account) continue;
+      const current = balances.get(account.id) || { name: account.nameEn, value: 0 };
+      current.value += line.debit - line.credit;
+      balances.set(account.id, current);
     }
 
     res.json(

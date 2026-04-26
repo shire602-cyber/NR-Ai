@@ -35,7 +35,12 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const invoices = await storage.getInvoicesByCompanyId(companyId);
+    // Use the trimmed projection so list responses don't carry full UBL XML
+    // (einvoice_xml can be 10-50KB per row). The detail endpoint pulls the
+    // full record on demand. limit/offset accept optional pagination.
+    const limit = Math.min(Number(req.query.limit) || 1000, 1000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const invoices = await storage.getInvoicesSummaryByCompanyId(companyId, { limit, offset });
     res.json(invoices);
   }));
 
