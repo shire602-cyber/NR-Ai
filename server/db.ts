@@ -70,7 +70,9 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
  * been tracked-but-not-executed in the production database.
  */
 export async function ensureCriticalSchema(): Promise<void> {
-  const steps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
+  const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+
+  const schemaSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     // ── 0003: invoice share token ────────────────────────────────────────
     {
       name: 'invoices.share_token',
@@ -300,7 +302,55 @@ export async function ensureCriticalSchema(): Promise<void> {
         "updated_at" timestamp DEFAULT now() NOT NULL
       )`,
     },
-    // ── 0023/0024: NRA test firm_owner seed (fallback for migration skip) ──
+    // ── 0026: onboarding_completed on companies ──────────────────────────
+    {
+      name: 'companies.onboarding_completed',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "onboarding_completed" boolean NOT NULL DEFAULT false`,
+    },
+    // ── 0019 (was missing): companies soft-delete columns [CRITICAL] ─────
+    // Without deleted_at, ALL Drizzle company queries fail (column in schema but not in DB).
+    {
+      name: 'companies.deleted_at',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp`,
+    },
+    {
+      name: 'companies.is_active',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "is_active" boolean NOT NULL DEFAULT true`,
+    },
+    // ── 0020 (was missing): invoice contact_id FK ─────────────────────────
+    {
+      name: 'invoices.contact_id',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "contact_id" uuid REFERENCES "customer_contacts"("id") ON DELETE SET NULL`,
+    },
+    // ── audit_logs: critical for financial audit trail (now wired in) ────
+    {
+      name: 'audit_logs table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "audit_logs" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid REFERENCES "users"("id"),
+        "action" text NOT NULL,
+        "resource_type" text NOT NULL,
+        "resource_id" text,
+        "details" text,
+        "ip_address" text,
+        "user_agent" text,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      name: 'audit_logs.created_at index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_created_at" ON "audit_logs" ("created_at" DESC)`,
+    },
+    {
+      name: 'audit_logs.resource index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_resource" ON "audit_logs" ("resource_type", "resource_id")`,
+    },
+  ];
+
+  // Dev/test-only seed data — never executed in production.
+  // The seeded password hash (TestFirmOwner123!) is in git history but is
+  // gated here so production environments do not accept it.
+  const devSeedSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     {
       name: 'seed nra test firm_owner user',
       sql: sql`INSERT INTO users (email, name, password_hash, is_admin, user_type, firm_role)
@@ -320,11 +370,6 @@ export async function ensureCriticalSchema(): Promise<void> {
         VALUES ('NRA Test Firm', 'AED', 'en', 'customer')
         ON CONFLICT (name) DO NOTHING`,
     },
-    // ── 0026: onboarding_completed on companies ──────────────────────────
-    {
-      name: 'companies.onboarding_completed',
-      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "onboarding_completed" boolean NOT NULL DEFAULT false`,
-    },
     {
       name: 'seed nra test firm company_users link',
       sql: sql`INSERT INTO company_users (company_id, user_id, role)
@@ -338,17 +383,6 @@ export async function ensureCriticalSchema(): Promise<void> {
             WHERE cu.company_id = c.id AND cu.user_id = u.id
           )`,
     },
-    // ── 0019 (was missing): companies soft-delete columns [CRITICAL] ─────
-    // Without deleted_at, ALL Drizzle company queries fail (column in schema but not in DB).
-    {
-      name: 'companies.deleted_at',
-      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp`,
-    },
-    {
-      name: 'companies.is_active',
-      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "is_active" boolean NOT NULL DEFAULT true`,
-    },
-    // ── 0028: test_firm_owner@nra.ae seed for endpoint testing ───────────
     {
       name: 'update test_firm_owner firm_role',
       sql: sql`UPDATE users SET firm_role = 'firm_owner' WHERE email = 'test_firm_owner@nra.ae'`,
@@ -382,35 +416,9 @@ export async function ensureCriticalSchema(): Promise<void> {
             SELECT 1 FROM subscriptions s WHERE s.company_id = c.id
           )`,
     },
-    // ── 0020 (was missing): invoice contact_id FK ─────────────────────────
-    {
-      name: 'invoices.contact_id',
-      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "contact_id" uuid REFERENCES "customer_contacts"("id") ON DELETE SET NULL`,
-    },
-    // ── audit_logs: critical for financial audit trail (now wired in) ────
-    {
-      name: 'audit_logs table',
-      sql: sql`CREATE TABLE IF NOT EXISTS "audit_logs" (
-        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        "user_id" uuid REFERENCES "users"("id"),
-        "action" text NOT NULL,
-        "resource_type" text NOT NULL,
-        "resource_id" text,
-        "details" text,
-        "ip_address" text,
-        "user_agent" text,
-        "created_at" timestamp DEFAULT now() NOT NULL
-      )`,
-    },
-    {
-      name: 'audit_logs.created_at index',
-      sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_created_at" ON "audit_logs" ("created_at" DESC)`,
-    },
-    {
-      name: 'audit_logs.resource index',
-      sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_resource" ON "audit_logs" ("resource_type", "resource_id")`,
-    },
   ];
+
+  const steps = isDev ? [...schemaSteps, ...devSeedSteps] : schemaSteps;
 
   let ok = 0;
   let failed = 0;
@@ -423,7 +431,9 @@ export async function ensureCriticalSchema(): Promise<void> {
       failed++;
     }
   }
-  console.log(`[db] Critical schema guard: ${ok} OK, ${failed} failed`);
+  console.log(
+    `[db] Critical schema guard: ${ok} OK, ${failed} failed (mode: ${isDev ? 'dev+seeds' : 'schema-only'})`,
+  );
 }
 
 /** Ping the database — used by /health and connection validation. */
