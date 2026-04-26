@@ -102,6 +102,9 @@ export const companies = pgTable("companies", {
   taxRegistrationDate: timestamp("tax_registration_date"),
   corporateTaxId: text("corporate_tax_id"),
   emirate: text("emirate").default("dubai"), // abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah
+  // Partial exemption: fraction of supplies that are exempt (0..1). When > 0, input VAT
+  // is reduced by this ratio per FTA partial-exemption rules.
+  exemptSupplyRatio: vatRateType("exempt_supply_ratio").notNull().default(0),
   
   // Soft delete — UAE FTA requires 5-year retention; hard deletes are disallowed
   deletedAt: timestamp("deleted_at"),

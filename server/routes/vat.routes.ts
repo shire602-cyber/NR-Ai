@@ -105,17 +105,17 @@ export function registerVATRoutes(app: Express) {
       return recDate >= startDate && recDate <= endDate;
     });
 
-    // Receipts split into reverse-charge vs ordinary expenses. Reverse-charge
-    // receipts contribute to BOTH output (Box 3) and input (Box 10) so the cash
-    // VAT effect is zero but the FTA return still records the supply.
+    // Split receipts: reverse-charge are reported in Boxes 3 (output) and 10
+    // (input side, subject to partial-exemption recovery), ordinary receipts
+    // feed Box 9.
     const ordinaryReceipts = periodReceipts.filter(r => !(r as any).reverseCharge);
     const reverseChargeReceipts = periodReceipts.filter(r => (r as any).reverseCharge);
 
     const totalExpenses = ordinaryReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
-    const inputTax = ordinaryReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
+    const inputTaxGross = ordinaryReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
 
     let reverseChargeAmount = reverseChargeReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
-    let reverseChargeVat = reverseChargeReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
+    let reverseChargeVatGross = reverseChargeReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
 
     // Reverse-charge bills (foreign / unregistered vendor purchases) — pulled
     // direct from vendor_bills since the bill module isn't in Drizzle yet.
@@ -131,10 +131,21 @@ export function registerVATRoutes(app: Express) {
         [companyId, startDate, endDate],
       );
       reverseChargeAmount += Number(billRes.rows[0]?.amount || 0);
-      reverseChargeVat += Number(billRes.rows[0]?.vat || 0);
+      reverseChargeVatGross += Number(billRes.rows[0]?.vat || 0);
     } catch (err) {
       // Bill-pay schema may not be installed in dev — fail open, log via parent.
     }
+
+    // Partial-exemption apportionment (FTA Article 55). When a company makes
+    // both taxable and exempt supplies, only the taxable portion of input VAT
+    // is recoverable. Output VAT (including reverse-charge output in Box 3) is
+    // unaffected — only the input/recovery side is reduced.
+    const exemptRatio = Math.min(1, Math.max(0, Number(company.exemptSupplyRatio || 0)));
+    const recoverableRatio = 1 - exemptRatio;
+    const inputTax = Math.round(inputTaxGross * recoverableRatio * 100) / 100;
+    const irrecoverableInputTax = Math.round((inputTaxGross - inputTax) * 100) / 100;
+    const reverseChargeVat = reverseChargeVatGross; // output side
+    const reverseChargeVatRecoverable = Math.round(reverseChargeVatGross * recoverableRatio * 100) / 100;
 
     // Due date is 28 days after period end (FTA requirement)
     const dueDate = new Date(endDate);
@@ -187,12 +198,13 @@ export function registerVATRoutes(app: Express) {
         break;
     }
 
-    // Calculate totals — reverse charge contributes to BOTH output (Box 3) and
-    // input (Box 10), so totals include it on each side.
+    // Calculate totals. Reverse charge feeds Box 3 (output, full) and Box 10
+    // (input, partial-exemption-reduced). Standard input tax (Box 9) is also
+    // partial-exemption reduced via `inputTax`.
     const totalOutputAmount = standardRatedAmount + zeroRatedAmount + exemptAmount + reverseChargeAmount;
     const totalOutputVat = standardRatedVat + reverseChargeVat;
     const totalInputAmount = totalExpenses + reverseChargeAmount;
-    const totalInputVat = inputTax + reverseChargeVat;
+    const totalInputVat = inputTax + reverseChargeVatRecoverable;
 
     const vatReturn = await storage.createVatReturn({
       companyId,
@@ -229,9 +241,9 @@ export function registerVATRoutes(app: Express) {
       box9ExpensesVat: inputTax,
       box9ExpensesAdj: 0,
       // Box 10: Reverse charge on imports (input side) — buyer claims back the
-      // self-assessed VAT, netting to zero unless partial-exemption applies.
+      // self-assessed VAT, reduced by partial-exemption ratio when applicable.
       box10ReverseChargeAmount: reverseChargeAmount,
-      box10ReverseChargeVat: reverseChargeVat,
+      box10ReverseChargeVat: reverseChargeVatRecoverable,
       // Box 11: Total input amounts and VAT
       box11TotalAmount: totalInputAmount,
       box11TotalVat: totalInputVat,
@@ -266,8 +278,16 @@ export function registerVATRoutes(app: Express) {
         exemptSales: exemptAmount,
         reverseChargeAmount,
         reverseChargeVat,
+        reverseChargeVatRecoverable,
         totalInputVat,
         netVatPayable: totalOutputVat - totalInputVat,
+        partialExemption: {
+          exemptSupplyRatio: exemptRatio,
+          recoverableRatio,
+          grossInputVat: inputTaxGross,
+          recoverableInputVat: inputTax,
+          irrecoverableInputVat: irrecoverableInputTax,
+        },
       }
     });
   }));
