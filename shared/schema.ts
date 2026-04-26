@@ -1,13 +1,29 @@
-import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, customType } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, index, customType } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 
 // Monetary amount stored as NUMERIC(15,2) in Postgres for exact decimal arithmetic.
-// fromDriver parses the numeric string back to a JS number so existing arithmetic continues to work.
+// fromDriver rounds to 2 decimals so JS-side floating-point drift cannot accumulate
+// across multi-line entries (a long-term decimal library is the proper fix).
 const money = customType<{ data: number; driverData: string }>({
   dataType() { return "numeric(15,2)"; },
-  fromDriver(value: string) { return parseFloat(value); },
+  fromDriver(value: string): number { return Math.round(parseFloat(value) * 100) / 100; },
+  toDriver(value: number) { return String(value); },
+});
+
+// Exchange rates need higher decimal precision than monetary amounts.
+const rate = customType<{ data: number; driverData: string }>({
+  dataType() { return "numeric(15,6)"; },
+  fromDriver(value: string): number { return parseFloat(value); },
+  toDriver(value: number) { return String(value); },
+});
+
+// VAT rates (e.g. 0.05 for UAE 5%) need exact decimal storage; real() cannot
+// represent 0.05 exactly in IEEE-754.
+const vatRateType = customType<{ data: number; driverData: string }>({
+  dataType() { return "numeric(5,4)"; },
+  fromDriver(value: string): number { return parseFloat(value); },
   toDriver(value: number) { return String(value); },
 });
 
@@ -60,7 +76,7 @@ export type UserPublic = Omit<User, 'passwordHash'>;
 // ===========================
 export const companies = pgTable("companies", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
   baseCurrency: text("base_currency").notNull().default("AED"),
   locale: text("locale").notNull().default("en"), // 'en' or 'ar'
   
@@ -122,7 +138,11 @@ export const companyUsers = pgTable("company_users", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   role: text("role").notNull().default("owner"), // owner | accountant | cfo | employee
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyUserUnique: unique("company_users_company_user_unique").on(table.companyId, table.userId),
+  companyIdIdx: index("idx_company_users_company_id").on(table.companyId),
+  userIdIdx: index("idx_company_users_user_id").on(table.userId),
+}));
 
 export const insertCompanyUserSchema = createInsertSchema(companyUsers).omit({
   id: true,
@@ -223,6 +243,7 @@ export const journalEntries = pgTable("journal_entries", {
   updatedAt: timestamp("updated_at"),
 }, (table) => ({
   companyEntryUnique: unique().on(table.companyId, table.entryNumber),
+  companyIdIdx: index("idx_journal_entries_company_id").on(table.companyId),
 }));
 
 export const insertJournalEntrySchema = createInsertSchema(journalEntries).omit({
@@ -247,15 +268,17 @@ export const journalLines = pgTable("journal_lines", {
   description: text("description"), // Line-level description
   // Foreign currency tracking
   foreignCurrency: text("foreign_currency"), // null = AED, otherwise ISO code (USD, EUR, etc.)
-  foreignDebit: real("foreign_debit").default(0),   // Original amount in foreign currency
-  foreignCredit: real("foreign_credit").default(0), // Original amount in foreign currency
-  exchangeRate: real("exchange_rate").default(1),   // Rate used: 1 foreignCurrency = X AED
+  foreignDebit: money("foreign_debit").default(0),   // Original amount in foreign currency
+  foreignCredit: money("foreign_credit").default(0), // Original amount in foreign currency
+  exchangeRate: rate("exchange_rate").default(1),    // Rate used: 1 foreignCurrency = X AED
   // Reconciliation support
   isReconciled: boolean("is_reconciled").notNull().default(false),
   reconciledAt: timestamp("reconciled_at"),
   reconciledBy: uuid("reconciled_by").references(() => users.id),
   bankTransactionId: uuid("bank_transaction_id"), // Reference to matched bank transaction
-});
+}, (table) => ({
+  entryIdIdx: index("idx_journal_lines_entry_id").on(table.entryId),
+}));
 
 export const insertJournalLineSchema = createInsertSchema(journalLines).omit({
   id: true,
@@ -272,7 +295,7 @@ export const exchangeRates = pgTable("exchange_rates", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   baseCurrency: text("base_currency").notNull().default("AED"),
   targetCurrency: text("target_currency").notNull(),
-  rate: real("rate").notNull(), // How many units of targetCurrency per 1 baseCurrency
+  rate: rate("rate").notNull(), // How many units of targetCurrency per 1 baseCurrency
   date: timestamp("date").notNull().defaultNow(),
   source: text("source").notNull().default("manual"), // manual | api
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -299,7 +322,7 @@ export const invoices = pgTable("invoices", {
   dueDate: timestamp("due_date"),
   paymentTerms: text("payment_terms").default("net30"),
   currency: text("currency").notNull().default("AED"),
-  exchangeRate: real("exchange_rate").notNull().default(1), // Rate to AED at time of transaction
+  exchangeRate: rate("exchange_rate").notNull().default(1), // Rate to AED at time of transaction
   baseCurrencyAmount: money("base_currency_amount").notNull().default(0), // Total in AED
   subtotal: money("subtotal").notNull().default(0),
   vatAmount: money("vat_amount").notNull().default(0),
@@ -321,7 +344,10 @@ export const invoices = pgTable("invoices", {
   recurringEndDate: timestamp("recurring_end_date"),
   contactId: uuid("contact_id").references((): any => customerContacts.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyNumberUnique: unique("invoices_company_number_unique").on(table.companyId, table.number),
+  companyIdIdx: index("idx_invoices_company_id").on(table.companyId),
+}));
 
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
   id: true,
@@ -340,7 +366,7 @@ export const invoiceLines = pgTable("invoice_lines", {
   description: text("description").notNull(),
   quantity: real("quantity").notNull(),
   unitPrice: money("unit_price").notNull(),
-  vatRate: real("vat_rate").notNull().default(0.05), // UAE standard 5%
+  vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE standard 5%
   vatSupplyType: text("vat_supply_type").default("standard_rated"), // standard_rated | zero_rated | exempt | out_of_scope
 });
 
@@ -358,7 +384,7 @@ export const invoicePayments = pgTable("invoice_payments", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   invoiceId: uuid("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-  amount: real("amount").notNull(),
+  amount: money("amount").notNull(),
   date: timestamp("date").notNull(),
   method: text("method").notNull().default("bank"), // cash | bank | cheque | online
   reference: text("reference"),
@@ -367,7 +393,9 @@ export const invoicePayments = pgTable("invoice_payments", {
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
   createdBy: uuid("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  invoiceIdIdx: index("idx_invoice_payments_invoice_id").on(table.invoiceId),
+}));
 
 export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
   id: true,
@@ -416,8 +444,8 @@ export const receipts = pgTable("receipts", {
   amount: money("amount"),
   vatAmount: money("vat_amount"),
   currency: text("currency").default("AED"),
-  exchangeRate: real("exchange_rate").notNull().default(1), // Rate to AED at time of transaction
-  baseCurrencyAmount: real("base_currency_amount").notNull().default(0), // Amount in AED
+  exchangeRate: rate("exchange_rate").notNull().default(1), // Rate to AED at time of transaction
+  baseCurrencyAmount: money("base_currency_amount").notNull().default(0), // Amount in AED
   category: text("category"),
   accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
   paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit
@@ -428,7 +456,9 @@ export const receipts = pgTable("receipts", {
   rawText: text("raw_text"),
   uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_receipts_company_id").on(table.companyId),
+}));
 
 export const insertReceiptSchema = createInsertSchema(receipts).omit({
   id: true,
@@ -450,7 +480,7 @@ export const products = pgTable("products", {
   description: text("description"),
   unitPrice: money("unit_price").notNull().default(0),
   costPrice: money("cost_price").default(0),
-  vatRate: real("vat_rate").notNull().default(0.05),
+  vatRate: vatRateType("vat_rate").notNull().default(0.05),
   unit: text("unit").notNull().default("pcs"), // pcs, kg, m, hr, etc.
   currentStock: integer("current_stock").notNull().default(0),
   lowStockThreshold: integer("low_stock_threshold").default(10),
@@ -765,7 +795,7 @@ export const bankTransactions = pgTable("bank_transactions", {
   transactionDate: timestamp("transaction_date").notNull(),
   description: text("description").notNull(),
   amount: money("amount").notNull(), // Positive for credits, negative for debits
-  balance: real("balance"), // Running balance from bank statement
+  balance: money("balance"), // Running balance from bank statement
   reference: text("reference"), // Bank reference number
   category: text("category"), // AI-suggested category
   matchStatus: text("match_status").notNull().default("unmatched"), // matched | suggested | unmatched
@@ -776,7 +806,9 @@ export const bankTransactions = pgTable("bank_transactions", {
   matchConfidence: real("match_confidence"), // AI confidence for the match
   importSource: text("import_source"), // manual | csv | api
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  bankAccountIdIdx: index("idx_bank_transactions_bank_account_id").on(table.bankAccountId),
+}));
 
 export const insertBankTransactionSchema = createInsertSchema(bankTransactions).omit({
   id: true,
@@ -1764,7 +1796,9 @@ export const activityLogs = pgTable("activity_logs", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_activity_logs_company_id").on(table.companyId),
+}));
 
 export const insertActivityLogSchema = createInsertSchema(activityLogs).omit({
   id: true,
@@ -1897,7 +1931,7 @@ export const serviceInvoiceLines = pgTable("service_invoice_lines", {
   description: text("description").notNull(),
   quantity: real("quantity").notNull().default(1),
   unitPrice: money("unit_price").notNull(),
-  vatRate: real("vat_rate").notNull().default(0.05), // UAE 5%
+  vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE 5%
   amount: money("amount").notNull(), // quantity * unitPrice
 });
 
