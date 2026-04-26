@@ -18,6 +18,7 @@ import {
 } from '../../shared/schema';
 import { getEnv } from '../config/env';
 import { storage } from '../storage';
+import { UAE_VAT_RATE, DEFAULT_CURRENCY } from '../constants';
 
 const router = Router();
 router.use(authMiddleware);
@@ -128,7 +129,7 @@ async function runOCR(
     date: parsedDate,
     amount: subtotal,
     vatAmount,
-    currency: result.currency ? String(result.currency).slice(0, 3).toUpperCase() : 'AED',
+    currency: result.currency ? String(result.currency).slice(0, 3).toUpperCase() : DEFAULT_CURRENCY,
     category,
   };
 }
@@ -279,7 +280,7 @@ const bulkInvoicesSchema = z.object({
   companyIds: z.array(z.string().uuid()).min(1),
   serviceDescription: z.string().min(1).max(500),
   amount: z.number().positive(),
-  vatRate: z.number().min(0).max(1).default(0.05),
+  vatRate: z.number().min(0).max(1).default(UAE_VAT_RATE),
 });
 
 router.post('/bulk/invoices', asyncHandler(async (req: Request, res: Response) => {
@@ -321,7 +322,7 @@ router.post('/bulk/invoices', asyncHandler(async (req: Request, res: Response) =
         number: invoiceNumber,
         customerName: company.name,
         date: new Date(),
-        currency: 'AED',
+        currency: DEFAULT_CURRENCY,
         exchangeRate: 1,
         baseCurrencyAmount: total,
         subtotal: amount,

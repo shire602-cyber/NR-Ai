@@ -6,6 +6,7 @@ import { db } from "../db";
 import { eq, and, gte, lte, inArray, type SQL } from "drizzle-orm";
 import { journalEntries, journalLines, accounts, invoices, invoiceLines, receipts } from "../../shared/schema";
 import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../shared/schema";
+import { UAE_VAT_RATE } from "../constants";
 
 /**
  * Register advanced report routes (cash flow, aging, period comparison).
@@ -327,7 +328,7 @@ export function registerReportRoutes(app: Express) {
       }
     }
 
-    const outputVat = standardRatedSupplies * 0.05;
+    const outputVat = standardRatedSupplies * UAE_VAT_RATE;
 
     // Get expenses (receipts) in range with VAT.
     // Only posted receipts can be claimed for input VAT recovery.

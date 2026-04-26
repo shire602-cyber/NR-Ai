@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import type { Invoice, InvoiceLine, Company } from '../../shared/schema';
+import { UAE_VAT_RATE } from '../constants';
 
 /**
  * Escape XML special characters to prevent malformed output.
@@ -42,7 +43,7 @@ export function generateEInvoiceXML(
   const invoiceLinesXml = lines
     .map((line, index) => {
       const lineExtension = line.quantity * line.unitPrice;
-      const vatRate = line.vatRate ?? 0.05;
+      const vatRate = line.vatRate ?? UAE_VAT_RATE;
       const vatAmount = lineExtension * vatRate;
       const vatPercent = (vatRate * 100).toFixed(2);
 
@@ -71,7 +72,7 @@ export function generateEInvoiceXML(
   // Calculate tax breakdown (grouped by VAT rate)
   const taxByRate = new Map<number, { taxable: number; tax: number }>();
   for (const line of lines) {
-    const vatRate = line.vatRate ?? 0.05;
+    const vatRate = line.vatRate ?? UAE_VAT_RATE;
     const lineExtension = line.quantity * line.unitPrice;
     const existing = taxByRate.get(vatRate) || { taxable: 0, tax: 0 };
     existing.taxable += lineExtension;

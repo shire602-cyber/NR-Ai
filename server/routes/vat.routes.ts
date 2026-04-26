@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { UAE_VAT_RATE } from "../constants";
 
 export function registerVATRoutes(app: Express) {
   // =====================================
@@ -78,7 +79,7 @@ export function registerVATRoutes(app: Express) {
 
       for (const line of lines) {
         const lineAmount = line.quantity * line.unitPrice;
-        const lineVat = lineAmount * (line.vatRate ?? 0.05);
+        const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
         const supplyType = (line as any).vatSupplyType || 'standard_rated';
 
         if (supplyType === 'zero_rated' || line.vatRate === 0) {

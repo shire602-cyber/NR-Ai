@@ -131,7 +131,7 @@ Amount: ${validated.amount} ${validated.currency}`
         reason: aiResponse.reason,
       });
     } catch (error: any) {
-      console.error('AI categorization error:', error);
+      log.error({ err: error }, 'AI categorization error');
       res.status(500).json({ message: error.message || 'AI categorization failed' });
     }
   }));
@@ -197,11 +197,11 @@ If no valid transactions can be found, return { "transactions": [] }`
         reference: t.reference || null,
       }));
 
-      console.log('[AI] Parsed bank statement, found', validTransactions.length, 'transactions');
+      log.info({ count: validTransactions.length }, 'Parsed bank statement');
 
       res.json({ transactions: validTransactions });
     } catch (error: any) {
-      console.error('AI bank statement parsing error:', error);
+      log.error({ err: error }, 'AI bank statement parsing error');
       res.status(500).json({ message: error.message || 'Failed to parse bank statement' });
     }
   }));
@@ -278,7 +278,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
         context: financialContext,
       });
     } catch (error: any) {
-      console.error('AI CFO advice error:', error);
+      log.error({ err: error }, 'AI CFO advice error');
       res.status(500).json({ message: error.message || 'Failed to get AI advice' });
     }
   }));
@@ -385,7 +385,7 @@ Respond with a JSON object:
 
       res.json(aiResponse);
     } catch (error: any) {
-      console.error('Batch categorization error:', error);
+      log.error({ err: error }, 'Batch categorization error');
       res.status(500).json({ message: error.message || 'Batch categorization failed' });
     }
   }));
@@ -494,7 +494,7 @@ Respond with JSON:
 
       res.json(aiResponse);
     } catch (error: any) {
-      console.error('Anomaly detection error:', error);
+      log.error({ err: error }, 'Anomaly detection error');
       res.status(500).json({ message: error.message || 'Anomaly detection failed' });
     }
   }));
@@ -659,7 +659,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
       const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
       res.json(aiResponse);
     } catch (error: any) {
-      console.error('Reconciliation error:', error);
+      log.error({ err: error }, 'Reconciliation error');
       res.status(500).json({ message: error.message || 'Reconciliation failed' });
     }
   }));
@@ -913,7 +913,7 @@ Respond with JSON:
         historicalData,
       });
     } catch (error: any) {
-      console.error('Cash flow forecast error:', error);
+      log.error({ err: error }, 'Cash flow forecast error');
       res.status(500).json({ message: error.message || 'Forecasting failed' });
     }
   }));
@@ -1151,7 +1151,7 @@ Company: ${company.name}`;
         timestamp: new Date().toISOString(),
       });
     } catch (error: any) {
-      console.error('NL Gateway error:', error);
+      log.error({ err: error }, 'NL Gateway error');
       res.status(500).json({ message: error.message || 'Failed to process query' });
     }
   }));
@@ -1226,7 +1226,7 @@ IMPORTANT GUIDELINES:
           }
         } catch (streamError: any) {
           // Error occurred during streaming - headers already sent, must use SSE format
-          console.error('/api/ask streaming error:', streamError);
+          log.error({ err: streamError }, '/api/ask streaming error');
 
           // Send error as SSE message
           const errorMessage = streamError.message || 'An error occurred while streaming the response';
@@ -1250,7 +1250,7 @@ IMPORTANT GUIDELINES:
               error: errorMessage,
             });
           } catch (dbError) {
-            console.error('Failed to store error conversation:', dbError);
+            log.error({ err: dbError }, 'Failed to store error conversation');
           }
 
           return; // Exit early, response already sent
@@ -1271,7 +1271,7 @@ IMPORTANT GUIDELINES:
             responseTime,
           });
         } catch (dbError) {
-          console.error('Failed to store conversation:', dbError);
+          log.error({ err: dbError }, 'Failed to store conversation');
           // Continue even if storage fails - still send completion signal
         }
 
@@ -1317,7 +1317,7 @@ IMPORTANT GUIDELINES:
         });
       }
     } catch (error: any) {
-      console.error('/api/ask error:', error);
+      log.error({ err: error }, '/api/ask error');
 
       // Check if headers have already been sent (streaming mode)
       // If headers are committed, we cannot send JSON responses - must use SSE format
@@ -1333,7 +1333,7 @@ IMPORTANT GUIDELINES:
           res.end();
         } catch (writeError) {
           // Response already ended or connection closed - log but don't throw
-          console.error('Failed to send SSE error message:', writeError);
+          log.error({ err: writeError }, 'Failed to send SSE error message');
         }
 
         // Store error conversation if we have partial data
@@ -1353,7 +1353,7 @@ IMPORTANT GUIDELINES:
             });
           }
         } catch (dbError) {
-          console.error('Failed to store error conversation:', dbError);
+          log.error({ err: dbError }, 'Failed to store error conversation');
         }
         return; // Exit early, response already sent
       }
@@ -1402,7 +1402,7 @@ IMPORTANT GUIDELINES:
 
       res.json(conversations);
     } catch (error: any) {
-      console.error('/api/ask/history error:', error);
+      log.error({ err: error }, '/api/ask/history error');
       res.status(500).json({ message: error.message || 'Failed to fetch history' });
     }
   }));
@@ -1757,7 +1757,7 @@ Respond with just the category name, nothing else.`;
 
       res.json({ suggestions });
     } catch (error: any) {
-      console.error('Smart suggest error:', error);
+      log.error({ err: error }, 'Smart suggest error');
       res.status(500).json({ message: error.message || 'Failed to generate suggestions' });
     }
   }));
