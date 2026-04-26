@@ -4,13 +4,24 @@ import * as XLSX from 'xlsx';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
-import { insertJournalEntrySchema } from '../../shared/schema';
+import { insertJournalEntrySchema, type JournalEntry } from '../../shared/schema';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
 import { createLogger } from '../config/logger';
 import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('journal');
+
+// Walk the user's companies to find the entry. Storage queries are
+// tenant-scoped, so a hit also proves the user has access.
+async function findJournalEntryForUser(userId: string, entryId: string): Promise<JournalEntry | undefined> {
+  const userCompanies = await storage.getCompaniesByUserId(userId);
+  for (const c of userCompanies) {
+    const entry = await storage.getJournalEntry(entryId, c.id);
+    if (entry) return entry;
+  }
+  return undefined;
+}
 
 export function registerJournalRoutes(app: Express) {
   // =====================================
@@ -36,7 +47,7 @@ export function registerJournalRoutes(app: Express) {
         const lines = await storage.getJournalLinesByEntryId(entry.id);
         const linesWithAccounts = await Promise.all(
           lines.map(async (line) => {
-            const account = await storage.getAccount(line.accountId);
+            const account = await storage.getAccount(line.accountId, companyId);
             return { ...line, account };
           })
         );
@@ -147,16 +158,10 @@ export function registerJournalRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    // Get journal entry
-    const entry = await storage.getJournalEntry(id);
+    // Tenant-scoped lookup also enforces access.
+    const entry = await findJournalEntryForUser(userId, id);
     if (!entry) {
       return res.status(404).json({ message: 'Journal entry not found' });
-    }
-
-    // Check if user has access to this company
-    const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Get journal lines for this entry
@@ -174,16 +179,10 @@ export function registerJournalRoutes(app: Express) {
     const userId = (req as any).user.id;
     const { lines, date, description, memo, notes, status: requestedStatus } = req.body;
 
-    // Get journal entry to verify it exists and get company access
-    const entry = await storage.getJournalEntry(id);
+    // Tenant-scoped lookup also enforces access.
+    const entry = await findJournalEntryForUser(userId, id);
     if (!entry) {
       return res.status(404).json({ message: 'Journal entry not found' });
-    }
-
-    // Check if user has access to this company
-    const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // IMMUTABILITY: Posted entries cannot be edited - must be reversed instead
@@ -263,6 +262,7 @@ export function registerJournalRoutes(app: Express) {
     // Update journal entry + replace lines atomically (validates balance & wraps in transaction)
     const updatedEntry = await storage.updateJournalEntryWithLines(
       id,
+      entry.companyId,
       safeUpdate,
       lines.map((line: any) => ({
         accountId: line.accountId,
@@ -292,14 +292,9 @@ export function registerJournalRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const entry = await storage.getJournalEntry(id);
+    const entry = await findJournalEntryForUser(userId, id);
     if (!entry) {
       return res.status(404).json({ message: 'Journal entry not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     if (entry.status !== 'draft') {
@@ -326,7 +321,7 @@ export function registerJournalRoutes(app: Express) {
     // Cannot post into a locked period.
     await assertPeriodNotLocked(entry.companyId, entry.date);
 
-    const updatedEntry = await storage.updateJournalEntry(id, {
+    const updatedEntry = await storage.updateJournalEntry(id, entry.companyId, {
       status: 'posted',
       postedBy: userId,
       postedAt: new Date(),
@@ -353,14 +348,9 @@ export function registerJournalRoutes(app: Express) {
     const userId = (req as any).user.id;
     const { reason } = req.body;
 
-    const entry = await storage.getJournalEntry(id);
+    const entry = await findJournalEntryForUser(userId, id);
     if (!entry) {
       return res.status(404).json({ message: 'Journal entry not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     if (entry.status !== 'posted') {
@@ -419,7 +409,7 @@ export function registerJournalRoutes(app: Express) {
     );
 
     // Mark original entry as void
-    await storage.updateJournalEntry(id, {
+    await storage.updateJournalEntry(id, entry.companyId, {
       status: 'void',
       updatedBy: userId,
       updatedAt: new Date(),
@@ -451,16 +441,10 @@ export function registerJournalRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    // Get journal entry to verify it exists and get company access
-    const entry = await storage.getJournalEntry(id);
+    // Tenant-scoped lookup also enforces access.
+    const entry = await findJournalEntryForUser(userId, id);
     if (!entry) {
       return res.status(404).json({ message: 'Journal entry not found' });
-    }
-
-    // Check if user has access to this company
-    const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // IMMUTABILITY: Posted entries cannot be deleted - must be reversed
@@ -483,7 +467,7 @@ export function registerJournalRoutes(app: Express) {
     assertRetentionExpired(entry as { createdAt: Date | string; retentionExpiresAt?: Date | string | null }, 'Journal entry');
 
     // Only draft entries can be deleted
-    await storage.deleteJournalEntry(id);
+    await storage.deleteJournalEntry(id, entry.companyId);
 
     await recordAudit({
       userId,

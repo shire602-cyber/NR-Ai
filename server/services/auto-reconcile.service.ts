@@ -339,8 +339,8 @@ export async function getSuggestionsForTransaction(
   transactionId: string,
   limit = 5
 ): Promise<ReconcileMatch[]> {
-  const txn = await storage.getBankTransactionById(transactionId);
-  if (!txn || txn.companyId !== companyId) return [];
+  const txn = await storage.getBankTransactionById(transactionId, companyId);
+  if (!txn) return [];
 
   const pool = await loadCandidatePool(companyId);
   return matchTransaction(txn, pool, undefined, limit);

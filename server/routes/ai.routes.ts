@@ -677,15 +677,15 @@ ${JSON.stringify(ledgerData, null, 2)}`
         return res.status(400).json({ message: 'matchId and matchType are required' });
       }
 
-      // Verify user has access to the company that owns this transaction
-      const txn = await storage.getBankTransactionById(id);
+      // Find the transaction within the user's accessible companies (tenant-scoped).
+      const userCompanies = await storage.getCompaniesByUserId(userId);
+      let txn: Awaited<ReturnType<typeof storage.getBankTransactionById>> | undefined;
+      for (const c of userCompanies) {
+        txn = await storage.getBankTransactionById(id, c.id);
+        if (txn) break;
+      }
       if (!txn) {
         return res.status(404).json({ message: 'Transaction not found' });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, txn.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
       }
 
       const transaction = await storage.reconcileBankTransaction(id, matchId, matchType);

@@ -3,7 +3,7 @@ import { storage } from '../storage';
 import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { insertInvoiceSchema } from '../../shared/schema';
+import { insertInvoiceSchema, type Receipt } from '../../shared/schema';
 import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
 import { createAndEmitNotification } from '../services/socket.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
@@ -14,6 +14,17 @@ import { assertRetentionExpired } from '../services/retention.service';
 import PDFDocument from 'pdfkit';
 
 const log = createLogger('receipts');
+
+// Walk the user's companies and return the first match — storage.getReceipt is
+// tenant-scoped, so a hit here also proves the user has access.
+async function findReceiptForUser(userId: string, receiptId: string): Promise<Receipt | undefined> {
+  const userCompanies = await storage.getCompaniesByUserId(userId);
+  for (const c of userCompanies) {
+    const receipt = await storage.getReceipt(receiptId, c.id);
+    if (receipt) return receipt;
+  }
+  return undefined;
+}
 
 export function registerReceiptRoutes(app: Express) {
   // =====================================
@@ -179,24 +190,18 @@ export function registerReceiptRoutes(app: Express) {
       req.body.category = null;
     }
 
-    const before = await storage.getReceipt(id);
+    const before = await findReceiptForUser(userId, id);
     if (!before) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
-    const hasAccess = await storage.hasCompanyAccess(userId, before.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-    const updatedReceipt = await storage.updateReceipt(id, req.body);
+    const updatedReceipt = await storage.updateReceipt(id, before.companyId, req.body);
     await recordAudit({
       userId,
       companyId: updatedReceipt.companyId,
       action: 'receipt.update',
       entityType: 'receipt',
       entityId: id,
-      before: before
-        ? { merchant: before.merchant, amount: before.amount, accountId: before.accountId }
-        : null,
+      before: { merchant: before.merchant, amount: before.amount, accountId: before.accountId },
       after: {
         merchant: updatedReceipt.merchant,
         amount: updatedReceipt.amount,
@@ -214,7 +219,7 @@ export function registerReceiptRoutes(app: Express) {
     const userId = (req as any).user.id;
 
     // Remove image file before deleting DB row (best-effort; don't block on failure)
-    const existing = await storage.getReceipt(id);
+    const existing = await findReceiptForUser(userId, id);
     if (!existing) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
@@ -229,7 +234,7 @@ export function registerReceiptRoutes(app: Express) {
       await deleteReceiptImage(existing.imagePath);
     }
 
-    await storage.deleteReceipt(id);
+    await storage.deleteReceipt(id, existing.companyId);
 
     await recordAudit({
       userId,
@@ -256,8 +261,8 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(400).json({ message: 'Expense account and payment account are required' });
     }
 
-    // Get receipt
-    const receipt = await storage.getReceipt(id);
+    // Get receipt — findReceiptForUser also enforces tenant access.
+    const receipt = await findReceiptForUser(userId, id);
     if (!receipt) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
@@ -265,12 +270,6 @@ export function registerReceiptRoutes(app: Express) {
     // Check if already posted
     if (receipt.posted) {
       return res.status(400).json({ message: 'Receipt has already been posted' });
-    }
-
-    // Check if user has access to this company
-    const hasAccess = await storage.hasCompanyAccess(userId, receipt.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Validate amount is present and positive
@@ -281,21 +280,13 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(400).json({ message: 'Receipt amount must be greater than zero' });
     }
 
-    // Get accounts to validate they exist and are correct types
-    const expenseAccount = await storage.getAccount(accountId);
-    const paymentAccount = await storage.getAccount(paymentAccountId);
+    // Get accounts (tenant-scoped to the receipt's company — cross-tenant
+    // accounts simply won't be found).
+    const expenseAccount = await storage.getAccount(accountId, receipt.companyId);
+    const paymentAccount = await storage.getAccount(paymentAccountId, receipt.companyId);
 
     if (!expenseAccount || !paymentAccount) {
       return res.status(404).json({ message: 'Account not found' });
-    }
-
-    // CRITICAL: Validate accounts belong to the same company as the receipt
-    if (expenseAccount.companyId !== receipt.companyId) {
-      return res.status(403).json({ message: 'Expense account must belong to the same company as the receipt' });
-    }
-
-    if (paymentAccount.companyId !== receipt.companyId) {
-      return res.status(403).json({ message: 'Payment account must belong to the same company as the receipt' });
     }
 
     // Validate account types
@@ -394,7 +385,7 @@ export function registerReceiptRoutes(app: Express) {
     );
 
     // Update receipt with posting information
-    const updatedReceipt = await storage.updateReceipt(id, {
+    const updatedReceipt = await storage.updateReceipt(id, receipt.companyId, {
       accountId,
       paymentAccountId,
       posted: true,
@@ -588,8 +579,8 @@ export function registerReceiptRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const receipt = await storage.getReceipt(id);
-    if (!receipt || receipt.companyId !== companyId) {
+    const receipt = await storage.getReceipt(id, companyId);
+    if (!receipt) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
 
@@ -616,8 +607,8 @@ export function registerReceiptRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const receipt = await storage.getReceipt(id);
-    if (!receipt || receipt.companyId !== companyId) {
+    const receipt = await storage.getReceipt(id, companyId);
+    if (!receipt) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
 

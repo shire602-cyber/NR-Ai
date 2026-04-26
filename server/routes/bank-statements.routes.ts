@@ -249,7 +249,7 @@ async function autoMatchImportedTransactions(companyId: string): Promise<void> {
     // Apply high-confidence suggestions (>=75%) as 'suggested' status
     for (const match of result.matches) {
       if (match.confidence >= 75) {
-        await storage.updateBankTransaction(match.bankTransactionId, {
+        await storage.updateBankTransaction(match.bankTransactionId, companyId, {
           matchStatus: 'suggested',
           matchConfidence: match.confidence / 100,
           ...(match.matchedType === 'journal_entry' && { matchedJournalEntryId: match.matchedId }),
@@ -514,8 +514,8 @@ export function registerBankStatementRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-      const txn = await storage.getBankTransactionById(tid);
-      if (!txn || txn.companyId !== companyId) {
+      const txn = await storage.getBankTransactionById(tid, companyId);
+      if (!txn) {
         return res.status(404).json({ message: 'Bank transaction not found' });
       }
 
@@ -531,7 +531,7 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       const updated = await storage.reconcileBankTransaction(tid, matchedId, matchedType as 'journal' | 'receipt' | 'invoice');
-      await storage.updateBankTransaction(tid, { matchStatus: 'matched' });
+      await storage.updateBankTransaction(tid, companyId, { matchStatus: 'matched' });
 
       const { recordAudit } = await import('../services/audit.service');
       await recordAudit({
@@ -566,8 +566,8 @@ export function registerBankStatementRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-      const txn = await storage.getBankTransactionById(tid);
-      if (!txn || txn.companyId !== companyId) {
+      const txn = await storage.getBankTransactionById(tid, companyId);
+      if (!txn) {
         return res.status(404).json({ message: 'Bank transaction not found' });
       }
 
@@ -625,7 +625,7 @@ export function registerBankStatementRoutes(app: Express) {
 
       // Mark transaction as matched to this journal entry
       const updated = await storage.reconcileBankTransaction(tid, entry.id, 'journal');
-      await storage.updateBankTransaction(tid, { matchStatus: 'matched' });
+      await storage.updateBankTransaction(tid, companyId, { matchStatus: 'matched' });
 
       res.status(201).json({
         journalEntry: entry,
@@ -677,8 +677,8 @@ export function registerBankStatementRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-      const txn = await storage.getBankTransactionById(tid);
-      if (!txn || txn.companyId !== companyId) {
+      const txn = await storage.getBankTransactionById(tid, companyId);
+      if (!txn) {
         return res.status(404).json({ message: 'Bank transaction not found' });
       }
 
@@ -702,12 +702,12 @@ export function registerBankStatementRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-      const txn = await storage.getBankTransactionById(tid);
-      if (!txn || txn.companyId !== companyId) {
+      const txn = await storage.getBankTransactionById(tid, companyId);
+      if (!txn) {
         return res.status(404).json({ message: 'Bank transaction not found' });
       }
 
-      const updated = await storage.updateBankTransaction(tid, {
+      const updated = await storage.updateBankTransaction(tid, companyId, {
         isReconciled: false,
         matchStatus: 'unmatched',
         matchedJournalEntryId: null,

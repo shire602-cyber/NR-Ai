@@ -4,7 +4,7 @@ import { storage } from '../storage';
 import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { insertInvoiceSchema } from '../../shared/schema';
+import { insertInvoiceSchema, type Invoice } from '../../shared/schema';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
 import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
@@ -18,6 +18,17 @@ import { allocateInvoiceNumber, peekNextInvoiceNumber } from '../services/invoic
 import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('invoices');
+
+// Walk the user's companies to find the invoice. Storage queries are
+// tenant-scoped, so a hit also proves the user has access.
+async function findInvoiceForUser(userId: string, invoiceId: string): Promise<Invoice | undefined> {
+  const userCompanies = await storage.getCompaniesByUserId(userId);
+  for (const c of userCompanies) {
+    const invoice = await storage.getInvoice(invoiceId, c.id);
+    if (invoice) return invoice;
+  }
+  return undefined;
+}
 
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
@@ -44,16 +55,10 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
 
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    // Verify company access
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Fetch invoice lines
@@ -292,16 +297,10 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    // Get invoice
-    const invoice = await storage.getInvoice(id);
+    // Tenant-scoped lookup also enforces access.
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    // Check access
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Get all draft entries for this invoice
@@ -319,7 +318,7 @@ export function registerInvoiceRoutes(app: Express) {
 
     // Post all draft entries
     for (const entry of invoiceEntries) {
-      await storage.updateJournalEntry(entry.id, {
+      await storage.updateJournalEntry(entry.id, invoice.companyId, {
         status: 'posted',
         postedBy: userId,
         postedAt: new Date(),
@@ -335,14 +334,9 @@ export function registerInvoiceRoutes(app: Express) {
     const userId = (req as any).user.id;
     const { lines, date, ...invoiceData } = req.body;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     if (isTerminal(invoice.status)) {
@@ -394,7 +388,7 @@ export function registerInvoiceRoutes(app: Express) {
     }
 
     // Update invoice
-    const updatedInvoice = await storage.updateInvoice(id, {
+    const updatedInvoice = await storage.updateInvoice(id, invoice.companyId, {
       ...invoiceData,
       date: invoiceDate,
       subtotal,
@@ -435,14 +429,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // FTA: 5-year retention. Throws RetentionViolationError → 409 via global handler.
@@ -489,14 +478,9 @@ export function registerInvoiceRoutes(app: Express) {
       });
     }
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     const oldStatus = invoice.status;
@@ -523,8 +507,8 @@ export function registerInvoiceRoutes(app: Express) {
       if (!paymentAccountId) {
         return res.status(400).json({ message: 'Payment account is required when marking invoice as paid' });
       }
-      const paymentAccount = await storage.getAccount(paymentAccountId);
-      if (!paymentAccount || paymentAccount.companyId !== invoice.companyId) {
+      const paymentAccount = await storage.getAccount(paymentAccountId, invoice.companyId);
+      if (!paymentAccount) {
         return res.status(400).json({ message: 'Invalid payment account' });
       }
       if (paymentAccount.type !== 'asset') {
@@ -557,7 +541,7 @@ export function registerInvoiceRoutes(app: Express) {
             createdBy: userId,
           });
         } else {
-          await storage.updateInvoiceStatus(id, 'paid');
+          await storage.updateInvoiceStatus(id, invoice.companyId, 'paid');
         }
       } catch (err: any) {
         if (err?.code === 'INVOICE_TERMINAL') {
@@ -569,10 +553,10 @@ export function registerInvoiceRoutes(app: Express) {
         throw err;
       }
     } else if (oldStatus !== status) {
-      await storage.updateInvoiceStatus(id, status);
+      await storage.updateInvoiceStatus(id, invoice.companyId, status);
     }
 
-    const updatedInvoice = await storage.getInvoice(id);
+    const updatedInvoice = await storage.getInvoice(id, invoice.companyId);
     log.info({ id, oldStatus, status }, 'Status transition');
 
     await recordAudit({
@@ -612,14 +596,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     const lines = await storage.getInvoiceLinesByInvoiceId(id);
@@ -635,7 +614,7 @@ export function registerInvoiceRoutes(app: Express) {
     const { xml, uuid, hash } = generateEInvoiceXML(invoice, lines, company, customer);
 
     // Save e-invoice data to the invoice record
-    await storage.updateInvoice(id, {
+    await storage.updateInvoice(id, invoice.companyId, {
       einvoiceUuid: uuid,
       einvoiceXml: xml,
       einvoiceHash: hash,
@@ -652,14 +631,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     if (!invoice.einvoiceXml) {
@@ -680,14 +654,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Generate a random token
@@ -709,14 +678,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     const lines = await storage.getInvoiceLinesByInvoiceId(id);
@@ -800,8 +764,8 @@ export function registerInvoiceRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -809,7 +773,7 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(400).json({ message: 'recurringInterval must be weekly, monthly, quarterly, or yearly' });
     }
 
-    const updated = await storage.updateInvoice(invoiceId, {
+    const updated = await storage.updateInvoice(invoiceId, companyId, {
       isRecurring: !!isRecurring,
       recurringInterval: isRecurring ? recurringInterval : null,
       nextRecurringDate: isRecurring && nextRecurringDate ? new Date(nextRecurringDate) : null,
@@ -831,8 +795,8 @@ export function registerInvoiceRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -858,8 +822,8 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(400).json({ message: 'paymentAccountId is required' });
     }
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -872,8 +836,8 @@ export function registerInvoiceRoutes(app: Express) {
       });
     }
 
-    const paymentAccount = await storage.getAccount(paymentAccountId);
-    if (!paymentAccount || paymentAccount.companyId !== companyId || paymentAccount.type !== 'asset') {
+    const paymentAccount = await storage.getAccount(paymentAccountId, companyId);
+    if (!paymentAccount || paymentAccount.type !== 'asset') {
       return res.status(400).json({ message: 'Invalid payment account — must be an asset (cash/bank) account' });
     }
     // Currency validation: bank-account currency (if present) must match the invoice.
@@ -961,8 +925,8 @@ export function registerInvoiceRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const original = await storage.getInvoice(invoiceId);
-    if (!original || original.companyId !== companyId) {
+    const original = await storage.getInvoice(invoiceId, companyId);
+    if (!original) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -1136,8 +1100,8 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -1190,8 +1154,8 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -1210,7 +1174,7 @@ export function registerInvoiceRoutes(app: Express) {
 
     await sendPaymentReminderEmail(to, invoice, company, pdfBuffer, newReminderCount);
 
-    await storage.updateInvoice(invoiceId, {
+    await storage.updateInvoice(invoiceId, companyId, {
       reminderCount: newReminderCount,
       lastReminderSentAt: new Date(),
     });
