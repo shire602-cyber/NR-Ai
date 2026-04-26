@@ -39,6 +39,7 @@
     { "idx": 34, "version": "7", "when": 1768300000000, "tag": "0034_invoice_number_sequences", "breakpoints": false },
     { "idx": 35, "version": "7", "when": 1768400000000, "tag": "0035_fta_exchange_rates", "breakpoints": false },
     { "idx": 36, "version": "7", "when": 1768500000000, "tag": "0036_retention_policy", "breakpoints": false },
-    { "idx": 37, "version": "7", "when": 1768600000000, "tag": "0037_customer_contact_whatsapp", "breakpoints": false }
+    { "idx": 37, "version": "7", "when": 1768600000000, "tag": "0037_customer_contact_whatsapp", "breakpoints": false },
+    { "idx": 38, "version": "7", "when": 1768700000000, "tag": "0038_payroll_state_machine", "breakpoints": false }
   ]
 }

@@ -6,6 +6,7 @@
  */
 
 import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
@@ -20,10 +21,19 @@ const log = createLogger('payroll');
 // ─── UAE / GCC pension constants (GPSSA & equivalents) ─────
 // UAE Federal Decree-Law No. 57 of 2023 (and predecessor Law No. 7/1999):
 // employees who are UAE/GCC nationals contribute 5% of pensionable wage and
-// the employer 12.5%. Pensionable wage = basic + housing + transport (the
-// "contribution salary" — other allowances are excluded).
+// the employer 12.5%. The "Contribution Account Salary" defined by the law
+// is *basic + housing only* — transport and other allowances are excluded
+// from the pension base.
 const PENSION_EMPLOYEE_RATE = 0.05;
 const PENSION_EMPLOYER_RATE = 0.125;
+
+// ─── Gratuity / 30-day-month convention ─────────────────────
+// UAE Labour Law (Federal Decree-Law 33/2021, Art. 51) explicitly fixes the
+// daily wage at basicSalary / 30 and uses 30-day months for proration. A
+// 360-day "commercial year" follows from this.
+const DAYS_PER_MONTH = 30;
+const MONTHS_PER_YEAR = 12;
+const DAYS_PER_YEAR_30D = DAYS_PER_MONTH * MONTHS_PER_YEAR; // 360
 
 // GCC nationalities (ISO-2 codes plus a few common spellings) eligible for
 // equivalent-treatment pension under GCC Unified Pension Extension. Match is
@@ -46,6 +56,59 @@ function isUaeOrGccNational(nationality: string | null | undefined): boolean {
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
+
+// Calendar-correct anniversary walk: how many full years elapsed between
+// `start` and `end`. Used to pick the 21-day vs 30-day gratuity tier.
+function completedYearsBetween(start: Date, end: Date): number {
+  if (!(start instanceof Date) || isNaN(start.getTime())) return 0;
+  if (end.getTime() <= start.getTime()) return 0;
+  let cursor = new Date(start);
+  let years = 0;
+  while (true) {
+    const next = new Date(cursor);
+    next.setFullYear(next.getFullYear() + 1);
+    if (next.getTime() > end.getTime()) break;
+    cursor = next;
+    years++;
+  }
+  return years;
+}
+
+// Last day of the given (1-indexed) payroll period, in UTC. Day 0 of month
+// `periodMonth` (0-indexed = periodMonth-1, then +1 month, day 0) lands on the
+// last day of the period.
+function periodEndDate(periodMonth: number, periodYear: number): Date {
+  return new Date(Date.UTC(periodYear, periodMonth, 0));
+}
+
+// ─── Zod: employee create payload ──────────────────────────
+// Trim + length-bound every text field; coerce numerics so HTML form posts
+// (which send strings) round-trip cleanly. Only `fullName` is required —
+// everything else is nullable on the underlying table.
+const employeeCreateSchema = z.object({
+  employeeNumber: z.string().trim().min(1).max(64).optional(),
+  fullName: z.string().trim().min(1, 'fullName is required').max(255),
+  fullNameAr: z.string().trim().max(255).optional(),
+  nationality: z.string().trim().max(64).optional(),
+  passportNumber: z.string().trim().max(64).optional(),
+  visaNumber: z.string().trim().max(64).optional(),
+  laborCardNumber: z.string().trim().max(64).optional(),
+  bankName: z.string().trim().max(128).optional(),
+  bankAccountNumber: z.string().trim().max(64).optional(),
+  iban: z.string().trim().max(64).optional(),
+  routingCode: z.string().trim().max(32).optional(),
+  department: z.string().trim().max(128).optional(),
+  designation: z.string().trim().max(128).optional(),
+  joinDate: z.preprocess(
+    (v) => (v === '' || v === null || v === undefined ? undefined : v),
+    z.coerce.date().optional(),
+  ),
+  basicSalary: z.coerce.number().nonnegative().default(0),
+  housingAllowance: z.coerce.number().nonnegative().default(0),
+  transportAllowance: z.coerce.number().nonnegative().default(0),
+  otherAllowance: z.coerce.number().nonnegative().default(0),
+  status: z.enum(['active', 'inactive', 'terminated']).optional(),
+});
 
 interface PayrollLineCalc {
   basic: number;
@@ -75,6 +138,10 @@ function calculatePayrollLine(input: {
   overtime: number;
   generalDeductions: number;
   isGccNational: boolean;
+  // Completed years of service at end of payroll period. Drives the
+  // gratuity 21-day vs 30-day tier (Art. 51). Defaults to 0 — i.e. the
+  // 21-day rate — when the caller can't determine tenure.
+  tenureYears?: number;
 }): PayrollLineCalc {
   const basic = input.basic || 0;
   const housing = input.housing || 0;
@@ -82,6 +149,7 @@ function calculatePayrollLine(input: {
   const other = input.other || 0;
   const overtime = input.overtime || 0;
   const generalDeductions = input.generalDeductions || 0;
+  const tenureYears = input.tenureYears ?? 0;
 
   const pensionableWage = basic + housing + transport;
   const pensionEmployee = input.isGccNational
@@ -91,12 +159,17 @@ function calculatePayrollLine(input: {
     ? round2(pensionableWage * PENSION_EMPLOYER_RATE)
     : 0;
 
-  // Expats accrue UAE end-of-service gratuity at 21 days basic per year of
-  // service (post-Jan-2024 reform aligns first 5 years and beyond at 21 days
-  // for the *expense accrual*; settlement on termination uses 21/30 tiering).
-  // Monthly accrual = (21 / 365) × basic. Conservative; understates beyond
-  // year 5 but never overstates.
-  const gratuityAccrual = input.isGccNational ? 0 : round2((21 / 365) * basic);
+  // Expat end-of-service gratuity per UAE Federal Decree-Law 33/2021 Art. 51:
+  //   daily wage = basic / 30 (30-day-month convention, NOT 365)
+  //   first 5 years: 21 days/year of basic
+  //   after 5 years: 30 days/year of basic
+  // Monthly accrual = (annualDays × basic / 30) / 12 = annualDays × basic / 360.
+  // Switches to 30/year as soon as the employee has 5 completed years at
+  // period end, since service from the 6th year onward earns at the higher rate.
+  const annualGratuityDays = tenureYears < 5 ? 21 : 30;
+  const gratuityAccrual = input.isGccNational
+    ? 0
+    : round2((annualGratuityDays * basic) / DAYS_PER_YEAR_30D);
 
   const grossPay = round2(basic + housing + transport + other + overtime);
   const netSalary = round2(grossPay - pensionEmployee - generalDeductions);
@@ -303,20 +376,17 @@ export function registerPayrollRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const {
-      employeeNumber, fullName, fullNameAr, nationality,
-      passportNumber, visaNumber, laborCardNumber,
-      bankName, bankAccountNumber, iban, routingCode,
-      department, designation, joinDate,
-      basicSalary, housingAllowance, transportAllowance, otherAllowance,
-      status,
-    } = req.body;
+    const parsed = employeeCreateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({
+        message: 'Validation error',
+        errors: parsed.error.errors,
+      });
+    }
+    const data = parsed.data;
 
-    const basic = parseFloat(basicSalary) || 0;
-    const housing = parseFloat(housingAllowance) || 0;
-    const transport = parseFloat(transportAllowance) || 0;
-    const other = parseFloat(otherAllowance) || 0;
-    const totalSalary = basic + housing + transport + other;
+    const totalSalary = data.basicSalary + data.housingAllowance
+      + data.transportAllowance + data.otherAllowance;
 
     const [employee] = await query(
       `INSERT INTO employees (
@@ -331,17 +401,17 @@ export function registerPayrollRoutes(app: Express) {
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
       ) RETURNING *`,
       [
-        companyId, employeeNumber || null, fullName, fullNameAr || null, nationality || null,
-        passportNumber || null, visaNumber || null, laborCardNumber || null,
-        bankName || null, bankAccountNumber || null, iban || null, routingCode || null,
-        department || null, designation || null, joinDate || null,
-        basic, housing, transport, other,
-        totalSalary, status || 'active',
+        companyId, data.employeeNumber ?? null, data.fullName, data.fullNameAr ?? null, data.nationality ?? null,
+        data.passportNumber ?? null, data.visaNumber ?? null, data.laborCardNumber ?? null,
+        data.bankName ?? null, data.bankAccountNumber ?? null, data.iban ?? null, data.routingCode ?? null,
+        data.department ?? null, data.designation ?? null, data.joinDate ?? null,
+        data.basicSalary, data.housingAllowance, data.transportAllowance, data.otherAllowance,
+        totalSalary, data.status ?? 'active',
       ]
     );
 
     log.info({ employeeId: employee.id, companyId }, 'Employee created');
-    res.json(employee);
+    res.status(201).json(employee);
   }));
 
   // Update employee
@@ -618,6 +688,10 @@ export function registerPayrollRoutes(app: Express) {
     let totalPensionEmployer = 0;
     let totalGratuityAccrual = 0;
 
+    // End of the payroll period — used to choose the gratuity tier (21 vs 30
+    // days/year) per Art. 51 based on the employee's tenure at period close.
+    const periodEnd = periodEndDate(run.period_month, run.period_year);
+
     // Re-include preserved (manually edited) items in the run totals.
     for (const item of preservedItems) {
       totalBasic += parseFloat(item.basic_salary) || 0;
@@ -638,6 +712,10 @@ export function registerPayrollRoutes(app: Express) {
     for (const emp of employees) {
       if (preservedEmployeeIds.has(emp.id)) continue;
 
+      const tenureYears = emp.join_date
+        ? completedYearsBetween(new Date(emp.join_date), periodEnd)
+        : 0;
+
       const calc = calculatePayrollLine({
         basic: parseFloat(emp.basic_salary) || 0,
         housing: parseFloat(emp.housing_allowance) || 0,
@@ -646,6 +724,7 @@ export function registerPayrollRoutes(app: Express) {
         overtime: 0,
         generalDeductions: 0,
         isGccNational: isUaeOrGccNational(emp.nationality),
+        tenureYears,
       });
 
       if (calc.netSalary < 0) {
@@ -1089,7 +1168,8 @@ export function registerPayrollRoutes(app: Express) {
     const userId = (req as any).user.id;
 
     const item = await queryOne(
-      `SELECT pi.*, pr.company_id, pr.status as run_status
+      `SELECT pi.*, pr.company_id, pr.status as run_status,
+              pr.period_month, pr.period_year
        FROM payroll_items pi
        JOIN payroll_runs pr ON pr.id = pi.payroll_run_id
        WHERE pi.id = $1`,
@@ -1109,12 +1189,17 @@ export function registerPayrollRoutes(app: Express) {
       return res.status(400).json({ message: 'Cannot modify items in an approved payroll run' });
     }
 
-    // Look up the employee for nationality (drives pension applicability).
+    // Look up the employee for nationality (drives pension applicability) and
+    // join_date (drives the 21/30-day gratuity tier).
     const emp = await queryOne(
-      'SELECT nationality FROM employees WHERE id = $1',
+      'SELECT nationality, join_date FROM employees WHERE id = $1',
       [item.employee_id]
     );
     const isGcc = isUaeOrGccNational(emp?.nationality);
+    const periodEnd = periodEndDate(item.period_month, item.period_year);
+    const tenureYears = emp?.join_date
+      ? completedYearsBetween(new Date(emp.join_date), periodEnd)
+      : 0;
 
     const overtime = req.body.overtime !== undefined
       ? parseFloat(req.body.overtime) : parseFloat(item.overtime);
@@ -1131,6 +1216,7 @@ export function registerPayrollRoutes(app: Express) {
       overtime,
       generalDeductions,
       isGccNational: isGcc,
+      tenureYears,
     });
 
     if (calc.netSalary < 0) {

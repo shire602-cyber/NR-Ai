@@ -102,6 +102,14 @@ export const companies = pgTable("companies", {
   taxRegistrationDate: timestamp("tax_registration_date"),
   corporateTaxId: text("corporate_tax_id"),
   emirate: text("emirate").default("dubai"), // abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah
+
+  // WPS / Payroll — MOHRE establishment ID and employer bank fields used to
+  // build the SCR (Salary Control Record) line of the SIF file. Distinct from
+  // `registrationNumber` (trade-license number).
+  mohreEstablishmentId: text("mohre_establishment_id"),
+  wpsEmployerBankName: text("wps_employer_bank_name"),
+  wpsEmployerIban: text("wps_employer_iban"),
+  wpsEmployerRoutingCode: text("wps_employer_routing_code"),
   // Partial exemption: fraction of supplies that are exempt (0..1). When > 0, input VAT
   // is reduced by this ratio per FTA partial-exemption rules.
   exemptSupplyRatio: vatRateType("exempt_supply_ratio").notNull().default(0),
