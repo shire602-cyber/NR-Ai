@@ -387,6 +387,29 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'invoices.contact_id',
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "contact_id" uuid REFERENCES "customer_contacts"("id") ON DELETE SET NULL`,
     },
+    // ── audit_logs: critical for financial audit trail (now wired in) ────
+    {
+      name: 'audit_logs table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "audit_logs" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid REFERENCES "users"("id"),
+        "action" text NOT NULL,
+        "resource_type" text NOT NULL,
+        "resource_id" text,
+        "details" text,
+        "ip_address" text,
+        "user_agent" text,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      name: 'audit_logs.created_at index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_created_at" ON "audit_logs" ("created_at" DESC)`,
+    },
+    {
+      name: 'audit_logs.resource index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_resource" ON "audit_logs" ("resource_type", "resource_id")`,
+    },
   ];
 
   let ok = 0;

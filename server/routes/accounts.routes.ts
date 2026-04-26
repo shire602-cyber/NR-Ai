@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { insertAccountSchema } from "../../shared/schema";
+import { recordAudit } from "../services/audit.service";
 
 export function registerAccountRoutes(app: Express) {
   // =====================================
@@ -38,6 +39,18 @@ export function registerAccountRoutes(app: Express) {
     const validated = insertAccountSchema.parse({ ...req.body, companyId });
 
     const account = await storage.createAccount(validated);
+
+    await recordAudit({
+      userId,
+      companyId,
+      action: 'account.create',
+      entityType: 'account',
+      entityId: account.id,
+      before: null,
+      after: { code: account.code, type: account.type, nameEn: account.nameEn },
+      req,
+    });
+
     res.json(account);
   }));
 
@@ -59,6 +72,22 @@ export function registerAccountRoutes(app: Express) {
     }
 
     const updatedAccount = await storage.updateAccount(id, req.body);
+
+    // Account-type changes are especially sensitive — they re-classify how
+    // every existing balance rolls into the trial balance / financial
+    // statements — so log them with extra emphasis.
+    const typeChanged = req.body.type && req.body.type !== account.type;
+    await recordAudit({
+      userId,
+      companyId: account.companyId,
+      action: typeChanged ? 'account.type_change' : 'account.update',
+      entityType: 'account',
+      entityId: id,
+      before: { code: account.code, type: account.type, nameEn: account.nameEn },
+      after: { code: updatedAccount.code, type: updatedAccount.type, nameEn: updatedAccount.nameEn },
+      req,
+    });
+
     res.json(updatedAccount);
   }));
 

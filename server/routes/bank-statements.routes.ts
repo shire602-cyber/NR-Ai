@@ -532,6 +532,18 @@ export function registerBankStatementRoutes(app: Express) {
       const updated = await storage.reconcileBankTransaction(tid, matchedId, matchedType as 'journal' | 'receipt' | 'invoice');
       await storage.updateBankTransaction(tid, { matchStatus: 'matched' });
 
+      const { recordAudit } = await import('../services/audit.service');
+      await recordAudit({
+        userId,
+        companyId,
+        action: 'bank.reconcile',
+        entityType: 'bank_transaction',
+        entityId: tid,
+        before: { matchStatus: txn.matchStatus },
+        after: { matchedType, matchedId, matchStatus: 'matched' },
+        req,
+      });
+
       res.json({ ...updated, matchStatus: 'matched' });
     })
   );
