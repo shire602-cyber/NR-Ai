@@ -14,6 +14,7 @@ import { getToken } from '@/lib/auth';
 import { User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
+import { PageSkeleton } from '@/components/PageSkeleton';
 
 // All pages lazy-loaded for route-level code splitting.
 // Layout shell (AppSidebar, ProtectedLayout) is NOT lazy — needed immediately.
@@ -111,9 +112,13 @@ const AnomalyDetection = lazy(() => import('@/pages/AnomalyDetection'));
 const AutoReconcile = lazy(() => import('@/pages/AutoReconcile'));
 const MonthEndClose = lazy(() => import('@/pages/MonthEndClose'));
 
-function PageLoader() {
+function PageLoader({ variant }: { variant?: 'list' | 'detail' | 'dashboard' | 'form' | 'minimal' } = {}) {
+  return <PageSkeleton variant={variant ?? 'list'} />;
+}
+
+function MinimalPageLoader() {
   return (
-    <div className="flex items-center justify-center h-64">
+    <div className="flex items-center justify-center h-64" aria-busy="true">
       <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
     </div>
   );
@@ -286,7 +291,7 @@ function Router() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
         >
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<MinimalPageLoader />}>
             <LandingPage />
           </Suspense>
         </motion.div>
@@ -299,7 +304,7 @@ function Router() {
     return (
       <PortalRoute>
         <PortalLayout>
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<PageLoader variant="dashboard" />}>
             <Switch>
               <Route path="/client-portal/dashboard" component={PortalDashboard} />
               <Route path="/client-portal/invoices" component={PortalInvoices} />
@@ -318,7 +323,7 @@ function Router() {
   if (location === '/onboarding') {
     return (
       <ProtectedRoute>
-        <Suspense fallback={<PageLoader />}>
+        <Suspense fallback={<PageLoader variant="form" />}>
           <Onboarding />
         </Suspense>
       </ProtectedRoute>
@@ -336,7 +341,7 @@ function Router() {
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.3 }}
         >
-          <Suspense fallback={<PageLoader />}>
+          <Suspense fallback={<MinimalPageLoader />}>
             <Switch>
               <Route path="/login" component={Login} />
               <Route path="/register" component={Register} />
@@ -355,7 +360,7 @@ function Router() {
   return (
     <ProtectedRoute>
       <ProtectedLayout>
-        <Suspense fallback={<PageLoader />}>
+        <Suspense fallback={<PageLoader variant="list" />}>
         <Switch>
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/company-profile" component={CompanyProfile} />
