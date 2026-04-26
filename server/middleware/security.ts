@@ -1,9 +1,9 @@
 import helmet from 'helmet';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
 import type { Express, Request, Response, NextFunction } from 'express';
 import { getEnv, isProduction } from '../config/env';
 import { createLogger } from '../config/logger';
+import { buildLimiter, limiterProfiles } from './rateLimit';
 
 const log = createLogger('security');
 
@@ -81,57 +81,15 @@ export function applySecurityMiddleware(app: Express): void {
     })
   );
 
-  // ─── Rate Limiting ────────────────────────────────────────
-  // Composite key: when authenticated, key on user id + ip so one user behind
-  // a shared NAT/proxy cannot eat another user's quota. Falls back to ip-only
-  // for unauthenticated requests.
-  const compositeKey = (req: Request): string => {
-    const userId = (req as any).user?.id as string | undefined;
-    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
-    return userId ? `${ip}:${userId}` : ip;
-  };
-
-  // General API rate limit: 100 requests per minute
-  const apiLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: compositeKey,
-    message: { message: 'Too many requests. Please try again later.' },
-    skip: (req) => {
-      // Don't rate limit health checks
-      return req.path === '/health' || req.path === '/api/v1/health';
-    },
-  });
-
-  // Strict auth rate limit: 5 requests per minute (auth has no user id, so key
-  // is naturally ip-only via the composite generator's fallback).
-  const authLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 5,
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: compositeKey,
-    message: { message: 'Too many authentication attempts. Please wait 1 minute.' },
-  });
-
-  // AI/OCR endpoints rate limit: 20 requests per minute (LLM calls are expensive)
-  const aiLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 20,
-    standardHeaders: true,
-    legacyHeaders: false,
-    keyGenerator: compositeKey,
-    message: { message: 'AI rate limit exceeded. Please try again later.' },
-  });
-
-  // Apply rate limiters
-  app.use('/api/', apiLimiter);
-  app.use('/api/auth/', authLimiter);
-  app.use('/api/ai/', aiLimiter);
-  app.use('/api/ocr/', aiLimiter);
-  app.use('/api/firm/bulk/ocr', aiLimiter);
+  // ─── Rate Limiting (sliding window, configurable per route) ──
+  // Each limiter has its own in-memory sliding-window store, sized via
+  // env vars (RL_*). Composite key (ip+userId) prevents NAT collisions.
+  // Order matters: more specific paths must be registered before /api/.
+  app.use('/api/auth/', buildLimiter(limiterProfiles.auth));
+  app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
+  app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));
+  app.use('/api/firm/bulk/ocr', buildLimiter(limiterProfiles.ai));
+  app.use('/api/', buildLimiter(limiterProfiles.api));
 
   // ─── Request Size Limits ──────────────────────────────────
   // Hard ceiling: image-upload routes allow up to 10MB; the per-route
