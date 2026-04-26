@@ -28,6 +28,8 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/loading-skeletons';
 import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from '@/lib/export';
 import { Plus, FileText, FileCode, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, Send, DollarSign, RefreshCw, RotateCcw } from 'lucide-react';
 import { SiGooglesheets, SiWhatsapp } from 'react-icons/si';
@@ -1233,7 +1235,7 @@ export default function Invoices() {
                               ? 'Try widening the date filter or clearing it to see all invoices.'
                               : 'Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically.'
                           }
-                          primaryAction={
+                          action={
                             !dateRange.from && !dateRange.to
                               ? {
                                   label: 'New invoice',
@@ -1251,6 +1253,7 @@ export default function Invoices() {
                                 }
                               : undefined
                           }
+                          testId="empty-state-invoices"
                         />
                       </TableCell>
                     </TableRow>

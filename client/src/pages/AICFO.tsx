@@ -502,7 +502,7 @@ export default function AICFO() {
               icon={Brain}
               title="No insights generated yet"
               description="Generate prioritized, AI-written recommendations based on your real financial data. Costs an AI request."
-              primaryAction={{
+              action={{
                 label: insightsMutation.isPending ? 'Generating…' : 'Generate insights',
                 onClick: () => insightsMutation.mutate(),
               }}

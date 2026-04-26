@@ -443,7 +443,7 @@ export default function CustomerContacts() {
                       ? 'Try a different search term or clear the search.'
                       : 'Add your first contact, or import a list from an Excel/CSV file.'
                   }
-                  primaryAction={
+                  action={
                     searchTerm
                       ? undefined
                       : {

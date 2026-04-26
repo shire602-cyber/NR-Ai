@@ -6,7 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/loading-skeletons';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -115,15 +118,15 @@ interface ReportData {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 const matchTypeConfig = {
-  journal_entry: { icon: BookOpen, label: 'Journal Entry', color: 'text-purple-600', bg: 'bg-purple-50' },
-  invoice: { icon: FileText, label: 'Invoice', color: 'text-blue-600', bg: 'bg-blue-50' },
-  receipt: { icon: Receipt, label: 'Receipt', color: 'text-green-600', bg: 'bg-green-50' },
+  journal_entry: { icon: BookOpen, label: 'Journal Entry', color: 'text-[hsl(var(--chart-3))]', bg: 'bg-[hsl(var(--chart-3)/0.10)]' },
+  invoice: { icon: FileText, label: 'Invoice', color: 'text-[hsl(var(--chart-1))]', bg: 'bg-[hsl(var(--chart-1)/0.10)]' },
+  receipt: { icon: Receipt, label: 'Receipt', color: 'text-[hsl(var(--chart-5))]', bg: 'bg-[hsl(var(--chart-5)/0.10)]' },
 };
 
 function confidenceLabel(score: number): { label: string; color: string; bg: string } {
-  if (score >= 80) return { label: 'High', color: 'text-green-700', bg: 'bg-green-100' };
-  if (score >= 60) return { label: 'Medium', color: 'text-amber-700', bg: 'bg-amber-100' };
-  return { label: 'Low', color: 'text-red-700', bg: 'bg-red-100' };
+  if (score >= 80) return { label: 'High', color: 'text-[hsl(var(--chart-5))]', bg: 'bg-[hsl(var(--chart-5)/0.15)]' };
+  if (score >= 60) return { label: 'Medium', color: 'text-[hsl(var(--chart-4))]', bg: 'bg-[hsl(var(--chart-4)/0.15)]' };
+  return { label: 'Low', color: 'text-destructive', bg: 'bg-destructive/15' };
 }
 
 function formatDate(dateStr: string) {
@@ -469,29 +472,29 @@ export default function BankReconciliation() {
             <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
-        <Card className="border-green-200">
+        <Card className="border-[hsl(var(--chart-5)/0.30)]">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-green-500" />
+              <CheckCircle2 className="w-3 h-3 text-[hsl(var(--chart-5))]" />
               Reconciled
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{stats.reconciled}</div>
+            <div className="text-2xl font-bold text-[hsl(var(--chart-5))]">{stats.reconciled}</div>
             {stats.total > 0 && (
               <Progress value={(stats.reconciled / stats.total) * 100} className="h-1 mt-2" />
             )}
           </CardContent>
         </Card>
-        <Card className="border-amber-200">
+        <Card className="border-[hsl(var(--chart-4)/0.30)]">
           <CardHeader className="pb-2">
             <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3 text-amber-500" />
+              <AlertTriangle className="w-3 h-3 text-[hsl(var(--chart-4))]" />
               Suggested
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600">{stats.suggested}</div>
+            <div className="text-2xl font-bold text-[hsl(var(--chart-4))]">{stats.suggested}</div>
             <p className="text-xs text-muted-foreground mt-1">Pending review</p>
           </CardContent>
         </Card>
@@ -502,7 +505,7 @@ export default function BankReconciliation() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${stats.totalAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className={`text-2xl font-bold ${stats.totalAmount >= 0 ? 'text-[hsl(var(--chart-5))]' : 'text-destructive'}`}>
               {formatCurrency(stats.totalAmount)}
             </div>
           </CardContent>
@@ -556,18 +559,15 @@ export default function BankReconciliation() {
         </CardHeader>
         <CardContent>
           {isLoadingTransactions ? (
-            <div className="space-y-2">
-              {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-12" />)}
-            </div>
+            <TableSkeleton rows={6} columns={6} />
           ) : filteredTransactions.length === 0 ? (
-            <div className="text-center py-16">
-              <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">{t.noTransactionsFound}</p>
-              <Button className="mt-4" variant="outline" onClick={() => setImportDialogOpen(true)}>
-                <Upload className="w-4 h-4 mr-2" />
-                Import bank statement
-              </Button>
-            </div>
+            <EmptyState
+              icon={Building2}
+              title="No bank transactions"
+              description={t.noTransactionsFound || 'Import a bank statement (CSV or PDF) to start matching transactions to journal entries.'}
+              action={{ label: 'Import bank statement', icon: Upload, variant: 'outline', onClick: () => setImportDialogOpen(true) }}
+              testId="empty-state-bank-transactions"
+            />
           ) : (
             <div className="rounded-md border overflow-x-auto">
               <Table>
@@ -589,7 +589,7 @@ export default function BankReconciliation() {
                       <TableRow
                         key={tx.id}
                         data-testid={`row-transaction-${tx.id}`}
-                        className={tx.matchStatus === 'suggested' ? 'bg-amber-50/40' : ''}
+                        className={tx.matchStatus === 'suggested' ? 'bg-[hsl(var(--chart-4)/0.06)]' : ''}
                       >
                         <TableCell className="font-mono text-sm">
                           {formatDate(tx.transactionDate)}
@@ -600,26 +600,26 @@ export default function BankReconciliation() {
                         <TableCell className="text-muted-foreground text-sm">
                           {tx.reference || '—'}
                         </TableCell>
-                        <TableCell className={`text-right font-mono font-medium ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        <TableCell className={`text-right font-mono font-medium ${tx.amount >= 0 ? 'text-[hsl(var(--chart-5))]' : 'text-destructive'}`}>
                           {formatCurrency(tx.amount)}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             {tx.isReconciled ? (
-                              <Badge className="bg-green-100 text-green-800 w-fit" variant="secondary">
+                              <StatusBadge tone="success" className="w-fit">
                                 <CheckCircle2 className="w-3 h-3 mr-1" />
                                 Reconciled
-                              </Badge>
+                              </StatusBadge>
                             ) : tx.matchStatus === 'suggested' ? (
-                              <Badge className="bg-amber-100 text-amber-800 w-fit" variant="secondary">
+                              <StatusBadge tone="warning" className="w-fit">
                                 <Sparkles className="w-3 h-3 mr-1" />
                                 Suggested
-                              </Badge>
+                              </StatusBadge>
                             ) : (
-                              <Badge variant="secondary" className="w-fit">
+                              <StatusBadge tone="neutral" className="w-fit">
                                 <XCircle className="w-3 h-3 mr-1" />
                                 Unmatched
-                              </Badge>
+                              </StatusBadge>
                             )}
                             {confMeta && !tx.isReconciled && (
                               <span className={`text-xs font-medium ${confMeta.color}`}>
@@ -645,7 +645,7 @@ export default function BankReconciliation() {
                               <>
                                 <Button
                                   size="sm"
-                                  className="h-7 px-2 bg-green-600 hover:bg-green-700"
+                                  className="h-7 px-2 bg-[hsl(var(--chart-5))] hover:bg-[hsl(var(--chart-5)/0.85)] text-primary-foreground"
                                   onClick={() => handleAcceptSuggestion(tx)}
                                   disabled={matchMutation.isPending}
                                   title="Accept suggested match"
@@ -724,7 +724,7 @@ export default function BankReconciliation() {
                   )}
                   <div>
                     <p className="text-xs text-muted-foreground">Amount</p>
-                    <p className={`text-xl font-bold ${selectedTransaction.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <p className={`text-xl font-bold ${selectedTransaction.amount >= 0 ? 'text-[hsl(var(--chart-5))]' : 'text-destructive'}`}>
                       {formatCurrency(selectedTransaction.amount)}
                     </p>
                   </div>
@@ -841,7 +841,7 @@ export default function BankReconciliation() {
                 </SelectContent>
               </Select>
               {(!bankAccounts || bankAccounts.length === 0) && (
-                <p className="text-xs text-amber-600">
+                <p className="text-xs text-[hsl(var(--chart-4))]">
                   No bank accounts configured. Create one under Settings → Bank Accounts.
                 </p>
               )}
@@ -858,9 +858,9 @@ export default function BankReconciliation() {
               {importFile && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   {importFile.type === 'application/pdf' ? (
-                    <FileText className="w-4 h-4 text-red-500" />
+                    <FileText className="w-4 h-4 text-destructive" />
                   ) : (
-                    <FileSpreadsheet className="w-4 h-4 text-green-500" />
+                    <FileSpreadsheet className="w-4 h-4 text-[hsl(var(--chart-5))]" />
                   )}
                   <span>{importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)</span>
                 </div>
@@ -875,11 +875,11 @@ export default function BankReconciliation() {
             <div className="bg-muted/50 p-3 rounded-md text-sm space-y-1.5">
               <p className="font-medium text-xs uppercase tracking-wide">Supported formats</p>
               <div className="flex items-center gap-2 text-xs">
-                <FileSpreadsheet className="w-3.5 h-3.5 text-green-500" />
+                <FileSpreadsheet className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
                 <span>CSV — Emirates NBD, ADCB, FAB, Mashreq, generic</span>
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <FileText className="w-3.5 h-3.5 text-red-500" />
+                <FileText className="w-3.5 h-3.5 text-destructive" />
                 <span>PDF — text extraction with OCR fallback</span>
               </div>
             </div>
@@ -916,8 +916,10 @@ export default function BankReconciliation() {
             </DialogDescription>
           </DialogHeader>
           {isLoadingReport ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16" />)}
+            <div className="space-y-3" aria-busy="true">
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-2 w-full" />
+              <Skeleton className="h-32 w-full" />
             </div>
           ) : reportData ? (
             <div className="space-y-4">
@@ -929,12 +931,12 @@ export default function BankReconciliation() {
                     <div className="text-2xl font-bold">{reportData.summary.totalTransactions}</div>
                     <div className="text-xs text-muted-foreground mt-1">Total</div>
                   </div>
-                  <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-center">
-                    <div className="text-2xl font-bold text-green-700">{reportData.summary.reconciledCount}</div>
+                  <div className="rounded-lg border border-[hsl(var(--chart-5)/0.30)] bg-[hsl(var(--chart-5)/0.10)] p-3 text-center">
+                    <div className="text-2xl font-bold text-[hsl(var(--chart-5))]">{reportData.summary.reconciledCount}</div>
                     <div className="text-xs text-muted-foreground mt-1">Reconciled</div>
                   </div>
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center">
-                    <div className="text-2xl font-bold text-amber-700">{reportData.summary.unreconciledCount}</div>
+                  <div className="rounded-lg border border-[hsl(var(--chart-4)/0.30)] bg-[hsl(var(--chart-4)/0.10)] p-3 text-center">
+                    <div className="text-2xl font-bold text-[hsl(var(--chart-4))]">{reportData.summary.unreconciledCount}</div>
                     <div className="text-xs text-muted-foreground mt-1">Unreconciled</div>
                   </div>
                 </div>
@@ -957,29 +959,29 @@ export default function BankReconciliation() {
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Total Credits</span>
-                    <span className="font-mono font-medium text-green-600">{formatCurrency(reportData.amounts.totalCredits)}</span>
+                    <span className="font-mono font-medium text-[hsl(var(--chart-5))]">{formatCurrency(reportData.amounts.totalCredits)}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Total Debits</span>
-                    <span className="font-mono font-medium text-red-600">{formatCurrency(reportData.amounts.totalDebits)}</span>
+                    <span className="font-mono font-medium text-destructive">{formatCurrency(reportData.amounts.totalDebits)}</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Reconciled Credits</span>
-                    <span className="font-mono text-green-600">{formatCurrency(reportData.amounts.reconciledCredits)}</span>
+                    <span className="font-mono text-[hsl(var(--chart-5))]">{formatCurrency(reportData.amounts.reconciledCredits)}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Reconciled Debits</span>
-                    <span className="font-mono text-red-600">{formatCurrency(reportData.amounts.reconciledDebits)}</span>
+                    <span className="font-mono text-destructive">{formatCurrency(reportData.amounts.reconciledDebits)}</span>
                   </div>
                   <Separator />
                   <div className="flex justify-between items-center text-sm font-semibold">
                     <span>Unreconciled Credits</span>
-                    <span className="font-mono text-amber-600">{formatCurrency(reportData.amounts.unreconciledCredits)}</span>
+                    <span className="font-mono text-[hsl(var(--chart-4))]">{formatCurrency(reportData.amounts.unreconciledCredits)}</span>
                   </div>
                   <div className="flex justify-between items-center text-sm font-semibold">
                     <span>Unreconciled Debits</span>
-                    <span className="font-mono text-amber-600">{formatCurrency(reportData.amounts.unreconciledDebits)}</span>
+                    <span className="font-mono text-[hsl(var(--chart-4))]">{formatCurrency(reportData.amounts.unreconciledDebits)}</span>
                   </div>
                 </div>
               </div>
@@ -987,9 +989,9 @@ export default function BankReconciliation() {
               {reportData.summary.suggestedCount > 0 && (
                 <>
                   <Separator />
-                  <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3">
-                    <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                    <p className="text-sm text-amber-800">
+                  <div className="flex items-center gap-2 rounded-lg bg-[hsl(var(--chart-4)/0.10)] border border-[hsl(var(--chart-4)/0.30)] p-3">
+                    <Sparkles className="w-4 h-4 text-[hsl(var(--chart-4))] shrink-0" />
+                    <p className="text-sm text-foreground">
                       <strong>{reportData.summary.suggestedCount}</strong> transaction(s) have suggested matches
                       waiting for your review.
                     </p>

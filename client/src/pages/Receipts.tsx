@@ -7,7 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CardListSkeleton } from '@/components/ui/loading-skeletons';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/lib/i18n';
@@ -998,7 +1001,7 @@ export default function Receipts() {
             className={`
               border-2 border-dashed rounded-lg p-8 text-center transition-all
               ${isDragging ? 'border-primary bg-primary/5' : 'border-border'}
-              ${processedReceipts.length > 0 ? 'border-green-500 bg-green-500/5' : ''}
+              ${processedReceipts.length > 0 ? 'border-[hsl(var(--chart-5))] bg-[hsl(var(--chart-5)/0.05)]' : ''}
               hover:border-primary hover:bg-accent/50 cursor-pointer
             `}
             onClick={() => document.getElementById('file-input')?.click()}
@@ -1019,7 +1022,7 @@ export default function Receipts() {
 
             {processedReceipts.length > 0 ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-center gap-2 text-green-600">
+                <div className="flex items-center justify-center gap-2 text-[hsl(var(--chart-5))]">
                   <CheckCircle2 className="w-5 h-5" />
                   <span>{processedReceipts.length} image(s) loaded</span>
                 </div>
@@ -1111,24 +1114,24 @@ export default function Receipts() {
                 <Badge variant="outline">{processingCount} processing</Badge>
               )}
               {completedCount > 0 && (
-                <Badge variant="outline" className="bg-green-500/10 border-green-500">
+                <StatusBadge tone="success">
                   {completedCount} ready to save
-                </Badge>
+                </StatusBadge>
               )}
               {savedCount > 0 && (
-                <Badge variant="outline" className="bg-blue-500/10 border-blue-500">
+                <StatusBadge tone="info">
                   {savedCount} saved
-                </Badge>
+                </StatusBadge>
               )}
               {errorCount > 0 && (
-                <Badge variant="outline" className="bg-red-500/10 border-red-500">
+                <StatusBadge tone="danger">
                   {errorCount} OCR errors
-                </Badge>
+                </StatusBadge>
               )}
               {saveErrorCount > 0 && (
-                <Badge variant="outline" className="bg-orange-500/10 border-orange-500">
+                <StatusBadge tone="warning">
                   {saveErrorCount} save failed
-                </Badge>
+                </StatusBadge>
               )}
             </div>
           )}
@@ -1186,21 +1189,21 @@ export default function Receipts() {
                     )}
 
                     {receipt.status === 'error' && (
-                      <div className="flex items-center gap-2 text-red-600">
+                      <div className="flex items-center gap-2 text-destructive">
                         <XCircle className="w-4 h-4" />
                         <span className="text-sm">{receipt.error}</span>
                       </div>
                     )}
 
                     {receipt.status === 'saved' && (
-                      <div className="flex items-center gap-2 text-blue-600">
+                      <div className="flex items-center gap-2 text-[hsl(var(--chart-1))]">
                         <CheckCircle2 className="w-4 h-4" />
                         <span className="text-sm font-medium">Successfully saved to database</span>
                       </div>
                     )}
 
                     {receipt.status === 'save_error' && (
-                      <div className="flex items-center gap-2 text-orange-600">
+                      <div className="flex items-center gap-2 text-[hsl(var(--chart-4))]">
                         <XCircle className="w-4 h-4" />
                         <span className="text-sm">{receipt.error || 'Failed to save'}</span>
                       </div>
@@ -1421,9 +1424,9 @@ export default function Receipts() {
                           {receipt.category || 'Uncategorized'}
                         </Badge>
                         {receipt.posted && (
-                          <Badge variant="default" className="bg-green-600">
+                          <StatusBadge tone="success">
                             Posted
-                          </Badge>
+                          </StatusBadge>
                         )}
                       </div>
                     </div>
@@ -1471,7 +1474,7 @@ export default function Receipts() {
                   ? 'Try widening the filter or clearing it to see all receipts.'
                   : "Snap a photo or upload a PDF — AI extracts merchant, VAT, and category automatically."
               }
-              primaryAction={
+              action={
                 !(dateRange.from || dateRange.to)
                   ? {
                       label: 'Upload receipt',
@@ -1489,6 +1492,7 @@ export default function Receipts() {
                     }
                   : undefined
               }
+              testId="empty-state-receipts"
             />
           )}
         </CardContent>
@@ -1608,7 +1612,7 @@ export default function Receipts() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <XCircle className="w-5 h-5 text-yellow-500" />
+              <XCircle className="w-5 h-5 text-[hsl(var(--chart-4))]" />
               Similar Transactions Found
             </DialogTitle>
             <DialogDescription>
