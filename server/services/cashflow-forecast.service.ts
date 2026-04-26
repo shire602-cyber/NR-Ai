@@ -133,8 +133,10 @@ export async function generateCashFlowForecast(
   const totalReceivables = outstandingInvoices.reduce(
     (sum, inv) => sum + (inv.total || 0), 0
   );
+  // receipts.amount is the net subtotal (excludes VAT); cash outflow when
+  // the receipt is paid is amount + vatAmount.
   const totalPayables = outstandingReceipts.reduce(
-    (sum, r) => sum + (r.amount || 0), 0
+    (sum, r) => sum + (r.amount || 0) + (r.vatAmount || 0), 0
   );
   const overdueInvoices = outstandingInvoices.filter(
     (inv) => new Date(inv.date) < now

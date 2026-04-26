@@ -445,7 +445,7 @@ async function generateDueRecurringInvoices() {
       for (const line of originalLines) {
         const lineTotal = line.quantity * line.unitPrice;
         subtotal += lineTotal;
-        vatAmount += lineTotal * (line.vatRate || 0.05);
+        vatAmount += lineTotal * (line.vatRate ?? 0.05);
       }
       const total = subtotal + vatAmount;
 

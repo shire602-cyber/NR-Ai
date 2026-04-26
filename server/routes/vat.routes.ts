@@ -56,10 +56,15 @@ export function registerVATRoutes(app: Express) {
     const startDate = new Date(periodStart);
     const endDate = new Date(periodEnd);
 
-    // Filter invoices for the period
+    // Filter invoices for the period — drafts must be excluded too because
+    // they have not been issued and therefore create no VAT obligation.
     const periodInvoices = invoices.filter(inv => {
       const invDate = new Date(inv.date);
-      return invDate >= startDate && invDate <= endDate && inv.status !== 'void';
+      return invDate >= startDate
+        && invDate <= endDate
+        && inv.status !== 'void'
+        && inv.status !== 'draft'
+        && inv.status !== 'cancelled';
     });
 
     // Fetch all invoice lines for categorization by VAT supply type
@@ -73,7 +78,7 @@ export function registerVATRoutes(app: Express) {
 
       for (const line of lines) {
         const lineAmount = line.quantity * line.unitPrice;
-        const lineVat = lineAmount * (line.vatRate || 0);
+        const lineVat = lineAmount * (line.vatRate ?? 0.05);
         const supplyType = (line as any).vatSupplyType || 'standard_rated';
 
         if (supplyType === 'zero_rated' || line.vatRate === 0) {
@@ -90,8 +95,10 @@ export function registerVATRoutes(app: Express) {
       }
     }
 
-    // Calculate input tax from receipts
+    // Calculate input tax from receipts — only posted receipts can be
+    // claimed for input VAT recovery on a VAT return.
     const periodReceipts = receipts.filter(rec => {
+      if (!rec.posted) return false;
       const recDate = new Date(rec.date || rec.createdAt);
       return recDate >= startDate && recDate <= endDate;
     });

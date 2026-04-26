@@ -7,6 +7,15 @@ import { createLogger } from '../config/logger';
 
 const log = createLogger('bill-pay');
 
+// Resolve a VAT rate (stored as percent in bill_line_items.vat_rate) honouring
+// explicit zero-rated lines. Only treat null/undefined/non-numeric as missing
+// and fall back to the UAE standard 5%; explicit 0 must remain 0.
+function resolveVatRatePercent(raw: unknown): number {
+  if (raw === null || raw === undefined || raw === '') return 5;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 5;
+}
+
 export function registerBillPayRoutes(app: Express) {
   // =====================================
   // Vendor Bill Routes
@@ -151,7 +160,7 @@ export function registerBillPayRoutes(app: Express) {
 
     for (const line of line_items) {
       const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-      const lineVat = lineAmount * ((Number(line.vat_rate) || 5) / 100);
+      const lineVat = lineAmount * (resolveVatRatePercent(line.vat_rate) / 100);
       subtotal += lineAmount;
       vatAmount += lineVat;
     }
@@ -197,7 +206,7 @@ export function registerBillPayRoutes(app: Express) {
           line.description,
           Number(line.quantity) || 1,
           Number(line.unit_price),
-          Number(line.vat_rate) ?? 5,
+          resolveVatRatePercent(line.vat_rate),
           lineAmount.toFixed(2),
           line.account_id || null,
         ]
@@ -272,7 +281,7 @@ export function registerBillPayRoutes(app: Express) {
 
       for (const line of line_items) {
         const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-        const lineVat = lineAmount * ((Number(line.vat_rate) || 5) / 100);
+        const lineVat = lineAmount * (resolveVatRatePercent(line.vat_rate) / 100);
         subtotal += lineAmount;
         vatAmount += lineVat;
       }
@@ -312,7 +321,7 @@ export function registerBillPayRoutes(app: Express) {
             line.description,
             Number(line.quantity) || 1,
             Number(line.unit_price),
-            Number(line.vat_rate) ?? 5,
+            resolveVatRatePercent(line.vat_rate),
             lineAmount.toFixed(2),
             line.account_id || null,
           ]

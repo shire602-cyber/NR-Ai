@@ -297,8 +297,12 @@ function matchTransaction(
       const rcptDate = receipt.date ? new Date(receipt.date) : new Date(receipt.createdAt);
       const rcptDesc = `${(receipt as any).merchant || ''} ${receipt.category || ''}`.trim();
 
+      // Bank transactions show the gross paid amount; receipts.amount is
+      // the net subtotal so we add VAT to compare like-for-like.
+      const receiptGross = receipt.amount + ((receipt as any).vatAmount || 0);
+
       const { score, reasons } = calculateConfidence(
-        bankAmount, receipt.amount, bankDate, rcptDate, bankDesc, rcptDesc
+        bankAmount, receiptGross, bankDate, rcptDate, bankDesc, rcptDesc
       );
 
       if (score > 0) {
@@ -314,7 +318,7 @@ function matchTransaction(
             ? txn.transactionDate.toISOString()
             : String(txn.transactionDate),
           matchedDescription: rcptDesc || 'Receipt',
-          matchedAmount: receipt.amount,
+          matchedAmount: receiptGross,
           matchedDate: rcptDate.toISOString(),
         });
       }

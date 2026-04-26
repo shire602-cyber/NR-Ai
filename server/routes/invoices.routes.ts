@@ -125,7 +125,7 @@ export function registerInvoiceRoutes(app: Express) {
     for (const line of lines) {
       const lineTotal = line.quantity * line.unitPrice;
       subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate || 0.05);
+      vatAmount += lineTotal * (line.vatRate ?? 0.05);
     }
 
     const total = subtotal + vatAmount;
@@ -302,7 +302,7 @@ export function registerInvoiceRoutes(app: Express) {
     for (const line of lines) {
       const lineTotal = line.quantity * line.unitPrice;
       subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate || 0.05);
+      vatAmount += lineTotal * (line.vatRate ?? 0.05);
     }
 
     const total = subtotal + vatAmount;

@@ -7,7 +7,7 @@ import { authMiddleware } from '../middleware/auth';
 import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { db } from '../db';
-import { eq, and, inArray, count, sum, max, not, desc } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, count, sum, max, not, desc } from 'drizzle-orm';
 import {
   companies,
   invoices,
@@ -116,7 +116,8 @@ async function runOCR(
 
   const result = extractJson(rawText);
   const subtotal = parseFloat(result.subtotal) || 0;
-  const vatPercent = parseFloat(result.vatPercent) || 5;
+  const parsedVatPercent = parseFloat(result.vatPercent);
+  const vatPercent = Number.isFinite(parsedVatPercent) ? parsedVatPercent : 5;
   const vatAmount = parseFloat(result.vatAmount) || parseFloat((subtotal * vatPercent / 100).toFixed(2));
   const category = BULK_VALID_CATEGORIES.includes(result.category) ? result.category : 'Other';
   let parsedDate = new Date().toISOString().split('T')[0];
@@ -218,16 +219,31 @@ router.post('/bulk/vat-queue', asyncHandler(async (req: Request, res: Response) 
   const quarter = Math.floor(now.getMonth() / 3);
   const period = `Q${quarter + 1} ${now.getFullYear()}`;
 
+  // Restrict aggregation to the current quarter so the queue reflects only
+  // the live VAT period rather than all-time totals across the company.
+  const periodStart = new Date(now.getFullYear(), quarter * 3, 1);
+  const periodEnd = new Date(now.getFullYear(), quarter * 3 + 3, 0, 23, 59, 59);
+
   const queue = await Promise.all(clientCompanies.map(async (company) => {
     const [salesRow] = await db
       .select({ total: sum(invoices.subtotal), vat: sum(invoices.vatAmount) })
       .from(invoices)
-      .where(eq(invoices.companyId, company.id));
+      .where(and(
+        eq(invoices.companyId, company.id),
+        gte(invoices.date, periodStart),
+        lte(invoices.date, periodEnd),
+        not(inArray(invoices.status, ['draft', 'void', 'cancelled'])),
+      ));
 
     const [purchasesRow] = await db
       .select({ total: sum(receipts.amount), vat: sum(receipts.vatAmount) })
       .from(receipts)
-      .where(eq(receipts.companyId, company.id));
+      .where(and(
+        eq(receipts.companyId, company.id),
+        eq(receipts.posted, true),
+        gte(receipts.date, periodStart),
+        lte(receipts.date, periodEnd),
+      ));
 
     const [latestVat] = await db
       .select({ status: vatReturns.status })

@@ -214,7 +214,7 @@ export default function PublicInvoiceView() {
                 <TableBody>
                   {lines.map((line, index) => {
                     const lineTotal = line.quantity * line.unitPrice;
-                    const vatPercent = ((line.vatRate || 0.05) * 100).toFixed(0);
+                    const vatPercent = ((line.vatRate ?? 0.05) * 100).toFixed(0);
                     return (
                       <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                         <TableCell className="font-medium">{line.description}</TableCell>

@@ -26,7 +26,10 @@ export function registerReportRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+    // Cashflow must reflect only posted activity; drafts/voided entries
+    // would otherwise distort inflow/outflow totals.
+    const journalEntries = (await storage.getJournalEntriesByCompanyId(companyId))
+      .filter(e => e.status === 'posted');
     const accounts = await storage.getAccountsByCompanyId(companyId);
 
     // Group entries by period
@@ -133,8 +136,14 @@ export function registerReportRoutes(app: Express) {
     const now = new Date();
     const agingData: any[] = [];
 
-    // Group unpaid invoices by customer
-    const unpaidInvoices = invoices.filter(inv => inv.status !== 'paid');
+    // Group unpaid invoices by customer — exclude drafts (not yet billed),
+    // voids, and cancelled invoices so aging only reflects real receivables.
+    const unpaidInvoices = invoices.filter(inv =>
+      inv.status !== 'paid'
+      && inv.status !== 'draft'
+      && inv.status !== 'void'
+      && inv.status !== 'cancelled'
+    );
     const customerTotals: Record<string, any> = {};
 
     for (const inv of unpaidInvoices) {
@@ -273,15 +282,19 @@ export function registerReportRoutes(app: Express) {
     const fromDate = new Date(from);
     const toDate = new Date(to);
 
-    // Get all invoices in range
-    const periodInvoices: Invoice[] = await db
+    // Get all invoices in range — exclude drafts (not issued), voids, and
+    // cancelled invoices so the VAT return only reports real supplies.
+    const periodInvoices: Invoice[] = (await db
       .select()
       .from(invoices)
       .where(and(
         eq(invoices.companyId, companyId),
         gte(invoices.date, fromDate),
         lte(invoices.date, toDate),
-      ));
+      )))
+      .filter((inv: Invoice) =>
+        inv.status !== 'draft' && inv.status !== 'void' && inv.status !== 'cancelled'
+      );
 
     const invoiceIds = periodInvoices.map((i: Invoice) => i.id);
 
@@ -316,22 +329,23 @@ export function registerReportRoutes(app: Express) {
 
     const outputVat = standardRatedSupplies * 0.05;
 
-    // Get expenses (receipts) in range with VAT — receipts.date is text (YYYY-MM-DD)
-    const periodReceipts: Receipt[] = await db
+    // Get expenses (receipts) in range with VAT — receipts.date is text (YYYY-MM-DD).
+    // Only posted receipts can be claimed for input VAT recovery.
+    const periodReceipts: Receipt[] = (await db
       .select()
       .from(receipts)
       .where(and(
         eq(receipts.companyId, companyId),
         gte(receipts.date, from),
         lte(receipts.date, to),
-      ));
+      )))
+      .filter((r: Receipt) => r.posted === true);
 
     const standardRatedExpenses = periodReceipts.reduce((s: number, r: Receipt) => {
       const rate = r.exchangeRate ?? 1;
-      const amount = (r.amount ?? 0) * rate;
-      // Exclude VAT from base if vatAmount is recorded separately
-      const base = r.vatAmount ? amount - (r.vatAmount * rate) : amount;
-      return s + base;
+      // receipts.amount is the net subtotal (excludes VAT); see convention
+      // documented in receipts.routes.ts. Use it directly as the VAT base.
+      return s + (r.amount ?? 0) * rate;
     }, 0);
 
     const inputVat = periodReceipts.reduce((s: number, r: Receipt) => {

@@ -17,13 +17,18 @@ export function registerDashboardRoutes(app: Express) {
     const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
-    const [invoices, accounts, entries, allLines, receipts] = await Promise.all([
+    const [invoices, accounts, allEntries, allLines, receipts] = await Promise.all([
       storage.getInvoicesByCompanyId(companyId),
       storage.getAccountsByCompanyId(companyId),
       storage.getJournalEntriesByCompanyId(companyId),
       storage.getJournalLinesByCompanyId(companyId),
       storage.getReceiptsByCompanyId(companyId),
     ]);
+
+    // Only posted entries affect financial balances; drafts and voided
+    // entries must be excluded so the dashboard does not inflate revenue,
+    // expenses, or cash position.
+    const entries = allEntries.filter(e => e.status === 'posted');
 
     const entryDateMap = new Map<string, Date>(entries.map(e => [e.id, new Date(e.date)]));
     const accountMap = new Map(accounts.map(a => [a.id, a]));
@@ -191,7 +196,8 @@ export function registerDashboardRoutes(app: Express) {
     const { companyId } = req.params;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-    const entries = await storage.getJournalEntriesByCompanyId(companyId);
+    const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
+    const entries = allEntries.filter(e => e.status === 'posted');
     const accounts = await storage.getAccountsByCompanyId(companyId);
     const expenseAccounts = accounts.filter(a => a.type === 'expense');
 
@@ -225,7 +231,9 @@ export function registerDashboardRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const invoices = await storage.getInvoicesByCompanyId(companyId);
-    const entries = await storage.getJournalEntriesByCompanyId(companyId);
+    const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
+    // Drafts and voided entries must not influence monthly trend totals.
+    const entries = allEntries.filter(e => e.status === 'posted');
     const accounts = await storage.getAccountsByCompanyId(companyId);
 
     const months = Array.from({ length: 6 }, (_, i) => {
@@ -241,6 +249,7 @@ export function registerDashboardRoutes(app: Express) {
     const trends = await Promise.all(months.map(async ({ month, monthNum, yearNum }) => {
       const revenue = invoices
         .filter(inv => {
+          if (inv.status === 'draft' || inv.status === 'void' || inv.status === 'cancelled') return false;
           const invDate = new Date(inv.date);
           return invDate.getMonth() === monthNum && invDate.getFullYear() === yearNum;
         })
@@ -277,7 +286,10 @@ export function registerDashboardRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const accounts = await storage.getAccountsByCompanyId(companyId);
-    let entries = await storage.getJournalEntriesByCompanyId(companyId);
+    // P&L must reflect only posted journal activity; drafts/voided entries
+    // would otherwise inflate revenue and expense totals.
+    let entries = (await storage.getJournalEntriesByCompanyId(companyId))
+      .filter(e => e.status === 'posted');
 
     if (startDate || endDate) {
       const start = startDate ? new Date(startDate as string) : null;
@@ -332,7 +344,9 @@ export function registerDashboardRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const accounts = await storage.getAccountsByCompanyId(companyId);
-    let entries = await storage.getJournalEntriesByCompanyId(companyId);
+    // Balance sheet must reflect only posted journal activity.
+    let entries = (await storage.getJournalEntriesByCompanyId(companyId))
+      .filter(e => e.status === 'posted');
 
     if (startDate || endDate) {
       const start = startDate ? new Date(startDate as string) : null;
@@ -418,7 +432,9 @@ export function registerDashboardRoutes(app: Express) {
     let salesSubtotal = 0;
     let salesVAT = 0;
     for (const invoice of invoices) {
-      if (invoice.status !== 'void') {
+      // Drafts must be excluded — they have not been issued to customers
+      // and so cannot give rise to a VAT obligation under UAE FTA rules.
+      if (invoice.status !== 'void' && invoice.status !== 'draft' && invoice.status !== 'cancelled') {
         const rate = invoice.exchangeRate ?? 1;
         salesSubtotal += invoice.subtotal * rate;
         salesVAT += invoice.vatAmount * rate;
@@ -501,7 +517,8 @@ export function registerDashboardRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const accounts = await storage.getAccountsByCompanyId(companyId as string);
-    const entries = await storage.getJournalEntriesByCompanyId(companyId as string);
+    const entries = (await storage.getJournalEntriesByCompanyId(companyId as string))
+      .filter(e => e.status === 'posted');
 
     const balances = new Map<string, { name: string; value: number }>();
 

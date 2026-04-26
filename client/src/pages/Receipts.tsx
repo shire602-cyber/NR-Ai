@@ -498,7 +498,7 @@ export default function Receipts() {
             date: result.date || new Date().toISOString().split('T')[0],
             invoiceNumber: result.invoiceNumber || null,
             subtotal: result.subtotal || result.amount || 0,
-            vatPercentage: result.vatPercentage || 5,
+            vatPercentage: result.vatPercentage ?? 5,
             vatAmount: result.vatAmount || 0,
             total: result.total || result.amount || 0,
             currency: result.currency || 'AED',

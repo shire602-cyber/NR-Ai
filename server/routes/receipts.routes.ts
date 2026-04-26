@@ -373,8 +373,11 @@ export function registerReceiptRoutes(app: Express) {
       doc.text('EXPENSE RECEIPTS EXPORT', margin, 48, { width: contentWidth });
 
       let sy = 100;
-      const totalAmount = receipts.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+      // receipts.amount stores the net subtotal (VAT excluded); the receipt
+      // total displayed to the user is amount + vatAmount.
+      const totalSubtotal = receipts.reduce((sum, r) => sum + (r.amount ?? 0), 0);
       const totalVat = receipts.reduce((sum, r) => sum + (r.vatAmount ?? 0), 0);
+      const totalAmount = totalSubtotal + totalVat;
       const dateRangeStr = from && to ? `${from} to ${to}` : from ? `From ${from}` : to ? `To ${to}` : 'All time';
 
       doc.fontSize(11).fillColor(labelColor).font('Helvetica-Bold').text('Export Summary', margin, sy);
@@ -416,7 +419,8 @@ export function registerReceiptRoutes(app: Express) {
         doc.text(r.date ? new Date(r.date).toLocaleDateString('en-AE') : '-', margin + 30, sy, { width: 70 });
         doc.text(r.merchant || 'Unknown', margin + 105, sy, { width: 160 });
         doc.text(r.category || 'Uncategorized', margin + 270, sy, { width: 110 });
-        doc.text(`${r.currency || 'AED'} ${(r.amount ?? 0).toFixed(2)}`, margin + 385, sy, { width: contentWidth - 385, align: 'right' });
+        const rowTotal = (r.amount ?? 0) + (r.vatAmount ?? 0);
+        doc.text(`${r.currency || 'AED'} ${rowTotal.toFixed(2)}`, margin + 385, sy, { width: contentWidth - 385, align: 'right' });
         sy += 16;
       });
 
@@ -455,12 +459,13 @@ export function registerReceiptRoutes(app: Express) {
         doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold');
         doc.text('Total Amount', margin + 12, y + 8);
         doc.fontSize(15).fillColor('#1E40AF');
-        doc.text(`${r.currency || 'AED'} ${(r.amount ?? 0).toFixed(2)}`, margin + 12, y + 22, { width: contentWidth - 24, align: 'right' });
+        const receiptTotal = (r.amount ?? 0) + (r.vatAmount ?? 0);
+        doc.text(`${r.currency || 'AED'} ${receiptTotal.toFixed(2)}`, margin + 12, y + 22, { width: contentWidth - 24, align: 'right' });
         y += 58;
 
         if (r.vatAmount && r.vatAmount > 0) {
           doc.fontSize(9).fillColor(labelColor).font('Helvetica');
-          const base = ((r.amount ?? 0) - r.vatAmount).toFixed(2);
+          const base = (r.amount ?? 0).toFixed(2);
           doc.text(`Base: ${r.currency || 'AED'} ${base}   VAT: ${r.currency || 'AED'} ${r.vatAmount.toFixed(2)}`, margin, y);
           y += 18;
         }
@@ -574,13 +579,13 @@ export function registerReceiptRoutes(app: Express) {
       doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold');
       doc.text('Total Amount', margin + 10, y + 8);
       doc.fontSize(14).fillColor('#1E40AF');
-      const total = (receipt.amount ?? 0).toFixed(2);
+      const total = ((receipt.amount ?? 0) + (receipt.vatAmount ?? 0)).toFixed(2);
       doc.text(`${receipt.currency || 'AED'} ${total}`, margin + 10, y + 22, { width: contentWidth - 20, align: 'right' });
       y += 55;
 
       if (receipt.vatAmount && receipt.vatAmount > 0) {
         doc.fontSize(9).fillColor(labelColor).font('Helvetica');
-        const base = ((receipt.amount ?? 0) - receipt.vatAmount).toFixed(2);
+        const base = (receipt.amount ?? 0).toFixed(2);
         doc.text(`Base: ${receipt.currency || 'AED'} ${base}   VAT (5%): ${receipt.currency || 'AED'} ${receipt.vatAmount.toFixed(2)}`, margin, y);
         y += 16;
       }

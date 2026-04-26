@@ -440,7 +440,8 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
   };
 
   const numAmount = parseFloat(amount) || 0;
-  const numVatRate = parseFloat(vatRate) || 0.05;
+  const parsedVatRate = parseFloat(vatRate);
+  const numVatRate = Number.isFinite(parsedVatRate) ? parsedVatRate : 0.05;
   const vatAmount = parseFloat((numAmount * numVatRate).toFixed(2));
   const total = numAmount + vatAmount;
 

@@ -189,7 +189,10 @@ function buildResult(
 ) {
   const subtotal = parseNonNegative(aiResult.subtotal);
   const vatAmount = parseNonNegative(aiResult.vatAmount);
-  const vatPercentage = parseNonNegative(aiResult.vatPercentage) || 5;
+  // Treat null/undefined as missing (default to 5% for UAE); explicit 0 means zero-rated
+  const vatPercentage = aiResult.vatPercentage === null || aiResult.vatPercentage === undefined
+    ? 5
+    : parseNonNegative(aiResult.vatPercentage);
   let total = parseNonNegative(aiResult.total);
 
   // Reconcile amounts if any are missing
