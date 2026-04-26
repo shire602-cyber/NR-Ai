@@ -50,7 +50,7 @@ export function canTransition(from: string, to: string): boolean {
 }
 
 export function isTerminal(status: string): boolean {
-  return status === 'void' || status === 'cancelled';
+  return status === 'void' || status === 'cancelled' || status === 'paid';
 }
 
 /**
