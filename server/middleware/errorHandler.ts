@@ -20,22 +20,6 @@ export class AppError extends Error {
   }
 }
 
-// Common error factories
-export const NotFoundError = (resource: string) =>
-  new AppError(`${resource} not found`, 404);
-
-export const BadRequestError = (message: string) =>
-  new AppError(message, 400);
-
-export const UnauthorizedError = (message = 'Unauthorized') =>
-  new AppError(message, 401);
-
-export const ForbiddenError = (message = 'Forbidden') =>
-  new AppError(message, 403);
-
-export const ConflictError = (message: string) =>
-  new AppError(message, 409);
-
 /**
  * Global error handler middleware.
  * Must be registered AFTER all routes.

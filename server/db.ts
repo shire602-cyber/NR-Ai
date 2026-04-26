@@ -3,6 +3,9 @@ import 'dotenv/config';
 
 import { sql } from 'drizzle-orm';
 import * as schema from '@shared/schema';
+import { createLogger } from './config/logger';
+
+const log = createLogger('db');
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -40,14 +43,14 @@ if (isNeon) {
   pool = new pg.default.Pool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
   // Prevent unhandled 'error' events from crashing the process
   pool.on('error', (err: Error) => {
-    console.error('[db] Unexpected pool client error:', err.message);
+    log.error({ err: err.message }, 'Unexpected pool client error');
   });
   db = pgDrizzle({ client: pool, schema });
   _driver = 'pg';
 }
 
 export async function runMigrations(migrationsFolder: string): Promise<void> {
-  console.log(`[db] Running migrations from ${migrationsFolder} (driver: ${_driver})...`);
+  log.info({ migrationsFolder, driver: _driver }, 'Running migrations');
   try {
     if (_driver === 'neon') {
       const { migrate } = await import('drizzle-orm/neon-serverless/migrator');
@@ -56,9 +59,9 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
       const { migrate } = await import('drizzle-orm/node-postgres/migrator');
       await migrate(db, { migrationsFolder });
     }
-    console.log('[db] Migrations completed successfully');
+    log.info('Migrations completed successfully');
   } catch (err) {
-    console.error('[db] Migration failed:', err);
+    log.error({ err }, 'Migration failed');
     throw err;
   }
 }
@@ -427,12 +430,13 @@ export async function ensureCriticalSchema(): Promise<void> {
       await db.execute(step.sql);
       ok++;
     } catch (err: any) {
-      console.error(`[db] Schema guard step "${step.name}" failed:`, err.message);
+      log.error({ step: step.name, err: err.message }, 'Schema guard step failed');
       failed++;
     }
   }
-  console.log(
-    `[db] Critical schema guard: ${ok} OK, ${failed} failed (mode: ${isDev ? 'dev+seeds' : 'schema-only'})`,
+  log.info(
+    { ok, failed, mode: isDev ? 'dev+seeds' : 'schema-only' },
+    'Critical schema guard completed',
   );
 }
 

@@ -8,8 +8,11 @@ import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../servi
 import { createAndEmitNotification } from '../services/socket.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
+import { createLogger } from '../config/logger';
 // @ts-ignore
 import PDFDocument from 'pdfkit';
+
+const log = createLogger('receipts');
 
 export function registerReceiptRoutes(app: Express) {
   // =====================================
@@ -101,14 +104,14 @@ export function registerReceiptRoutes(app: Express) {
       await assertPeriodNotLocked(companyId, receiptData.date);
     }
 
-    console.log('[Receipts] Creating receipt:', {
+    log.info({
       companyId,
       userId,
       merchant: receiptData.merchant,
       amount: receiptData.amount,
       hasImageData: !!imageData,
       imageDataLength: imageData?.length,
-    });
+    }, 'Creating receipt');
 
     // Save image to disk; store only the path in Postgres (not the base64 blob)
     let imagePath: string | undefined;
@@ -125,7 +128,7 @@ export function registerReceiptRoutes(app: Express) {
       // imageData intentionally omitted — not stored in Postgres
     });
 
-    console.log('[Receipts] Receipt created successfully:', receipt.id);
+    log.info({ receiptId: receipt.id }, 'Receipt created successfully');
 
     await recordAudit({
       userId,
@@ -181,7 +184,7 @@ export function registerReceiptRoutes(app: Express) {
       },
       req,
     });
-    console.log('[Receipts] Receipt updated successfully:', id);
+    log.info({ id }, 'Receipt updated successfully');
     res.json(updatedReceipt);
   }));
 
@@ -370,7 +373,7 @@ export function registerReceiptRoutes(app: Express) {
       journalEntryId: entry.id,
     });
 
-    console.log('[Receipts] Receipt posted successfully:', id, 'Journal entry:', entry.id);
+    log.info({ id, journalEntryId: entry.id }, 'Receipt posted successfully');
     res.json(updatedReceipt);
   }));
 

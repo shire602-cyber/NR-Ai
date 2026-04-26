@@ -4,6 +4,9 @@ import * as XLSX from 'xlsx';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
+import { createLogger } from '../config/logger';
+
+const log = createLogger('contacts');
 
 export function registerContactRoutes(app: Express) {
   // =====================================
@@ -126,7 +129,7 @@ export function registerContactRoutes(app: Express) {
       }
     }
 
-    console.log('[CustomerContacts] Import completed:', results);
+    log.info({ results }, 'Customer contacts import completed');
     res.json({
       message: `Import completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`,
       ...results

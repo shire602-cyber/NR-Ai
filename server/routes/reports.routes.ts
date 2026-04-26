@@ -7,6 +7,7 @@ import { eq, and, gte, lte, inArray, type SQL } from "drizzle-orm";
 import { journalEntries, journalLines, accounts, invoices, invoiceLines, receipts } from "../../shared/schema";
 import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../shared/schema";
 import { uaeDayStart, uaeDayEnd } from "../utils/date";
+import { UAE_VAT_RATE } from "../constants";
 
 // Cash/bank account predicate — see dashboard.routes.ts for rationale.
 function isCashOrBankAccount(a: { code?: string | null; nameEn: string; subType?: string | null }): boolean {
@@ -449,7 +450,7 @@ export function registerReportRoutes(app: Express) {
       }
     }
 
-    const outputVat = standardRatedSupplies * 0.05;
+    const outputVat = standardRatedSupplies * UAE_VAT_RATE;
 
     // Get expenses (receipts) in range with VAT.
     // Only posted receipts can be claimed for input VAT recovery.

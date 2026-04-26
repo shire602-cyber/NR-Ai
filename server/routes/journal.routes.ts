@@ -7,6 +7,9 @@ import { storage } from '../storage';
 import { insertJournalEntrySchema } from '../../shared/schema';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
+import { createLogger } from '../config/logger';
+
+const log = createLogger('journal');
 
 export function registerJournalRoutes(app: Express) {
   // =====================================
@@ -279,7 +282,7 @@ export function registerJournalRoutes(app: Express) {
       req,
     });
 
-    console.log('[Journal] Draft journal entry updated successfully:', id);
+    log.info({ id }, 'Draft journal entry updated successfully');
     res.json({ id: updatedEntry.id, status: updatedEntry.status, message: 'Draft entry updated successfully' });
   }));
 
@@ -339,7 +342,7 @@ export function registerJournalRoutes(app: Express) {
       req,
     });
 
-    console.log('[Journal] Entry posted successfully:', id);
+    log.info({ id }, 'Entry posted successfully');
     res.json({ id: updatedEntry.id, status: 'posted', message: 'Entry posted successfully' });
   }));
 
@@ -433,7 +436,7 @@ export function registerJournalRoutes(app: Express) {
       extra: { reason: reason || null },
     });
 
-    console.log('[Journal] Entry reversed:', id, '-> new entry:', reversalEntry.id);
+    log.info({ id, reversalEntryId: reversalEntry.id }, 'Entry reversed');
     res.json({
       originalId: id,
       reversalId: reversalEntry.id,
@@ -489,7 +492,7 @@ export function registerJournalRoutes(app: Express) {
       req,
     });
 
-    console.log('[Journal] Draft entry deleted:', id);
+    log.info({ id }, 'Draft entry deleted');
     res.json({ message: 'Draft entry deleted successfully' });
   }));
 }

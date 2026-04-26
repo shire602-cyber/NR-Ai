@@ -2,8 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 import {
   AppError,
-  NotFoundError,
-  BadRequestError,
   globalErrorHandler,
   asyncHandler,
 } from '../../server/middleware/errorHandler';
@@ -57,20 +55,6 @@ describe('Error Handler Middleware', () => {
     it('should support non-operational errors', () => {
       const error = new AppError('Internal', 500, false);
       expect(error.isOperational).toBe(false);
-    });
-  });
-
-  describe('Error factories', () => {
-    it('should create NotFoundError', () => {
-      const error = NotFoundError('User');
-      expect(error.statusCode).toBe(404);
-      expect(error.message).toBe('User not found');
-    });
-
-    it('should create BadRequestError', () => {
-      const error = BadRequestError('Invalid input');
-      expect(error.statusCode).toBe(400);
-      expect(error.message).toBe('Invalid input');
     });
   });
 

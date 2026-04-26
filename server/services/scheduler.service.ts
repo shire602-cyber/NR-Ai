@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { storage } from '../storage';
 import { createLogger } from '../config/logger';
 import { assertPeriodNotLocked } from './period-lock.service';
+import { UAE_VAT_RATE, ACCOUNT_CODES } from '../constants';
 
 const log = createLogger('scheduler');
 
@@ -471,7 +472,7 @@ async function generateDueRecurringInvoices() {
       for (const line of templateLines) {
         const lineTotal = line.quantity * line.unitPrice;
         subtotal += lineTotal;
-        vatAmount += lineTotal * (line.vatRate ?? 0.05);
+        vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
       }
       const total = subtotal + vatAmount;
 
@@ -518,7 +519,7 @@ async function generateDueRecurringInvoices() {
           description: line.description,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          vatRate: line.vatRate ?? 0.05,
+          vatRate: line.vatRate ?? UAE_VAT_RATE,
           vatSupplyType: line.vatSupplyType || undefined,
         } as any);
       }
@@ -559,11 +560,11 @@ async function generateDueRecurringInvoices() {
           );
         } else {
           const accounts = await storage.getAccountsByCompanyId(template.companyId);
-          const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+          const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
           const salesRevenue = accounts.find(
-            a => a.isSystemAccount && a.type === 'income' && (a.code === '4010' || a.code === '4020'),
+            a => a.isSystemAccount && a.type === 'income' && (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT),
           );
-          const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === '2020');
+          const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT);
 
           if (accountsReceivable && salesRevenue) {
             const entryNumber = await storage.generateEntryNumber(template.companyId, invoiceDate);

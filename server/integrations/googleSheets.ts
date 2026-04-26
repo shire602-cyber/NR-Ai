@@ -5,6 +5,9 @@
 
 import { google, sheets_v4 } from 'googleapis';
 import type { JWT, OAuth2Client } from 'google-auth-library';
+import { createLogger } from '../config/logger';
+
+const log = createLogger('google-sheets');
 
 // ---------------------------------------------------------------------------
 // Authentication helpers
@@ -88,7 +91,7 @@ export async function isGoogleSheetsConnected(): Promise<boolean> {
     });
     return true;
   } catch (err) {
-    console.warn('[GoogleSheets] Connection check failed:', (err as Error).message);
+    log.warn({ err: (err as Error).message }, 'Connection check failed');
     return false;
   }
 }
@@ -139,7 +142,7 @@ export async function exportToSheet(
   } catch (error: any) {
     // Sheet might already exist, that's fine
     if (!error.message?.includes('already exists')) {
-      console.log('[GoogleSheets] Note: Sheet may already exist');
+      log.info('Note: Sheet may already exist');
     }
   }
 

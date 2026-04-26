@@ -5,6 +5,9 @@ import * as googleSheets from '../integrations/googleSheets';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { insertWaitlistSchema } from '../../shared/schema';
+import { createLogger } from '../config/logger';
+
+const log = createLogger('integrations');
 
 export function registerIntegrationRoutes(app: Express) {
   // =====================================
@@ -302,7 +305,7 @@ export function registerIntegrationRoutes(app: Express) {
         });
         createdCount++;
       } catch (err) {
-        console.error('Error creating invoice:', err);
+        log.error({ err }, 'Error creating invoice');
       }
     }
 
@@ -364,7 +367,7 @@ export function registerIntegrationRoutes(app: Express) {
         });
         createdCount++;
       } catch (err) {
-        console.error('Error creating expense:', err);
+        log.error({ err }, 'Error creating expense');
       }
     }
 

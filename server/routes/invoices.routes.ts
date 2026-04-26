@@ -12,6 +12,10 @@ import { createAndEmitNotification } from '../services/socket.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { canTransition, isTerminal, isValidStatus } from '../services/invoice-state-machine';
 import { recordAudit } from '../services/audit.service';
+import { createLogger } from '../config/logger';
+import { UAE_VAT_RATE, ACCOUNT_CODES } from '../constants';
+
+const log = createLogger('invoices');
 
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
@@ -128,7 +132,7 @@ export function registerInvoiceRoutes(app: Express) {
     for (const line of lines) {
       const lineTotal = line.quantity * line.unitPrice;
       subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate ?? 0.05);
+      vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
     }
 
     const total = subtotal + vatAmount;
@@ -140,7 +144,7 @@ export function registerInvoiceRoutes(app: Express) {
     // posts a revenue-recognition journal entry on this date.
     await assertPeriodNotLocked(companyId, invoiceDate);
 
-    console.log('[Invoices] Creating invoice:', {
+    log.info({
       companyId,
       userId,
       number: invoiceData.number,
@@ -149,7 +153,7 @@ export function registerInvoiceRoutes(app: Express) {
       vatAmount,
       total,
       linesCount: lines.length
-    });
+    }, 'Creating invoice');
 
     // Create invoice
     const invoice = await storage.createInvoice({
@@ -172,11 +176,11 @@ export function registerInvoiceRoutes(app: Express) {
     // Revenue recognition: create journal entry immediately when invoice is raised
     const accounts = await storage.getAccountsByCompanyId(companyId);
     // Look up by code/type to avoid fragile name-string matching
-    const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+    const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
     const salesRevenue = accounts.find(
-      a => a.isSystemAccount && a.type === 'income' && (a.code === '4010' || a.code === '4020')
+      a => a.isSystemAccount && a.type === 'income' && (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
     );
-    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === '2020');
+    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT);
 
     if (accountsReceivable && salesRevenue) {
       // Generate entry number atomically via storage helper
@@ -221,12 +225,12 @@ export function registerInvoiceRoutes(app: Express) {
         journalLines
       );
 
-      console.log('[Invoices] Revenue recognition journal entry created:', entryNumber, 'for invoice:', invoice.id);
+      log.info({ entryNumber, invoiceId: invoice.id }, 'Revenue recognition journal entry created');
     } else {
-      console.warn('[Invoices] Could not create revenue recognition entry - missing accounts');
+      log.warn('Could not create revenue recognition entry - missing accounts');
     }
 
-    console.log('[Invoices] Invoice created successfully:', invoice.id);
+    log.info({ invoiceId: invoice.id }, 'Invoice created successfully');
 
     await recordAudit({
       userId,
@@ -332,7 +336,7 @@ export function registerInvoiceRoutes(app: Express) {
     for (const line of lines) {
       const lineTotal = line.quantity * line.unitPrice;
       subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate ?? 0.05);
+      vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
     }
     const total = subtotal + vatAmount;
 
@@ -400,7 +404,7 @@ export function registerInvoiceRoutes(app: Express) {
       req,
     });
 
-    console.log('[Invoices] Invoice updated successfully:', id);
+    log.info({ id }, 'Invoice updated successfully');
     res.json(updatedInvoice);
   }));
 
@@ -503,7 +507,7 @@ export function registerInvoiceRoutes(app: Express) {
       }
 
       const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
-      const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+      const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
       if (!accountsReceivable) {
         return res.status(500).json({ message: 'Accounts Receivable account not found' });
       }
@@ -544,7 +548,7 @@ export function registerInvoiceRoutes(app: Express) {
     }
 
     const updatedInvoice = await storage.getInvoice(id);
-    console.log(`[Invoices] Status transition: ${oldStatus} -> ${status} for invoice ${id}`);
+    log.info({ id, oldStatus, status }, 'Status transition');
 
     await recordAudit({
       userId,
@@ -613,7 +617,7 @@ export function registerInvoiceRoutes(app: Express) {
       einvoiceStatus: 'generated',
     });
 
-    console.log('[E-Invoice] Generated e-invoice for invoice:', id, 'UUID:', uuid);
+    log.info({ id, uuid }, 'Generated e-invoice');
 
     res.json({ uuid, hash, status: 'generated' });
   }));
@@ -857,7 +861,7 @@ export function registerInvoiceRoutes(app: Express) {
     }
 
     const accounts = await storage.getAccountsByCompanyId(companyId);
-    const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+    const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
     if (!accountsReceivable) {
       return res.status(500).json({ message: 'Accounts Receivable account not found' });
     }
@@ -978,9 +982,9 @@ export function registerInvoiceRoutes(app: Express) {
 
     // Reverse journal entry: Debit Sales Revenue + VAT, Credit Accounts Receivable
     const accounts = await storage.getAccountsByCompanyId(companyId);
-    const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
-    const salesRevenue = accounts.find(a => a.isSystemAccount && a.type === 'income' && (a.code === '4010' || a.code === '4020'));
-    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === '2020');
+    const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
+    const salesRevenue = accounts.find(a => a.isSystemAccount && a.type === 'income' && (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT));
+    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT);
 
     if (accountsReceivable && salesRevenue) {
       const now = new Date();

@@ -29,7 +29,7 @@ async function seedChartOfAccounts(
 ): Promise<{ created: number; alreadyExisted: boolean }> {
   const hasAccounts = await storage.companyHasAccounts(companyId);
   if (hasAccounts) {
-    console.log(`[Seed COA] Company ${companyId} already has accounts, skipping seed`);
+    logger.info({ companyId }, 'Company already has accounts, skipping seed');
     return { created: 0, alreadyExisted: true };
   }
 
@@ -37,13 +37,11 @@ async function seedChartOfAccounts(
 
   try {
     const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
-    console.log(`[Seed COA] Created ${createdAccounts.length} accounts for company ${companyId}`);
+    logger.info({ companyId, count: createdAccounts.length }, 'Created chart of accounts');
     return { created: createdAccounts.length, alreadyExisted: false };
   } catch (error: any) {
     if (error.message?.includes('PARTIAL_INSERT')) {
-      console.error(
-        `[Seed COA] Partial insert detected for company ${companyId}: ${error.message}`
-      );
+      logger.error({ companyId, err: error.message }, 'Partial insert detected during COA seed');
       throw new Error(
         'PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support.'
       );
@@ -746,7 +744,7 @@ export function registerAdminRoutes(app: Express): void {
               });
             } catch (invErr: any) {
               // Don't fail the whole import if invitation fails
-              console.error(`Failed to create invitation for ${row.email}:`, invErr.message);
+              logger.error({ email: row.email, err: invErr.message }, 'Failed to create invitation');
             }
           }
 
