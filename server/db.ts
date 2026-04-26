@@ -16,11 +16,23 @@ if (!process.env.DATABASE_URL) {
 const DATABASE_URL = process.env.DATABASE_URL;
 const isNeon = DATABASE_URL.includes('neon.tech') || DATABASE_URL.includes('neon.');
 
-// Connection pool settings — sized for Railway's single-instance deployment
+// Pool sizing is overridable via env so Railway / Docker / Neon can be tuned
+// without a redeploy. Defaults match a single-instance Railway deployment.
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 const POOL_CONFIG = {
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000,
+  max: envInt('DB_POOL_MAX', 10),
+  min: envInt('DB_POOL_MIN', 1),
+  idleTimeoutMillis: envInt('DB_POOL_IDLE_MS', 30_000),
+  connectionTimeoutMillis: envInt('DB_POOL_CONN_MS', 10_000),
+  // pg also honours `statement_timeout` per-connection; expose via env for
+  // long-running analytical queries that should be killed to protect the pool.
+  statement_timeout: envInt('DB_STATEMENT_TIMEOUT_MS', 30_000),
 };
 
 let pool: any;
@@ -450,11 +462,41 @@ export async function checkDbConnectivity(): Promise<boolean> {
   }
 }
 
-/** Close the pool — call during graceful shutdown. */
-export async function closePool(): Promise<void> {
-  if (pool?.end) {
-    await pool.end();
+/** Ping with latency. Used by detailed health to expose response times. */
+export async function pingDb(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const start = Date.now();
+  try {
+    await db.execute(sql`SELECT 1`);
+    return { ok: true, latencyMs: Date.now() - start };
+  } catch (err: any) {
+    return { ok: false, latencyMs: Date.now() - start, error: err?.message || 'unknown' };
   }
+}
+
+/** Snapshot of pool state — total/idle/waiting connections. */
+export function getPoolStats(): {
+  driver: 'pg' | 'neon';
+  total: number;
+  idle: number;
+  waiting: number;
+  max: number;
+} {
+  return {
+    driver: _driver,
+    total: pool?.totalCount ?? 0,
+    idle: pool?.idleCount ?? 0,
+    waiting: pool?.waitingCount ?? 0,
+    max: POOL_CONFIG.max,
+  };
+}
+
+/** Drain and close the pool. Bounded by `timeoutMs` so shutdown is never stuck. */
+export async function closePool(timeoutMs = 10_000): Promise<void> {
+  if (!pool?.end) return;
+  await Promise.race([
+    pool.end(),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
 }
 
 export { pool, db };

@@ -22,7 +22,7 @@ import { registerRoutes } from './routes';
 import { initSocketServer } from './services/socket.service';
 import { setupVite, serveStatic } from './vite';
 import { initScheduler } from './services/scheduler.service';
-import { runMigrations, checkDbConnectivity, closePool, ensureCriticalSchema } from './db';
+import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from './db';
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -100,17 +100,34 @@ app.get('/api/csrf-token', csrfTokenHandler);
 app.use(csrfProtection);
 
 // ─── Health check (before auth, always accessible) ───────────
+// Liveness probe — process is up. Cheap; safe for orchestrators.
+app.get('/health/live', (_req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
+// Readiness/full health — depends on DB. Reports pool + memory + version.
 app.get('/health', async (_req, res) => {
-  const dbOk = await checkDbConnectivity();
-  const status = dbOk ? 'ok' : 'degraded';
-  res.status(dbOk ? 200 : 503).json({
+  const ping = await pingDb();
+  const status = ping.ok ? 'ok' : 'degraded';
+  const mem = process.memoryUsage();
+  res.status(ping.ok ? 200 : 503).json({
     status,
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: env.NODE_ENV,
-    version: '1.0.0',
+    version: process.env.APP_VERSION || '1.0.0',
+    node: process.version,
+    pid: process.pid,
+    memory: {
+      rssMB: Math.round(mem.rss / 1024 / 1024),
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
+    },
     checks: {
-      database: dbOk ? 'ok' : 'error',
+      database: ping.ok ? 'ok' : 'error',
+      databaseLatencyMs: ping.latencyMs,
+      databaseError: ping.error,
+      pool: getPoolStats(),
     },
   });
 });
