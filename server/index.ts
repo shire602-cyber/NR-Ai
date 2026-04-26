@@ -23,6 +23,7 @@ import { initSocketServer } from './services/socket.service';
 import { setupVite, serveStatic } from './vite';
 import { initScheduler } from './services/scheduler.service';
 import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from './db';
+import { installGracefulShutdown } from './shutdown';
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -139,8 +140,9 @@ if (!fs.existsSync(uploadsDir)) {
   log.info(`Created uploads directory: ${uploadsDir}`);
 }
 
-// ─── Module-level server ref for graceful shutdown ───────────
+// ─── Module-level refs for graceful shutdown ─────────────────
 let httpServer: any = null;
+let ioServer: any = null;
 
 // ─── Bootstrap application ───────────────────────────────────
 async function bootstrap() {
@@ -164,7 +166,7 @@ async function bootstrap() {
   httpServer = server;
 
   // ─── WebSocket (Socket.io) ────────────────────────────
-  initSocketServer(server);
+  ioServer = initSocketServer(server);
 
   // ─── Background scheduler (engagement automation) ─────
   initScheduler();
@@ -203,6 +205,15 @@ async function bootstrap() {
     }
     process.exit(1);
   });
+
+  // ─── Graceful shutdown wired now that servers exist ──────
+  const shutdown = installGracefulShutdown({
+    httpServer,
+    ioServer,
+    closePool,
+  });
+  process.on('SIGTERM', () => { void shutdown('SIGTERM'); });
+  process.on('SIGINT', () => { void shutdown('SIGINT'); });
 }
 
 bootstrap().catch((error) => {
@@ -210,31 +221,10 @@ bootstrap().catch((error) => {
   process.exit(1);
 });
 
-// ─── Graceful shutdown ───────────────────────────────────────
-async function shutdown(signal: string) {
-  log.info(`${signal} received. Shutting down gracefully...`);
-
-  // Stop accepting new connections; wait up to 10s for in-flight requests
-  if (httpServer) {
-    await new Promise<void>((resolve) => {
-      httpServer.close(() => resolve());
-      setTimeout(() => resolve(), 10_000);
-    });
-    log.info('HTTP server closed');
-  }
-
-  try {
-    await closePool();
-    log.info('Database pool closed');
-  } catch (err) {
-    log.error({ err }, 'Error closing database pool');
-  }
-
-  process.exit(0);
-}
-
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+// Note: graceful shutdown handlers are wired up inside bootstrap() once
+// httpServer / ioServer references are populated. Until then, signals fall
+// through to the default handler (immediate exit) which is fine — there are
+// no in-flight requests to drain pre-bootstrap.
 
 process.on('unhandledRejection', (reason) => {
   log.error({ reason }, 'Unhandled promise rejection');
