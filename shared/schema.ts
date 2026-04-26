@@ -362,6 +362,7 @@ export const invoices = pgTable("invoices", {
   number: text("number").notNull(),
   customerName: text("customer_name").notNull(),
   customerTrn: text("customer_trn"),
+  customerAddress: text("customer_address"),
   date: timestamp("date").notNull(),
   dueDate: timestamp("due_date"),
   paymentTerms: text("payment_terms").default("net30"),
@@ -381,6 +382,7 @@ export const invoices = pgTable("invoices", {
   reminderCount: integer("reminder_count").notNull().default(0),
   lastReminderSentAt: timestamp("last_reminder_sent_at"),
   invoiceType: text("invoice_type").notNull().default("invoice"),
+  reverseCharge: boolean("reverse_charge").notNull().default(false), // FTA reverse-charge: recipient self-assesses VAT
   originalInvoiceId: uuid("original_invoice_id"),
   isRecurring: boolean("is_recurring").notNull().default(false),
   recurringInterval: text("recurring_interval"), // weekly | monthly | quarterly | yearly
