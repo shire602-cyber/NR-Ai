@@ -8,6 +8,97 @@ import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('fixed-assets');
 
+// Same advisory-lock hash function used by storage.generateEntryNumber so
+// concurrent batch runs serialise on the same key. Keeps tx-scoped JE
+// numbering collision-free without piggy-backing on the storage layer.
+function hashStringToInt(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
+// Allocate the next entry number from a per-(company, date) counter held
+// in-memory for the duration of a transaction. Caller must hold an advisory
+// xact lock for the same (company, date) so a parallel transaction can't
+// recompute the same MAX. Returns a closure that produces JE-YYYYMMDD-NNN.
+async function makeEntryNumberAllocator(
+  client: any,
+  companyId: string,
+  date: Date,
+): Promise<() => string> {
+  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const prefix = `JE-${dateStr}`;
+  const counterStart = prefix.length + 2; // 1-based SUBSTRING start position
+  const likePattern = prefix + '-%';
+
+  const result = await client.query(
+    `SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM $1) AS INTEGER)), 0) AS max_seq
+       FROM journal_entries
+      WHERE company_id = $2 AND entry_number LIKE $3`,
+    [counterStart, companyId, likePattern],
+  );
+  let nextSeq = Number(result.rows[0]?.max_seq ?? 0) + 1;
+  return () => {
+    const num = `${prefix}-${String(nextSeq).padStart(3, '0')}`;
+    nextSeq++;
+    return num;
+  };
+}
+
+// Inline JE insert that participates in the caller's transaction. Mirrors
+// storage.createJournalEntry's contract (balanced lines required) but keeps
+// every write on the same connection so the outer BEGIN/COMMIT actually
+// covers it.
+async function insertJournalEntryTx(
+  client: any,
+  entry: {
+    companyId: string;
+    entryNumber: string;
+    date: Date;
+    memo: string;
+    status: string;
+    source: string;
+    sourceId: string | null;
+    createdBy: string;
+    postedBy: string | null;
+    postedAt: Date | null;
+  },
+  lines: Array<{ accountId: string; debit: number; credit: number; description: string }>,
+): Promise<{ id: string }> {
+  if (!Array.isArray(lines) || lines.length === 0) {
+    throw new Error('Journal entry must have at least one line');
+  }
+  const totalDebit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
+  const totalCredit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+  if (Math.abs(totalDebit - totalCredit) > 0.01) {
+    throw new Error(
+      `Journal entry is unbalanced: debits ${totalDebit.toFixed(2)} ≠ credits ${totalCredit.toFixed(2)}`,
+    );
+  }
+
+  const inserted = await client.query(
+    `INSERT INTO journal_entries
+       (company_id, entry_number, date, memo, status, source, source_id, created_by, posted_by, posted_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING id`,
+    [
+      entry.companyId, entry.entryNumber, entry.date, entry.memo, entry.status,
+      entry.source, entry.sourceId, entry.createdBy, entry.postedBy, entry.postedAt,
+    ],
+  );
+  const entryId = inserted.rows[0].id;
+  for (const line of lines) {
+    await client.query(
+      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, description)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [entryId, line.accountId, line.debit, line.credit, line.description],
+    );
+  }
+  return { id: entryId };
+}
+
 // Round to 2dp using banker-safe HALF_UP (sufficient for AED).
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -18,12 +109,21 @@ function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
 }
 
+// Land is held indefinitely and never depreciates under IAS 16. The check is
+// case-insensitive so 'Land' from the UI dropdown and 'land' from raw API
+// callers both match.
+function isNonDepreciableCategory(category: string | null | undefined): boolean {
+  return (category ?? '').trim().toLowerCase() === 'land';
+}
+
 interface DepreciationCalc {
   monthlyDepreciation: number;
   newAccumulatedDepreciation: number;
   newNetBookValue: number;
   prorationFactor: number; // 1.0 = full month, <1.0 = prorated first month
   fullyDepreciated: boolean;
+  skipped?: boolean;
+  skipReason?: string;
 }
 
 /**
@@ -53,6 +153,25 @@ function calculateDepreciation(
   const usefulLifeYears = asset.useful_life_years;
   const currentAccDep = parseFloat(asset.accumulated_depreciation || 0);
   const method = asset.depreciation_method || 'straight_line';
+
+  // Land never depreciates under IAS 16, and assets without a useful_life
+  // can't be straight-lined. Bail out before any math runs so callers can
+  // distinguish "skipped because non-depreciable" from "skipped because
+  // already fully depreciated".
+  if (isNonDepreciableCategory(asset.category) || usefulLifeYears === null || usefulLifeYears === undefined) {
+    return {
+      monthlyDepreciation: 0,
+      newAccumulatedDepreciation: currentAccDep,
+      newNetBookValue: round2(cost - currentAccDep),
+      prorationFactor: 1,
+      fullyDepreciated: false,
+      skipped: true,
+      skipReason: isNonDepreciableCategory(asset.category)
+        ? 'Land is non-depreciable'
+        : 'Asset has no useful_life_years',
+    };
+  }
+
   const totalMonths = usefulLifeYears * 12;
   const maxDepreciation = cost - salvage;
   const remainingDepreciable = Math.max(0, maxDepreciation - currentAccDep);
@@ -83,8 +202,11 @@ function calculateDepreciation(
     monthlyDepreciation = remainingDepreciable / Math.max(1, totalMonths - monthsAlreadyDepreciated);
   }
 
-  // First-month proration — if the period equals the acquisition month,
-  // book only the fraction of the month from purchase_day onward.
+  // First-month proration — based on actual months elapsed between
+  // acquisition and the depreciation period, not a row count. The first
+  // posting period (whether it's the acquisition month or a backfill of
+  // the acquisition month) gets the partial-day fraction; every subsequent
+  // period gets a full month even if the schedule had gaps.
   const purchaseDate = asset.purchase_date instanceof Date
     ? asset.purchase_date
     : new Date(asset.purchase_date);
@@ -92,8 +214,14 @@ function calculateDepreciation(
   const purchaseMonth = purchaseDate.getUTCMonth() + 1; // 1-12
   const purchaseDay = purchaseDate.getUTCDate();
 
+  // Months elapsed from acquisition date to the END of the target period.
+  // 0 for the acquisition month itself; 1 for the next calendar month; etc.
+  const monthsElapsed =
+    (periodYear - purchaseYear) * 12 + (periodMonth - purchaseMonth);
+
   let prorationFactor = 1;
-  if (periodYear === purchaseYear && periodMonth === purchaseMonth) {
+  if (monthsElapsed === 0) {
+    // Acquisition month — partial month based on purchase day.
     const dim = daysInMonth(periodYear, periodMonth);
     prorationFactor = (dim - purchaseDay + 1) / dim;
     monthlyDepreciation *= prorationFactor;
@@ -190,30 +318,110 @@ export function registerFixedAssetRoutes(app: Express) {
     const {
       assetName, assetNameAr, assetNumber, category, purchaseDate,
       purchaseCost, salvageValue, usefulLifeYears, depreciationMethod,
-      location, serialNumber, notes
+      location, serialNumber, notes, paymentAccountId
     } = req.body;
 
-    if (!assetName || !category || !purchaseDate || purchaseCost === undefined || !usefulLifeYears) {
-      return res.status(400).json({ message: 'assetName, category, purchaseDate, purchaseCost, and usefulLifeYears are required' });
+    // Land has no useful life, so usefulLifeYears is optional for it but
+    // mandatory for everything else. Validate accordingly.
+    const isLand = isNonDepreciableCategory(category);
+    if (!assetName || !category || !purchaseDate || purchaseCost === undefined) {
+      return res.status(400).json({ message: 'assetName, category, purchaseDate, and purchaseCost are required' });
+    }
+    if (!isLand && !usefulLifeYears) {
+      return res.status(400).json({ message: 'usefulLifeYears is required for depreciable assets' });
+    }
+
+    // Cost must be a non-negative number; salvage cannot exceed cost.
+    const cost = parseFloat(purchaseCost);
+    if (!Number.isFinite(cost) || cost < 0) {
+      return res.status(400).json({ message: 'purchaseCost must be a non-negative number' });
+    }
+    const salvage = parseFloat(salvageValue || 0);
+    if (!Number.isFinite(salvage) || salvage < 0) {
+      return res.status(400).json({ message: 'salvageValue must be a non-negative number' });
+    }
+    if (salvage > cost) {
+      return res.status(400).json({ message: 'salvageValue cannot exceed purchaseCost' });
     }
 
     // Block creating an asset purchased inside a locked period — the
     // capitalization/depreciation journal entries derive from purchase_date.
     await assertPeriodNotLocked(companyId, purchaseDate);
 
-    const cost = parseFloat(purchaseCost);
-    const salvage = parseFloat(salvageValue || 0);
+    // Resolve the payment account up-front so we can fail fast before
+    // inserting the asset row when an invalid account id is supplied.
+    let paymentAccount: any = null;
+    if (paymentAccountId) {
+      const companyAccounts = await storage.getAccountsByCompanyId(companyId);
+      paymentAccount = companyAccounts.find(a => a.id === paymentAccountId);
+      if (!paymentAccount) {
+        return res.status(400).json({ message: `paymentAccountId ${paymentAccountId} not found in company chart of accounts` });
+      }
+    }
+
     const nbv = cost - 0; // Initial NBV = cost (no depreciation yet)
+    const needsCapJe = !paymentAccountId;
+    const lifeYears = isLand ? null : usefulLifeYears;
 
     const result = await pool.query(
-      `INSERT INTO fixed_assets (company_id, asset_name, asset_name_ar, asset_number, category, purchase_date, purchase_cost, salvage_value, useful_life_years, depreciation_method, accumulated_depreciation, net_book_value, location, serial_number, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12, $13, $14)
+      `INSERT INTO fixed_assets (company_id, asset_name, asset_name_ar, asset_number, category, purchase_date, purchase_cost, salvage_value, useful_life_years, depreciation_method, accumulated_depreciation, net_book_value, location, serial_number, notes, needs_capitalization_je)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, $11, $12, $13, $14, $15)
        RETURNING *`,
-      [companyId, assetName, assetNameAr || null, assetNumber || null, category, purchaseDate, cost, salvage, usefulLifeYears, depreciationMethod || 'straight_line', nbv, location || null, serialNumber || null, notes || null]
+      [companyId, assetName, assetNameAr || null, assetNumber || null, category, purchaseDate, cost, salvage, lifeYears, depreciationMethod || 'straight_line', nbv, location || null, serialNumber || null, notes || null, needsCapJe]
     );
 
-    log.info({ assetId: result.rows[0].id, companyId }, 'Fixed asset created');
-    res.json(result.rows[0]);
+    const asset = result.rows[0];
+    let capitalizationJournalEntryId: string | null = null;
+
+    // If a paymentAccountId was supplied, post the capitalization JE:
+    //   Dr  1290 Fixed Assets at Cost      cost
+    //   Cr  <paymentAccountId>             cost
+    // Failure rolls back the asset insert so we don't leave a dangling row
+    // that would then need a manual correction.
+    if (paymentAccount) {
+      try {
+        const companyAccounts = await storage.getAccountsByCompanyId(companyId);
+        const fixedAssetCostAccount = companyAccounts.find(a => a.code === '1290' && a.isSystemAccount);
+        if (!fixedAssetCostAccount) {
+          throw new Error('Fixed Assets at Cost account (1290) not found — run migrations to create it');
+        }
+
+        const entryDate = new Date(purchaseDate);
+        const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
+        const je = await storage.createJournalEntry(
+          {
+            companyId,
+            date: entryDate,
+            memo: `Capitalization: ${assetName}`,
+            entryNumber,
+            status: 'posted',
+            source: 'system',
+            sourceId: asset.id,
+            createdBy: userId,
+            postedBy: userId,
+            postedAt: new Date(),
+          },
+          [
+            { accountId: fixedAssetCostAccount.id, debit: round2(cost), credit: 0, description: `Capitalize ${assetName}` },
+            { accountId: paymentAccount.id, debit: 0, credit: round2(cost), description: `Payment for ${assetName}` },
+          ],
+        );
+        capitalizationJournalEntryId = je.id;
+      } catch (err) {
+        await pool
+          .query(`DELETE FROM fixed_assets WHERE id = $1`, [asset.id])
+          .catch((cleanupErr: unknown) => log.error({ assetId: asset.id, cleanupErr }, 'Failed to roll back asset insert after capitalization JE failure'));
+        throw err;
+      }
+    }
+
+    log.info({
+      assetId: asset.id,
+      companyId,
+      capitalizationJournalEntryId,
+      needsCapitalizationJe: needsCapJe,
+    }, 'Fixed asset created');
+    res.json({ ...asset, capitalizationJournalEntryId });
   }));
 
   // Update fixed asset
@@ -540,110 +748,144 @@ export function registerFixedAssetRoutes(app: Express) {
     const targetEntryDate = new Date(Date.UTC(reqYear, reqMonth - 1, 1));
     await assertPeriodNotLocked(companyId, targetEntryDate);
 
-    const assetsResult = await pool.query(
-      `SELECT * FROM fixed_assets WHERE company_id = $1 AND status = 'active'`,
-      [companyId]
-    );
-
-    // Resolve depreciation system accounts once for the batch.
+    // Resolve depreciation system accounts once for the batch — outside the
+    // tx because chart-of-accounts is a separate concern and we want to fail
+    // fast before opening a transaction if they're missing.
     const companyAccounts = await storage.getAccountsByCompanyId(companyId);
     const depExpenseAccount = companyAccounts.find(a => a.code === '5100' && a.isSystemAccount);
     const accDepAccount = companyAccounts.find(a => a.code === '1240' && a.isSystemAccount);
+    if (!depExpenseAccount || !accDepAccount) {
+      return res.status(500).json({
+        message: 'Depreciation system accounts (5100/1240) not found — run migrations to create them',
+      });
+    }
 
-    const results: any[] = [];
+    // ALL-OR-NOTHING: the entire batch runs on a single connection inside one
+    // BEGIN/COMMIT. Any per-asset failure aborts the whole batch — partial
+    // posting was the source of recurring "GL doesn't tie to schedules" bugs
+    // when a mid-batch JE failed. Skips (already-depreciated, predates
+    // acquisition, fully-depreciated, non-depreciable) are NOT failures and
+    // do not roll back the rest.
+    const client = await pool.connect();
+    let results: any[] = [];
+    try {
+      await client.query('BEGIN');
 
-    for (const asset of assetsResult.rows) {
-      // Skip assets purchased after this period — depreciation can't pre-date
-      // the asset.
-      const purchaseDate = asset.purchase_date instanceof Date
-        ? asset.purchase_date
-        : new Date(asset.purchase_date);
-      const purchaseYear = purchaseDate.getUTCFullYear();
-      const purchaseMonth = purchaseDate.getUTCMonth() + 1;
-      if (reqYear < purchaseYear || (reqYear === purchaseYear && reqMonth < purchaseMonth)) {
-        results.push({
-          assetId: asset.id,
-          assetName: asset.asset_name,
-          skipped: true,
-          reason: 'Period predates acquisition',
-        });
-        continue;
-      }
+      // Per-(company, JE date) advisory xact lock — auto-released on
+      // COMMIT/ROLLBACK. Serialises concurrent batch runs so our in-memory
+      // entry-number counter stays collision-free.
+      const lockKey1 = hashStringToInt(companyId);
+      const dateStr = targetEntryDate.toISOString().slice(0, 10).replace(/-/g, '');
+      const lockKey2 = hashStringToInt(`JE-${dateStr}`);
+      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [lockKey1, lockKey2]);
 
-      // Idempotency check — if this period is already booked for this asset,
-      // skip cleanly.
-      const already = await pool.query(
-        `SELECT id, amount FROM depreciation_schedules
-          WHERE asset_id = $1 AND period_year = $2 AND period_month = $3`,
-        [asset.id, reqYear, reqMonth],
+      const allocateEntryNumber = await makeEntryNumberAllocator(client, companyId, targetEntryDate);
+
+      const assetsResult = await client.query(
+        `SELECT * FROM fixed_assets WHERE company_id = $1 AND status = 'active'`,
+        [companyId],
       );
-      if (already.rows.length > 0) {
-        results.push({
-          assetId: asset.id,
-          assetName: asset.asset_name,
-          skipped: true,
-          reason: 'Already depreciated for this period',
-          existingAmount: already.rows[0].amount,
-        });
-        continue;
-      }
 
-      const monthsAlreadyDepreciated = await countMonthsAlreadyDepreciated(asset.id, reqYear, reqMonth);
-      const calc = calculateDepreciation(asset, reqYear, reqMonth, monthsAlreadyDepreciated);
+      for (const asset of assetsResult.rows) {
+        // Skip assets purchased after this period — depreciation can't pre-date
+        // the asset.
+        const purchaseDate = asset.purchase_date instanceof Date
+          ? asset.purchase_date
+          : new Date(asset.purchase_date);
+        const purchaseYear = purchaseDate.getUTCFullYear();
+        const purchaseMonth = purchaseDate.getUTCMonth() + 1;
+        if (reqYear < purchaseYear || (reqYear === purchaseYear && reqMonth < purchaseMonth)) {
+          results.push({
+            assetId: asset.id,
+            assetName: asset.asset_name,
+            skipped: true,
+            reason: 'Period predates acquisition',
+          });
+          continue;
+        }
 
-      if (calc.monthlyDepreciation <= 0) {
-        results.push({
-          assetId: asset.id,
-          assetName: asset.asset_name,
-          monthlyDepreciation: 0,
-          skipped: true,
-          reason: 'Fully depreciated',
-        });
-        continue;
-      }
+        // Idempotency check — if this period is already booked for this asset,
+        // skip cleanly. Reading inside the tx is fine; the schedule's UNIQUE
+        // constraint prevents anyone else from inserting for this slot until
+        // we commit.
+        const already = await client.query(
+          `SELECT id, amount FROM depreciation_schedules
+            WHERE asset_id = $1 AND period_year = $2 AND period_month = $3`,
+          [asset.id, reqYear, reqMonth],
+        );
+        if (already.rows.length > 0) {
+          results.push({
+            assetId: asset.id,
+            assetName: asset.asset_name,
+            skipped: true,
+            reason: 'Already depreciated for this period',
+            existingAmount: already.rows[0].amount,
+          });
+          continue;
+        }
 
-      // Claim the schedule slot — concurrent batch runs converge here.
-      const claim = await pool.query(
-        `INSERT INTO depreciation_schedules (company_id, asset_id, period_year, period_month, amount, posted_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (asset_id, period_year, period_month) DO NOTHING
-         RETURNING id`,
-        [companyId, asset.id, reqYear, reqMonth, calc.monthlyDepreciation, userId],
-      );
-      if (claim.rowCount === 0) {
-        results.push({
-          assetId: asset.id,
-          assetName: asset.asset_name,
-          skipped: true,
-          reason: 'Already depreciated for this period (race)',
-        });
-        continue;
-      }
-      const scheduleId = claim.rows[0].id;
+        const countResult = await client.query(
+          `SELECT COUNT(*)::int AS n FROM depreciation_schedules
+            WHERE asset_id = $1
+              AND (period_year < $2 OR (period_year = $2 AND period_month < $3))`,
+          [asset.id, reqYear, reqMonth],
+        );
+        const monthsAlreadyDepreciated = countResult.rows[0]?.n ?? 0;
+        const calc = calculateDepreciation(asset, reqYear, reqMonth, monthsAlreadyDepreciated);
 
-      if (!depExpenseAccount || !accDepAccount) {
-        await pool.query(`DELETE FROM depreciation_schedules WHERE id = $1`, [scheduleId]).catch(() => {});
-        results.push({
-          assetId: asset.id,
-          assetName: asset.asset_name,
-          skipped: true,
-          reason: 'Depreciation system accounts (5100/1240) not found',
-        });
-        continue;
-      }
+        if (calc.skipped) {
+          results.push({
+            assetId: asset.id,
+            assetName: asset.asset_name,
+            monthlyDepreciation: 0,
+            skipped: true,
+            reason: calc.skipReason ?? 'Skipped',
+          });
+          continue;
+        }
 
-      try {
-        const entryNumber = await storage.generateEntryNumber(companyId, targetEntryDate);
+        if (calc.monthlyDepreciation <= 0) {
+          results.push({
+            assetId: asset.id,
+            assetName: asset.asset_name,
+            monthlyDepreciation: 0,
+            skipped: true,
+            reason: 'Fully depreciated',
+          });
+          continue;
+        }
+
+        // Insert schedule and JE on the SAME connection. ON CONFLICT DO
+        // NOTHING handles the race where another transaction committed first;
+        // here we treat that as a hard error since we already saw an empty
+        // row above — meaning a parallel batch beat us and we should abort
+        // the whole thing rather than skip silently and leave the GL out of
+        // step with the schedules they're being asked to honour.
+        const claim = await client.query(
+          `INSERT INTO depreciation_schedules (company_id, asset_id, period_year, period_month, amount, posted_by)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (asset_id, period_year, period_month) DO NOTHING
+           RETURNING id`,
+          [companyId, asset.id, reqYear, reqMonth, calc.monthlyDepreciation, userId],
+        );
+        if (claim.rowCount === 0) {
+          throw new Error(
+            `Concurrent batch already booked depreciation for asset ${asset.id} ${reqMonth}/${reqYear} — aborting to keep GL consistent with schedules`,
+          );
+        }
+        const scheduleId = claim.rows[0].id;
+
         const memoSuffix = calc.prorationFactor < 1
           ? ` (${reqMonth}/${reqYear}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%)`
           : ` (${reqMonth}/${reqYear})`;
 
-        const je = await storage.createJournalEntry(
+        const je = await insertJournalEntryTx(
+          client,
           {
             companyId,
+            entryNumber: allocateEntryNumber(),
             date: targetEntryDate,
             memo: `Depreciation: ${asset.asset_name}${memoSuffix}`,
-            entryNumber,
             status: 'posted',
             source: 'system',
             sourceId: asset.id,
@@ -657,12 +899,12 @@ export function registerFixedAssetRoutes(app: Express) {
           ],
         );
 
-        await pool.query(
+        await client.query(
           `UPDATE depreciation_schedules SET journal_entry_id = $1 WHERE id = $2`,
           [je.id, scheduleId],
         );
 
-        await pool.query(
+        await client.query(
           `UPDATE fixed_assets SET accumulated_depreciation = $1, net_book_value = $2 WHERE id = $3`,
           [calc.newAccumulatedDepreciation, calc.newNetBookValue, asset.id],
         );
@@ -677,18 +919,14 @@ export function registerFixedAssetRoutes(app: Express) {
           journalEntryId: je.id,
           scheduleId,
         });
-      } catch (err: any) {
-        await pool
-          .query(`DELETE FROM depreciation_schedules WHERE id = $1`, [scheduleId])
-          .catch((cleanupErr: unknown) => log.error({ scheduleId, cleanupErr }, 'Failed to roll back schedule claim'));
-        log.error({ assetId: asset.id, err: err?.message }, 'Failed to post depreciation in batch');
-        results.push({
-          assetId: asset.id,
-          assetName: asset.asset_name,
-          skipped: true,
-          reason: `Failed to post: ${err?.message ?? 'unknown error'}`,
-        });
       }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch((rbErr: unknown) => log.error({ rbErr }, 'ROLLBACK failed'));
+      throw err;
+    } finally {
+      client.release();
     }
 
     log.info({ companyId, month: reqMonth, year: reqYear, assetsProcessed: results.length }, 'Batch depreciation completed');
@@ -742,101 +980,308 @@ export function registerFixedAssetRoutes(app: Express) {
       return res.status(400).json({ message: 'disposalDate is not a valid date' });
     }
 
-    const cost = parseFloat(asset.purchase_cost);
-    const accDep = parseFloat(asset.accumulated_depreciation || 0);
-    const nbv = round2(cost - accDep);
-    const proceeds = round2(parseFloat(disposalAmount || 0));
-    const gainLoss = round2(proceeds - nbv);
-    const isGain = gainLoss > 0;
-    const isLoss = gainLoss < 0;
+    const purchaseDate = asset.purchase_date instanceof Date
+      ? asset.purchase_date
+      : new Date(asset.purchase_date);
+    if (dispDate.getTime() < purchaseDate.getTime()) {
+      return res.status(400).json({ message: 'disposalDate cannot precede purchaseDate' });
+    }
 
-    // Resolve all required system accounts before mutating anything.
+    const proceeds = round2(parseFloat(disposalAmount || 0));
+
+    // Resolve all required system accounts before opening the transaction so
+    // we fail fast on missing chart-of-accounts setup. We have to estimate
+    // gain/loss using a tentative NBV here — the catch-up depreciation may
+    // change accumulated_depreciation before the disposal JE actually posts.
     const companyAccounts = await storage.getAccountsByCompanyId(asset.company_id);
     const accDepAccount = companyAccounts.find(a => a.code === '1240' && a.isSystemAccount);
     const fixedAssetCostAccount = companyAccounts.find(a => a.code === '1290' && a.isSystemAccount);
     const cashAccount = companyAccounts.find(a => a.code === '1010' && a.isSystemAccount);
     const gainAccount = companyAccounts.find(a => a.code === '4080' && a.isSystemAccount);
     const lossAccount = companyAccounts.find(a => a.code === '5130' && a.isSystemAccount);
+    const depExpenseAccount = companyAccounts.find(a => a.code === '5100' && a.isSystemAccount);
 
-    const missing: string[] = [];
-    if (!accDepAccount) missing.push('1240');
-    if (!fixedAssetCostAccount) missing.push('1290');
-    if (proceeds > 0 && !cashAccount) missing.push('1010');
-    if (isGain && !gainAccount) missing.push('4080');
-    if (isLoss && !lossAccount) missing.push('5130');
-    if (missing.length > 0) {
+    const baseMissing: string[] = [];
+    if (!accDepAccount) baseMissing.push('1240');
+    if (!fixedAssetCostAccount) baseMissing.push('1290');
+    if (proceeds > 0 && !cashAccount) baseMissing.push('1010');
+    if (baseMissing.length > 0) {
       return res.status(500).json({
-        message: `Disposal cannot post — missing system accounts: ${missing.join(', ')}. Run migrations to create them.`,
+        message: `Disposal cannot post — missing system accounts: ${baseMissing.join(', ')}. Run migrations to create them.`,
       });
     }
 
-    // Build the JE lines. We always credit the full original cost so the
-    // asset's contribution to 1290 is reversed; accumulated depreciation
-    // (1240) is debited to reverse what was credited to it over the asset's
-    // life. The plug is whichever of gain/loss applies.
-    type Line = { accountId: string; debit: number; credit: number; description: string };
-    const lines: Line[] = [];
-    if (proceeds > 0) {
-      lines.push({ accountId: cashAccount!.id, debit: proceeds, credit: 0, description: `Proceeds from disposal of ${asset.asset_name}` });
-    }
-    if (accDep > 0) {
-      lines.push({ accountId: accDepAccount!.id, debit: round2(accDep), credit: 0, description: `Reverse accumulated depreciation on ${asset.asset_name}` });
-    }
-    if (isLoss) {
-      lines.push({ accountId: lossAccount!.id, debit: round2(-gainLoss), credit: 0, description: `Loss on disposal of ${asset.asset_name}` });
-    }
-    lines.push({ accountId: fixedAssetCostAccount!.id, debit: 0, credit: round2(cost), description: `Remove cost of ${asset.asset_name}` });
-    if (isGain) {
-      lines.push({ accountId: gainAccount!.id, debit: 0, credit: round2(gainLoss), description: `Gain on disposal of ${asset.asset_name}` });
+    // Disposal catch-up + disposal JE run in one transaction. If any of the
+    // catch-up depreciation entries fail, we don't want a half-depreciated
+    // asset stranded between two states.
+    const client = await pool.connect();
+    let updatedAssetRow: any = null;
+    let disposalJeId: string | null = null;
+    let netBookValueAtDisposal = 0;
+    let gainLoss = 0;
+    let gainLossType: 'gain' | 'loss' | 'breakeven' = 'breakeven';
+    const catchUpEntries: Array<{ year: number; month: number; amount: number; journalEntryId: string }> = [];
+
+    try {
+      await client.query('BEGIN');
+
+      // Lock the asset row so concurrent depreciation/dispose calls serialise
+      // here rather than racing on accumulated_depreciation.
+      const lockedAsset = await client.query(
+        `SELECT * FROM fixed_assets WHERE id = $1 FOR UPDATE`,
+        [id],
+      );
+      if (lockedAsset.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Fixed asset not found' });
+      }
+      let workingAsset = lockedAsset.rows[0];
+      if (workingAsset.status === 'disposed') {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: 'Asset is already disposed' });
+      }
+
+      // Per-(company, JE date) advisory xact lock for the entry-number
+      // allocator. Catch-up + disposal share the disposal-month numbering;
+      // catch-up months in earlier periods get their own per-period locks.
+      const lockKey1 = hashStringToInt(asset.company_id);
+      const lockedDates = new Set<string>();
+      const lockDate = async (d: Date) => {
+        const key = d.toISOString().slice(0, 10);
+        if (lockedDates.has(key)) return;
+        const lockKey2 = hashStringToInt(`JE-${key.replace(/-/g, '')}`);
+        await client.query('SELECT pg_advisory_xact_lock($1, $2)', [lockKey1, lockKey2]);
+        lockedDates.add(key);
+      };
+
+      // -------------------- CATCH-UP DEPRECIATION ---------------------
+      // Post depreciation for any month from the acquisition month through
+      // the month BEFORE disposal that hasn't already been booked. Skip the
+      // disposal month itself — full-month convention; the asset is gone
+      // before the month closes. Skip entirely for non-depreciable (Land) or
+      // assets with no useful_life_years.
+      const skipCatchUp =
+        isNonDepreciableCategory(workingAsset.category) ||
+        workingAsset.useful_life_years === null ||
+        workingAsset.useful_life_years === undefined;
+
+      if (!skipCatchUp) {
+        if (!depExpenseAccount) {
+          throw new Error('Depreciation expense account (5100) not found — required for catch-up depreciation');
+        }
+
+        const purchaseYear = purchaseDate.getUTCFullYear();
+        const purchaseMonth = purchaseDate.getUTCMonth() + 1;
+        const dispYear = dispDate.getUTCFullYear();
+        const dispMonth = dispDate.getUTCMonth() + 1;
+
+        // Last full month to depreciate = month immediately before the
+        // disposal month. If disposal happens in the acquisition month
+        // itself, there's nothing to catch up.
+        const endYear = dispMonth === 1 ? dispYear - 1 : dispYear;
+        const endMonth = dispMonth === 1 ? 12 : dispMonth - 1;
+
+        // Build list of (year, month) we need to consider.
+        const periodsToConsider: Array<{ year: number; month: number }> = [];
+        let curYear = purchaseYear;
+        let curMonth = purchaseMonth;
+        while (curYear < endYear || (curYear === endYear && curMonth <= endMonth)) {
+          periodsToConsider.push({ year: curYear, month: curMonth });
+          curMonth++;
+          if (curMonth > 12) { curMonth = 1; curYear++; }
+        }
+
+        // Existing schedules in this asset's history — skip these.
+        const existingResult = await client.query(
+          `SELECT period_year, period_month FROM depreciation_schedules WHERE asset_id = $1`,
+          [workingAsset.id],
+        );
+        const existing = new Set(
+          existingResult.rows.map((r: any) => `${r.period_year}-${r.period_month}`),
+        );
+
+        for (const period of periodsToConsider) {
+          if (existing.has(`${period.year}-${period.month}`)) continue;
+
+          const entryDate = new Date(Date.UTC(period.year, period.month - 1, 1));
+          await assertPeriodNotLocked(workingAsset.company_id, entryDate);
+
+          // monthsAlreadyDepreciated counts schedules strictly before this
+          // (year, month). Read from this client so we see in-progress
+          // catch-up inserts above.
+          const countResult = await client.query(
+            `SELECT COUNT(*)::int AS n FROM depreciation_schedules
+              WHERE asset_id = $1
+                AND (period_year < $2 OR (period_year = $2 AND period_month < $3))`,
+            [workingAsset.id, period.year, period.month],
+          );
+          const monthsAlreadyDepreciated = countResult.rows[0]?.n ?? 0;
+          const calc = calculateDepreciation(workingAsset, period.year, period.month, monthsAlreadyDepreciated);
+
+          if (calc.skipped || calc.monthlyDepreciation <= 0) continue;
+
+          const claim = await client.query(
+            `INSERT INTO depreciation_schedules (company_id, asset_id, period_year, period_month, amount, posted_by)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (asset_id, period_year, period_month) DO NOTHING
+             RETURNING id`,
+            [workingAsset.company_id, workingAsset.id, period.year, period.month, calc.monthlyDepreciation, userId],
+          );
+          if (claim.rowCount === 0) {
+            // Someone slipped a row in between our read and write — abort
+            // rather than skip, so the disposal isn't computed against an
+            // accumulated_depreciation that doesn't reflect the GL.
+            throw new Error(
+              `Concurrent depreciation booked for asset ${workingAsset.id} ${period.month}/${period.year} during catch-up — aborting disposal`,
+            );
+          }
+          const scheduleId = claim.rows[0].id;
+
+          await lockDate(entryDate);
+          const allocate = await makeEntryNumberAllocator(client, workingAsset.company_id, entryDate);
+          const memoSuffix = calc.prorationFactor < 1
+            ? ` (${period.month}/${period.year}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%, catch-up)`
+            : ` (${period.month}/${period.year}, catch-up)`;
+
+          const je = await insertJournalEntryTx(
+            client,
+            {
+              companyId: workingAsset.company_id,
+              entryNumber: allocate(),
+              date: entryDate,
+              memo: `Depreciation: ${workingAsset.asset_name}${memoSuffix}`,
+              status: 'posted',
+              source: 'system',
+              sourceId: workingAsset.id,
+              createdBy: userId,
+              postedBy: userId,
+              postedAt: new Date(),
+            },
+            [
+              { accountId: depExpenseAccount.id, debit: calc.monthlyDepreciation, credit: 0, description: `Depreciation - ${workingAsset.asset_name}` },
+              { accountId: accDepAccount!.id, debit: 0, credit: calc.monthlyDepreciation, description: `Accumulated depreciation - ${workingAsset.asset_name}` },
+            ],
+          );
+
+          await client.query(
+            `UPDATE depreciation_schedules SET journal_entry_id = $1 WHERE id = $2`,
+            [je.id, scheduleId],
+          );
+          await client.query(
+            `UPDATE fixed_assets SET accumulated_depreciation = $1, net_book_value = $2 WHERE id = $3`,
+            [calc.newAccumulatedDepreciation, calc.newNetBookValue, workingAsset.id],
+          );
+
+          // Update working copy so calculateDepreciation in subsequent
+          // iterations sees the latest accumulated_depreciation.
+          workingAsset = {
+            ...workingAsset,
+            accumulated_depreciation: calc.newAccumulatedDepreciation,
+            net_book_value: calc.newNetBookValue,
+          };
+
+          catchUpEntries.push({
+            year: period.year,
+            month: period.month,
+            amount: calc.monthlyDepreciation,
+            journalEntryId: je.id,
+          });
+        }
+      }
+
+      // -------------------- DISPOSAL JE -------------------------------
+      const cost = parseFloat(workingAsset.purchase_cost);
+      const accDep = parseFloat(workingAsset.accumulated_depreciation || 0);
+      const nbv = round2(cost - accDep);
+      gainLoss = round2(proceeds - nbv);
+      const isGain = gainLoss > 0;
+      const isLoss = gainLoss < 0;
+      gainLossType = isGain ? 'gain' : isLoss ? 'loss' : 'breakeven';
+      netBookValueAtDisposal = nbv;
+
+      const missing: string[] = [];
+      if (isGain && !gainAccount) missing.push('4080');
+      if (isLoss && !lossAccount) missing.push('5130');
+      if (missing.length > 0) {
+        throw new Error(
+          `Disposal cannot post — missing system accounts: ${missing.join(', ')}. Run migrations to create them.`,
+        );
+      }
+
+      type Line = { accountId: string; debit: number; credit: number; description: string };
+      const lines: Line[] = [];
+      if (proceeds > 0) {
+        lines.push({ accountId: cashAccount!.id, debit: proceeds, credit: 0, description: `Proceeds from disposal of ${workingAsset.asset_name}` });
+      }
+      if (accDep > 0) {
+        lines.push({ accountId: accDepAccount!.id, debit: round2(accDep), credit: 0, description: `Reverse accumulated depreciation on ${workingAsset.asset_name}` });
+      }
+      if (isLoss) {
+        lines.push({ accountId: lossAccount!.id, debit: round2(-gainLoss), credit: 0, description: `Loss on disposal of ${workingAsset.asset_name}` });
+      }
+      lines.push({ accountId: fixedAssetCostAccount!.id, debit: 0, credit: round2(cost), description: `Remove cost of ${workingAsset.asset_name}` });
+      if (isGain) {
+        lines.push({ accountId: gainAccount!.id, debit: 0, credit: round2(gainLoss), description: `Gain on disposal of ${workingAsset.asset_name}` });
+      }
+
+      await lockDate(dispDate);
+      const allocateDispNum = await makeEntryNumberAllocator(client, workingAsset.company_id, dispDate);
+      const disposalJe = await insertJournalEntryTx(
+        client,
+        {
+          companyId: workingAsset.company_id,
+          entryNumber: allocateDispNum(),
+          date: dispDate,
+          memo: `Disposal: ${workingAsset.asset_name}`,
+          status: 'posted',
+          source: 'system',
+          sourceId: id,
+          createdBy: userId,
+          postedBy: userId,
+          postedAt: new Date(),
+        },
+        lines,
+      );
+      disposalJeId = disposalJe.id;
+
+      await client.query(
+        `UPDATE fixed_assets SET
+          status = 'disposed',
+          disposal_date = $1,
+          disposal_amount = $2,
+          net_book_value = 0,
+          notes = COALESCE($3, notes)
+         WHERE id = $4`,
+        [dispDate, proceeds, notes || null, id],
+      );
+      const finalRow = await client.query(`SELECT * FROM fixed_assets WHERE id = $1`, [id]);
+      updatedAssetRow = finalRow.rows[0];
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch((rbErr: unknown) => log.error({ rbErr }, 'ROLLBACK failed during disposal'));
+      throw err;
+    } finally {
+      client.release();
     }
 
-    const entryNumber = await storage.generateEntryNumber(asset.company_id, dispDate);
-    const je = await storage.createJournalEntry(
-      {
-        companyId: asset.company_id,
-        date: dispDate,
-        memo: `Disposal: ${asset.asset_name}`,
-        entryNumber,
-        status: 'posted',
-        source: 'system',
-        sourceId: id,
-        createdBy: userId,
-        postedBy: userId,
-        postedAt: new Date(),
-      },
-      lines,
-    );
-
-    // Mark asset disposed and zero NBV — accumulated_depreciation is left
-    // intact as a historical record (matches the JE we just posted) and
-    // status='disposed' filters it out of running balance reports.
-    await pool.query(
-      `UPDATE fixed_assets SET
-        status = 'disposed',
-        disposal_date = $1,
-        disposal_amount = $2,
-        net_book_value = 0,
-        notes = COALESCE($3, notes)
-       WHERE id = $4`,
-      [dispDate, proceeds, notes || null, id]
-    );
-
-    const updated = await pool.query(`SELECT * FROM fixed_assets WHERE id = $1`, [id]);
     log.info({
       assetId: id,
       proceeds,
-      netBookValueAtDisposal: nbv,
+      netBookValueAtDisposal,
       gainLoss,
-      gainLossType: isGain ? 'gain' : isLoss ? 'loss' : 'breakeven',
-      journalEntryId: je.id,
+      gainLossType,
+      catchUpMonths: catchUpEntries.length,
+      journalEntryId: disposalJeId,
     }, 'Asset disposed');
     res.json({
-      asset: updated.rows[0],
+      asset: updatedAssetRow,
       disposalAmount: proceeds,
-      netBookValueAtDisposal: nbv,
+      netBookValueAtDisposal,
       gainLoss,
-      gainLossType: isGain ? 'gain' : isLoss ? 'loss' : 'breakeven',
-      journalEntryId: je.id,
+      gainLossType,
+      journalEntryId: disposalJeId,
+      catchUpDepreciation: catchUpEntries,
     });
   }));
 
