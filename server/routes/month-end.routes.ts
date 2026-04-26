@@ -6,9 +6,12 @@ import {
   getCloseChecklist,
   generateClosingEntries,
   lockPeriod,
+  unlockPeriod,
+  listLockedPeriods,
   aiValidation,
   getCloseHistory,
 } from '../services/month-end.service';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 /**
  * Derive periodStart and periodEnd from a YYYY-MM query parameter.
@@ -80,6 +83,10 @@ export function registerMonthEndRoutes(app: Express) {
       if (!hasAccess) {
         return res.status(403).json({ message: 'Access denied' });
       }
+
+      // generateClosingEntries posts a JE on periodEnd. Re-running it inside an
+      // already-locked period would silently mutate locked-period totals.
+      await assertPeriodNotLocked(companyId, periodEnd);
 
       const entry = await generateClosingEntries(companyId, periodStart, periodEnd, userId);
       res.json(entry);
@@ -174,6 +181,89 @@ export function registerMonthEndRoutes(app: Express) {
 
       const history = await getCloseHistory(companyId);
       res.json(history);
+    })
+  );
+
+  // =====================================
+  // Period Lock Routes
+  // =====================================
+
+  /**
+   * POST /api/period-lock/unlock
+   * Unlock a previously-closed period. firm_owner only — unlocking re-opens
+   * a closed month for editing and is a sensitive accounting action.
+   * Body: { companyId: string, period: string (YYYY-MM) }
+   */
+  app.post(
+    '/api/period-lock/unlock',
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = req.user!.id;
+      const { companyId, period } = req.body ?? {};
+
+      if (!companyId || typeof companyId !== 'string') {
+        return res.status(400).json({ message: 'companyId is required' });
+      }
+      if (!period || typeof period !== 'string' || !/^\d{4}-\d{2}$/.test(period)) {
+        return res.status(400).json({ message: 'period (YYYY-MM) is required' });
+      }
+
+      // firm_owner only — admins also allowed for support, but firm_admin is not
+      // sufficient. This mirrors the elevated-permission pattern used for
+      // financial-control actions elsewhere.
+      if (!req.user!.isAdmin && req.user!.firmRole !== 'firm_owner') {
+        return res.status(403).json({ message: 'Only firm owners can unlock periods' });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { periodEnd } = parsePeriod(period);
+      const record = await unlockPeriod(companyId, periodEnd);
+      if (!record) {
+        return res.status(404).json({ message: 'No locked period found for that month' });
+      }
+
+      const { recordAudit } = await import('../services/audit.service');
+      await recordAudit({
+        userId,
+        companyId,
+        action: 'period.unlock',
+        entityType: 'period',
+        entityId: periodEnd,
+        before: { periodEnd, status: 'locked' },
+        after: { periodEnd, status: 'open', unlockedBy: userId },
+        req,
+      });
+
+      res.json(record);
+    })
+  );
+
+  /**
+   * GET /api/period-lock/list?companyId=...
+   * List all currently-locked periods for a company.
+   */
+  app.get(
+    '/api/period-lock/list',
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = req.user!.id;
+      const companyId = req.query.companyId as string | undefined;
+
+      if (!companyId) {
+        return res.status(400).json({ message: 'companyId query parameter is required' });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const periods = await listLockedPeriods(companyId);
+      res.json(periods);
     })
   );
 }

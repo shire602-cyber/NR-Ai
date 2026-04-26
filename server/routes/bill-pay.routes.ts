@@ -5,6 +5,7 @@ import { storage } from '../storage';
 import { pool } from '../db';
 import { createLogger } from '../config/logger';
 import { assertRetentionExpired } from '../services/retention.service';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('bill-pay');
 
@@ -156,6 +157,10 @@ export function registerBillPayRoutes(app: Express) {
       return res.status(400).json({ message: 'At least one line item is required' });
     }
 
+    // Bills post a JE on the bill_date once approved — refuse to even draft
+    // one inside a closed period.
+    await assertPeriodNotLocked(companyId, bill_date);
+
     // Reverse charge: when the vendor has no TRN (typically a foreign supplier or
     // unregistered domestic supplier), the buyer self-assesses VAT. Auto-flag when
     // not explicitly provided and TRN is absent — gives accountants a default.
@@ -264,6 +269,13 @@ export function registerBillPayRoutes(app: Express) {
       attachment_url,
       line_items,
     } = req.body;
+
+    // Block edits that touch a locked period — the existing bill_date and any
+    // requested new bill_date must both be outside any closed period.
+    await assertPeriodNotLocked(bill.company_id, bill.bill_date);
+    if (bill_date) {
+      await assertPeriodNotLocked(bill.company_id, bill_date);
+    }
 
     // Build dynamic update
     const updates: string[] = [];
@@ -403,6 +415,9 @@ export function registerBillPayRoutes(app: Express) {
       return res.status(400).json({ message: 'Only pending bills can be approved' });
     }
 
+    // Approval triggers the AP journal entry on bill_date — block if locked.
+    await assertPeriodNotLocked(bill.company_id, bill.bill_date);
+
     const updateResult = await pool.query(
       `UPDATE vendor_bills
        SET status = 'approved', approved_by = $1, approved_at = NOW()
@@ -445,6 +460,9 @@ export function registerBillPayRoutes(app: Express) {
     if (paymentAmount <= 0) {
       return res.status(400).json({ message: 'Payment amount must be positive' });
     }
+
+    // Recording a payment posts a cash JE on payment_date — block if locked.
+    await assertPeriodNotLocked(bill.company_id, payment_date);
 
     const currentPaid = Number(bill.amount_paid) || 0;
     const totalAmount = Number(bill.total_amount) || 0;

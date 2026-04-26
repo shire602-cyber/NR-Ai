@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { UAE_VAT_RATE } from "../constants";
 import { pool } from "../db";
+import { assertPeriodNotLocked } from "../services/period-lock.service";
 
 export function registerVATRoutes(app: Express) {
   // =====================================
@@ -33,6 +34,12 @@ export function registerVATRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Generating a VAT return for a period that is already closed would
+    // produce numbers that disagree with the locked-period books. Block it.
+    if (periodEnd) {
+      await assertPeriodNotLocked(companyId, periodEnd);
     }
 
     // Get company information for emirate and VAT registration
@@ -297,6 +304,13 @@ export function registerVATRoutes(app: Express) {
     const userId = (req as any).user?.id;
     const { id } = req.params;
     const { adjustmentAmount, adjustmentReason, notes } = req.body;
+
+    // Submitting the return finalises the VAT settlement against periodEnd —
+    // refuse if the underlying period is already closed.
+    const existing = await storage.getVatReturn(id);
+    if (existing) {
+      await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
+    }
 
     const vatReturn = await storage.updateVatReturn(id, {
       status: 'submitted',

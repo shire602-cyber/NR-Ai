@@ -4,6 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { pool } from '../db';
 import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('expense-claims');
 
@@ -298,6 +299,17 @@ export function registerExpenseClaimRoutes(app: Express) {
       return res.status(400).json({ message: 'Only submitted claims can be approved' });
     }
 
+    // Approval recognises the expense on the latest item date — block if any
+    // line item falls inside a locked period.
+    const itemDates = await pool.query(
+      `SELECT MAX(expense_date) AS latest FROM expense_claim_items WHERE claim_id = $1`,
+      [id]
+    );
+    const latestExpenseDate = itemDates.rows[0]?.latest;
+    if (latestExpenseDate) {
+      await assertPeriodNotLocked(claim.company_id, latestExpenseDate);
+    }
+
     const { review_notes } = req.body;
 
     const updatedResult = await pool.query(
@@ -371,6 +383,9 @@ export function registerExpenseClaimRoutes(app: Express) {
     if (claim.status !== 'approved') {
       return res.status(400).json({ message: 'Only approved claims can be marked as paid' });
     }
+
+    // Mark-paid stamps the payment with NOW() and posts a cash JE on that date.
+    await assertPeriodNotLocked(claim.company_id, new Date());
 
     const { payment_reference } = req.body;
 

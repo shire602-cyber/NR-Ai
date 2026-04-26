@@ -530,6 +530,10 @@ export function registerBankStatementRoutes(app: Express) {
         return res.status(400).json({ message: 'matchedId is required' });
       }
 
+      // Manual reconciliation flips a transaction inside a period to matched —
+      // refuse to mutate reconciliation state inside a locked period.
+      await assertPeriodNotLocked(companyId, txn.transactionDate);
+
       const updated = await storage.reconcileBankTransaction(tid, matchedId, matchedType as 'journal' | 'receipt' | 'invoice');
       await storage.updateBankTransaction(tid, { matchStatus: 'matched' });
 
@@ -706,6 +710,10 @@ export function registerBankStatementRoutes(app: Express) {
       if (!txn || txn.companyId !== companyId) {
         return res.status(404).json({ message: 'Bank transaction not found' });
       }
+
+      // Unmatching reverses reconciliation state on the transaction's date —
+      // refuse if that date is inside a locked period.
+      await assertPeriodNotLocked(companyId, txn.transactionDate);
 
       const updated = await storage.updateBankTransaction(tid, {
         isReconciled: false,

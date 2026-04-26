@@ -3,6 +3,7 @@ import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { UAE_CT_EXEMPTION_THRESHOLD } from '../constants';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 export function registerCorporateTaxRoutes(app: Express) {
   // =====================================
@@ -43,6 +44,12 @@ export function registerCorporateTaxRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // CT returns settle tax against periodEnd — block creation when the
+    // period is already locked, since the tax provision JE could not post.
+    if (req.body?.periodEnd) {
+      await assertPeriodNotLocked(companyId, req.body.periodEnd);
     }
 
     const taxReturn = await storage.createCorporateTaxReturn({

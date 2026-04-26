@@ -3,6 +3,7 @@ import { storage } from '../storage';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('inventory');
 
@@ -134,6 +135,10 @@ export function registerInventoryRoutes(app: Express) {
     if (quantity === undefined || quantity === null || quantity === 0) {
       return res.status(400).json({ message: 'Quantity is required and must not be zero' });
     }
+
+    // Inventory movements change stock value (and COGS for sales) as of today —
+    // refuse if today falls inside a closed period.
+    await assertPeriodNotLocked(product.companyId, new Date());
 
     // Create the movement
     const movement = await storage.createInventoryMovement({
