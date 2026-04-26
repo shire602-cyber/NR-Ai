@@ -416,26 +416,68 @@ function advanceByInterval(date: Date, interval: string): Date {
 }
 
 /**
- * Scans invoices with isRecurring=true and nextRecurringDate <= today,
- * copies them as new invoices, and advances nextRecurringDate.
+ * Reads the `recurring_invoices` table for active templates whose
+ * `next_run_date` has arrived, generates a fresh invoice for each (with the
+ * matching revenue-recognition journal entry), and advances the template's
+ * `next_run_date` atomically.
+ *
+ * Idempotency: each template row is "claimed" via a CAS update on
+ * next_run_date. If two cron invocations overlap, only one will succeed in
+ * the claim and proceed to generate. The other will see the row's
+ * next_run_date already advanced and fall out of the due query on the next
+ * pass.
+ *
+ * Why we no longer scan invoices.is_recurring: that approach was a parallel
+ * subsystem that the recurring-invoices.routes.ts API never wrote to, so
+ * recurring schedules created through the UI were never picked up.
  */
 async function generateDueRecurringInvoices() {
-  const dueInvoices = await storage.getDueInvoicesForRecurring();
-  log.info({ count: dueInvoices.length }, 'Recurring invoices due for generation');
+  const dueTemplates = await storage.getDueRecurringInvoices();
+  log.info({ count: dueTemplates.length }, 'Recurring invoice templates due for generation');
 
   const today = new Date();
 
-  for (const template of dueInvoices) {
+  for (const template of dueTemplates) {
     try {
-      // Skip if past end date
-      if (template.recurringEndDate && new Date(template.recurringEndDate) < today) {
-        await storage.updateInvoice(template.id, { isRecurring: false } as any);
-        log.info({ invoiceId: template.id }, 'Recurring invoice ended — disabling');
+      // Skip and disable if past end date.
+      if (template.endDate && new Date(template.endDate) < today) {
+        await storage.updateRecurringInvoice(template.id, { isActive: false } as any);
+        log.info({ templateId: template.id }, 'Recurring template past endDate — disabled');
         continue;
       }
 
-      const originalLines = await storage.getInvoiceLinesByInvoiceId(template.id);
+      // Parse line items from the template.
+      let templateLines: Array<{
+        description: string;
+        quantity: number;
+        unitPrice: number;
+        vatRate?: number;
+        vatSupplyType?: string;
+      }>;
+      try {
+        templateLines = JSON.parse(template.linesJson);
+      } catch (err) {
+        log.error({ err, templateId: template.id }, 'Recurring template has invalid linesJson — skipping');
+        continue;
+      }
+      if (!Array.isArray(templateLines) || templateLines.length === 0) {
+        log.warn({ templateId: template.id }, 'Recurring template has no lines — skipping');
+        continue;
+      }
+
+      // Compute totals up front for the new invoice.
+      let subtotal = 0;
+      let vatAmount = 0;
+      for (const line of templateLines) {
+        const lineTotal = line.quantity * line.unitPrice;
+        subtotal += lineTotal;
+        vatAmount += lineTotal * (line.vatRate ?? 0.05);
+      }
+      const total = subtotal + vatAmount;
+
       const invoiceDate = new Date();
+      const expectedNextRunDate = new Date(template.nextRunDate);
+      const advancedNextRunDate = advanceByInterval(expectedNextRunDate, template.frequency);
 
       // Skip generation if the target invoice date is in a locked period —
       // the resulting invoice would be impossible to post a JE for, and
@@ -450,19 +492,12 @@ async function generateDueRecurringInvoices() {
         continue;
       }
 
-      // Generate a unique invoice number based on original + timestamp
-      const newNumber = `${template.number}-R${Date.now()}`;
+      // Generate a unique invoice number scoped to this template.
+      const newNumber = `R-${template.id.slice(0, 8)}-${expectedNextRunDate.toISOString().slice(0, 10)}`;
 
-      // Recompute totals from lines
-      let subtotal = 0;
-      let vatAmount = 0;
-      for (const line of originalLines) {
-        const lineTotal = line.quantity * line.unitPrice;
-        subtotal += lineTotal;
-        vatAmount += lineTotal * (line.vatRate ?? 0.05);
-      }
-      const total = subtotal + vatAmount;
-
+      // Create the invoice + lines first. We claim the template (CAS) only
+      // after the invoice is durable, so a crash in the middle leaves the
+      // template's next_run_date untouched and the next cron retries.
       const newInvoice = await storage.createInvoice({
         companyId: template.companyId,
         number: newNumber,
@@ -473,31 +508,127 @@ async function generateDueRecurringInvoices() {
         subtotal,
         vatAmount,
         total,
-        status: 'draft',
+        status: 'sent',
         invoiceType: 'invoice',
       } as any);
 
-      for (const line of originalLines) {
+      for (const line of templateLines) {
         await storage.createInvoiceLine({
           invoiceId: newInvoice.id,
           description: line.description,
           quantity: line.quantity,
           unitPrice: line.unitPrice,
-          vatRate: line.vatRate,
+          vatRate: line.vatRate ?? 0.05,
           vatSupplyType: line.vatSupplyType || undefined,
         } as any);
       }
 
-      // Advance the nextRecurringDate on the template
-      const nextDate = advanceByInterval(new Date(template.nextRecurringDate!), template.recurringInterval!);
-      await storage.updateInvoice(template.id, { nextRecurringDate: nextDate } as any);
+      // Try to claim the template. If we lose, another runner already
+      // generated for this period — drop the just-created invoice to avoid
+      // a duplicate.
+      const claim = await storage.tryClaimRecurringInvoice(
+        template.id,
+        expectedNextRunDate,
+        advancedNextRunDate,
+        newInvoice.id,
+      );
+      if (!claim) {
+        log.warn(
+          { templateId: template.id, droppedInvoiceId: newInvoice.id },
+          'Lost CAS race for recurring template — dropping duplicate invoice',
+        );
+        try {
+          await storage.safeDeleteInvoice(newInvoice.id);
+        } catch (cleanupErr) {
+          log.error({ cleanupErr, invoiceId: newInvoice.id }, 'Failed to clean up duplicate recurring invoice');
+        }
+        continue;
+      }
+
+      // Post revenue-recognition journal entry. journal_entries.created_by
+      // is NOT NULL FK → users.id, so we attribute system-generated entries
+      // to a company owner. If none found, we leave the invoice unposted and
+      // log loudly — accounting can post manually.
+      try {
+        const owners = await storage.getCompanyUsersByCompanyId(template.companyId);
+        const owner = owners.find((u: any) => u.role === 'owner') ?? owners[0];
+        if (!owner) {
+          log.warn(
+            { templateId: template.id, invoiceId: newInvoice.id },
+            'Recurring invoice generated but no company user found for GL attribution — manual posting needed',
+          );
+        } else {
+          const accounts = await storage.getAccountsByCompanyId(template.companyId);
+          const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+          const salesRevenue = accounts.find(
+            a => a.isSystemAccount && a.type === 'income' && (a.code === '4010' || a.code === '4020'),
+          );
+          const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === '2020');
+
+          if (accountsReceivable && salesRevenue) {
+            const entryNumber = await storage.generateEntryNumber(template.companyId, invoiceDate);
+            const lines: Array<{
+              accountId: string;
+              debit: number;
+              credit: number;
+              description: string;
+            }> = [
+              {
+                accountId: accountsReceivable.id,
+                debit: total,
+                credit: 0,
+                description: `Recurring invoice ${newInvoice.number}`,
+              },
+              {
+                accountId: salesRevenue.id,
+                debit: 0,
+                credit: subtotal,
+                description: `Recurring revenue ${newInvoice.number}`,
+              },
+            ];
+            if (vatAmount > 0 && vatPayable) {
+              lines.push({
+                accountId: vatPayable.id,
+                debit: 0,
+                credit: vatAmount,
+                description: `Recurring VAT ${newInvoice.number}`,
+              });
+            }
+            await storage.createJournalEntry(
+              {
+                companyId: template.companyId,
+                date: invoiceDate,
+                memo: `Recurring sales invoice ${newInvoice.number} - ${template.customerName}`,
+                entryNumber,
+                status: 'posted',
+                source: 'invoice',
+                sourceId: newInvoice.id,
+                createdBy: owner.userId,
+                postedBy: owner.userId,
+                postedAt: invoiceDate,
+              } as any,
+              lines as any,
+            );
+          } else {
+            log.warn(
+              { templateId: template.id, invoiceId: newInvoice.id },
+              'Recurring invoice generated but GL accounts missing — manual posting needed',
+            );
+          }
+        }
+      } catch (jeErr) {
+        log.error(
+          { jeErr, templateId: template.id, invoiceId: newInvoice.id },
+          'Recurring invoice created but failed to post GL — manual intervention required',
+        );
+      }
 
       log.info(
-        { templateId: template.id, newInvoiceId: newInvoice.id, nextDate },
-        'Generated recurring invoice copy'
+        { templateId: template.id, newInvoiceId: newInvoice.id, nextDate: advancedNextRunDate },
+        'Generated recurring invoice from template',
       );
     } catch (err) {
-      log.error({ err, invoiceId: template.id }, 'Failed to generate recurring invoice copy');
+      log.error({ err, templateId: template.id }, 'Failed to generate recurring invoice');
     }
   }
 }

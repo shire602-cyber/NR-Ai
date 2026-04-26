@@ -6,6 +6,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { insertJournalEntrySchema } from '../../shared/schema';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { recordAudit } from '../services/audit.service';
 
 export function registerJournalRoutes(app: Express) {
   // =====================================
@@ -111,6 +112,23 @@ export function registerJournalRoutes(app: Express) {
         description: line.description || null,
       }))
     );
+
+    await recordAudit({
+      userId,
+      companyId,
+      action: isPosting ? 'journal.create_posted' : 'journal.create_draft',
+      entityType: 'journal_entry',
+      entityId: entry.id,
+      before: null,
+      after: {
+        entryNumber: entry.entryNumber,
+        status: entry.status,
+        totalDebit,
+        totalCredit,
+        lineCount: lines.length,
+      },
+      req,
+    });
 
     res.json({
       id: entry.id,
@@ -250,6 +268,17 @@ export function registerJournalRoutes(app: Express) {
       }))
     );
 
+    await recordAudit({
+      userId,
+      companyId: entry.companyId,
+      action: 'journal.update',
+      entityType: 'journal_entry',
+      entityId: id,
+      before: { entryNumber: entry.entryNumber, status: entry.status },
+      after: { totalDebit, totalCredit, lineCount: lines.length, date: entryDate },
+      req,
+    });
+
     console.log('[Journal] Draft journal entry updated successfully:', id);
     res.json({ id: updatedEntry.id, status: updatedEntry.status, message: 'Draft entry updated successfully' });
   }));
@@ -297,6 +326,17 @@ export function registerJournalRoutes(app: Express) {
       status: 'posted',
       postedBy: userId,
       postedAt: new Date(),
+    });
+
+    await recordAudit({
+      userId,
+      companyId: entry.companyId,
+      action: 'journal.post',
+      entityType: 'journal_entry',
+      entityId: id,
+      before: { status: 'draft' },
+      after: { status: 'posted' },
+      req,
     });
 
     console.log('[Journal] Entry posted successfully:', id);
@@ -381,6 +421,18 @@ export function registerJournalRoutes(app: Express) {
       updatedAt: new Date(),
     });
 
+    await recordAudit({
+      userId,
+      companyId: entry.companyId,
+      action: 'journal.reverse',
+      entityType: 'journal_entry',
+      entityId: id,
+      before: { status: 'posted', entryNumber: entry.entryNumber },
+      after: { status: 'void', reversalEntryId: reversalEntry.id, reversalNumber: reversalEntry.entryNumber },
+      req,
+      extra: { reason: reason || null },
+    });
+
     console.log('[Journal] Entry reversed:', id, '-> new entry:', reversalEntry.id);
     res.json({
       originalId: id,
@@ -425,6 +477,18 @@ export function registerJournalRoutes(app: Express) {
 
     // Only draft entries can be deleted
     await storage.deleteJournalEntry(id);
+
+    await recordAudit({
+      userId,
+      companyId: entry.companyId,
+      action: 'journal.delete',
+      entityType: 'journal_entry',
+      entityId: id,
+      before: { entryNumber: entry.entryNumber, status: entry.status },
+      after: null,
+      req,
+    });
+
     console.log('[Journal] Draft entry deleted:', id);
     res.json({ message: 'Draft entry deleted successfully' });
   }));

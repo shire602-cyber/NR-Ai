@@ -7,6 +7,7 @@ import { insertInvoiceSchema } from '../../shared/schema';
 import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
 import { createAndEmitNotification } from '../services/socket.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { recordAudit } from '../services/audit.service';
 // @ts-ignore
 import PDFDocument from 'pdfkit';
 
@@ -126,6 +127,17 @@ export function registerReceiptRoutes(app: Express) {
 
     console.log('[Receipts] Receipt created successfully:', receipt.id);
 
+    await recordAudit({
+      userId,
+      companyId,
+      action: 'receipt.create',
+      entityType: 'receipt',
+      entityId: receipt.id,
+      before: null,
+      after: { merchant: receipt.merchant, amount: receipt.amount, currency: receipt.currency },
+      req,
+    });
+
     createAndEmitNotification({
       userId,
       companyId,
@@ -151,7 +163,24 @@ export function registerReceiptRoutes(app: Express) {
       req.body.category = null;
     }
 
+    const before = await storage.getReceipt(id);
     const updatedReceipt = await storage.updateReceipt(id, req.body);
+    await recordAudit({
+      userId,
+      companyId: updatedReceipt.companyId,
+      action: 'receipt.update',
+      entityType: 'receipt',
+      entityId: id,
+      before: before
+        ? { merchant: before.merchant, amount: before.amount, accountId: before.accountId }
+        : null,
+      after: {
+        merchant: updatedReceipt.merchant,
+        amount: updatedReceipt.amount,
+        accountId: updatedReceipt.accountId,
+      },
+      req,
+    });
     console.log('[Receipts] Receipt updated successfully:', id);
     res.json(updatedReceipt);
   }));
@@ -159,6 +188,7 @@ export function registerReceiptRoutes(app: Express) {
   // Customer-only: Delete receipt
   app.delete("/api/receipts/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
+    const userId = (req as any).user.id;
 
     // Remove image file before deleting DB row (best-effort; don't block on failure)
     const existing = await storage.getReceipt(id);
@@ -167,6 +197,20 @@ export function registerReceiptRoutes(app: Express) {
     }
 
     await storage.deleteReceipt(id);
+
+    if (existing) {
+      await recordAudit({
+        userId,
+        companyId: existing.companyId,
+        action: 'receipt.delete',
+        entityType: 'receipt',
+        entityId: id,
+        before: { merchant: existing.merchant, amount: existing.amount },
+        after: null,
+        req,
+      });
+    }
+
     res.json({ message: 'Receipt deleted successfully' });
   }));
 

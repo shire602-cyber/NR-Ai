@@ -121,7 +121,19 @@ import {
   invoicePayments
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, isNull } from "drizzle-orm";
+import { eq, and, desc, lte, isNull, sql } from "drizzle-orm";
+import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
+
+// Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
+// Postgres advisory locks accept (int4, int4); pg_advisory_lock(bigint) would
+// also work but the two-int form makes the namespace more obvious.
+function hashStringToInt(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
 
 // Tolerance for float-rounding drift. Anything beyond this is a real imbalance.
 const JOURNAL_BALANCE_TOLERANCE = 0.01;
@@ -558,12 +570,57 @@ export interface IStorage {
   createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice>;
   updateRecurringInvoice(id: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice>;
   deleteRecurringInvoice(id: string): Promise<void>;
+  tryClaimRecurringInvoice(
+    id: string,
+    expectedNextRunDate: Date,
+    newNextRunDate: Date,
+    newLastGeneratedInvoiceId: string | null,
+  ): Promise<RecurringInvoice | null>;
 
   // Invoice Payments
   getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]>;
   createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment>;
   getInvoicePaidTotal(invoiceId: string): Promise<number>;
   getDueInvoicesForRecurring(): Promise<Invoice[]>;
+  /**
+   * Atomically record an invoice payment + post the cash/AR journal entry +
+   * recompute invoice status. All inside a single transaction with
+   * SELECT FOR UPDATE on the invoice row, so concurrent payments cannot
+   * over-pay or race on the status field.
+   */
+  recordInvoicePayment(input: {
+    invoiceId: string;
+    companyId: string;
+    amount: number;
+    date: Date;
+    method: string;
+    reference: string | null;
+    notes: string | null;
+    paymentAccountId: string;
+    paymentAccountCurrency?: string | null;
+    receivableAccountId: string;
+    createdBy: string;
+  }): Promise<{
+    payment: InvoicePayment;
+    invoice: Invoice;
+    journalEntryId: string;
+    totalPaid: number;
+  }>;
+  /**
+   * Delete an invoice safely. Refuses if any associated journal entry is
+   * posted (caller must void instead). Cascades draft journal entries.
+   * Throws Error with .code === 'INVOICE_HAS_POSTED_JE' for the route
+   * layer to translate to a 422.
+   */
+  safeDeleteInvoice(id: string): Promise<void>;
+  /**
+   * Get journal entries that originated from an invoice.
+   */
+  getJournalEntriesBySource(
+    companyId: string,
+    source: string,
+    sourceId: string,
+  ): Promise<JournalEntry[]>;
 
   // Products / Inventory
   getProductsByCompanyId(companyId: string): Promise<Product[]>;
@@ -1009,20 +1066,41 @@ export class DatabaseStorage implements IStorage {
   async generateEntryNumber(companyId: string, date: Date): Promise<string> {
     const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
     const prefix = `JE-${dateStr}`;
-    
-    // Get count of entries for this company and date prefix using SQL for atomicity
-    const allEntries = await db
-      .select()
-      .from(journalEntries)
-      .where(eq(journalEntries.companyId, companyId));
-    
-    // Filter entries that match this date prefix
-    const todayEntries = allEntries.filter((e: any) =>
-      e.entryNumber?.startsWith(prefix)
-    );
-    
-    const nextNumber = todayEntries.length + 1;
-    return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+    const likePattern = prefix + '-%';
+    // Trim 'JE-' (3) + 'YYYYMMDD' (8) + '-' (1) → 12, so the counter starts at
+    // SUBSTRING position 13 (1-based) per Postgres semantics.
+    const counterStart = prefix.length + 2;
+
+    // Atomic next-number generation. Two-pronged defence:
+    // 1) Per-(company, date) advisory lock serialises concurrent generators in
+    //    the same Postgres session pool, so they don't both compute MAX+1.
+    // 2) The unique constraint (company_id, entry_number) is the final safety
+    //    net. If we still collide (different DB instances / restored backups /
+    //    bug), the insert will fail and the caller can retry.
+    //
+    // The advisory lock is session-scoped here (not _xact_) because the caller
+    // typically generates the number, then runs createJournalEntry which opens
+    // its own transaction. We release at function exit.
+    const lockKey1 = hashStringToInt(companyId);
+    const lockKey2 = hashStringToInt(prefix);
+    await db.execute(sql`SELECT pg_advisory_lock(${lockKey1}, ${lockKey2})`);
+    try {
+      const result: any = await db.execute(sql`
+        SELECT COALESCE(
+          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}) AS INTEGER)),
+          0
+        ) AS max_seq
+        FROM journal_entries
+        WHERE company_id = ${companyId}
+          AND entry_number LIKE ${likePattern}
+      `);
+      const rows = (result.rows ?? result) as Array<{ max_seq: number | string | null }>;
+      const maxSeq = Number(rows[0]?.max_seq ?? 0);
+      const nextNumber = maxSeq + 1;
+      return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+    } finally {
+      await db.execute(sql`SELECT pg_advisory_unlock(${lockKey1}, ${lockKey2})`).catch(() => {});
+    }
   }
 
   // Journal Lines
@@ -2818,6 +2896,34 @@ export class DatabaseStorage implements IStorage {
     await db.delete(recurringInvoices).where(eq(recurringInvoices.id, id));
   }
 
+  /**
+   * Atomic compare-and-swap on recurring_invoices.next_run_date. Only the
+   * caller whose `expected_next_run_date` matches the row will succeed; all
+   * others get null. This is the cron's idempotency guarantee — even if two
+   * cron invocations overlap, exactly one will advance the date and proceed
+   * to generate.
+   *
+   * Returns the updated row, or null if the CAS lost.
+   */
+  async tryClaimRecurringInvoice(
+    id: string,
+    expectedNextRunDate: Date,
+    newNextRunDate: Date,
+    newLastGeneratedInvoiceId: string | null,
+  ): Promise<RecurringInvoice | null> {
+    const result: any = await db.execute(sql`
+      UPDATE recurring_invoices
+      SET next_run_date = ${newNextRunDate.toISOString()},
+          last_generated_invoice_id = COALESCE(${newLastGeneratedInvoiceId}, last_generated_invoice_id),
+          total_generated = total_generated + 1
+      WHERE id = ${id}
+        AND next_run_date = ${expectedNextRunDate.toISOString()}
+      RETURNING *
+    `);
+    const rows = (result.rows ?? result) as RecurringInvoice[];
+    return rows[0] ?? null;
+  }
+
   // Invoice Payments
   async getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]> {
     return await db
@@ -2830,6 +2936,235 @@ export class DatabaseStorage implements IStorage {
   async createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment> {
     const [payment] = await db.insert(invoicePayments).values(data).returning();
     return payment;
+  }
+
+  async getJournalEntriesBySource(
+    companyId: string,
+    source: string,
+    sourceId: string,
+  ): Promise<JournalEntry[]> {
+    return await db
+      .select()
+      .from(journalEntries)
+      .where(
+        and(
+          eq(journalEntries.companyId, companyId),
+          eq(journalEntries.source, source),
+          eq(journalEntries.sourceId, sourceId),
+        ),
+      );
+  }
+
+  async recordInvoicePayment(input: {
+    invoiceId: string;
+    companyId: string;
+    amount: number;
+    date: Date;
+    method: string;
+    reference: string | null;
+    notes: string | null;
+    paymentAccountId: string;
+    paymentAccountCurrency?: string | null;
+    receivableAccountId: string;
+    createdBy: string;
+  }): Promise<{
+    payment: InvoicePayment;
+    invoice: Invoice;
+    journalEntryId: string;
+    totalPaid: number;
+  }> {
+    return await db.transaction(async (tx: typeof db) => {
+      // Lock the invoice row. Concurrent payment writers will queue here.
+      const lockResult: any = await tx.execute(sql`
+        SELECT id, company_id, currency, total, status
+        FROM invoices
+        WHERE id = ${input.invoiceId}
+        FOR UPDATE
+      `);
+      const lockedRows = (lockResult.rows ?? lockResult) as Array<{
+        id: string;
+        company_id: string;
+        currency: string;
+        total: number;
+        status: string;
+      }>;
+      const lockedInvoice = lockedRows[0];
+      if (!lockedInvoice) {
+        const e: any = new Error('Invoice not found');
+        e.code = 'INVOICE_NOT_FOUND';
+        throw e;
+      }
+      if (lockedInvoice.company_id !== input.companyId) {
+        const e: any = new Error('Invoice does not belong to company');
+        e.code = 'INVOICE_COMPANY_MISMATCH';
+        throw e;
+      }
+      if (isTerminal(lockedInvoice.status)) {
+        const e: any = new Error(`Cannot record payment on ${lockedInvoice.status} invoice`);
+        e.code = 'INVOICE_TERMINAL';
+        throw e;
+      }
+      if (
+        input.paymentAccountCurrency &&
+        input.paymentAccountCurrency !== lockedInvoice.currency
+      ) {
+        const e: any = new Error(
+          `Payment account currency (${input.paymentAccountCurrency}) does not match invoice currency (${lockedInvoice.currency})`,
+        );
+        e.code = 'CURRENCY_MISMATCH';
+        throw e;
+      }
+
+      // Sum existing payments INSIDE the lock so we see the canonical figure.
+      const sumResult: any = await tx.execute(sql`
+        SELECT COALESCE(SUM(amount), 0) AS paid
+        FROM invoice_payments
+        WHERE invoice_id = ${input.invoiceId}
+      `);
+      const sumRows = (sumResult.rows ?? sumResult) as Array<{ paid: number | string }>;
+      const previouslyPaid = Number(sumRows[0]?.paid ?? 0);
+      const remaining = Number(lockedInvoice.total) - previouslyPaid;
+
+      // Round to fils (2dp) for tolerance.
+      if (input.amount > remaining + 0.005) {
+        const e: any = new Error(
+          `Payment ${input.amount.toFixed(2)} exceeds remaining balance ${remaining.toFixed(2)}`,
+        );
+        e.code = 'OVERPAYMENT';
+        throw e;
+      }
+
+      // Generate JE number — uses session advisory lock so concurrent calls
+      // serialise. The session is the same as this transaction's connection,
+      // so the lock will be released at commit.
+      const dateStr = input.date.toISOString().slice(0, 10).replace(/-/g, '');
+      const prefix = `JE-${dateStr}`;
+      const lockKey1 = hashStringToInt(input.companyId);
+      const lockKey2 = hashStringToInt(prefix);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
+      const counterStart = prefix.length + 2;
+      const numResult: any = await tx.execute(sql`
+        SELECT COALESCE(
+          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}) AS INTEGER)),
+          0
+        ) AS max_seq
+        FROM journal_entries
+        WHERE company_id = ${input.companyId}
+          AND entry_number LIKE ${prefix + '-%'}
+      `);
+      const numRows = (numResult.rows ?? numResult) as Array<{ max_seq: number | string | null }>;
+      const nextNumber = Number(numRows[0]?.max_seq ?? 0) + 1;
+      const entryNumber = `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+
+      // Insert journal entry + balanced lines.
+      const [entry] = await tx
+        .insert(journalEntries)
+        .values({
+          companyId: input.companyId,
+          date: input.date,
+          memo: `Payment received for Invoice ${input.invoiceId} - ${input.method}`,
+          entryNumber,
+          status: 'posted',
+          source: 'payment',
+          sourceId: input.invoiceId,
+          createdBy: input.createdBy,
+          postedBy: input.createdBy,
+          postedAt: input.date,
+        })
+        .returning();
+      await tx.insert(journalLines).values({
+        entryId: entry.id,
+        accountId: input.paymentAccountId,
+        debit: input.amount,
+        credit: 0,
+        description: `Payment received - Invoice ${input.invoiceId}`,
+      });
+      await tx.insert(journalLines).values({
+        entryId: entry.id,
+        accountId: input.receivableAccountId,
+        debit: 0,
+        credit: input.amount,
+        description: `Clear A/R - Invoice ${input.invoiceId}`,
+      });
+
+      // Record the payment row.
+      const [payment] = await tx
+        .insert(invoicePayments)
+        .values({
+          invoiceId: input.invoiceId,
+          companyId: input.companyId,
+          amount: input.amount,
+          date: input.date,
+          method: input.method,
+          reference: input.reference,
+          notes: input.notes,
+          paymentAccountId: input.paymentAccountId,
+          journalEntryId: entry.id,
+          createdBy: input.createdBy,
+        })
+        .returning();
+
+      // Recompute status from the canonical paid total (post-insert).
+      const newTotalPaid = previouslyPaid + input.amount;
+      const newStatus = statusFromPayments(
+        lockedInvoice.status as InvoiceStatus,
+        Number(lockedInvoice.total),
+        newTotalPaid,
+      );
+      const [updatedInvoice] = await tx
+        .update(invoices)
+        .set({ status: newStatus })
+        .where(eq(invoices.id, input.invoiceId))
+        .returning();
+
+      return {
+        payment,
+        invoice: updatedInvoice,
+        journalEntryId: entry.id,
+        totalPaid: newTotalPaid,
+      };
+    });
+  }
+
+  async safeDeleteInvoice(id: string): Promise<void> {
+    await db.transaction(async (tx: typeof db) => {
+      // Read invoice for company scope
+      const [inv] = await tx.select().from(invoices).where(eq(invoices.id, id));
+      if (!inv) {
+        const e: any = new Error('Invoice not found');
+        e.code = 'INVOICE_NOT_FOUND';
+        throw e;
+      }
+
+      // Find associated journal entries (any source — invoice or payment).
+      const associatedEntries = await tx
+        .select()
+        .from(journalEntries)
+        .where(
+          and(
+            eq(journalEntries.companyId, inv.companyId),
+            eq(journalEntries.sourceId, id),
+          ),
+        );
+
+      // Refuse if any are posted — caller must void instead.
+      const posted = associatedEntries.filter((e: any) => e.status === 'posted');
+      if (posted.length > 0) {
+        const err: any = new Error(
+          'Cannot delete invoice with posted journal entries. Void the invoice instead.',
+        );
+        err.code = 'INVOICE_HAS_POSTED_JE';
+        throw err;
+      }
+
+      // Order matters: invoice_payments references journal_entries, and
+      // invoices cascades to invoice_payments. Drop the invoice first so
+      // payment rows are gone before we drop the JEs they referenced.
+      await tx.delete(invoices).where(eq(invoices.id, id));
+      for (const e of associatedEntries) {
+        await tx.delete(journalEntries).where(eq(journalEntries.id, e.id));
+      }
+    });
   }
 
   async getInvoicePaidTotal(invoiceId: string): Promise<number> {
