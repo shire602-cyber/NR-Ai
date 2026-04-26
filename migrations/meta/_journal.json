@@ -44,6 +44,7 @@
     { "idx": 39, "version": "7", "when": 1768800000000, "tag": "0039_payroll_state_machine", "breakpoints": false },
     { "idx": 40, "version": "7", "when": 1768900000000, "tag": "0040_auth_session_security", "breakpoints": false },
     { "idx": 41, "version": "7", "when": 1769000000000, "tag": "0041_invoice_fta_pdf_fields", "breakpoints": false },
-    { "idx": 42, "version": "7", "when": 1769100000000, "tag": "0042_password_reset_tokens", "breakpoints": false }
+    { "idx": 42, "version": "7", "when": 1769100000000, "tag": "0042_password_reset_tokens", "breakpoints": false },
+    { "idx": 43, "version": "7", "when": 1769200000000, "tag": "0043_performance_indexes", "breakpoints": false }
   ]
 }

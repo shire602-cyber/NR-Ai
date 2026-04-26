@@ -122,10 +122,15 @@ import {
   invoicePayments
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, isNull, sql, gt } from "drizzle-orm";
+import { eq, and, desc, lte, isNull, sql, gt, inArray } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
+
+// Default cap on list-endpoint queries. Without this, a single tenant with
+// runaway invoice/journal volume can pull tens of MB into memory. Pages that
+// truly need the full dataset (PDF export, GL ledger) pass an explicit limit.
+const DEFAULT_LIST_LIMIT = 1000;
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
 // Postgres advisory locks accept (int4, int4); pg_advisory_lock(bigint) would
@@ -250,11 +255,13 @@ export interface IStorage {
   // Journal Lines
   createJournalLine(line: InsertJournalLine): Promise<JournalLine>;
   getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]>;
+  getJournalLinesByEntryIds(entryIds: string[]): Promise<JournalLine[]>;
   deleteJournalLinesByEntryId(entryId: string): Promise<void>;
-  
+
   // Invoices
   getInvoice(id: string, companyId: string): Promise<Invoice | undefined>;
   getInvoicesByCompanyId(companyId: string): Promise<Invoice[]>;
+  getInvoicesSummaryByCompanyId(companyId: string, opts?: { limit?: number; offset?: number }): Promise<Omit<Invoice, 'einvoiceXml' | 'einvoiceHash'>[]>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
   updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice>;
   updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice>;
@@ -267,6 +274,7 @@ export interface IStorage {
   // Invoice Lines
   createInvoiceLine(line: InsertInvoiceLine): Promise<InvoiceLine>;
   getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]>;
+  getInvoiceLinesByInvoiceIds(invoiceIds: string[]): Promise<InvoiceLine[]>;
   deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void>;
   
   // Receipts
@@ -1215,6 +1223,11 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(journalLines).where(eq(journalLines.entryId, entryId));
   }
 
+  async getJournalLinesByEntryIds(entryIds: string[]): Promise<JournalLine[]> {
+    if (entryIds.length === 0) return [];
+    return await db.select().from(journalLines).where(inArray(journalLines.entryId, entryIds));
+  }
+
   async deleteJournalLinesByEntryId(entryId: string): Promise<void> {
     await db.delete(journalLines).where(eq(journalLines.entryId, entryId));
   }
@@ -1234,6 +1247,54 @@ export class DatabaseStorage implements IStorage {
       .from(invoices)
       .where(eq(invoices.companyId, companyId))
       .orderBy(desc(invoices.date));
+  }
+
+  // Trimmed projection used by list endpoints — strips einvoiceXml (full UBL
+  // doc) and einvoiceHash, which can each be 10-50KB per invoice and bloat
+  // the JSON payload by 100x for a tenant with hundreds of submitted invoices.
+  async getInvoicesSummaryByCompanyId(
+    companyId: string,
+    opts: { limit?: number; offset?: number } = {},
+  ): Promise<Omit<Invoice, 'einvoiceXml' | 'einvoiceHash'>[]> {
+    const limit = opts.limit ?? DEFAULT_LIST_LIMIT;
+    const offset = opts.offset ?? 0;
+    return await db
+      .select({
+        id: invoices.id,
+        companyId: invoices.companyId,
+        number: invoices.number,
+        customerName: invoices.customerName,
+        customerTrn: invoices.customerTrn,
+        date: invoices.date,
+        dueDate: invoices.dueDate,
+        paymentTerms: invoices.paymentTerms,
+        currency: invoices.currency,
+        exchangeRate: invoices.exchangeRate,
+        baseCurrencyAmount: invoices.baseCurrencyAmount,
+        subtotal: invoices.subtotal,
+        vatAmount: invoices.vatAmount,
+        total: invoices.total,
+        status: invoices.status,
+        shareToken: invoices.shareToken,
+        shareTokenExpiresAt: invoices.shareTokenExpiresAt,
+        einvoiceUuid: invoices.einvoiceUuid,
+        einvoiceStatus: invoices.einvoiceStatus,
+        reminderCount: invoices.reminderCount,
+        lastReminderSentAt: invoices.lastReminderSentAt,
+        invoiceType: invoices.invoiceType,
+        originalInvoiceId: invoices.originalInvoiceId,
+        isRecurring: invoices.isRecurring,
+        recurringInterval: invoices.recurringInterval,
+        nextRecurringDate: invoices.nextRecurringDate,
+        recurringEndDate: invoices.recurringEndDate,
+        contactId: invoices.contactId,
+        createdAt: invoices.createdAt,
+      })
+      .from(invoices)
+      .where(eq(invoices.companyId, companyId))
+      .orderBy(desc(invoices.date))
+      .limit(limit)
+      .offset(offset);
   }
 
   async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
@@ -1299,6 +1360,11 @@ export class DatabaseStorage implements IStorage {
 
   async getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]> {
     return await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
+  }
+
+  async getInvoiceLinesByInvoiceIds(invoiceIds: string[]): Promise<InvoiceLine[]> {
+    if (invoiceIds.length === 0) return [];
+    return await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds));
   }
 
   async deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void> {

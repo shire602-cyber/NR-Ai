@@ -120,13 +120,25 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
   return failureCount < 3;
 }
 
+// staleTime: Infinity means a query never re-fetches on its own — fine for
+// truly static reference data, but for the lists/dashboards we render it
+// freezes the UI on whatever was first loaded. Default to 1 minute fresh +
+// 10 minutes in cache (gcTime), so:
+//   • repeated mounts of the same screen reuse the cache without a network
+//     round-trip,
+//   • after 60s a focus/refetch updates the data,
+//   • a screen the user comes back to within 10 minutes paints instantly.
+// Mutations still call queryClient.invalidateQueries to force-refresh after
+// writes, so freshness guarantees don't depend on the timer alone.
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
-      staleTime: Infinity,
+      refetchOnReconnect: true,
+      staleTime: 60_000,
+      gcTime: 10 * 60_000,
       retry: shouldRetry,
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30_000),
     },

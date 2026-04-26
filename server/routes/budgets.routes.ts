@@ -374,34 +374,34 @@ export function registerBudgetRoutes(app: Express) {
       return entryDate >= startDate && entryDate <= endDate && entry.status === 'posted';
     });
 
-    // Build actual amounts per account per month
+    // Build actual amounts per account per month — fetch all period lines
+    // up-front rather than one round-trip per entry.
     const actualsByAccountMonth: Map<string, Map<number, number>> = new Map();
+    const entryDateById = new Map(periodEntries.map(e => [e.id, new Date(e.date)]));
+    const periodLines = await storage.getJournalLinesByEntryIds(periodEntries.map(e => e.id));
 
-    for (const entry of periodEntries) {
-      const entryDate = new Date(entry.date);
-      const month = entryDate.getMonth() + 1; // 1-12
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
+    for (const line of periodLines) {
+      const account = accountMap.get(line.accountId);
+      if (!account) continue;
+      const entryDate = entryDateById.get(line.entryId);
+      if (!entryDate) continue;
+      const month = entryDate.getMonth() + 1;
 
-      for (const line of lines) {
-        const account = accountMap.get(line.accountId);
-        if (!account) continue;
+      const accountId = line.accountId;
+      if (!actualsByAccountMonth.has(accountId)) {
+        actualsByAccountMonth.set(accountId, new Map());
+      }
+      const monthMap = actualsByAccountMonth.get(accountId)!;
+      const currentVal = monthMap.get(month) || 0;
 
-        const accountId = line.accountId;
-        if (!actualsByAccountMonth.has(accountId)) {
-          actualsByAccountMonth.set(accountId, new Map());
-        }
-        const monthMap = actualsByAccountMonth.get(accountId)!;
-        const currentVal = monthMap.get(month) || 0;
-
-        // For expense accounts, debit increases; for income, credit increases
-        if (account.type === 'expense') {
-          monthMap.set(month, currentVal + (line.debit || 0) - (line.credit || 0));
-        } else if (account.type === 'income') {
-          monthMap.set(month, currentVal + (line.credit || 0) - (line.debit || 0));
-        } else {
-          // For other account types, use net debit
-          monthMap.set(month, currentVal + (line.debit || 0) - (line.credit || 0));
-        }
+      // For expense accounts, debit increases; for income, credit increases
+      if (account.type === 'expense') {
+        monthMap.set(month, currentVal + (line.debit || 0) - (line.credit || 0));
+      } else if (account.type === 'income') {
+        monthMap.set(month, currentVal + (line.credit || 0) - (line.debit || 0));
+      } else {
+        // For other account types, use net debit
+        monthMap.set(month, currentVal + (line.debit || 0) - (line.credit || 0));
       }
     }
 

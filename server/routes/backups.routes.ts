@@ -47,26 +47,20 @@ export function registerBackupRoutes(app: Express) {
     });
 
     try {
-      // Gather all financial data
-      const accounts = await storage.getAccountsByCompanyId(companyId);
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const vatReturns = await storage.getVatReturnsByCompanyId(companyId);
+      // Gather all financial data — parallelise the top-level fetches and
+      // batch the lines instead of issuing one round-trip per parent row.
+      const [accounts, journalEntries, invoices, receipts, vatReturns] = await Promise.all([
+        storage.getAccountsByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getInvoicesByCompanyId(companyId),
+        storage.getReceiptsByCompanyId(companyId),
+        storage.getVatReturnsByCompanyId(companyId),
+      ]);
 
-      // Get all journal lines for entries
-      const journalLines = [];
-      for (const entry of journalEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        journalLines.push(...lines);
-      }
-
-      // Get all invoice lines
-      const invoiceLines = [];
-      for (const invoice of invoices) {
-        const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-        invoiceLines.push(...lines);
-      }
+      const [journalLines, invoiceLines] = await Promise.all([
+        storage.getJournalLinesByEntryIds(journalEntries.map(e => e.id)),
+        storage.getInvoiceLinesByInvoiceIds(invoices.map(i => i.id)),
+      ]);
 
       // Create snapshot
       const snapshot = {
@@ -200,10 +194,12 @@ export function registerBackupRoutes(app: Express) {
     }
 
     // Get current data counts for comparison
-    const currentAccounts = await storage.getAccountsByCompanyId(backup.companyId);
-    const currentEntries = await storage.getJournalEntriesByCompanyId(backup.companyId);
-    const currentInvoices = await storage.getInvoicesByCompanyId(backup.companyId);
-    const currentReceipts = await storage.getReceiptsByCompanyId(backup.companyId);
+    const [currentAccounts, currentEntries, currentInvoices, currentReceipts] = await Promise.all([
+      storage.getAccountsByCompanyId(backup.companyId),
+      storage.getJournalEntriesByCompanyId(backup.companyId),
+      storage.getInvoicesByCompanyId(backup.companyId),
+      storage.getReceiptsByCompanyId(backup.companyId),
+    ]);
 
     res.json({
       backup: {
@@ -266,24 +262,19 @@ export function registerBackupRoutes(app: Express) {
     });
 
     try {
-      // Gather current data for pre-restore backup
-      const currentAccounts = await storage.getAccountsByCompanyId(backup.companyId);
-      const currentEntries = await storage.getJournalEntriesByCompanyId(backup.companyId);
-      const currentInvoices = await storage.getInvoicesByCompanyId(backup.companyId);
-      const currentReceipts = await storage.getReceiptsByCompanyId(backup.companyId);
-      const currentVatReturns = await storage.getVatReturnsByCompanyId(backup.companyId);
+      // Gather current data for pre-restore backup — parallel + batched.
+      const [currentAccounts, currentEntries, currentInvoices, currentReceipts, currentVatReturns] = await Promise.all([
+        storage.getAccountsByCompanyId(backup.companyId),
+        storage.getJournalEntriesByCompanyId(backup.companyId),
+        storage.getInvoicesByCompanyId(backup.companyId),
+        storage.getReceiptsByCompanyId(backup.companyId),
+        storage.getVatReturnsByCompanyId(backup.companyId),
+      ]);
 
-      const currentJournalLines = [];
-      for (const entry of currentEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        currentJournalLines.push(...lines);
-      }
-
-      const currentInvoiceLines = [];
-      for (const invoice of currentInvoices) {
-        const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-        currentInvoiceLines.push(...lines);
-      }
+      const [currentJournalLines, currentInvoiceLines] = await Promise.all([
+        storage.getJournalLinesByEntryIds(currentEntries.map(e => e.id)),
+        storage.getInvoiceLinesByInvoiceIds(currentInvoices.map(i => i.id)),
+      ]);
 
       const preRestoreSnapshot = {
         version: '1.0',

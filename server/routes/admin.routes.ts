@@ -233,12 +233,15 @@ export function registerAdminRoutes(app: Express): void {
         companies = await storage.getAllCompanies();
       }
 
-      // Get user counts per company
+      // Per-company stats fan out in parallel within each row, instead of
+      // sequential awaits that triple round-trip count for big tenant lists.
       const clientsWithStats = await Promise.all(
         companies.map(async (company) => {
-          const companyUsers = await storage.getCompanyUsersByCompanyId(company.id);
-          const documents = await storage.getDocuments(company.id);
-          const invoices = await storage.getInvoicesByCompanyId(company.id);
+          const [companyUsers, documents, invoices] = await Promise.all([
+            storage.getCompanyUsersByCompanyId(company.id),
+            storage.getDocuments(company.id),
+            storage.getInvoicesByCompanyId(company.id),
+          ]);
 
           return {
             ...company,
@@ -264,14 +267,16 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(404).json({ message: "Client not found" });
       }
 
-      const companyUsers = await storage.getCompanyUserWithUser(clientId);
-      const documents = await storage.getDocuments(clientId);
-      const invoices = await storage.getInvoicesByCompanyId(clientId);
-      const receipts = await storage.getReceiptsByCompanyId(clientId);
-      const journalEntries = await storage.getJournalEntriesByCompanyId(clientId);
-      const complianceTasks = await storage.getComplianceTasks(clientId);
-      const clientNotes = await storage.getClientNotes(clientId);
-      const activityLogs = await storage.getActivityLogsByCompany(clientId, 50);
+      const [companyUsers, documents, invoices, receipts, journalEntries, complianceTasks, clientNotes, activityLogs] = await Promise.all([
+        storage.getCompanyUserWithUser(clientId),
+        storage.getDocuments(clientId),
+        storage.getInvoicesByCompanyId(clientId),
+        storage.getReceiptsByCompanyId(clientId),
+        storage.getJournalEntriesByCompanyId(clientId),
+        storage.getComplianceTasks(clientId),
+        storage.getClientNotes(clientId),
+        storage.getActivityLogsByCompany(clientId, 50),
+      ]);
 
       res.json({
         company,

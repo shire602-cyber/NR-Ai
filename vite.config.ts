@@ -40,7 +40,7 @@ export default defineConfig({
         manualChunks: (id) => {
           if (!id.includes("node_modules")) return undefined;
           // Heavy vendor libs deserve dedicated chunks so route bundles stay small.
-          if (id.includes("jspdf")) return "vendor-jspdf";
+          if (id.includes("jspdf") || id.includes("qrcode")) return "vendor-pdf";
           if (id.includes("xlsx")) return "vendor-xlsx";
           if (id.includes("pdfjs-dist") || id.includes("pdf.worker")) return "vendor-pdfjs";
           if (id.includes("html2canvas")) return "vendor-html2canvas";
@@ -48,12 +48,12 @@ export default defineConfig({
           // produces a TDZ error ("Cannot access 'P' before initialization")
           // due to circular module init order after esbuild minification.
           // Let Vite's default chunking preserve the import-order-correct grouping.
-          if (id.includes("framer-motion")) return "vendor-framer";
+          if (id.includes("framer-motion")) return "vendor-motion";
           if (id.includes("@radix-ui")) return "vendor-radix";
           if (id.includes("react-day-picker") || id.includes("date-fns")) return "vendor-dates";
           if (id.includes("tesseract")) return "vendor-tesseract";
           if (id.includes("isomorphic-dompurify") || id.includes("dompurify")) return "vendor-dompurify";
-          if (id.includes("@tanstack")) return "vendor-tanstack";
+          if (id.includes("@tanstack")) return "vendor-query";
           if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("zod")) return "vendor-forms";
           if (id.includes("react-icons")) return "vendor-icons";
           if (id.includes("lucide-react")) return "vendor-lucide";
