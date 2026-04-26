@@ -8,6 +8,7 @@ import { insertJournalEntrySchema } from '../../shared/schema';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
 import { createLogger } from '../config/logger';
+import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('journal');
 
@@ -477,6 +478,9 @@ export function registerJournalRoutes(app: Express) {
         code: 'ENTRY_VOID'
       });
     }
+
+    // FTA 5-year retention.
+    assertRetentionExpired(entry as { createdAt: Date | string; retentionExpiresAt?: Date | string | null }, 'Journal entry');
 
     // Only draft entries can be deleted
     await storage.deleteJournalEntry(id);

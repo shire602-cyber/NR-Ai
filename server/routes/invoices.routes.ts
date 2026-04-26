@@ -15,6 +15,7 @@ import { recordAudit } from '../services/audit.service';
 import { createLogger } from '../config/logger';
 import { UAE_VAT_RATE, ACCOUNT_CODES } from '../constants';
 import { allocateInvoiceNumber, peekNextInvoiceNumber } from '../services/invoice-numbering.service';
+import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('invoices');
 
@@ -443,6 +444,9 @@ export function registerInvoiceRoutes(app: Express) {
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
+
+    // FTA: 5-year retention. Throws RetentionViolationError → 409 via global handler.
+    assertRetentionExpired(invoice as { createdAt: Date | string; retentionExpiresAt?: Date | string | null }, 'Invoice');
 
     try {
       await storage.safeDeleteInvoice(id);

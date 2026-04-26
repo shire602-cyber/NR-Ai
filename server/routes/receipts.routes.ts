@@ -9,6 +9,7 @@ import { createAndEmitNotification } from '../services/socket.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
 import { createLogger } from '../config/logger';
+import { assertRetentionExpired } from '../services/retention.service';
 // @ts-ignore
 import PDFDocument from 'pdfkit';
 
@@ -195,24 +196,28 @@ export function registerReceiptRoutes(app: Express) {
 
     // Remove image file before deleting DB row (best-effort; don't block on failure)
     const existing = await storage.getReceipt(id);
-    if (existing?.imagePath) {
+    if (!existing) {
+      return res.status(404).json({ message: 'Receipt not found' });
+    }
+    // FTA 5-year retention.
+    assertRetentionExpired(existing as { createdAt: Date | string; retentionExpiresAt?: Date | string | null }, 'Receipt');
+
+    if (existing.imagePath) {
       await deleteReceiptImage(existing.imagePath);
     }
 
     await storage.deleteReceipt(id);
 
-    if (existing) {
-      await recordAudit({
-        userId,
-        companyId: existing.companyId,
-        action: 'receipt.delete',
-        entityType: 'receipt',
-        entityId: id,
-        before: { merchant: existing.merchant, amount: existing.amount },
-        after: null,
-        req,
-      });
-    }
+    await recordAudit({
+      userId,
+      companyId: existing.companyId,
+      action: 'receipt.delete',
+      entityType: 'receipt',
+      entityId: id,
+      before: { merchant: existing.merchant, amount: existing.amount },
+      after: null,
+      req,
+    });
 
     res.json({ message: 'Receipt deleted successfully' });
   }));
