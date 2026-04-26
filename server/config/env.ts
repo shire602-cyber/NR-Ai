@@ -20,6 +20,10 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('gpt-3.5-turbo'),
 
+  // === Support contact surfaced in AI prompts (optional) ===
+  SUPPORT_CONTACT_NAME: z.string().optional(),
+  SUPPORT_CONTACT_PHONE: z.string().optional(),
+
   // === AI / Anthropic (used for OCR vision if set; also accepted via OPENAI_API_KEY with sk-ant- prefix) ===
   ANTHROPIC_API_KEY: z.string().optional(),
 
