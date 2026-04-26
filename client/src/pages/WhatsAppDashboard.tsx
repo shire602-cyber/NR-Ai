@@ -61,6 +61,7 @@ import {
   fillTemplate,
   formatPhoneForWhatsApp,
   openWhatsApp,
+  pickWhatsAppNumber,
   type MessageTemplate,
 } from '@/lib/whatsapp-templates';
 
@@ -145,7 +146,9 @@ export default function WhatsAppDashboard() {
 
   // Helpers
   const getCustomerName = (phone: string) => {
-    const customer = customers.find(c => c.phone === phone);
+    const customer = customers.find(
+      (c) => c.phone === phone || c.whatsappNumber === phone,
+    );
     return customer?.name || phone;
   };
 
@@ -170,7 +173,8 @@ export default function WhatsAppDashboard() {
     let phone = sendTo;
     if (selectedCustomer) {
       const cust = customers.find(c => c.id === selectedCustomer);
-      if (cust?.phone) phone = cust.phone;
+      const wa = cust ? pickWhatsAppNumber(cust) : null;
+      if (wa) phone = wa;
       else {
         toast({ title: en ? 'No phone number' : 'لا يوجد رقم', variant: 'destructive' });
         return;
@@ -189,11 +193,12 @@ export default function WhatsAppDashboard() {
     const inv = invoices.find(i => i.id === selectedInvoice);
     if (!inv) return;
     const cust = customers.find(c => c.name === inv.customerName);
-    if (!cust?.phone) { toast({ title: en ? 'No phone number' : 'لا يوجد رقم', variant: 'destructive' }); return; }
+    const recipient = cust ? pickWhatsAppNumber(cust) : null;
+    if (!recipient) { toast({ title: en ? 'No phone number' : 'لا يوجد رقم', variant: 'destructive' }); return; }
 
     const invoiceDate = new Date(inv.date);
     const dueDate = new Date(invoiceDate);
-    dueDate.setDate(dueDate.getDate() + (cust.paymentTerms || 30));
+    dueDate.setDate(dueDate.getDate() + (cust!.paymentTerms || 30));
 
     const tpl = MESSAGE_TEMPLATES.find(t => t.id === (selectedTemplate || 'invoice_new'));
     const templateStr = en ? (tpl?.template || '') : (tpl?.templateAr || '');
@@ -205,42 +210,42 @@ export default function WhatsAppDashboard() {
       company_name: currentCompany?.name || 'Our Company',
     });
 
-    logAndOpen(cust.phone, message);
+    logAndOpen(recipient, message);
     setSelectedInvoice(''); setSelectedTemplate(''); setShowInvoiceDialog(false);
   };
 
   const handleBroadcast = () => {
     if (!broadcastMessage.trim()) { toast({ title: en ? 'Message required' : 'الرسالة مطلوبة', variant: 'destructive' }); return; }
-    const withPhone = customers.filter(c => c.phone);
-    if (withPhone.length === 0) { toast({ title: en ? 'No customers with phone numbers' : 'لا يوجد عملاء بأرقام', variant: 'destructive' }); return; }
+    const recipients = customers
+      .map((c) => ({ customer: c, number: pickWhatsAppNumber(c) }))
+      .filter((r): r is { customer: CustomerContact; number: string } => !!r.number);
+    if (recipients.length === 0) { toast({ title: en ? 'No customers with phone numbers' : 'لا يوجد عملاء بأرقام', variant: 'destructive' }); return; }
 
-    // Open WhatsApp for each customer one by one
-    withPhone.forEach((cust, i) => {
+    recipients.forEach((r, i) => {
       const tpl = MESSAGE_TEMPLATES.find(t => t.id === 'news_update');
       const templateStr = en ? (tpl?.template || '') : (tpl?.templateAr || '');
       const msg = fillTemplate(templateStr, {
-        customer_name: cust.name,
+        customer_name: r.customer.name,
         message: broadcastMessage,
         company_name: currentCompany?.name || 'Our Company',
       });
 
-      apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: cust.phone, message: msg }).catch(() => {});
-
-      // Stagger opening to avoid browser blocking popups
-      setTimeout(() => openWhatsApp(cust.phone!, msg), i * 800);
+      apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: r.number, message: msg }).catch(() => {});
+      setTimeout(() => openWhatsApp(r.number, msg), i * 800);
     });
 
-    toast({ title: en ? `Opening WhatsApp for ${withPhone.length} customer(s)...` : `جاري فتح واتساب لـ ${withPhone.length} عميل...` });
+    toast({ title: en ? `Opening WhatsApp for ${recipients.length} customer(s)...` : `جاري فتح واتساب لـ ${recipients.length} عميل...` });
     setBroadcastMessage(''); setShowBroadcastDialog(false);
     setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
-    }, withPhone.length * 800 + 1000);
+    }, recipients.length * 800 + 1000);
   };
 
   const handleQuickMessage = (customer: CustomerContact) => {
-    if (!customer.phone) { toast({ title: en ? 'No phone number' : 'لا يوجد رقم', variant: 'destructive' }); return; }
+    const wa = pickWhatsAppNumber(customer);
+    if (!wa) { toast({ title: en ? 'No phone number' : 'لا يوجد رقم', variant: 'destructive' }); return; }
     setSelectedCustomer(customer.id);
-    setSendTo(customer.phone);
+    setSendTo(wa);
     setSendMessage('');
     setShowSendDialog(true);
   };
@@ -261,7 +266,8 @@ export default function WhatsAppDashboard() {
 
     if (inv) {
       const cust = customers.find((c) => c.name === inv.customerName);
-      if (cust?.phone) {
+      const wa = cust ? pickWhatsAppNumber(cust) : null;
+      if (cust && wa) {
         const tpl = MESSAGE_TEMPLATES.find((t) => t.id === 'payment_reminder');
         const invoiceDate = new Date(inv.date);
         const dueDate = new Date(invoiceDate);
@@ -276,7 +282,7 @@ export default function WhatsAppDashboard() {
           company_name: currentCompany?.name || 'Our Company',
         });
 
-        logAndOpen(cust.phone, message);
+        logAndOpen(wa, message);
       } else {
         toast({ title: en ? 'No phone number for this customer' : 'لا يوجد رقم هاتف لهذا العميل', variant: 'destructive' });
       }
@@ -344,8 +350,8 @@ export default function WhatsAppDashboard() {
                 <DialogTitle>{en ? 'Broadcast to All Clients' : 'بث لجميع العملاء'}</DialogTitle>
                 <DialogDescription>
                   {en
-                    ? `Send a news or announcement to all ${customers.filter(c => c.phone).length} customer(s) with phone numbers`
-                    : `أرسل خبر أو إعلان لجميع ${customers.filter(c => c.phone).length} عميل لديهم أرقام هواتف`}
+                    ? `Send a news or announcement to all ${customers.filter((c) => pickWhatsAppNumber(c)).length} customer(s) with phone numbers`
+                    : `أرسل خبر أو إعلان لجميع ${customers.filter((c) => pickWhatsAppNumber(c)).length} عميل لديهم أرقام هواتف`}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -363,7 +369,7 @@ export default function WhatsAppDashboard() {
                 </p>
                 <Button onClick={handleBroadcast} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-send-broadcast">
                   <Megaphone className="w-4 h-4 mr-2" />
-                  {en ? `Send to ${customers.filter(c => c.phone).length} Client(s)` : `إرسال لـ ${customers.filter(c => c.phone).length} عميل`}
+                  {en ? `Send to ${customers.filter((c) => pickWhatsAppNumber(c)).length} Client(s)` : `إرسال لـ ${customers.filter((c) => pickWhatsAppNumber(c)).length} عميل`}
                 </Button>
               </div>
             </DialogContent>
@@ -460,17 +466,20 @@ export default function WhatsAppDashboard() {
                   <Select value={selectedCustomer} onValueChange={(val) => {
                     setSelectedCustomer(val);
                     const cust = customers.find(c => c.id === val);
-                    if (cust?.phone) setSendTo(cust.phone);
+                    const wa = cust ? pickWhatsAppNumber(cust) : null;
+                    if (wa) setSendTo(wa);
                   }}>
                     <SelectTrigger data-testid="select-customer">
                       <SelectValue placeholder={en ? 'Select a customer' : 'اختر عميل'} />
                     </SelectTrigger>
                     <SelectContent>
-                      {customers.filter(c => c.phone).map(c => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name} ({c.phone})
-                        </SelectItem>
-                      ))}
+                      {customers
+                        .filter((c) => pickWhatsAppNumber(c))
+                        .map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name} ({pickWhatsAppNumber(c)})
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -624,29 +633,45 @@ export default function WhatsAppDashboard() {
         {/* ─── Customers Tab ────────────────────────────── */}
         <TabsContent value="customers">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {customers.map((customer) => (
-              <Card key={customer.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="min-w-0">
-                      <p className="font-medium truncate">{customer.name}</p>
-                      {customer.phone ? (
-                        <p className="text-sm text-muted-foreground flex items-center gap-1">
-                          <Phone className="w-3 h-3" /> {customer.phone}
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">{en ? 'No phone' : 'لا يوجد رقم'}</p>
+            {customers.map((customer) => {
+              const wa = pickWhatsAppNumber(customer);
+              const usingDedicatedWa = !!customer.whatsappNumber?.trim();
+              return (
+                <Card key={customer.id} className="hover:shadow-md transition-shadow">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{customer.name}</p>
+                        {wa ? (
+                          <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                            {usingDedicatedWa ? (
+                              <SiWhatsapp className="w-3 h-3 text-green-500" />
+                            ) : (
+                              <Phone className="w-3 h-3" />
+                            )}
+                            {wa}
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground italic">
+                            {en ? 'No phone' : 'لا يوجد رقم'}
+                          </p>
+                        )}
+                      </div>
+                      {wa && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-green-600 shrink-0"
+                          onClick={() => handleQuickMessage(customer)}
+                        >
+                          <SiWhatsapp className="w-5 h-5" />
+                        </Button>
                       )}
                     </div>
-                    {customer.phone && (
-                      <Button variant="ghost" size="sm" className="text-green-600 shrink-0" onClick={() => handleQuickMessage(customer)}>
-                        <SiWhatsapp className="w-5 h-5" />
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
             {customers.length === 0 && (
               <Card className="col-span-full border-dashed">
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">

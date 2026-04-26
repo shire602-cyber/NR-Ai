@@ -31,7 +31,8 @@ import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from '@
 import { Plus, FileText, FileCode, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, Send, DollarSign, RefreshCw, RotateCcw } from 'lucide-react';
 import { SiGooglesheets, SiWhatsapp } from 'react-icons/si';
 import type { Invoice, Company, CustomerContact, InvoicePayment } from '@shared/schema';
-import { MESSAGE_TEMPLATES, fillTemplate, openWhatsApp } from '@/lib/whatsapp-templates';
+import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from '@/lib/whatsapp-templates';
+import { WhatsAppComposer } from '@/components/WhatsAppComposer';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
 
@@ -99,6 +100,13 @@ export default function Invoices() {
   const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState('');
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
+
+  // WhatsApp composer state. We open this with a pre-filled message rather
+  // than redirecting to wa.me directly, so the user can review/edit before
+  // sending — important when share links are baked into the body.
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [composerRecipient, setComposerRecipient] = useState<{ name?: string | null; phone?: string | null; whatsappNumber?: string | null } | null>(null);
+  const [composerMessage, setComposerMessage] = useState('');
 
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
@@ -1009,30 +1017,28 @@ export default function Invoices() {
                             variant="ghost"
                             size="sm"
                             className="text-green-600 hover:text-green-700"
+                            title="Send via WhatsApp"
                             onClick={async () => {
                               try {
-                                // Find customer phone
                                 const customer = customers.find(c => c.name === invoice.customerName);
-                                if (!customer?.phone) {
+                                const recipientNumber = customer ? pickWhatsAppNumber(customer) : null;
+                                if (!customer || !recipientNumber) {
                                   toast({
-                                    title: 'No phone number',
-                                    description: `No phone number found for ${invoice.customerName}. Add one in Customer Contacts.`,
+                                    title: 'No WhatsApp number',
+                                    description: `No phone or WhatsApp number found for ${invoice.customerName}. Add one in Customer Contacts.`,
                                     variant: 'destructive',
                                   });
                                   return;
                                 }
 
-                                // Generate share link
                                 const shareResult = await apiRequest('POST', `/api/invoices/${invoice.id}/share`);
                                 const shareUrl = `${window.location.origin}${shareResult.shareUrl}`;
 
-                                // Calculate due date
                                 const invoiceDate = new Date(invoice.date);
                                 const paymentTerms = customer.paymentTerms || 30;
                                 const dueDate = new Date(invoiceDate);
                                 dueDate.setDate(dueDate.getDate() + paymentTerms);
 
-                                // Fill template
                                 const tpl = MESSAGE_TEMPLATES.find(t => t.id === 'invoice_with_link');
                                 const templateStr = locale === 'en' ? (tpl?.template || '') : (tpl?.templateAr || '');
                                 const message = fillTemplate(templateStr, {
@@ -1044,25 +1050,24 @@ export default function Invoices() {
                                   company_name: company?.name || '',
                                 });
 
-                                // Log and open WhatsApp
-                                apiRequest('POST', '/api/integrations/whatsapp/log-message', {
-                                  to: customer.phone,
-                                  message,
-                                }).catch(() => {});
+                                setComposerRecipient({
+                                  name: customer.name,
+                                  phone: customer.phone,
+                                  whatsappNumber: customer.whatsappNumber,
+                                });
+                                setComposerMessage(message);
+                                setComposerOpen(true);
 
-                                openWhatsApp(customer.phone, message);
-
-                                // Update invoice status to sent
+                                // Mark drafts as sent — opening composer is intent enough.
                                 if (invoice.status === 'draft') {
-                                  await apiRequest('PATCH', `/api/invoices/${invoice.id}/status`, { status: 'sent' });
-                                  queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] });
+                                  apiRequest('PATCH', `/api/invoices/${invoice.id}/status`, { status: 'sent' })
+                                    .then(() => queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'invoices'] }))
+                                    .catch(() => {});
                                 }
-
-                                toast({ title: 'Opening WhatsApp...' });
                               } catch (error: any) {
                                 toast({
                                   title: 'Error',
-                                  description: error?.message || 'Failed to send via WhatsApp',
+                                  description: error?.message || 'Failed to prepare WhatsApp message',
                                   variant: 'destructive',
                                 });
                               }
@@ -1863,6 +1868,20 @@ export default function Invoices() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <WhatsAppComposer
+        open={composerOpen}
+        onOpenChange={(open) => {
+          setComposerOpen(open);
+          if (!open) {
+            setComposerMessage('');
+            setComposerRecipient(null);
+          }
+        }}
+        recipient={composerRecipient}
+        defaultMessage={composerMessage}
+        allowedCategories={["invoice", "payment", "alert"]}
+      />
     </div>
   );
 }
