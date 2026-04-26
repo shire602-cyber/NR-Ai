@@ -9,6 +9,7 @@ import express from 'express';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import passport from 'passport';
+import compression from 'compression';
 
 import { validateEnv, isProduction, isDevelopment } from './config/env';
 import { createLogger } from './config/logger';
@@ -36,13 +37,26 @@ app.set('trust proxy', 1);
 // ─── Security middleware (helmet, CORS, rate limiting) ──────
 applySecurityMiddleware(app);
 
+// ─── Response compression ────────────────────────────────────
+app.use(compression());
+
 // ─── Body parsing ────────────────────────────────────────────
-app.use(
-  express.json({
-    limit: '50mb', // For base64-encoded receipt images
-  })
-);
-app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+// Most endpoints accept small JSON. A handful of image-upload routes
+// (OCR + receipts) accept base64 data URLs and need a larger limit.
+const largeJsonRoutes = [
+  /^\/api\/ocr\//,
+  /^\/api\/firm\/bulk\/ocr/,
+  /^\/api\/companies\/[^/]+\/receipts$/,
+];
+
+const largeJson = express.json({ limit: '10mb' });
+const smallJson = express.json({ limit: '1mb' });
+
+app.use((req, res, next) => {
+  const useLarge = largeJsonRoutes.some((rx) => rx.test(req.path));
+  return (useLarge ? largeJson : smallJson)(req, res, next);
+});
+app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
 // ─── Session configuration ───────────────────────────────────
 const PgSession = connectPgSimple(session);

@@ -4,6 +4,9 @@ import OpenAI from 'openai';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
+import { createLogger } from '../config/logger';
+
+const log = createLogger('ocr');
 
 export function registerOCRRoutes(app: Express) {
   const apiKey = getEnv().OPENAI_API_KEY;
@@ -143,7 +146,7 @@ Respond ONLY with valid JSON matching this exact structure:
 
         return res.json(buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories));
       } catch (visionError: any) {
-        console.error('[OCR] Vision API error:', visionError?.message || visionError);
+        log.error({ err: visionError?.message || visionError }, 'Vision API error');
         // Fall through to text-based extraction
       }
     }
@@ -172,7 +175,7 @@ Respond ONLY with valid JSON matching this exact structure:
 
         return res.json(buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories));
       } catch (textError: any) {
-        console.error('[OCR] Text extraction error:', textError?.message || textError);
+        log.error({ err: textError?.message || textError }, 'Text extraction error');
       }
     }
 

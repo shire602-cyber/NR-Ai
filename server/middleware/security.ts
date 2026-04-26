@@ -82,13 +82,22 @@ export function applySecurityMiddleware(app: Express): void {
   );
 
   // ─── Rate Limiting ────────────────────────────────────────
+  // Composite key: when authenticated, key on user id + ip so one user behind
+  // a shared NAT/proxy cannot eat another user's quota. Falls back to ip-only
+  // for unauthenticated requests.
+  const compositeKey = (req: Request): string => {
+    const userId = (req as any).user?.id as string | undefined;
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    return userId ? `${ip}:${userId}` : ip;
+  };
 
-  // General API rate limit: 100 requests per minute per IP
+  // General API rate limit: 100 requests per minute
   const apiLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
     max: 100,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: compositeKey,
     message: { message: 'Too many requests. Please try again later.' },
     skip: (req) => {
       // Don't rate limit health checks
@@ -96,21 +105,24 @@ export function applySecurityMiddleware(app: Express): void {
     },
   });
 
-  // Strict auth rate limit: 5 requests per minute per IP
+  // Strict auth rate limit: 5 requests per minute (auth has no user id, so key
+  // is naturally ip-only via the composite generator's fallback).
   const authLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
     max: 5,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: compositeKey,
     message: { message: 'Too many authentication attempts. Please wait 1 minute.' },
   });
 
-  // AI endpoints rate limit: 20 requests per minute per IP
+  // AI/OCR endpoints rate limit: 20 requests per minute (LLM calls are expensive)
   const aiLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 20,
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator: compositeKey,
     message: { message: 'AI rate limit exceeded. Please try again later.' },
   });
 
@@ -118,13 +130,16 @@ export function applySecurityMiddleware(app: Express): void {
   app.use('/api/', apiLimiter);
   app.use('/api/auth/', authLimiter);
   app.use('/api/ai/', aiLimiter);
+  app.use('/api/ocr/', aiLimiter);
+  app.use('/api/firm/bulk/ocr', aiLimiter);
 
   // ─── Request Size Limits ──────────────────────────────────
-  // Already handled in index.ts body parsers, but add a safety check
+  // Hard ceiling: image-upload routes allow up to 10MB; the per-route
+  // body parser in index.ts enforces tighter per-route limits.
   app.use((req: Request, res: Response, next: NextFunction) => {
     const contentLength = parseInt(req.headers['content-length'] || '0', 10);
-    if (contentLength > 52_428_800) {
-      // 50MB
+    if (contentLength > 10_485_760) {
+      // 10MB
       return res.status(413).json({ message: 'Request too large' });
     }
     next();

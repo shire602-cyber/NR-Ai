@@ -15,6 +15,9 @@ import {
 import { asyncHandler } from '../middleware/errorHandler';
 import { insertUserSchema } from '../../shared/schema';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import { createLogger } from '../config/logger';
+
+const log = createLogger('auth');
 
 // =============================================
 // Helpers (migrated from monolith routes.ts)
@@ -28,7 +31,7 @@ async function seedChartOfAccounts(
 ): Promise<{ created: number; alreadyExisted: boolean }> {
   const hasAccounts = await storage.companyHasAccounts(companyId);
   if (hasAccounts) {
-    console.log(`[Seed COA] Company ${companyId} already has accounts, skipping seed`);
+    log.info({ companyId }, 'Company already has accounts, skipping seed');
     return { created: 0, alreadyExisted: true };
   }
 
@@ -36,13 +39,11 @@ async function seedChartOfAccounts(
 
   try {
     const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
-    console.log(`[Seed COA] Created ${createdAccounts.length} accounts for company ${companyId}`);
+    log.info({ companyId, count: createdAccounts.length }, 'Created chart of accounts');
     return { created: createdAccounts.length, alreadyExisted: false };
   } catch (error: any) {
     if (error.message?.includes('PARTIAL_INSERT')) {
-      console.error(
-        `[Seed COA] Partial insert detected for company ${companyId}: ${error.message}`
-      );
+      log.error({ companyId, err: error.message }, 'Partial insert detected during COA seed');
       throw new Error(
         'PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support.'
       );

@@ -16,8 +16,12 @@ import { authMiddleware } from '../middleware/auth';
 import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
-import { sendEmail, renderTemplate } from '../services/emailService';
-import { hasSmtpConfig, sendGenericEmail } from '../services/email.service';
+import {
+  sendEmail,
+  renderTemplate,
+  hasSmtpConfig,
+  sendGenericEmail,
+} from '../services/email.service';
 import { createAndEmitNotification } from '../services/socket.service';
 
 const logger = createLogger('firm-comms-routes');

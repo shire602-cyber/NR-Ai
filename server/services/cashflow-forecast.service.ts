@@ -74,26 +74,41 @@ export async function generateCashFlowForecast(
     }
   }
 
-  // Calculate historical weekly averages for income and expense
-  const weeksInHistory = Math.max(1, Math.ceil(
-    (now.getTime() - sixMonthsAgo.getTime()) / (7 * 24 * 60 * 60 * 1000)
-  ));
-
+  // Calculate historical weekly averages for income and expense.
+  // Dividing by a fixed 26 weeks (the lookback window) understates a young
+  // company's averages — a one-month-old business with AED 100k of activity
+  // would have its weekly average diluted to ~3.8k instead of 25k. Use the
+  // span between the earliest in-window transaction and now so the divisor
+  // tracks the data we actually have.
   let totalHistoricalInflows = 0;
   let totalHistoricalOutflows = 0;
+  let earliestActivity: Date | null = null;
 
   for (const line of allLines) {
     const account = accountMap.get(line.accountId);
     if (!account) continue;
 
     if (account.type === 'income') {
-      // Income accounts: credits are income
       totalHistoricalInflows += (line.credit || 0);
     } else if (account.type === 'expense') {
-      // Expense accounts: debits are expenses
       totalHistoricalOutflows += (line.debit || 0);
     }
+
+    if (account.type === 'income' || account.type === 'expense') {
+      if (!earliestActivity || line.entryDate < earliestActivity) {
+        earliestActivity = line.entryDate;
+      }
+    }
   }
+
+  // Span from first observed inflow/outflow to now, in weeks. Floor at 1
+  // week to avoid division by zero / wild extrapolation in the first days
+  // of activity. Capped at the lookback window so a long-running but
+  // recently-quiet company isn't penalised.
+  const spanStart = earliestActivity && earliestActivity > sixMonthsAgo ? earliestActivity : sixMonthsAgo;
+  const weeksInHistory = Math.max(1, Math.ceil(
+    (now.getTime() - spanStart.getTime()) / (7 * 24 * 60 * 60 * 1000)
+  ));
 
   const avgWeeklyInflow = totalHistoricalInflows / weeksInHistory;
   const avgWeeklyOutflow = totalHistoricalOutflows / weeksInHistory;

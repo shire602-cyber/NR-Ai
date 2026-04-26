@@ -4,6 +4,9 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { insertCompanySchema } from "../../shared/schema";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { createLogger } from '../config/logger';
+
+const log = createLogger('companies');
 
 /**
  * Seed Chart of Accounts for a company using the default UAE chart.
@@ -12,7 +15,7 @@ async function seedChartOfAccounts(companyId: string): Promise<{ created: number
   // Check if company already has accounts
   const hasAccounts = await storage.companyHasAccounts(companyId);
   if (hasAccounts) {
-    console.log(`[Seed COA] Company ${companyId} already has accounts, skipping seed`);
+    log.info({ companyId }, 'Company already has accounts, skipping seed');
     return { created: 0, alreadyExisted: true };
   }
 
@@ -21,11 +24,11 @@ async function seedChartOfAccounts(companyId: string): Promise<{ created: number
 
   try {
     const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
-    console.log(`[Seed COA] Created ${createdAccounts.length} accounts for company ${companyId}`);
+    log.info({ companyId, count: createdAccounts.length }, 'Created chart of accounts');
     return { created: createdAccounts.length, alreadyExisted: false };
   } catch (error: any) {
     if (error.message?.includes('PARTIAL_INSERT')) {
-      console.error(`[Seed COA] Partial insert detected for company ${companyId}: ${error.message}`);
+      log.error({ companyId, err: error.message }, 'Partial insert detected during COA seed');
       throw new Error('PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support.');
     }
     throw error;
@@ -138,7 +141,7 @@ export function registerCompanyRoutes(app: Express) {
     }
 
     const company = await storage.updateCompany(id, updateData);
-    console.log('[Company Profile] Company updated:', company.id);
+    log.info({ id: company.id }, 'Company profile updated');
     res.json(company);
   }));
 

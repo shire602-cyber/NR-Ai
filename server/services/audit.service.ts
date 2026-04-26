@@ -1,5 +1,8 @@
 import type { Request } from 'express';
 import { storage } from '../storage';
+import { createLogger } from '../config/logger';
+
+const log = createLogger('audit');
 
 interface AuditParams {
   userId?: string | null;
@@ -45,6 +48,6 @@ export async function recordAudit(params: AuditParams): Promise<void> {
       userAgent,
     } as any);
   } catch (err) {
-    console.error('[audit] failed to record audit log:', (err as Error).message);
+    log.error({ err: (err as Error).message }, 'failed to record audit log');
   }
 }

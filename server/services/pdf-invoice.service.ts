@@ -1,6 +1,7 @@
 // @ts-ignore - pdfkit has no type declarations
 import PDFDocument from 'pdfkit';
 import type { Invoice, InvoiceLine, Company } from '../../shared/schema';
+import { UAE_VAT_RATE } from '../constants';
 
 export async function generateInvoicePDF(
   invoice: Invoice,
@@ -159,7 +160,7 @@ export async function generateInvoicePDF(
         doc.rect(margin, y, contentWidth, rowH).stroke('#E5E7EB');
 
         const lineTotal = line.quantity * line.unitPrice;
-        const vatPercent = ((line.vatRate ?? 0.05) * 100).toFixed(0);
+        const vatPercent = ((line.vatRate ?? UAE_VAT_RATE) * 100).toFixed(0);
 
         doc.fillColor('#1F2937').fontSize(9);
         doc.text(line.description, colX.desc, y + 7, { width: colWidths.desc });

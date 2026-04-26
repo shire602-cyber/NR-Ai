@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
+import { UAE_CT_EXEMPTION_THRESHOLD } from '../constants';
 
 export function registerCorporateTaxRoutes(app: Express) {
   // =====================================
@@ -123,7 +124,7 @@ export function registerCorporateTaxRoutes(app: Express) {
     totalRevenue = Math.max(0, totalRevenue);
     totalExpenses = Math.max(0, totalExpenses);
 
-    const exemptionThreshold = 375000;
+    const exemptionThreshold = UAE_CT_EXEMPTION_THRESHOLD;
     const taxRate = 0.09;
     const totalDeductions = 0; // User can adjust this on the frontend
     const taxableIncome = totalRevenue - totalExpenses - totalDeductions;
