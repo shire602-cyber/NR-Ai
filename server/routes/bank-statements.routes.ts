@@ -5,6 +5,7 @@ import { storage } from '../storage';
 import { autoReconcileTransactions, getSuggestionsForTransaction } from '../services/auto-reconcile.service';
 import { createLogger } from '../config/logger';
 import { createAndEmitNotification } from '../services/socket.service';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('bank-statements');
 
@@ -570,6 +571,9 @@ export function registerBankStatementRoutes(app: Express) {
       const isInflow = txn.amount > 0;
 
       const bankGlAccountId = txn.bankAccountId;
+
+      // Block creating reconciliation journal entries into a locked period.
+      await assertPeriodNotLocked(companyId, txn.transactionDate);
 
       const entryNumber = await storage.generateEntryNumber(companyId, new Date(txn.transactionDate));
 

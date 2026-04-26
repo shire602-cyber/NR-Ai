@@ -5,6 +5,7 @@ import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { insertJournalEntrySchema } from '../../shared/schema';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 export function registerJournalRoutes(app: Express) {
   // =====================================
@@ -79,6 +80,10 @@ export function registerJournalRoutes(app: Express) {
     // Convert date string to Date object if it's a string
     const entryDate = typeof date === 'string' ? new Date(date) : date;
 
+    // Block posting into a locked period. Drafts are also blocked because
+    // their existence implies they will eventually be posted on this date.
+    await assertPeriodNotLocked(companyId, entryDate);
+
     // Generate entry number atomically via storage helper
     const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
 
@@ -148,7 +153,7 @@ export function registerJournalRoutes(app: Express) {
   app.put("/api/journal/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
-    const { lines, date, ...entryData } = req.body;
+    const { lines, date, description, memo, notes, status: requestedStatus } = req.body;
 
     // Get journal entry to verify it exists and get company access
     const entry = await storage.getJournalEntry(id);
@@ -204,13 +209,40 @@ export function registerJournalRoutes(app: Express) {
     // Convert date string to Date object if it's a string
     const entryDate = typeof date === 'string' ? new Date(date) : date;
 
-    // Update journal entry with audit trail
-    const updatedEntry = await storage.updateJournalEntry(id, {
-      ...entryData,
+    // Block updates that would land in a locked period (either the existing
+    // entry date or the requested new date).
+    await assertPeriodNotLocked(entry.companyId, entry.date);
+    if (entryDate) {
+      await assertPeriodNotLocked(entry.companyId, entryDate);
+    }
+
+    // Whitelist: only safe fields can be edited via this endpoint.
+    // Block changes to companyId, entryNumber, postedBy, source, sourceId, etc.
+    // status may only transition between 'draft' and 'posted' (post path also
+    // exists at /post; we permit 'posted' here for forms that submit-and-post).
+    const safeUpdate: Record<string, any> = {
       date: entryDate,
       updatedBy: userId,
       updatedAt: new Date(),
-    });
+    };
+    if (description !== undefined) safeUpdate.description = description;
+    if (memo !== undefined) safeUpdate.memo = memo;
+    if (notes !== undefined) safeUpdate.notes = notes;
+    if (requestedStatus !== undefined) {
+      if (requestedStatus !== 'draft' && requestedStatus !== 'posted') {
+        return res.status(400).json({
+          message: `Invalid status '${requestedStatus}' — only 'draft' or 'posted' are accepted`,
+        });
+      }
+      safeUpdate.status = requestedStatus;
+      if (requestedStatus === 'posted') {
+        safeUpdate.postedBy = userId;
+        safeUpdate.postedAt = new Date();
+      }
+    }
+
+    // Update journal entry with audit trail
+    const updatedEntry = await storage.updateJournalEntry(id, safeUpdate);
 
     // Delete existing lines and create new ones
     await storage.deleteJournalLinesByEntryId(id);
@@ -264,6 +296,9 @@ export function registerJournalRoutes(app: Express) {
       return res.status(400).json({ message: 'Cannot post: Debits must equal credits' });
     }
 
+    // Cannot post into a locked period.
+    await assertPeriodNotLocked(entry.companyId, entry.date);
+
     const updatedEntry = await storage.updateJournalEntry(id, {
       status: 'posted',
       postedBy: userId,
@@ -294,11 +329,16 @@ export function registerJournalRoutes(app: Express) {
       return res.status(400).json({ message: 'Only posted entries can be reversed' });
     }
 
+    // The reversal posts a new JE on `now`. Block if today is in a locked
+    // period — reversing a posted entry into a closed period must go through
+    // an unlock-and-amend flow instead.
+    const now = new Date();
+    await assertPeriodNotLocked(entry.companyId, now);
+
     // Get original lines
     const originalLines = await storage.getJournalLinesByEntryId(id);
 
     // Generate reversal entry number atomically via storage helper
-    const now = new Date();
     const reversalNumber = await storage.generateEntryNumber(entry.companyId, now);
 
     // Create reversing entry with swapped debits/credits

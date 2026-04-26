@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { pool } from '../db';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from './period-lock.service';
 
 const log = createLogger('autonomous-gl');
 
@@ -462,6 +463,9 @@ async function createJournalEntryForQueueItem(
 ): Promise<string> {
   const amount = parseFloat(item.amount);
   const txnDate = new Date(item.transaction_date);
+
+  // Block AI auto-posting into a locked period.
+  await assertPeriodNotLocked(companyId, txnDate);
 
   // Generate entry number
   const dateStr = txnDate.toISOString().slice(0, 10).replace(/-/g, '');
