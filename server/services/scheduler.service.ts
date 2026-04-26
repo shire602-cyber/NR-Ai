@@ -3,6 +3,7 @@ import { storage } from '../storage';
 import { createLogger } from '../config/logger';
 import { assertPeriodNotLocked } from './period-lock.service';
 import { UAE_VAT_RATE, ACCOUNT_CODES } from '../constants';
+import { purgeExpiredAuthTokens } from './auth-tokens.service';
 
 const log = createLogger('scheduler');
 
@@ -202,7 +203,19 @@ export function initScheduler() {
     }
   });
 
-  log.info('Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC');
+  // Run hourly: sweep expired auth tokens (blacklist, password reset, email verify)
+  cron.schedule('15 * * * *', async () => {
+    try {
+      const result = await purgeExpiredAuthTokens();
+      if (result.blacklist + result.passwordReset + result.emailVerification > 0) {
+        log.info(result, 'Purged expired auth tokens');
+      }
+    } catch (err) {
+      log.error({ err }, 'Scheduler error during auth token sweep');
+    }
+  });
+
+  log.info('Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC, auth-token sweep hourly');
 }
 
 // ---------------------------------------------------------------------------

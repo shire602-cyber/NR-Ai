@@ -55,6 +55,8 @@ import { cn } from '@/lib/utils';
 import { useTranslation, useI18n } from '@/lib/i18n';
 import { useRTL } from '@/components/RTLProvider';
 import { removeToken, getToken } from '@/lib/auth';
+import { apiUrl } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -200,6 +202,7 @@ export function AppSidebar() {
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
   const { isRTL, rtlValue } = useRTL();
+  const queryClient = useQueryClient();
 
   const checkUserStatus = (): {
     isAdmin: boolean;
@@ -287,8 +290,20 @@ export function AppSidebar() {
     });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = getToken();
+    if (token) {
+      try {
+        await fetch(apiUrl('/api/auth/logout'), {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch {
+        // Network failure shouldn't block local sign-out — JWT still expires.
+      }
+    }
     removeToken();
+    queryClient.clear();
     setLocation('/');
   };
 

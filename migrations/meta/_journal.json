@@ -41,6 +41,7 @@
     { "idx": 36, "version": "7", "when": 1768500000000, "tag": "0036_retention_policy", "breakpoints": false },
     { "idx": 37, "version": "7", "when": 1768600000000, "tag": "0037_customer_contact_whatsapp", "breakpoints": false },
     { "idx": 38, "version": "7", "when": 1768700000000, "tag": "0038_fixed_assets_capitalization_flag", "breakpoints": false },
-    { "idx": 39, "version": "7", "when": 1768800000000, "tag": "0039_payroll_state_machine", "breakpoints": false }
+    { "idx": 39, "version": "7", "when": 1768800000000, "tag": "0039_payroll_state_machine", "breakpoints": false },
+    { "idx": 40, "version": "7", "when": 1768900000000, "tag": "0040_auth_session_security", "breakpoints": false }
   ]
 }

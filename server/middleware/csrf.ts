@@ -33,7 +33,7 @@ const {
   },
   cookieName: isProduction() ? '__Host-x-csrf' : 'x-csrf',
   cookieOptions: {
-    sameSite: 'lax',
+    sameSite: 'strict',
     secure: isProduction(),
     httpOnly: true,
     path: '/',

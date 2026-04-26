@@ -55,6 +55,7 @@ export const users = pgTable("users", {
   firmRole: text("firm_role"), // firm_owner | firm_admin | null
   phone: text("phone"),
   avatarUrl: text("avatar_url"),
+  emailVerified: boolean("email_verified").notNull().default(false),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -63,13 +64,45 @@ export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   passwordHash: true,
   createdAt: true,
+  emailVerified: true,
 }).extend({
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type UserPublic = Omit<User, 'passwordHash'>;
+
+// ===========================
+// Auth security tables
+// ===========================
+// Blacklisted JWTs — entries are kept until token expiry, then swept.
+export const tokenBlacklist = pgTable("token_blacklist", {
+  tokenHash: text("token_hash").primaryKey(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type TokenBlacklistEntry = typeof tokenBlacklist.$inferSelect;
+
+// One-time password-reset tokens (24h validity).
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// Email-verification tokens — issued on registration.
+export const emailVerificationTokens = pgTable("email_verification_tokens", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
 
 // ===========================
 // Companies
