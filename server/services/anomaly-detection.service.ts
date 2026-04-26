@@ -1,5 +1,6 @@
 import { storage } from '../storage';
 import type { Account } from '../../shared/schema';
+import { uaeDayOfWeek } from '../utils/date';
 
 type AnomalySeverity = 'critical' | 'warning' | 'info';
 
@@ -170,11 +171,12 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
   for (const entry of journalEntries) {
     if (entry.status !== 'posted') continue;
     const entryDate = new Date(entry.date);
-    const dayOfWeek = entryDate.getDay();
+    // UAE moved to a Sat/Sun weekend in January 2022. Use UAE-local day of
+    // week so late-night entries don't get bucketed into the wrong day.
+    const dayOfWeek = uaeDayOfWeek(entryDate);
 
-    // Friday and Saturday are typical UAE weekends
-    if (dayOfWeek === 5 || dayOfWeek === 6) {
-      const dayName = dayOfWeek === 5 ? 'Friday' : 'Saturday';
+    if (dayOfWeek === 6 || dayOfWeek === 0) {
+      const dayName = dayOfWeek === 6 ? 'Saturday' : 'Sunday';
       // Get total amount from lines
       const lines = await storage.getJournalLinesByEntryId(entry.id);
       const totalDebit = lines.reduce((s, l) => s + (l.debit || 0), 0);
