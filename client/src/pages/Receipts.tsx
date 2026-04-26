@@ -534,7 +534,7 @@ export default function Receipts() {
             category: result.category || 'Other',
             lineItems: result.lineItems || [],
             rawText: result.rawText || '',
-            confidence: result.confidence || 0.85,
+            confidence: result.confidence ?? 0.85,
           };
           setProcessedReceipts((prev) => {
             const updated = [...prev];

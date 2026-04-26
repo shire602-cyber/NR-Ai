@@ -207,12 +207,20 @@ If no valid transactions can be found, return { "transactions": [] }`
   }));
 
   // AI CFO Advice Route
-  app.post("/api/ai/cfo-advice", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/ai/cfo-advice", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     try {
       const { companyId, question, context } = req.body;
+      const userId = (req as any).user.id;
 
       if (!companyId || !question) {
         return res.status(400).json({ message: 'Company ID and question are required' });
+      }
+
+      // Verify the caller has access to this company before exposing any
+      // financial context to the AI prompt.
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
 
       // Get additional company data for context
