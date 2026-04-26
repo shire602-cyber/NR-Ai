@@ -102,6 +102,9 @@ export const companies = pgTable("companies", {
   taxRegistrationDate: timestamp("tax_registration_date"),
   corporateTaxId: text("corporate_tax_id"),
   emirate: text("emirate").default("dubai"), // abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah
+  // Partial exemption: fraction of supplies that are exempt (0..1). When > 0, input VAT
+  // is reduced by this ratio per FTA partial-exemption rules.
+  exemptSupplyRatio: vatRateType("exempt_supply_ratio").notNull().default(0),
   
   // Soft delete — UAE FTA requires 5-year retention; hard deletes are disallowed
   deletedAt: timestamp("deleted_at"),
@@ -450,6 +453,7 @@ export const receipts = pgTable("receipts", {
   accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
   paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit
   posted: boolean("posted").default(false).notNull(), // Whether journal entry has been created
+  reverseCharge: boolean("reverse_charge").default(false).notNull(), // FTA reverse-charge: buyer self-assesses VAT
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id), // Link to created journal entry
   imageData: text("image_data"),
   imagePath: text("image_path"),

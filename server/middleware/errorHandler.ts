@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { createLogger } from '../config/logger';
 import { isProduction } from '../config/env';
+import { RetentionViolationError } from '../services/retention.service';
 
 const log = createLogger('error');
 
@@ -30,6 +31,16 @@ export function globalErrorHandler(
   res: Response,
   _next: NextFunction
 ): void {
+  // FTA 5-year retention: cannot delete records still inside the window.
+  if (err instanceof RetentionViolationError) {
+    res.status(err.status).json({
+      message: err.message,
+      code: err.code,
+      retentionExpiresAt: err.retentionExpiresAt,
+    });
+    return;
+  }
+
   // Handle Zod validation errors
   if (err instanceof ZodError) {
     const errors = err.flatten().fieldErrors;

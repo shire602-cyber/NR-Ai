@@ -2,12 +2,32 @@
 import PDFDocument from 'pdfkit';
 import type { Invoice, InvoiceLine, Company } from '../../shared/schema';
 import { UAE_VAT_RATE } from '../constants';
+import { renderEInvoiceQrPng } from './einvoice-qr.service';
 
 export async function generateInvoicePDF(
   invoice: Invoice,
   lines: InvoiceLine[],
   company: Company
 ): Promise<Buffer> {
+  // Pre-render the e-invoice QR png so the PDF stream — which is synchronous
+  // once started — can simply embed the buffer. We only render when the
+  // company is VAT registered, since the QR must encode the seller's TRN.
+  let qrPng: Buffer | null = null;
+  if (company.trnVatNumber) {
+    try {
+      qrPng = await renderEInvoiceQrPng({
+        sellerName: company.name,
+        vatRegistrationNumber: company.trnVatNumber,
+        timestamp: invoice.date instanceof Date ? invoice.date : new Date(invoice.date),
+        invoiceTotalWithVat: invoice.total,
+        vatAmount: invoice.vatAmount,
+      });
+    } catch {
+      // Fall back to placeholder if QR generation fails — PDF must still render.
+      qrPng = null;
+    }
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
@@ -212,14 +232,22 @@ export async function generateInvoicePDF(
         y += 16;
       }
 
-      // ── QR Code placeholder (e-invoicing readiness) ──────────────────────────
-      const qrSize = 60;
+      // ── e-Invoice QR Code (UAE FTA Phase 2 / ZATCA TLV format) ──────────────
+      const qrSize = 72;
       const qrX = pageWidth - margin - qrSize;
       const qrY = y - 16;
-      doc.rect(qrX, qrY, qrSize, qrSize).stroke('#D1D5DB');
-      doc.fontSize(6).fillColor('#9CA3AF').font('Helvetica');
-      doc.text('QR CODE', qrX, qrY + qrSize / 2 - 6, { width: qrSize, align: 'center' });
-      doc.text('(e-Invoice)', qrX, qrY + qrSize / 2 + 2, { width: qrSize, align: 'center' });
+      if (qrPng) {
+        doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
+        doc.fontSize(6).fillColor('#6B7280').font('Helvetica');
+        doc.text('FTA e-Invoice', qrX, qrY + qrSize + 2, { width: qrSize, align: 'center' });
+      } else {
+        // Non-VAT-registered (or QR generation failed) — keep an empty box so
+        // the layout stays stable for non-tax-invoice receipts.
+        doc.rect(qrX, qrY, qrSize, qrSize).stroke('#D1D5DB');
+        doc.fontSize(6).fillColor('#9CA3AF').font('Helvetica');
+        doc.text('QR CODE', qrX, qrY + qrSize / 2 - 6, { width: qrSize, align: 'center' });
+        doc.text('(N/A)', qrX, qrY + qrSize / 2 + 2, { width: qrSize, align: 'center' });
+      }
 
       // ── Footer ───────────────────────────────────────────────────────────────
       const footerY = 760;

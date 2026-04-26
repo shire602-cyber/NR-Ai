@@ -14,6 +14,8 @@ import { canTransition, isTerminal, isValidStatus } from '../services/invoice-st
 import { recordAudit } from '../services/audit.service';
 import { createLogger } from '../config/logger';
 import { UAE_VAT_RATE, ACCOUNT_CODES } from '../constants';
+import { allocateInvoiceNumber, peekNextInvoiceNumber } from '../services/invoice-numbering.service';
+import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('invoices');
 
@@ -113,6 +115,20 @@ export function registerInvoiceRoutes(app: Express) {
     });
   }));
 
+  // Peek next invoice/credit-note number — for UI display before save. Does
+  // not allocate, so it is safe to call from a draft form.
+  app.get("/api/companies/:companyId/invoices/next-number", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.params;
+    const userId = (req as any).user.id;
+    const docType = (req.query.docType === 'credit_note' ? 'credit_note' : 'invoice') as 'invoice' | 'credit_note';
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
+
+    const number = await peekNextInvoiceNumber(companyId, docType);
+    res.json({ number, docType });
+  }));
+
   // Customer-only: Create invoices
   app.post("/api/companies/:companyId/invoices", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
@@ -144,10 +160,15 @@ export function registerInvoiceRoutes(app: Express) {
     // posts a revenue-recognition journal entry on this date.
     await assertPeriodNotLocked(companyId, invoiceDate);
 
+    // FTA requires sequential, gap-free invoice numbering. The server is the
+    // sole authority — any number sent by the client is ignored.
+    const allocatedNumber = await allocateInvoiceNumber(companyId, 'invoice', invoiceDate);
+
     log.info({
       companyId,
       userId,
-      number: invoiceData.number,
+      number: allocatedNumber,
+      clientSuppliedNumber: invoiceData.number,
       date: invoiceDate,
       subtotal,
       vatAmount,
@@ -158,6 +179,7 @@ export function registerInvoiceRoutes(app: Express) {
     // Create invoice
     const invoice = await storage.createInvoice({
       ...invoiceData,
+      number: allocatedNumber,
       date: invoiceDate,
       companyId,
       subtotal,
@@ -422,6 +444,9 @@ export function registerInvoiceRoutes(app: Express) {
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
+
+    // FTA: 5-year retention. Throws RetentionViolationError → 409 via global handler.
+    assertRetentionExpired(invoice as { createdAt: Date | string; retentionExpiresAt?: Date | string | null }, 'Invoice');
 
     try {
       await storage.safeDeleteInvoice(id);
@@ -951,8 +976,8 @@ export function registerInvoiceRoutes(app: Express) {
 
     const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
 
-    // Generate credit note number
-    const cnNumber = `CN-${original.number}`;
+    // Generate credit note number — FTA: sequential, gap-free per company per year.
+    const cnNumber = await allocateInvoiceNumber(companyId, 'credit_note', new Date());
 
     const creditNote = await storage.createInvoice({
       companyId,

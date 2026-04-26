@@ -7,33 +7,75 @@ import { exchangeRates, invoices, receipts } from "../../shared/schema";
 import type { UnrealizedFxGainLoss, FxGainsLossesReport, ExchangeRate, Invoice, Receipt } from "../../shared/schema";
 import { storage } from "../storage";
 
+export type ExchangeRateSource = 'manual' | 'api' | 'fta';
+
+export interface RateLookupResult {
+  rate: number;
+  source: ExchangeRateSource;
+  date: Date;
+}
+
 /**
- * Retrieve the most recent exchange rate for a currency pair on or before
- * a given date. Returns null when no rate is found.
+ * Retrieve the most recent exchange rate for a currency pair on or before a
+ * given date. Returns null when no rate is found.
+ *
+ * Per FTA: when an FTA-published rate exists it must be used for VAT-impacting
+ * conversions. We therefore look for an FTA rate first; if none is available
+ * for the period we fall back to manual / API entries. Callers can opt out of
+ * the preference with `preferFta: false` when they need the literal newest rate.
  */
-export async function getLatestRate(
+export async function getLatestRateDetailed(
   baseCurrency: string,
   targetCurrency: string,
   asOf?: Date,
-): Promise<number | null> {
-  if (baseCurrency === targetCurrency) return 1;
+  options: { preferFta?: boolean } = {},
+): Promise<RateLookupResult | null> {
+  if (baseCurrency === targetCurrency) {
+    return { rate: 1, source: 'manual', date: asOf ?? new Date() };
+  }
 
-  const conditions = [
+  const preferFta = options.preferFta !== false;
+
+  const baseConditions = [
     eq(exchangeRates.baseCurrency, baseCurrency),
     eq(exchangeRates.targetCurrency, targetCurrency),
   ];
-  if (asOf) {
-    conditions.push(lte(exchangeRates.date, asOf));
+  if (asOf) baseConditions.push(lte(exchangeRates.date, asOf));
+
+  if (preferFta) {
+    const ftaRows = await db
+      .select()
+      .from(exchangeRates)
+      .where(and(...baseConditions, eq(exchangeRates.source, 'fta')))
+      .orderBy(desc(exchangeRates.date))
+      .limit(1);
+    if (ftaRows.length > 0) {
+      return { rate: ftaRows[0].rate, source: 'fta', date: ftaRows[0].date };
+    }
   }
 
   const rows = await db
     .select()
     .from(exchangeRates)
-    .where(and(...conditions))
+    .where(and(...baseConditions))
     .orderBy(desc(exchangeRates.date))
     .limit(1);
 
-  return rows.length > 0 ? rows[0].rate : null;
+  if (rows.length === 0) return null;
+  return {
+    rate: rows[0].rate,
+    source: (rows[0].source as ExchangeRateSource) ?? 'manual',
+    date: rows[0].date,
+  };
+}
+
+export async function getLatestRate(
+  baseCurrency: string,
+  targetCurrency: string,
+  asOf?: Date,
+): Promise<number | null> {
+  const result = await getLatestRateDetailed(baseCurrency, targetCurrency, asOf);
+  return result === null ? null : result.rate;
 }
 
 /**
@@ -115,6 +157,9 @@ export function registerExchangeRateRoutes(app: Express) {
       if (typeof rate !== "number" || rate <= 0) {
         return res.status(400).json({ message: "rate must be a positive number" });
       }
+      if (!['manual', 'api', 'fta'].includes(source)) {
+        return res.status(400).json({ message: "source must be 'manual', 'api', or 'fta'" });
+      }
 
       const [created] = await db
         .insert(exchangeRates)
@@ -128,6 +173,98 @@ export function registerExchangeRateRoutes(app: Express) {
         .returning();
 
       res.status(201).json(created);
+    }),
+  );
+
+  // ─────────────────────────────────────────────
+  // POST /api/exchange-rates/fta/bulk
+  // Body: { baseCurrency?, rates: [{ targetCurrency, rate, date }] }
+  // Bulk-load FTA-published rates. The (base, target, date::date, source)
+  // unique index prevents duplicate entries on re-import.
+  // ─────────────────────────────────────────────
+  app.post(
+    "/api/exchange-rates/fta/bulk",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { baseCurrency = "AED", rates } = req.body as {
+        baseCurrency?: string;
+        rates: Array<{ targetCurrency: string; rate: number; date: string }>;
+      };
+
+      if (!Array.isArray(rates) || rates.length === 0) {
+        return res.status(400).json({ message: "rates array is required" });
+      }
+
+      const inserted: typeof exchangeRates.$inferSelect[] = [];
+      const skipped: Array<{ targetCurrency: string; date: string; reason: string }> = [];
+
+      for (const r of rates) {
+        if (!r.targetCurrency || typeof r.rate !== 'number' || r.rate <= 0 || !r.date) {
+          skipped.push({
+            targetCurrency: r.targetCurrency ?? '?',
+            date: r.date ?? '?',
+            reason: 'invalid payload',
+          });
+          continue;
+        }
+        try {
+          const [row] = await db
+            .insert(exchangeRates)
+            .values({
+              baseCurrency,
+              targetCurrency: r.targetCurrency,
+              rate: r.rate,
+              date: new Date(r.date),
+              source: 'fta',
+            })
+            .returning();
+          if (row) inserted.push(row);
+        } catch (err: unknown) {
+          // Unique-index collision — already imported. Skip cleanly.
+          skipped.push({
+            targetCurrency: r.targetCurrency,
+            date: r.date,
+            reason: err instanceof Error ? err.message : 'duplicate',
+          });
+        }
+      }
+
+      res.status(201).json({
+        inserted: inserted.length,
+        skipped: skipped.length,
+        skippedDetails: skipped,
+      });
+    }),
+  );
+
+  // ─────────────────────────────────────────────
+  // GET /api/exchange-rates/lookup
+  // Query: ?base=AED&target=USD&asOf=2026-04-01
+  // Returns the rate including its source — required for FTA audit trail.
+  // ─────────────────────────────────────────────
+  app.get(
+    "/api/exchange-rates/lookup",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { base = "AED", target, asOf } = req.query as {
+        base?: string;
+        target?: string;
+        asOf?: string;
+      };
+      if (!target) {
+        return res.status(400).json({ message: "target is required" });
+      }
+      const result = await getLatestRateDetailed(base, target, asOf ? new Date(asOf) : undefined);
+      if (result === null) {
+        return res.status(404).json({ message: `No exchange rate found for ${base}/${target}` });
+      }
+      res.json({
+        baseCurrency: base,
+        targetCurrency: target,
+        rate: result.rate,
+        source: result.source,
+        date: result.date,
+      });
     }),
   );
 
