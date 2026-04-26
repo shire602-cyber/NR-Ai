@@ -105,7 +105,15 @@ export function registerVATRoutes(app: Express) {
     });
 
     const totalExpenses = periodReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
-    const inputTax = periodReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
+    const inputTaxGross = periodReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
+
+    // Partial-exemption apportionment (FTA Article 55). When a company makes
+    // both taxable and exempt supplies, only the taxable portion of input VAT
+    // is recoverable. Stored as exempt fraction (0 = fully recoverable).
+    const exemptRatio = Math.min(1, Math.max(0, Number(company.exemptSupplyRatio || 0)));
+    const recoverableRatio = 1 - exemptRatio;
+    const inputTax = Math.round(inputTaxGross * recoverableRatio * 100) / 100;
+    const irrecoverableInputTax = Math.round((inputTaxGross - inputTax) * 100) / 100;
 
     // Due date is 28 days after period end (FTA requirement)
     const dueDate = new Date(endDate);
@@ -232,6 +240,13 @@ export function registerVATRoutes(app: Express) {
         exemptSales: exemptAmount,
         totalInputVat: inputTax,
         netVatPayable: totalOutputVat - inputTax,
+        partialExemption: {
+          exemptSupplyRatio: exemptRatio,
+          recoverableRatio,
+          grossInputVat: inputTaxGross,
+          recoverableInputVat: inputTax,
+          irrecoverableInputVat: irrecoverableInputTax,
+        },
       }
     });
   }));
