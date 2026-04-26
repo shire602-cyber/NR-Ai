@@ -35,6 +35,7 @@
     { "idx": 30, "version": "7", "when": 1767900000000, "tag": "0030_payroll_pension_gratuity", "breakpoints": false },
     { "idx": 31, "version": "7", "when": 1768000000000, "tag": "0031_fixed_assets_depreciation_schedules", "breakpoints": false },
     { "idx": 32, "version": "7", "when": 1768100000000, "tag": "0032_reverse_charge_vat", "breakpoints": false },
-    { "idx": 33, "version": "7", "when": 1768200000000, "tag": "0033_partial_exemption_vat", "breakpoints": false }
+    { "idx": 33, "version": "7", "when": 1768200000000, "tag": "0033_partial_exemption_vat", "breakpoints": false },
+    { "idx": 34, "version": "7", "when": 1768300000000, "tag": "0034_invoice_number_sequences", "breakpoints": false }
   ]
 }
