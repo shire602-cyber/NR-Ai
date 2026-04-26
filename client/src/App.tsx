@@ -27,6 +27,9 @@ const Services = lazy(() => import('@/pages/Services'));
 const Pricing = lazy(() => import('@/pages/Pricing'));
 const PublicInvoiceView = lazy(() => import('@/pages/PublicInvoiceView'));
 const CustomerPortal = lazy(() => import('@/pages/CustomerPortal'));
+const PrivacyPolicy = lazy(() => import('@/pages/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('@/pages/TermsOfService'));
+const CookiePolicy = lazy(() => import('@/pages/CookiePolicy'));
 
 // Client Portal — lazy loaded
 const PortalDashboard = lazy(() => import('@/pages/portal/PortalDashboard'));
@@ -311,7 +314,17 @@ function Router() {
   }
 
   // Public routes (no sidebar)
-  if (location === '/login' || location === '/register' || location === '/services' || location === '/pricing' || location.startsWith('/view/invoice/') || location.startsWith('/portal/')) {
+  if (
+    location === '/login' ||
+    location === '/register' ||
+    location === '/services' ||
+    location === '/pricing' ||
+    location === '/privacy' ||
+    location === '/terms' ||
+    location === '/cookies' ||
+    location.startsWith('/view/invoice/') ||
+    location.startsWith('/portal/')
+  ) {
     return (
       <AnimatePresence mode="wait">
         <motion.div
@@ -329,6 +342,9 @@ function Router() {
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
               <Route path="/portal/:token" component={CustomerPortal} />
               <Route path="/pricing" component={Pricing} />
+              <Route path="/privacy" component={PrivacyPolicy} />
+              <Route path="/terms" component={TermsOfService} />
+              <Route path="/cookies" component={CookiePolicy} />
             </Switch>
           </Suspense>
         </motion.div>
