@@ -183,7 +183,7 @@ Respond ONLY with valid JSON matching this exact structure:
 function buildResult(
   aiResult: any,
   rawText: string,
-  companyId: number,
+  companyId: string,
   messageId: string | null,
   validCategories: string[],
 ) {

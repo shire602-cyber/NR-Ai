@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { pool } from '../db';
+import { storage } from '../storage';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 
@@ -463,18 +464,6 @@ async function createJournalEntryForQueueItem(
   const amount = parseFloat(item.amount);
   const txnDate = new Date(item.transaction_date);
 
-  // Generate entry number
-  const dateStr = txnDate.toISOString().slice(0, 10).replace(/-/g, '');
-  const prefix = `JE-${dateStr}`;
-
-  const { rows: existing } = await pool.query(
-    `SELECT COUNT(*) as count FROM journal_entries
-     WHERE company_id = $1 AND entry_number LIKE $2`,
-    [companyId, `${prefix}%`]
-  );
-  const nextNum = parseInt(existing[0].count, 10) + 1;
-  const entryNumber = `${prefix}-${String(nextNum).padStart(3, '0')}`;
-
   // Determine bank account (from bank_transaction or fallback to first bank/cash account)
   let bankAccountId = (item as any).bank_account_id;
   if (!bankAccountId) {
@@ -493,6 +482,10 @@ async function createJournalEntryForQueueItem(
     throw new Error('No bank account found for journal entry');
   }
 
+  if (!item.suggested_account_id) {
+    throw new Error('Cannot post: queue item has no suggested account');
+  }
+
   // Resolve the company owner's user ID to satisfy the FK constraint on created_by
   const { rows: ownerRows } = await pool.query(
     `SELECT user_id FROM company_users WHERE company_id = $1 AND role = 'owner' LIMIT 1`,
@@ -503,69 +496,49 @@ async function createJournalEntryForQueueItem(
     throw new Error(`No owner user found for company ${companyId} — cannot create auto-posted journal entry`);
   }
 
-  // Create the journal entry (posted directly since it's auto-posted)
-  const { rows: [entry] } = await pool.query(
-    `INSERT INTO journal_entries
-     (company_id, entry_number, date, memo, status, source, source_id, created_by, posted_by, posted_at)
-     VALUES ($1, $2, $3, $4, 'posted', 'system', $5, $6, $6, now())
-     RETURNING id`,
-    [
-      companyId,
-      entryNumber,
-      txnDate,
-      `AI Auto-Posted: ${item.description}`,
-      item.bank_transaction_id,
-      systemUserId,
-    ]
-  );
-
-  const journalEntryId = entry.id;
-
-  // For payments (amount > 0 in queue = absolute value of bank debit):
-  // If original bank txn was negative (debit/payment):
-  //   Debit the expense/suggested account, Credit the bank account
-  // If original bank txn was positive (credit/deposit):
-  //   Debit the bank account, Credit the income/suggested account
-
-  // Check the original bank transaction direction
-  let isDebit = true; // default: payment out
+  // Determine direction from original bank transaction:
+  //   negative amount → payment out (debit expense, credit bank)
+  //   positive amount → deposit in (debit bank, credit income)
+  let isDebit = true;
   if (item.bank_transaction_id) {
     const { rows: [bankTxn] } = await pool.query(
       `SELECT amount FROM bank_transactions WHERE id = $1`,
       [item.bank_transaction_id]
     );
     if (bankTxn && bankTxn.amount > 0) {
-      isDebit = false; // credit/deposit
+      isDebit = false;
     }
   }
 
-  if (isDebit) {
-    // Payment: Debit expense account, Credit bank account
-    await pool.query(
-      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, description)
-       VALUES ($1, $2, $3, 0, $4)`,
-      [journalEntryId, item.suggested_account_id, amount, item.description]
-    );
-    await pool.query(
-      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, description)
-       VALUES ($1, $2, 0, $3, $4)`,
-      [journalEntryId, bankAccountId, amount, item.description]
-    );
-  } else {
-    // Deposit: Debit bank account, Credit income/suggested account
-    await pool.query(
-      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, description)
-       VALUES ($1, $2, $3, 0, $4)`,
-      [journalEntryId, bankAccountId, amount, item.description]
-    );
-    await pool.query(
-      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, description)
-       VALUES ($1, $2, 0, $3, $4)`,
-      [journalEntryId, item.suggested_account_id, amount, item.description]
-    );
-  }
+  const lines = isDebit
+    ? [
+        { accountId: item.suggested_account_id, debit: amount, credit: 0, description: item.description },
+        { accountId: bankAccountId as string, debit: 0, credit: amount, description: item.description },
+      ]
+    : [
+        { accountId: bankAccountId as string, debit: amount, credit: 0, description: item.description },
+        { accountId: item.suggested_account_id, debit: 0, credit: amount, description: item.description },
+      ];
 
-  return journalEntryId;
+  // Use storage helper: validates balance + wraps entry+lines in a single transaction
+  const entryNumber = await storage.generateEntryNumber(companyId, txnDate);
+  const entry = await storage.createJournalEntry(
+    {
+      companyId,
+      entryNumber,
+      date: txnDate,
+      memo: `AI Auto-Posted: ${item.description}`,
+      status: 'posted',
+      source: 'system',
+      sourceId: item.bank_transaction_id,
+      createdBy: systemUserId,
+      postedBy: systemUserId,
+      postedAt: new Date(),
+    } as any,
+    lines
+  );
+
+  return entry.id;
 }
 
 /**

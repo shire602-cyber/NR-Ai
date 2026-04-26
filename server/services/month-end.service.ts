@@ -1,4 +1,5 @@
 import { pool } from '../db';
+import { storage } from '../storage';
 import { detectAnomalies } from './anomaly-detection.service';
 
 // ===========================
@@ -293,6 +294,26 @@ export async function generateClosingEntries(
   periodEnd: string,
   userId: string
 ): Promise<ClosingJournalEntry> {
+  // Idempotency: refuse to generate closing entries twice for the same period.
+  // Without this, calling twice double-closes revenue/expense and corrupts equity.
+  const existingClosingResult = await pool.query(
+    `SELECT id, entry_number, date, memo, status
+     FROM journal_entries
+     WHERE company_id = $1
+       AND source = 'system'
+       AND date = $2::date
+       AND memo LIKE 'Closing entries for %'
+       AND status != 'void'
+     LIMIT 1`,
+    [companyId, periodEnd]
+  );
+  if (existingClosingResult.rows.length > 0) {
+    throw new Error(
+      `Closing entries already exist for period ending ${periodEnd} (entry ${existingClosingResult.rows[0].entry_number}). ` +
+      `Reverse the existing closing entry before re-running.`
+    );
+  }
+
   // Get all income accounts with their balances for the period
   const incomeResult = await pool.query(
     `SELECT
@@ -442,53 +463,38 @@ export async function generateClosingEntries(
 
   // Format period for memo
   const periodLabel = `${periodStart} to ${periodEnd}`;
+  const memo = `Closing entries for ${periodLabel}`;
+  const periodEndDate = new Date(periodEnd);
+  const entryNumber = await storage.generateEntryNumber(companyId, periodEndDate);
 
-  // Generate entry number
-  const now = new Date();
-  const dateStr = now.toISOString().split('T')[0].replace(/-/g, '');
-  const countResult = await pool.query(
-    `SELECT COUNT(*) AS cnt FROM journal_entries WHERE company_id = $1 AND entry_number LIKE $2`,
-    [companyId, `JE-${dateStr}-%`]
-  );
-  const seqNum = parseInt(countResult.rows[0].cnt) + 1;
-  const entryNumber = `JE-${dateStr}-${String(seqNum).padStart(3, '0')}`;
+  // Create entry + lines atomically via storage (validates balance & wraps in transaction)
+  const journalLines = lines.map((line) => ({
+    accountId: line.accountId,
+    debit: Math.round(line.debit * 100) / 100,
+    credit: Math.round(line.credit * 100) / 100,
+    description: `Closing entry - ${line.accountName}`,
+  }));
 
-  // Create the journal entry
-  const entryResult = await pool.query(
-    `INSERT INTO journal_entries (company_id, entry_number, date, memo, status, source, created_by)
-     VALUES ($1, $2, $3::date, $4, 'posted', 'system', $5)
-     RETURNING id, entry_number, date, memo`,
-    [companyId, entryNumber, periodEnd, `Closing entries for ${periodLabel}`, userId]
-  );
-
-  const entry = entryResult.rows[0];
-
-  // Create journal lines
-  for (const line of lines) {
-    await pool.query(
-      `INSERT INTO journal_lines (entry_id, account_id, debit, credit, description)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        entry.id,
-        line.accountId,
-        Math.round(line.debit * 100) / 100,
-        Math.round(line.credit * 100) / 100,
-        `Closing entry - ${line.accountName}`,
-      ]
-    );
-  }
-
-  // Update posted_by and posted_at
-  await pool.query(
-    `UPDATE journal_entries SET posted_by = $1, posted_at = now() WHERE id = $2`,
-    [userId, entry.id]
+  const entry = await storage.createJournalEntry(
+    {
+      companyId,
+      entryNumber,
+      date: periodEndDate,
+      memo,
+      status: 'posted',
+      source: 'system',
+      createdBy: userId,
+      postedBy: userId,
+      postedAt: new Date(),
+    } as any,
+    journalLines
   );
 
   return {
     id: entry.id,
-    entryNumber: entry.entry_number,
-    date: entry.date,
-    memo: entry.memo,
+    entryNumber: entry.entryNumber,
+    date: entry.date instanceof Date ? entry.date.toISOString() : String(entry.date),
+    memo: entry.memo ?? memo,
     lines,
     totalDebits: Math.round(totalDebits * 100) / 100,
     totalCredits: Math.round(totalCredits * 100) / 100,

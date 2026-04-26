@@ -123,6 +123,19 @@ import {
 import { db } from "./db";
 import { eq, and, desc, lte, isNull } from "drizzle-orm";
 
+// Tolerance for float-rounding drift. Anything beyond this is a real imbalance.
+const JOURNAL_BALANCE_TOLERANCE = 0.01;
+
+function assertBalanced(lines: Array<{ debit?: number | null; credit?: number | null }>): void {
+  const totalDebit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
+  const totalCredit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
+  if (Math.abs(totalDebit - totalCredit) > JOURNAL_BALANCE_TOLERANCE) {
+    throw new Error(
+      `Journal entry is unbalanced: debits ${totalDebit.toFixed(2)} ≠ credits ${totalCredit.toFixed(2)}`
+    );
+  }
+}
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
@@ -203,8 +216,9 @@ export interface IStorage {
   // Journal Entries
   getJournalEntry(id: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
-  createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }, lines?: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
+  createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
   updateJournalEntry(id: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
+  updateJournalEntryWithLines(id: string, data: Partial<JournalEntry>, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
   deleteJournalEntry(id: string): Promise<void>;
   generateEntryNumber(companyId: string, date: Date): Promise<string>;
   
@@ -933,29 +947,20 @@ export class DatabaseStorage implements IStorage {
 
   async createJournalEntry(
     insertEntry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
-    lines?: Array<Omit<InsertJournalLine, 'entryId'>>
+    lines: Array<Omit<InsertJournalLine, 'entryId'>>
   ): Promise<JournalEntry> {
-    if (lines && lines.length > 0) {
-      const totalDebit = lines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
-      const totalCredit = lines.reduce((sum, l) => sum + (Number(l.credit) || 0), 0);
-      if (Math.abs(totalDebit - totalCredit) > 0.01) {
-        throw new Error(
-          `Journal entry is unbalanced: debits ${totalDebit.toFixed(2)} ≠ credits ${totalCredit.toFixed(2)}`
-        );
-      }
-      return await db.transaction(async (tx: typeof db) => {
-        const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
-        for (const line of lines) {
-          await tx.insert(journalLines).values({ ...line, entryId: entry.id });
-        }
-        return entry;
-      });
+    if (!Array.isArray(lines) || lines.length === 0) {
+      throw new Error('Journal entry must have at least one line');
     }
-    const [entry] = await db
-      .insert(journalEntries)
-      .values(insertEntry)
-      .returning();
-    return entry;
+    assertBalanced(lines);
+
+    return await db.transaction(async (tx: typeof db) => {
+      const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
+      for (const line of lines) {
+        await tx.insert(journalLines).values({ ...line, entryId: entry.id });
+      }
+      return entry;
+    });
   }
 
   async updateJournalEntry(id: string, data: Partial<JournalEntry>): Promise<JournalEntry> {
@@ -968,6 +973,33 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Journal entry not found');
     }
     return entry;
+  }
+
+  async updateJournalEntryWithLines(
+    id: string,
+    data: Partial<JournalEntry>,
+    lines: Array<Omit<InsertJournalLine, 'entryId'>>
+  ): Promise<JournalEntry> {
+    if (!Array.isArray(lines) || lines.length === 0) {
+      throw new Error('Journal entry must have at least one line');
+    }
+    assertBalanced(lines);
+
+    return await db.transaction(async (tx: typeof db) => {
+      const [entry] = await tx
+        .update(journalEntries)
+        .set(data)
+        .where(eq(journalEntries.id, id))
+        .returning();
+      if (!entry) {
+        throw new Error('Journal entry not found');
+      }
+      await tx.delete(journalLines).where(eq(journalLines.entryId, id));
+      for (const line of lines) {
+        await tx.insert(journalLines).values({ ...line, entryId: id });
+      }
+      return entry;
+    });
   }
 
   async deleteJournalEntry(id: string): Promise<void> {

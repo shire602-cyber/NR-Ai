@@ -174,7 +174,7 @@ router.post('/bulk/ocr', asyncHandler(async (req: Request, res: Response) => {
       const receipt = await storage.createReceipt({
         companyId: item.companyId,
         merchant: extracted.merchant,
-        date: extracted.date,
+        date: extracted.date ? new Date(extracted.date) : null,
         amount: extracted.amount,
         vatAmount: extracted.vatAmount,
         currency: extracted.currency,

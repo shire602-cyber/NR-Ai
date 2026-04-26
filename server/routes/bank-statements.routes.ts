@@ -570,41 +570,42 @@ export function registerBankStatementRoutes(app: Express) {
       const isInflow = txn.amount > 0;
 
       const bankGlAccountId = txn.bankAccountId;
-
-      const entryNumber = await storage.generateEntryNumber(companyId, new Date(txn.transactionDate));
-
-      const entry = await storage.createJournalEntry({
-        companyId,
-        entryNumber,
-        date: new Date(txn.transactionDate),
-        memo: memo || txn.description,
-        status: 'posted',
-        source: 'bank_reconciliation',
-        sourceId: txn.id,
-        createdBy: userId,
-        postedBy: userId,
-        postedAt: new Date(),
-      });
-
-      if (bankGlAccountId) {
-        // Bank GL side
-        await storage.createJournalLine({
-          entryId: entry.id,
-          accountId: bankGlAccountId,
-          debit: isInflow ? absAmount : 0,
-          credit: isInflow ? 0 : absAmount,
-          description: txn.description,
+      if (!bankGlAccountId) {
+        return res.status(400).json({
+          message: 'Cannot create journal entry: bank transaction has no associated bank account (bankAccountId is null). Link the transaction to a bank account first.',
         });
       }
 
-      // Contra account side
-      await storage.createJournalLine({
-        entryId: entry.id,
-        accountId,
-        debit: isInflow ? 0 : absAmount,
-        credit: isInflow ? absAmount : 0,
-        description: txn.description,
-      });
+      const entryNumber = await storage.generateEntryNumber(companyId, new Date(txn.transactionDate));
+
+      const entry = await storage.createJournalEntry(
+        {
+          companyId,
+          entryNumber,
+          date: new Date(txn.transactionDate),
+          memo: memo || txn.description,
+          status: 'posted',
+          source: 'bank_reconciliation',
+          sourceId: txn.id,
+          createdBy: userId,
+          postedBy: userId,
+          postedAt: new Date(),
+        },
+        [
+          {
+            accountId: bankGlAccountId,
+            debit: isInflow ? absAmount : 0,
+            credit: isInflow ? 0 : absAmount,
+            description: txn.description,
+          },
+          {
+            accountId,
+            debit: isInflow ? 0 : absAmount,
+            credit: isInflow ? absAmount : 0,
+            description: txn.description,
+          },
+        ]
+      );
 
       // Mark transaction as matched to this journal entry
       const updated = await storage.reconcileBankTransaction(tid, entry.id, 'journal');
