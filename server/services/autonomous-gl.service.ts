@@ -3,6 +3,7 @@ import { pool } from '../db';
 import { storage } from '../storage';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from './period-lock.service';
 
 const log = createLogger('autonomous-gl');
 
@@ -463,6 +464,9 @@ async function createJournalEntryForQueueItem(
 ): Promise<string> {
   const amount = parseFloat(item.amount);
   const txnDate = new Date(item.transaction_date);
+
+  // Block AI auto-posting into a locked period.
+  await assertPeriodNotLocked(companyId, txnDate);
 
   // Determine bank account (from bank_transaction or fallback to first bank/cash account)
   let bankAccountId = (item as any).bank_account_id;

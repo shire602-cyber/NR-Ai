@@ -9,6 +9,9 @@ import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
 import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
 import { createAndEmitNotification } from '../services/socket.service';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { canTransition, isTerminal, isValidStatus } from '../services/invoice-state-machine';
+import { recordAudit } from '../services/audit.service';
 
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
@@ -133,6 +136,10 @@ export function registerInvoiceRoutes(app: Express) {
     // Convert date string to Date object if it's a string
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
 
+    // Block invoice creation in a locked period — invoice creation immediately
+    // posts a revenue-recognition journal entry on this date.
+    await assertPeriodNotLocked(companyId, invoiceDate);
+
     console.log('[Invoices] Creating invoice:', {
       companyId,
       userId,
@@ -221,6 +228,23 @@ export function registerInvoiceRoutes(app: Express) {
 
     console.log('[Invoices] Invoice created successfully:', invoice.id);
 
+    await recordAudit({
+      userId,
+      companyId,
+      action: 'invoice.create',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      before: null,
+      after: {
+        number: invoice.number,
+        customerName: invoice.customerName,
+        total: invoice.total,
+        currency: invoice.currency,
+        status: invoice.status,
+      },
+      req,
+    });
+
     createAndEmitNotification({
       userId,
       companyId,
@@ -262,6 +286,11 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(400).json({ message: 'No draft entries to post' });
     }
 
+    // Block posting any draft entry into a locked period.
+    for (const entry of invoiceEntries) {
+      await assertPeriodNotLocked(invoice.companyId, entry.date);
+    }
+
     // Post all draft entries
     for (const entry of invoiceEntries) {
       await storage.updateJournalEntry(entry.id, {
@@ -280,32 +309,63 @@ export function registerInvoiceRoutes(app: Express) {
     const userId = (req as any).user.id;
     const { lines, date, ...invoiceData } = req.body;
 
-    // Get invoice to verify it exists and get company access
     const invoice = await storage.getInvoice(id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
-    // Check if user has access to this company
     const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Calculate totals
+    if (isTerminal(invoice.status)) {
+      return res.status(422).json({
+        message: `Cannot edit ${invoice.status} invoice`,
+        code: 'INVOICE_TERMINAL',
+      });
+    }
+
+    // Recompute totals from lines.
     let subtotal = 0;
     let vatAmount = 0;
-
     for (const line of lines) {
       const lineTotal = line.quantity * line.unitPrice;
       subtotal += lineTotal;
       vatAmount += lineTotal * (line.vatRate ?? 0.05);
     }
-
     const total = subtotal + vatAmount;
 
-    // Convert date string to Date object if it's a string
+    // If a posted journal entry exists for this invoice and the amount is
+    // changing, refuse. The user must void & reissue (or issue a credit
+    // note) instead — silently re-posting the GL would break period-locked
+    // ledgers and audit trails.
+    const existingEntries = await storage.getJournalEntriesBySource(
+      invoice.companyId,
+      'invoice',
+      id,
+    );
+    const postedEntry = existingEntries.find(e => e.status === 'posted');
+    const totalsChanged =
+      Math.abs(Number(invoice.total) - total) > 0.005 ||
+      Math.abs(Number(invoice.subtotal) - subtotal) > 0.005 ||
+      Math.abs(Number(invoice.vatAmount) - vatAmount) > 0.005;
+    if (postedEntry && totalsChanged) {
+      return res.status(422).json({
+        message:
+          'Invoice amount cannot be changed while a posted journal entry exists. Void this invoice and issue a credit note or new invoice instead.',
+        code: 'INVOICE_POSTED_AMOUNT_LOCKED',
+      });
+    }
+
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
+
+    // Block updates that would touch a locked period (either the invoice's
+    // existing date or the requested new date).
+    await assertPeriodNotLocked(invoice.companyId, invoice.date);
+    if (invoiceDate) {
+      await assertPeriodNotLocked(invoice.companyId, invoiceDate);
+    }
 
     // Update invoice
     const updatedInvoice = await storage.updateInvoice(id, {
@@ -316,7 +376,6 @@ export function registerInvoiceRoutes(app: Express) {
       total,
     });
 
-    // Delete existing lines and create new ones
     await storage.deleteInvoiceLinesByInvoiceId(id);
     for (const line of lines) {
       await storage.createInvoiceLine({
@@ -324,6 +383,22 @@ export function registerInvoiceRoutes(app: Express) {
         ...line,
       });
     }
+
+    await recordAudit({
+      userId,
+      companyId: invoice.companyId,
+      action: 'invoice.update',
+      entityType: 'invoice',
+      entityId: id,
+      before: {
+        subtotal: invoice.subtotal,
+        vatAmount: invoice.vatAmount,
+        total: invoice.total,
+        date: invoice.date,
+      },
+      after: { subtotal, vatAmount, total, date: invoiceDate },
+      req,
+    });
 
     console.log('[Invoices] Invoice updated successfully:', id);
     res.json(updatedInvoice);
@@ -334,123 +409,162 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    // Get invoice to verify it exists and get company access
     const invoice = await storage.getInvoice(id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
-    // Check if user has access to this company
     const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    await storage.deleteInvoice(id);
+    try {
+      await storage.safeDeleteInvoice(id);
+    } catch (err: any) {
+      if (err?.code === 'INVOICE_HAS_POSTED_JE') {
+        return res.status(422).json({
+          message: err.message,
+          code: err.code,
+        });
+      }
+      if (err?.code === 'INVOICE_NOT_FOUND') {
+        return res.status(404).json({ message: err.message });
+      }
+      throw err;
+    }
+
+    await recordAudit({
+      userId,
+      companyId: invoice.companyId,
+      action: 'invoice.delete',
+      entityType: 'invoice',
+      entityId: id,
+      before: { number: invoice.number, status: invoice.status, total: invoice.total },
+      after: null,
+      req,
+    });
+
     res.json({ message: 'Invoice deleted successfully' });
   }));
 
-  // Customer-only: Update invoice status
+  // Customer-only: Update invoice status (state-machine enforced)
   app.patch("/api/invoices/:id/status", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const { status, paymentAccountId } = req.body;
     const userId = (req as any).user.id;
 
-    // Validate status
-    const validStatuses = ['draft', 'sent', 'paid', 'partial', 'void'];
-    if (!status || !validStatuses.includes(status)) {
-      return res.status(400).json({ message: 'Invalid status. Must be one of: draft, sent, paid, void' });
+    if (!status || !isValidStatus(status)) {
+      return res.status(400).json({
+        message: 'Invalid status. Must be one of: draft, sent, posted, partial, paid, void, cancelled',
+      });
     }
 
-    // Get invoice to verify it exists and get company access
     const invoice = await storage.getInvoice(id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
-    // Check if user has access to this company
     const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
     const oldStatus = invoice.status;
-    const updatedInvoice = await storage.updateInvoiceStatus(id, status);
 
-    console.log(`[Invoices] Status transition: ${oldStatus} -> ${status} for invoice ${id}`);
-
-    // Payment recording when invoice is marked as paid
-    // Note: Revenue is already recognized when invoice is created
+    // Status transitions that post journal entries (currently only
+    // draft/sent -> paid) must respect period locks. Block before mutating
+    // status so we don't end up with a status flipped but no JE.
     if (status === 'paid' && oldStatus !== 'paid') {
-      // Validate payment account is provided
+      await assertPeriodNotLocked(invoice.companyId, new Date());
+    }
+
+    // No-op transition is fine.
+    if (oldStatus !== status && !canTransition(oldStatus, status)) {
+      return res.status(422).json({
+        message: `Invalid invoice status transition: ${oldStatus} → ${status}`,
+        code: 'INVALID_TRANSITION',
+        allowed: { from: oldStatus, to: status },
+      });
+    }
+
+    // 'paid' transition through this endpoint records the full payment via
+    // the transactional helper so we share the race-safe code path.
+    if (status === 'paid' && oldStatus !== 'paid') {
       if (!paymentAccountId) {
         return res.status(400).json({ message: 'Payment account is required when marking invoice as paid' });
       }
-
-      // Validate payment account belongs to company
       const paymentAccount = await storage.getAccount(paymentAccountId);
       if (!paymentAccount || paymentAccount.companyId !== invoice.companyId) {
         return res.status(400).json({ message: 'Invalid payment account' });
       }
-
-      // Validate payment account is an asset account (cash/bank)
       if (paymentAccount.type !== 'asset') {
         return res.status(400).json({ message: 'Payment account must be a cash or bank account' });
       }
 
       const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
       const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
-
-      if (accountsReceivable) {
-        // Generate entry number atomically via storage helper
-        const now = new Date();
-        const entryNumber = await storage.generateEntryNumber(invoice.companyId, now);
-
-        await storage.createJournalEntry(
-          {
-            companyId: invoice.companyId,
-            date: now,
-            memo: `Payment received for Invoice ${invoice.number}`,
-            entryNumber,
-            status: 'posted',
-            source: 'payment',
-            sourceId: invoice.id,
-            createdBy: userId,
-            postedBy: userId,
-            postedAt: now,
-          },
-          [
-            {
-              accountId: paymentAccountId,
-              debit: invoice.total,
-              credit: 0,
-              description: `Payment received - Invoice ${invoice.number}`,
-            },
-            {
-              accountId: accountsReceivable.id,
-              debit: 0,
-              credit: invoice.total,
-              description: `Clear A/R - Invoice ${invoice.number}`,
-            },
-          ]
-        );
-
-        console.log('[Invoices] Payment journal entry created:', entryNumber, 'for invoice:', id, 'to account:', paymentAccount.nameEn);
-      } else {
+      if (!accountsReceivable) {
         return res.status(500).json({ message: 'Accounts Receivable account not found' });
       }
+
+      // Compute the unpaid remainder so we don't double-record.
+      const previouslyPaid = await storage.getInvoicePaidTotal(id);
+      const remaining = invoice.total - previouslyPaid;
+
+      try {
+        if (remaining > 0.005) {
+          await storage.recordInvoicePayment({
+            invoiceId: id,
+            companyId: invoice.companyId,
+            amount: remaining,
+            date: new Date(),
+            method: 'manual',
+            reference: null,
+            notes: 'Marked paid via status update',
+            paymentAccountId,
+            paymentAccountCurrency: (paymentAccount as any).currency ?? null,
+            receivableAccountId: accountsReceivable.id,
+            createdBy: userId,
+          });
+        } else {
+          await storage.updateInvoiceStatus(id, 'paid');
+        }
+      } catch (err: any) {
+        if (err?.code === 'INVOICE_TERMINAL') {
+          return res.status(422).json({ message: err.message, code: err.code });
+        }
+        if (err?.code === 'CURRENCY_MISMATCH') {
+          return res.status(422).json({ message: err.message, code: err.code });
+        }
+        throw err;
+      }
+    } else if (oldStatus !== status) {
+      await storage.updateInvoiceStatus(id, status);
     }
 
-    console.log('[Invoices] Invoice status updated:', id, status);
+    const updatedInvoice = await storage.getInvoice(id);
+    console.log(`[Invoices] Status transition: ${oldStatus} -> ${status} for invoice ${id}`);
 
-    if (status !== oldStatus && (status === 'paid' || status === 'overdue' || status === 'void')) {
+    await recordAudit({
+      userId,
+      companyId: invoice.companyId,
+      action: 'invoice.status_change',
+      entityType: 'invoice',
+      entityId: id,
+      before: { status: oldStatus },
+      after: { status },
+      req,
+    });
+
+    if (status !== oldStatus && (status === 'paid' || status === 'void')) {
       createAndEmitNotification({
         userId,
         companyId: invoice.companyId,
         type: 'invoice_status_change',
         title: `Invoice ${status}`,
         message: `Invoice ${invoice.number} for ${invoice.customerName} marked as ${status}`,
-        priority: status === 'overdue' ? 'high' : 'normal',
+        priority: 'normal',
         relatedEntityType: 'invoice',
         relatedEntityId: id,
         actionUrl: '/invoices',
@@ -706,86 +820,104 @@ export function registerInvoiceRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
+    // Validate first — cheap rejects before we touch the DB.
+    const numericAmount = Number(amount);
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+      return res.status(422).json({ message: 'Payment amount must be a positive number' });
+    }
+    if (!paymentAccountId) {
+      return res.status(400).json({ message: 'paymentAccountId is required' });
+    }
+
     const invoice = await storage.getInvoice(invoiceId);
     if (!invoice || invoice.companyId !== companyId) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ message: 'Payment amount must be positive' });
-    }
-
-    if (!paymentAccountId) {
-      return res.status(400).json({ message: 'paymentAccountId is required' });
+    // Reject voided/cancelled invoices up front (the storage layer also
+    // re-checks under FOR UPDATE; this is a fast-path 422).
+    if (isTerminal(invoice.status)) {
+      return res.status(422).json({
+        message: `Cannot record payment on ${invoice.status} invoice`,
+        code: 'INVOICE_TERMINAL',
+      });
     }
 
     const paymentAccount = await storage.getAccount(paymentAccountId);
     if (!paymentAccount || paymentAccount.companyId !== companyId || paymentAccount.type !== 'asset') {
       return res.status(400).json({ message: 'Invalid payment account — must be an asset (cash/bank) account' });
     }
+    // Currency validation: bank-account currency (if present) must match the invoice.
+    const acctCurrency = (paymentAccount as any).currency as string | null | undefined;
+    if (acctCurrency && acctCurrency !== invoice.currency) {
+      return res.status(422).json({
+        message: `Payment account currency (${acctCurrency}) does not match invoice currency (${invoice.currency})`,
+        code: 'CURRENCY_MISMATCH',
+      });
+    }
+
+    const accounts = await storage.getAccountsByCompanyId(companyId);
+    const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+    if (!accountsReceivable) {
+      return res.status(500).json({ message: 'Accounts Receivable account not found' });
+    }
 
     const paymentDate = date ? new Date(date) : new Date();
 
-    // Create journal entry: Debit Cash/Bank, Credit Accounts Receivable
-    const accounts = await storage.getAccountsByCompanyId(companyId);
-    const accountsReceivable = accounts.find(a => a.code === '1040' && a.isSystemAccount);
+    // Block payment recording into a locked period.
+    await assertPeriodNotLocked(companyId, paymentDate);
 
-    let journalEntryId: string | undefined;
-    if (accountsReceivable) {
-      const entryNumber = await storage.generateEntryNumber(companyId, paymentDate);
-      const entry = await storage.createJournalEntry(
-        {
-          companyId,
-          date: paymentDate,
-          memo: `Payment received for Invoice ${invoice.number} - ${method || 'bank'}`,
-          entryNumber,
-          status: 'posted',
-          source: 'payment',
-          sourceId: invoice.id,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: paymentDate,
-        },
-        [
-          {
-            accountId: paymentAccountId,
-            debit: amount,
-            credit: 0,
-            description: `Payment received - Invoice ${invoice.number}`,
-          },
-          {
-            accountId: accountsReceivable.id,
-            debit: 0,
-            credit: amount,
-            description: `Clear A/R - Invoice ${invoice.number}`,
-          },
-        ]
-      );
-
-      journalEntryId = entry.id;
+    let result;
+    try {
+      result = await storage.recordInvoicePayment({
+        invoiceId,
+        companyId,
+        amount: numericAmount,
+        date: paymentDate,
+        method: method || 'bank',
+        reference: reference || null,
+        notes: notes || null,
+        paymentAccountId,
+        paymentAccountCurrency: acctCurrency ?? null,
+        receivableAccountId: accountsReceivable.id,
+        createdBy: userId,
+      });
+    } catch (err: any) {
+      const code = err?.code;
+      if (code === 'OVERPAYMENT' || code === 'INVOICE_TERMINAL' || code === 'CURRENCY_MISMATCH') {
+        return res.status(422).json({ message: err.message, code });
+      }
+      if (code === 'INVOICE_NOT_FOUND') {
+        return res.status(404).json({ message: err.message });
+      }
+      if (code === 'INVOICE_COMPANY_MISMATCH') {
+        return res.status(403).json({ message: err.message });
+      }
+      throw err;
     }
 
-    const payment = await storage.createInvoicePayment({
-      invoiceId,
+    await recordAudit({
+      userId,
       companyId,
-      amount,
-      date: paymentDate,
-      method: method || 'bank',
-      reference: reference || null,
-      notes: notes || null,
-      paymentAccountId,
-      journalEntryId: journalEntryId || null,
-      createdBy: userId,
-    } as any);
+      action: 'invoice.payment',
+      entityType: 'invoice',
+      entityId: invoiceId,
+      before: { status: invoice.status, totalPaid: result.totalPaid - numericAmount },
+      after: { status: result.invoice.status, totalPaid: result.totalPaid },
+      req,
+      extra: {
+        paymentId: result.payment.id,
+        amount: numericAmount,
+        method: method || 'bank',
+        journalEntryId: result.journalEntryId,
+      },
+    });
 
-    // Auto-update invoice status based on total payments
-    const totalPaid = await storage.getInvoicePaidTotal(invoiceId);
-    const newStatus = totalPaid >= invoice.total ? 'paid' : 'partial';
-    if (invoice.status !== newStatus && invoice.status !== 'void') {
-      await storage.updateInvoiceStatus(invoiceId, newStatus);
-    }
-
-    res.status(201).json({ payment, totalPaid, status: newStatus });
+    res.status(201).json({
+      payment: result.payment,
+      totalPaid: result.totalPaid,
+      status: result.invoice.status,
+    });
   }));
 
   // =====================================
@@ -808,6 +940,10 @@ export function registerInvoiceRoutes(app: Express) {
     if (original.invoiceType === 'credit_note') {
       return res.status(400).json({ message: 'Cannot create a credit note of a credit note' });
     }
+
+    // Block credit note creation if today is in a locked period — the credit
+    // note posts a reversing JE on `now`.
+    await assertPeriodNotLocked(companyId, new Date());
 
     const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
 
@@ -895,6 +1031,21 @@ export function registerInvoiceRoutes(app: Express) {
         cnLines
       );
     }
+
+    await recordAudit({
+      userId,
+      companyId,
+      action: 'invoice.credit_note',
+      entityType: 'invoice',
+      entityId: creditNote.id,
+      before: { originalInvoiceId: invoiceId, originalNumber: original.number },
+      after: {
+        creditNoteNumber: cnNumber,
+        total: creditNote.total,
+        currency: creditNote.currency,
+      },
+      req,
+    });
 
     res.status(201).json(creditNote);
   }));

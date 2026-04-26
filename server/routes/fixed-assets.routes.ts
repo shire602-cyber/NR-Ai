@@ -4,6 +4,7 @@ import { storage } from '../storage';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('fixed-assets');
 
@@ -68,6 +69,10 @@ export function registerFixedAssetRoutes(app: Express) {
       return res.status(400).json({ message: 'assetName, category, purchaseDate, purchaseCost, and usefulLifeYears are required' });
     }
 
+    // Block creating an asset purchased inside a locked period — the
+    // capitalization/depreciation journal entries derive from purchase_date.
+    await assertPeriodNotLocked(companyId, purchaseDate);
+
     const cost = parseFloat(purchaseCost);
     const salvage = parseFloat(salvageValue || 0);
     const nbv = cost - 0; // Initial NBV = cost (no depreciation yet)
@@ -104,6 +109,13 @@ export function registerFixedAssetRoutes(app: Express) {
       purchaseCost, salvageValue, usefulLifeYears, depreciationMethod,
       location, serialNumber, notes, status
     } = req.body;
+
+    // Block updates that touch a locked period — both the existing purchase
+    // date and the requested new purchase date.
+    await assertPeriodNotLocked(asset.company_id, asset.purchase_date);
+    if (purchaseDate) {
+      await assertPeriodNotLocked(asset.company_id, purchaseDate);
+    }
 
     const result = await pool.query(
       `UPDATE fixed_assets SET
@@ -178,6 +190,9 @@ export function registerFixedAssetRoutes(app: Express) {
     if (asset.status !== 'active') {
       return res.status(400).json({ message: 'Can only depreciate active assets' });
     }
+
+    // Single-asset depreciate posts a JE on today's date.
+    await assertPeriodNotLocked(asset.company_id, new Date());
 
     const cost = parseFloat(asset.purchase_cost);
     const salvage = parseFloat(asset.salvage_value || 0);
@@ -273,6 +288,11 @@ export function registerFixedAssetRoutes(app: Express) {
     if (!month || !year) {
       return res.status(400).json({ message: 'month and year are required' });
     }
+
+    // Block batch depreciation when the target period is locked — the entries
+    // are dated to (year, month, 1).
+    const targetEntryDate = new Date(year, month - 1, 1);
+    await assertPeriodNotLocked(companyId, targetEntryDate);
 
     const assetsResult = await pool.query(
       `SELECT * FROM fixed_assets WHERE company_id = $1 AND status = 'active'`,

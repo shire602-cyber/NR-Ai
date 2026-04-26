@@ -110,6 +110,19 @@ export function registerMonthEndRoutes(app: Express) {
       }
 
       const record = await lockPeriod(companyId, periodEnd, userId);
+
+      const { recordAudit } = await import('../services/audit.service');
+      await recordAudit({
+        userId,
+        companyId,
+        action: 'period.lock',
+        entityType: 'period',
+        entityId: periodEnd,
+        before: null,
+        after: { periodEnd, lockedBy: userId },
+        req,
+      });
+
       res.json(record);
     })
   );

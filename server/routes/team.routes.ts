@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { recordAudit } from "../services/audit.service";
 
 export function registerTeamRoutes(app: Express) {
   // =====================================
@@ -72,6 +73,18 @@ export function registerTeamRoutes(app: Express) {
     }
 
     const companyUser = await storage.updateCompanyUser(memberId, { role });
+
+    await recordAudit({
+      userId,
+      companyId,
+      action: 'team.role_change',
+      entityType: 'company_user',
+      entityId: memberId,
+      before: null,
+      after: { userId: companyUser.userId, role: companyUser.role },
+      req,
+    });
+
     res.json(companyUser);
   }));
 
@@ -86,6 +99,18 @@ export function registerTeamRoutes(app: Express) {
     }
 
     await storage.deleteCompanyUser(memberId);
+
+    await recordAudit({
+      userId,
+      companyId,
+      action: 'team.remove',
+      entityType: 'company_user',
+      entityId: memberId,
+      before: null,
+      after: null,
+      req,
+    });
+
     res.status(204).send();
   }));
 }

@@ -294,8 +294,26 @@ export async function generateClosingEntries(
   periodEnd: string,
   userId: string
 ): Promise<ClosingJournalEntry> {
-  // Idempotency: refuse to generate closing entries twice for the same period.
-  // Without this, calling twice double-closes revenue/expense and corrupts equity.
+  // Idempotency check #1: refuse to generate closing entries if the period is
+  // already formally locked in month_end_close.
+  await ensureMonthEndTable();
+  const existingClose = await pool.query(
+    `SELECT id, status, closing_entry_id
+     FROM month_end_close
+     WHERE company_id = $1 AND period_end = $2::date`,
+    [companyId, periodEnd]
+  );
+  const closeRow = existingClose.rows[0];
+  if (closeRow && closeRow.status === 'locked') {
+    throw new Error(
+      `Period ending ${periodEnd} is already closed (closing entry ${closeRow.closing_entry_id || 'unknown'}). ` +
+      `Unlock the period before generating new closing entries.`
+    );
+  }
+
+  // Idempotency check #2: refuse to generate closing entries twice for the
+  // same period. Without this, calling twice double-closes revenue/expense
+  // and corrupts equity even when month_end_close has not been locked yet.
   const existingClosingResult = await pool.query(
     `SELECT id, entry_number, date, memo, status
      FROM journal_entries

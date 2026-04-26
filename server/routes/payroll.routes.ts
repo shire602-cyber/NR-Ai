@@ -12,6 +12,7 @@ import { storage } from '../storage';
 import { db } from '../db';
 import { generateSIFFile } from '../services/wps-sif.service';
 import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('payroll');
 
@@ -444,6 +445,12 @@ export function registerPayrollRoutes(app: Express) {
     if (run.status === 'draft') {
       return res.status(400).json({ message: 'Please calculate payroll before approving' });
     }
+
+    // Approving a payroll run posts wage/salary journal entries for the
+    // period — block if that period is locked. Use the last day of the
+    // payroll period as the JE date.
+    const periodEndDate = new Date(run.period_year, run.period_month, 0);
+    await assertPeriodNotLocked(run.company_id, periodEndDate);
 
     const updated = await queryOne(
       `UPDATE payroll_runs SET status = 'approved', approved_by = $1, approved_at = NOW()
