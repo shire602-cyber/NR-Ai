@@ -23,6 +23,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2, Edit, RotateCcw, Lock, FileText, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { VirtualList } from '@/components/VirtualList';
 
 const journalLineSchema = z.object({
   accountId: z.string().uuid('Please select an account'),
@@ -515,8 +516,13 @@ export default function Journal() {
       {isLoading ? (
         <Skeleton className="h-96" />
       ) : entries && entries.length > 0 ? (
-        <div className="space-y-4">
-          {entries.map((entry: any) => {
+        <VirtualList
+          items={entries as any[]}
+          estimateSize={220}
+          height={Math.min(900, Math.max(600, (entries as any[]).length * 220))}
+          getKey={(entry) => entry.id}
+          className="space-y-4"
+          renderItem={(entry: any) => {
             const isPosted = entry.status === 'posted';
             const isDraft = entry.status === 'draft';
             const isVoid = entry.status === 'void';
@@ -684,8 +690,8 @@ export default function Journal() {
                 </CardContent>
               </Card>
             );
-          })}
-        </div>
+          }}
+        />
       ) : (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
