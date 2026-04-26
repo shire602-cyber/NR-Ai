@@ -10,12 +10,14 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import passport from 'passport';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 
 import { validateEnv, isProduction, isDevelopment } from './config/env';
 import { createLogger } from './config/logger';
 import { applySecurityMiddleware } from './middleware/security';
 import { requestLogger } from './middleware/requestLogger';
 import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
+import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from './middleware/csrf';
 import { registerRoutes } from './routes';
 import { initSocketServer } from './services/socket.service';
 import { setupVite, serveStatic } from './vite';
@@ -58,6 +60,9 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
+// ─── Cookie parser (must run before CSRF + session) ─────────
+app.use(cookieParser(env.SESSION_SECRET));
+
 // ─── Session configuration ───────────────────────────────────
 const PgSession = connectPgSimple(session);
 app.use(
@@ -86,6 +91,13 @@ import './auth';
 
 // ─── Request logging ─────────────────────────────────────────
 app.use(requestLogger);
+
+// ─── CSRF token endpoint (public, sets cookie + returns header token) ─
+app.get('/api/csrf-token', csrfTokenHandler);
+
+// ─── CSRF protection on state-changing requests ─────────────
+// Skips Bearer-auth requests and a small allowlist (login/register/portal).
+app.use(csrfProtection);
 
 // ─── Health check (before auth, always accessible) ───────────
 app.get('/health', async (_req, res) => {
@@ -142,6 +154,9 @@ async function bootstrap() {
 
   // ─── API 404 handler (before static/SPA fallback) ───────
   app.use('/api/*', notFoundHandler);
+
+  // ─── CSRF error handler runs before global handler ───────
+  app.use(csrfErrorHandler);
 
   // ─── Error handling (MUST be after routes) ───────────────
   app.use(globalErrorHandler);
