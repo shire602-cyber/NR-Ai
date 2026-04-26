@@ -51,7 +51,6 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useTranslation, useI18n } from '@/lib/i18n';
 import { useRTL } from '@/components/RTLProvider';
@@ -385,18 +384,21 @@ export function AppSidebar() {
   return (
     <Sidebar side={isRTL ? 'right' : 'left'}>
       <motion.div
-        initial={{ opacity: 0, x: rtlValue(-20, 20) }}
+        initial={{ opacity: 0, x: rtlValue(-12, 12) }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.4 }}
       >
-        <SidebarHeader className="p-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center shrink-0">
-              <Wallet className="w-5 h-5 text-primary-foreground" />
+        <SidebarHeader className="px-3 pt-4 pb-3 border-b border-sidebar-border/60">
+          <div className="flex items-center gap-2.5">
+            <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-sidebar-primary to-sidebar-primary/70 flex items-center justify-center shrink-0 shadow-sm ring-1 ring-sidebar-primary/30">
+              <Wallet className="w-4 h-4 text-sidebar-primary-foreground" strokeWidth={2.25} />
+              <span aria-hidden className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot" />
             </div>
-            <div>
-              <div className="font-semibold text-sm">Muhasib.ai</div>
-              <div className="text-xs text-muted-foreground">
+            <div className="min-w-0">
+              <div className="font-semibold text-[13px] tracking-tight text-sidebar-foreground leading-tight">
+                Muhasib<span className="text-sidebar-primary">.ai</span>
+              </div>
+              <div className="text-[10.5px] text-sidebar-foreground/55 uppercase tracking-[0.12em] leading-tight font-medium">
                 {t.smartAccounting ?? 'Smart Accounting'}
               </div>
             </div>
@@ -404,11 +406,14 @@ export function AppSidebar() {
         </SidebarHeader>
       </motion.div>
 
-      <SidebarContent>
-        {/* ── Client portal — simplified flat view (unchanged per spec) ── */}
+      <SidebarContent className="px-1.5">
+        {/* ── Client portal — simplified flat view ── */}
         {userType === 'client' && (
           <>
-            <SidebarMenu className="px-2 pt-2">
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
+              Workspace
+            </div>
+            <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={location === '/dashboard'}
@@ -421,11 +426,17 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <SidebarMenu className="px-2">
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
+              Documents
+            </div>
+            <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <SidebarMenu className="px-2">
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
+              Insights
+            </div>
+            <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={location === '/reports'}
@@ -443,8 +454,10 @@ export function AppSidebar() {
         {/* ── Customer / admin — 7 collapsible accordion groups ── */}
         {(userType === 'customer' || userType === 'admin') && (
           <>
-            {/* Dashboard — direct link, no sub-items */}
-            <SidebarMenu className="px-2 pt-2">
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
+              Overview
+            </div>
+            <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={location === '/dashboard'}
@@ -457,34 +470,39 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            {/* Collapsible groups */}
-            <SidebarMenu className="px-2 pb-4">
+            <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
+              Operations
+            </div>
+            <SidebarMenu className="px-1.5 pb-4">
               {allGroups.map(renderNavGroup)}
             </SidebarMenu>
           </>
         )}
       </SidebarContent>
 
-      <SidebarFooter className="p-4 space-y-2">
-        <Button
-          variant="outline"
-          className="w-full justify-start"
+      <SidebarFooter className="px-3 py-3 border-t border-sidebar-border/60 space-y-1.5">
+        <button
+          type="button"
           onClick={toggleLanguage}
           data-testid="button-language-toggle"
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/80 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors"
         >
-          <Languages className="w-4 h-4 me-2" />
-          {locale === 'en' ? 'Arabic' : 'English'}
-        </Button>
+          <Languages className="w-4 h-4 opacity-70" />
+          <span className="text-[13px]">{locale === 'en' ? 'العربية' : 'English'}</span>
+          <span className="ms-auto text-[10px] uppercase tracking-wider text-sidebar-foreground/45 font-medium">
+            {locale === 'en' ? 'AR' : 'EN'}
+          </span>
+        </button>
 
-        <Button
-          variant="ghost"
-          className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+        <button
+          type="button"
           onClick={handleLogout}
           data-testid="button-logout"
+          className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
         >
-          <LogOut className="w-4 h-4 me-2" />
-          {t.logout ?? 'Logout'}
-        </Button>
+          <LogOut className="w-4 h-4 opacity-70" />
+          <span className="text-[13px]">{t.logout ?? 'Sign out'}</span>
+        </button>
       </SidebarFooter>
     </Sidebar>
   );
