@@ -146,6 +146,7 @@ import '@/styles/mobile.css';
 import { OnboardingWizard } from '@/components/Onboarding';
 import { CommandPaletteProvider } from '@/components/CommandPalette';
 import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
+import { SkipLink } from '@/components/SkipLink';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
@@ -166,10 +167,12 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
+      <SkipLink />
       <div className="flex h-screen w-full bg-background">
         <AppSidebar />
         <div className="flex flex-col flex-1 min-w-0">
           <motion.header
+            role="banner"
             className="flex items-center justify-between gap-3 px-3 md:px-6 h-14 border-b border-border/70 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 sticky top-0 z-20"
             initial={{ y: -16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -178,6 +181,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               <SidebarTrigger
                 data-testid="button-sidebar-toggle"
+                aria-label="Toggle sidebar"
                 className="text-muted-foreground hover:text-foreground"
               />
               <div className="hidden md:flex items-center gap-2 ps-2 text-xs text-muted-foreground">
@@ -199,6 +203,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   data-testid="button-profile"
+                  aria-label={t.profile}
                   className="group flex items-center gap-2 ps-1.5 pe-3 py-1 rounded-full border border-border/70 bg-card/50 hover:bg-card hover:border-border transition-colors"
                 >
                   <span className="relative flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary/70 text-primary-foreground shadow-xs">
@@ -211,7 +216,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </Link>
             </div>
           </motion.header>
-          <main className="flex-1 overflow-auto">
+          <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
               <AnimatePresence mode="wait">
