@@ -499,7 +499,9 @@ function CustomerDashboard() {
                 <EmptyState
                   icon={BarChart3}
                   title="No revenue data yet"
-                  body="Start logging invoices to see your trend curve."
+                  body="Issue your first invoice and the trend chart fills in automatically."
+                  actionLabel="Create invoice"
+                  actionHref="/invoices"
                 />
               )}
             </CardContent>

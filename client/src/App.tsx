@@ -21,6 +21,8 @@ import { PageSkeleton } from '@/components/PageSkeleton';
 const NotFound = lazy(() => import('@/pages/not-found'));
 const Login = lazy(() => import('@/pages/Login'));
 const Register = lazy(() => import('@/pages/Register'));
+const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const LandingPage = lazy(() => import('@/pages/LandingPage'));
 const Services = lazy(() => import('@/pages/Services'));
@@ -350,7 +352,16 @@ function Router() {
   }
 
   // Public routes (no sidebar)
-  if (location === '/login' || location === '/register' || location === '/services' || location === '/pricing' || location.startsWith('/view/invoice/') || location.startsWith('/portal/')) {
+  if (
+    location === '/login' ||
+    location === '/register' ||
+    location === '/forgot-password' ||
+    location === '/reset-password' ||
+    location === '/services' ||
+    location === '/pricing' ||
+    location.startsWith('/view/invoice/') ||
+    location.startsWith('/portal/')
+  ) {
     return (
       <AnimatePresence mode="wait">
         <motion.div
@@ -364,6 +375,8 @@ function Router() {
             <Switch>
               <Route path="/login" component={Login} />
               <Route path="/register" component={Register} />
+              <Route path="/forgot-password" component={ForgotPassword} />
+              <Route path="/reset-password" component={ResetPassword} />
               <Route path="/services" component={Services} />
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
               <Route path="/portal/:token" component={CustomerPortal} />

@@ -84,14 +84,26 @@ export const tokenBlacklist = pgTable("token_blacklist", {
 });
 export type TokenBlacklistEntry = typeof tokenBlacklist.$inferSelect;
 
-// One-time password-reset tokens (24h validity).
+// One-time tokens issued by /auth/forgot-password and consumed by /auth/reset-password.
+// usedAt is set the moment the token is redeemed so a captured token cannot be replayed.
 export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  tokenHash: text("token_hash").notNull().unique(),
+  tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the token; raw token only ever lives in the email
   expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tokenHashIdx: index("idx_password_reset_token_hash").on(table.tokenHash),
+  userIdIdx: index("idx_password_reset_user_id").on(table.userId),
+}));
+
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
+  id: true,
+  createdAt: true,
 });
+
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 
 // Email-verification tokens — issued on registration.
@@ -103,6 +115,7 @@ export const emailVerificationTokens = pgTable("email_verification_tokens", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
+
 
 // ===========================
 // Companies

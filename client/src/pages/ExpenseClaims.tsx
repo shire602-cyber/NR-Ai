@@ -58,6 +58,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
+import { EmptyState } from '@/components/EmptyState';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { getStoredUser } from '@/lib/auth';
@@ -475,9 +476,16 @@ export default function ExpenseClaims() {
 
   if (!companyId) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
-      </div>
+      <EmptyState
+        icon={Receipt}
+        title="Set up your company first"
+        description="Expense claims live inside a company workspace. Finish onboarding to start tracking reimbursements."
+        primaryAction={{
+          label: 'Continue setup',
+          onClick: () => { window.location.href = '/onboarding'; },
+          testId: 'button-go-onboarding',
+        }}
+      />
     );
   }
 
@@ -487,7 +495,33 @@ export default function ExpenseClaims() {
     claims: ExpenseClaim[];
     showActions?: boolean;
     isReview?: boolean;
-  }) => (
+  }) => {
+    if (claims.length === 0) {
+      // Empty state: review tab gets a different message because reviewers
+      // can't create claims — they wait for staff to submit.
+      return (
+        <EmptyState
+          icon={Receipt}
+          title={isReview ? 'Nothing to review yet' : 'No expense claims yet'}
+          description={
+            isReview
+              ? 'When staff submit expense claims, they will appear here for approval.'
+              : 'Capture out-of-pocket spend, attach receipts, and submit for reimbursement.'
+          }
+          primaryAction={
+            !isReview
+              ? {
+                  label: 'New claim',
+                  icon: Plus,
+                  onClick: () => setClaimDialogOpen(true),
+                  testId: 'button-create-first-claim',
+                }
+              : undefined
+          }
+        />
+      );
+    }
+    return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
@@ -501,14 +535,7 @@ export default function ExpenseClaims() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {claims.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={showActions ? 6 : 5} className="text-center py-8 text-muted-foreground">
-                No expense claims found.
-              </TableCell>
-            </TableRow>
-          ) : (
-            claims.map((claim) => (
+          {claims.map((claim) => (
               <TableRow key={claim.id}>
                 <TableCell className="font-mono text-sm text-muted-foreground">
                   {claim.claim_number}
@@ -599,12 +626,12 @@ export default function ExpenseClaims() {
                   </TableCell>
                 )}
               </TableRow>
-            ))
-          )}
+            ))}
         </TableBody>
       </Table>
     </div>
-  );
+    );
+  };
 
   // ─── Render ───────────────────────────────────────────
 

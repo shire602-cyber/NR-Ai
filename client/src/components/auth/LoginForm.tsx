@@ -103,7 +103,16 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
               name="password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t.password}</FormLabel>
+                  <div className="flex items-center justify-between">
+                    <FormLabel>{t.password}</FormLabel>
+                    <Link
+                      href="/forgot-password"
+                      className="text-xs text-primary hover:underline"
+                      data-testid="link-forgot-password"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
                   <FormControl>
                     <Input
                       {...field}

@@ -1469,7 +1469,25 @@ export default function Receipts() {
               description={
                 dateRange.from || dateRange.to
                   ? 'Try widening the filter or clearing it to see all receipts.'
-                  : "Upload a photo or PDF of a receipt above and we'll extract the data automatically."
+                  : "Snap a photo or upload a PDF — AI extracts merchant, VAT, and category automatically."
+              }
+              primaryAction={
+                !(dateRange.from || dateRange.to)
+                  ? {
+                      label: 'Upload receipt',
+                      icon: Upload,
+                      onClick: () => document.getElementById('file-input')?.click(),
+                      testId: 'button-upload-first-receipt',
+                    }
+                  : undefined
+              }
+              secondaryAction={
+                dateRange.from || dateRange.to
+                  ? {
+                      label: 'Clear filter',
+                      onClick: () => setDateRange({ from: undefined, to: undefined }),
+                    }
+                  : undefined
               }
             />
           )}
