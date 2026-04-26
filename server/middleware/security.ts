@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import type { Express, Request, Response, NextFunction } from 'express';
 import { getEnv, isProduction } from '../config/env';
 import { createLogger } from '../config/logger';
+import { cspNonce, buildCspDirectives, cspReportHandler } from './csp';
 
 const log = createLogger('security');
 
@@ -14,29 +15,34 @@ const log = createLogger('security');
 export function applySecurityMiddleware(app: Express): void {
   const env = getEnv();
 
+  // ─── Per-request CSP nonce (must run before helmet) ───────
+  app.use(cspNonce);
+
+  // CSP violation reports come in as POST with JSON content type — accept
+  // both standard `application/csp-report` and `application/json` payloads.
+  app.use('/api/csp-report', (req, res, next) => {
+    const ctype = (req.headers['content-type'] || '').toLowerCase();
+    if (ctype.includes('csp-report')) {
+      // helmet's CSP report-uri sends application/csp-report; parse manually
+      let raw = '';
+      req.setEncoding('utf8');
+      req.on('data', (c) => (raw += c));
+      req.on('end', () => {
+        try { req.body = raw ? JSON.parse(raw) : {}; } catch { req.body = {}; }
+        next();
+      });
+      return;
+    }
+    next();
+  });
+  app.post('/api/csp-report', cspReportHandler);
+
   // ─── Helmet: Security Headers ─────────────────────────────
   // Sets X-Content-Type-Options, X-Frame-Options, X-XSS-Protection,
   // Content-Security-Policy, Strict-Transport-Security, etc.
   app.use(
     helmet({
-      contentSecurityPolicy: isProduction()
-        ? {
-            directives: {
-              defaultSrc: ["'self'"],
-              scriptSrc: ["'self'"],
-              styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-              fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-              imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-              connectSrc: ["'self'"],
-              workerSrc: ["'self'", 'blob:'],
-              objectSrc: ["'none'"],
-              baseUri: ["'self'"],
-              formAction: ["'self'"],
-              frameAncestors: ["'none'"],
-              upgradeInsecureRequests: [],
-            },
-          }
-        : false, // Disable CSP in development (Vite HMR needs inline scripts)
+      contentSecurityPolicy: buildCspDirectives(),
       crossOriginEmbedderPolicy: false, // Allow embedding (PDF viewers, etc.)
     })
   );
