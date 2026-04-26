@@ -130,6 +130,8 @@ import '@/styles/mobile.css';
 
 // Components
 import { OnboardingWizard } from '@/components/Onboarding';
+import { CommandPaletteProvider } from '@/components/CommandPalette';
+import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
 
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
@@ -216,6 +218,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <OnboardingWizard />
+      <CommandPaletteProvider />
+      <GlobalShortcutsProvider />
     </SidebarProvider>
   );
 }
