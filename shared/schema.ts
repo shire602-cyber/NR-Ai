@@ -450,6 +450,7 @@ export const receipts = pgTable("receipts", {
   accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
   paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit
   posted: boolean("posted").default(false).notNull(), // Whether journal entry has been created
+  reverseCharge: boolean("reverse_charge").default(false).notNull(), // FTA reverse-charge: buyer self-assesses VAT
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id), // Link to created journal entry
   imageData: text("image_data"),
   imagePath: text("image_path"),
