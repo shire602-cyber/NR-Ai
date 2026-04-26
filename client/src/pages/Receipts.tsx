@@ -25,6 +25,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
+import { VirtualList } from '@/components/VirtualList';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useForm } from 'react-hook-form';
@@ -1365,11 +1366,16 @@ export default function Receipts() {
               ))}
             </div>
           ) : filteredReceipts && filteredReceipts.length > 0 ? (
-            <div className="space-y-2">
-              {filteredReceipts.map((receipt: any) => (
+            <VirtualList
+              items={filteredReceipts as any[]}
+              estimateSize={88}
+              height={Math.min(720, Math.max(400, filteredReceipts.length * 88))}
+              getKey={(receipt) => receipt.id}
+              className="space-y-2"
+              renderItem={(receipt: any) => (
                 <div
                   key={receipt.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover-elevate"
+                  className="flex items-center justify-between p-4 border rounded-lg hover-elevate mb-2"
                   data-testid={`receipt-${receipt.id}`}
                 >
                   <div className="flex items-center gap-4">
@@ -1430,8 +1436,8 @@ export default function Receipts() {
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            />
           ) : (
             <p className="text-center text-muted-foreground py-8">
               No receipts yet. Upload your first receipt above!

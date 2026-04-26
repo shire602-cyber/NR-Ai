@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { VirtualTable, type VirtualTableColumn } from '@/components/VirtualTable';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -440,106 +441,114 @@ export default function CustomerContacts() {
                   </p>
                 </div>
               ) : (
-                <ScrollArea className="h-[500px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>TRN</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead className="w-[140px]">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredContacts.map((contact) => (
-                        <TableRow key={contact.id} data-testid={`row-contact-${contact.id}`}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Building2 className="w-4 h-4 text-muted-foreground" />
-                              <span className="font-medium">{contact.name}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Mail className="w-4 h-4 text-muted-foreground" />
-                              {contact.email}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {contact.phone && (
-                              <div className="flex items-center gap-2">
-                                <Phone className="w-4 h-4 text-muted-foreground" />
-                                {contact.phone}
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {contact.trnNumber ? (
-                              <Badge variant="outline">{contact.trnNumber}</Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {(contact.city || contact.country) && (
-                              <div className="flex items-center gap-2">
-                                <MapPin className="w-4 h-4 text-muted-foreground" />
-                                {[contact.city, contact.country].filter(Boolean).join(', ')}
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              {(() => {
-                                const wa = pickWhatsAppNumber(contact);
-                                return wa ? (
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    title="Send via WhatsApp"
-                                    className="text-green-600 hover:text-green-700"
-                                    onClick={() => setComposerContact(contact)}
-                                    data-testid={`button-whatsapp-contact-${contact.id}`}
-                                  >
-                                    <SiWhatsapp className="w-4 h-4" />
-                                  </Button>
-                                ) : null;
-                              })()}
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                title="Generate Portal Link"
-                                onClick={() => portalLinkMutation.mutate({ contactId: contact.id, contactName: contact.name })}
-                                disabled={portalLinkMutation.isPending}
-                                data-testid={`button-portal-link-${contact.id}`}
-                              >
-                                <Link2 className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => setEditContact(contact)}
-                                data-testid={`button-edit-contact-${contact.id}`}
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => setContactToDelete(contact)}
-                                data-testid={`button-delete-contact-${contact.id}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
+                <VirtualTable<CustomerContact>
+                  rows={filteredContacts}
+                  height={500}
+                  estimateRowHeight={56}
+                  getRowId={(contact) => contact.id}
+                  rowTestId={(contact) => `row-contact-${contact.id}`}
+                  columns={[
+                    {
+                      key: 'name',
+                      header: 'Name',
+                      cell: (contact) => (
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-muted-foreground" />
+                          <span className="font-medium">{contact.name}</span>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: 'email',
+                      header: 'Email',
+                      cell: (contact) => (
+                        <div className="flex items-center gap-2 truncate">
+                          <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="truncate">{contact.email}</span>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: 'phone',
+                      header: 'Phone',
+                      cell: (contact) =>
+                        contact.phone ? (
+                          <div className="flex items-center gap-2">
+                            <Phone className="w-4 h-4 text-muted-foreground" />
+                            {contact.phone}
+                          </div>
+                        ) : null,
+                    },
+                    {
+                      key: 'trn',
+                      header: 'TRN',
+                      cell: (contact) =>
+                        contact.trnNumber ? (
+                          <Badge variant="outline">{contact.trnNumber}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        ),
+                    },
+                    {
+                      key: 'location',
+                      header: 'Location',
+                      cell: (contact) =>
+                        (contact.city || contact.country) ? (
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-4 h-4 text-muted-foreground" />
+                            {[contact.city, contact.country].filter(Boolean).join(', ')}
+                          </div>
+                        ) : null,
+                    },
+                    {
+                      key: 'actions',
+                      header: 'Actions',
+                      width: '170px',
+                      cell: (contact) => (
+                        <div className="flex items-center gap-1">
+                          {pickWhatsAppNumber(contact) && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              title="Send via WhatsApp"
+                              className="text-green-600 hover:text-green-700"
+                              onClick={() => setComposerContact(contact)}
+                              data-testid={`button-whatsapp-contact-${contact.id}`}
+                            >
+                              <SiWhatsapp className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title="Generate Portal Link"
+                            onClick={() => portalLinkMutation.mutate({ contactId: contact.id, contactName: contact.name })}
+                            disabled={portalLinkMutation.isPending}
+                            data-testid={`button-portal-link-${contact.id}`}
+                          >
+                            <Link2 className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditContact(contact)}
+                            data-testid={`button-edit-contact-${contact.id}`}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setContactToDelete(contact)}
+                            data-testid={`button-delete-contact-${contact.id}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ),
+                    },
+                  ]}
+                />
               )}
             </CardContent>
           </Card>
