@@ -27,6 +27,8 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/loading-skeletons';
 import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from '@/lib/export';
 import { Plus, FileText, FileCode, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, Send, DollarSign, RefreshCw, RotateCcw } from 'lucide-react';
 import { SiGooglesheets, SiWhatsapp } from 'react-icons/si';
@@ -1193,21 +1195,21 @@ export default function Invoices() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={6}>
-                      <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <FileText className="w-12 h-12 text-muted-foreground/40 mb-4" />
-                        <p className="font-medium text-foreground mb-1">No invoices yet</p>
-                        <p className="text-sm text-muted-foreground mb-6">
-                          {dateRange.from || dateRange.to
-                            ? 'No invoices found in this date range.'
-                            : 'Create your first invoice to get started.'}
-                        </p>
-                        {!dateRange.from && !dateRange.to && (
-                          <Button size="sm" onClick={() => setDialogOpen(true)}>
-                            <Plus className="w-4 h-4 mr-2" />
-                            New Invoice
-                          </Button>
-                        )}
-                      </div>
+                      <EmptyState
+                        icon={FileText}
+                        title={dateRange.from || dateRange.to ? 'No invoices in range' : 'No invoices yet'}
+                        description={
+                          dateRange.from || dateRange.to
+                            ? 'No invoices match the selected date range. Try a wider window or clear the filter.'
+                            : 'Bill clients in seconds with FTA-compliant tax invoices.'
+                        }
+                        action={
+                          dateRange.from || dateRange.to
+                            ? { label: 'Clear filter', variant: 'outline', onClick: () => setDateRange({ from: undefined, to: undefined }) }
+                            : { label: 'New Invoice', icon: Plus, onClick: () => setDialogOpen(true) }
+                        }
+                        testId="empty-state-invoices"
+                      />
                     </TableCell>
                   </TableRow>
                 )}

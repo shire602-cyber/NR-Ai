@@ -22,6 +22,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton, StatCardSkeleton } from '@/components/ui/loading-skeletons';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Table,
@@ -444,15 +447,15 @@ export default function ExpenseClaims() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'draft':
-        return <Badge variant="secondary" className="bg-gray-100 text-gray-800 hover:bg-gray-100">Draft</Badge>;
+        return <StatusBadge tone="neutral">Draft</StatusBadge>;
       case 'submitted':
-        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Submitted</Badge>;
+        return <StatusBadge tone="info">Submitted</StatusBadge>;
       case 'approved':
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Approved</Badge>;
+        return <StatusBadge tone="success">Approved</StatusBadge>;
       case 'rejected':
-        return <Badge variant="destructive">Rejected</Badge>;
+        return <StatusBadge tone="danger">Rejected</StatusBadge>;
       case 'paid':
-        return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Paid</Badge>;
+        return <StatusBadge tone="accent">Paid</StatusBadge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -467,27 +470,49 @@ export default function ExpenseClaims() {
 
   if (isLoadingCompany) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || 'Loading...'}</div>
+      <div className="space-y-6">
+        <StatCardSkeleton count={3} />
+        <Card>
+          <CardContent className="pt-6">
+            <TableSkeleton rows={5} columns={6} />
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (!companyId) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
-      </div>
+      <EmptyState
+        icon={Receipt}
+        title="No company selected"
+        description="Create or select a company before submitting expense claims."
+      />
     );
   }
 
   // ─── Claims Table Component ───────────────────────────
 
-  const ClaimsTable = ({ claims, showActions = true, isReview = false }: {
+  const ClaimsTable = ({ claims, showActions = true, isReview = false, emptyTitle, emptyDescription, emptyAction }: {
     claims: ExpenseClaim[];
     showActions?: boolean;
     isReview?: boolean;
-  }) => (
+    emptyTitle?: string;
+    emptyDescription?: string;
+    emptyAction?: { label: string; onClick: () => void };
+  }) => {
+    if (claims.length === 0) {
+      return (
+        <EmptyState
+          icon={Receipt}
+          title={emptyTitle ?? 'No expense claims yet'}
+          description={emptyDescription ?? 'Submit your first reimbursement to get started.'}
+          action={emptyAction ? { label: emptyAction.label, onClick: emptyAction.onClick, icon: Plus } : undefined}
+          testId="empty-state-expense-claims"
+        />
+      );
+    }
+    return (
     <div className="overflow-x-auto">
       <Table>
         <TableHeader>
@@ -501,14 +526,7 @@ export default function ExpenseClaims() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {claims.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={showActions ? 6 : 5} className="text-center py-8 text-muted-foreground">
-                No expense claims found.
-              </TableCell>
-            </TableRow>
-          ) : (
-            claims.map((claim) => (
+          {claims.map((claim) => (
               <TableRow key={claim.id}>
                 <TableCell className="font-mono text-sm text-muted-foreground">
                   {claim.claim_number}
@@ -547,7 +565,7 @@ export default function ExpenseClaims() {
                             size="sm"
                             onClick={() => submitClaimMutation.mutate(claim.id)}
                             title="Submit for Review"
-                            className="text-blue-600 hover:text-blue-700"
+                            className="text-primary hover:text-primary"
                           >
                             <Send className="w-4 h-4" />
                           </Button>
@@ -569,7 +587,7 @@ export default function ExpenseClaims() {
                             size="sm"
                             onClick={() => handleOpenReviewDialog(claim.id, 'approve')}
                             title="Approve"
-                            className="text-green-600 hover:text-green-700"
+                            className="text-[hsl(var(--chart-5))] hover:text-[hsl(var(--chart-5))]"
                           >
                             <CheckCircle className="w-4 h-4" />
                           </Button>
@@ -578,7 +596,7 @@ export default function ExpenseClaims() {
                             size="sm"
                             onClick={() => handleOpenReviewDialog(claim.id, 'reject')}
                             title="Reject"
-                            className="text-red-600 hover:text-red-700"
+                            className="text-destructive hover:text-destructive"
                           >
                             <XCircle className="w-4 h-4" />
                           </Button>
@@ -590,7 +608,7 @@ export default function ExpenseClaims() {
                           size="sm"
                           onClick={() => handleOpenPaymentDialog(claim.id)}
                           title="Mark as Paid"
-                          className="text-purple-600 hover:text-purple-700"
+                          className="text-[hsl(var(--chart-3))] hover:text-[hsl(var(--chart-3))]"
                         >
                           <CreditCard className="w-4 h-4" />
                         </Button>
@@ -599,12 +617,12 @@ export default function ExpenseClaims() {
                   </TableCell>
                 )}
               </TableRow>
-            ))
-          )}
+            ))}
         </TableBody>
       </Table>
     </div>
-  );
+    );
+  };
 
   // ─── Render ───────────────────────────────────────────
 
@@ -627,7 +645,7 @@ export default function ExpenseClaims() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Pending This Month</CardTitle>
-            <Clock className="w-4 h-4 text-blue-500" />
+            <Clock className="w-4 h-4 text-[hsl(var(--chart-1))]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -642,7 +660,7 @@ export default function ExpenseClaims() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Approved This Month</CardTitle>
-            <CheckCircle className="w-4 h-4 text-green-500" />
+            <CheckCircle className="w-4 h-4 text-[hsl(var(--chart-5))]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -657,7 +675,7 @@ export default function ExpenseClaims() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Paid This Month</CardTitle>
-            <DollarSign className="w-4 h-4 text-purple-500" />
+            <DollarSign className="w-4 h-4 text-[hsl(var(--chart-3))]" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -681,9 +699,9 @@ export default function ExpenseClaims() {
             <CheckCircle className="w-4 h-4" />
             Review
             {submittedClaims.length > 0 && (
-              <Badge variant="secondary" className="ml-1 bg-blue-100 text-blue-800 text-xs px-1.5 py-0">
+              <StatusBadge tone="info" className="ml-1 text-xs px-1.5 py-0">
                 {submittedClaims.length}
-              </Badge>
+              </StatusBadge>
             )}
           </TabsTrigger>
           <TabsTrigger value="all-claims" className="flex items-center gap-2">
@@ -711,9 +729,14 @@ export default function ExpenseClaims() {
             </CardHeader>
             <CardContent>
               {isLoadingClaims ? (
-                <div className="text-center py-8 text-muted-foreground">{t.loading || 'Loading...'}</div>
+                <TableSkeleton rows={4} columns={6} />
               ) : (
-                <ClaimsTable claims={myClaims} />
+                <ClaimsTable
+                  claims={myClaims}
+                  emptyTitle="No claims yet"
+                  emptyDescription="Submit your first reimbursement to get started."
+                  emptyAction={{ label: 'New Claim', onClick: handleOpenCreateDialog }}
+                />
               )}
             </CardContent>
           </Card>
@@ -730,9 +753,14 @@ export default function ExpenseClaims() {
             </CardHeader>
             <CardContent>
               {isLoadingClaims ? (
-                <div className="text-center py-8 text-muted-foreground">{t.loading || 'Loading...'}</div>
+                <TableSkeleton rows={4} columns={6} />
               ) : (
-                <ClaimsTable claims={submittedClaims} isReview />
+                <ClaimsTable
+                  claims={submittedClaims}
+                  isReview
+                  emptyTitle="Nothing to review"
+                  emptyDescription="There are no expense claims awaiting your approval right now."
+                />
               )}
             </CardContent>
           </Card>
@@ -749,9 +777,13 @@ export default function ExpenseClaims() {
             </CardHeader>
             <CardContent>
               {isLoadingClaims ? (
-                <div className="text-center py-8 text-muted-foreground">{t.loading || 'Loading...'}</div>
+                <TableSkeleton rows={6} columns={6} />
               ) : (
-                <ClaimsTable claims={allClaims} />
+                <ClaimsTable
+                  claims={allClaims}
+                  emptyTitle="No expense claims"
+                  emptyDescription="No one in this company has filed an expense claim yet."
+                />
               )}
             </CardContent>
           </Card>
