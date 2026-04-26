@@ -44,7 +44,10 @@ export default defineConfig({
           if (id.includes("xlsx")) return "vendor-xlsx";
           if (id.includes("pdfjs-dist") || id.includes("pdf.worker")) return "vendor-pdfjs";
           if (id.includes("html2canvas")) return "vendor-html2canvas";
-          if (id.includes("recharts") || id.includes("d3-")) return "vendor-charts";
+          // recharts + d3-* are NOT manually grouped: bundling them together
+          // produces a TDZ error ("Cannot access 'P' before initialization")
+          // due to circular module init order after esbuild minification.
+          // Let Vite's default chunking preserve the import-order-correct grouping.
           if (id.includes("framer-motion")) return "vendor-framer";
           if (id.includes("@radix-ui")) return "vendor-radix";
           if (id.includes("react-day-picker") || id.includes("date-fns")) return "vendor-dates";
