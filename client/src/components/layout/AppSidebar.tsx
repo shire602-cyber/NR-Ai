@@ -55,6 +55,7 @@ import { cn } from '@/lib/utils';
 import { useTranslation, useI18n } from '@/lib/i18n';
 import { useRTL } from '@/components/RTLProvider';
 import { removeToken, getToken } from '@/lib/auth';
+import { CompanySwitcher } from '@/components/CompanySwitcher';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -388,7 +389,7 @@ export function AppSidebar() {
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.4 }}
       >
-        <SidebarHeader className="px-3 pt-4 pb-3 border-b border-sidebar-border/60">
+        <SidebarHeader className="px-3 pt-4 pb-3 border-b border-sidebar-border/60 space-y-3">
           <div className="flex items-center gap-2.5">
             <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-sidebar-primary to-sidebar-primary/70 flex items-center justify-center shrink-0 shadow-sm ring-1 ring-sidebar-primary/30">
               <Wallet className="w-4 h-4 text-sidebar-primary-foreground" strokeWidth={2.25} />
@@ -403,6 +404,7 @@ export function AppSidebar() {
               </div>
             </div>
           </div>
+          <CompanySwitcher />
         </SidebarHeader>
       </motion.div>
 

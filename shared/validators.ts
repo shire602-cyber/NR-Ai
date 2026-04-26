@@ -43,6 +43,21 @@ export const moneySchema = z
     message: 'Money values must have at most 2 decimal places',
   });
 
+// ── UAE TRN (Tax Registration Number) ────────────────────────────
+// FTA-issued TRN is 15 digits. Used by company tax setup, contact records,
+// and the customer-facing registration form.
+export const trnSchema = z
+  .string()
+  .trim()
+  .regex(/^[0-9]{15}$/, 'UAE TRN must be exactly 15 digits');
+
+export const optionalTrnSchema = z
+  .string()
+  .trim()
+  .transform((v) => (v === '' ? undefined : v))
+  .pipe(trnSchema.optional())
+  .optional();
+
 // ── Auth payloads ────────────────────────────────────────────────
 export const loginSchema = z.object({
   email: z.string().email().max(254),
@@ -54,6 +69,20 @@ export const registerSchema = z.object({
   password: z.string().min(8).max(256),
   name: z.string().trim().min(1).max(120),
   companyName: z.string().trim().min(1).max(200).optional(),
+  // Optional at signup — many users register before they have a TRN; if
+  // supplied it must match FTA format so we don't pollute the company record
+  // with a malformed value that later breaks VAT filing.
+  trn: optionalTrnSchema,
+});
+
+// Forgot/reset password payloads
+export const forgotPasswordSchema = z.object({
+  email: z.string().email().max(254),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(20).max(200),
+  password: z.string().min(8, 'Password must be at least 8 characters').max(256),
 });
 
 // ── Common request body for creating a contact / customer ────────
@@ -82,3 +111,5 @@ export type DateRange = z.infer<typeof dateRangeSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type ContactInput = z.infer<typeof contactInputSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

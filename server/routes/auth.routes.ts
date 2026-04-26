@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import type { Express } from 'express';
 import bcrypt from 'bcryptjs';
+import { randomBytes, createHash } from 'crypto';
 import { z } from 'zod';
 
 import { storage } from '../storage';
@@ -17,7 +18,9 @@ import { validate } from '../middleware/validate';
 import { insertUserSchema } from '../../shared/schema';
 import {
   loginSchema as sharedLoginSchema,
-  registerSchema as sharedRegisterSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  trnSchema,
 } from '../../shared/validators';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { createLogger } from '../config/logger';
@@ -80,6 +83,22 @@ export function registerAuthRoutes(app: Express): void {
       // Strengthen password validation (8+ chars)
       passwordSchema.parse(validated.password);
 
+      // Optional TRN at signup. We accept it here (instead of forcing the user
+      // through onboarding first) so the auto-created company is seeded with a
+      // valid value. Format is enforced via the shared schema.
+      const trnFromBody = (req.body as any)?.trn as string | undefined;
+      let trn: string | undefined;
+      if (typeof trnFromBody === 'string' && trnFromBody.trim() !== '') {
+        const trnParse = trnSchema.safeParse(trnFromBody.trim());
+        if (!trnParse.success) {
+          return res.status(400).json({
+            message: trnParse.error.issues[0]?.message || 'Invalid TRN',
+            field: 'trn',
+          });
+        }
+        trn = trnParse.data;
+      }
+
       // Check if user exists
       const existingUser = await storage.getUserByEmail(validated.email);
       if (existingUser) {
@@ -110,6 +129,7 @@ export function registerAuthRoutes(app: Express): void {
         baseCurrency: 'AED',
         locale: 'en',
         companyType: 'customer', // Self-signup companies are customer type (not managed by NR)
+        trnVatNumber: trn,
       });
 
       // Associate user with company as owner
@@ -233,6 +253,92 @@ export function registerAuthRoutes(app: Express): void {
 
   // Alias for frontend compatibility: POST /api/auth/refresh
   router.post('/auth/refresh', handleRefreshToken);
+
+  // =====================================
+  // PASSWORD RESET
+  // =====================================
+
+  // Hash a raw token before storing or looking up — DB only ever sees the digest.
+  const hashResetToken = (token: string): string =>
+    createHash('sha256').update(token).digest('hex');
+
+  // Request a password reset link. Always returns 200 to prevent email enumeration.
+  router.post(
+    '/auth/forgot-password',
+    validate({ body: forgotPasswordSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { email } = req.body as { email: string };
+      const user = await storage.getUserByEmail(email);
+
+      // Generic response — never reveal whether the email exists
+      const genericResponse = {
+        message: 'If that email is registered, a reset link has been sent.',
+      };
+
+      if (!user) {
+        return res.json(genericResponse);
+      }
+
+      // Issue a one-time token; raw token only exists in memory long enough
+      // to email the user. The DB stores only the SHA-256 digest.
+      const rawToken = randomBytes(32).toString('hex');
+      const tokenHash = hashResetToken(rawToken);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Invalidate any prior outstanding tokens so only the latest one works.
+      await storage.deletePasswordResetTokensForUser(user.id);
+      await storage.createPasswordResetToken({
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      });
+
+      const env = getEnv();
+      const appUrl = (env as any).APP_URL || (env as any).PUBLIC_URL || '';
+      const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+
+      log.info({ userId: user.id, email }, 'Password reset requested');
+
+      // TODO(email): wire to outbound email service when configured.
+      // In non-production, return the URL so QA can verify the flow.
+      const isProd = (env as any).NODE_ENV === 'production';
+      if (!isProd) {
+        return res.json({
+          ...genericResponse,
+          devResetUrl: resetUrl,
+        });
+      }
+
+      return res.json(genericResponse);
+    }),
+  );
+
+  // Consume a reset token and set a new password.
+  router.post(
+    '/auth/reset-password',
+    validate({ body: resetPasswordSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { token, password } = req.body as { token: string; password: string };
+
+      const tokenHash = hashResetToken(token);
+      const record = await storage.findValidPasswordResetToken(tokenHash);
+
+      if (!record) {
+        return res.status(400).json({ message: 'This reset link is invalid or has expired. Please request a new one.' });
+      }
+
+      const newHash = await bcrypt.hash(password, 10);
+      await storage.updateUserPassword(record.userId, newHash);
+      await storage.markPasswordResetTokenUsed(record.id);
+      // Revoke any other outstanding reset tokens — one successful reset
+      // invalidates the whole batch.
+      await storage.deletePasswordResetTokensForUser(record.userId);
+
+      log.info({ userId: record.userId }, 'Password reset completed');
+
+      res.json({ message: 'Your password has been reset. You can now sign in with your new password.' });
+    }),
+  );
 
   // =====================================
   // PUBLIC - INVITATION ACCEPTANCE

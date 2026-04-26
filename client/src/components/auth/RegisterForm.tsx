@@ -5,17 +5,28 @@ import { z } from 'zod';
 import { Link } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { apiUrl } from '@/lib/api';
 import { UserPlus } from 'lucide-react';
 
+// TRN is optional at sign-up — many users register before they have one — but
+// when supplied it must match the FTA's 15-digit format so the company record
+// isn't seeded with a malformed value that breaks VAT filing later.
 const registerSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Please enter a valid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+  trn: z
+    .string()
+    .trim()
+    .optional()
+    .refine(
+      (v) => !v || /^[0-9]{15}$/.test(v),
+      'UAE TRN must be exactly 15 digits',
+    ),
 });
 
 type RegisterFormData = z.infer<typeof registerSchema>;
@@ -35,16 +46,23 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       name: '',
       email: '',
       password: '',
+      trn: '',
     },
   });
 
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
     try {
+      // Strip empty optional TRN so the server-side schema doesn't see a
+      // sentinel empty string and reject it on the regex check.
+      const payload = {
+        ...data,
+        trn: data.trn?.trim() ? data.trn.trim() : undefined,
+      };
       const response = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -133,6 +151,34 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                       data-testid="input-password"
                     />
                   </FormControl>
+                  <FormDescription>
+                    Use at least 8 characters.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="trn"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    UAE TRN <span className="text-muted-foreground font-normal">(optional)</span>
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      inputMode="numeric"
+                      maxLength={15}
+                      placeholder="100123456700003"
+                      disabled={isLoading}
+                      data-testid="input-trn"
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Your 15-digit FTA Tax Registration Number. You can add this later from the company profile.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
