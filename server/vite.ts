@@ -67,10 +67,32 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Long-lived cache for hashed assets (Vite emits content-hashed filenames
+  // under /assets/, so they are safe to cache aggressively).
+  app.use(
+    '/assets',
+    express.static(path.join(distPath, 'assets'), {
+      maxAge: '1y',
+      immutable: true,
+    }),
+  );
+
+  // Other static files — short cache, since index.html and similar are not
+  // content-hashed and need to refresh on deploy.
+  app.use(
+    express.static(distPath, {
+      maxAge: '1h',
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache');
+        }
+      },
+    }),
+  );
 
   // SPA fallback
   app.use('*', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.resolve(distPath, 'index.html'));
   });
 }
