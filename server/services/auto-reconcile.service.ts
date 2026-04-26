@@ -464,6 +464,7 @@ export async function applyReconcileMatches(
     try {
       await storage.reconcileBankTransaction(
         match.bankTransactionId,
+        companyId,
         match.matchedId,
         match.matchedType as 'journal' | 'receipt' | 'invoice',
         userId,

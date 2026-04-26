@@ -14,7 +14,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
 import { apiRequest } from '@/lib/queryClient';
-import { EmptyState } from '@/components/EmptyState';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Bot, Send, TrendingUp, AlertTriangle, DollarSign, FileText, Loader2, Brain, BarChart3, Zap, Target, ArrowUp, ArrowDown, Eye, PieChart } from 'lucide-react';
 
 interface Message {
@@ -413,7 +413,7 @@ export default function AICFO() {
                   icon={BarChart3}
                   title="No trend data yet"
                   description="Post invoices and journal entries to see revenue and expense trends here."
-                  variant="compact"
+                  compact
                 />
               )}
             </CardContent>
@@ -459,7 +459,7 @@ export default function AICFO() {
                   icon={PieChart}
                   title="No expense data yet"
                   description="Post expense journal entries to see how your spending breaks down."
-                  variant="compact"
+                  compact
                 />
               )}
             </CardContent>

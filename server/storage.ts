@@ -340,6 +340,7 @@ export interface IStorage {
   updateBankTransaction(id: string, companyId: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
   reconcileBankTransaction(
     id: string,
+    companyId: string,
     matchedId: string,
     matchType: 'journal' | 'receipt' | 'invoice',
     createdBy?: string,
@@ -1742,12 +1743,13 @@ export class DatabaseStorage implements IStorage {
 
   async reconcileBankTransaction(
     id: string,
+    companyId: string,
     matchedId: string,
     matchType: 'journal' | 'receipt' | 'invoice',
     createdBy?: string,
   ): Promise<BankTransaction> {
     // Load the bank txn so we have amount/date/bankAccountId for JE posting.
-    const existing = await this.getBankTransactionById(id);
+    const existing = await this.getBankTransactionById(id, companyId);
     if (!existing) {
       throw new Error('Bank transaction not found');
     }

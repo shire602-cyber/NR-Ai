@@ -696,7 +696,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
         return res.status(404).json({ message: 'Transaction not found' });
       }
 
-      const transaction = await storage.reconcileBankTransaction(id, matchId, matchType);
+      const transaction = await storage.reconcileBankTransaction(id, txn.companyId, matchId, matchType);
       res.json(transaction);
     } catch (error: any) {
       res.status(500).json({ message: error.message });

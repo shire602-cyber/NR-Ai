@@ -26,8 +26,6 @@ import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { createLogger } from '../config/logger';
 import {
   blacklistToken,
-  createPasswordResetToken,
-  consumePasswordResetToken,
   createEmailVerificationToken,
   consumeEmailVerificationToken,
 } from '../services/auth-tokens.service';
@@ -520,60 +518,6 @@ export function registerAuthRoutes(app: Express): void {
         }
       }
       res.json({ message: 'Logged out successfully' });
-    })
-  );
-
-  // ─── Password reset ────────────────────────────────────────────────
-
-  const forgotPasswordSchema = z.object({
-    email: z.string().email().max(254),
-  });
-
-  router.post(
-    '/auth/forgot-password',
-    asyncHandler(async (req: Request, res: Response) => {
-      const { email } = forgotPasswordSchema.parse(req.body);
-      const user = await storage.getUserByEmail(email);
-      if (user) {
-        try {
-          const resetToken = await createPasswordResetToken(user.id);
-          // TODO: deliver via email when transactional provider is wired up.
-          log.info(
-            { userId: user.id, email: user.email },
-            `Password reset issued — reset URL: /reset-password?token=${resetToken}`,
-          );
-        } catch (err) {
-          log.error({ err, userId: user.id }, 'Failed to create password reset token');
-        }
-      }
-      // Always respond identically to prevent account enumeration.
-      res.json({
-        message:
-          'If an account exists for that email, a password reset link has been sent.',
-      });
-    })
-  );
-
-  const resetPasswordSchema = z.object({
-    token: z.string().min(16).max(256),
-    password: z.string().min(8).max(256),
-  });
-
-  router.post(
-    '/auth/reset-password',
-    asyncHandler(async (req: Request, res: Response) => {
-      const { token, password } = resetPasswordSchema.parse(req.body);
-      passwordSchema.parse(password);
-
-      const userId = await consumePasswordResetToken(token);
-      if (!userId) {
-        return res
-          .status(400)
-          .json({ message: 'Reset link is invalid or has expired' });
-      }
-      const passwordHash = await bcrypt.hash(password, 10);
-      await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
-      res.json({ message: 'Password updated successfully' });
     })
   );
 

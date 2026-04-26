@@ -38,8 +38,6 @@ import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from '@/lib/whats
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
 import { cn } from '@/lib/utils';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
-import { TableSkeleton } from '@/components/skeletons';
-import { EmptyState } from '@/components/EmptyState';
 
 const invoiceLineSchema = z.object({
   description: z.string().min(1, 'Description is required'),

@@ -40,8 +40,8 @@ import * as XLSX from 'xlsx';
 import { SiWhatsapp } from 'react-icons/si';
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
 import { pickWhatsAppNumber } from '@/lib/whatsapp-templates';
-import { EmptyState } from '@/components/EmptyState';
-import { TableSkeleton } from '@/components/skeletons';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/loading-skeletons';
 
 interface ImportResult {
   message: string;

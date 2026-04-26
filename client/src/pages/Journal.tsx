@@ -17,7 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
-import { PageSkeleton } from '@/components/ui/loading-skeletons';
+import { CardListSkeleton, PageSkeleton } from '@/components/ui/loading-skeletons';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
@@ -27,8 +27,6 @@ import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2, Edit, Ro
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { VirtualList } from '@/components/VirtualList';
-import { EmptyState } from '@/components/EmptyState';
-import { CardListSkeleton } from '@/components/skeletons';
 
 const journalLineSchema = z.object({
   accountId: z.string().uuid('Please select an account'),

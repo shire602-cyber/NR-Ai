@@ -61,7 +61,6 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
-import { EmptyState } from '@/components/EmptyState';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { getStoredUser } from '@/lib/auth';

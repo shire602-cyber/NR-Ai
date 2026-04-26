@@ -615,7 +615,7 @@ export function registerBankStatementRoutes(app: Express) {
           return res.status(500).json({ message: 'Accounts Receivable account not found' });
         }
 
-        const paymentAccount = await storage.getAccount(txn.bankAccountId);
+        const paymentAccount = await storage.getAccount(txn.bankAccountId, companyId);
         if (!paymentAccount) {
           return res.status(400).json({ message: 'Bank GL account not found' });
         }
@@ -663,6 +663,7 @@ export function registerBankStatementRoutes(app: Express) {
       } else {
         updated = await storage.reconcileBankTransaction(
           tid,
+          companyId,
           matchedId,
           matchedType as 'journal' | 'receipt' | 'invoice',
           userId,
@@ -759,7 +760,7 @@ export function registerBankStatementRoutes(app: Express) {
       );
 
       // Mark transaction as matched to this journal entry
-      const updated = await storage.reconcileBankTransaction(tid, entry.id, 'journal');
+      const updated = await storage.reconcileBankTransaction(tid, companyId, entry.id, 'journal');
       await storage.updateBankTransaction(tid, companyId, { matchStatus: 'matched' });
 
       res.status(201).json({
