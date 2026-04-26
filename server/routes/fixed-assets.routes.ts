@@ -8,6 +8,134 @@ import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('fixed-assets');
 
+// Round to 2dp using banker-safe HALF_UP (sufficient for AED).
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function daysInMonth(year: number, month: number): number {
+  // month is 1-12. Date(year, month, 0) gives last day of (month).
+  return new Date(year, month, 0).getDate();
+}
+
+interface DepreciationCalc {
+  monthlyDepreciation: number;
+  newAccumulatedDepreciation: number;
+  newNetBookValue: number;
+  prorationFactor: number; // 1.0 = full month, <1.0 = prorated first month
+  fullyDepreciated: boolean;
+}
+
+/**
+ * Compute depreciation for a single (asset, period) using:
+ *   - straight-line: remaining-depreciable / remaining-months,
+ *     so a change to useful_life or salvage automatically reshapes
+ *     the schedule for *future* periods only.
+ *   - declining-balance: 2/n * NBV / 12.
+ *
+ * Both methods are capped so accumulated_depreciation never exceeds
+ * (cost - salvage), and the first month posts a prorated amount
+ * based on acquisition day (e.g. acquired on the 16th of a 30-day
+ * month = 15/30 = 0.5 month).
+ *
+ * `monthsAlreadyDepreciated` is COUNT(*) of depreciation_schedules
+ * rows strictly *before* this (year, month). Pass 0 for the first
+ * period.
+ */
+function calculateDepreciation(
+  asset: any,
+  periodYear: number,
+  periodMonth: number,
+  monthsAlreadyDepreciated: number,
+): DepreciationCalc {
+  const cost = parseFloat(asset.purchase_cost);
+  const salvage = parseFloat(asset.salvage_value || 0);
+  const usefulLifeYears = asset.useful_life_years;
+  const currentAccDep = parseFloat(asset.accumulated_depreciation || 0);
+  const method = asset.depreciation_method || 'straight_line';
+  const totalMonths = usefulLifeYears * 12;
+  const maxDepreciation = cost - salvage;
+  const remainingDepreciable = Math.max(0, maxDepreciation - currentAccDep);
+
+  let monthlyDepreciation = 0;
+
+  if (remainingDepreciable <= 0) {
+    return {
+      monthlyDepreciation: 0,
+      newAccumulatedDepreciation: currentAccDep,
+      newNetBookValue: round2(cost - currentAccDep),
+      prorationFactor: 1,
+      fullyDepreciated: true,
+    };
+  }
+
+  if (method === 'straight_line') {
+    // Recompute over remaining life — change in useful_life or method
+    // automatically propagates from this period forward without
+    // touching past entries.
+    const monthsRemaining = Math.max(1, totalMonths - monthsAlreadyDepreciated);
+    monthlyDepreciation = remainingDepreciable / monthsRemaining;
+  } else if (method === 'declining_balance') {
+    const currentNBV = cost - currentAccDep;
+    const annualRate = 2 / usefulLifeYears;
+    monthlyDepreciation = (currentNBV * annualRate) / 12;
+  } else {
+    monthlyDepreciation = remainingDepreciable / Math.max(1, totalMonths - monthsAlreadyDepreciated);
+  }
+
+  // First-month proration — if the period equals the acquisition month,
+  // book only the fraction of the month from purchase_day onward.
+  const purchaseDate = asset.purchase_date instanceof Date
+    ? asset.purchase_date
+    : new Date(asset.purchase_date);
+  const purchaseYear = purchaseDate.getUTCFullYear();
+  const purchaseMonth = purchaseDate.getUTCMonth() + 1; // 1-12
+  const purchaseDay = purchaseDate.getUTCDate();
+
+  let prorationFactor = 1;
+  if (periodYear === purchaseYear && periodMonth === purchaseMonth) {
+    const dim = daysInMonth(periodYear, periodMonth);
+    prorationFactor = (dim - purchaseDay + 1) / dim;
+    monthlyDepreciation *= prorationFactor;
+  }
+
+  // Cap so accumulated_depreciation never breaches (cost - salvage)
+  // and NBV never drifts below salvage from rounding.
+  if (monthlyDepreciation > remainingDepreciable) {
+    monthlyDepreciation = remainingDepreciable;
+  }
+  if (monthlyDepreciation < 0) {
+    monthlyDepreciation = 0;
+  }
+
+  monthlyDepreciation = round2(monthlyDepreciation);
+  const newAccDep = round2(currentAccDep + monthlyDepreciation);
+  const newNBV = round2(cost - newAccDep);
+
+  return {
+    monthlyDepreciation,
+    newAccumulatedDepreciation: newAccDep,
+    newNetBookValue: newNBV,
+    prorationFactor,
+    fullyDepreciated: newAccDep >= maxDepreciation - 0.005,
+  };
+}
+
+async function countMonthsAlreadyDepreciated(
+  assetId: string,
+  beforeYear: number,
+  beforeMonth: number,
+): Promise<number> {
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS n
+       FROM depreciation_schedules
+      WHERE asset_id = $1
+        AND (period_year < $2 OR (period_year = $2 AND period_month < $3))`,
+    [assetId, beforeYear, beforeMonth],
+  );
+  return result.rows[0]?.n ?? 0;
+}
+
 export function registerFixedAssetRoutes(app: Express) {
   // =====================================
   // Fixed Asset CRUD
@@ -117,6 +245,32 @@ export function registerFixedAssetRoutes(app: Express) {
       await assertPeriodNotLocked(asset.company_id, purchaseDate);
     }
 
+    // Detect changes that require re-deriving future-period depreciation.
+    // Past entries (rows already in depreciation_schedules) stay frozen — the
+    // calculator treats already-depreciated months as immutable inputs and
+    // spreads the remaining depreciable amount over the new remaining life.
+    const willChangeUsefulLife = usefulLifeYears !== undefined
+      && Number(usefulLifeYears) !== Number(asset.useful_life_years);
+    const willChangeMethod = depreciationMethod !== undefined
+      && depreciationMethod !== asset.depreciation_method;
+    const willChangeSalvage = salvageValue !== undefined
+      && parseFloat(salvageValue) !== parseFloat(asset.salvage_value || 0);
+    const willChangePurchaseCost = purchaseCost !== undefined
+      && parseFloat(purchaseCost) !== parseFloat(asset.purchase_cost);
+
+    // Block useful-life shortening that would force the new schedule to
+    // re-depreciate the past — i.e. months already booked must not exceed
+    // the new total life.
+    if (willChangeUsefulLife) {
+      const monthsBooked = await countMonthsAlreadyDepreciated(id, 9999, 12);
+      const newTotalMonths = Number(usefulLifeYears) * 12;
+      if (monthsBooked >= newTotalMonths) {
+        return res.status(400).json({
+          message: `Cannot shorten useful life — ${monthsBooked} months already depreciated, new useful_life would only cover ${newTotalMonths} months`,
+        });
+      }
+    }
+
     const result = await pool.query(
       `UPDATE fixed_assets SET
         asset_name = COALESCE($1, asset_name),
@@ -139,11 +293,23 @@ export function registerFixedAssetRoutes(app: Express) {
 
     // Recalculate NBV after update
     const updated = result.rows[0];
-    const nbv = parseFloat(updated.purchase_cost) - parseFloat(updated.accumulated_depreciation || 0);
+    const nbv = round2(parseFloat(updated.purchase_cost) - parseFloat(updated.accumulated_depreciation || 0));
     await pool.query(`UPDATE fixed_assets SET net_book_value = $1 WHERE id = $2`, [nbv, id]);
 
     const final = await pool.query(`SELECT * FROM fixed_assets WHERE id = $1`, [id]);
-    log.info({ assetId: id }, 'Fixed asset updated');
+
+    if (willChangeUsefulLife || willChangeMethod || willChangeSalvage || willChangePurchaseCost) {
+      log.info({
+        assetId: id,
+        willChangeUsefulLife,
+        willChangeMethod,
+        willChangeSalvage,
+        willChangePurchaseCost,
+      }, 'Fixed asset updated — future depreciation will be recomputed');
+    } else {
+      log.info({ assetId: id }, 'Fixed asset updated');
+    }
+
     res.json(final.rows[0]);
   }));
 
@@ -171,7 +337,11 @@ export function registerFixedAssetRoutes(app: Express) {
   // Depreciation
   // =====================================
 
-  // Calculate and record monthly depreciation for a single asset
+  // Calculate and record monthly depreciation for a single asset.
+  // Body params:
+  //   month?: 1-12   (defaults to current UTC month)
+  //   year?:  YYYY   (defaults to current UTC year)
+  // Idempotent: re-running the same (asset, month, year) returns 409.
   app.post("/api/fixed-assets/:id/depreciate", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
@@ -191,90 +361,158 @@ export function registerFixedAssetRoutes(app: Express) {
       return res.status(400).json({ message: 'Can only depreciate active assets' });
     }
 
-    // Single-asset depreciate posts a JE on today's date.
-    await assertPeriodNotLocked(asset.company_id, new Date());
+    // Resolve target period — body wins, otherwise current UTC month.
+    const now = new Date();
+    const reqMonth = req.body?.month !== undefined ? Number(req.body.month) : now.getUTCMonth() + 1;
+    const reqYear = req.body?.year !== undefined ? Number(req.body.year) : now.getUTCFullYear();
 
-    const cost = parseFloat(asset.purchase_cost);
-    const salvage = parseFloat(asset.salvage_value || 0);
-    const usefulLifeYears = asset.useful_life_years;
-    const currentAccDep = parseFloat(asset.accumulated_depreciation || 0);
-    const method = asset.depreciation_method || 'straight_line';
-
-    let monthlyDepreciation = 0;
-
-    if (method === 'straight_line') {
-      // Straight-line: (cost - salvage) / (useful_life * 12) per month
-      monthlyDepreciation = (cost - salvage) / (usefulLifeYears * 12);
-    } else if (method === 'declining_balance') {
-      // Declining balance: 2 * (1/useful_life) * NBV per year / 12 per month
-      const currentNBV = cost - currentAccDep;
-      const annualRate = 2 / usefulLifeYears;
-      monthlyDepreciation = (currentNBV * annualRate) / 12;
-      // Don't depreciate below salvage value
-      if (currentNBV - monthlyDepreciation < salvage) {
-        monthlyDepreciation = Math.max(0, currentNBV - salvage);
-      }
+    if (!Number.isInteger(reqMonth) || reqMonth < 1 || reqMonth > 12) {
+      return res.status(400).json({ message: 'month must be an integer 1-12' });
+    }
+    if (!Number.isInteger(reqYear) || reqYear < 1900 || reqYear > 2999) {
+      return res.status(400).json({ message: 'year must be a valid 4-digit year' });
     }
 
-    // Don't depreciate beyond (cost - salvage)
-    const maxDepreciation = cost - salvage;
-    if (currentAccDep + monthlyDepreciation > maxDepreciation) {
-      monthlyDepreciation = Math.max(0, maxDepreciation - currentAccDep);
+    // Reject periods strictly before the acquisition month — depreciation
+    // can't pre-date the asset.
+    const purchaseDate = asset.purchase_date instanceof Date
+      ? asset.purchase_date
+      : new Date(asset.purchase_date);
+    const purchaseYear = purchaseDate.getUTCFullYear();
+    const purchaseMonth = purchaseDate.getUTCMonth() + 1;
+    if (reqYear < purchaseYear || (reqYear === purchaseYear && reqMonth < purchaseMonth)) {
+      return res.status(400).json({
+        message: `Cannot depreciate before acquisition month (${purchaseMonth}/${purchaseYear})`,
+      });
     }
 
-    monthlyDepreciation = Math.round(monthlyDepreciation * 100) / 100;
-    const newAccDep = Math.round((currentAccDep + monthlyDepreciation) * 100) / 100;
-    const newNBV = Math.round((cost - newAccDep) * 100) / 100;
+    // Period-lock check uses the JE date — first day of the target month.
+    const entryDate = new Date(Date.UTC(reqYear, reqMonth - 1, 1));
+    await assertPeriodNotLocked(asset.company_id, entryDate);
 
-    await pool.query(
-      `UPDATE fixed_assets SET accumulated_depreciation = $1, net_book_value = $2 WHERE id = $3`,
-      [newAccDep, newNBV, id]
+    // Idempotency check first — cheap rejection before we spend a JE number.
+    const already = await pool.query(
+      `SELECT id, amount, journal_entry_id FROM depreciation_schedules
+        WHERE asset_id = $1 AND period_year = $2 AND period_month = $3`,
+      [id, reqYear, reqMonth],
     );
+    if (already.rows.length > 0) {
+      return res.status(409).json({
+        message: 'Depreciation already posted for this period',
+        period: { month: reqMonth, year: reqYear },
+        existingScheduleId: already.rows[0].id,
+        amount: already.rows[0].amount,
+        journalEntryId: already.rows[0].journal_entry_id,
+      });
+    }
 
-    // Create journal entry: Debit Depreciation Expense, Credit Accumulated Depreciation
-    if (monthlyDepreciation > 0) {
+    const monthsAlreadyDepreciated = await countMonthsAlreadyDepreciated(id, reqYear, reqMonth);
+    const calc = calculateDepreciation(asset, reqYear, reqMonth, monthsAlreadyDepreciated);
+
+    if (calc.monthlyDepreciation <= 0) {
+      return res.status(400).json({
+        message: 'Asset is fully depreciated',
+        netBookValue: calc.newNetBookValue,
+        salvageValue: parseFloat(asset.salvage_value || 0),
+      });
+    }
+
+    // Atomically claim the (asset, year, month) slot. The unique constraint
+    // on depreciation_schedules forecloses concurrent double-posts; ON
+    // CONFLICT lets us return a clean 409 instead of a DB error if a parallel
+    // request slipped through the SELECT above.
+    const claim = await pool.query(
+      `INSERT INTO depreciation_schedules (company_id, asset_id, period_year, period_month, amount, posted_by)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (asset_id, period_year, period_month) DO NOTHING
+       RETURNING id`,
+      [asset.company_id, id, reqYear, reqMonth, calc.monthlyDepreciation, userId],
+    );
+    if (claim.rowCount === 0) {
+      return res.status(409).json({
+        message: 'Depreciation already posted for this period (race)',
+        period: { month: reqMonth, year: reqYear },
+      });
+    }
+    const scheduleId = claim.rows[0].id;
+
+    // From here on, any failure must roll back the claim row to avoid leaving
+    // an orphaned schedule entry that would block future retries.
+    try {
       const companyAccounts = await storage.getAccountsByCompanyId(asset.company_id);
       const depExpenseAccount = companyAccounts.find(a => a.code === '5100' && a.isSystemAccount);
       const accDepAccount = companyAccounts.find(a => a.code === '1240' && a.isSystemAccount);
 
-      if (depExpenseAccount && accDepAccount) {
-        const entryDate = new Date();
-        const entryNumber = await storage.generateEntryNumber(asset.company_id, entryDate);
-        await storage.createJournalEntry(
-          {
-            companyId: asset.company_id,
-            date: entryDate,
-            memo: `Depreciation: ${asset.asset_name}`,
-            entryNumber,
-            status: 'posted',
-            source: 'system',
-            sourceId: id,
-            createdBy: userId,
-            postedBy: userId,
-            postedAt: entryDate,
-          },
-          [
-            { accountId: depExpenseAccount.id, debit: monthlyDepreciation, credit: 0, description: `Depreciation - ${asset.asset_name}` },
-            { accountId: accDepAccount.id, debit: 0, credit: monthlyDepreciation, description: `Accumulated depreciation - ${asset.asset_name}` },
-          ]
-        );
-      } else {
-        log.warn({ assetId: id }, 'Depreciation journal entry skipped: system accounts 5100/1240 not found');
+      if (!depExpenseAccount || !accDepAccount) {
+        throw new Error('Depreciation system accounts (5100/1240) not found');
       }
-    }
 
-    const updated = await pool.query(`SELECT * FROM fixed_assets WHERE id = $1`, [id]);
-    log.info({ assetId: id, monthlyDepreciation, newAccDep, newNBV }, 'Depreciation recorded');
-    res.json({
-      asset: updated.rows[0],
-      monthlyDepreciation,
-      previousAccumulatedDepreciation: currentAccDep,
-      newAccumulatedDepreciation: newAccDep,
-      newNetBookValue: newNBV,
-    });
+      const entryNumber = await storage.generateEntryNumber(asset.company_id, entryDate);
+      const memoSuffix = calc.prorationFactor < 1
+        ? ` (${reqMonth}/${reqYear}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%)`
+        : ` (${reqMonth}/${reqYear})`;
+
+      const je = await storage.createJournalEntry(
+        {
+          companyId: asset.company_id,
+          date: entryDate,
+          memo: `Depreciation: ${asset.asset_name}${memoSuffix}`,
+          entryNumber,
+          status: 'posted',
+          source: 'system',
+          sourceId: id,
+          createdBy: userId,
+          postedBy: userId,
+          postedAt: new Date(),
+        },
+        [
+          { accountId: depExpenseAccount.id, debit: calc.monthlyDepreciation, credit: 0, description: `Depreciation - ${asset.asset_name}` },
+          { accountId: accDepAccount.id, debit: 0, credit: calc.monthlyDepreciation, description: `Accumulated depreciation - ${asset.asset_name}` },
+        ],
+      );
+
+      await pool.query(
+        `UPDATE depreciation_schedules SET journal_entry_id = $1 WHERE id = $2`,
+        [je.id, scheduleId],
+      );
+
+      await pool.query(
+        `UPDATE fixed_assets SET accumulated_depreciation = $1, net_book_value = $2 WHERE id = $3`,
+        [calc.newAccumulatedDepreciation, calc.newNetBookValue, id],
+      );
+
+      log.info({
+        assetId: id,
+        period: { month: reqMonth, year: reqYear },
+        amount: calc.monthlyDepreciation,
+        newAccumulatedDepreciation: calc.newAccumulatedDepreciation,
+        newNetBookValue: calc.newNetBookValue,
+        prorationFactor: calc.prorationFactor,
+        journalEntryId: je.id,
+      }, 'Depreciation posted');
+
+      const updated = await pool.query(`SELECT * FROM fixed_assets WHERE id = $1`, [id]);
+      res.json({
+        asset: updated.rows[0],
+        period: { month: reqMonth, year: reqYear },
+        monthlyDepreciation: calc.monthlyDepreciation,
+        prorationFactor: calc.prorationFactor,
+        newAccumulatedDepreciation: calc.newAccumulatedDepreciation,
+        newNetBookValue: calc.newNetBookValue,
+        journalEntryId: je.id,
+        scheduleId,
+      });
+    } catch (err) {
+      await pool
+        .query(`DELETE FROM depreciation_schedules WHERE id = $1`, [scheduleId])
+        .catch((cleanupErr: unknown) => log.error({ scheduleId, cleanupErr }, 'Failed to roll back schedule claim'));
+      throw err;
+    }
   }));
 
-  // Run depreciation for all active assets for a given month
+  // Run depreciation for all active assets for a given month.
+  // Per-asset idempotency: if (asset, month, year) already exists in
+  // depreciation_schedules, that asset is skipped and reported as such.
   app.post("/api/companies/:companyId/fixed-assets/run-depreciation", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
@@ -288,10 +526,18 @@ export function registerFixedAssetRoutes(app: Express) {
     if (!month || !year) {
       return res.status(400).json({ message: 'month and year are required' });
     }
+    const reqMonth = Number(month);
+    const reqYear = Number(year);
+    if (!Number.isInteger(reqMonth) || reqMonth < 1 || reqMonth > 12) {
+      return res.status(400).json({ message: 'month must be an integer 1-12' });
+    }
+    if (!Number.isInteger(reqYear) || reqYear < 1900 || reqYear > 2999) {
+      return res.status(400).json({ message: 'year must be a valid 4-digit year' });
+    }
 
     // Block batch depreciation when the target period is locked — the entries
     // are dated to (year, month, 1).
-    const targetEntryDate = new Date(year, month - 1, 1);
+    const targetEntryDate = new Date(Date.UTC(reqYear, reqMonth - 1, 1));
     await assertPeriodNotLocked(companyId, targetEntryDate);
 
     const assetsResult = await pool.query(
@@ -299,61 +545,104 @@ export function registerFixedAssetRoutes(app: Express) {
       [companyId]
     );
 
+    // Resolve depreciation system accounts once for the batch.
+    const companyAccounts = await storage.getAccountsByCompanyId(companyId);
+    const depExpenseAccount = companyAccounts.find(a => a.code === '5100' && a.isSystemAccount);
+    const accDepAccount = companyAccounts.find(a => a.code === '1240' && a.isSystemAccount);
+
     const results: any[] = [];
 
     for (const asset of assetsResult.rows) {
-      const cost = parseFloat(asset.purchase_cost);
-      const salvage = parseFloat(asset.salvage_value || 0);
-      const usefulLifeYears = asset.useful_life_years;
-      const currentAccDep = parseFloat(asset.accumulated_depreciation || 0);
-      const method = asset.depreciation_method || 'straight_line';
-      const maxDepreciation = cost - salvage;
-
-      let monthlyDepreciation = 0;
-
-      if (method === 'straight_line') {
-        monthlyDepreciation = (cost - salvage) / (usefulLifeYears * 12);
-      } else if (method === 'declining_balance') {
-        const currentNBV = cost - currentAccDep;
-        const annualRate = 2 / usefulLifeYears;
-        monthlyDepreciation = (currentNBV * annualRate) / 12;
-        if (currentNBV - monthlyDepreciation < salvage) {
-          monthlyDepreciation = Math.max(0, currentNBV - salvage);
-        }
-      }
-
-      // Don't depreciate beyond max
-      if (currentAccDep + monthlyDepreciation > maxDepreciation) {
-        monthlyDepreciation = Math.max(0, maxDepreciation - currentAccDep);
-      }
-
-      if (monthlyDepreciation <= 0) {
-        results.push({ assetId: asset.id, assetName: asset.asset_name, monthlyDepreciation: 0, skipped: true, reason: 'Fully depreciated' });
+      // Skip assets purchased after this period — depreciation can't pre-date
+      // the asset.
+      const purchaseDate = asset.purchase_date instanceof Date
+        ? asset.purchase_date
+        : new Date(asset.purchase_date);
+      const purchaseYear = purchaseDate.getUTCFullYear();
+      const purchaseMonth = purchaseDate.getUTCMonth() + 1;
+      if (reqYear < purchaseYear || (reqYear === purchaseYear && reqMonth < purchaseMonth)) {
+        results.push({
+          assetId: asset.id,
+          assetName: asset.asset_name,
+          skipped: true,
+          reason: 'Period predates acquisition',
+        });
         continue;
       }
 
-      monthlyDepreciation = Math.round(monthlyDepreciation * 100) / 100;
-      const newAccDep = Math.round((currentAccDep + monthlyDepreciation) * 100) / 100;
-      const newNBV = Math.round((cost - newAccDep) * 100) / 100;
-
-      await pool.query(
-        `UPDATE fixed_assets SET accumulated_depreciation = $1, net_book_value = $2 WHERE id = $3`,
-        [newAccDep, newNBV, asset.id]
+      // Idempotency check — if this period is already booked for this asset,
+      // skip cleanly.
+      const already = await pool.query(
+        `SELECT id, amount FROM depreciation_schedules
+          WHERE asset_id = $1 AND period_year = $2 AND period_month = $3`,
+        [asset.id, reqYear, reqMonth],
       );
+      if (already.rows.length > 0) {
+        results.push({
+          assetId: asset.id,
+          assetName: asset.asset_name,
+          skipped: true,
+          reason: 'Already depreciated for this period',
+          existingAmount: already.rows[0].amount,
+        });
+        continue;
+      }
 
-      // Create journal entry: Debit Depreciation Expense, Credit Accumulated Depreciation
-      const companyAccounts = await storage.getAccountsByCompanyId(companyId);
-      const depExpenseAccount = companyAccounts.find(a => a.code === '5100' && a.isSystemAccount);
-      const accDepAccount = companyAccounts.find(a => a.code === '1240' && a.isSystemAccount);
+      const monthsAlreadyDepreciated = await countMonthsAlreadyDepreciated(asset.id, reqYear, reqMonth);
+      const calc = calculateDepreciation(asset, reqYear, reqMonth, monthsAlreadyDepreciated);
 
-      if (depExpenseAccount && accDepAccount) {
-        const entryDate = new Date(year, month - 1, 1);
-        const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
-        await storage.createJournalEntry(
+      if (calc.monthlyDepreciation <= 0) {
+        results.push({
+          assetId: asset.id,
+          assetName: asset.asset_name,
+          monthlyDepreciation: 0,
+          skipped: true,
+          reason: 'Fully depreciated',
+        });
+        continue;
+      }
+
+      // Claim the schedule slot — concurrent batch runs converge here.
+      const claim = await pool.query(
+        `INSERT INTO depreciation_schedules (company_id, asset_id, period_year, period_month, amount, posted_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (asset_id, period_year, period_month) DO NOTHING
+         RETURNING id`,
+        [companyId, asset.id, reqYear, reqMonth, calc.monthlyDepreciation, userId],
+      );
+      if (claim.rowCount === 0) {
+        results.push({
+          assetId: asset.id,
+          assetName: asset.asset_name,
+          skipped: true,
+          reason: 'Already depreciated for this period (race)',
+        });
+        continue;
+      }
+      const scheduleId = claim.rows[0].id;
+
+      if (!depExpenseAccount || !accDepAccount) {
+        await pool.query(`DELETE FROM depreciation_schedules WHERE id = $1`, [scheduleId]).catch(() => {});
+        results.push({
+          assetId: asset.id,
+          assetName: asset.asset_name,
+          skipped: true,
+          reason: 'Depreciation system accounts (5100/1240) not found',
+        });
+        continue;
+      }
+
+      try {
+        const entryNumber = await storage.generateEntryNumber(companyId, targetEntryDate);
+        const memoSuffix = calc.prorationFactor < 1
+          ? ` (${reqMonth}/${reqYear}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%)`
+          : ` (${reqMonth}/${reqYear})`;
+
+        const je = await storage.createJournalEntry(
           {
             companyId,
-            date: entryDate,
-            memo: `Depreciation: ${asset.asset_name} (${month}/${year})`,
+            date: targetEntryDate,
+            memo: `Depreciation: ${asset.asset_name}${memoSuffix}`,
             entryNumber,
             status: 'posted',
             source: 'system',
@@ -363,27 +652,49 @@ export function registerFixedAssetRoutes(app: Express) {
             postedAt: new Date(),
           },
           [
-            { accountId: depExpenseAccount.id, debit: monthlyDepreciation, credit: 0, description: `Depreciation - ${asset.asset_name}` },
-            { accountId: accDepAccount.id, debit: 0, credit: monthlyDepreciation, description: `Accumulated depreciation - ${asset.asset_name}` },
-          ]
+            { accountId: depExpenseAccount.id, debit: calc.monthlyDepreciation, credit: 0, description: `Depreciation - ${asset.asset_name}` },
+            { accountId: accDepAccount.id, debit: 0, credit: calc.monthlyDepreciation, description: `Accumulated depreciation - ${asset.asset_name}` },
+          ],
         );
-      } else {
-        log.warn({ assetId: asset.id }, 'Depreciation journal entry skipped: system accounts 5100/1240 not found');
-      }
 
-      results.push({
-        assetId: asset.id,
-        assetName: asset.asset_name,
-        monthlyDepreciation,
-        newAccumulatedDepreciation: newAccDep,
-        newNetBookValue: newNBV,
-      });
+        await pool.query(
+          `UPDATE depreciation_schedules SET journal_entry_id = $1 WHERE id = $2`,
+          [je.id, scheduleId],
+        );
+
+        await pool.query(
+          `UPDATE fixed_assets SET accumulated_depreciation = $1, net_book_value = $2 WHERE id = $3`,
+          [calc.newAccumulatedDepreciation, calc.newNetBookValue, asset.id],
+        );
+
+        results.push({
+          assetId: asset.id,
+          assetName: asset.asset_name,
+          monthlyDepreciation: calc.monthlyDepreciation,
+          prorationFactor: calc.prorationFactor,
+          newAccumulatedDepreciation: calc.newAccumulatedDepreciation,
+          newNetBookValue: calc.newNetBookValue,
+          journalEntryId: je.id,
+          scheduleId,
+        });
+      } catch (err: any) {
+        await pool
+          .query(`DELETE FROM depreciation_schedules WHERE id = $1`, [scheduleId])
+          .catch((cleanupErr: unknown) => log.error({ scheduleId, cleanupErr }, 'Failed to roll back schedule claim'));
+        log.error({ assetId: asset.id, err: err?.message }, 'Failed to post depreciation in batch');
+        results.push({
+          assetId: asset.id,
+          assetName: asset.asset_name,
+          skipped: true,
+          reason: `Failed to post: ${err?.message ?? 'unknown error'}`,
+        });
+      }
     }
 
-    log.info({ companyId, month, year, assetsProcessed: results.length }, 'Batch depreciation completed');
+    log.info({ companyId, month: reqMonth, year: reqYear, assetsProcessed: results.length }, 'Batch depreciation completed');
     res.json({
-      month,
-      year,
+      month: reqMonth,
+      year: reqYear,
       assetsProcessed: results.length,
       results,
     });
@@ -393,7 +704,12 @@ export function registerFixedAssetRoutes(app: Express) {
   // Disposal
   // =====================================
 
-  // Record disposal of an asset
+  // Record disposal of an asset and post the disposal journal entry:
+  //   Dr Cash                        proceeds
+  //   Dr Accumulated Depreciation    accDep
+  //   Dr Loss on Asset Disposal      loss   (if proceeds < NBV)
+  //                            Cr Fixed Assets at Cost     cost
+  //                            Cr Gain on Asset Disposal   gain   (if proceeds > NBV)
   app.post("/api/fixed-assets/:id/dispose", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
@@ -418,28 +734,109 @@ export function registerFixedAssetRoutes(app: Express) {
       return res.status(400).json({ message: 'disposalDate is required' });
     }
 
-    const dispAmount = parseFloat(disposalAmount || 0);
-    const nbv = parseFloat(asset.net_book_value || 0);
-    const gainLoss = Math.round((dispAmount - nbv) * 100) / 100;
+    // Disposal posts a JE on disposalDate — block locked periods.
+    await assertPeriodNotLocked(asset.company_id, disposalDate);
 
+    const dispDate = new Date(disposalDate);
+    if (isNaN(dispDate.getTime())) {
+      return res.status(400).json({ message: 'disposalDate is not a valid date' });
+    }
+
+    const cost = parseFloat(asset.purchase_cost);
+    const accDep = parseFloat(asset.accumulated_depreciation || 0);
+    const nbv = round2(cost - accDep);
+    const proceeds = round2(parseFloat(disposalAmount || 0));
+    const gainLoss = round2(proceeds - nbv);
+    const isGain = gainLoss > 0;
+    const isLoss = gainLoss < 0;
+
+    // Resolve all required system accounts before mutating anything.
+    const companyAccounts = await storage.getAccountsByCompanyId(asset.company_id);
+    const accDepAccount = companyAccounts.find(a => a.code === '1240' && a.isSystemAccount);
+    const fixedAssetCostAccount = companyAccounts.find(a => a.code === '1290' && a.isSystemAccount);
+    const cashAccount = companyAccounts.find(a => a.code === '1010' && a.isSystemAccount);
+    const gainAccount = companyAccounts.find(a => a.code === '4080' && a.isSystemAccount);
+    const lossAccount = companyAccounts.find(a => a.code === '5130' && a.isSystemAccount);
+
+    const missing: string[] = [];
+    if (!accDepAccount) missing.push('1240');
+    if (!fixedAssetCostAccount) missing.push('1290');
+    if (proceeds > 0 && !cashAccount) missing.push('1010');
+    if (isGain && !gainAccount) missing.push('4080');
+    if (isLoss && !lossAccount) missing.push('5130');
+    if (missing.length > 0) {
+      return res.status(500).json({
+        message: `Disposal cannot post — missing system accounts: ${missing.join(', ')}. Run migrations to create them.`,
+      });
+    }
+
+    // Build the JE lines. We always credit the full original cost so the
+    // asset's contribution to 1290 is reversed; accumulated depreciation
+    // (1240) is debited to reverse what was credited to it over the asset's
+    // life. The plug is whichever of gain/loss applies.
+    type Line = { accountId: string; debit: number; credit: number; description: string };
+    const lines: Line[] = [];
+    if (proceeds > 0) {
+      lines.push({ accountId: cashAccount!.id, debit: proceeds, credit: 0, description: `Proceeds from disposal of ${asset.asset_name}` });
+    }
+    if (accDep > 0) {
+      lines.push({ accountId: accDepAccount!.id, debit: round2(accDep), credit: 0, description: `Reverse accumulated depreciation on ${asset.asset_name}` });
+    }
+    if (isLoss) {
+      lines.push({ accountId: lossAccount!.id, debit: round2(-gainLoss), credit: 0, description: `Loss on disposal of ${asset.asset_name}` });
+    }
+    lines.push({ accountId: fixedAssetCostAccount!.id, debit: 0, credit: round2(cost), description: `Remove cost of ${asset.asset_name}` });
+    if (isGain) {
+      lines.push({ accountId: gainAccount!.id, debit: 0, credit: round2(gainLoss), description: `Gain on disposal of ${asset.asset_name}` });
+    }
+
+    const entryNumber = await storage.generateEntryNumber(asset.company_id, dispDate);
+    const je = await storage.createJournalEntry(
+      {
+        companyId: asset.company_id,
+        date: dispDate,
+        memo: `Disposal: ${asset.asset_name}`,
+        entryNumber,
+        status: 'posted',
+        source: 'system',
+        sourceId: id,
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: new Date(),
+      },
+      lines,
+    );
+
+    // Mark asset disposed and zero NBV — accumulated_depreciation is left
+    // intact as a historical record (matches the JE we just posted) and
+    // status='disposed' filters it out of running balance reports.
     await pool.query(
       `UPDATE fixed_assets SET
         status = 'disposed',
         disposal_date = $1,
         disposal_amount = $2,
+        net_book_value = 0,
         notes = COALESCE($3, notes)
        WHERE id = $4`,
-      [disposalDate, dispAmount, notes || null, id]
+      [dispDate, proceeds, notes || null, id]
     );
 
     const updated = await pool.query(`SELECT * FROM fixed_assets WHERE id = $1`, [id]);
-    log.info({ assetId: id, disposalAmount: dispAmount, gainLoss }, 'Asset disposed');
-    res.json({
-      asset: updated.rows[0],
-      disposalAmount: dispAmount,
+    log.info({
+      assetId: id,
+      proceeds,
       netBookValueAtDisposal: nbv,
       gainLoss,
-      gainLossType: gainLoss >= 0 ? 'gain' : 'loss',
+      gainLossType: isGain ? 'gain' : isLoss ? 'loss' : 'breakeven',
+      journalEntryId: je.id,
+    }, 'Asset disposed');
+    res.json({
+      asset: updated.rows[0],
+      disposalAmount: proceeds,
+      netBookValueAtDisposal: nbv,
+      gainLoss,
+      gainLossType: isGain ? 'gain' : isLoss ? 'loss' : 'breakeven',
+      journalEntryId: je.id,
     });
   }));
 

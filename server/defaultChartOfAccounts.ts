@@ -141,6 +141,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     vatType: null,
     isSystemAccount: true,
   },
+  {
+    code: "1290",
+    nameEn: "Fixed Assets at Cost",
+    nameAr: "الأصول الثابتة بالتكلفة",
+    description: "Aggregate fixed asset cost account used for disposal entries",
+    type: "asset",
+    subType: "fixed_asset",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
 
   // ===========================
   // LIABILITIES - Current Liabilities (2000-2099)
@@ -388,6 +399,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     vatType: "exempt",
     isSystemAccount: false,
   },
+  {
+    code: "4080",
+    nameEn: "Gain on Asset Disposal",
+    nameAr: "ربح من بيع الأصول",
+    description: "Gain recognized on disposal of fixed assets above net book value",
+    type: "income",
+    subType: null,
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
+  },
 
   // ===========================
   // EXPENSES (5000-5199)
@@ -545,6 +567,17 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     isVatAccount: false,
     vatType: null,
     isSystemAccount: false,
+  },
+  {
+    code: "5130",
+    nameEn: "Loss on Asset Disposal",
+    nameAr: "خسارة من بيع الأصول",
+    description: "Loss recognized on disposal of fixed assets below net book value",
+    type: "expense",
+    subType: null,
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: true,
   },
 ];
 
