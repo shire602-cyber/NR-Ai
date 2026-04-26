@@ -6,6 +6,16 @@ import { db } from "../db";
 import { eq, and, gte, lte, inArray, type SQL } from "drizzle-orm";
 import { journalEntries, journalLines, accounts, invoices, invoiceLines, receipts } from "../../shared/schema";
 import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../shared/schema";
+import { uaeDayStart, uaeDayEnd } from "../utils/date";
+
+// Cash/bank account predicate — see dashboard.routes.ts for rationale.
+function isCashOrBankAccount(a: { code?: string | null; nameEn: string; subType?: string | null }): boolean {
+  if (a.subType === 'cash' || a.subType === 'bank') return true;
+  const code = a.code ?? '';
+  if (code >= '1010' && code <= '1039') return true;
+  const name = a.nameEn.toLowerCase();
+  return name.includes('cash') || name.includes('bank') || name.includes('petty');
+}
 
 /**
  * Register advanced report routes (cash flow, aging, period comparison).
@@ -28,11 +38,36 @@ export function registerReportRoutes(app: Express) {
 
     // Cashflow must reflect only posted activity; drafts/voided entries
     // would otherwise distort inflow/outflow totals.
-    const journalEntries = (await storage.getJournalEntriesByCompanyId(companyId))
+    const journalEntriesData = (await storage.getJournalEntriesByCompanyId(companyId))
       .filter(e => e.status === 'posted');
-    const accounts = await storage.getAccountsByCompanyId(companyId);
+    const accountsData = await storage.getAccountsByCompanyId(companyId);
 
-    // Group entries by period
+    // Cash flow must reflect actual movement of cash, not revenue/expense
+    // recognition. Booking an unpaid sales invoice records revenue (and an
+    // AR debit) but no cash has changed hands; the previous implementation
+    // treated that as an "operating inflow", overstating cash flow on the
+    // accrual side. We instead read movements on cash/bank accounts
+    // directly: a debit to a cash account is an inflow, a credit is an
+    // outflow. For each non-cash leg of the entry we classify by the
+    // counterpart account type to bucket operating / investing / financing.
+    const cashAccountIds = new Set(
+      accountsData.filter(a => a.type === 'asset' && isCashOrBankAccount(a)).map(a => a.id)
+    );
+    const accountById = new Map(accountsData.map(a => [a.id, a]));
+
+    const classifyCounterpart = (acct: Account | undefined): 'operating' | 'investing' | 'financing' => {
+      if (!acct) return 'operating';
+      if (acct.type === 'income' || acct.type === 'expense') return 'operating';
+      // AR, AP, VAT, prepaid, inventory — working-capital changes are operating.
+      if (acct.type === 'asset' && acct.subType !== 'fixed_asset') return 'operating';
+      if (acct.type === 'liability' && acct.subType === 'long_term_liability') return 'financing';
+      if (acct.type === 'liability') return 'operating';
+      if (acct.type === 'asset' && acct.subType === 'fixed_asset') return 'investing';
+      if (acct.type === 'equity') return 'financing';
+      return 'operating';
+    };
+
+    // Build period buckets.
     const now = new Date();
     let startDate: Date;
     let periodLength: 'month' | 'quarter' | 'year' = 'quarter';
@@ -51,65 +86,109 @@ export function registerReportRoutes(app: Express) {
         periodLength = 'quarter';
     }
 
+    // Establish opening cash balance: sum of all cash-account debits/credits
+    // before the report window so the running balance is accurate, not
+    // implicitly anchored at zero.
+    let runningBalance = 0;
+    {
+      const priorEntries = journalEntriesData.filter(je => new Date(je.date) < startDate);
+      for (const entry of priorEntries) {
+        const lines = await storage.getJournalLinesByEntryId(entry.id);
+        for (const line of lines) {
+          if (cashAccountIds.has(line.accountId)) {
+            runningBalance += (line.debit || 0) - (line.credit || 0);
+          }
+        }
+      }
+    }
+
     const cashFlowData: any[] = [];
     let currentDate = new Date(startDate);
-    let runningBalance = 0;
 
     while (currentDate <= now) {
       let periodEnd: Date;
       let periodLabel: string;
 
       if (periodLength === 'month') {
-        periodEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+        periodEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0, 23, 59, 59, 999);
         periodLabel = currentDate.toLocaleString('default', { month: 'short', year: '2-digit' });
       } else if (periodLength === 'quarter') {
-        periodEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 3, 0);
+        periodEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 3, 0, 23, 59, 59, 999);
         periodLabel = `Q${Math.floor(currentDate.getMonth() / 3) + 1} ${currentDate.getFullYear()}`;
       } else {
-        periodEnd = new Date(currentDate.getFullYear(), 11, 31);
+        periodEnd = new Date(currentDate.getFullYear(), 11, 31, 23, 59, 59, 999);
         periodLabel = currentDate.getFullYear().toString();
       }
 
-      // Get entries for this period
-      const periodEntries = journalEntries.filter(je => {
+      const periodEntries = journalEntriesData.filter(je => {
         const jeDate = new Date(je.date);
         return jeDate >= currentDate && jeDate <= periodEnd;
       });
 
-      // Calculate cash flows (simplified)
       let operatingInflow = 0;
       let operatingOutflow = 0;
+      let investingInflow = 0;
+      let investingOutflow = 0;
+      let financingInflow = 0;
+      let financingOutflow = 0;
 
       for (const entry of periodEntries) {
         const lines = await storage.getJournalLinesByEntryId(entry.id);
-        for (const line of lines) {
-          const account = accounts.find(a => a.id === line.accountId);
-          if (account) {
-            if (account.type === 'income') {
-              operatingInflow += line.credit;
-            } else if (account.type === 'expense') {
-              operatingOutflow += line.debit;
-            }
+        const cashLines = lines.filter(l => cashAccountIds.has(l.accountId));
+        const nonCashLines = lines.filter(l => !cashAccountIds.has(l.accountId));
+        if (cashLines.length === 0) continue; // No cash movement — skip.
+
+        // Classify the entry by its largest non-cash counterpart. Most
+        // bookkeeping entries have a single non-cash leg, so the heuristic
+        // is exact for them; for compound entries we attribute the entry's
+        // net cash movement to the dominant counterpart category.
+        type Category = ReturnType<typeof classifyCounterpart>;
+        const categories: Category[] = ['operating', 'investing', 'financing'];
+        const weightByCategory: Record<Category, number> = { operating: 0, investing: 0, financing: 0 };
+        for (const l of nonCashLines) {
+          const cat = classifyCounterpart(accountById.get(l.accountId));
+          weightByCategory[cat] += Math.abs((l.debit || 0) - (l.credit || 0));
+        }
+        let dominant: Category = 'operating';
+        let dominantWeight = -1;
+        for (const cat of categories) {
+          if (weightByCategory[cat] > dominantWeight) {
+            dominantWeight = weightByCategory[cat];
+            dominant = cat;
           }
+        }
+
+        const inflow = cashLines.reduce((s, l) => s + (l.debit || 0), 0);
+        const outflow = cashLines.reduce((s, l) => s + (l.credit || 0), 0);
+        if (dominant === 'investing') {
+          investingInflow += inflow;
+          investingOutflow += outflow;
+        } else if (dominant === 'financing') {
+          financingInflow += inflow;
+          financingOutflow += outflow;
+        } else {
+          operatingInflow += inflow;
+          operatingOutflow += outflow;
         }
       }
 
-      const netCashFlow = operatingInflow - operatingOutflow;
+      const netCashFlow = (operatingInflow - operatingOutflow)
+        + (investingInflow - investingOutflow)
+        + (financingInflow - financingOutflow);
       runningBalance += netCashFlow;
 
       cashFlowData.push({
         period: periodLabel,
         operatingInflow,
         operatingOutflow,
-        investingInflow: 0,
-        investingOutflow: 0,
-        financingInflow: 0,
-        financingOutflow: 0,
+        investingInflow,
+        investingOutflow,
+        financingInflow,
+        financingOutflow,
         netCashFlow,
         endingBalance: runningBalance,
       });
 
-      // Move to next period
       if (periodLength === 'month') {
         currentDate.setMonth(currentDate.getMonth() + 1);
       } else if (periodLength === 'quarter') {
@@ -147,8 +226,14 @@ export function registerReportRoutes(app: Express) {
     const customerTotals: Record<string, any> = {};
 
     for (const inv of unpaidInvoices) {
-      const invDate = new Date(inv.date);
-      const daysOld = Math.floor((now.getTime() - invDate.getTime()) / (1000 * 60 * 60 * 24));
+      // Aging is measured from due date, not issue date — otherwise a
+      // freshly-issued net-60 invoice would land in the 30+ bucket the day
+      // after issuance. Default to issue date + 30 (net-30) when dueDate
+      // is missing.
+      const due = inv.dueDate
+        ? new Date(inv.dueDate)
+        : new Date(new Date(inv.date).getTime() + 30 * 86400000);
+      const daysPastDue = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
 
       if (!customerTotals[inv.customerName]) {
         customerTotals[inv.customerName] = {
@@ -167,13 +252,13 @@ export function registerReportRoutes(app: Express) {
       const customer = customerTotals[inv.customerName];
       customer.total += inv.total;
 
-      if (daysOld <= 0) {
+      if (daysPastDue <= 0) {
         customer.current += inv.total;
-      } else if (daysOld <= 30) {
+      } else if (daysPastDue <= 30) {
         customer.days30 += inv.total;
-      } else if (daysOld <= 60) {
+      } else if (daysPastDue <= 60) {
         customer.days60 += inv.total;
-      } else if (daysOld <= 90) {
+      } else if (daysPastDue <= 90) {
         customer.days90 += inv.total;
       } else {
         customer.over90 += inv.total;
@@ -201,42 +286,79 @@ export function registerReportRoutes(app: Express) {
       .from(accounts)
       .where(eq(accounts.companyId, companyId));
 
-    // Build date filter conditions for entries
-    const baseCond = and(
+    // Period filter for income/expense activity. Use UAE-day boundaries so
+    // a transaction at, say, 23:00 UAE on Dec 31 is bucketed into Dec 31
+    // rather than slipping into the next year via UTC conversion.
+    const fromDate = from ? uaeDayStart(from) : undefined;
+    const toDate = to ? uaeDayEnd(to) : undefined;
+
+    // Period entries — used for income/expense balances which ARE
+    // period-scoped (a P&L line in the trial balance reflects the
+    // reporting period only).
+    const periodCond = and(
       eq(journalEntries.companyId, companyId),
       eq(journalEntries.status, 'posted'),
-      from ? gte(journalEntries.date, new Date(from)) : undefined,
-      to ? lte(journalEntries.date, new Date(to)) : undefined,
+      fromDate ? gte(journalEntries.date, fromDate) : undefined,
+      toDate ? lte(journalEntries.date, toDate) : undefined,
     );
 
-    const filteredEntries: Array<{ id: string }> = await db
+    const periodEntryRows: Array<{ id: string }> = await db
       .select({ id: journalEntries.id })
       .from(journalEntries)
-      .where(baseCond);
+      .where(periodCond);
+    const periodEntryIds = periodEntryRows.map(e => e.id);
 
-    const entryIds = filteredEntries.map((e: { id: string }) => e.id);
+    // Cumulative entries — used for asset/liability/equity (balance-sheet)
+    // accounts. A trial balance for those carries the opening balance
+    // through `to`, otherwise the trial balance won't tie to the balance
+    // sheet and won't actually balance.
+    const cumulativeCond = and(
+      eq(journalEntries.companyId, companyId),
+      eq(journalEntries.status, 'posted'),
+      toDate ? lte(journalEntries.date, toDate) : undefined,
+    );
 
-    // Load all lines for these entries in one query
-    const lines: JournalLine[] = entryIds.length > 0
-      ? await db.select().from(journalLines).where(inArray(journalLines.entryId, entryIds))
+    const cumulativeEntryRows: Array<{ id: string }> = await db
+      .select({ id: journalEntries.id })
+      .from(journalEntries)
+      .where(cumulativeCond);
+    const cumulativeEntryIds = cumulativeEntryRows.map(e => e.id);
+
+    const periodLines: JournalLine[] = periodEntryIds.length > 0
+      ? await db.select().from(journalLines).where(inArray(journalLines.entryId, periodEntryIds))
       : [];
 
-    // Aggregate by account — debit/credit are in AED (base currency)
-    const totalsMap = new Map<string, { totalDebit: number; totalCredit: number; hasForeignLines: boolean }>();
-    for (const line of lines) {
-      const existing = totalsMap.get(line.accountId) ?? { totalDebit: 0, totalCredit: 0, hasForeignLines: false };
+    const cumulativeLines: JournalLine[] = cumulativeEntryIds.length > 0
+      ? await db.select().from(journalLines).where(inArray(journalLines.entryId, cumulativeEntryIds))
+      : [];
+
+    const periodTotals = new Map<string, { totalDebit: number; totalCredit: number; hasForeignLines: boolean }>();
+    for (const line of periodLines) {
+      const existing = periodTotals.get(line.accountId) ?? { totalDebit: 0, totalCredit: 0, hasForeignLines: false };
       existing.totalDebit += line.debit ?? 0;
       existing.totalCredit += line.credit ?? 0;
       if (line.foreignCurrency) existing.hasForeignLines = true;
-      totalsMap.set(line.accountId, existing);
+      periodTotals.set(line.accountId, existing);
     }
 
-    // Build result rows for all accounts (including zero-activity accounts)
+    const cumulativeTotals = new Map<string, { totalDebit: number; totalCredit: number; hasForeignLines: boolean }>();
+    for (const line of cumulativeLines) {
+      const existing = cumulativeTotals.get(line.accountId) ?? { totalDebit: 0, totalCredit: 0, hasForeignLines: false };
+      existing.totalDebit += line.debit ?? 0;
+      existing.totalCredit += line.credit ?? 0;
+      if (line.foreignCurrency) existing.hasForeignLines = true;
+      cumulativeTotals.set(line.accountId, existing);
+    }
+
+    // Build result rows. For each account pick the correct slice:
+    //  - Asset/Liability/Equity: cumulative through `to` (point-in-time)
+    //  - Income/Expense: period activity only
     const rows = (companyAccounts as Account[])
       .sort((a: Account, b: Account) => (a.code ?? '').localeCompare(b.code ?? ''))
       .map((account: Account) => {
-        const { totalDebit, totalCredit, hasForeignLines } = totalsMap.get(account.id) ?? { totalDebit: 0, totalCredit: 0, hasForeignLines: false };
-        // Normal balance: debit-normal for asset/expense, credit-normal for liability/equity/income
+        const isBalanceSheet = ['asset', 'liability', 'equity'].includes(account.type);
+        const { totalDebit, totalCredit, hasForeignLines } = (isBalanceSheet ? cumulativeTotals : periodTotals)
+          .get(account.id) ?? { totalDebit: 0, totalCredit: 0, hasForeignLines: false };
         const balance = ['asset', 'expense'].includes(account.type)
           ? totalDebit - totalCredit
           : totalCredit - totalDebit;
@@ -248,7 +370,7 @@ export function registerReportRoutes(app: Express) {
           totalDebit,
           totalCredit,
           balance,
-          hasForeignLines, // indicates FX-converted lines exist for this account
+          hasForeignLines,
         };
       });
 
@@ -279,8 +401,8 @@ export function registerReportRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
+    const fromDate = uaeDayStart(from);
+    const toDate = uaeDayEnd(to);
 
     // Get all invoices in range — exclude drafts (not issued), voids, and
     // cancelled invoices so the VAT return only reports real supplies.
