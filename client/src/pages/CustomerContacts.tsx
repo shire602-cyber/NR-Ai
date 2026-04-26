@@ -36,6 +36,9 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import type { CustomerContact } from '@shared/schema';
 import * as XLSX from 'xlsx';
+import { SiWhatsapp } from 'react-icons/si';
+import { WhatsAppComposer } from '@/components/WhatsAppComposer';
+import { pickWhatsAppNumber } from '@/lib/whatsapp-templates';
 
 interface ImportResult {
   message: string;
@@ -59,6 +62,7 @@ export default function CustomerContacts() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [portalLinkDialog, setPortalLinkDialog] = useState<{ open: boolean; url: string; contactName: string }>({ open: false, url: '', contactName: '' });
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
+  const [composerContact, setComposerContact] = useState<CustomerContact | null>(null);
 
   const { data: contacts = [], isLoading } = useQuery<CustomerContact[]>({
     queryKey: ['/api/companies', companyId, 'customer-contacts'],
@@ -252,6 +256,7 @@ export default function CustomerContacts() {
       name: contact?.name || '',
       email: contact?.email || '',
       phone: contact?.phone || '',
+      whatsappNumber: contact?.whatsappNumber || '',
       trnNumber: contact?.trnNumber || '',
       address: contact?.address || '',
       city: contact?.city || '',
@@ -284,7 +289,7 @@ export default function CustomerContacts() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Phone</Label>
-            <Input 
+            <Input
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               placeholder="+971-50-XXX-XXXX"
@@ -292,14 +297,29 @@ export default function CustomerContacts() {
             />
           </div>
           <div className="space-y-2">
+            <Label className="flex items-center gap-1.5">
+              <MessageCircle className="w-3.5 h-3.5 text-green-600" />
+              WhatsApp Number
+            </Label>
+            <Input
+              value={formData.whatsappNumber}
+              onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+              placeholder="971501234567 (defaults to phone)"
+              data-testid="input-contact-whatsapp"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
             <Label>TRN Number</Label>
-            <Input 
+            <Input
               value={formData.trnNumber}
               onChange={(e) => setFormData({ ...formData, trnNumber: e.target.value })}
               placeholder="100XXXXXXXXX003"
               data-testid="input-contact-trn"
             />
           </div>
+          <div />
         </div>
         <div className="space-y-2">
           <Label>Address</Label>
@@ -472,6 +492,21 @@ export default function CustomerContacts() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
+                              {(() => {
+                                const wa = pickWhatsAppNumber(contact);
+                                return wa ? (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    title="Send via WhatsApp"
+                                    className="text-green-600 hover:text-green-700"
+                                    onClick={() => setComposerContact(contact)}
+                                    data-testid={`button-whatsapp-contact-${contact.id}`}
+                                  >
+                                    <SiWhatsapp className="w-4 h-4" />
+                                  </Button>
+                                ) : null;
+                              })()}
                               <Button
                                 size="icon"
                                 variant="ghost"
@@ -767,6 +802,17 @@ export default function CustomerContacts() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <WhatsAppComposer
+        open={!!composerContact}
+        onOpenChange={(open) => { if (!open) setComposerContact(null); }}
+        recipient={composerContact ? {
+          name: composerContact.name,
+          phone: composerContact.phone,
+          whatsappNumber: composerContact.whatsappNumber,
+        } : null}
+        defaultTemplateId="general_reminder"
+      />
 
       <AlertDialog open={!!contactToDelete} onOpenChange={(open) => { if (!open) setContactToDelete(null); }}>
         <AlertDialogContent>

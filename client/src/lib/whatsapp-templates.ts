@@ -42,6 +42,17 @@ export function openWhatsApp(phone: string, message: string) {
   window.open(`https://wa.me/${formatted}?text=${encoded}`, '_blank');
 }
 
+// Prefer a contact's dedicated WhatsApp number, fall back to phone.
+export function pickWhatsAppNumber(contact: {
+  whatsappNumber?: string | null;
+  phone?: string | null;
+}): string | null {
+  const wa = contact.whatsappNumber?.trim();
+  if (wa) return wa;
+  const ph = contact.phone?.trim();
+  return ph || null;
+}
+
 export function fillTemplate(templateStr: string, data: Record<string, string>): string {
   let result = templateStr;
   for (const [key, value] of Object.entries(data)) {

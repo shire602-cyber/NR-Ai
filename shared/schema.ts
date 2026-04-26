@@ -533,6 +533,7 @@ export const customerContacts = pgTable("customer_contacts", {
   nameAr: text("name_ar"),
   email: text("email"),
   phone: text("phone"),
+  whatsappNumber: text("whatsapp_number"),
   trnNumber: text("trn_number"),
   address: text("address"),
   city: text("city"),
