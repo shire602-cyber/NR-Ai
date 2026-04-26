@@ -134,6 +134,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: 'companyProfile', url: '/company-profile' },
       { titleKey: 'teamManagement', url: '/team' },
       { titleKey: 'integrations', url: '/integrations' },
+      { titleKey: 'whatsappInbox', url: '/whatsapp' },
       { titleKey: 'backupRestore', url: '/backup-restore' },
       { titleKey: 'history', url: '/history' },
     ],
