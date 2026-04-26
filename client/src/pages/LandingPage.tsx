@@ -35,6 +35,7 @@ import {
   AnimatedNumber,
   hoverLift,
 } from '@/lib/animations';
+import { useI18n } from '@/lib/i18n';
 
 // ──────────────────────────────────────────────
 // Data
@@ -205,12 +206,15 @@ const stats = [
 export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { locale, setLocale } = useI18n();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  const toggleLocale = () => setLocale(locale === 'en' ? 'ar' : 'en');
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -243,10 +247,24 @@ export default function LandingPage() {
               <a href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors">
                 Pricing
               </a>
+              <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">
+                Contact
+              </a>
             </nav>
 
             {/* Desktop CTA */}
             <div className="hidden md:flex items-center gap-3">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleLocale}
+                aria-label={locale === 'en' ? 'Switch to Arabic' : 'Switch to English'}
+                data-testid="button-language-toggle"
+                className="gap-1.5"
+              >
+                <Languages className="w-4 h-4" />
+                <span className="text-xs font-semibold">{locale === 'en' ? 'العربية' : 'English'}</span>
+              </Button>
               <Link href="/login">
                 <Button variant="ghost" size="sm">Sign In</Button>
               </Link>
@@ -281,7 +299,17 @@ export default function LandingPage() {
                 <a href="#features" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-2">Features</a>
                 <a href="#how-it-works" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-2">How it works</a>
                 <a href="#pricing" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-2">Pricing</a>
+                <a href="#contact" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-2">Contact</a>
                 <Separator />
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-2"
+                  onClick={() => { toggleLocale(); setMenuOpen(false); }}
+                  data-testid="button-language-toggle-mobile"
+                >
+                  <Languages className="w-4 h-4" />
+                  {locale === 'en' ? 'العربية' : 'English'}
+                </Button>
                 <Link href="/login">
                   <Button variant="outline" className="w-full" onClick={() => setMenuOpen(false)}>Sign In</Button>
                 </Link>
@@ -626,6 +654,62 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Contact ── */}
+      <section id="contact" className="py-20 lg:py-24 bg-muted/30 border-t">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <ScrollReveal className="text-center mb-12">
+            <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
+              Get in Touch
+            </Badge>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
+              Talk to Our Team
+            </h2>
+            <p className="text-muted-foreground text-lg max-w-xl mx-auto">
+              Questions about VAT, onboarding, or pricing? Our UAE-based team is here to help.
+            </p>
+          </ScrollReveal>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card className="bg-background border-border/60">
+              <CardContent className="p-6 text-center">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                  <Mail className="w-5 h-5 text-primary" />
+                </div>
+                <h3 className="font-semibold text-base mb-1">Email</h3>
+                <a href="mailto:hello@muhasib.ai" className="text-sm text-primary hover:underline" data-testid="link-contact-email">
+                  hello@muhasib.ai
+                </a>
+                <p className="text-xs text-muted-foreground mt-2">Replies within 1 business day</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-background border-border/60">
+              <CardContent className="p-6 text-center">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                  <Phone className="w-5 h-5 text-primary" />
+                </div>
+                <h3 className="font-semibold text-base mb-1">Phone</h3>
+                <a href="tel:+97141234567" className="text-sm text-primary hover:underline" data-testid="link-contact-phone">
+                  +971 4 123 4567
+                </a>
+                <p className="text-xs text-muted-foreground mt-2">Sun – Thu, 9:00 – 18:00 GST</p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-background border-border/60">
+              <CardContent className="p-6 text-center">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                  <MapPin className="w-5 h-5 text-primary" />
+                </div>
+                <h3 className="font-semibold text-base mb-1">Office</h3>
+                <p className="text-sm text-foreground">Dubai, UAE</p>
+                <p className="text-xs text-muted-foreground mt-2">Najma Al Raeda Accounting LLC</p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
       {/* ── Footer ── */}
       <footer className="border-t bg-muted/20 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -664,6 +748,12 @@ export default function LandingPage() {
                 <li>WPS Payroll (SIF)</li>
                 <li>IFRS-Ready Reports</li>
               </ul>
+              <h4 className="font-semibold text-sm mt-5 mb-3">Legal</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li><Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/terms" className="hover:text-foreground transition-colors">Terms of Service</Link></li>
+                <li><Link href="/cookies" className="hover:text-foreground transition-colors">Cookie Policy</Link></li>
+              </ul>
             </div>
 
             {/* Contact */}
@@ -681,6 +771,10 @@ export default function LandingPage() {
                 <li className="flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 shrink-0 text-primary" />
                   <a href="mailto:hello@muhasib.ai" className="hover:text-foreground transition-colors">hello@muhasib.ai</a>
+                </li>
+                <li className="flex items-center gap-2">
+                  <Mail className="w-3.5 h-3.5 shrink-0 text-primary" />
+                  <a href="mailto:support@muhasib.ai" className="hover:text-foreground transition-colors">support@muhasib.ai</a>
                 </li>
               </ul>
 
@@ -706,9 +800,9 @@ export default function LandingPage() {
           <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-muted-foreground">
             <span>© {new Date().getFullYear()} Muhasib.ai · Powered by Najma Al Raeda Accounting LLC</span>
             <div className="flex gap-4">
-              <a href="#" className="hover:text-foreground transition-colors">Privacy Policy</a>
-              <a href="#" className="hover:text-foreground transition-colors">Terms of Service</a>
-              <a href="#" className="hover:text-foreground transition-colors">Cookie Policy</a>
+              <Link href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-footer-privacy">Privacy Policy</Link>
+              <Link href="/terms" className="hover:text-foreground transition-colors" data-testid="link-footer-terms">Terms of Service</Link>
+              <Link href="/cookies" className="hover:text-foreground transition-colors" data-testid="link-footer-cookies">Cookie Policy</Link>
             </div>
           </div>
         </div>
