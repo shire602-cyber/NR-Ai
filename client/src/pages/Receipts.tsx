@@ -159,10 +159,18 @@ export default function Receipts() {
   });
 
   const postExpenseMutation = useMutation({
-    mutationFn: ({ id, accountId, paymentAccountId }: { id: string; accountId: string; paymentAccountId: string }) => 
+    mutationFn: ({ id, accountId, paymentAccountId }: { id: string; accountId: string; paymentAccountId: string }) =>
       apiRequest('POST', `/api/receipts/${id}/post`, { accountId, paymentAccountId }),
+    onMutate: async ({ id }) => {
+      const queryKey = ['/api/companies', companyId, 'receipts'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) =>
+        old?.map((r: any) => (r.id === id ? { ...r, posted: true } : r)) ?? [],
+      );
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'journal-entries'] });
       toast({
         title: 'Expense posted successfully',
@@ -173,12 +181,18 @@ export default function Receipts() {
       setSelectedExpenseAccount('');
       setSelectedPaymentAccount('');
     },
-    onError: (error: any) => {
+    onError: (error: any, _vars, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({
         variant: 'destructive',
         title: 'Failed to post expense',
         description: error?.message || 'Please try again.',
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
     },
   });
 
@@ -246,21 +260,33 @@ export default function Receipts() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => 
+    mutationFn: (id: string) =>
       apiRequest('DELETE', `/api/receipts/${id}`),
+    onMutate: async (id: string) => {
+      const queryKey = ['/api/companies', companyId, 'receipts'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) => old?.filter((r: any) => r.id !== id) ?? []);
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
       toast({
         title: 'Expense deleted',
         description: 'The expense has been deleted successfully.',
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, _id, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({
         variant: 'destructive',
         title: 'Failed to delete expense',
         description: error?.message || 'Please try again.',
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
     },
   });
 
