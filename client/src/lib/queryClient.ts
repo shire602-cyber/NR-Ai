@@ -1,6 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getAuthHeaders } from "./auth";
 import { apiUrl } from "./api";
+import { withCsrfHeader, clearCsrfToken } from "./csrf";
 
 /** Error that carries the HTTP status code — used to decide retry behaviour. */
 export class ApiError extends Error {
@@ -39,12 +40,17 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<any> {
-  const headers: Record<string, string> = {
+  let headers: Record<string, string> = {
     ...getAuthHeaders(),
   };
 
   if (data) {
     headers["Content-Type"] = "application/json";
+  }
+
+  // Cookie-session requests need CSRF tokens; Bearer requests are exempt server-side.
+  if (!headers.Authorization) {
+    headers = await withCsrfHeader(method, headers);
   }
 
   const res = await fetch(apiUrl(url), {
@@ -53,6 +59,19 @@ export async function apiRequest(
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
+
+  // 403 with CSRF code → token rotated/expired; clear cache so next call refetches.
+  if (res.status === 403) {
+    try {
+      const cloned = res.clone();
+      const json = await cloned.json();
+      if (json?.code === "CSRF_INVALID") {
+        clearCsrfToken();
+      }
+    } catch {
+      /* non-JSON body is fine */
+    }
+  }
 
   await throwIfResNotOk(res);
   return res.json();
