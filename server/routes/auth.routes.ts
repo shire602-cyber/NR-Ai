@@ -13,7 +13,12 @@ import {
   authMiddleware,
 } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { validate } from '../middleware/validate';
 import { insertUserSchema } from '../../shared/schema';
+import {
+  loginSchema as sharedLoginSchema,
+  registerSchema as sharedRegisterSchema,
+} from '../../shared/validators';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { createLogger } from '../config/logger';
 
@@ -153,16 +158,12 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  const loginSchema = z.object({
-    email: z.string().email('Invalid email address'),
-    password: z.string().min(1, 'Password is required'),
-  });
-
-  // Login
+  // Login — body validated up-front via shared schema before reaching handler.
   router.post(
     '/auth/login',
+    validate({ body: sharedLoginSchema }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { email, password } = loginSchema.parse(req.body);
+      const { email, password } = req.body as { email: string; password: string };
 
       const user = await storage.getUserByEmail(email);
       if (!user) {
