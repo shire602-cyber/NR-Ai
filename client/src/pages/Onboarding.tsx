@@ -142,8 +142,12 @@ export default function Onboarding() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
     },
-    onError: () => {
-      toast({ title: 'Failed to save company details', variant: 'destructive' });
+    onError: (err: Error) => {
+      toast({
+        title: 'Failed to save company details',
+        description: err.message,
+        variant: 'destructive',
+      });
     },
   });
 
@@ -153,8 +157,12 @@ export default function Onboarding() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${company!.id}/bank-accounts`] });
     },
-    onError: () => {
-      toast({ title: 'Failed to create bank account', variant: 'destructive' });
+    onError: (err: Error) => {
+      toast({
+        title: 'Failed to create bank account',
+        description: err.message,
+        variant: 'destructive',
+      });
     },
   });
 
@@ -165,8 +173,12 @@ export default function Onboarding() {
       queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
       if (company) localStorage.removeItem(STORAGE_KEY(company.id));
     },
-    onError: () => {
-      toast({ title: 'Failed to complete onboarding', variant: 'destructive' });
+    onError: (err: Error) => {
+      toast({
+        title: 'Failed to complete onboarding',
+        description: err.message,
+        variant: 'destructive',
+      });
     },
   });
 
