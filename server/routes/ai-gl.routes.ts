@@ -186,7 +186,7 @@ export function registerAIGLRoutes(app: Express) {
       const postResult = await autoPostHighConfidence(companyId);
 
       res.json({
-        message: `Scanned ${scanResult.scanned} transactions. Classified ${scanResult.classified} (${scanResult.ruleMatched} by rules, ${scanResult.aiClassified} by AI). Auto-posted ${postResult.posted}.`,
+        message: `Scanned ${scanResult.scanned} transactions. Classified ${scanResult.classified} (${scanResult.ruleMatched} by rules, ${scanResult.aiClassified} by AI). Drafted ${postResult.posted} for review.`,
         scan: scanResult,
         autoPost: postResult,
       });
