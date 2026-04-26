@@ -122,6 +122,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lte, isNull, sql } from "drizzle-orm";
+import Decimal from "decimal.js";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
@@ -3046,13 +3047,18 @@ export class DatabaseStorage implements IStorage {
         WHERE invoice_id = ${input.invoiceId}
       `);
       const sumRows = (sumResult.rows ?? sumResult) as Array<{ paid: number | string }>;
-      const previouslyPaid = Number(sumRows[0]?.paid ?? 0);
-      const remaining = Number(lockedInvoice.total) - previouslyPaid;
 
-      // Round to fils (2dp) for tolerance.
-      if (input.amount > remaining + 0.005) {
+      // Decimal.js comparison so summing many payments cannot drift past
+      // the invoice total via binary-float error and silently overpay.
+      const totalD = new Decimal(lockedInvoice.total);
+      const previouslyPaidD = new Decimal(sumRows[0]?.paid ?? 0);
+      const amountD = new Decimal(input.amount);
+      const remainingD = totalD.minus(previouslyPaidD);
+
+      // 0.005 fils tolerance for legitimate 2dp rounding.
+      if (amountD.greaterThan(remainingD.plus('0.005'))) {
         const e: any = new Error(
-          `Payment ${input.amount.toFixed(2)} exceeds remaining balance ${remaining.toFixed(2)}`,
+          `Payment ${amountD.toFixed(2)} exceeds remaining balance ${remainingD.toFixed(2)}`,
         );
         e.code = 'OVERPAYMENT';
         throw e;
@@ -3129,7 +3135,7 @@ export class DatabaseStorage implements IStorage {
         .returning();
 
       // Recompute status from the canonical paid total (post-insert).
-      const newTotalPaid = previouslyPaid + input.amount;
+      const newTotalPaid = previouslyPaidD.plus(amountD).toNumber();
       const newStatus = statusFromPayments(
         lockedInvoice.status as InvoiceStatus,
         Number(lockedInvoice.total),

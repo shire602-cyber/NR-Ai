@@ -1,5 +1,6 @@
 import { Router, type Express, type Request, type Response } from 'express';
 import crypto from 'crypto';
+import Decimal from 'decimal.js';
 import { storage } from '../storage';
 import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
@@ -146,17 +147,22 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Calculate totals
-    let subtotal = 0;
-    let vatAmount = 0;
+    // Calculate totals using decimal.js to avoid binary-float drift on
+    // NUMERIC(15,2) columns. Sums are kept as Decimal until the very end.
+    let subtotalD = new Decimal(0);
+    let vatAmountD = new Decimal(0);
 
     for (const line of lines) {
-      const lineTotal = line.quantity * line.unitPrice;
-      subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
+      const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
+      subtotalD = subtotalD.plus(lineTotal);
+      vatAmountD = vatAmountD.plus(
+        lineTotal.times(line.vatRate ?? UAE_VAT_RATE),
+      );
     }
 
-    const total = subtotal + vatAmount;
+    const subtotal = subtotalD.toDecimalPlaces(2).toNumber();
+    const vatAmount = vatAmountD.toDecimalPlaces(2).toNumber();
+    const total = subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber();
 
     // Convert date string to Date object if it's a string
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
@@ -346,15 +352,19 @@ export function registerInvoiceRoutes(app: Express) {
       });
     }
 
-    // Recompute totals from lines.
-    let subtotal = 0;
-    let vatAmount = 0;
+    // Recompute totals from lines using decimal.js for precise money math.
+    let subtotalD = new Decimal(0);
+    let vatAmountD = new Decimal(0);
     for (const line of lines) {
-      const lineTotal = line.quantity * line.unitPrice;
-      subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
+      const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
+      subtotalD = subtotalD.plus(lineTotal);
+      vatAmountD = vatAmountD.plus(
+        lineTotal.times(line.vatRate ?? UAE_VAT_RATE),
+      );
     }
-    const total = subtotal + vatAmount;
+    const subtotal = subtotalD.toDecimalPlaces(2).toNumber();
+    const vatAmount = vatAmountD.toDecimalPlaces(2).toNumber();
+    const total = subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber();
 
     // If a posted journal entry exists for this invoice and the amount is
     // changing, refuse. The user must void & reissue (or issue a credit
@@ -486,10 +496,11 @@ export function registerInvoiceRoutes(app: Express) {
     const oldStatus = invoice.status;
 
     // Status transitions that post journal entries (currently only
-    // draft/sent -> paid) must respect period locks. Block before mutating
-    // status so we don't end up with a status flipped but no JE.
+    // draft/sent -> paid) must respect period locks. Use the invoice's
+    // own date — that's the period the JE is being posted into — not the
+    // wall-clock now, which can mismatch when paying historic invoices.
     if (status === 'paid' && oldStatus !== 'paid') {
-      await assertPeriodNotLocked(invoice.companyId, new Date());
+      await assertPeriodNotLocked(invoice.companyId, invoice.date);
     }
 
     // No-op transition is fine.
@@ -553,6 +564,95 @@ export function registerInvoiceRoutes(app: Express) {
         throw err;
       }
     } else if (oldStatus !== status) {
+      // Void must reverse the original revenue-recognition JE so the GL
+      // doesn't keep recognising sales that were never realised. Without
+      // this, a voided invoice would still inflate revenue and AR.
+      if (status === 'void') {
+        const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
+        const accountsReceivable = accounts.find(
+          a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount,
+        );
+        const salesRevenue = accounts.find(
+          a =>
+            a.isSystemAccount &&
+            a.type === 'income' &&
+            (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT),
+        );
+        const vatPayable = accounts.find(
+          a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT,
+        );
+
+        const existingEntries = await storage.getJournalEntriesBySource(
+          invoice.companyId,
+          'invoice',
+          id,
+        );
+        const originalEntry = existingEntries.find(e => e.status === 'posted');
+
+        if (originalEntry && accountsReceivable && salesRevenue) {
+          const reversalDate = new Date();
+          // Block reversal posting into a locked period — without this we
+          // could flip status without writing the offsetting JE.
+          await assertPeriodNotLocked(invoice.companyId, reversalDate);
+
+          const entryNumber = await storage.generateEntryNumber(
+            invoice.companyId,
+            reversalDate,
+          );
+
+          const reversalLines: Array<{
+            accountId: string;
+            debit: number;
+            credit: number;
+            description: string;
+          }> = [
+            {
+              accountId: salesRevenue.id,
+              debit: Number(invoice.subtotal),
+              credit: 0,
+              description: `Reverse revenue - Void Invoice ${invoice.number}`,
+            },
+          ];
+          if (Number(invoice.vatAmount) > 0 && vatPayable) {
+            reversalLines.push({
+              accountId: vatPayable.id,
+              debit: Number(invoice.vatAmount),
+              credit: 0,
+              description: `Reverse VAT - Void Invoice ${invoice.number}`,
+            });
+          }
+          reversalLines.push({
+            accountId: accountsReceivable.id,
+            debit: 0,
+            credit: Number(invoice.total),
+            description: `Reverse A/R - Void Invoice ${invoice.number}`,
+          });
+
+          await storage.createJournalEntry(
+            {
+              companyId: invoice.companyId,
+              date: reversalDate,
+              memo: `Void Invoice ${invoice.number} - reversal of original posting`,
+              entryNumber,
+              status: 'posted',
+              source: 'invoice',
+              sourceId: id,
+              reversedEntryId: originalEntry.id,
+              reversalReason: 'Invoice voided',
+              createdBy: userId,
+              postedBy: userId,
+              postedAt: reversalDate,
+            } as any,
+            reversalLines,
+          );
+
+          log.info(
+            { invoiceId: id, originalEntryId: originalEntry.id, entryNumber },
+            'Void reversal journal entry created',
+          );
+        }
+      }
+
       await storage.updateInvoiceStatus(id, invoice.companyId, status);
     }
 
