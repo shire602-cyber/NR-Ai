@@ -322,6 +322,32 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'companies.onboarding_completed',
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "onboarding_completed" boolean NOT NULL DEFAULT false`,
     },
+    // ── 0029: drop incorrect global UNIQUE on companies.name ─────────────
+    // The original schema (migration 0000) created `companies_name_unique`
+    // on companies(name). In a multi-tenant SaaS, two unrelated tenants can
+    // legitimately share a legal name, so this constraint causes the
+    // onboarding "Save & Continue" step to fail with a unique violation
+    // for the second tenant. Migration 0029 drops it; this guard ensures
+    // the drop happens even when 0029 was skipped (tracked-but-not-run).
+    {
+      name: 'companies.name unique constraint drop',
+      sql: sql`DO $$
+        DECLARE cname text;
+        BEGIN
+          SELECT tc.constraint_name INTO cname
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.constraint_column_usage ccu
+            ON tc.constraint_name = ccu.constraint_name
+           AND tc.table_schema    = ccu.table_schema
+          WHERE tc.table_name = 'companies'
+            AND tc.constraint_type = 'UNIQUE'
+            AND ccu.column_name = 'name'
+          LIMIT 1;
+          IF cname IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE companies DROP CONSTRAINT %I', cname);
+          END IF;
+        END $$`,
+    },
     // ── 0019 (was missing): companies soft-delete columns [CRITICAL] ─────
     // Without deleted_at, ALL Drizzle company queries fail (column in schema but not in DB).
     {
