@@ -8,7 +8,7 @@ import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { PortalLayout } from '@/components/layout/PortalLayout';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ErrorBoundary, SectionBoundary } from '@/components/ErrorBoundary';
 import { useI18n, useTranslation } from '@/lib/i18n';
 import { getToken } from '@/lib/auth';
 import { User } from 'lucide-react';
@@ -124,6 +124,14 @@ function MinimalPageLoader() {
   );
 }
 
+function routeName(location: string): string {
+  const seg = location.split('/').filter(Boolean)[0] ?? 'app';
+  return seg
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
 import { NotificationBell } from '@/components/NotificationBell';
@@ -206,7 +214,6 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           <main className="flex-1 overflow-auto">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
-              <ErrorBoundary>
               <AnimatePresence mode="wait">
                 <motion.div
                   key={location}
@@ -215,10 +222,11 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.25, ease: 'easeOut' }}
                 >
-              {children}
+                  <SectionBoundary name={routeName(location)}>
+                    {children}
+                  </SectionBoundary>
                 </motion.div>
               </AnimatePresence>
-              </ErrorBoundary>
               </RouteGuard>
             </div>
           </main>
