@@ -50,6 +50,7 @@ const largeJsonRoutes = [
   /^\/api\/ocr\//,
   /^\/api\/firm\/bulk\/ocr/,
   /^\/api\/companies\/[^/]+\/receipts$/,
+  /^\/api\/companies\/[^/]+\/bank-statements\/import$/,
 ];
 
 const largeJson = express.json({ limit: '10mb' });
