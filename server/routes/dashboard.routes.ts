@@ -154,11 +154,11 @@ export function registerDashboardRoutes(app: Express) {
       .slice(0, 5);
 
     // ── AR Aging ──────────────────────────────────────────────────
-    // Aging buckets count days *past due*, measured from the invoice's due
-    // date. Falling back to the issue date would mark a brand-new net-60
-    // invoice as 30+ days overdue the day after it was issued. If the
-    // invoice has no dueDate, default to issue date + 30 days (net-30).
-    const unpaidInvoices = invoices.filter(inv => inv.status === 'sent' || inv.status === 'draft');
+    // Only legally-issued invoices count toward AR. Drafts have not been
+    // delivered to the customer and create no receivable; partial means
+    // some amount remains outstanding. Aging buckets count days *past due*
+    // from the invoice's due date; if no dueDate, default to issue+30.
+    const unpaidInvoices = invoices.filter(inv => inv.status === 'sent' || inv.status === 'partial');
     const arAging = { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
     for (const inv of unpaidInvoices) {
       const due = inv.dueDate
@@ -172,15 +172,23 @@ export function registerDashboardRoutes(app: Express) {
     }
 
     // ── AP Aging ──────────────────────────────────────────────────
-    // Unposted receipts represent outstanding payables
+    // In this schema, a receipt is "posted" when its journal entry has
+    // been created — and that JE credits the payment account, i.e. cash
+    // has already left. So *unposted* receipts are the outstanding bills
+    // that still owe a payment. Aging buckets count days *past due*
+    // against a net-30 derived due date (the receipts table does not
+    // carry an explicit dueDate). Bills not yet due land in the
+    // "current" bucket so they aren't double-counted as overdue.
     const unpaidReceipts = receipts.filter(rec => !rec.posted && rec.date);
-    const apAging = { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
+    const apAging = { current: 0, days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 };
     for (const rec of unpaidReceipts) {
-      const daysOld = Math.floor((now.getTime() - new Date(rec.date!).getTime()) / 86400000);
+      const due = new Date(new Date(rec.date!).getTime() + 30 * 86400000);
+      const daysPastDue = Math.floor((now.getTime() - due.getTime()) / 86400000);
       const amount = (rec.amount || 0) + (rec.vatAmount || 0);
-      if (daysOld <= 30) apAging.days0to30 += amount;
-      else if (daysOld <= 60) apAging.days31to60 += amount;
-      else if (daysOld <= 90) apAging.days61to90 += amount;
+      if (daysPastDue < 0) apAging.current += amount;
+      else if (daysPastDue <= 30) apAging.days0to30 += amount;
+      else if (daysPastDue <= 60) apAging.days31to60 += amount;
+      else if (daysPastDue <= 90) apAging.days61to90 += amount;
       else apAging.days90plus += amount;
     }
 
@@ -531,7 +539,7 @@ export function registerDashboardRoutes(app: Express) {
         revenue: 0, expenses: 0, outstanding: 0, totalInvoices: 0, totalEntries: 0,
         cashPosition: 0, monthlyBurnRate: 0, cashRunway: null,
         arAging: { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
-        apAging: { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
+        apAging: { current: 0, days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
         revenueGrowth: null, expenseGrowth: null, topExpenseCategories: [],
       });
     }
@@ -548,7 +556,7 @@ export function registerDashboardRoutes(app: Express) {
         revenue: 0, expenses: 0, outstanding: 0, totalInvoices: 0, totalEntries: 0,
         cashPosition: 0, monthlyBurnRate: 0, cashRunway: null,
         arAging: { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
-        apAging: { days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
+        apAging: { current: 0, days0to30: 0, days31to60: 0, days61to90: 0, days90plus: 0 },
         revenueGrowth: null, expenseGrowth: null, topExpenseCategories: [],
       });
     }

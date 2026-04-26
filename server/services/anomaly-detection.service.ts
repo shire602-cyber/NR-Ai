@@ -54,12 +54,31 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
     return `anomaly-${Date.now()}-${anomalyCounter}`;
   };
 
+  // ── Threshold tuning ─────────────────────────────────────────
+  // The previous thresholds flooded users with noise: every AED 5
+  // duplicate coffee receipt, every Friday journal entry, every round
+  // AED 1,000 amount fired an anomaly. These minima filter out the
+  // long tail of small/legit transactions so genuine outliers stand
+  // out. Numbers chosen to clear typical operational noise (tea,
+  // parking, taxi, small office supplies) while still catching
+  // material accounting errors.
+  const MIN_DUPLICATE_AMOUNT = 100;       // ignore tiny lookalikes
+  const MIN_UNUSUAL_RECEIPT_RATIO = 5;    // was 3× — too eager
+  const MIN_UNUSUAL_INVOICE_RATIO = 4;
+  const MIN_UNUSUAL_ABSOLUTE = 1000;      // require material absolute size
+  const MIN_WEEKEND_AMOUNT = 1000;        // tea/taxi shouldn't trigger
+  const MIN_ROUND_NUMBER_AMOUNT = 5000;   // AED 1k rent/salary not suspect
+  const MIN_DUPLICATE_VENDOR_AMOUNT = 100;
+  const SPIKE_THRESHOLD_RATIO = 1.75;     // was 1.5× — too sensitive
+  const MIN_SPIKE_AVG_MONTHLY = 1000;     // bail on toy datasets
+
   // ===========================
   // 1. Duplicate amount detection (same amount, same day)
   // ===========================
   const receiptsByDateAmount = new Map<string, typeof receipts>();
   for (const receipt of receipts) {
     if (!receipt.amount || !receipt.date) continue;
+    if (receipt.amount < MIN_DUPLICATE_AMOUNT) continue;
     const key = `${receipt.date}-${receipt.amount.toFixed(2)}`;
     if (!receiptsByDateAmount.has(key)) {
       receiptsByDateAmount.set(key, []);
@@ -87,6 +106,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
   const invoicesByDateAmount = new Map<string, typeof invoices>();
   for (const inv of invoices) {
     if (!inv.total || !inv.date) continue;
+    if (inv.total < MIN_DUPLICATE_AMOUNT) continue;
     const dateStr = new Date(inv.date).toISOString().split('T')[0];
     const key = `${dateStr}-${inv.total.toFixed(2)}`;
     if (!invoicesByDateAmount.has(key)) {
@@ -114,15 +134,18 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
   }
 
   // ===========================
-  // 2. Unusually large transactions (>3x average)
+  // 2. Unusually large transactions (>5x average)
+  // 5× over a sample of ≥5 plus an absolute floor avoids flagging
+  // every transaction in tiny datasets where a single large one
+  // skews the mean.
   // ===========================
   const receiptAmounts = receipts
     .filter((r) => r.amount && r.amount > 0)
     .map((r) => r.amount!);
 
-  if (receiptAmounts.length >= 3) {
+  if (receiptAmounts.length >= 5) {
     const avgReceiptAmount = receiptAmounts.reduce((a, b) => a + b, 0) / receiptAmounts.length;
-    const threshold = avgReceiptAmount * 3;
+    const threshold = Math.max(avgReceiptAmount * MIN_UNUSUAL_RECEIPT_RATIO, MIN_UNUSUAL_ABSOLUTE);
 
     for (const receipt of receipts) {
       if (receipt.amount && receipt.amount > threshold) {
@@ -144,9 +167,9 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
     .filter((i) => i.total && i.total > 0)
     .map((i) => i.total);
 
-  if (invoiceAmounts.length >= 3) {
+  if (invoiceAmounts.length >= 5) {
     const avgInvoiceAmount = invoiceAmounts.reduce((a, b) => a + b, 0) / invoiceAmounts.length;
-    const threshold = avgInvoiceAmount * 3;
+    const threshold = Math.max(avgInvoiceAmount * MIN_UNUSUAL_INVOICE_RATIO, MIN_UNUSUAL_ABSOLUTE);
 
     for (const inv of invoices) {
       if (inv.total > threshold) {
@@ -165,7 +188,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
   }
 
   // ===========================
-  // 3. Weekend transactions
+  // 3. Weekend transactions (above material threshold only)
   // ===========================
   for (const entry of journalEntries) {
     if (entry.status !== 'posted') continue;
@@ -179,7 +202,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
       const lines = await storage.getJournalLinesByEntryId(entry.id);
       const totalDebit = lines.reduce((s, l) => s + (l.debit || 0), 0);
 
-      if (totalDebit > 0) {
+      if (totalDebit >= MIN_WEEKEND_AMOUNT) {
         anomalies.push({
           id: generateId(),
           type: 'weekend_transaction',
@@ -195,12 +218,14 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
   }
 
   // ===========================
-  // 4. Round number patterns (exact multiples of 1000)
+  // 4. Round number patterns (large exact multiples of 1000)
+  // Many legitimate amounts are round (rent, salary, retainer fees)
+  // so we only flag larger rounds where estimates are more suspect.
   // ===========================
   for (const receipt of receipts) {
     if (
       receipt.amount &&
-      receipt.amount >= 1000 &&
+      receipt.amount >= MIN_ROUND_NUMBER_AMOUNT &&
       receipt.amount % 1000 === 0
     ) {
       anomalies.push({
@@ -252,6 +277,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
         daysDiff <= 7 &&
         prev.amount &&
         curr.amount &&
+        curr.amount >= MIN_DUPLICATE_VENDOR_AMOUNT &&
         Math.abs(prev.amount - curr.amount) < 0.01
       ) {
         anomalies.push({
@@ -288,13 +314,13 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
   if (receiptsByMonth.size >= 2) {
     const monthlyTotals = Array.from(receiptsByMonth.values());
     const avgMonthly = monthlyTotals.reduce((a, b) => a + b, 0) / monthlyTotals.length;
-    const spikeThreshold = avgMonthly * 1.5;
+    const spikeThreshold = avgMonthly * SPIKE_THRESHOLD_RATIO;
 
     // Check the most recent month
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const currentMonthTotal = receiptsByMonth.get(currentMonthKey) || 0;
 
-    if (currentMonthTotal > spikeThreshold && avgMonthly > 0) {
+    if (currentMonthTotal > spikeThreshold && avgMonthly >= MIN_SPIKE_AVG_MONTHLY) {
       anomalies.push({
         id: generateId(),
         type: 'expense_spike',
