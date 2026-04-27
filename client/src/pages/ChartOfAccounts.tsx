@@ -140,10 +140,13 @@ export default function ChartOfAccounts() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6">
         <BookOpen className="h-16 w-16 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">No Company Selected</h2>
-        <p className="text-muted-foreground text-center max-w-md">
-          Please select a company from the sidebar to view the Chart of Accounts.
+        <h2 className="text-xl font-semibold mb-2">Set up your company</h2>
+        <p className="text-muted-foreground text-center max-w-md mb-4">
+          You need a company before you can configure your Chart of Accounts.
         </p>
+        <Button onClick={() => navigate('/onboarding')} data-testid="button-create-company">
+          Create your company
+        </Button>
       </div>
     );
   }
