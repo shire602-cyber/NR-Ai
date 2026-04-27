@@ -10,6 +10,88 @@ import { createLogger } from '../config/logger';
 const log = createLogger('companies');
 
 /**
+ * Translate a Postgres-driver error from a companies write into an HTTP
+ * response. Returns true (and writes the response) when the error matches a
+ * known SQLSTATE; returns false to let the caller re-throw for the global
+ * handler to render a generic 500.
+ *
+ * Why this is its own helper: the onboarding wizard's "Save & Continue"
+ * surfaces whatever the API returns. A bare 500 with "Internal Server Error"
+ * leaves the user stuck with no actionable message and leaves us with no
+ * structured log either. We catch the common write-time failures
+ * (unique violation, NOT NULL violation, CHECK violation, value too long,
+ * invalid input syntax for type) and surface them as 4xx with a hint about
+ * which field the user needs to change. Schema drift (column does not exist)
+ * is logged as a 5xx with explicit context so it lands in alerts and we can
+ * tell it apart from a generic crash.
+ */
+export function handleCompanyWriteError(
+  err: any,
+  ctx: { route: string; id?: string; userId?: string },
+  res: Response,
+): boolean {
+  const code: string | undefined = err?.code;
+
+  // Always emit a structured log so production can tell apart 23505 from
+  // 42703 from a connection drop. Includes the constraint/column the driver
+  // gives us so we don't have to guess from the message text.
+  log.warn(
+    {
+      ...ctx,
+      pgCode: code,
+      pgConstraint: err?.constraint,
+      pgColumn: err?.column,
+      pgDetail: err?.detail,
+      pgTable: err?.table,
+      err: err?.message,
+    },
+    'Company write failed',
+  );
+
+  switch (code) {
+    case '23505': // unique_violation
+      res.status(409).json({
+        message: 'That value is already taken by another tenant. Please pick a different one.',
+        field: err?.constraint?.includes('name') ? 'name' : undefined,
+      });
+      return true;
+    case '23502': // not_null_violation
+      res.status(400).json({
+        message: `Required field is missing: ${err?.column ?? 'unknown'}`,
+        field: err?.column,
+      });
+      return true;
+    case '23514': // check_violation
+      res.status(400).json({
+        message: `Value rejected by validation rule: ${err?.constraint ?? 'check constraint'}`,
+      });
+      return true;
+    case '22001': // string_data_right_truncation (value too long)
+      res.status(400).json({
+        message: 'One of the values you entered is too long for this field.',
+      });
+      return true;
+    case '22P02': // invalid_text_representation (e.g. bad uuid)
+      res.status(400).json({
+        message: 'One of the values you entered is not valid for this field.',
+      });
+      return true;
+    case '42703': // undefined_column — schema/DB drift
+    case '42P01': // undefined_table
+      // The schema-guard in server/db.ts is meant to prevent this; if we
+      // still hit it in production we want it to land loudly in alerts so
+      // we can add the missing column there.
+      log.error(
+        { ...ctx, pgCode: code, err: err?.message },
+        'Schema drift: companies write referenced a missing column/table',
+      );
+      return false;
+    default:
+      return false;
+  }
+}
+
+/**
  * Seed Chart of Accounts for a company using the default UAE chart.
  */
 async function seedChartOfAccounts(companyId: string): Promise<{ created: number; alreadyExisted: boolean }> {
@@ -57,7 +139,15 @@ export function registerCompanyRoutes(app: Express) {
       return res.status(400).json({ message: 'Company name already exists' });
     }
 
-    const company = await storage.createCompany(validated);
+    let company;
+    try {
+      company = await storage.createCompany(validated);
+    } catch (err: any) {
+      if (handleCompanyWriteError(err, { route: 'POST /api/companies', userId }, res)) {
+        return;
+      }
+      throw err;
+    }
 
     // Associate user with company as owner
     await storage.createCompanyUser({
@@ -111,8 +201,15 @@ export function registerCompanyRoutes(app: Express) {
       delete updateData.taxRegistrationDate;
     }
 
-    const company = await storage.updateCompany(id, updateData);
-    res.json(company);
+    try {
+      const company = await storage.updateCompany(id, updateData);
+      res.json(company);
+    } catch (err: any) {
+      if (handleCompanyWriteError(err, { route: 'PUT /api/companies/:id', id, userId }, res)) {
+        return;
+      }
+      throw err;
+    }
   }));
 
   app.patch("/api/companies/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -146,15 +243,8 @@ export function registerCompanyRoutes(app: Express) {
       log.info({ id: company.id }, 'Company profile updated');
       res.json(company);
     } catch (err: any) {
-      // Postgres unique_violation. Surface a 409 with a clear message so the
-      // onboarding wizard can show something actionable instead of being
-      // stuck on a generic save-failed toast.
-      if (err?.code === '23505') {
-        log.warn({ id, constraint: err.constraint }, 'Company update unique violation');
-        return res.status(409).json({
-          message: 'That value is already taken by another tenant. Please pick a different one.',
-          field: err.constraint?.includes('name') ? 'name' : undefined,
-        });
+      if (handleCompanyWriteError(err, { route: 'PATCH /api/companies/:id', id, userId }, res)) {
+        return;
       }
       throw err;
     }

@@ -451,6 +451,64 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'email_verification_tokens.user_id index',
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_email_verification_tokens_user_id" ON "email_verification_tokens" ("user_id")`,
     },
+    // ── 0033: companies.exempt_supply_ratio (partial-exemption VAT) ──────
+    // Schema-required column. If migration 0033 was tracked-but-not-run,
+    // any SELECT/UPDATE...RETURNING on companies fails with 42703 because
+    // Drizzle's generated SQL references this column explicitly. That
+    // surfaces as a 500 "Internal Server Error" on the onboarding wizard.
+    {
+      name: 'companies.exempt_supply_ratio',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "exempt_supply_ratio" numeric(5,4) NOT NULL DEFAULT 0`,
+    },
+    // ── 0039: companies MOHRE + WPS employer bank fields ────────────────
+    {
+      name: 'companies.mohre_establishment_id',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "mohre_establishment_id" text`,
+    },
+    {
+      name: 'companies.wps_employer_bank_name',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "wps_employer_bank_name" text`,
+    },
+    {
+      name: 'companies.wps_employer_iban',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "wps_employer_iban" text`,
+    },
+    {
+      name: 'companies.wps_employer_routing_code',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "wps_employer_routing_code" text`,
+    },
+    // ── 0044: companies preferences columns (QuickBooks-style settings) ──
+    // Same failure mode as 0033 above. These are referenced by Drizzle's
+    // RETURNING clause on every PATCH /api/companies/:id, so a missing
+    // column blocks the onboarding "Save & Continue" step.
+    {
+      name: 'companies.legal_name',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "legal_name" text`,
+    },
+    {
+      name: 'companies.date_format',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "date_format" text NOT NULL DEFAULT 'DD/MM/YYYY'`,
+    },
+    {
+      name: 'companies.fiscal_year_start_month',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "fiscal_year_start_month" integer NOT NULL DEFAULT 1`,
+    },
+    {
+      name: 'companies.default_vat_rate',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "default_vat_rate" numeric(5,4) NOT NULL DEFAULT 0.05`,
+    },
+    {
+      name: 'companies.address_street',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "address_street" text`,
+    },
+    {
+      name: 'companies.address_city',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "address_city" text`,
+    },
+    {
+      name: 'companies.address_country',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "address_country" text DEFAULT 'AE'`,
+    },
   ];
 
   // Dev/test-only seed data — never executed in production.
