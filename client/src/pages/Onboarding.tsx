@@ -147,6 +147,30 @@ export default function Onboarding() {
     },
   });
 
+  const createCompanyMutation = useMutation({
+    mutationFn: async (data: typeof companyForm): Promise<Company> => {
+      return apiRequest('POST', '/api/companies', {
+        ...data,
+        baseCurrency: 'AED',
+        locale: 'en',
+        companyType: 'customer',
+      });
+    },
+    onSuccess: (newCompany) => {
+      queryClient.setQueryData<Company[]>(['/api/companies'], (old) =>
+        old ? [...old, newCompany] : [newCompany],
+      );
+      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Failed to create company',
+        description: err?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const createBankMutation = useMutation({
     mutationFn: (data: typeof bankForm) =>
       apiRequest('POST', `/api/companies/${company!.id}/bank-accounts`, data),
@@ -186,7 +210,15 @@ export default function Onboarding() {
   }
 
   async function handleCompanyNext() {
-    await saveCompanyMutation.mutateAsync(companyForm);
+    if (!companyForm.name.trim()) {
+      toast({ title: 'Company name is required', variant: 'destructive' });
+      return;
+    }
+    if (company) {
+      await saveCompanyMutation.mutateAsync(companyForm);
+    } else {
+      await createCompanyMutation.mutateAsync(companyForm);
+    }
     goNext();
   }
 
@@ -296,7 +328,7 @@ export default function Onboarding() {
                   onChange={(f) => setCompanyForm((p) => ({ ...p, ...f }))}
                   onNext={handleCompanyNext}
                   onBack={goBack}
-                  saving={saveCompanyMutation.isPending}
+                  saving={saveCompanyMutation.isPending || createCompanyMutation.isPending}
                 />
               )}
               {currentStep === 'accounts' && (

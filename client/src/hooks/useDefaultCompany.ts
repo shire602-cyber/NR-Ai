@@ -11,10 +11,13 @@ export function useDefaultCompany() {
   });
 
   const defaultCompany = companies?.[0];
+  const hasNoCompanies = !isLoading && !error && (companies?.length ?? 0) === 0;
 
   return {
     company: defaultCompany,
     companyId: defaultCompany?.id,
+    companies: companies ?? [],
+    hasNoCompanies,
     isLoading,
     error,
   };
