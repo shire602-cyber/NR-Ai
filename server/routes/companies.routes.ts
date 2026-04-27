@@ -2,7 +2,8 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { insertCompanySchema } from "../../shared/schema";
+import { insertCompanySchema, companyPreferencesSchema } from "../../shared/schema";
+import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from '../config/logger';
 
@@ -157,6 +158,42 @@ export function registerCompanyRoutes(app: Express) {
       }
       throw err;
     }
+  }));
+
+  // QuickBooks-style company preferences page — strictly validated PATCH.
+  // Kept separate from PATCH /api/companies/:id so other callers that send
+  // unrelated fields (e.g. tax registration date, company type) keep working.
+  app.patch("/api/companies/:id/preferences", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    let validated;
+    try {
+      validated = companyPreferencesSchema.parse(req.body);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        return res.status(400).json({
+          message: 'Invalid company preferences',
+          errors: err.flatten().fieldErrors,
+        });
+      }
+      throw err;
+    }
+
+    // Strip undefined keys so we never overwrite existing values with NULL
+    const updateData: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(validated)) {
+      if (value !== undefined) updateData[key] = value;
+    }
+
+    const company = await storage.updateCompany(id, updateData as any);
+    log.info({ id: company.id }, 'Company preferences updated');
+    res.json(company);
   }));
 
   // Mark company onboarding as complete

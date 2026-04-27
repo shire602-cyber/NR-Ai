@@ -123,19 +123,26 @@ export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect
 export const companies = pgTable("companies", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
+  legalName: text("legal_name"), // Registered legal name (may differ from trading name)
   baseCurrency: text("base_currency").notNull().default("AED"),
   locale: text("locale").notNull().default("en"), // 'en' or 'ar'
-  
+  dateFormat: text("date_format").notNull().default("DD/MM/YYYY"), // DD/MM/YYYY | MM/DD/YYYY | YYYY-MM-DD
+  fiscalYearStartMonth: integer("fiscal_year_start_month").notNull().default(1), // 1..12
+  defaultVatRate: vatRateType("default_vat_rate").notNull().default(0.05), // UAE standard rate
+
   // Company Type - determines access model
   companyType: text("company_type").notNull().default("customer"), // client | customer
   // client = Managed by NR Accounting, invite-only portal access
   // customer = Self-service SaaS user
-  
+
   // Company Information
   legalStructure: text("legal_structure"), // Sole Proprietorship, LLC, Corporation, Partnership, Other
   industry: text("industry"),
   registrationNumber: text("registration_number"),
-  businessAddress: text("business_address"),
+  businessAddress: text("business_address"), // Free-text legacy single-line address
+  addressStreet: text("address_street"),
+  addressCity: text("address_city"),
+  addressCountry: text("address_country").default("AE"),
   contactPhone: text("contact_phone"),
   contactEmail: text("contact_email"),
   websiteUrl: text("website_url"),
@@ -185,6 +192,53 @@ export const insertCompanySchema = createInsertSchema(companies).omit({
 
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
 export type Company = typeof companies.$inferSelect;
+
+// Schema for the QuickBooks-style Company Preferences page (PATCH /api/companies/:id).
+// All fields are optional so the page can be saved partially and so legacy clients
+// that omit a field continue to work.
+export const companyPreferencesSchema = z.object({
+  name: z.string().min(2, "Company name must be at least 2 characters").optional(),
+  legalName: z.string().max(200).optional().nullable(),
+  trnVatNumber: z
+    .string()
+    .regex(/^\d{15}$/u, "TRN must be exactly 15 digits")
+    .optional()
+    .nullable()
+    .or(z.literal("").transform(() => null)),
+  baseCurrency: z
+    .enum(["AED", "USD", "EUR", "GBP", "SAR", "QAR", "KWD", "BHD", "OMR", "INR"]) // common GCC + global currencies
+    .optional(),
+  fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
+  defaultVatRate: z.number().min(0).max(1).optional(), // stored as fraction (0.05 = 5%)
+  addressStreet: z.string().max(200).optional().nullable(),
+  addressCity: z.string().max(100).optional().nullable(),
+  emirate: z
+    .enum([
+      "abu_dhabi",
+      "dubai",
+      "sharjah",
+      "ajman",
+      "umm_al_quwain",
+      "ras_al_khaimah",
+      "fujairah",
+    ])
+    .optional()
+    .nullable(),
+  addressCountry: z.string().max(2).optional().nullable(), // ISO-3166 alpha-2
+  contactPhone: z.string().max(40).optional().nullable(),
+  contactEmail: z
+    .string()
+    .email("Invalid email address")
+    .optional()
+    .nullable()
+    .or(z.literal("").transform(() => null)),
+  industry: z.string().max(100).optional().nullable(),
+  logoUrl: z.string().optional().nullable(),
+  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
+  locale: z.enum(["en", "ar"]).optional(),
+});
+
+export type CompanyPreferences = z.infer<typeof companyPreferencesSchema>;
 
 // ===========================
 // Company Users (Many-to-Many)

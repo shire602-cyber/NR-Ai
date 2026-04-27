@@ -60,6 +60,7 @@ const JournalEntryDetail = lazy(() => import('@/pages/JournalEntryDetail'));
 const Reports = lazy(() => import('@/pages/Reports'));
 const Receipts = lazy(() => import('@/pages/Receipts'));
 const CompanyProfile = lazy(() => import('@/pages/CompanyProfile'));
+const CompanySettings = lazy(() => import('@/pages/CompanySettings'));
 
 // Lazy-loaded pages (large or infrequently visited)
 const Admin = lazy(() => import('@/pages/Admin'));
@@ -415,6 +416,7 @@ function Router() {
         <Switch>
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/company-profile" component={CompanyProfile} />
+          <Route path="/settings/company" component={CompanySettings} />
           <Route path="/accounts" component={Accounts} />
           <Route path="/chart-of-accounts" component={ChartOfAccounts} />
           <Route path="/accounts/:id/ledger" component={AccountLedger} />
