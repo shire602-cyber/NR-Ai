@@ -7,7 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CardListSkeleton } from '@/components/ui/loading-skeletons';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/lib/i18n';
@@ -25,6 +28,7 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
+import { VirtualList } from '@/components/VirtualList';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useForm } from 'react-hook-form';
@@ -158,10 +162,18 @@ export default function Receipts() {
   });
 
   const postExpenseMutation = useMutation({
-    mutationFn: ({ id, accountId, paymentAccountId }: { id: string; accountId: string; paymentAccountId: string }) => 
+    mutationFn: ({ id, accountId, paymentAccountId }: { id: string; accountId: string; paymentAccountId: string }) =>
       apiRequest('POST', `/api/receipts/${id}/post`, { accountId, paymentAccountId }),
+    onMutate: async ({ id }) => {
+      const queryKey = ['/api/companies', companyId, 'receipts'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) =>
+        old?.map((r: any) => (r.id === id ? { ...r, posted: true } : r)) ?? [],
+      );
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'journal-entries'] });
       toast({
         title: 'Expense posted successfully',
@@ -172,12 +184,18 @@ export default function Receipts() {
       setSelectedExpenseAccount('');
       setSelectedPaymentAccount('');
     },
-    onError: (error: any) => {
+    onError: (error: any, _vars, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({
         variant: 'destructive',
         title: 'Failed to post expense',
         description: error?.message || 'Please try again.',
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
     },
   });
 
@@ -245,21 +263,33 @@ export default function Receipts() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => 
+    mutationFn: (id: string) =>
       apiRequest('DELETE', `/api/receipts/${id}`),
+    onMutate: async (id: string) => {
+      const queryKey = ['/api/companies', companyId, 'receipts'] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) => old?.filter((r: any) => r.id !== id) ?? []);
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
       toast({
         title: 'Expense deleted',
         description: 'The expense has been deleted successfully.',
       });
     },
-    onError: (error: any) => {
+    onError: (error: any, _id, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({
         variant: 'destructive',
         title: 'Failed to delete expense',
         description: error?.message || 'Please try again.',
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'receipts'] });
     },
   });
 
@@ -505,7 +535,7 @@ export default function Receipts() {
             category: result.category || 'Other',
             lineItems: result.lineItems || [],
             rawText: result.rawText || '',
-            confidence: result.confidence || 0.85,
+            confidence: result.confidence ?? 0.85,
           };
           setProcessedReceipts((prev) => {
             const updated = [...prev];
@@ -969,7 +999,7 @@ export default function Receipts() {
             className={`
               border-2 border-dashed rounded-lg p-8 text-center transition-all
               ${isDragging ? 'border-primary bg-primary/5' : 'border-border'}
-              ${processedReceipts.length > 0 ? 'border-green-500 bg-green-500/5' : ''}
+              ${processedReceipts.length > 0 ? 'border-[hsl(var(--chart-5))] bg-[hsl(var(--chart-5)/0.05)]' : ''}
               hover:border-primary hover:bg-accent/50 cursor-pointer
             `}
             onClick={() => document.getElementById('file-input')?.click()}
@@ -990,7 +1020,7 @@ export default function Receipts() {
 
             {processedReceipts.length > 0 ? (
               <div className="space-y-4">
-                <div className="flex items-center justify-center gap-2 text-green-600">
+                <div className="flex items-center justify-center gap-2 text-[hsl(var(--chart-5))]">
                   <CheckCircle2 className="w-5 h-5" />
                   <span>{processedReceipts.length} image(s) loaded</span>
                 </div>
@@ -1082,24 +1112,24 @@ export default function Receipts() {
                 <Badge variant="outline">{processingCount} processing</Badge>
               )}
               {completedCount > 0 && (
-                <Badge variant="outline" className="bg-green-500/10 border-green-500">
+                <StatusBadge tone="success">
                   {completedCount} ready to save
-                </Badge>
+                </StatusBadge>
               )}
               {savedCount > 0 && (
-                <Badge variant="outline" className="bg-blue-500/10 border-blue-500">
+                <StatusBadge tone="info">
                   {savedCount} saved
-                </Badge>
+                </StatusBadge>
               )}
               {errorCount > 0 && (
-                <Badge variant="outline" className="bg-red-500/10 border-red-500">
+                <StatusBadge tone="danger">
                   {errorCount} OCR errors
-                </Badge>
+                </StatusBadge>
               )}
               {saveErrorCount > 0 && (
-                <Badge variant="outline" className="bg-orange-500/10 border-orange-500">
+                <StatusBadge tone="warning">
                   {saveErrorCount} save failed
-                </Badge>
+                </StatusBadge>
               )}
             </div>
           )}
@@ -1157,21 +1187,21 @@ export default function Receipts() {
                     )}
 
                     {receipt.status === 'error' && (
-                      <div className="flex items-center gap-2 text-red-600">
+                      <div className="flex items-center gap-2 text-destructive">
                         <XCircle className="w-4 h-4" />
                         <span className="text-sm">{receipt.error}</span>
                       </div>
                     )}
 
                     {receipt.status === 'saved' && (
-                      <div className="flex items-center gap-2 text-blue-600">
+                      <div className="flex items-center gap-2 text-[hsl(var(--chart-1))]">
                         <CheckCircle2 className="w-4 h-4" />
                         <span className="text-sm font-medium">Successfully saved to database</span>
                       </div>
                     )}
 
                     {receipt.status === 'save_error' && (
-                      <div className="flex items-center gap-2 text-orange-600">
+                      <div className="flex items-center gap-2 text-[hsl(var(--chart-4))]">
                         <XCircle className="w-4 h-4" />
                         <span className="text-sm">{receipt.error || 'Failed to save'}</span>
                       </div>
@@ -1359,17 +1389,18 @@ export default function Receipts() {
             />
           </div>
           {isLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map(i => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
+            <CardListSkeleton count={4} />
           ) : filteredReceipts && filteredReceipts.length > 0 ? (
-            <div className="space-y-2">
-              {filteredReceipts.map((receipt: any) => (
+            <VirtualList
+              items={filteredReceipts as any[]}
+              estimateSize={88}
+              height={Math.min(720, Math.max(400, filteredReceipts.length * 88))}
+              getKey={(receipt) => receipt.id}
+              className="space-y-2"
+              renderItem={(receipt: any) => (
                 <div
                   key={receipt.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover-elevate"
+                  className="flex items-center justify-between p-4 border rounded-lg hover-elevate mb-2"
                   data-testid={`receipt-${receipt.id}`}
                 >
                   <div className="flex items-center gap-4">
@@ -1391,9 +1422,9 @@ export default function Receipts() {
                           {receipt.category || 'Uncategorized'}
                         </Badge>
                         {receipt.posted && (
-                          <Badge variant="default" className="bg-green-600">
+                          <StatusBadge tone="success">
                             Posted
-                          </Badge>
+                          </StatusBadge>
                         )}
                       </div>
                     </div>
@@ -1430,12 +1461,37 @@ export default function Receipts() {
                     </div>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            />
           ) : (
-            <p className="text-center text-muted-foreground py-8">
-              No receipts yet. Upload your first receipt above!
-            </p>
+            <EmptyState
+              icon={Upload}
+              title={dateRange.from || dateRange.to ? 'No receipts in this date range' : 'No receipts yet'}
+              description={
+                dateRange.from || dateRange.to
+                  ? 'Try widening the filter or clearing it to see all receipts.'
+                  : "Snap a photo or upload a PDF — AI extracts merchant, VAT, and category automatically."
+              }
+              action={
+                !(dateRange.from || dateRange.to)
+                  ? {
+                      label: 'Upload receipt',
+                      icon: Upload,
+                      onClick: () => document.getElementById('file-input')?.click(),
+                      testId: 'button-upload-first-receipt',
+                    }
+                  : undefined
+              }
+              secondaryAction={
+                dateRange.from || dateRange.to
+                  ? {
+                      label: 'Clear filter',
+                      onClick: () => setDateRange({ from: undefined, to: undefined }),
+                    }
+                  : undefined
+              }
+              testId="empty-state-receipts"
+            />
           )}
         </CardContent>
       </Card>
@@ -1554,7 +1610,7 @@ export default function Receipts() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <XCircle className="w-5 h-5 text-yellow-500" />
+              <XCircle className="w-5 h-5 text-[hsl(var(--chart-4))]" />
               Similar Transactions Found
             </DialogTitle>
             <DialogDescription>

@@ -1,17 +1,21 @@
-import type { Express, Request, Response } from "express";
+import { Router, type Express, type Request, type Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
-import crypto from "crypto";
 
 export function registerReferralRoutes(app: Express) {
+  const router = Router();
+
+  // Protect every referral endpoint at the router level.
+  router.use(authMiddleware);
+
   // =====================================
   // REFERRAL SYSTEM
   // =====================================
 
   // Get user's referral code
-  app.get("/api/referral/my-code", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  router.get("/my-code", asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     let referralCode = await storage.getReferralCodeByUserId(userId);
 
@@ -36,7 +40,7 @@ export function registerReferralRoutes(app: Express) {
   }));
 
   // Get referral stats
-  app.get("/api/referral/stats", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  router.get("/stats", asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     const referralCode = await storage.getReferralCodeByUserId(userId);
     const referrals = await storage.getReferralsByReferrerId(userId);
@@ -54,7 +58,7 @@ export function registerReferralRoutes(app: Express) {
   }));
 
   // Validate referral code (for signup)
-  app.get("/api/referral/validate/:code", asyncHandler(async (req: Request, res: Response) => {
+  router.get("/validate/:code", asyncHandler(async (req: Request, res: Response) => {
     const { code } = req.params;
     const referralCode = await storage.getReferralCodeByCode(code);
 
@@ -74,7 +78,7 @@ export function registerReferralRoutes(app: Express) {
   }));
 
   // Track referral signup
-  app.post("/api/referral/track-signup", asyncHandler(async (req: Request, res: Response) => {
+  router.post("/track-signup", asyncHandler(async (req: Request, res: Response) => {
     // Validate input
     const validationSchema = z.object({
       code: z.string().min(1, 'Referral code is required'),
@@ -120,4 +124,8 @@ export function registerReferralRoutes(app: Express) {
 
     res.json(referral);
   }));
+
+  // Mount under /api/referral so the router-level authMiddleware does not
+  // short-circuit unrelated paths (including the SPA root).
+  app.use('/api/referral', router);
 }

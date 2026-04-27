@@ -207,12 +207,20 @@ If no valid transactions can be found, return { "transactions": [] }`
   }));
 
   // AI CFO Advice Route
-  app.post("/api/ai/cfo-advice", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/ai/cfo-advice", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     try {
       const { companyId, question, context } = req.body;
+      const userId = (req as any).user.id;
 
       if (!companyId || !question) {
         return res.status(400).json({ message: 'Company ID and question are required' });
+      }
+
+      // Verify the caller has access to this company before exposing any
+      // financial context to the AI prompt.
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
       }
 
       // Get additional company data for context
@@ -677,18 +685,18 @@ ${JSON.stringify(ledgerData, null, 2)}`
         return res.status(400).json({ message: 'matchId and matchType are required' });
       }
 
-      // Verify user has access to the company that owns this transaction
-      const txn = await storage.getBankTransactionById(id);
+      // Find the transaction within the user's accessible companies (tenant-scoped).
+      const userCompanies = await storage.getCompaniesByUserId(userId);
+      let txn: Awaited<ReturnType<typeof storage.getBankTransactionById>> | undefined;
+      for (const c of userCompanies) {
+        txn = await storage.getBankTransactionById(id, c.id);
+        if (txn) break;
+      }
       if (!txn) {
         return res.status(404).json({ message: 'Transaction not found' });
       }
 
-      const hasAccess = await storage.hasCompanyAccess(userId, txn.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
-
-      const transaction = await storage.reconcileBankTransaction(id, matchId, matchType);
+      const transaction = await storage.reconcileBankTransaction(id, txn.companyId, matchId, matchType);
       res.json(transaction);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -969,30 +977,31 @@ Respond with JSON:
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      // Gather comprehensive financial context
-      const accounts = await storage.getAccountsByCompanyId(companyId);
-      const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      // Gather comprehensive financial context — parallel + single line fetch.
+      const [accounts, invoices, receipts, entries, allLines] = await Promise.all([
+        storage.getAccountsByCompanyId(companyId),
+        storage.getInvoicesByCompanyId(companyId),
+        storage.getReceiptsByCompanyId(companyId),
+        storage.getJournalEntriesByCompanyId(companyId),
+        storage.getJournalLinesByCompanyId(companyId),
+      ]);
+      const accountById = new Map(accounts.map(a => [a.id, a]));
 
-      // Calculate account balances
+      // Calculate account balances in a single pass.
       const accountBalances = new Map<string, { debit: number; credit: number; balance: number }>();
-      for (const entry of entries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        for (const line of lines) {
-          const current = accountBalances.get(line.accountId) || { debit: 0, credit: 0, balance: 0 };
-          current.debit += Number(line.debit) || 0;
-          current.credit += Number(line.credit) || 0;
-          const account = accounts.find(a => a.id === line.accountId);
-          if (account) {
-            if (['asset', 'expense'].includes(account.type)) {
-              current.balance = current.debit - current.credit;
-            } else {
-              current.balance = current.credit - current.debit;
-            }
+      for (const line of allLines) {
+        const current = accountBalances.get(line.accountId) || { debit: 0, credit: 0, balance: 0 };
+        current.debit += Number(line.debit) || 0;
+        current.credit += Number(line.credit) || 0;
+        const account = accountById.get(line.accountId);
+        if (account) {
+          if (['asset', 'expense'].includes(account.type)) {
+            current.balance = current.debit - current.credit;
+          } else {
+            current.balance = current.credit - current.debit;
           }
-          accountBalances.set(line.accountId, current);
         }
+        accountBalances.set(line.accountId, current);
       }
 
       // Prepare financial summary for AI
@@ -1060,6 +1069,21 @@ Respond with JSON:
         }
       }
 
+      const supportName = getEnv().SUPPORT_CONTACT_NAME;
+      const supportPhone = getEnv().SUPPORT_CONTACT_PHONE;
+      const supportLine = supportName && supportPhone
+        ? `${supportName} at ${supportPhone}`
+        : supportName || supportPhone || 'a qualified professional';
+      const supportGuidance = supportName && supportPhone
+        ? `- IMPORTANT: When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact ${supportLine} for personalized professional assistance`
+        : `- IMPORTANT: When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to consult a qualified professional`;
+      const followUpLine = supportName && supportPhone
+        ? `4. When professional advice is needed, suggest contacting ${supportLine}`
+        : `4. When professional advice is needed, suggest consulting a qualified professional`;
+      const closingGuidance = supportName && supportPhone
+        ? `Always conclude with: "For personalized professional advice on this matter, I recommend contacting ${supportLine}. They can provide expert guidance tailored to your specific situation."`
+        : `Always conclude with: "For personalized professional advice on this matter, I recommend consulting a qualified professional who can provide expert guidance tailored to your specific situation."`;
+
       const systemPrompt = `You are an intelligent bookkeeping assistant for a UAE business. You help users query and manage their financial data using natural language.
 
 CAPABILITIES:
@@ -1083,14 +1107,14 @@ RULES:
 - Format numbers properly with thousand separators
 - For date ranges, interpret "this month" as current calendar month, "last month" as previous calendar month, "this year" as current calendar year
 - When suggesting actions, explain what the user should do but don't claim to have done it
-- IMPORTANT: When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact NR Accounting Services at +971507042270 for personalized professional assistance
+${supportGuidance}
 
 RESPONSE FORMAT:
 Respond naturally in conversational language. Include:
 1. Direct answer to the question
 2. Relevant context or insights if helpful
 3. Suggestions for follow-up questions or actions if appropriate
-4. When professional advice is needed, suggest contacting NR Accounting Services at +971507042270
+${followUpLine}
 
 PROFESSIONAL ADVICE GUIDANCE:
 Whenever a user asks about:
@@ -1101,7 +1125,7 @@ Whenever a user asks about:
 - Professional accounting services
 - Or any topic requiring expert consultation
 
-Always conclude with: "For personalized professional advice on this matter, I recommend contacting NR Accounting Services at +971507042270. They can provide expert guidance tailored to your specific situation."
+${closingGuidance}
 
 Current date: ${new Date().toISOString().split('T')[0]}
 Company: ${company.name}`;
@@ -1162,10 +1186,13 @@ Company: ${company.name}`;
     let fullResponse = '';
     let conversationId: string | undefined;
     let isStreaming = false;
+    // Whitelist of models a client may request. Expensive models (gpt-4, gpt-4-turbo)
+    // are intentionally excluded — only cost-controlled models can be selected.
+    const ALLOWED_AI_MODELS = ['gpt-3.5-turbo', 'gpt-4o-mini'] as const;
     const validationSchema = z.object({
       message: z.string().min(1, 'Message is required').max(10000, 'Message is too long'),
       companyId: z.string().uuid('Invalid company ID format').optional(),
-      model: z.enum(['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo']).optional().default('gpt-3.5-turbo'),
+      model: z.enum(ALLOWED_AI_MODELS).optional().default('gpt-3.5-turbo'),
       systemPrompt: z.string().max(2000, 'System prompt too long').optional(),
       stream: z.boolean().optional().default(false),
     });
@@ -1189,12 +1216,22 @@ Company: ${company.name}`;
         return res.status(500).json({ message: 'OpenAI API key is not configured' });
       }
 
+      const askSupportName = getEnv().SUPPORT_CONTACT_NAME;
+      const askSupportPhone = getEnv().SUPPORT_CONTACT_PHONE;
+      const askSupportLine = askSupportName && askSupportPhone
+        ? `${askSupportName} at ${askSupportPhone}`
+        : askSupportName || askSupportPhone || 'a qualified professional';
+      const askGuidanceBlock = askSupportName && askSupportPhone
+        ? `- When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact ${askSupportLine} for personalized professional assistance.
+- For complex tax matters, legal compliance, advanced financial strategies, business structure advice, or any topic requiring expert consultation, always suggest: "For personalized professional advice on this matter, I recommend contacting ${askSupportLine}. They can provide expert guidance tailored to your specific situation."`
+        : `- When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to consult a qualified professional.
+- For complex tax matters, legal compliance, advanced financial strategies, business structure advice, or any topic requiring expert consultation, always suggest: "For personalized professional advice on this matter, I recommend consulting a qualified professional who can provide expert guidance tailored to your specific situation."`;
+
       const systemPrompt = validated.systemPrompt ||
         `You are a helpful AI assistant for accounting and financial management. Provide clear, accurate, and professional responses.
 
 IMPORTANT GUIDELINES:
-- When users ask for professional advice, complex accounting guidance, tax planning, or need expert consultation, always encourage them to contact NR Accounting Services at +971507042270 for personalized professional assistance.
-- For complex tax matters, legal compliance, advanced financial strategies, business structure advice, or any topic requiring expert consultation, always suggest: "For personalized professional advice on this matter, I recommend contacting NR Accounting Services at +971507042270. They can provide expert guidance tailored to your specific situation."`;
+${askGuidanceBlock}`;
 
       // Setup streaming if requested
       if (validated.stream) {
@@ -1603,16 +1640,14 @@ IMPORTANT GUIDELINES:
         }
       }
 
-      // Collect descriptions from invoice lines
+      // Collect descriptions from invoice lines — single batched query.
       if (!type || type === 'invoice') {
         const invoices = await storage.getInvoicesByCompanyId(companyId as string);
-        for (const invoice of invoices) {
-          const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-          for (const line of lines) {
-            if (line.description) {
-              const key = line.description.toLowerCase().trim();
-              descriptions.set(key, (descriptions.get(key) || 0) + 1);
-            }
+        const allLines = await storage.getInvoiceLinesByInvoiceIds(invoices.map(i => i.id));
+        for (const line of allLines) {
+          if (line.description) {
+            const key = line.description.toLowerCase().trim();
+            descriptions.set(key, (descriptions.get(key) || 0) + 1);
           }
         }
       }
@@ -1666,17 +1701,16 @@ IMPORTANT GUIDELINES:
         );
 
         if (merchantReceipts.length > 0) {
-          // Find most common account used
+          // Single batched fetch instead of one query per receipt.
+          const entryIds = merchantReceipts
+            .map(r => r.journalEntryId)
+            .filter((id): id is string => Boolean(id));
+          const allLines = await storage.getJournalLinesByEntryIds(entryIds);
           const accountCounts = new Map<string, number>();
-          for (const receipt of merchantReceipts) {
-            if (receipt.journalEntryId) {
-              const lines = await storage.getJournalLinesByEntryId(receipt.journalEntryId);
-              for (const line of lines) {
-                const account = accounts.find(a => a.id === line.accountId);
-                if (account && account.type === 'expense') {
-                  accountCounts.set(account.id, (accountCounts.get(account.id) || 0) + 1);
-                }
-              }
+          for (const line of allLines) {
+            const account = accounts.find(a => a.id === line.accountId);
+            if (account && account.type === 'expense') {
+              accountCounts.set(account.id, (accountCounts.get(account.id) || 0) + 1);
             }
           }
 

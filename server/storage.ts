@@ -60,6 +60,7 @@ import type {
   InvoicePayment, InsertInvoicePayment
 } from "@shared/schema";
 import {
+  passwordResetTokens,
   users,
   companies,
   companyUsers,
@@ -121,8 +122,15 @@ import {
   invoicePayments
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, lte, isNull, sql, gt, inArray } from "drizzle-orm";
+import Decimal from "decimal.js";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
+import { ACCOUNT_CODES } from "./constants";
+
+// Default cap on list-endpoint queries. Without this, a single tenant with
+// runaway invoice/journal volume can pull tens of MB into memory. Pages that
+// truly need the full dataset (PDF export, GL ledger) pass an explicit limit.
+const DEFAULT_LIST_LIMIT = 1000;
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
 // Postgres advisory locks accept (int4, int4); pg_advisory_lock(bigint) would
@@ -153,6 +161,13 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUserPassword(userId: string, passwordHash: string): Promise<void>;
+
+  // Password reset tokens
+  createPasswordResetToken(input: { userId: string; tokenHash: string; expiresAt: Date }): Promise<void>;
+  findValidPasswordResetToken(tokenHash: string): Promise<{ id: string; userId: string } | undefined>;
+  markPasswordResetTokenUsed(id: string): Promise<void>;
+  deletePasswordResetTokensForUser(userId: string): Promise<void>;
   
   // Companies
   getCompany(id: string): Promise<Company | undefined>;
@@ -168,11 +183,11 @@ export interface IStorage {
   hasCompanyAccess(userId: string, companyId: string): Promise<boolean>;
   
   // Accounts
-  getAccount(id: string): Promise<Account | undefined>;
+  getAccount(id: string, companyId: string): Promise<Account | undefined>;
   getAccountsByCompanyId(companyId: string): Promise<Account[]>;
   createAccount(account: InsertAccount): Promise<Account>;
-  updateAccount(id: string, data: Partial<Account>): Promise<Account>;
-  deleteAccount(id: string): Promise<void>;
+  updateAccount(id: string, companyId: string, data: Partial<Account>): Promise<Account>;
+  deleteAccount(id: string, companyId: string): Promise<void>;
   accountHasTransactions(accountId: string): Promise<boolean>;
   
   // Account Ledger & Balance
@@ -226,26 +241,31 @@ export interface IStorage {
   }>;
   
   // Journal Entries
-  getJournalEntry(id: string): Promise<JournalEntry | undefined>;
+  getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
+  getPostedJournalEntriesWithLines(
+    companyId: string,
+  ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>>;
   createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
-  updateJournalEntry(id: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
-  updateJournalEntryWithLines(id: string, data: Partial<JournalEntry>, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
-  deleteJournalEntry(id: string): Promise<void>;
+  updateJournalEntry(id: string, companyId: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
+  updateJournalEntryWithLines(id: string, companyId: string, data: Partial<JournalEntry>, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
+  deleteJournalEntry(id: string, companyId: string): Promise<void>;
   generateEntryNumber(companyId: string, date: Date): Promise<string>;
   
   // Journal Lines
   createJournalLine(line: InsertJournalLine): Promise<JournalLine>;
   getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]>;
+  getJournalLinesByEntryIds(entryIds: string[]): Promise<JournalLine[]>;
   deleteJournalLinesByEntryId(entryId: string): Promise<void>;
-  
+
   // Invoices
-  getInvoice(id: string): Promise<Invoice | undefined>;
+  getInvoice(id: string, companyId: string): Promise<Invoice | undefined>;
   getInvoicesByCompanyId(companyId: string): Promise<Invoice[]>;
+  getInvoicesSummaryByCompanyId(companyId: string, opts?: { limit?: number; offset?: number }): Promise<Omit<Invoice, 'einvoiceXml' | 'einvoiceHash'>[]>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
-  updateInvoice(id: string, data: Partial<InsertInvoice>): Promise<Invoice>;
-  updateInvoiceStatus(id: string, status: string): Promise<Invoice>;
-  deleteInvoice(id: string): Promise<void>;
+  updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice>;
+  updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice>;
+  deleteInvoice(id: string, companyId: string): Promise<void>;
   
   // Invoice Share Token
   getInvoiceByShareToken(token: string): Promise<Invoice | undefined>;
@@ -254,14 +274,15 @@ export interface IStorage {
   // Invoice Lines
   createInvoiceLine(line: InsertInvoiceLine): Promise<InvoiceLine>;
   getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]>;
+  getInvoiceLinesByInvoiceIds(invoiceIds: string[]): Promise<InvoiceLine[]>;
   deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void>;
   
   // Receipts
-  getReceipt(id: string): Promise<Receipt | undefined>;
+  getReceipt(id: string, companyId: string): Promise<Receipt | undefined>;
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
-  updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt>;
-  deleteReceipt(id: string): Promise<void>;
+  updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt>;
+  deleteReceipt(id: string, companyId: string): Promise<void>;
   
   // Customer Contacts
   getCustomerContact(id: string): Promise<CustomerContact | undefined>;
@@ -313,11 +334,17 @@ export interface IStorage {
   // Bank Transactions
   createBankTransaction(transaction: InsertBankTransaction): Promise<BankTransaction>;
   bulkCreateBankTransactions(transactions: InsertBankTransaction[]): Promise<BankTransaction[]>;
-  getBankTransactionById(id: string): Promise<BankTransaction | undefined>;
+  getBankTransactionById(id: string, companyId: string): Promise<BankTransaction | undefined>;
   getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]>;
   getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]>;
-  updateBankTransaction(id: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
-  reconcileBankTransaction(id: string, matchedId: string, matchType: 'journal' | 'receipt' | 'invoice'): Promise<BankTransaction>;
+  updateBankTransaction(id: string, companyId: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
+  reconcileBankTransaction(
+    id: string,
+    companyId: string,
+    matchedId: string,
+    matchType: 'journal' | 'receipt' | 'invoice',
+    createdBy?: string,
+  ): Promise<BankTransaction>;
 
   // Cash Flow Forecasts
   createCashFlowForecast(forecast: InsertCashFlowForecast): Promise<CashFlowForecast>;
@@ -335,7 +362,7 @@ export interface IStorage {
   // Budgets
   getBudgetsByCompanyId(companyId: string, year: number, month: number): Promise<Budget[]>;
   createBudget(budget: InsertBudget): Promise<Budget>;
-  updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget>;
+  updateBudget(id: string, companyId: string, data: Partial<InsertBudget>): Promise<Budget>;
 
   // E-Commerce Integrations
   getEcommerceIntegrations(companyId: string): Promise<EcommerceIntegration[]>;
@@ -658,6 +685,44 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
+    await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  }
+
+  // Password reset tokens
+  async createPasswordResetToken(input: { userId: string; tokenHash: string; expiresAt: Date }): Promise<void> {
+    await db.insert(passwordResetTokens).values({
+      userId: input.userId,
+      tokenHash: input.tokenHash,
+      expiresAt: input.expiresAt,
+    });
+  }
+
+  async findValidPasswordResetToken(tokenHash: string): Promise<{ id: string; userId: string } | undefined> {
+    const [row] = await db
+      .select({ id: passwordResetTokens.id, userId: passwordResetTokens.userId })
+      .from(passwordResetTokens)
+      .where(
+        and(
+          eq(passwordResetTokens.tokenHash, tokenHash),
+          isNull(passwordResetTokens.usedAt),
+          gt(passwordResetTokens.expiresAt, new Date()),
+        ),
+      );
+    return row || undefined;
+  }
+
+  async markPasswordResetTokenUsed(id: string): Promise<void> {
+    await db
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.id, id));
+  }
+
+  async deletePasswordResetTokensForUser(userId: string): Promise<void> {
+    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));
+  }
+
   // Companies
   async getCompany(id: string): Promise<Company | undefined> {
     const [company] = await db.select().from(companies).where(and(eq(companies.id, id), isNull(companies.deletedAt)));
@@ -728,8 +793,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Accounts
-  async getAccount(id: string): Promise<Account | undefined> {
-    const [account] = await db.select().from(accounts).where(eq(accounts.id, id));
+  async getAccount(id: string, companyId: string): Promise<Account | undefined> {
+    const [account] = await db
+      .select()
+      .from(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)));
     return account || undefined;
   }
 
@@ -745,11 +813,11 @@ export class DatabaseStorage implements IStorage {
     return account;
   }
 
-  async updateAccount(id: string, data: Partial<Account>): Promise<Account> {
+  async updateAccount(id: string, companyId: string, data: Partial<Account>): Promise<Account> {
     const [account] = await db
       .update(accounts)
       .set(data)
-      .where(eq(accounts.id, id))
+      .where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)))
       .returning();
     if (!account) {
       throw new Error('Account not found');
@@ -757,8 +825,10 @@ export class DatabaseStorage implements IStorage {
     return account;
   }
 
-  async deleteAccount(id: string): Promise<void> {
-    await db.delete(accounts).where(eq(accounts.id, id));
+  async deleteAccount(id: string, companyId: string): Promise<void> {
+    await db
+      .delete(accounts)
+      .where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)));
   }
 
   async archiveAccount(id: string): Promise<Account> {
@@ -872,14 +942,17 @@ export class DatabaseStorage implements IStorage {
     return results;
   }
 
-  async getAccountLedger(accountId: string, options?: { 
-    dateStart?: Date; 
-    dateEnd?: Date; 
+  async getAccountLedger(accountId: string, options?: {
+    dateStart?: Date;
+    dateEnd?: Date;
     search?: string;
     limit?: number;
     offset?: number;
   }) {
-    const account = await this.getAccount(accountId);
+    // Existence check; tenant scoping is the caller's responsibility (the
+    // accounts.routes ledger handler resolves the account against the user's
+    // companies before invoking this).
+    const [account] = await db.select().from(accounts).where(eq(accounts.id, accountId));
     if (!account) {
       throw new Error('Account not found');
     }
@@ -989,8 +1062,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Journal Entries
-  async getJournalEntry(id: string): Promise<JournalEntry | undefined> {
-    const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+  async getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined> {
+    const [entry] = await db
+      .select()
+      .from(journalEntries)
+      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)));
     return entry || undefined;
   }
 
@@ -1000,6 +1076,35 @@ export class DatabaseStorage implements IStorage {
       .from(journalEntries)
       .where(eq(journalEntries.companyId, companyId))
       .orderBy(desc(journalEntries.date));
+  }
+
+  async getPostedJournalEntriesWithLines(
+    companyId: string,
+  ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>> {
+    // Single JOIN replaces an N+1 (one query per entry to fetch lines).
+    const rows = await db
+      .select({
+        entry: journalEntries,
+        line: journalLines,
+      })
+      .from(journalEntries)
+      .leftJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
+      .where(and(
+        eq(journalEntries.companyId, companyId),
+        eq(journalEntries.status, 'posted'),
+      ));
+
+    const byId = new Map<string, { entry: JournalEntry; lines: JournalLine[] }>();
+    for (const row of rows) {
+      const entryId = row.entry.id;
+      let bucket = byId.get(entryId);
+      if (!bucket) {
+        bucket = { entry: row.entry, lines: [] };
+        byId.set(entryId, bucket);
+      }
+      if (row.line) bucket.lines.push(row.line);
+    }
+    return Array.from(byId.values());
   }
 
   async createJournalEntry(
@@ -1020,11 +1125,11 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async updateJournalEntry(id: string, data: Partial<JournalEntry>): Promise<JournalEntry> {
+  async updateJournalEntry(id: string, companyId: string, data: Partial<JournalEntry>): Promise<JournalEntry> {
     const [entry] = await db
       .update(journalEntries)
       .set(data)
-      .where(eq(journalEntries.id, id))
+      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
       .returning();
     if (!entry) {
       throw new Error('Journal entry not found');
@@ -1034,6 +1139,7 @@ export class DatabaseStorage implements IStorage {
 
   async updateJournalEntryWithLines(
     id: string,
+    companyId: string,
     data: Partial<JournalEntry>,
     lines: Array<Omit<InsertJournalLine, 'entryId'>>
   ): Promise<JournalEntry> {
@@ -1046,7 +1152,7 @@ export class DatabaseStorage implements IStorage {
       const [entry] = await tx
         .update(journalEntries)
         .set(data)
-        .where(eq(journalEntries.id, id))
+        .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
         .returning();
       if (!entry) {
         throw new Error('Journal entry not found');
@@ -1059,8 +1165,10 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async deleteJournalEntry(id: string): Promise<void> {
-    await db.delete(journalEntries).where(eq(journalEntries.id, id));
+  async deleteJournalEntry(id: string, companyId: string): Promise<void> {
+    await db
+      .delete(journalEntries)
+      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)));
   }
 
   async generateEntryNumber(companyId: string, date: Date): Promise<string> {
@@ -1116,13 +1224,21 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(journalLines).where(eq(journalLines.entryId, entryId));
   }
 
+  async getJournalLinesByEntryIds(entryIds: string[]): Promise<JournalLine[]> {
+    if (entryIds.length === 0) return [];
+    return await db.select().from(journalLines).where(inArray(journalLines.entryId, entryIds));
+  }
+
   async deleteJournalLinesByEntryId(entryId: string): Promise<void> {
     await db.delete(journalLines).where(eq(journalLines.entryId, entryId));
   }
 
   // Invoices
-  async getInvoice(id: string): Promise<Invoice | undefined> {
-    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
+  async getInvoice(id: string, companyId: string): Promise<Invoice | undefined> {
+    const [invoice] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)));
     return invoice || undefined;
   }
 
@@ -1134,6 +1250,54 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(invoices.date));
   }
 
+  // Trimmed projection used by list endpoints — strips einvoiceXml (full UBL
+  // doc) and einvoiceHash, which can each be 10-50KB per invoice and bloat
+  // the JSON payload by 100x for a tenant with hundreds of submitted invoices.
+  async getInvoicesSummaryByCompanyId(
+    companyId: string,
+    opts: { limit?: number; offset?: number } = {},
+  ): Promise<Omit<Invoice, 'einvoiceXml' | 'einvoiceHash'>[]> {
+    const limit = opts.limit ?? DEFAULT_LIST_LIMIT;
+    const offset = opts.offset ?? 0;
+    return await db
+      .select({
+        id: invoices.id,
+        companyId: invoices.companyId,
+        number: invoices.number,
+        customerName: invoices.customerName,
+        customerTrn: invoices.customerTrn,
+        date: invoices.date,
+        dueDate: invoices.dueDate,
+        paymentTerms: invoices.paymentTerms,
+        currency: invoices.currency,
+        exchangeRate: invoices.exchangeRate,
+        baseCurrencyAmount: invoices.baseCurrencyAmount,
+        subtotal: invoices.subtotal,
+        vatAmount: invoices.vatAmount,
+        total: invoices.total,
+        status: invoices.status,
+        shareToken: invoices.shareToken,
+        shareTokenExpiresAt: invoices.shareTokenExpiresAt,
+        einvoiceUuid: invoices.einvoiceUuid,
+        einvoiceStatus: invoices.einvoiceStatus,
+        reminderCount: invoices.reminderCount,
+        lastReminderSentAt: invoices.lastReminderSentAt,
+        invoiceType: invoices.invoiceType,
+        originalInvoiceId: invoices.originalInvoiceId,
+        isRecurring: invoices.isRecurring,
+        recurringInterval: invoices.recurringInterval,
+        nextRecurringDate: invoices.nextRecurringDate,
+        recurringEndDate: invoices.recurringEndDate,
+        contactId: invoices.contactId,
+        createdAt: invoices.createdAt,
+      })
+      .from(invoices)
+      .where(eq(invoices.companyId, companyId))
+      .orderBy(desc(invoices.date))
+      .limit(limit)
+      .offset(offset);
+  }
+
   async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
     const [invoice] = await db
       .insert(invoices)
@@ -1142,11 +1306,11 @@ export class DatabaseStorage implements IStorage {
     return invoice;
   }
 
-  async updateInvoice(id: string, data: Partial<InsertInvoice>): Promise<Invoice> {
+  async updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice> {
     const [invoice] = await db
       .update(invoices)
       .set(data)
-      .where(eq(invoices.id, id))
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)))
       .returning();
     if (!invoice) {
       throw new Error('Invoice not found');
@@ -1154,22 +1318,24 @@ export class DatabaseStorage implements IStorage {
     return invoice;
   }
 
-  async updateInvoiceStatus(id: string, status: string): Promise<Invoice> {
+  async updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice> {
     const [invoice] = await db
       .update(invoices)
       .set({ status })
-      .where(eq(invoices.id, id))
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)))
       .returning();
-    
+
     if (!invoice) {
       throw new Error('Invoice not found');
     }
-    
+
     return invoice;
   }
 
-  async deleteInvoice(id: string): Promise<void> {
-    await db.delete(invoices).where(eq(invoices.id, id));
+  async deleteInvoice(id: string, companyId: string): Promise<void> {
+    await db
+      .delete(invoices)
+      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)));
   }
 
   async getInvoiceByShareToken(token: string): Promise<Invoice | undefined> {
@@ -1197,13 +1363,21 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
   }
 
+  async getInvoiceLinesByInvoiceIds(invoiceIds: string[]): Promise<InvoiceLine[]> {
+    if (invoiceIds.length === 0) return [];
+    return await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds));
+  }
+
   async deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void> {
     await db.delete(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
   }
 
   // Receipts
-  async getReceipt(id: string): Promise<Receipt | undefined> {
-    const [receipt] = await db.select().from(receipts).where(eq(receipts.id, id));
+  async getReceipt(id: string, companyId: string): Promise<Receipt | undefined> {
+    const [receipt] = await db
+      .select()
+      .from(receipts)
+      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
     return receipt || undefined;
   }
 
@@ -1223,11 +1397,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(receipts.createdAt));
   }
 
-  async updateReceipt(id: string, data: Partial<InsertReceipt>): Promise<Receipt> {
+  async updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt> {
     const [receipt] = await db
       .update(receipts)
       .set(data)
-      .where(eq(receipts.id, id))
+      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)))
       .returning();
     if (!receipt) {
       throw new Error('Receipt not found');
@@ -1235,8 +1409,10 @@ export class DatabaseStorage implements IStorage {
     return receipt;
   }
 
-  async deleteReceipt(id: string): Promise<void> {
-    await db.delete(receipts).where(eq(receipts.id, id));
+  async deleteReceipt(id: string, companyId: string): Promise<void> {
+    await db
+      .delete(receipts)
+      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
   }
 
   // Customer Contacts
@@ -1526,11 +1702,11 @@ export class DatabaseStorage implements IStorage {
     return await db.insert(bankTransactions).values(transactions).returning();
   }
 
-  async getBankTransactionById(id: string): Promise<BankTransaction | undefined> {
+  async getBankTransactionById(id: string, companyId: string): Promise<BankTransaction | undefined> {
     const [transaction] = await db
       .select()
       .from(bankTransactions)
-      .where(eq(bankTransactions.id, id));
+      .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)));
     return transaction;
   }
 
@@ -1553,11 +1729,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
-  async updateBankTransaction(id: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction> {
+  async updateBankTransaction(id: string, companyId: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction> {
     const [transaction] = await db
       .update(bankTransactions)
       .set(data)
-      .where(eq(bankTransactions.id, id))
+      .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)))
       .returning();
     if (!transaction) {
       throw new Error('Bank transaction not found');
@@ -1565,7 +1741,19 @@ export class DatabaseStorage implements IStorage {
     return transaction;
   }
 
-  async reconcileBankTransaction(id: string, matchedId: string, matchType: 'journal' | 'receipt' | 'invoice'): Promise<BankTransaction> {
+  async reconcileBankTransaction(
+    id: string,
+    companyId: string,
+    matchedId: string,
+    matchType: 'journal' | 'receipt' | 'invoice',
+    createdBy?: string,
+  ): Promise<BankTransaction> {
+    // Load the bank txn so we have amount/date/bankAccountId for JE posting.
+    const existing = await this.getBankTransactionById(id, companyId);
+    if (!existing) {
+      throw new Error('Bank transaction not found');
+    }
+
     const updateData: any = {
       isReconciled: true,
     };
@@ -1576,7 +1764,83 @@ export class DatabaseStorage implements IStorage {
     } else {
       updateData.matchedInvoiceId = matchedId;
     }
-    
+
+    // Reconciliation must produce a journal entry: previously this method only
+    // flipped flags on the bank transaction, leaving the books out of step
+    // with the bank statement. For 'journal' matches the contra entry already
+    // exists, so we just link to it. For 'invoice' / 'receipt' matches we
+    // either link an existing source-derived JE (e.g. one posted by
+    // recordInvoicePayment / receipt posting) or create a fresh
+    // bank-reconciliation JE here.
+    if (
+      createdBy &&
+      matchType !== 'journal' &&
+      !existing.matchedJournalEntryId &&
+      existing.bankAccountId
+    ) {
+      const sourceTag = matchType === 'invoice' ? 'payment' : 'receipt';
+      const sourceEntries = await this.getJournalEntriesBySource(
+        existing.companyId,
+        sourceTag,
+        matchedId,
+      );
+      const linkedExisting = sourceEntries[0];
+
+      if (linkedExisting) {
+        updateData.matchedJournalEntryId = linkedExisting.id;
+      } else {
+        const accounts = await this.getAccountsByCompanyId(existing.companyId);
+        const arAccount = accounts.find(
+          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount,
+        );
+        const apAccount = accounts.find(
+          (a) => a.code === ACCOUNT_CODES.AP && a.isSystemAccount,
+        );
+        const isInflow = Number(existing.amount) > 0;
+        // Inflow: customer paid → Dr Bank, Cr A/R (link to invoice).
+        // Outflow: paid vendor / expense → Dr A/P, Cr Bank (link to receipt).
+        const contraAccount = isInflow ? arAccount : apAccount;
+
+        if (contraAccount) {
+          const absAmount = Math.abs(Number(existing.amount));
+          const txnDate = existing.transactionDate instanceof Date
+            ? existing.transactionDate
+            : new Date(existing.transactionDate);
+          const entryNumber = await this.generateEntryNumber(existing.companyId, txnDate);
+
+          const newEntry = await this.createJournalEntry(
+            {
+              companyId: existing.companyId,
+              entryNumber,
+              date: txnDate,
+              memo: `Bank reconciliation: ${existing.description}`.slice(0, 500),
+              status: 'posted',
+              source: 'bank_reconciliation',
+              sourceId: existing.id,
+              createdBy,
+              postedBy: createdBy,
+              postedAt: new Date(),
+            },
+            [
+              {
+                accountId: existing.bankAccountId,
+                debit: isInflow ? absAmount : 0,
+                credit: isInflow ? 0 : absAmount,
+                description: existing.description,
+              },
+              {
+                accountId: contraAccount.id,
+                debit: isInflow ? 0 : absAmount,
+                credit: isInflow ? absAmount : 0,
+                description: existing.description,
+              },
+            ],
+          );
+          updateData.matchedJournalEntryId = newEntry.id;
+        }
+      }
+    }
+
     const [transaction] = await db
       .update(bankTransactions)
       .set(updateData)
@@ -1673,11 +1937,11 @@ export class DatabaseStorage implements IStorage {
     return budget;
   }
 
-  async updateBudget(id: string, data: Partial<InsertBudget>): Promise<Budget> {
+  async updateBudget(id: string, companyId: string, data: Partial<InsertBudget>): Promise<Budget> {
     const [budget] = await db
       .update(budgets)
       .set(data)
-      .where(eq(budgets.id, id))
+      .where(and(eq(budgets.id, id), eq(budgets.companyId, companyId)))
       .returning();
     if (!budget) {
       throw new Error('Budget not found');
@@ -3022,13 +3286,18 @@ export class DatabaseStorage implements IStorage {
         WHERE invoice_id = ${input.invoiceId}
       `);
       const sumRows = (sumResult.rows ?? sumResult) as Array<{ paid: number | string }>;
-      const previouslyPaid = Number(sumRows[0]?.paid ?? 0);
-      const remaining = Number(lockedInvoice.total) - previouslyPaid;
 
-      // Round to fils (2dp) for tolerance.
-      if (input.amount > remaining + 0.005) {
+      // Decimal.js comparison so summing many payments cannot drift past
+      // the invoice total via binary-float error and silently overpay.
+      const totalD = new Decimal(lockedInvoice.total);
+      const previouslyPaidD = new Decimal(sumRows[0]?.paid ?? 0);
+      const amountD = new Decimal(input.amount);
+      const remainingD = totalD.minus(previouslyPaidD);
+
+      // 0.005 fils tolerance for legitimate 2dp rounding.
+      if (amountD.greaterThan(remainingD.plus('0.005'))) {
         const e: any = new Error(
-          `Payment ${input.amount.toFixed(2)} exceeds remaining balance ${remaining.toFixed(2)}`,
+          `Payment ${amountD.toFixed(2)} exceeds remaining balance ${remainingD.toFixed(2)}`,
         );
         e.code = 'OVERPAYMENT';
         throw e;
@@ -3105,7 +3374,7 @@ export class DatabaseStorage implements IStorage {
         .returning();
 
       // Recompute status from the canonical paid total (post-insert).
-      const newTotalPaid = previouslyPaid + input.amount;
+      const newTotalPaid = previouslyPaidD.plus(amountD).toNumber();
       const newStatus = statusFromPayments(
         lockedInvoice.status as InvoiceStatus,
         Number(lockedInvoice.total),

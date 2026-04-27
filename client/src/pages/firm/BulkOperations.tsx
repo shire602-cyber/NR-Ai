@@ -434,7 +434,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
   const toggleClient = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
@@ -643,7 +643,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
   const toggleClient = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };

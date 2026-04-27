@@ -33,6 +33,7 @@ import { registerOnboardingRoutes } from './routes/onboarding.routes';
 import { registerBackupRoutes } from './routes/backups.routes';
 import { registerReferralRoutes } from './routes/referrals.routes';
 import { registerFeedbackRoutes } from './routes/feedback.routes';
+import { registerClientErrorRoutes } from './routes/client-errors.routes';
 import { registerVATRoutes } from './routes/vat.routes';
 import { registerCorporateTaxRoutes } from './routes/corporate-tax.routes';
 import { registerTeamRoutes } from './routes/team.routes';
@@ -116,6 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerBackupRoutes(app);
   registerReferralRoutes(app);
   registerFeedbackRoutes(app);
+  registerClientErrorRoutes(app);
 
   // ─── UAE Compliance ─────────────────────────────────────
   registerVATRoutes(app);

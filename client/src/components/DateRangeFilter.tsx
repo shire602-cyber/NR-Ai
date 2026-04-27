@@ -39,24 +39,27 @@ export function DateRangeFilter({ dateRange, onDateRangeChange, className }: Dat
       case 'this-month':
         onDateRangeChange({ from: startOfMonth(now), to: endOfMonth(now) });
         break;
-      case 'last-month':
+      case 'last-month': {
         const lastMonth = subMonths(now, 1);
         onDateRangeChange({ from: startOfMonth(lastMonth), to: endOfMonth(lastMonth) });
         break;
+      }
       case 'this-quarter':
         onDateRangeChange({ from: startOfQuarter(now), to: endOfQuarter(now) });
         break;
-      case 'last-quarter':
+      case 'last-quarter': {
         const lastQuarter = subQuarters(now, 1);
         onDateRangeChange({ from: startOfQuarter(lastQuarter), to: endOfQuarter(lastQuarter) });
         break;
+      }
       case 'this-year':
         onDateRangeChange({ from: startOfYear(now), to: endOfYear(now) });
         break;
-      case 'last-year':
+      case 'last-year': {
         const lastYear = subYears(now, 1);
         onDateRangeChange({ from: startOfYear(lastYear), to: endOfYear(lastYear) });
         break;
+      }
       case 'custom':
         break;
       default:

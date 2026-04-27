@@ -140,9 +140,23 @@ export function registerCompanyRoutes(app: Express) {
       delete updateData.taxRegistrationDate;
     }
 
-    const company = await storage.updateCompany(id, updateData);
-    log.info({ id: company.id }, 'Company profile updated');
-    res.json(company);
+    try {
+      const company = await storage.updateCompany(id, updateData);
+      log.info({ id: company.id }, 'Company profile updated');
+      res.json(company);
+    } catch (err: any) {
+      // Postgres unique_violation. Surface a 409 with a clear message so the
+      // onboarding wizard can show something actionable instead of being
+      // stuck on a generic save-failed toast.
+      if (err?.code === '23505') {
+        log.warn({ id, constraint: err.constraint }, 'Company update unique violation');
+        return res.status(409).json({
+          message: 'That value is already taken by another tenant. Please pick a different one.',
+          field: err.constraint?.includes('name') ? 'name' : undefined,
+        });
+      }
+      throw err;
+    }
   }));
 
   // Mark company onboarding as complete

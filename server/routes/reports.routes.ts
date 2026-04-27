@@ -39,9 +39,20 @@ export function registerReportRoutes(app: Express) {
 
     // Cashflow must reflect only posted activity; drafts/voided entries
     // would otherwise distort inflow/outflow totals.
-    const journalEntriesData = (await storage.getJournalEntriesByCompanyId(companyId))
-      .filter(e => e.status === 'posted');
-    const accountsData = await storage.getAccountsByCompanyId(companyId);
+    const [journalEntriesRaw, accountsData] = await Promise.all([
+      storage.getJournalEntriesByCompanyId(companyId),
+      storage.getAccountsByCompanyId(companyId),
+    ]);
+    const journalEntriesData = journalEntriesRaw.filter(e => e.status === 'posted');
+    // Pre-fetch lines for all posted entries in a single batch — the cash
+    // flow report otherwise issues one round-trip per entry per period.
+    const allLinesArr = await storage.getJournalLinesByEntryIds(journalEntriesData.map(e => e.id));
+    const linesByEntryId = new Map<string, typeof allLinesArr>();
+    for (const line of allLinesArr) {
+      const list = linesByEntryId.get(line.entryId) ?? [];
+      list.push(line);
+      linesByEntryId.set(line.entryId, list);
+    }
 
     // Cash flow must reflect actual movement of cash, not revenue/expense
     // recognition. Booking an unpaid sales invoice records revenue (and an
@@ -94,7 +105,7 @@ export function registerReportRoutes(app: Express) {
     {
       const priorEntries = journalEntriesData.filter(je => new Date(je.date) < startDate);
       for (const entry of priorEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
+        const lines = linesByEntryId.get(entry.id) ?? [];
         for (const line of lines) {
           if (cashAccountIds.has(line.accountId)) {
             runningBalance += (line.debit || 0) - (line.credit || 0);
@@ -134,7 +145,7 @@ export function registerReportRoutes(app: Express) {
       let financingOutflow = 0;
 
       for (const entry of periodEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
+        const lines = linesByEntryId.get(entry.id) ?? [];
         const cashLines = lines.filter(l => cashAccountIds.has(l.accountId));
         const nonCashLines = lines.filter(l => !cashAccountIds.has(l.accountId));
         if (cashLines.length === 0) continue; // No cash movement — skip.

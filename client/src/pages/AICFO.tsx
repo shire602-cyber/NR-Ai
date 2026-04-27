@@ -14,7 +14,8 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
 import { apiRequest } from '@/lib/queryClient';
-import { Bot, Send, Sparkles, TrendingUp, AlertTriangle, DollarSign, FileText, Loader2, Brain, BarChart3, Zap, Target, ArrowUp, ArrowDown, Eye, PieChart } from 'lucide-react';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Bot, Send, TrendingUp, AlertTriangle, DollarSign, FileText, Loader2, Brain, BarChart3, Zap, Target, ArrowUp, ArrowDown, Eye, PieChart } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -36,10 +37,21 @@ interface ProfitLossReport {
   netProfit: number;
 }
 
+interface MonthlyTrend {
+  month: string;
+  revenue: number;
+  expenses: number;
+}
+
+interface ExpenseBreakdownEntry {
+  name: string;
+  value: number;
+}
+
 interface KPI {
   label: string;
   value: number;
-  trend: number;
+  format: 'percent' | 'currency';
   icon: any;
   color: string;
 }
@@ -53,13 +65,23 @@ export default function AICFO() {
   const [activeTab, setActiveTab] = useState('overview');
 
   // Get financial context for AI
-  const { data: stats } = useQuery<DashboardStats>({
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['/api/companies', companyId, 'dashboard/stats'],
     enabled: !!companyId,
   });
 
-  const { data: profitLoss } = useQuery<ProfitLossReport>({
+  const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
     queryKey: ['/api/companies', companyId, 'reports', 'pl'],
+    enabled: !!companyId,
+  });
+
+  const { data: monthlyTrends, isLoading: trendsLoading } = useQuery<MonthlyTrend[]>({
+    queryKey: ['/api/companies', companyId, 'dashboard/monthly-trends'],
+    enabled: !!companyId,
+  });
+
+  const { data: expenseBreakdown, isLoading: breakdownLoading } = useQuery<ExpenseBreakdownEntry[]>({
+    queryKey: ['/api/companies', companyId, 'dashboard/expense-breakdown'],
     enabled: !!companyId,
   });
 
@@ -92,6 +114,28 @@ export default function AICFO() {
     },
   });
 
+  // Insights are produced on demand by asking the AI CFO. Without that explicit
+  // ask we have no model output to display, so the Insights tab shows an
+  // EmptyState instead of fabricated recommendations.
+  const insightsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/ai/cfo-advice', {
+        companyId,
+        question:
+          'Give me 3 concrete, prioritized recommendations to improve my financial health based on my current data. Focus on actions I can take this month.',
+        context: { stats, profitLoss },
+      });
+      return response.advice as string;
+    },
+    onError: (error: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'AI CFO Error',
+        description: error?.message || 'Failed to generate insights',
+      });
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -114,87 +158,48 @@ export default function AICFO() {
     { q: "Revenue forecast for next quarter?", icon: "🔮" },
   ];
 
-  const chartData = [
-    { month: 'Jan', revenue: 45000, expenses: 38000 },
-    { month: 'Feb', revenue: 52000, expenses: 41000 },
-    { month: 'Mar', revenue: 58000, expenses: 39000 },
-    { month: 'Apr', revenue: 62000, expenses: 42000 },
-    { month: 'May', revenue: 68000, expenses: 45000 },
-    { month: 'Jun', revenue: 72000, expenses: 48000 },
-  ];
-
-  const profitMarginData = [
-    { category: 'Q1', profit: 18 },
-    { category: 'Q2', profit: 22 },
-    { category: 'Q3', profit: 25 },
-    { category: 'Q4', profit: 28 },
-  ];
-
-  const expenseBreakdown = [
-    { name: 'Salaries', value: 35000, percentage: 31 },
-    { name: 'Operations', value: 28000, percentage: 25 },
-    { name: 'Marketing', value: 18000, percentage: 16 },
-    { name: 'Infrastructure', value: 15000, percentage: 13 },
-    { name: 'Other', value: 16645, percentage: 15 },
-  ];
-
-  const recommendations = [
-    {
-      title: "Optimize Expense Allocation",
-      description: "Your salaries represent 31% of revenue. Industry benchmark is 28%. Consider reviewing compensation structure.",
-      priority: "high",
-      impact: "Could save AED 12,500/month",
-    },
-    {
-      title: "Improve Payment Collection",
-      description: "Outstanding invoices total AED 45,000. Implementing automated reminders could accelerate cash flow by 15%.",
-      priority: "high",
-      impact: "AED 6,750 faster collection",
-    },
-    {
-      title: "Seasonal Revenue Patterns",
-      description: "Historical data shows 18% revenue increase in Q4. Prepare inventory and staffing accordingly.",
-      priority: "medium",
-      impact: "Better Q4 planning",
-    },
-    {
-      title: "VAT Optimization Opportunity",
-      description: "Review Q2 transactions. Potential VAT recovery found on equipment purchases.",
-      priority: "medium",
-      impact: "Possible AED 3,200 recovery",
-    },
-  ];
+  const profitMarginPct = profitLoss && profitLoss.totalRevenue > 0
+    ? (profitLoss.netProfit / profitLoss.totalRevenue) * 100
+    : null;
+  const expenseRatioPct = profitLoss && profitLoss.totalRevenue > 0
+    ? (profitLoss.totalExpenses / profitLoss.totalRevenue) * 100
+    : null;
 
   const kpis: KPI[] = [
     {
       label: 'Profit Margin',
-      value: profitLoss ? ((profitLoss.netProfit / (profitLoss.totalRevenue || 1)) * 100) : 0,
-      trend: 2.5,
+      value: profitMarginPct ?? 0,
+      format: 'percent',
       icon: TrendingUp,
       color: 'text-green-600 dark:text-green-400',
     },
     {
       label: 'Expense Ratio',
-      value: profitLoss ? ((profitLoss.totalExpenses / (profitLoss.totalRevenue || 1)) * 100) : 0,
-      trend: -1.2,
+      value: expenseRatioPct ?? 0,
+      format: 'percent',
       icon: BarChart3,
       color: 'text-blue-600 dark:text-blue-400',
     },
     {
-      label: 'Revenue Growth',
-      value: 12.5,
-      trend: 3.8,
+      label: 'Total Revenue',
+      value: profitLoss?.totalRevenue ?? 0,
+      format: 'currency',
       icon: ArrowUp,
       color: 'text-purple-600 dark:text-purple-400',
     },
     {
-      label: 'Cash Health',
-      value: 85,
-      trend: 5,
+      label: 'Net Profit',
+      value: profitLoss?.netProfit ?? 0,
+      format: 'currency',
       icon: DollarSign,
       color: 'text-amber-600 dark:text-amber-400',
     },
   ];
+
+  const totalExpenseBreakdown = (expenseBreakdown ?? []).reduce(
+    (sum, item) => sum + item.value,
+    0,
+  );
 
   return (
     <div className="space-y-6">
@@ -208,7 +213,7 @@ export default function AICFO() {
             <div>
               <h1 className="text-3xl font-bold">AI CFO & Financial Advisor</h1>
               <p className="text-muted-foreground mt-1">
-                Real-time financial intelligence powered by GPT-4o
+                Ask questions about your financial data and get AI-generated guidance.
               </p>
             </div>
           </div>
@@ -242,6 +247,7 @@ export default function AICFO() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {kpis.map((kpi, idx) => {
               const Icon = kpi.icon;
+              const isLoading = plLoading;
               return (
                 <Card key={idx} className="hover-elevate cursor-pointer transition-all">
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
@@ -249,15 +255,15 @@ export default function AICFO() {
                     <Icon className={`w-4 h-4 ${kpi.color}`} />
                   </CardHeader>
                   <CardContent>
-                    <div className={`text-3xl font-bold ${kpi.color}`}>
-                      {Math.round(kpi.value)}%
-                    </div>
-                    <div className="flex items-center gap-1 mt-2">
-                      <ArrowUp className={`w-3 h-3 ${kpi.trend >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
-                      <span className={`text-xs font-medium ${kpi.trend >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                        {Math.abs(kpi.trend).toFixed(1)}% {kpi.trend >= 0 ? 'increase' : 'decrease'}
-                      </span>
-                    </div>
+                    {isLoading ? (
+                      <Skeleton className="h-9 w-32" />
+                    ) : (
+                      <div className={`text-3xl font-bold ${kpi.color}`}>
+                        {kpi.format === 'percent'
+                          ? `${Math.round(kpi.value)}%`
+                          : formatCurrency(kpi.value, 'AED')}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               );
@@ -272,7 +278,9 @@ export default function AICFO() {
                 <TrendingUp className="w-4 h-4 text-green-600 dark:text-green-400" />
               </CardHeader>
               <CardContent>
-                {stats ? (
+                {statsLoading ? (
+                  <Skeleton className="h-10 w-40" />
+                ) : stats ? (
                   <>
                     <div className="text-3xl font-bold font-mono text-green-600 dark:text-green-400">
                       {formatCurrency(stats.revenue || 0, 'AED')}
@@ -282,7 +290,7 @@ export default function AICFO() {
                     </p>
                   </>
                 ) : (
-                  <Skeleton className="h-10 w-40" />
+                  <p className="text-sm text-muted-foreground">No data</p>
                 )}
               </CardContent>
             </Card>
@@ -293,7 +301,9 @@ export default function AICFO() {
                 <ArrowDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               </CardHeader>
               <CardContent>
-                {stats ? (
+                {statsLoading ? (
+                  <Skeleton className="h-10 w-40" />
+                ) : stats ? (
                   <>
                     <div className="text-3xl font-bold font-mono text-blue-600 dark:text-blue-400">
                       {formatCurrency(stats.expenses || 0, 'AED')}
@@ -303,7 +313,7 @@ export default function AICFO() {
                     </p>
                   </>
                 ) : (
-                  <Skeleton className="h-10 w-40" />
+                  <p className="text-sm text-muted-foreground">No data</p>
                 )}
               </CardContent>
             </Card>
@@ -314,17 +324,19 @@ export default function AICFO() {
                 <Target className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
               </CardHeader>
               <CardContent>
-                {profitLoss ? (
+                {plLoading ? (
+                  <Skeleton className="h-10 w-40" />
+                ) : profitLoss ? (
                   <>
                     <div className={`text-3xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                       {formatCurrency(profitLoss.netProfit || 0, 'AED')}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {profitLoss.totalRevenue ? `${((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(1)}% margin` : 'Calculating...'}
+                      {profitLoss.totalRevenue ? `${((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(1)}% margin` : 'No revenue yet'}
                     </p>
                   </>
                 ) : (
-                  <Skeleton className="h-10 w-40" />
+                  <p className="text-sm text-muted-foreground">No data</p>
                 )}
               </CardContent>
             </Card>
@@ -340,7 +352,9 @@ export default function AICFO() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {stats ? (
+                {statsLoading ? (
+                  <Skeleton className="h-10 w-40" />
+                ) : stats ? (
                   <>
                     <div className="text-3xl font-bold font-mono text-amber-600 dark:text-amber-400">
                       {formatCurrency(stats.outstanding || 0, 'AED')}
@@ -353,7 +367,7 @@ export default function AICFO() {
                     </Button>
                   </>
                 ) : (
-                  <Skeleton className="h-10 w-40" />
+                  <p className="text-sm text-muted-foreground">No data</p>
                 )}
               </div>
             </CardContent>
@@ -362,63 +376,48 @@ export default function AICFO() {
 
         {/* Analytics Tab */}
         <TabsContent value="analytics" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Revenue vs Expenses Chart */}
-            <Card className="hover-elevate">
-              <CardHeader>
-                <CardTitle className="text-base">Revenue vs Expenses Trend</CardTitle>
-                <CardDescription>Last 6 months performance</CardDescription>
-              </CardHeader>
-              <CardContent>
+          <Card className="hover-elevate">
+            <CardHeader>
+              <CardTitle className="text-base">Revenue vs Expenses Trend</CardTitle>
+              <CardDescription>Last 6 months performance</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {trendsLoading ? (
+                <Skeleton className="h-[300px] w-full" />
+              ) : monthlyTrends && monthlyTrends.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={chartData}>
+                  <LineChart data={monthlyTrends}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis />
                     <Tooltip formatter={(value) => formatCurrency(Number(value), 'AED')} />
                     <Legend />
-                    <Line 
-                      type="monotone" 
-                      dataKey="revenue" 
-                      stroke="hsl(var(--primary))" 
+                    <Line
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="hsl(var(--primary))"
                       strokeWidth={2}
                       name="Revenue"
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="expenses" 
-                      stroke="hsl(var(--destructive))" 
+                    <Line
+                      type="monotone"
+                      dataKey="expenses"
+                      stroke="hsl(var(--destructive))"
                       strokeWidth={2}
                       name="Expenses"
                     />
                   </LineChart>
                 </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* Profit Margin Trend */}
-            <Card className="hover-elevate">
-              <CardHeader>
-                <CardTitle className="text-base">Profit Margin Trend</CardTitle>
-                <CardDescription>Quarterly performance</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={profitMarginData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="category" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar 
-                      dataKey="profit" 
-                      fill="hsl(var(--primary))" 
-                      name="Profit Margin %"
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
+              ) : (
+                <EmptyState
+                  icon={BarChart3}
+                  title="No trend data yet"
+                  description="Post invoices and journal entries to see revenue and expense trends here."
+                  compact
+                />
+              )}
+            </CardContent>
+          </Card>
 
           {/* Expense Breakdown */}
           <Card className="hover-elevate">
@@ -427,77 +426,88 @@ export default function AICFO() {
                 <PieChart className="w-4 h-4" />
                 Expense Breakdown
               </CardTitle>
-              <CardDescription>Distribution of expenses by category</CardDescription>
+              <CardDescription>Top expense categories from posted journal entries</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {expenseBreakdown.map((item, idx) => (
-                  <div key={idx} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{item.name}</span>
-                      <span className="text-sm font-mono font-bold">{item.percentage}%</span>
-                    </div>
-                    <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                      <div 
-                        className="bg-primary h-full" 
-                        style={{ width: `${item.percentage}%` }}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">{formatCurrency(item.value, 'AED')}</p>
-                  </div>
-                ))}
-              </div>
+              {breakdownLoading ? (
+                <Skeleton className="h-32 w-full" />
+              ) : expenseBreakdown && expenseBreakdown.length > 0 ? (
+                <div className="space-y-4">
+                  {expenseBreakdown.map((item, idx) => {
+                    const pct = totalExpenseBreakdown > 0
+                      ? (item.value / totalExpenseBreakdown) * 100
+                      : 0;
+                    return (
+                      <div key={idx} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{item.name}</span>
+                          <span className="text-sm font-mono font-bold">{pct.toFixed(0)}%</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-primary h-full"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">{formatCurrency(item.value, 'AED')}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={PieChart}
+                  title="No expense data yet"
+                  description="Post expense journal entries to see how your spending breaks down."
+                  compact
+                />
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* Insights Tab */}
         <TabsContent value="insights" className="space-y-6">
-          <div className="grid gap-4">
-            {recommendations.map((rec, idx) => {
-              const priorityColor = rec.priority === 'high' 
-                ? 'border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/20' 
-                : 'border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/20';
-              
-              return (
-                <Card key={idx} className={`hover-elevate border-2 ${priorityColor}`}>
-                  <CardHeader>
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-2">
-                        <CardTitle className="text-base">{rec.title}</CardTitle>
-                        <CardDescription>{rec.description}</CardDescription>
-                      </div>
-                      <Badge variant={rec.priority === 'high' ? 'destructive' : 'secondary'}>
-                        {rec.priority === 'high' ? 'High Priority' : 'Medium Priority'}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between pt-2 border-t">
-                      <span className="text-sm text-muted-foreground">Potential Impact:</span>
-                      <span className="font-mono font-semibold text-green-600 dark:text-green-400">
-                        {rec.impact}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-
-          <Card className="border-primary/30 bg-primary/5">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-primary" />
-                AI Generated Recommendations
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                These insights are generated by analyzing your financial data, industry benchmarks, and historical patterns. Click the chat tab to discuss any of these recommendations with your AI advisor.
-              </p>
-            </CardContent>
-          </Card>
+          {insightsMutation.data ? (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Brain className="w-4 h-4 text-primary" />
+                  AI-Generated Recommendations
+                </CardTitle>
+                <CardDescription>
+                  Based on your live financial data. Generated on demand.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                  {insightsMutation.data}
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => insightsMutation.mutate()}
+                  disabled={insightsMutation.isPending}
+                >
+                  {insightsMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : null}
+                  Regenerate
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <EmptyState
+              icon={Brain}
+              title="No insights generated yet"
+              description="Generate prioritized, AI-written recommendations based on your real financial data. Costs an AI request."
+              action={{
+                label: insightsMutation.isPending ? 'Generating…' : 'Generate insights',
+                onClick: () => insightsMutation.mutate(),
+              }}
+            />
+          )}
         </TabsContent>
 
         {/* Chat Tab */}

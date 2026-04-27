@@ -399,8 +399,10 @@ Date: ${txn.transaction_date}${txn.reference ? `\nReference: ${txn.reference}` :
 }
 
 /**
- * Auto-post high-confidence items from the queue to the GL.
- * Creates journal entries for items where ai_confidence >= 0.85 and status = 'pending_review'.
+ * Create draft journal entries for high-confidence items from the queue.
+ * Creates DRAFT journal entries for items where ai_confidence >= 0.85 and status = 'pending_review'.
+ * A human must review and approve each draft before it is posted to the GL.
+ * Notifies the company owner that drafts are awaiting review.
  */
 export async function autoPostHighConfidence(companyId: string): Promise<{
   posted: number;
@@ -421,12 +423,16 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
 
   let posted = 0;
   const errors: string[] = [];
+  const draftedEntryIds: string[] = [];
 
   for (const item of highConfItems) {
     try {
       const journalEntryId = await createJournalEntryForQueueItem(companyId, item);
 
-      // Update queue item
+      // Mark queue item as auto-actioned. The JE itself is a DRAFT — see
+      // createJournalEntryForQueueItem. Bank transactions are NOT marked
+      // reconciled here; that happens only when a human approves the draft
+      // and it moves to 'posted'.
       await pool.query(
         `UPDATE ai_gl_queue
          SET journal_entry_id = $1, status = 'auto_posted'
@@ -434,24 +440,42 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
         [journalEntryId, item.id]
       );
 
-      // Mark bank transaction as reconciled
-      if (item.bank_transaction_id) {
-        await pool.query(
-          `UPDATE bank_transactions
-           SET is_reconciled = true, matched_journal_entry_id = $1
-           WHERE id = $2`,
-          [journalEntryId, item.bank_transaction_id]
-        );
-      }
-
+      draftedEntryIds.push(journalEntryId);
       posted++;
     } catch (err: any) {
-      log.error({ err, queueItemId: item.id }, 'Failed to auto-post queue item');
-      errors.push(`Failed to post item ${item.id}: ${err.message}`);
+      log.error({ err, queueItemId: item.id }, 'Failed to draft queue item');
+      errors.push(`Failed to draft item ${item.id}: ${err.message}`);
     }
   }
 
+  if (draftedEntryIds.length > 0) {
+    await notifyOwnerOfDrafts(companyId, draftedEntryIds.length).catch((err) => {
+      log.error({ err, companyId }, 'Failed to send draft notification');
+    });
+  }
+
   return { posted, errors };
+}
+
+async function notifyOwnerOfDrafts(companyId: string, draftCount: number): Promise<void> {
+  const { rows: ownerRows } = await pool.query(
+    `SELECT user_id FROM company_users WHERE company_id = $1 AND role = 'owner' LIMIT 1`,
+    [companyId]
+  );
+  const ownerUserId = ownerRows[0]?.user_id;
+  if (!ownerUserId) return;
+
+  await pool.query(
+    `INSERT INTO notifications
+       (user_id, company_id, type, title, message, priority, related_entity_type, action_url)
+     VALUES ($1, $2, 'system', $3, $4, 'high', 'journal_entry', '/journal-entries?status=draft')`,
+    [
+      ownerUserId,
+      companyId,
+      `${draftCount} AI draft journal ${draftCount === 1 ? 'entry' : 'entries'} need review`,
+      `The AI categorized ${draftCount} bank transaction${draftCount === 1 ? '' : 's'} with high confidence. Review and approve each draft journal entry before it posts to the GL.`,
+    ]
+  );
 }
 
 /**
@@ -524,20 +548,20 @@ async function createJournalEntryForQueueItem(
         { accountId: item.suggested_account_id, debit: 0, credit: amount, description: item.description },
       ];
 
-  // Use storage helper: validates balance + wraps entry+lines in a single transaction
+  // Use storage helper: validates balance + wraps entry+lines in a single transaction.
+  // High-confidence AI suggestions are saved as DRAFT — a human must review and
+  // approve each draft before it is posted to the GL.
   const entryNumber = await storage.generateEntryNumber(companyId, txnDate);
   const entry = await storage.createJournalEntry(
     {
       companyId,
       entryNumber,
       date: txnDate,
-      memo: `AI Auto-Posted: ${item.description}`,
-      status: 'posted',
+      memo: `AI Draft (review required): ${item.description}`,
+      status: 'draft',
       source: 'system',
       sourceId: item.bank_transaction_id,
       createdBy: systemUserId,
-      postedBy: systemUserId,
-      postedAt: new Date(),
     } as any,
     lines
   );

@@ -1,6 +1,9 @@
 // Authentication utilities
 const TOKEN_KEY = 'auth_token';
 const USER_KEY = 'auth_user';
+// Same key as activeCompany.ts — kept inline to avoid an import cycle
+// (activeCompany imports queryClient → which is loaded for unauth pages too).
+const ACTIVE_COMPANY_KEY = 'muhasib_active_company_id';
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -13,6 +16,9 @@ export function setToken(token: string): void {
 export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  // Drop tenant context too — the next user signing in on this device
+  // should not inherit the previous user's selected company.
+  localStorage.removeItem(ACTIVE_COMPANY_KEY);
 }
 
 export function getStoredUser(): any {

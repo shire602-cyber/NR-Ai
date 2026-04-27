@@ -51,28 +51,34 @@ export async function generateInvoicePDF(
       const contentWidth = pageWidth - 2 * margin;
 
       const isVATRegistered = !!company.trnVatNumber;
-      const invoiceLabel = isVATRegistered ? 'TAX INVOICE' : 'INVOICE';
+      // FTA Article 59 requires bilingual presentation on tax invoices issued
+      // in the UAE. We pair the English label with its Arabic counterpart so
+      // either reader can identify the document type at a glance.
+      const invoiceLabelEn = isVATRegistered ? 'TAX INVOICE' : 'INVOICE';
+      const invoiceLabelAr = isVATRegistered ? 'فاتورة ضريبية' : 'فاتورة';
 
       // ── Header bar ──────────────────────────────────────────────────────────
       doc.rect(0, 0, pageWidth, 110).fill('#1E40AF');
 
       // Company name
       doc.fontSize(22).fillColor('#FFFFFF').font('Helvetica-Bold');
-      doc.text(company.name, margin, 28, { width: contentWidth * 0.65 });
+      doc.text(company.name, margin, 24, { width: contentWidth * 0.65 });
 
-      // Invoice type label (top-right)
+      // Invoice type label (top-right) — English over Arabic.
       doc.fontSize(18).fillColor('#BFDBFE').font('Helvetica-Bold');
-      doc.text(invoiceLabel, margin, 28, { width: contentWidth, align: 'right' });
+      doc.text(invoiceLabelEn, margin, 24, { width: contentWidth, align: 'right' });
+      doc.fontSize(11).fillColor('#DBEAFE').font('Helvetica');
+      doc.text(invoiceLabelAr, margin, 46, { width: contentWidth, align: 'right' });
 
       // Company TRN under name
       if (isVATRegistered && company.trnVatNumber) {
         doc.fontSize(9).fillColor('#BFDBFE').font('Helvetica');
-        doc.text(`TRN: ${company.trnVatNumber}`, margin, 56, { width: contentWidth * 0.65 });
+        doc.text(`TRN / الرقم الضريبي: ${company.trnVatNumber}`, margin, 56, { width: contentWidth * 0.65 });
       }
 
       // Company contact (right side of header)
       doc.fontSize(8).fillColor('#DBEAFE').font('Helvetica');
-      let headerRightY = 56;
+      let headerRightY = 70;
       if (company.businessAddress) {
         doc.text(company.businessAddress, margin, headerRightY, { width: contentWidth, align: 'right' });
         headerRightY += 11;
@@ -85,17 +91,32 @@ export async function generateInvoicePDF(
         doc.text(company.contactEmail, margin, headerRightY, { width: contentWidth, align: 'right' });
       }
 
-      // ── Invoice metadata box ─────────────────────────────────────────────────
+      // ── Reverse-charge banner (FTA: recipient self-assesses VAT) ────────────
       let y = 125;
+      if (invoice.reverseCharge) {
+        const bannerH = 38;
+        doc.rect(margin, y, contentWidth, bannerH).fill('#FEF3C7').stroke('#F59E0B');
+        doc.fontSize(9).fillColor('#92400E').font('Helvetica-Bold');
+        doc.text('REVERSE CHARGE / آلية الاحتساب العكسي', margin + 10, y + 7, { width: contentWidth - 20 });
+        doc.fontSize(8).fillColor('#78350F').font('Helvetica');
+        doc.text(
+          'VAT is to be accounted for by the recipient under the reverse-charge mechanism (UAE VAT law).',
+          margin + 10, y + 21,
+          { width: contentWidth - 20 },
+        );
+        y += bannerH + 10;
+      }
+
+      // ── Invoice metadata box ─────────────────────────────────────────────────
       const metaBoxH = 55;
       doc.rect(margin, y, contentWidth, metaBoxH).fill('#F0F9FF').stroke('#BAE6FD');
 
       const metaColW = contentWidth / 4;
       const metaFields = [
-        { label: 'Invoice #', value: invoice.number },
-        { label: 'Issue Date', value: formatDate(invoice.date) },
-        { label: 'Due Date', value: invoice.dueDate ? formatDate(invoice.dueDate) : paymentTermsLabel(invoice.paymentTerms, invoice.date) },
-        { label: 'Status', value: (invoice.status || 'draft').toUpperCase() },
+        { label: 'Invoice # / رقم الفاتورة', value: invoice.number },
+        { label: 'Issue Date / تاريخ الإصدار', value: formatDate(invoice.date) },
+        { label: 'Due Date / تاريخ الاستحقاق', value: invoice.dueDate ? formatDate(invoice.dueDate) : paymentTermsLabel(invoice.paymentTerms, invoice.date) },
+        { label: 'Status / الحالة', value: (invoice.status || 'draft').toUpperCase() },
       ];
 
       metaFields.forEach((field, i) => {
@@ -103,46 +124,53 @@ export async function generateInvoicePDF(
         doc.fontSize(7).fillColor('#6B7280').font('Helvetica');
         doc.text(field.label, x, y + 10, { width: metaColW - 10 });
         doc.fontSize(9).fillColor('#111827').font('Helvetica-Bold');
-        doc.text(field.value, x, y + 22, { width: metaColW - 10 });
+        doc.text(field.value, x, y + 26, { width: metaColW - 10 });
       });
 
       y += metaBoxH + 16;
 
       // ── Bill From / Bill To ──────────────────────────────────────────────────
       const halfW = contentWidth / 2 - 8;
+      const partiesTop = y;
 
-      // FROM
+      // FROM (seller)
       doc.fontSize(8).fillColor('#6B7280').font('Helvetica-Bold');
-      doc.text('FROM:', margin, y);
-      y += 13;
+      doc.text('FROM / من:', margin, partiesTop);
+      let fromY = partiesTop + 13;
       doc.fontSize(11).fillColor('#111827').font('Helvetica-Bold');
-      doc.text(company.name, margin, y, { width: halfW });
-      y += 15;
+      doc.text(company.name, margin, fromY, { width: halfW });
+      fromY += 15;
       if (isVATRegistered && company.trnVatNumber) {
         doc.fontSize(9).fillColor('#374151').font('Helvetica');
-        doc.text(`TRN: ${company.trnVatNumber}`, margin, y, { width: halfW });
-        y += 12;
+        doc.text(`TRN: ${company.trnVatNumber}`, margin, fromY, { width: halfW });
+        fromY += 12;
       }
       if (company.businessAddress) {
         doc.fontSize(9).fillColor('#374151').font('Helvetica');
-        doc.text(company.businessAddress, margin, y, { width: halfW });
+        doc.text(company.businessAddress, margin, fromY, { width: halfW });
+        fromY += 12 * countLines(company.businessAddress);
       }
 
-      // TO (reset y to same start)
-      const toStartY = y - 15 - (isVATRegistered && company.trnVatNumber ? 12 : 0) - (company.businessAddress ? 12 : 0) - 13;
+      // TO (buyer)
       const toX = margin + halfW + 16;
-
       doc.fontSize(8).fillColor('#6B7280').font('Helvetica-Bold');
-      doc.text('BILL TO:', toX, toStartY);
+      doc.text('BILL TO / إلى:', toX, partiesTop);
+      let toY = partiesTop + 13;
       doc.fontSize(11).fillColor('#111827').font('Helvetica-Bold');
-      doc.text(invoice.customerName, toX, toStartY + 13, { width: halfW });
+      doc.text(invoice.customerName, toX, toY, { width: halfW });
+      toY += 15;
       if (invoice.customerTrn) {
         doc.fontSize(9).fillColor('#374151').font('Helvetica');
-        doc.text(`TRN: ${invoice.customerTrn}`, toX, toStartY + 28, { width: halfW });
+        doc.text(`TRN: ${invoice.customerTrn}`, toX, toY, { width: halfW });
+        toY += 12;
+      }
+      if (invoice.customerAddress) {
+        doc.fontSize(9).fillColor('#374151').font('Helvetica');
+        doc.text(invoice.customerAddress, toX, toY, { width: halfW });
+        toY += 12 * countLines(invoice.customerAddress);
       }
 
-      // Recalculate y based on content
-      y = Math.max(y + 20, toStartY + 55);
+      y = Math.max(fromY, toY) + 10;
 
       // ── Line Items Table ─────────────────────────────────────────────────────
       const tableTop = y;
@@ -197,6 +225,43 @@ export async function generateInvoicePDF(
 
       y += 16;
 
+      // ── Per-rate VAT breakdown (FTA Article 59: a tax invoice must show
+      //    the VAT amount for each rate applied) ────────────────────────────
+      const vatBuckets = aggregateVatByRate(lines);
+      if (vatBuckets.length > 1) {
+        const breakdownTop = y;
+        const breakdownH = 18 + vatBuckets.length * 16 + 6;
+        doc.rect(margin, breakdownTop, contentWidth, breakdownH).fill('#F8FAFC').stroke('#E5E7EB');
+
+        doc.fontSize(9).fillColor('#1E40AF').font('Helvetica-Bold');
+        doc.text('VAT Breakdown / تفاصيل ضريبة القيمة المضافة', margin + 8, breakdownTop + 6);
+
+        const cols = {
+          rate: margin + 8,
+          taxable: margin + 120,
+          vat: margin + 260,
+          incl: margin + contentWidth - 8,
+        };
+        const breakdownRowY = breakdownTop + 22;
+        doc.fontSize(7).fillColor('#6B7280').font('Helvetica');
+        doc.text('Rate', cols.rate, breakdownRowY);
+        doc.text('Taxable Amount', cols.taxable, breakdownRowY);
+        doc.text('VAT', cols.vat, breakdownRowY);
+        doc.text('Inclusive Total', margin + contentWidth - 100 - 8, breakdownRowY, { width: 100, align: 'right' });
+
+        let bRowY = breakdownRowY + 10;
+        doc.fontSize(9).fillColor('#1F2937').font('Helvetica');
+        for (const bucket of vatBuckets) {
+          doc.text(`${(bucket.rate * 100).toFixed(0)}%`, cols.rate, bRowY);
+          doc.text(formatAmount(bucket.taxable, invoice.currency), cols.taxable, bRowY);
+          doc.text(formatAmount(bucket.vat, invoice.currency), cols.vat, bRowY);
+          doc.text(formatAmount(bucket.taxable + bucket.vat, invoice.currency), margin + contentWidth - 100 - 8, bRowY, { width: 100, align: 'right' });
+          bRowY += 14;
+        }
+
+        y = breakdownTop + breakdownH + 10;
+      }
+
       // ── Totals ───────────────────────────────────────────────────────────────
       const totalsX = margin + contentWidth - 200;
       const labelW = 120;
@@ -207,7 +272,14 @@ export async function generateInvoicePDF(
       doc.text(formatAmount(invoice.subtotal, invoice.currency), totalsX + labelW, y, { width: valueW, align: 'right' });
       y += 16;
 
-      doc.text('VAT (5%):', totalsX, y, { width: labelW });
+      // VAT label: when reverse-charge applies, the supplier collects no VAT —
+      // make that clear in the totals so the reader doesn't expect a 5% line.
+      const vatLabel = invoice.reverseCharge
+        ? 'VAT (reverse charge):'
+        : vatBuckets.length === 1
+          ? `VAT (${(vatBuckets[0].rate * 100).toFixed(0)}%):`
+          : 'VAT:';
+      doc.text(vatLabel, totalsX, y, { width: labelW });
       doc.text(formatAmount(invoice.vatAmount, invoice.currency), totalsX + labelW, y, { width: valueW, align: 'right' });
       y += 10;
 
@@ -270,6 +342,29 @@ export async function generateInvoicePDF(
       reject(err);
     }
   });
+}
+
+type VatBucket = { rate: number; taxable: number; vat: number };
+
+function aggregateVatByRate(lines: InvoiceLine[]): VatBucket[] {
+  const buckets = new Map<number, VatBucket>();
+  for (const line of lines) {
+    const rate = line.vatRate ?? UAE_VAT_RATE;
+    const taxable = line.quantity * line.unitPrice;
+    const vat = taxable * rate;
+    const existing = buckets.get(rate);
+    if (existing) {
+      existing.taxable += taxable;
+      existing.vat += vat;
+    } else {
+      buckets.set(rate, { rate, taxable, vat });
+    }
+  }
+  return Array.from(buckets.values()).sort((a, b) => a.rate - b.rate);
+}
+
+function countLines(text: string): number {
+  return Math.max(1, text.split('\n').length);
 }
 
 function formatDate(date: Date | string | null | undefined): string {

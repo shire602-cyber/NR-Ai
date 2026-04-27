@@ -101,8 +101,8 @@ export function registerClientPortalRoutes(app: Express): void {
   // ─── Invoice PDF download ─────────────────────────────────────────────────
   app.get('/api/client-portal/invoices/:id/pdf', ...chain, asyncHandler(async (req: Request, res: Response) => {
     const companyId: string = (req as any).portalCompanyId;
-    const invoice = await storage.getInvoice(req.params.id);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(req.params.id, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
     const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);

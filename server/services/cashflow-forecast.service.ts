@@ -165,6 +165,29 @@ export async function generateCashFlowForecast(
   const projections: WeeklyProjection[] = [];
   let runningBalance = currentBalance;
 
+  // ── Forecast guardrails ──────────────────────────────────────
+  // A single anomalous transaction in the lookback window can blow up
+  // the weekly average and produce absurd extrapolations. We cap the
+  // projected balance so it cannot exceed 3× the larger of currentBalance
+  // and total expected inflows over the horizon (i.e. >200% growth gets
+  // clamped). The floor is symmetric on the downside so a runaway
+  // outflow average can't project a fictitious bottomless drain. When
+  // a clamp fires we surface it as an insight so the user knows the
+  // raw model output was tempered.
+  const horizonInflowBudget = Math.abs(avgWeeklyInflow) * totalWeeks + totalReceivables;
+  const horizonOutflowBudget = Math.abs(avgWeeklyOutflow) * totalWeeks + totalPayables;
+  const upperBalanceCap = Math.max(
+    Math.abs(currentBalance) * 3,
+    Math.abs(currentBalance) + horizonInflowBudget,
+    10000,
+  );
+  const lowerBalanceFloor = -Math.max(
+    Math.abs(currentBalance) * 3,
+    Math.abs(currentBalance) + horizonOutflowBudget,
+    10000,
+  );
+  let clampedAny = false;
+
   for (let w = 1; w <= totalWeeks; w++) {
     const weekStart = new Date(now);
     weekStart.setDate(weekStart.getDate() + (w - 1) * 7);
@@ -188,6 +211,14 @@ export async function generateCashFlowForecast(
     }
 
     runningBalance = runningBalance + weekInflow - weekOutflow;
+
+    if (runningBalance > upperBalanceCap) {
+      runningBalance = upperBalanceCap;
+      clampedAny = true;
+    } else if (runningBalance < lowerBalanceFloor) {
+      runningBalance = lowerBalanceFloor;
+      clampedAny = true;
+    }
 
     projections.push({
       week: w,
@@ -250,6 +281,12 @@ export async function generateCashFlowForecast(
   if (avgWeeklyInflow === 0 && avgWeeklyOutflow === 0) {
     insights.push(
       'No recent transaction activity found. Forecast is based on outstanding invoices and receipts only.'
+    );
+  }
+
+  if (clampedAny) {
+    insights.push(
+      'Forecast extrapolated beyond a sanity bound and was clamped — recent activity may include an outlier transaction skewing the weekly average.'
     );
   }
 

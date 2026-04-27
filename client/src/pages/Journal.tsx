@@ -14,7 +14,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge, type StatusTone } from '@/components/ui/status-badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { CardListSkeleton, PageSkeleton } from '@/components/ui/loading-skeletons';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
@@ -23,6 +26,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Plus, BookMarked, CalendarIcon, CheckCircle2, XCircle, Trash2, Edit, RotateCcw, Lock, FileText, Send } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { VirtualList } from '@/components/VirtualList';
 
 const journalLineSchema = z.object({
   accountId: z.string().uuid('Please select an account'),
@@ -476,17 +480,17 @@ export default function Journal() {
                     <div className="flex items-center gap-2">
                       {isBalanced ? (
                         <>
-                          <CheckCircle2 className="w-4 h-4 text-green-500" />
-                          <Badge variant="outline" className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
+                          <CheckCircle2 className="w-4 h-4 text-[hsl(var(--chart-5))]" />
+                          <StatusBadge tone="success">
                             {t.balanced}
-                          </Badge>
+                          </StatusBadge>
                         </>
                       ) : (
                         <>
                           <XCircle className="w-4 h-4 text-destructive" />
-                          <Badge variant="outline" className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">
+                          <StatusBadge tone="danger">
                             {t.notBalanced} ({formatNumber(Math.abs(totalDebit - totalCredit), locale)})
-                          </Badge>
+                          </StatusBadge>
                         </>
                       )}
                     </div>
@@ -513,10 +517,15 @@ export default function Journal() {
       </div>
 
       {isLoading ? (
-        <Skeleton className="h-96" />
+        <CardListSkeleton count={4} />
       ) : entries && entries.length > 0 ? (
-        <div className="space-y-4">
-          {entries.map((entry: any) => {
+        <VirtualList
+          items={entries as any[]}
+          estimateSize={220}
+          height={Math.min(900, Math.max(600, (entries as any[]).length * 220))}
+          getKey={(entry) => entry.id}
+          className="space-y-4"
+          renderItem={(entry: any) => {
             const isPosted = entry.status === 'posted';
             const isDraft = entry.status === 'draft';
             const isVoid = entry.status === 'void';
@@ -524,43 +533,39 @@ export default function Journal() {
             const getStatusBadge = () => {
               if (isPosted) {
                 return (
-                  <Badge variant="outline" className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
+                  <StatusBadge tone="success">
                     <Lock className="w-3 h-3 mr-1" />
                     Posted
-                  </Badge>
+                  </StatusBadge>
                 );
               } else if (isVoid) {
                 return (
-                  <Badge variant="outline" className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">
+                  <StatusBadge tone="danger">
                     <XCircle className="w-3 h-3 mr-1" />
                     Void
-                  </Badge>
+                  </StatusBadge>
                 );
               } else {
                 return (
-                  <Badge variant="outline" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400">
+                  <StatusBadge tone="warning">
                     <FileText className="w-3 h-3 mr-1" />
                     Draft
-                  </Badge>
+                  </StatusBadge>
                 );
               }
             };
 
             const getSourceBadge = () => {
               if (!entry.source || entry.source === 'manual') return null;
-              const sources: Record<string, { label: string; className: string }> = {
-                invoice: { label: 'Invoice', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' },
-                receipt: { label: 'Receipt', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400' },
-                payment: { label: 'Payment', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' },
-                reversal: { label: 'Reversal', className: 'bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400' },
+              const sources: Record<string, { label: string; tone: StatusTone }> = {
+                invoice: { label: 'Invoice', tone: 'info' },
+                receipt: { label: 'Receipt', tone: 'accent' },
+                payment: { label: 'Payment', tone: 'success' },
+                reversal: { label: 'Reversal', tone: 'warning' },
               };
               const source = sources[entry.source];
               if (!source) return null;
-              return (
-                <Badge variant="outline" className={source.className}>
-                  {source.label}
-                </Badge>
-              );
+              return <StatusBadge tone={source.tone}>{source.label}</StatusBadge>;
             };
             
             return (
@@ -684,20 +689,23 @@ export default function Journal() {
                 </CardContent>
               </Card>
             );
-          })}
-        </div>
+          }}
+        />
       ) : (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <BookMarked className="w-16 h-16 text-muted-foreground/50 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No journal entries yet</h3>
-            <p className="text-sm text-muted-foreground mb-6">
-              Create your first double-entry journal
-            </p>
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
-              {t.newEntry}
-            </Button>
+          <CardContent className="p-0">
+            <EmptyState
+              icon={BookMarked}
+              title="No journal entries yet"
+              description="Record your first manual journal entry — every transaction needs at least one debit and one credit."
+              action={{
+                label: t.newEntry,
+                icon: Plus,
+                onClick: () => setDialogOpen(true),
+                testId: 'button-create-first-journal',
+              }}
+              testId="empty-state-journal"
+            />
           </CardContent>
         </Card>
       )}

@@ -16,11 +16,23 @@ if (!process.env.DATABASE_URL) {
 const DATABASE_URL = process.env.DATABASE_URL;
 const isNeon = DATABASE_URL.includes('neon.tech') || DATABASE_URL.includes('neon.');
 
-// Connection pool settings — sized for Railway's single-instance deployment
+// Pool sizing is overridable via env so Railway / Docker / Neon can be tuned
+// without a redeploy. Defaults match a single-instance Railway deployment.
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 const POOL_CONFIG = {
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000,
+  max: envInt('DB_POOL_MAX', 10),
+  min: envInt('DB_POOL_MIN', 1),
+  idleTimeoutMillis: envInt('DB_POOL_IDLE_MS', 30_000),
+  connectionTimeoutMillis: envInt('DB_POOL_CONN_MS', 10_000),
+  // pg also honours `statement_timeout` per-connection; expose via env for
+  // long-running analytical queries that should be killed to protect the pool.
+  statement_timeout: envInt('DB_STATEMENT_TIMEOUT_MS', 30_000),
 };
 
 let pool: any;
@@ -310,6 +322,32 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'companies.onboarding_completed',
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "onboarding_completed" boolean NOT NULL DEFAULT false`,
     },
+    // ── 0029: drop incorrect global UNIQUE on companies.name ─────────────
+    // The original schema (migration 0000) created `companies_name_unique`
+    // on companies(name). In a multi-tenant SaaS, two unrelated tenants can
+    // legitimately share a legal name, so this constraint causes the
+    // onboarding "Save & Continue" step to fail with a unique violation
+    // for the second tenant. Migration 0029 drops it; this guard ensures
+    // the drop happens even when 0029 was skipped (tracked-but-not-run).
+    {
+      name: 'companies.name unique constraint drop',
+      sql: sql`DO $$
+        DECLARE cname text;
+        BEGIN
+          SELECT tc.constraint_name INTO cname
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.constraint_column_usage ccu
+            ON tc.constraint_name = ccu.constraint_name
+           AND tc.table_schema    = ccu.table_schema
+          WHERE tc.table_name = 'companies'
+            AND tc.constraint_type = 'UNIQUE'
+            AND ccu.column_name = 'name'
+          LIMIT 1;
+          IF cname IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE companies DROP CONSTRAINT %I', cname);
+          END IF;
+        END $$`,
+    },
     // ── 0019 (was missing): companies soft-delete columns [CRITICAL] ─────
     // Without deleted_at, ALL Drizzle company queries fail (column in schema but not in DB).
     {
@@ -347,6 +385,71 @@ export async function ensureCriticalSchema(): Promise<void> {
     {
       name: 'audit_logs.resource index',
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_resource" ON "audit_logs" ("resource_type", "resource_id")`,
+    },
+    // ── 0040: auth & session security [CRITICAL FOR LOGIN] ───────────────
+    // Drizzle's select(users) reads every column declared in the schema. If
+    // email_verified is missing the entire login flow returns 500. The
+    // companion token tables back logout/blacklist, password-reset, and
+    // email-verification flows.
+    {
+      name: 'users.email_verified',
+      sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "email_verified" boolean NOT NULL DEFAULT false`,
+    },
+    {
+      name: 'token_blacklist table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "token_blacklist" (
+        "token_hash" text PRIMARY KEY,
+        "expires_at" timestamp NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      name: 'token_blacklist.expires_at index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_token_blacklist_expires_at" ON "token_blacklist" ("expires_at")`,
+    },
+    {
+      name: 'password_reset_tokens table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "token_hash" text NOT NULL UNIQUE,
+        "expires_at" timestamp NOT NULL,
+        "used_at" timestamp,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      // 0042 added used_at after 0040 created the table. If 0040 ran but 0042
+      // did not, the column is missing — guard separately so the table-create
+      // step above (a no-op when the table already exists) does not mask it.
+      name: 'password_reset_tokens.used_at',
+      sql: sql`ALTER TABLE "password_reset_tokens" ADD COLUMN IF NOT EXISTS "used_at" timestamp`,
+    },
+    {
+      name: 'password_reset_tokens.user_id index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_user_id" ON "password_reset_tokens" ("user_id")`,
+    },
+    {
+      name: 'password_reset_tokens.expires_at index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_expires_at" ON "password_reset_tokens" ("expires_at")`,
+    },
+    {
+      name: 'password_reset_tokens.token_hash index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_token_hash" ON "password_reset_tokens" ("token_hash")`,
+    },
+    {
+      name: 'email_verification_tokens table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "email_verification_tokens" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "token_hash" text NOT NULL UNIQUE,
+        "expires_at" timestamp NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      name: 'email_verification_tokens.user_id index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_email_verification_tokens_user_id" ON "email_verification_tokens" ("user_id")`,
     },
   ];
 
@@ -450,11 +553,41 @@ export async function checkDbConnectivity(): Promise<boolean> {
   }
 }
 
-/** Close the pool — call during graceful shutdown. */
-export async function closePool(): Promise<void> {
-  if (pool?.end) {
-    await pool.end();
+/** Ping with latency. Used by detailed health to expose response times. */
+export async function pingDb(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const start = Date.now();
+  try {
+    await db.execute(sql`SELECT 1`);
+    return { ok: true, latencyMs: Date.now() - start };
+  } catch (err: any) {
+    return { ok: false, latencyMs: Date.now() - start, error: err?.message || 'unknown' };
   }
+}
+
+/** Snapshot of pool state — total/idle/waiting connections. */
+export function getPoolStats(): {
+  driver: 'pg' | 'neon';
+  total: number;
+  idle: number;
+  waiting: number;
+  max: number;
+} {
+  return {
+    driver: _driver,
+    total: pool?.totalCount ?? 0,
+    idle: pool?.idleCount ?? 0,
+    waiting: pool?.waitingCount ?? 0,
+    max: POOL_CONFIG.max,
+  };
+}
+
+/** Drain and close the pool. Bounded by `timeoutMs` so shutdown is never stuck. */
+export async function closePool(timeoutMs = 10_000): Promise<void> {
+  if (!pool?.end) return;
+  await Promise.race([
+    pool.end(),
+    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+  ]);
 }
 
 export { pool, db };

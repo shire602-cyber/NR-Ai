@@ -4,6 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { UAE_VAT_RATE } from "../constants";
 import { pool } from "../db";
+import { assertPeriodNotLocked } from "../services/period-lock.service";
 
 export function registerVATRoutes(app: Express) {
   // =====================================
@@ -33,6 +34,12 @@ export function registerVATRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Generating a VAT return for a period that is already closed would
+    // produce numbers that disagree with the locked-period books. Block it.
+    if (periodEnd) {
+      await assertPeriodNotLocked(companyId, periodEnd);
     }
 
     // Get company information for emirate and VAT registration
@@ -69,31 +76,29 @@ export function registerVATRoutes(app: Express) {
         && inv.status !== 'cancelled';
     });
 
-    // Fetch all invoice lines for categorization by VAT supply type
+    // Fetch all invoice lines for categorization by VAT supply type — single
+    // batched fetch instead of one per invoice.
     let standardRatedAmount = 0;
     let standardRatedVat = 0;
     let zeroRatedAmount = 0;
     let exemptAmount = 0;
 
-    for (const invoice of periodInvoices) {
-      const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
+    const periodLines = await storage.getInvoiceLinesByInvoiceIds(periodInvoices.map(i => i.id));
+    for (const line of periodLines) {
+      const lineAmount = line.quantity * line.unitPrice;
+      const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
+      const supplyType = (line as any).vatSupplyType || 'standard_rated';
 
-      for (const line of lines) {
-        const lineAmount = line.quantity * line.unitPrice;
-        const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
-        const supplyType = (line as any).vatSupplyType || 'standard_rated';
-
-        if (supplyType === 'zero_rated' || line.vatRate === 0) {
-          // Zero-rated supplies (exports, international services)
-          zeroRatedAmount += lineAmount;
-        } else if (supplyType === 'exempt') {
-          // Exempt supplies (financial services, residential rent, etc.)
-          exemptAmount += lineAmount;
-        } else {
-          // Standard rated (5% VAT)
-          standardRatedAmount += lineAmount;
-          standardRatedVat += lineVat;
-        }
+      if (supplyType === 'zero_rated' || line.vatRate === 0) {
+        // Zero-rated supplies (exports, international services)
+        zeroRatedAmount += lineAmount;
+      } else if (supplyType === 'exempt') {
+        // Exempt supplies (financial services, residential rent, etc.)
+        exemptAmount += lineAmount;
+      } else {
+        // Standard rated (5% VAT)
+        standardRatedAmount += lineAmount;
+        standardRatedVat += lineVat;
       }
     }
 
@@ -297,6 +302,13 @@ export function registerVATRoutes(app: Express) {
     const userId = (req as any).user?.id;
     const { id } = req.params;
     const { adjustmentAmount, adjustmentReason, notes } = req.body;
+
+    // Submitting the return finalises the VAT settlement against periodEnd —
+    // refuse if the underlying period is already closed.
+    const existing = await storage.getVatReturn(id);
+    if (existing) {
+      await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
+    }
 
     const vatReturn = await storage.updateVatReturn(id, {
       status: 'submitted',
