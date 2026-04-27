@@ -227,7 +227,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               <AnimatePresence mode="wait">
                 <motion.div
                   key={location}
-                  initial={{ opacity: 0, y: 12 }}
+                  initial={false}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.25, ease: 'easeOut' }}
@@ -304,13 +304,15 @@ function Router() {
     return null;
   }
   
-  // Landing page (public only)
+  // Landing page (public only).
+  // `initial={false}` skips the entry fade so the page is visible immediately;
+  // a stalled or throttled animation must never leave the root at opacity:0.
   if (location === '/' && !token) {
     return (
       <AnimatePresence mode="wait">
         <motion.div
           key="landing"
-          initial={{ opacity: 0 }}
+          initial={false}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.3 }}
@@ -372,7 +374,7 @@ function Router() {
       <AnimatePresence mode="wait">
         <motion.div
           key={location}
-          initial={{ opacity: 0, scale: 0.95 }}
+          initial={false}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
           transition={{ duration: 0.3 }}
