@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -44,7 +45,8 @@ type CompanyProfileFormData = z.infer<typeof companyProfileSchema>;
 
 export default function CompanyProfile() {
   const { toast } = useToast();
-  const { companyId } = useDefaultCompany();
+  const [, navigate] = useLocation();
+  const { companyId, isLoading: companiesLoading } = useDefaultCompany();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
 
@@ -150,7 +152,7 @@ export default function CompanyProfile() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading || companiesLoading) {
     return (
       <div className="space-y-8">
         <Skeleton className="h-96" />
@@ -165,7 +167,10 @@ export default function CompanyProfile() {
           <CardContent className="py-12">
             <div className="text-center text-muted-foreground">
               <Building2 className="w-12 h-12 mx-auto mb-4" />
-              <p>No company selected</p>
+              <p className="mb-4">Set up your company to manage its profile.</p>
+              <Button onClick={() => navigate('/onboarding')} data-testid="button-create-company">
+                Create your company
+              </Button>
             </div>
           </CardContent>
         </Card>

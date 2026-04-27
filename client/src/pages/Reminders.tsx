@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,6 +42,7 @@ const REMINDER_TYPES = [
 
 export default function Reminders() {
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const { companyId: selectedCompanyId, isLoading: companyLoading } = useDefaultCompany();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newSetting, setNewSetting] = useState({
@@ -121,12 +123,23 @@ export default function Reminders() {
     }
   };
 
+  if (companyLoading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <Skeleton className="w-64 h-12" />
+      </div>
+    );
+  }
+
   if (!selectedCompanyId) {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh]">
         <AlertTriangle className="w-12 h-12 text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">No Company Selected</h2>
-        <p className="text-muted-foreground">Please select a company to manage reminders.</p>
+        <h2 className="text-xl font-semibold mb-2">Set up your company</h2>
+        <p className="text-muted-foreground mb-4">You need a company before you can configure reminders.</p>
+        <Button onClick={() => navigate('/onboarding')} data-testid="button-create-company">
+          Create your company
+        </Button>
       </div>
     );
   }
