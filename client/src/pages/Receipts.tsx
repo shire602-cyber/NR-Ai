@@ -510,6 +510,7 @@ export default function Receipts() {
       });
 
       let parsed: ExtractedData | null = null;
+      let backendErrorMessage: string | null = null;
 
       try {
         const response = await fetch(apiUrl('/api/ocr/process'), {
@@ -542,31 +543,60 @@ export default function Receipts() {
             updated[index] = { ...updated[index], progress: 90 };
             return updated;
           });
+        } else {
+          // Capture the server-provided message so we can surface it if Tesseract
+          // also fails. Without this, users see a generic "Try a clearer image"
+          // even when the real cause is a misconfigured AI key on the server.
+          try {
+            const body = await response.json();
+            backendErrorMessage = body?.message || `Backend OCR returned ${response.status}`;
+          } catch {
+            backendErrorMessage = `Backend OCR returned ${response.status}`;
+          }
+          console.warn('[OCR] Backend returned error:', response.status, backendErrorMessage);
         }
-      } catch (backendError) {
+      } catch (backendError: any) {
+        backendErrorMessage = backendError?.message || 'Network error contacting OCR service';
         console.warn('[OCR] Backend Vision failed, falling back to Tesseract:', backendError);
       }
 
       // Strategy 2: Tesseract fallback
       if (!parsed) {
-        const result = await Tesseract.recognize(receipt.file, 'eng', {
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              setProcessedReceipts((prev) => {
-                const updated = [...prev];
-                updated[index] = { ...updated[index], progress: 40 + Math.round(m.progress * 50) };
-                return updated;
-              });
-            }
-          },
-        });
-
-        const text = result.data.text;
-        if (!text || text.trim().length < 10) {
-          throw new Error('Could not extract readable text from image. Try a clearer photo.');
+        let tesseractText = '';
+        try {
+          const result = await Tesseract.recognize(receipt.file, 'eng', {
+            logger: (m) => {
+              if (m.status === 'recognizing text') {
+                setProcessedReceipts((prev) => {
+                  const updated = [...prev];
+                  updated[index] = { ...updated[index], progress: 40 + Math.round(m.progress * 50) };
+                  return updated;
+                });
+              }
+            },
+          });
+          tesseractText = result.data.text;
+        } catch (tesseractError: any) {
+          // If Tesseract itself blew up (worker/WASM load failure under strict
+          // CSP, etc.), surface the backend reason instead of a vague Tesseract
+          // stack trace — that's almost always the actionable cause.
+          const tessMsg = tesseractError?.message || 'Tesseract failed to initialize';
+          const composed = backendErrorMessage
+            ? `${backendErrorMessage} (local OCR fallback also failed: ${tessMsg})`
+            : `OCR fallback failed: ${tessMsg}`;
+          throw new Error(composed);
         }
 
-        parsed = parseReceiptText(text);
+        if (!tesseractText || tesseractText.trim().length < 10) {
+          // Prefer the actionable backend reason over the generic Tesseract msg.
+          throw new Error(
+            backendErrorMessage
+              ? `${backendErrorMessage} (local OCR could not read the image)`
+              : 'Could not extract readable text from image. Try a clearer photo.',
+          );
+        }
+
+        parsed = parseReceiptText(tesseractText);
         if (!parsed.merchant && !parsed.total) {
           parsed.merchant = 'Unknown Merchant';
           parsed.total = 0;
