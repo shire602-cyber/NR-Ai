@@ -20,7 +20,14 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { apiUrl } from '@/lib/api';
 import { getAuthHeaders } from '@/lib/auth';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
-import { exportToExcel, exportToGoogleSheets, prepareReceiptsForExport } from '@/lib/export';
+import {
+  exportToExcel,
+  exportToGoogleSheets,
+  prepareReceiptsForExport,
+  downloadOcrExcel,
+  downloadReceiptsExcel,
+  ocrDataToExportRow,
+} from '@/lib/export';
 import Tesseract from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -95,6 +102,7 @@ export default function Receipts() {
   const [pendingSaveData, setPendingSaveData] = useState<any>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+  const [isOcrExporting, setIsOcrExporting] = useState(false);
   const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
   
   const manualExpenseForm = useForm<ReceiptFormData>({
@@ -979,19 +987,82 @@ export default function Receipts() {
     setIsExporting(false);
 
     if (result.success) {
-      toast({ 
-        title: 'Export successful', 
-        description: `${filteredReceipts.length} expenses exported to Google Sheets` 
+      toast({
+        title: 'Export successful',
+        description: `${filteredReceipts.length} expenses exported to Google Sheets`
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, '_blank');
       }
     } else {
-      toast({ 
+      toast({
         variant: 'destructive',
-        title: 'Export failed', 
-        description: result.error || 'Failed to export to Google Sheets' 
+        title: 'Export failed',
+        description: result.error || 'Failed to export to Google Sheets'
       });
+    }
+  };
+
+  // Server-rendered Excel of the OCR-extracted rows currently on screen
+  // (post-extraction, pre-save). Skips rows that haven't completed OCR yet.
+  const handleDownloadOcrExcel = async () => {
+    const rows = processedReceipts
+      .filter((r) => r.status === 'completed' || r.status === 'saved')
+      .filter((r) => r.data)
+      .map((r) => ocrDataToExportRow(r.data!));
+
+    if (rows.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Nothing to export',
+        description: 'Process at least one receipt before downloading.',
+      });
+      return;
+    }
+
+    setIsOcrExporting(true);
+    try {
+      await downloadOcrExcel(rows);
+      toast({
+        title: 'Excel ready',
+        description: `${rows.length} receipt${rows.length === 1 ? '' : 's'} exported to Excel.`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Export failed',
+        description: err?.message || 'Could not generate the spreadsheet.',
+      });
+    } finally {
+      setIsOcrExporting(false);
+    }
+  };
+
+  // Bulk export of saved receipts via the server endpoint — same column layout
+  // as the OCR export, so users get a consistent spreadsheet format for both
+  // in-flight scans and historical data.
+  const handleDownloadReceiptsExcel = async () => {
+    if (!companyId || !filteredReceipts.length) {
+      toast({ variant: 'destructive', title: 'No data', description: 'No expenses to export' });
+      return;
+    }
+    setIsExporting(true);
+    try {
+      await downloadReceiptsExcel(companyId, {
+        ids: filteredReceipts.map((r: any) => r.id),
+      });
+      toast({
+        title: 'Excel ready',
+        description: `${filteredReceipts.length} receipts exported.`,
+      });
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Export failed',
+        description: err?.message || 'Could not generate the spreadsheet.',
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -1117,6 +1188,26 @@ export default function Receipts() {
                   <>
                     <CheckCircle2 className="w-4 h-4 mr-2" />
                     Save All ({completedCount})
+                  </>
+                )}
+              </Button>
+
+              <Button
+                variant="outline"
+                onClick={handleDownloadOcrExcel}
+                disabled={completedCount === 0 || isOcrExporting || isProcessingBulk}
+                size="lg"
+                data-testid="button-download-ocr-excel"
+              >
+                {isOcrExporting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Preparing...
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Download Excel ({completedCount})
                   </>
                 )}
               </Button>
@@ -1400,7 +1491,11 @@ export default function Receipts() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-expenses-excel">
                   <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Export to Excel
+                  Export to Excel (full)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDownloadReceiptsExcel} data-testid="menu-export-expenses-excel-ocr">
+                  <FileSpreadsheet className="w-4 h-4 mr-2" />
+                  Download Excel (OCR format)
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-expenses-sheets">
                   <SiGooglesheets className="w-4 h-4 mr-2" />
