@@ -128,8 +128,8 @@ self.addEventListener('fetch', (event) => {
 async function handleStaticRequest(request) {
   const cachedResponse = await caches.match(request);
   if (cachedResponse) {
-    // Revalidate in background (stale-while-revalidate)
-    const fetchPromise = fetch(request)
+    // Revalidate in background (stale-while-revalidate, fire-and-forget)
+    fetch(request)
       .then((response) => {
         if (response.ok) {
           const responseClone = response.clone();
@@ -153,7 +153,7 @@ async function handleStaticRequest(request) {
       cache.put(request, responseClone);
     }
     return response;
-  } catch (error) {
+  } catch {
     // Return a basic 404 for missing static assets
     return new Response('Not found', { status: 404 });
   }
@@ -184,7 +184,7 @@ async function handleApiRequest(request, url) {
     }
 
     return response;
-  } catch (error) {
+  } catch {
     // Network failed - try cache for cacheable endpoints
     if (isCacheable && !shouldNeverCache) {
       const cachedResponse = await caches.match(request);
@@ -211,7 +211,7 @@ async function handleNavigationRequest(request) {
   try {
     const response = await fetch(request);
     return response;
-  } catch (error) {
+  } catch {
     const offlinePage = await caches.match('/offline.html');
     if (offlinePage) {
       return offlinePage;
@@ -232,7 +232,7 @@ async function networkFirst(request, cacheName) {
       cache.put(request, responseClone);
     }
     return response;
-  } catch (error) {
+  } catch {
     const cachedResponse = await caches.match(request);
     if (cachedResponse) {
       return cachedResponse;
@@ -276,12 +276,12 @@ async function replayFailedRequests() {
           const deleteTx = db.transaction('requests', 'readwrite');
           deleteTx.objectStore('requests').delete(entry.id);
         }
-      } catch (error) {
+      } catch {
         // Still offline, will retry on next sync
         console.warn('[SW] Background sync retry failed for:', entry.url);
       }
     }
-  } catch (error) {
+  } catch {
     console.error('[SW] Background sync error:', error);
   }
 }
@@ -353,7 +353,7 @@ async function queueFailedRequest(requestData) {
     if (self.registration.sync) {
       await self.registration.sync.register('muhasib-sync');
     }
-  } catch (error) {
+  } catch {
     console.error('[SW] Failed to queue request:', error);
   }
 }
