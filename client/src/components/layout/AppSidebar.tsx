@@ -134,6 +134,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     titleKey: 'settings',
     icon: Settings,
     items: [
+      { titleKey: 'companySettings', url: '/settings/company' },
       { titleKey: 'companyProfile', url: '/company-profile' },
       { titleKey: 'teamManagement', url: '/team' },
       { titleKey: 'integrations', url: '/integrations' },
