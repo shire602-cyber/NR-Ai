@@ -80,8 +80,10 @@ const bulkRemindSchema = z.object({
 export function registerFirmCommsRoutes(app: Express): void {
   const router = Router();
 
-  router.use(authMiddleware as any);
-  router.use(requireFirmRole());
+  // Scope auth + firm-role guards to /firm/* so this router (mounted at /api)
+  // does not short-circuit unrelated /api requests like /api/health.
+  router.use('/firm', authMiddleware as any);
+  router.use('/firm', requireFirmRole());
 
   // ─── GET /api/firm/comms/log ──────────────────────────────────────────────
   router.get(
