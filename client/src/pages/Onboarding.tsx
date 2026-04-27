@@ -190,6 +190,30 @@ function CustomerOnboarding() {
     },
   });
 
+  const createCompanyMutation = useMutation({
+    mutationFn: async (data: typeof companyForm): Promise<Company> => {
+      return apiRequest('POST', '/api/companies', {
+        ...data,
+        baseCurrency: 'AED',
+        locale: 'en',
+        companyType: 'customer',
+      });
+    },
+    onSuccess: (newCompany) => {
+      queryClient.setQueryData<Company[]>(['/api/companies'], (old) =>
+        old ? [...old, newCompany] : [newCompany],
+      );
+      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Failed to create company',
+        description: err?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const createBankMutation = useMutation({
     mutationFn: (data: typeof bankForm) =>
       apiRequest('POST', `/api/companies/${company!.id}/bank-accounts`, data),
@@ -276,7 +300,14 @@ function CustomerOnboarding() {
     setCompanySaveError(null);
 
     try {
-      await saveCompanyMutation.mutateAsync(companyForm);
+      // First-time onboarding: a user without any company creates one here so
+      // they're not stranded on the "no company selected" dead-end. Existing
+      // companies just get patched with the new details.
+      if (company) {
+        await saveCompanyMutation.mutateAsync(companyForm);
+      } else {
+        await createCompanyMutation.mutateAsync(companyForm);
+      }
       goNext();
     } catch (err) {
       // Server validation: a 400/409 with a `field` hint maps back to the
@@ -437,7 +468,7 @@ function CustomerOnboarding() {
                     setCompanySaveError(null);
                     void handleCompanyNext();
                   }}
-                  saving={saveCompanyMutation.isPending}
+                  saving={saveCompanyMutation.isPending || createCompanyMutation.isPending}
                 />
               )}
               {currentStep === 'accounts' && (

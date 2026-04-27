@@ -156,13 +156,21 @@ import { SkipLink } from '@/components/SkipLink';
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
-  const { company, isLoading: companyLoading } = useDefaultCompany();
+  const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
 
   useEffect(() => {
-    if (!companyLoading && company && !company.onboardingCompleted && location !== '/onboarding') {
+    if (companyLoading || location === '/onboarding') return;
+
+    // No company yet — send the user to onboarding so they can create one.
+    if (hasNoCompanies) {
+      navigate('/onboarding');
+      return;
+    }
+
+    if (company && !company.onboardingCompleted) {
       navigate('/onboarding');
     }
-  }, [company, companyLoading, location, navigate]);
+  }, [company, hasNoCompanies, companyLoading, location, navigate]);
 
 
   const style = {

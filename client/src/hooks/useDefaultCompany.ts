@@ -33,10 +33,13 @@ export function useDefaultCompany() {
   const matchedById = activeId ? companies?.find((c) => c.id === activeId) : undefined;
   const fallback = companies?.[0];
   const company = matchedById ?? fallback;
+  const hasNoCompanies = !isLoading && !error && (companies?.length ?? 0) === 0;
 
   return {
     company,
     companyId: company?.id,
+    companies: companies ?? [],
+    hasNoCompanies,
     isLoading,
     error,
   };
