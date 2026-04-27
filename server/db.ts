@@ -386,6 +386,71 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'audit_logs.resource index',
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_resource" ON "audit_logs" ("resource_type", "resource_id")`,
     },
+    // ── 0040: auth & session security [CRITICAL FOR LOGIN] ───────────────
+    // Drizzle's select(users) reads every column declared in the schema. If
+    // email_verified is missing the entire login flow returns 500. The
+    // companion token tables back logout/blacklist, password-reset, and
+    // email-verification flows.
+    {
+      name: 'users.email_verified',
+      sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "email_verified" boolean NOT NULL DEFAULT false`,
+    },
+    {
+      name: 'token_blacklist table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "token_blacklist" (
+        "token_hash" text PRIMARY KEY,
+        "expires_at" timestamp NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      name: 'token_blacklist.expires_at index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_token_blacklist_expires_at" ON "token_blacklist" ("expires_at")`,
+    },
+    {
+      name: 'password_reset_tokens table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "token_hash" text NOT NULL UNIQUE,
+        "expires_at" timestamp NOT NULL,
+        "used_at" timestamp,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      // 0042 added used_at after 0040 created the table. If 0040 ran but 0042
+      // did not, the column is missing — guard separately so the table-create
+      // step above (a no-op when the table already exists) does not mask it.
+      name: 'password_reset_tokens.used_at',
+      sql: sql`ALTER TABLE "password_reset_tokens" ADD COLUMN IF NOT EXISTS "used_at" timestamp`,
+    },
+    {
+      name: 'password_reset_tokens.user_id index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_user_id" ON "password_reset_tokens" ("user_id")`,
+    },
+    {
+      name: 'password_reset_tokens.expires_at index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_expires_at" ON "password_reset_tokens" ("expires_at")`,
+    },
+    {
+      name: 'password_reset_tokens.token_hash index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_token_hash" ON "password_reset_tokens" ("token_hash")`,
+    },
+    {
+      name: 'email_verification_tokens table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "email_verification_tokens" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "token_hash" text NOT NULL UNIQUE,
+        "expires_at" timestamp NOT NULL,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      name: 'email_verification_tokens.user_id index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_email_verification_tokens_user_id" ON "email_verification_tokens" ("user_id")`,
+    },
   ];
 
   // Dev/test-only seed data — never executed in production.
