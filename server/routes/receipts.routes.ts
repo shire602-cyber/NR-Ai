@@ -3,6 +3,7 @@ import { storage } from '../storage';
 import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { validate } from '../middleware/validate';
 import { insertInvoiceSchema, type Account, type Receipt } from '../../shared/schema';
 import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
 import { createAndEmitNotification } from '../services/socket.service';
@@ -10,6 +11,11 @@ import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
 import { createLogger } from '../config/logger';
 import { assertRetentionExpired } from '../services/retention.service';
+import {
+  buildOcrReceiptsWorkbook,
+  buildExportFilename,
+  receiptToExportRow,
+} from '../services/excel-export.service';
 // @ts-ignore
 import PDFDocument from 'pdfkit';
 
@@ -45,6 +51,59 @@ export function registerReceiptRoutes(app: Express) {
     const receipts = await storage.getReceiptsByCompanyId(companyId);
     res.json(receipts);
   }));
+
+  // Bulk Excel export for saved receipts. Optional `ids` filters down to a
+  // specific subset (e.g. user selected rows in the UI). All filtering happens
+  // server-side after a tenant scope check so cross-company leaks are
+  // impossible.
+  app.post(
+    '/api/companies/:companyId/receipts/export-excel',
+    authMiddleware,
+    requireCustomer,
+    validate({ body: receiptsExportSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { ids } = req.body as z.infer<typeof receiptsExportSchema>;
+      const all = await storage.getReceiptsByCompanyId(companyId);
+      const subset = ids && ids.length > 0
+        ? all.filter((r) => ids.includes(r.id))
+        : all;
+
+      const rows = subset.map((r) =>
+        receiptToExportRow({
+          date: r.date,
+          merchant: r.merchant,
+          // receipts table doesn't store invoiceNumber; export it as blank.
+          invoiceNumber: null,
+          amount: r.amount as unknown as number,
+          vatAmount: r.vatAmount as unknown as number,
+          currency: r.currency,
+        }),
+      );
+
+      const buffer = await buildOcrReceiptsWorkbook(rows, {
+        sheetName: 'Receipts',
+        title: 'Muhasib Receipts Export',
+      });
+      const filename = buildExportFilename('muhasib-receipts');
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', String(buffer.length));
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(buffer);
+    }),
+  );
 
   // Check for similar transactions
   // Customer-only: Check for similar receipts/transactions
@@ -771,3 +830,9 @@ export function registerReceiptRoutes(app: Express) {
     res.send(pdfBuffer);
   }));
 }
+
+// Body schema for the bulk Excel export. `ids` is optional — omitting it (or
+// passing an empty array) exports every receipt the company has access to.
+const receiptsExportSchema = z.object({
+  ids: z.array(z.string().uuid()).max(5000).optional(),
+});

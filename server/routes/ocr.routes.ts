@@ -1,11 +1,18 @@
 import { type Express, type Request, type Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
+import { z } from 'zod';
 import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { validate } from '../middleware/validate';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
+import {
+  buildOcrReceiptsWorkbook,
+  buildExportFilename,
+  type OcrExportRow,
+} from '../services/excel-export.service';
 
 const log = createLogger('ocr');
 
@@ -149,7 +156,55 @@ Respond ONLY with valid JSON matching this exact structure:
 
     return res.status(400).json({ message: 'Missing imageData or content' });
   }));
+
+  // ===========================
+  // Excel Export — in-flight OCR rows
+  // ===========================
+  // Accepts the rows the client has just extracted (and possibly edited) and
+  // streams back an .xlsx file with Date / Vendor / Invoice No. / Amount / VAT
+  // columns. The same shape is reused for the saved-receipt bulk export so the
+  // client only has to know one schema.
+  app.post(
+    "/api/ocr/export-excel",
+    authMiddleware,
+    validate({ body: ocrExportSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { rows, filename } = req.body as z.infer<typeof ocrExportSchema>;
+      const buffer = await buildOcrReceiptsWorkbook(rows as OcrExportRow[], {
+        sheetName: 'OCR Receipts',
+        title: 'Muhasib OCR Export',
+      });
+      const safeName = filename
+        ? `${filename.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80)}.xlsx`
+        : buildExportFilename();
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+      res.setHeader('Content-Length', String(buffer.length));
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(buffer);
+    }),
+  );
 }
+
+// Schema for the in-flight OCR export. Strict enough to reject obvious junk
+// but tolerant of partial data — empty cells render as blanks, not "null".
+const ocrExportRowSchema = z.object({
+  date: z.union([z.string().max(40), z.null()]).optional(),
+  vendor: z.union([z.string().max(200), z.null()]).optional(),
+  invoiceNumber: z.union([z.string().max(100), z.null()]).optional(),
+  amount: z.union([z.number(), z.string().max(40), z.null()]).optional(),
+  vat: z.union([z.number(), z.string().max(40), z.null()]).optional(),
+  currency: z.union([z.string().max(10), z.null()]).optional(),
+});
+
+const ocrExportSchema = z.object({
+  rows: z.array(ocrExportRowSchema).min(1, 'At least one row is required').max(5000),
+  filename: z.string().max(80).optional(),
+});
 
 async function runVisionOCR(
   imageData: string,
