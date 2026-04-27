@@ -281,7 +281,7 @@ async function replayFailedRequests() {
         console.warn('[SW] Background sync retry failed for:', entry.url);
       }
     }
-  } catch {
+  } catch (error) {
     console.error('[SW] Background sync error:', error);
   }
 }
@@ -353,7 +353,7 @@ async function queueFailedRequest(requestData) {
     if (self.registration.sync) {
       await self.registration.sync.register('muhasib-sync');
     }
-  } catch {
+  } catch (error) {
     console.error('[SW] Failed to queue request:', error);
   }
 }
