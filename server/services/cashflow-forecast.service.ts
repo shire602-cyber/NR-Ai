@@ -1,5 +1,5 @@
 import { storage } from '../storage';
-import type { JournalEntry, JournalLine, Account, Invoice, Receipt } from '../../shared/schema';
+import type { JournalLine, Account } from '../../shared/schema';
 
 interface WeeklyProjection {
   week: number;

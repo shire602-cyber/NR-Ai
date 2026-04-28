@@ -44,7 +44,6 @@ export function generateEInvoiceXML(
     .map((line, index) => {
       const lineExtension = line.quantity * line.unitPrice;
       const vatRate = line.vatRate ?? UAE_VAT_RATE;
-      const vatAmount = lineExtension * vatRate;
       const vatPercent = (vatRate * 100).toFixed(2);
 
       return `

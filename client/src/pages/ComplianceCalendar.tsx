@@ -9,9 +9,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Calendar as CalendarIcon,
+  ChevronLeft,
+  ChevronRight,
   AlertTriangle,
   CheckCircle2,
   Clock,
@@ -57,7 +56,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function ComplianceCalendar() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -197,7 +196,6 @@ export default function ComplianceCalendar() {
                 }
 
                 const events = getEventsForDate(day);
-                const hasEvents = events.length > 0;
                 const hasOverdue = events.some(e => e.status !== 'completed' && isBefore(e.date, new Date()));
                 const isSelected = selectedDate && isSameDay(day, selectedDate);
 

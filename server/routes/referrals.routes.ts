@@ -4,7 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
 
-export function registerReferralRoutes(app: Express) {
+export function registerReferralRoutes(app: Express): void {
   const router = Router();
 
   // Protect every referral endpoint at the router level.

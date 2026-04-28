@@ -29,7 +29,7 @@ export function registerAdminHealthRoutes(app: Express): void {
   // =========================================
   router.get(
     '/admin/clients/health-overview',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const companies = await storage.getAllCompanies();
 
       const healthData = await Promise.all(
@@ -122,7 +122,7 @@ export function registerAdminHealthRoutes(app: Express): void {
   // =========================================
   router.get(
     '/admin/deadlines',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const companies = await storage.getAllCompanies();
       const now = new Date();
       const ninetyDaysFromNow = new Date();

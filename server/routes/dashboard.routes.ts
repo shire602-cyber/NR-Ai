@@ -19,7 +19,7 @@ function isCashOrBankAccount(a: { code?: string | null; nameEn: string; subType?
 /**
  * Register all dashboard and basic report routes.
  */
-export function registerDashboardRoutes(app: Express) {
+export function registerDashboardRoutes(app: Express): void {
   // =====================================
   // Dashboard Stats Routes
   // =====================================

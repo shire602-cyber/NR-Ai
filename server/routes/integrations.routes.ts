@@ -1,6 +1,5 @@
-import { Router, type Express, type Request, type Response } from 'express';
+import { type Express, type Request, type Response } from 'express';
 import { storage } from '../storage';
-import { z } from 'zod';
 import * as googleSheets from '../integrations/googleSheets';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
@@ -9,7 +8,7 @@ import { createLogger } from '../config/logger';
 
 const log = createLogger('integrations');
 
-export function registerIntegrationRoutes(app: Express) {
+export function registerIntegrationRoutes(app: Express): void {
   // =====================================
   // Waitlist Routes (Public)
   // =====================================
@@ -36,7 +35,7 @@ export function registerIntegrationRoutes(app: Express) {
   // =====================================
 
   // Get integration status
-  app.get("/api/integrations/status", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/status", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
     const googleSheetsConnected = await googleSheets.isGoogleSheetsConnected();
 
     res.json({
@@ -84,7 +83,7 @@ export function registerIntegrationRoutes(app: Express) {
   }));
 
   // List available Google Sheets spreadsheets
-  app.get("/api/integrations/google-sheets/spreadsheets", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/google-sheets/spreadsheets", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
     const isConnected = await googleSheets.isGoogleSheetsConnected();
     if (!isConnected) {
       return res.status(400).json({ message: 'Google Sheets not connected' });
@@ -296,7 +295,7 @@ export function registerIntegrationRoutes(app: Express) {
     let createdCount = 0;
     for (const invoiceData of invoices) {
       try {
-        const invoice = await storage.createInvoice({
+        await storage.createInvoice({
           companyId,
           number: invoiceData.invoiceNumber,
           customerName: invoiceData.customerName,
@@ -358,7 +357,7 @@ export function registerIntegrationRoutes(app: Express) {
     let createdCount = 0;
     for (const expenseData of expenses) {
       try {
-        const receipt = await storage.createReceipt({
+        await storage.createReceipt({
           companyId,
           date: expenseData.date,
           merchant: expenseData.merchant,

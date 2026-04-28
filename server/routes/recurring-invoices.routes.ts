@@ -1,13 +1,12 @@
 import { type Express, type Request, type Response } from 'express';
 import { storage } from '../storage';
-import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 
 const log = createLogger('recurring-invoices');
 
-export function registerRecurringInvoiceRoutes(app: Express) {
+export function registerRecurringInvoiceRoutes(app: Express): void {
   // =====================================
   // Recurring Invoice Routes
   // =====================================

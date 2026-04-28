@@ -4,7 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
 
-export function registerReminderRoutes(app: Express) {
+export function registerReminderRoutes(app: Express): void {
   // =====================================
   // REMINDER SETTINGS (Late Payment Reminders)
   // =====================================

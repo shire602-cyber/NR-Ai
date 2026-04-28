@@ -34,10 +34,8 @@ import {
   Bot,
   LineChart,
   Target,
-  Lightbulb,
   Mic,
   FileSearch,
-  Banknote,
   AlertTriangle,
   Workflow
 } from 'lucide-react';

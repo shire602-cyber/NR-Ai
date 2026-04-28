@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -40,13 +40,11 @@ import {
   Pencil,
   Loader2,
   RefreshCw,
-  TrendingUp,
   Zap,
   Target,
   Clock,
   BookOpen,
   CheckCircle2,
-  XCircle,
   ArrowUpDown,
   BarChart3,
 } from 'lucide-react';
@@ -214,7 +212,7 @@ export default function AIInbox() {
         `/api/companies/${companyId}/ai-gl/queue/${itemId}/accept`
       );
     },
-    onSuccess: (_data: any, itemId: string) => {
+    onSuccess: () => {
       toast({ title: 'Accepted', description: 'Transaction posted to GL.' });
       invalidateAll();
     },

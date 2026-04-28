@@ -14,7 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Building2, FileText, Upload, Save } from 'lucide-react';
+import { Building2, FileText, Save } from 'lucide-react';
 import type { Company } from '@shared/schema';
 
 const companyProfileSchema = z.object({
@@ -48,7 +48,7 @@ export default function CompanyProfile() {
   const [, navigate] = useLocation();
   const { companyId, isLoading: companiesLoading } = useDefaultCompany();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [, setLogoFile] = useState<File | null>(null);
 
   const { data: company, isLoading } = useQuery<Company>({
     queryKey: ['/api/companies', companyId],

@@ -17,7 +17,7 @@ async function findAccountForUser(userId: string, accountId: string): Promise<Ac
   return undefined;
 }
 
-export function registerAccountRoutes(app: Express) {
+export function registerAccountRoutes(app: Express): void {
   // =====================================
   // Account Routes
   // =====================================

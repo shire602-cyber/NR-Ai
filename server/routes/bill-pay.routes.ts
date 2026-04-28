@@ -77,7 +77,7 @@ function resolveVatRatePercent(raw: unknown): number {
   return Number.isFinite(n) ? n : 5;
 }
 
-export function registerBillPayRoutes(app: Express) {
+export function registerBillPayRoutes(app: Express): void {
   // =====================================
   // Vendor Bill Routes
   // =====================================
@@ -544,7 +544,6 @@ export function registerBillPayRoutes(app: Express) {
       newStatus = 'partial';
     }
 
-    const paidAt = newStatus === 'paid' ? 'NOW()' : 'paid_at';
     await pool.query(
       `UPDATE vendor_bills
        SET amount_paid = $1, status = $2, paid_at = ${newStatus === 'paid' ? 'NOW()' : 'paid_at'}

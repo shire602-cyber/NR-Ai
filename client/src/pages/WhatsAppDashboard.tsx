@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
@@ -26,10 +25,6 @@ import {
   Settings2,
   FileText,
   CreditCard,
-  CalendarClock,
-  ChevronRight,
-  Plus,
-  Trash2,
   AlertTriangle,
   CheckCircle2,
 } from 'lucide-react';
@@ -59,10 +54,8 @@ import type { WhatsappMessage, Invoice, CustomerContact, Notification } from '@s
 import {
   MESSAGE_TEMPLATES,
   fillTemplate,
-  formatPhoneForWhatsApp,
   openWhatsApp,
   pickWhatsAppNumber,
-  type MessageTemplate,
 } from '@/lib/whatsapp-templates';
 
 // ─── Rules ────────────────────────────────────────────────

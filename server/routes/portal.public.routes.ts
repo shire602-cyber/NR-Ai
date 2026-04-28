@@ -11,7 +11,7 @@ import crypto from "crypto";
  * Public endpoints for the client portal, accessible via portal access tokens.
  * No auth required for portal/:token routes — they use token-based access.
  */
-export function registerPortalPublicRoutes(app: Express) {
+export function registerPortalPublicRoutes(app: Express): void {
 
   // =====================================
   // GENERATE PORTAL ACCESS (authenticated)

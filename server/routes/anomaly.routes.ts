@@ -19,7 +19,7 @@ const typeMap: Record<string, string> = {
   expense_spike: 'unusual_amount',
 };
 
-export function registerAnomalyRoutes(app: Express) {
+export function registerAnomalyRoutes(app: Express): void {
   /**
    * GET /api/companies/:companyId/anomalies
    * Run anomaly detection, persist new anomalies, return unresolved ones.

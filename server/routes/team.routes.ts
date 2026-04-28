@@ -4,7 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { recordAudit } from "../services/audit.service";
 
-export function registerTeamRoutes(app: Express) {
+export function registerTeamRoutes(app: Express): void {
   // =====================================
   // TEAM MANAGEMENT
   // =====================================

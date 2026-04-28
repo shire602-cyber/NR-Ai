@@ -3,7 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,7 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, BookOpen, Search, Trash2, Edit } from 'lucide-react';
+import { Plus, Search, Trash2, Edit } from 'lucide-react';
 import type { Account } from '@shared/schema';
 
 const accountSchema = z.object({
@@ -153,14 +153,6 @@ export default function Accounts() {
     acc.nameEn.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (acc.nameAr && acc.nameAr.includes(searchTerm))
   );
-
-  const groupedAccounts = filteredAccounts?.reduce((acc, account) => {
-    if (!acc[account.type]) {
-      acc[account.type] = [];
-    }
-    acc[account.type].push(account);
-    return acc;
-  }, {} as Record<string, Account[]>);
 
   const getTypeBadgeColor = (type: string) => {
     switch (type) {

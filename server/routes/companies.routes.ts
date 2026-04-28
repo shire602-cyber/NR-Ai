@@ -118,7 +118,7 @@ async function seedChartOfAccounts(companyId: string): Promise<{ created: number
   }
 }
 
-export function registerCompanyRoutes(app: Express) {
+export function registerCompanyRoutes(app: Express): void {
   // =====================================
   // Company Routes
   // =====================================

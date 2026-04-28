@@ -5,7 +5,7 @@ import { storage } from '../storage';
 import { UAE_CT_EXEMPTION_THRESHOLD } from '../constants';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 
-export function registerCorporateTaxRoutes(app: Express) {
+export function registerCorporateTaxRoutes(app: Express): void {
   // =====================================
   // CORPORATE TAX RETURNS (UAE 9% CT)
   // =====================================

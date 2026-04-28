@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRoute, useLocation, Link } from 'wouter';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -12,7 +12,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
@@ -23,14 +22,12 @@ import { getAuthHeaders } from '@/lib/auth';
 import type { Account } from '@shared/schema';
 import jsPDF from 'jspdf';
 import { 
-  ArrowLeft, 
-  Search, 
-  Download, 
+  ArrowLeft,
+  Search,
   FileText,
   FileSpreadsheet,
   RotateCcw,
   BookOpen,
-  Calendar,
   Filter,
   ChevronLeft,
   ChevronRight,
@@ -64,12 +61,12 @@ interface LedgerResponse {
 }
 
 export default function AccountLedger() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const [match, params] = useRoute('/accounts/:id/ledger');
+  const [, params] = useRoute('/accounts/:id/ledger');
   const accountId = params?.id;
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  useDefaultCompany();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });

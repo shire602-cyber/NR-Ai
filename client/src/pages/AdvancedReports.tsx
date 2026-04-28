@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { format, parseISO, subMonths, startOfMonth, endOfMonth, subQuarters, startOfQuarter, endOfQuarter, subYears, startOfYear, endOfYear, differenceInDays } from 'date-fns';
+import { format, subMonths, startOfMonth, endOfMonth, subQuarters, startOfQuarter, endOfQuarter, subYears, startOfYear, endOfYear } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,36 +13,25 @@ import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
   ResponsiveContainer,
-  LineChart,
   Line,
-  PieChart,
-  Pie,
-  Cell,
   AreaChart,
   Area
 } from 'recharts';
-import { 
-  Download, 
-  TrendingUp, 
-  TrendingDown,
-  Calendar,
+import {
+  Download,
+  TrendingUp,
   Clock,
-  AlertTriangle,
   ArrowUp,
   ArrowDown,
-  DollarSign,
-  Users,
-  FileText,
-  RefreshCw,
   ArrowRightLeft
 } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -80,14 +68,11 @@ interface PeriodComparison {
   changePercent: number;
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
-
 export default function AdvancedReports() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [selectedPeriod, setSelectedPeriod] = useState('quarter');
-  const [comparisonPeriod, setComparisonPeriod] = useState('previous');
   const [activeTab, setActiveTab] = useState('cashflow');
 
   const periodDates = useMemo(() => {

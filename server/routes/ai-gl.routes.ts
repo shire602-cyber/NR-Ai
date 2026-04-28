@@ -13,7 +13,7 @@ import { createLogger } from '../config/logger';
 
 const log = createLogger('ai-gl-routes');
 
-export function registerAIGLRoutes(app: Express) {
+export function registerAIGLRoutes(app: Express): void {
   // =====================================
   // AI GL Queue — List items
   // =====================================

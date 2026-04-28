@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { CardListSkeleton } from '@/components/ui/loading-skeletons';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -33,7 +32,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { VirtualList } from '@/components/VirtualList';
 import { formatCurrency } from '@/lib/format';
@@ -79,9 +78,9 @@ const receiptSchema = z.object({
 type ReceiptFormData = z.infer<typeof receiptSchema>;
 
 export default function Receipts() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId } = useDefaultCompany();
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -138,13 +137,6 @@ export default function Receipts() {
       vatAmount: null,
       category: '',
       currency: 'AED',
-    },
-  });
-
-  // Save single receipt mutation
-  const saveReceiptMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return apiRequest('POST', `/api/companies/${companyId}/receipts`, data);
     },
   });
 
@@ -263,11 +255,6 @@ export default function Receipts() {
         description: error?.message || 'Please try again.',
       });
     },
-  });
-
-  const checkSimilarMutation = useMutation({
-    mutationFn: (data: any) => 
-      apiRequest('POST', `/api/companies/${companyId}/receipts/check-similar`, data),
   });
 
   const deleteMutation = useMutation({

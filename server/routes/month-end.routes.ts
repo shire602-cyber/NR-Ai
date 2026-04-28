@@ -28,7 +28,7 @@ function parsePeriod(period: string): { periodStart: string; periodEnd: string }
   return { periodStart, periodEnd };
 }
 
-export function registerMonthEndRoutes(app: Express) {
+export function registerMonthEndRoutes(app: Express): void {
   // =====================================
   // Month-End Close Routes
   // =====================================

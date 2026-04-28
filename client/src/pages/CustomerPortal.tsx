@@ -105,7 +105,7 @@ export default function CustomerPortal() {
     retry: false,
   });
 
-  const handleDownloadPDF = (invoiceId: string, invoiceNumber: string) => {
+  const handleDownloadPDF = (invoiceId: string, _invoiceNumber: string) => {
     window.open(apiUrl(`/api/portal/${token}/invoices/${invoiceId}/pdf`), '_blank');
   };
 

@@ -1,9 +1,6 @@
-import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Separator } from '@/components/ui/separator';
 import { useTranslation } from '@/lib/i18n';
 
 interface VAT201Data {
@@ -76,7 +73,7 @@ const EMIRATES = [
 ];
 
 export default function VAT201Form({ data, onChange, companyInfo, periodInfo, readOnly = false }: Props) {
-  const { locale } = useTranslation();
+  useTranslation();
   
   const formatNumber = (num: number) => num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   

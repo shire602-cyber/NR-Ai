@@ -1,27 +1,23 @@
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from 'recharts';
+import { LineChart, Line, AreaChart, Area, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from 'recharts';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { 
-  TrendingUp, 
-  TrendingDown, 
-  BarChart3, 
-  Brain, 
-  Wallet, 
-  Calendar, 
-  Target, 
+  TrendingUp,
+  BarChart3,
+  Brain,
+  Wallet,
+  Target,
   AlertTriangle,
   ArrowUp,
   ArrowDown,
@@ -35,25 +31,6 @@ import {
   Activity,
   Zap
 } from 'lucide-react';
-
-interface CashFlowForecast {
-  id: string;
-  forecastDate: string;
-  predictedInflow: number;
-  predictedOutflow: number;
-  predictedBalance: number;
-  confidenceLevel: number;
-}
-
-interface BudgetVsActual {
-  accountId: string;
-  accountName: string;
-  accountType: string;
-  budgeted: number;
-  actual: number;
-  variance: number;
-  variancePercent: number;
-}
 
 interface FinancialKPI {
   type: string;
@@ -78,37 +55,13 @@ interface AIInsight {
 }
 
 export default function AdvancedAnalytics() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const isRTL = locale === 'ar';
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [forecastPeriod, setForecastPeriod] = useState('3months');
   const [budgetYear, setBudgetYear] = useState(new Date().getFullYear());
   const [budgetMonth, setBudgetMonth] = useState(new Date().getMonth() + 1);
-
-  // Fetch forecasts
-  const { data: forecasts, isLoading: forecastsLoading } = useQuery<CashFlowForecast[]>({
-    queryKey: ['/api/analytics/forecasts', companyId, forecastPeriod],
-    enabled: !!companyId,
-  });
-
-  // Fetch budget vs actual
-  const { data: budgetData, isLoading: budgetLoading } = useQuery<BudgetVsActual[]>({
-    queryKey: ['/api/analytics/budget-vs-actual', companyId, budgetYear, budgetMonth],
-    enabled: !!companyId,
-  });
-
-  // Fetch KPIs
-  const { data: kpis, isLoading: kpisLoading } = useQuery<FinancialKPI[]>({
-    queryKey: ['/api/analytics/kpis', companyId],
-    enabled: !!companyId,
-  });
-
-  // Fetch AI insights
-  const { data: insights, isLoading: insightsLoading } = useQuery<AIInsight[]>({
-    queryKey: ['/api/analytics/insights', companyId],
-    enabled: !!companyId,
-  });
 
   // Generate forecast mutation
   const generateForecastMutation = useMutation({

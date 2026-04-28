@@ -12,15 +12,12 @@ import { formatDistanceToNow } from 'date-fns';
 import { 
   Bell, 
   CheckCircle, 
-  XCircle, 
-  AlertTriangle, 
-  Clock, 
-  FileText,
+  XCircle,
+  AlertTriangle,
+  Clock,
   Newspaper,
   ChevronRight,
   Check,
-  Trash2,
-  RefreshCw
 } from 'lucide-react';
 import type { Notification, RegulatoryNews } from '@shared/schema';
 

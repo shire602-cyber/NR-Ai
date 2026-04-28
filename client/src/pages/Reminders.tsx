@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { formatDistanceToNow, format } from 'date-fns';
+import { format } from 'date-fns';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { 
   Bell, 
@@ -27,7 +27,6 @@ import {
   Plus,
   CheckCircle,
   XCircle,
-  Send,
   AlertTriangle
 } from 'lucide-react';
 import { SiWhatsapp } from 'react-icons/si';

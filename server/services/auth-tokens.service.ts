@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { and, eq, lt } from 'drizzle-orm';
+import { eq, lt } from 'drizzle-orm';
 import jwt from 'jsonwebtoken';
 
 import { db } from '../db';

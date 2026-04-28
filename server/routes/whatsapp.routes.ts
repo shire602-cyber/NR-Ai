@@ -12,7 +12,7 @@ const log = createLogger('whatsapp');
  * Messages are sent by opening wa.me links on the client side.
  * The backend only logs messages for history/tracking.
  */
-export function registerWhatsAppRoutes(app: Express) {
+export function registerWhatsAppRoutes(app: Express): void {
 
   // Log a message that was sent via wa.me link
   app.post("/api/integrations/whatsapp/log-message", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
@@ -68,7 +68,7 @@ export function registerWhatsAppRoutes(app: Express) {
   }));
 
   // Get WhatsApp config — always return configured:true since personal WhatsApp needs no setup
-  app.get("/api/integrations/whatsapp/config", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/whatsapp/config", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
     res.json({
       configured: true,
       isActive: true,
@@ -77,7 +77,7 @@ export function registerWhatsAppRoutes(app: Express) {
   }));
 
   // Get WhatsApp integration status (for dashboard/integrations page)
-  app.get("/api/integrations/whatsapp/status", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/whatsapp/status", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
     res.json({
       connected: true,
       configured: true,

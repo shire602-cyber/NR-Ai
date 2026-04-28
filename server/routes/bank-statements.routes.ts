@@ -310,7 +310,7 @@ async function autoMatchImportedTransactions(companyId: string): Promise<void> {
 
 // ─── Route Registration ──────────────────────────────────────────────────────
 
-export function registerBankStatementRoutes(app: Express) {
+export function registerBankStatementRoutes(app: Express): void {
   // ─────────────────────────────────────────────────────────────
   // Bank Account Management
   // ─────────────────────────────────────────────────────────────

@@ -1,21 +1,17 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { 
-  Mail, 
-  Plus, 
+import {
+  Mail,
   Search,
   MoreHorizontal,
   RefreshCw,
   XCircle,
-  CheckCircle,
-  Clock,
   Trash2,
   Send,
   Building2,
   Copy,
-  ExternalLink
 } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';

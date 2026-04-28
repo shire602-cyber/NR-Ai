@@ -1,11 +1,11 @@
 import { useState, useRef, useCallback } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   Upload, FileText, ReceiptIcon, CheckCircle2, XCircle,
-  Clock, AlertCircle, Play, RefreshCw, Building2, ChevronDown,
+  Play, RefreshCw, Building2,
   Loader2, CheckSquare, Square,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -70,15 +70,6 @@ interface PeriodCloseStatus {
   };
   issues: string[];
   readyToClose: boolean;
-}
-
-interface BankImportStatus {
-  companyId: string;
-  companyName: string;
-  lastImportDate: string | null;
-  unreconciledCount: number;
-  totalTransactions: number;
-  matchRate: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -305,7 +296,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
 
 // ─── Tab 2: VAT Filing Queue ──────────────────────────────────────────────────
 
-function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
+function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
   const { toast } = useToast();
   const [queue, setQueue] = useState<VatQueueEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);

@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import {
-  Users, ChevronDown, ChevronRight, Building2,
-  UserPlus, UserMinus, CheckSquare, Square, Shield,
+  Users, ChevronDown, ChevronRight,
+  Shield,
   Search, Mail, ExternalLink,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';

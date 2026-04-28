@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -15,15 +14,15 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency, formatDate } from '@/lib/format';
-import { 
-  Sparkles, AlertTriangle, TrendingUp, TrendingDown, 
-  Check, X, FileWarning, DollarSign, RefreshCw, 
+import {
+  Sparkles, AlertTriangle, AlertCircle,
+  Check, FileWarning, DollarSign, RefreshCw,
   Brain, Zap, ShieldAlert, LineChart, Upload,
-  Clock, ChevronRight, CheckCircle2, AlertCircle,
+  Clock, CheckCircle2,
   ArrowUpRight, ArrowDownRight, Target, Lightbulb
 } from 'lucide-react';
-import { 
-  ResponsiveContainer, LineChart as RechartsLineChart, Line, 
+import {
+  ResponsiveContainer,
   XAxis, YAxis, Tooltip, Legend, AreaChart, Area, BarChart, Bar
 } from 'recharts';
 
@@ -65,7 +64,7 @@ export default function AIFeatures() {
     setMounted(true);
   }, []);
 
-  const { data: anomalyAlerts, isLoading: alertsLoading, refetch: refetchAlerts } = useQuery<AnomalyAlert[]>({
+  const { data: anomalyAlerts, isLoading: alertsLoading } = useQuery<AnomalyAlert[]>({
     queryKey: ['/api/companies', companyId, 'anomaly-alerts'],
     enabled: !!companyId,
   });
@@ -99,7 +98,7 @@ export default function AIFeatures() {
     mutationFn: async () => {
       return apiRequest('POST', '/api/ai/forecast-cashflow', { companyId, forecastMonths: 3 });
     },
-    onSuccess: (data: any) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'forecasts'] });
       toast({
         title: 'Forecast Generated',
@@ -503,7 +502,7 @@ export default function AIFeatures() {
           ) : forecasts && forecasts.length > 0 ? (
             <>
               <div className="grid gap-6 md:grid-cols-3">
-                {forecasts.map((forecast, index) => (
+                {forecasts.map((forecast) => (
                   <Card key={forecast.id} className="hover-elevate">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-lg flex items-center gap-2">

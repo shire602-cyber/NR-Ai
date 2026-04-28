@@ -24,7 +24,6 @@ import {
   AlertTriangle,
   Calculator,
   Send,
-  FileCheck,
   Loader2,
   Eye,
   Edit3
@@ -128,7 +127,7 @@ const DEFAULT_VAT_DATA = {
 };
 
 export default function VATFiling() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);

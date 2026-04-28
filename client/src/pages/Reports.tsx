@@ -4,7 +4,7 @@ import { format } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useTranslation } from '@/lib/i18n';
@@ -19,7 +19,7 @@ import {
   prepareBalanceSheetForExport,
   prepareVATSummaryForExport,
 } from '@/lib/export';
-import { Download, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet, FileText } from 'lucide-react';
+import { Download, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 
 interface AccountLineItem {

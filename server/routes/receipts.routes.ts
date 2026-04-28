@@ -1,10 +1,10 @@
-import { Router, type Express, type Request, type Response } from 'express';
+import { type Express, type Request, type Response } from 'express';
 import { storage } from '../storage';
 import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { insertInvoiceSchema, type Account, type Receipt } from '../../shared/schema';
+import { type Account, type Receipt } from '../../shared/schema';
 import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
 import { createAndEmitNotification } from '../services/socket.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
@@ -32,7 +32,7 @@ async function findReceiptForUser(userId: string, receiptId: string): Promise<Re
   return undefined;
 }
 
-export function registerReceiptRoutes(app: Express) {
+export function registerReceiptRoutes(app: Express): void {
   // =====================================
   // Receipt Routes
   // =====================================

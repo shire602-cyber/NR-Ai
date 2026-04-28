@@ -13,17 +13,12 @@ import {
   Plus,
   Trash2,
   Edit2,
-  ToggleLeft,
-  ToggleRight,
   RefreshCw,
   Search,
   Download,
   BarChart3,
-  TrendingUp,
   AlertTriangle,
   CheckCircle,
-  XCircle,
-  Clock,
   FileText,
   Building2,
   CreditCard,
@@ -52,7 +47,6 @@ export default function Admin() {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [newPlanDialogOpen, setNewPlanDialogOpen] = useState(false);
-  const [editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   
@@ -143,21 +137,6 @@ export default function Admin() {
     aiCreditsUsed: number;
   }>({
     queryKey: ['/api/admin/stats'],
-  });
-
-  // Mutations
-  const updateSettingMutation = useMutation({
-    mutationFn: async (setting: { key: string; value: string }) => {
-      return apiRequest('PUT', '/api/admin/settings', setting);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/settings'] });
-      toast({ title: 'Setting updated successfully' });
-      setEditSettingDialog(null);
-    },
-    onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update setting' });
-    },
   });
 
   // Save all system settings
@@ -275,15 +254,6 @@ export default function Admin() {
   const filteredCompanies = companies.filter(company =>
     company.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
-
-  // Group settings by category
-  const settingsByCategory = settings.reduce((acc, setting) => {
-    if (!acc[setting.category]) {
-      acc[setting.category] = [];
-    }
-    acc[setting.category].push(setting);
-    return acc;
-  }, {} as Record<string, AdminSetting[]>);
 
   return (
     <div className="space-y-6">

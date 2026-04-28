@@ -1,11 +1,11 @@
-import { Router, type Express, type Request, type Response } from 'express';
+import { type Express, type Request, type Response } from 'express';
 import crypto from 'crypto';
 import Decimal from 'decimal.js';
 import { storage } from '../storage';
 import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { insertInvoiceSchema, type Invoice } from '../../shared/schema';
+import { type Invoice } from '../../shared/schema';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
 import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
@@ -31,7 +31,7 @@ async function findInvoiceForUser(userId: string, invoiceId: string): Promise<In
   return undefined;
 }
 
-export function registerInvoiceRoutes(app: Express) {
+export function registerInvoiceRoutes(app: Express): void {
   // =====================================
   // Invoice Routes
   // =====================================

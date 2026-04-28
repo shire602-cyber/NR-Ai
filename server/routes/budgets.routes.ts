@@ -67,7 +67,7 @@ const budgetLineCreateSchema = z.object({
 
 const budgetLineUpdateSchema = budgetLineCreateSchema.partial();
 
-export function registerBudgetRoutes(app: Express) {
+export function registerBudgetRoutes(app: Express): void {
   // =====================================
   // Budget CRUD
   // =====================================

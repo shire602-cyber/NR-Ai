@@ -48,7 +48,7 @@ interface MonthlyCashHistory {
 }
 
 export default function CashFlowForecast() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [forecastDays, setForecastDays] = useState('90');
 

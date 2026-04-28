@@ -1,6 +1,4 @@
 import type { Express, Request, Response } from 'express';
-import { z } from 'zod';
-import * as XLSX from 'xlsx';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
@@ -8,7 +6,7 @@ import { createLogger } from '../config/logger';
 
 const log = createLogger('contacts');
 
-export function registerContactRoutes(app: Express) {
+export function registerContactRoutes(app: Express): void {
   // =====================================
   // Customer Contacts Routes (for Customer users)
   // =====================================

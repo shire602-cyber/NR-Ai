@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest } from '@/lib/queryClient';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +18,6 @@ import {
   CheckCircle,
   Clock,
   DollarSign,
-  ArrowRight,
   Sparkles
 } from 'lucide-react';
 import type { ReferralCode, Referral } from '@shared/schema';

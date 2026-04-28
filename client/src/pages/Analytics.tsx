@@ -5,18 +5,15 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { formatDistanceToNow } from 'date-fns';
-import { 
-  BarChart3, 
-  PieChart as PieChartIcon, 
-  TrendingUp,
+import {
+  BarChart3,
+  PieChart as PieChartIcon,
   Eye,
   MousePointer,
   AlertTriangle,
   Activity,
-  Users,
-  Clock
 } from 'lucide-react';
 
 interface AnalyticsDashboard {
@@ -210,7 +207,7 @@ export default function Analytics() {
                         fill="#8884d8"
                         dataKey="count"
                       >
-                        {pieData.map((entry, index) => (
+                        {pieData.map((_entry, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>

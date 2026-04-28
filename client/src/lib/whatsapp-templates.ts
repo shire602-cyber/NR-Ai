@@ -11,7 +11,6 @@ import {
   BookOpen,
   ClipboardCheck,
   BarChart3,
-  Star,
   MessageSquare,
   PartyPopper,
 } from 'lucide-react';

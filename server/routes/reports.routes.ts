@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
-import { eq, and, gte, lte, inArray, type SQL } from "drizzle-orm";
+import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { journalEntries, journalLines, accounts, invoices, invoiceLines, receipts } from "../../shared/schema";
 import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../shared/schema";
 import { uaeDayStart, uaeDayEnd } from "../utils/date";
@@ -21,7 +21,7 @@ function isCashOrBankAccount(a: { code?: string | null; nameEn: string; subType?
 /**
  * Register advanced report routes (cash flow, aging, period comparison).
  */
-export function registerReportRoutes(app: Express) {
+export function registerReportRoutes(app: Express): void {
   // =====================================
   // ADVANCED REPORTS
   // =====================================

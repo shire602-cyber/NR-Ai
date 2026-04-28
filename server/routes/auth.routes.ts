@@ -479,7 +479,6 @@ export function registerAuthRoutes(app: Express): void {
       });
 
       // Generate tokens for immediate login
-      const isAdminBoolean = user.isAdmin === true;
       const jwtToken = generateToken(user);
       const refreshToken = generateRefreshToken(user);
 

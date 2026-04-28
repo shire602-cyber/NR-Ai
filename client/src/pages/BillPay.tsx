@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { format, parseISO, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
+import { format } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +19,6 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -172,9 +171,8 @@ function getStatusBadge(status: string) {
 // ===========================
 
 export default function BillPay() {
-  const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { company, companyId } = useDefaultCompany();
+  const { companyId } = useDefaultCompany();
 
   const [activeTab, setActiveTab] = useState('bills');
   const [billDialogOpen, setBillDialogOpen] = useState(false);
@@ -211,12 +209,6 @@ export default function BillPay() {
     enabled: !!companyId,
   });
 
-  // Get all payments across bills
-  const allPayments = useMemo(() => {
-    if (!bills || bills.length === 0) return [];
-    // We'll collect payments from individual bill queries as they load
-    return [];
-  }, [bills]);
 
   // Collect payments from bills for the Payments tab
   const { data: paymentsData = [] } = useQuery<any[]>({
@@ -967,7 +959,6 @@ export default function BillPay() {
                   </TableHeader>
                   <TableBody>
                     {filteredBills.map((bill) => {
-                      const remaining = Number(bill.total_amount) - Number(bill.amount_paid);
                       return (
                         <TableRow key={bill.id}>
                           <TableCell className="font-medium">{bill.vendor_name}</TableCell>

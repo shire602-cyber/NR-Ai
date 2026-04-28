@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 
-export function registerPortalRoutes(app: Express) {
+export function registerPortalRoutes(app: Express): void {
   // =====================================
   // CUSTOMER ACTIVITY LOGS (History)
   // =====================================
@@ -305,7 +305,7 @@ export function registerPortalRoutes(app: Express) {
   // =====================================
 
   // Get news items
-  app.get("/api/news", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/news", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
     const news = await storage.getNewsItems();
     res.json(news);
   }));

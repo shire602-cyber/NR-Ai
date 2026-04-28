@@ -25,7 +25,6 @@ import {
   FileSpreadsheet,
   Settings,
   Plus,
-  Search,
   Sparkles,
 } from 'lucide-react';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';

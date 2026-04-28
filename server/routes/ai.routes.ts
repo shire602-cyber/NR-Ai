@@ -1,5 +1,4 @@
 import type { Request, Response } from 'express';
-import { Router } from 'express';
 import type { Express } from 'express';
 import OpenAI from 'openai';
 import { z } from 'zod';
@@ -34,7 +33,7 @@ function getAIModel(): string {
 // Register AI routes
 // =============================================
 
-export function registerAIRoutes(app: Express) {
+export function registerAIRoutes(app: Express): void {
   const openai = createOpenAIClient();
   const AI_MODEL = getAIModel();
 
@@ -416,7 +415,6 @@ Respond with a JSON object:
 
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
 
       // Prepare transaction data for analysis
       const transactionData = {
@@ -577,7 +575,6 @@ Respond with JSON:
       const bankTransactions = await storage.getUnreconciledBankTransactions(companyId);
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
 
       if (bankTransactions.length === 0) {
         return res.json({ matches: [], message: 'No unreconciled transactions' });
@@ -797,7 +794,6 @@ ${JSON.stringify(ledgerData, null, 2)}`
 
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
 
       // Calculate historical patterns
       const now = new Date();
@@ -960,7 +956,7 @@ Respond with JSON:
   // Main Natural Language Query Endpoint
   app.post("/api/ai/nl-gateway", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     try {
-      const { companyId, message, locale = 'en', context = {} } = req.body;
+      const { companyId, message, locale = 'en' } = req.body;
       const userId = (req as any).user.id;
 
       if (!companyId || !message) {
@@ -978,7 +974,7 @@ Respond with JSON:
       }
 
       // Gather comprehensive financial context — parallel + single line fetch.
-      const [accounts, invoices, receipts, entries, allLines] = await Promise.all([
+      const [accounts, invoices, receipts, , allLines] = await Promise.all([
         storage.getAccountsByCompanyId(companyId),
         storage.getInvoicesByCompanyId(companyId),
         storage.getReceiptsByCompanyId(companyId),
@@ -1675,7 +1671,7 @@ ${askGuidanceBlock}`;
   // Smart suggestions based on context
   app.post("/api/ai/smart-suggest", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     try {
-      const { companyId, context, fieldType, currentValue } = req.body;
+      const { companyId, context, fieldType } = req.body;
       const userId = (req as any).user.id;
 
       if (!companyId || !context || !fieldType) {

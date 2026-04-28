@@ -64,6 +64,6 @@ router.get('/bulk', asyncHandler(async (_req, res) => {
   res.json({ message: 'Bulk operations — coming in Phase 1' });
 }));
 
-export function registerNRARoutes(app: Express) {
+export function registerNRARoutes(app: Express): void {
   app.use('/nra', router);
 }

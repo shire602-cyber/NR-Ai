@@ -4,7 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
 
-export function registerNotificationRoutes(app: Express) {
+export function registerNotificationRoutes(app: Express): void {
   // =====================================
   // NOTIFICATIONS & SMART REMINDERS
   // =====================================

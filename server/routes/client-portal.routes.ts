@@ -3,15 +3,6 @@ import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
-import { db } from '../db';
-import { eq, and, or, desc } from 'drizzle-orm';
-import {
-  journalEntries,
-  journalLines,
-  accounts,
-  companyUsers,
-  companies,
-} from '../../shared/schema';
 
 /**
  * Middleware: restrict to client_portal (and client) userType.

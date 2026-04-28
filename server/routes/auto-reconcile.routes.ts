@@ -4,7 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { autoReconcileTransactions, applyReconcileMatches } from '../services/auto-reconcile.service';
 
-export function registerAutoReconcileRoutes(app: Express) {
+export function registerAutoReconcileRoutes(app: Express): void {
   // =====================================
   // Auto-Reconciliation Routes
   // =====================================

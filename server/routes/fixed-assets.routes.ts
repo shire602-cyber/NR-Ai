@@ -264,7 +264,7 @@ async function countMonthsAlreadyDepreciated(
   return result.rows[0]?.n ?? 0;
 }
 
-export function registerFixedAssetRoutes(app: Express) {
+export function registerFixedAssetRoutes(app: Express): void {
   // =====================================
   // Fixed Asset CRUD
   // =====================================

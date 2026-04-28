@@ -326,7 +326,7 @@ async function queryOne<T = any>(text: string, params: any[] = []): Promise<T | 
   return rows[0];
 }
 
-export function registerPayrollRoutes(app: Express) {
+export function registerPayrollRoutes(app: Express): void {
   // =============================================
   // EMPLOYEES
   // =============================================

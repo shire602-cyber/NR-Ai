@@ -3,32 +3,25 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useI18n } from '@/lib/i18n';
-import { 
-  Sheet, 
-  FileSpreadsheet, 
-  Download, 
-  Upload, 
-  Check, 
-  X, 
-  Loader2, 
+import {
+  Sheet,
+  FileSpreadsheet,
+  Download,
+  Upload,
+  Check,
+  X,
+  Loader2,
   ExternalLink,
   Clock,
-  MessageSquare,
   Calculator,
   Wallet,
-  RefreshCw,
   Zap,
   Link2,
   History,
-  Settings,
-  Power
 } from 'lucide-react';
 import { SiGoogle, SiWhatsapp, SiQuickbooks } from 'react-icons/si';
 import {
@@ -38,7 +31,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -122,7 +114,7 @@ export default function Integrations() {
       : 'أرسل رسائل وفواتير وتذكيرات عبر واتساب الشخصي',
   };
 
-  const { data: integrationStatus, isLoading: statusLoading } = useQuery<IntegrationsStatusResponse>({
+  const { data: integrationStatus } = useQuery<IntegrationsStatusResponse>({
     queryKey: ['/api/integrations/status'],
   });
 

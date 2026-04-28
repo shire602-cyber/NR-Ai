@@ -41,7 +41,7 @@ interface JournalEntry {
 
 export default function JournalEntryDetail() {
   const { id } = useParams<{ id: string }>();
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
 
   const { data: entry, isLoading, error } = useQuery<JournalEntry>({
     queryKey: [`/api/journal/${id}`],

@@ -91,7 +91,7 @@ export function toBaseCurrency(
   return foreignAmount * rateToBase;
 }
 
-export function registerExchangeRateRoutes(app: Express) {
+export function registerExchangeRateRoutes(app: Express): void {
   // ─────────────────────────────────────────────
   // GET /api/exchange-rates
   // Query: ?base=AED&target=USD&asOf=2025-01-01

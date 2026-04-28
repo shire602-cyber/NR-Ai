@@ -3,8 +3,8 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import {
   Building2, Plus, Search, LayoutGrid, List,
-  ChevronRight, AlertCircle, CheckCircle2, Clock,
-  FileText, Receipt, Users, Calendar, Edit, UserPlus,
+  ChevronRight,
+  Users, Calendar,
   BookOpen, Filter,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

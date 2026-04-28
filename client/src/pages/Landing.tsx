@@ -2,24 +2,20 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Link } from 'wouter';
-import { 
-  Sparkles, 
-  Zap, 
-  Shield, 
-  BarChart3, 
-  Receipt, 
+import {
+  Sparkles,
+  Zap,
+  Shield,
+  BarChart3,
   FileText,
   CheckCircle2,
   ArrowRight,
   Globe,
-  Brain,
-  Clock,
   Star,
   Building2,
   Check,
   Briefcase,
   TrendingUp,
-  ChevronRight,
   Lock,
   Bot,
   Award,
@@ -45,12 +41,12 @@ import {
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
-import { motion, useScroll, useTransform, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ScrollReveal, StaggerContainer, StaggerItem, Floating, hoverScale, hoverLift } from '@/lib/animations';
 
 export default function Landing() {
   const { locale, setLocale } = useI18n();
-  const [mounted, setMounted] = useState(false);
+  const [, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 

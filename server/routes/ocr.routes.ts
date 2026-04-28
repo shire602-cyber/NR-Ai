@@ -37,7 +37,7 @@ function extractJson(raw: string): any {
   return JSON.parse(fenced ? fenced[1].trim() : raw.trim());
 }
 
-export function registerOCRRoutes(app: Express) {
+export function registerOCRRoutes(app: Express): void {
   const { anthropic, openai } = initOCRClients();
 
   // ===========================

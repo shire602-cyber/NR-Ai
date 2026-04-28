@@ -2,16 +2,15 @@ import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useParams, useLocation } from 'wouter';
 import {
-  ArrowLeft, Building2, Phone, Mail, Globe, MapPin,
-  FileText, Receipt, Users, Calendar, Edit, Save, X,
-  BookOpen, ExternalLink, Shield, CheckCircle2, AlertCircle, Clock,
+  ArrowLeft, Building2,
+  FileText, Users, Edit, Save, X,
+  BookOpen, ExternalLink, AlertCircle,
   UserPlus, UserMinus,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';

@@ -8,7 +8,7 @@ import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('expense-claims');
 
-export function registerExpenseClaimRoutes(app: Express) {
+export function registerExpenseClaimRoutes(app: Express): void {
   // =====================================
   // Expense Claims Routes
   // =====================================

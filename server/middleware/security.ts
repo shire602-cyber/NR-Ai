@@ -20,7 +20,7 @@ export function applySecurityMiddleware(app: Express): void {
 
   // CSP violation reports come in as POST with JSON content type — accept
   // both standard `application/csp-report` and `application/json` payloads.
-  app.use('/api/csp-report', (req, res, next) => {
+  app.use('/api/csp-report', (req, _res, next) => {
     const ctype = (req.headers['content-type'] || '').toLowerCase();
     if (ctype.includes('csp-report')) {
       // helmet's CSP report-uri sends application/csp-report; parse manually

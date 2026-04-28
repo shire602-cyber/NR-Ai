@@ -256,7 +256,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
     receiptsByVendor.get(vendorKey)!.push(receipt);
   }
 
-  for (const [vendor, vendorReceipts] of receiptsByVendor) {
+  for (const [, vendorReceipts] of receiptsByVendor) {
     if (vendorReceipts.length < 2) continue;
 
     // Sort by date

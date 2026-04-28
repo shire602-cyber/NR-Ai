@@ -10,7 +10,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { db } from '../db';
-import { eq, and, count, sum, max, or, desc, inArray, sql, lt, gte, ne, lte } from 'drizzle-orm';
+import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne, lte } from 'drizzle-orm';
 import {
   companies,
   companyUsers,

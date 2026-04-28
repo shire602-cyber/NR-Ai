@@ -6,7 +6,7 @@ import { UAE_VAT_RATE } from "../constants";
 import { pool } from "../db";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 
-export function registerVATRoutes(app: Express) {
+export function registerVATRoutes(app: Express): void {
   // =====================================
   // VAT RETURNS
   // =====================================

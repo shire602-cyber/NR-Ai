@@ -19,8 +19,6 @@ import { createLogger } from '../config/logger';
 import {
   sendEmail,
   renderTemplate,
-  hasSmtpConfig,
-  sendGenericEmail,
 } from '../services/email.service';
 import { createAndEmitNotification } from '../services/socket.service';
 

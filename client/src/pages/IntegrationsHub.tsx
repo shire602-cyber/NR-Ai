@@ -3,9 +3,8 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -15,23 +14,18 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { 
-  Link2, 
-  Plug, 
-  RefreshCw, 
-  Check, 
-  X, 
+import {
+  Link2,
+  Plug,
+  RefreshCw,
+  Check,
   AlertTriangle,
-  ExternalLink,
   Settings,
   ChevronRight,
   Loader2,
   CreditCard,
-  ShoppingBag,
-  Users,
   Zap,
   Clock,
-  ArrowRight,
   Shield,
   Database,
   FileText
@@ -102,7 +96,7 @@ const PLATFORMS = [
 ];
 
 export default function IntegrationsHub() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const isRTL = locale === 'ar';
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -111,16 +105,11 @@ export default function IntegrationsHub() {
   const [configForm, setConfigForm] = useState<IntegrationConfig>({ platform: '' });
 
   // Fetch integrations
-  const { data: integrations, isLoading: integrationsLoading } = useQuery<EcommerceIntegration[]>({
+  const { data: integrations } = useQuery<EcommerceIntegration[]>({
     queryKey: ['/api/integrations/ecommerce', companyId],
     enabled: !!companyId,
   });
 
-  // Fetch recent transactions
-  const { data: transactions, isLoading: transactionsLoading } = useQuery<EcommerceTransaction[]>({
-    queryKey: ['/api/integrations/ecommerce/transactions', companyId],
-    enabled: !!companyId,
-  });
 
   // Connect integration mutation
   const connectMutation = useMutation({
@@ -159,20 +148,6 @@ export default function IntegrationsHub() {
   });
 
   // Toggle integration mutation
-  const toggleMutation = useMutation({
-    mutationFn: async ({ integrationId, isActive }: { integrationId: string; isActive: boolean }) => {
-      return await apiRequest('PATCH', `/api/integrations/ecommerce/${integrationId}/toggle`, {
-        isActive,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/ecommerce', companyId] });
-    },
-    onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to update integration' });
-    },
-  });
-
   const getIntegration = (platform: string) => {
     return integrations?.find(i => i.platform === platform);
   };

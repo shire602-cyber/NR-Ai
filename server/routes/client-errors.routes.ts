@@ -15,7 +15,7 @@ const clientErrorSchema = z.object({
   releaseTag: z.string().max(120).optional(),
 });
 
-export function registerClientErrorRoutes(app: Express) {
+export function registerClientErrorRoutes(app: Express): void {
   app.post(
     '/api/client-errors',
     asyncHandler(async (req: Request, res: Response) => {

@@ -1,8 +1,6 @@
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import type { Express } from 'express';
-import bcrypt from 'bcryptjs';
-import { z } from 'zod';
 import * as XLSX from 'xlsx';
 import crypto from 'crypto';
 
@@ -12,7 +10,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { db } from '../db';
-import { eq, and, desc, gte, lte, like } from 'drizzle-orm';
+import { eq, and, desc, gte, lte } from 'drizzle-orm';
 import { activityLogs } from '../../shared/schema';
 
 const logger = createLogger('admin-routes');
@@ -68,7 +66,7 @@ export function registerAdminRoutes(app: Express): void {
   // Get admin settings
   router.get(
     '/admin/settings',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const settings = await storage.getAdminSettings();
       res.json(settings);
     })
@@ -105,7 +103,7 @@ export function registerAdminRoutes(app: Express): void {
   // Get subscription plans
   router.get(
     '/admin/plans',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const plans = await storage.getSubscriptionPlans();
       res.json(plans);
     })
@@ -147,7 +145,7 @@ export function registerAdminRoutes(app: Express): void {
   // Get all companies (admin)
   router.get(
     '/admin/companies',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const companies = await storage.getAllCompanies();
       res.json(companies);
     })
@@ -191,7 +189,7 @@ export function registerAdminRoutes(app: Express): void {
   // Get admin dashboard stats (later/more complete version)
   router.get(
     '/admin/stats',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const users = await storage.getAllUsers();
       const companies = await storage.getAllCompanies();
       const invitations = await storage.getInvitations();
@@ -391,7 +389,7 @@ export function registerAdminRoutes(app: Express): void {
   // Get all users - Admin only (later/more complete version)
   router.get(
     '/admin/users',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const users = await storage.getAllUsers();
 
       // Return users without password hashes
@@ -468,7 +466,7 @@ export function registerAdminRoutes(app: Express): void {
   // Get all invitations - Admin only
   router.get(
     '/admin/invitations',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const invitations = await storage.getInvitations();
       res.json(invitations);
     })
@@ -664,7 +662,7 @@ export function registerAdminRoutes(app: Express): void {
   router.post(
     '/admin/import/clients',
     asyncHandler(async (req: Request, res: Response) => {
-      const { data, createInvitations, sendEmails } = req.body;
+      const { data, createInvitations } = req.body;
 
       if (!data || !Array.isArray(data)) {
         return res.status(400).json({ message: "Invalid data format. Expected array of client records." });
@@ -731,7 +729,7 @@ export function registerAdminRoutes(app: Express): void {
               const expiresAt = new Date();
               expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
-              const invitation = await storage.createInvitation({
+              await storage.createInvitation({
                 email: row.email.trim(),
                 companyId: company.id,
                 role: 'client',
@@ -858,7 +856,7 @@ export function registerAdminRoutes(app: Express): void {
   // Download sample import template - Admin only
   router.get(
     '/admin/import/template',
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       // Create sample data
       const sampleData = [
         {

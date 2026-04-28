@@ -4,7 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import crypto from "crypto";
 
-export function registerBackupRoutes(app: Express) {
+export function registerBackupRoutes(app: Express): void {
   // =====================================
   // DATA BACKUP & RESTORE
   // =====================================

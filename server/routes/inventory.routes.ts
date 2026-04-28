@@ -45,7 +45,7 @@ const inventoryMovementSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
 });
 
-export function registerInventoryRoutes(app: Express) {
+export function registerInventoryRoutes(app: Express): void {
   // =====================================
   // Product Routes
   // =====================================

@@ -1,6 +1,6 @@
 import { useParams } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Download, FileText, AlertCircle, Clock } from 'lucide-react';
+import { Download, AlertCircle, Clock } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
 
 interface PublicInvoiceData {

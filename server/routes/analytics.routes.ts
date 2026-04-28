@@ -4,7 +4,7 @@ import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
 
-export function registerAnalyticsRoutes(app: Express) {
+export function registerAnalyticsRoutes(app: Express): void {
   // =====================================
   // Advanced Analytics Routes
   // =====================================
@@ -12,7 +12,7 @@ export function registerAnalyticsRoutes(app: Express) {
   // Get cash flow forecasts
   app.get("/api/analytics/forecasts", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
-    const { companyId, period } = req.query;
+    const { companyId } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
@@ -47,7 +47,6 @@ export function registerAnalyticsRoutes(app: Express) {
     // Get historical data
     const invoices = await storage.getInvoicesByCompanyId(companyId);
     const receipts = await storage.getReceiptsByCompanyId(companyId);
-    const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
 
     // Calculate monthly trends
     const monthlyData: { [key: string]: { inflow: number; outflow: number } } = {};
@@ -400,9 +399,7 @@ export function registerAnalyticsRoutes(app: Express) {
   }));
 
   // Get analytics dashboard data
-  app.get("/api/analytics/dashboard", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const { startDate, endDate } = req.query;
-
+  app.get("/api/analytics/dashboard", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
     // Get all events (in production, filter by date range)
     const events = await storage.getAnalyticsEvents();
     const metrics = await storage.getFeatureUsageMetrics();

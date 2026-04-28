@@ -4,7 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { generateCashFlowForecast, getCashFlowHistory } from '../services/cashflow-forecast.service';
 
-export function registerCashFlowRoutes(app: Express) {
+export function registerCashFlowRoutes(app: Express): void {
   // =====================================
   // Cash Flow Forecast Routes
   // =====================================

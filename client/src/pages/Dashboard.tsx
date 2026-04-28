@@ -9,13 +9,13 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency, formatDate } from '@/lib/format';
 import { getToken } from '@/lib/auth';
 import {
-  TrendingUp, TrendingDown, AlertCircle, FileText,
+  TrendingUp, TrendingDown, FileText,
   Plus, Receipt, BookOpen, Sparkles, ArrowRight, Clock, CheckCircle2,
-  BarChart3, ArrowUpRight, Wallet, Coins,
+  BarChart3, ArrowUpRight, Coins,
 } from 'lucide-react';
 import {
   ResponsiveContainer, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, Tooltip, AreaChart, Area,
 } from 'recharts';
 import { Link } from 'wouter';
 import { motion } from 'framer-motion';

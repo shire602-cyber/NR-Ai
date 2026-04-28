@@ -1,10 +1,8 @@
 import type { Express, Request, Response } from 'express';
-import { z } from 'zod';
-import * as XLSX from 'xlsx';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
-import { insertJournalEntrySchema, type JournalEntry } from '../../shared/schema';
+import { type JournalEntry } from '../../shared/schema';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
 import { createLogger } from '../config/logger';
@@ -23,7 +21,7 @@ async function findJournalEntryForUser(userId: string, entryId: string): Promise
   return undefined;
 }
 
-export function registerJournalRoutes(app: Express) {
+export function registerJournalRoutes(app: Express): void {
   // =====================================
   // Journal Entry Routes
   // =====================================
