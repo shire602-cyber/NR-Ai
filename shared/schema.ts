@@ -95,7 +95,7 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   tokenHashIdx: index("idx_password_reset_token_hash").on(table.tokenHash),
-  userIdIdx: index("idx_password_reset_user_id").on(table.userId),
+  userIdIdx: index("idx_password_reset_tokens_user_id").on(table.userId),
 }));
 
 export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
