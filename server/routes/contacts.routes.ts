@@ -5,8 +5,39 @@ import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { createLogger } from '../config/logger';
+import { optionalTrnSchema, phoneSchema } from '../../shared/validators';
 
 const log = createLogger('contacts');
+
+const customerContactBodySchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  nameAr: z.string().trim().max(255).nullish(),
+  email: z.string().trim().email().max(255).optional().or(z.literal('').transform(() => undefined)),
+  phone: phoneSchema.optional().or(z.literal('').transform(() => undefined)),
+  trnNumber: optionalTrnSchema,
+  address: z.string().max(500).nullish(),
+  city: z.string().max(100).nullish(),
+  country: z.string().max(100).default('UAE'),
+  contactPerson: z.string().max(255).nullish(),
+  paymentTerms: z.coerce.number().int().min(0).max(365).default(30),
+  notes: z.string().max(5000).nullish(),
+  isActive: z.boolean().default(true),
+});
+
+// Bulk import is more permissive: each row is validated and bad rows are
+// reported back as skipped rather than failing the whole batch.
+const importContactRowSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  email: z.string().trim().email().max(255),
+  phone: phoneSchema.optional().nullish().or(z.literal('').transform(() => undefined)),
+  // Excel imports often arrive with `trn` instead of `trnNumber`; the loop
+  // already handles that mapping. Validate format if present.
+  trnNumber: optionalTrnSchema,
+  trn: optionalTrnSchema,
+  address: z.string().max(500).nullish(),
+  city: z.string().max(100).nullish(),
+  country: z.string().max(100).default('UAE'),
+});
 
 export function registerContactRoutes(app: Express) {
   // =====================================
@@ -37,7 +68,8 @@ export function registerContactRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const contactData = { ...req.body, companyId };
+    const parsed = customerContactBodySchema.parse(req.body);
+    const contactData = { ...parsed, companyId };
 
     // Check for duplicate email within company
     if (contactData.email) {
@@ -76,14 +108,18 @@ export function registerContactRoutes(app: Express) {
 
     const contactsToCreate: any[] = [];
 
-    for (const contact of contacts) {
+    for (const rawContact of contacts) {
       try {
-        // Validate required fields
-        if (!contact.name || !contact.email) {
+        const result = importContactRowSchema.safeParse(rawContact);
+        if (!result.success) {
           results.skipped++;
-          results.errors.push(`Row skipped: Missing name or email`);
+          const reason = result.error.issues[0]?.message ?? 'invalid row';
+          const id = (rawContact && typeof rawContact === 'object' && rawContact.email) || 'unknown';
+          results.errors.push(`Row skipped (${id}): ${reason}`);
           continue;
         }
+        const contact = result.data;
+        const trnNumber = contact.trnNumber ?? contact.trn ?? null;
 
         // Check if contact exists by email
         const existing = await storage.getCustomerContactByEmail(companyId, contact.email);
@@ -92,11 +128,11 @@ export function registerContactRoutes(app: Express) {
           // Update existing contact
           await storage.updateCustomerContact(existing.id, {
             name: contact.name,
-            phone: contact.phone || null,
-            trnNumber: contact.trnNumber || contact.trn || null,
-            address: contact.address || null,
-            city: contact.city || null,
-            country: contact.country || 'UAE',
+            phone: contact.phone ?? null,
+            trnNumber,
+            address: contact.address ?? null,
+            city: contact.city ?? null,
+            country: contact.country,
           });
           results.updated++;
         } else {
@@ -105,17 +141,18 @@ export function registerContactRoutes(app: Express) {
             companyId,
             email: contact.email,
             name: contact.name,
-            phone: contact.phone || null,
-            trnNumber: contact.trnNumber || contact.trn || null,
-            address: contact.address || null,
-            city: contact.city || null,
-            country: contact.country || 'UAE',
+            phone: contact.phone ?? null,
+            trnNumber,
+            address: contact.address ?? null,
+            city: contact.city ?? null,
+            country: contact.country,
             isActive: true,
           });
         }
       } catch (rowError: any) {
         results.skipped++;
-        results.errors.push(`Error processing ${contact.email || 'unknown'}: ${rowError.message}`);
+        const id = (rawContact && typeof rawContact === 'object' && rawContact.email) || 'unknown';
+        results.errors.push(`Error processing ${id}: ${rowError.message}`);
       }
     }
 
@@ -152,7 +189,8 @@ export function registerContactRoutes(app: Express) {
       return res.status(404).json({ message: 'Contact not found' });
     }
 
-    const contact = await storage.updateCustomerContact(id, req.body);
+    const updates = customerContactBodySchema.partial().parse(req.body);
+    const contact = await storage.updateCustomerContact(id, updates);
     res.json(contact);
   }));
 

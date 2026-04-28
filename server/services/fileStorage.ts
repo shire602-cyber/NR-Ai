@@ -1,15 +1,42 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { isUnsafePath } from '../../shared/validators';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '../..');
 
 // All uploaded receipt images land under <projectRoot>/uploads/receipts/
-const receiptsDir = path.join(projectRoot, 'uploads', 'receipts');
+const uploadsDir = path.join(projectRoot, 'uploads');
+const receiptsDir = path.join(uploadsDir, 'receipts');
 
 async function ensureDir(): Promise<void> {
   await fs.mkdir(receiptsDir, { recursive: true });
+}
+
+// Rejects names that, after sanitization, could escape the receipts directory.
+// `path.join` does not stop `..` segments, so we must do it ourselves.
+function sanitizeReceiptFilename(filename: string): string {
+  const safe = filename.replace(/[^a-z0-9_\-\.]/gi, '_');
+  if (!safe || safe === '.' || safe === '..' || isUnsafePath(safe)) {
+    throw new Error('Invalid filename');
+  }
+  return safe;
+}
+
+// Resolves a relative DB path against `uploadsDir`, then verifies the result
+// is still inside `uploadsDir`. Defends against poisoned DB rows or callers
+// that forget to validate the input.
+function resolveUploadPath(relPath: string): string {
+  if (isUnsafePath(relPath)) {
+    throw new Error('Invalid upload path');
+  }
+  const abs = path.resolve(uploadsDir, relPath);
+  const rel = path.relative(uploadsDir, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error('Invalid upload path');
+  }
+  return abs;
 }
 
 /**
@@ -21,8 +48,8 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
   await ensureDir();
   const raw = base64Data.replace(/^data:image\/\w+;base64,/, '');
   const buffer = Buffer.from(raw, 'base64');
-  const safeName = filename.replace(/[^a-z0-9_\-\.]/gi, '_');
-  const absPath = path.join(receiptsDir, safeName);
+  const safeName = sanitizeReceiptFilename(filename);
+  const absPath = resolveUploadPath(path.join('receipts', safeName));
   await fs.writeFile(absPath, buffer);
   return `receipts/${safeName}`;
 }
@@ -33,17 +60,17 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
  */
 export async function deleteReceiptImage(imagePath: string): Promise<void> {
   try {
-    const absPath = path.join(projectRoot, 'uploads', imagePath);
+    const absPath = resolveUploadPath(imagePath);
     await fs.unlink(absPath);
   } catch {
-    // file already gone or never existed — not an error
+    // file already gone, never existed, or path rejected — not an error
   }
 }
 
 /**
  * Resolve a relative image_path from the DB to an absolute filesystem path.
- * Used by the image-serve route.
+ * Used by the image-serve route. Throws if the path escapes the uploads dir.
  */
 export function resolveImagePath(imagePath: string): string {
-  return path.join(projectRoot, 'uploads', imagePath);
+  return resolveUploadPath(imagePath);
 }

@@ -16,8 +16,26 @@ import { createLogger } from '../config/logger';
 import { UAE_VAT_RATE, ACCOUNT_CODES } from '../constants';
 import { allocateInvoiceNumber, peekNextInvoiceNumber } from '../services/invoice-numbering.service';
 import { assertRetentionExpired } from '../services/retention.service';
+import { isoDateSchema, moneySchema, quantitySchema, vatRateSchema } from '../../shared/validators';
 
 const log = createLogger('invoices');
+
+// Per-line validation guards against negative quantities/prices, NaN/Infinity,
+// and out-of-range VAT rates that would corrupt the GL when posted.
+const invoiceLineInputSchema = z.object({
+  description: z.string().trim().min(1, 'Line description is required').max(1000),
+  quantity: quantitySchema,
+  unitPrice: moneySchema,
+  vatRate: vatRateSchema.default(UAE_VAT_RATE),
+  vatSupplyType: z
+    .enum(['standard_rated', 'zero_rated', 'exempt', 'out_of_scope'])
+    .default('standard_rated'),
+});
+
+const createInvoiceBodySchema = z.object({
+  date: isoDateSchema({ noFuture: true }),
+  lines: z.array(invoiceLineInputSchema).min(1, 'Invoice must have at least one line'),
+}).passthrough();
 
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
@@ -133,7 +151,12 @@ export function registerInvoiceRoutes(app: Express) {
   app.post("/api/companies/:companyId/invoices", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
-    const { lines, date, ...invoiceData } = req.body;
+
+    const parsedBody = createInvoiceBodySchema.parse(req.body);
+    const { lines, date } = parsedBody;
+    // Pass through other invoice fields (customerName, currency, notes, etc.)
+    // These remain validated downstream by storage / DB constraints.
+    const { lines: _l, date: _d, ...invoiceData } = req.body as Record<string, any>;
 
     // Check if user has access to this company
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -141,20 +164,20 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Calculate totals
+    // Calculate totals — values are already validated as finite, non-negative.
     let subtotal = 0;
     let vatAmount = 0;
 
     for (const line of lines) {
       const lineTotal = line.quantity * line.unitPrice;
       subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
+      vatAmount += lineTotal * line.vatRate;
     }
 
     const total = subtotal + vatAmount;
 
-    // Convert date string to Date object if it's a string
-    const invoiceDate = typeof date === 'string' ? new Date(date) : date;
+    // `date` was validated and coerced to a Date by the schema.
+    const invoiceDate = date;
 
     // Block invoice creation in a locked period — invoice creation immediately
     // posts a revenue-recognition journal entry on this date.
@@ -185,7 +208,7 @@ export function registerInvoiceRoutes(app: Express) {
       subtotal,
       vatAmount,
       total,
-    });
+    } as any);
 
     // Create invoice lines
     for (const line of lines) {

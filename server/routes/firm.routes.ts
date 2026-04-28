@@ -20,6 +20,7 @@ import {
   vatReturns,
   bankTransactions,
 } from '../../shared/schema';
+import { optionalTrnSchema, phoneSchema } from '../../shared/validators';
 
 const logger = createLogger('firm-routes');
 
@@ -121,13 +122,13 @@ async function getClientStats(companyId: string) {
 
 const createClientSchema = z.object({
   name: z.string().min(1),
-  trnVatNumber: z.string().optional(),
+  trnVatNumber: optionalTrnSchema,
   legalStructure: z.string().optional(),
   industry: z.string().optional(),
   registrationNumber: z.string().optional(),
   businessAddress: z.string().optional(),
-  contactPhone: z.string().optional(),
-  contactEmail: z.string().email().optional().or(z.literal('')),
+  contactPhone: phoneSchema.optional().or(z.literal('').transform(() => undefined)),
+  contactEmail: z.string().email().optional().or(z.literal('').transform(() => undefined)),
   websiteUrl: z.string().optional(),
   emirate: z.string().optional(),
   vatFilingFrequency: z.string().optional(),

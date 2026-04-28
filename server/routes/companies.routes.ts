@@ -1,12 +1,39 @@
 import type { Express, Request, Response } from "express";
+import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { insertCompanySchema } from "../../shared/schema";
+import { insertCompanySchema, insertBankAccountSchema } from "../../shared/schema";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from '../config/logger';
+import { isoDateSchema, optionalTrnSchema } from "../../shared/validators";
 
 const log = createLogger('companies');
+
+// Updates that the company-profile UI is allowed to send. Drizzle's
+// generated insert schema isn't usable here because we need partial
+// semantics plus stricter rules on TRN format and date sanity.
+const updateCompanyBodySchema = insertCompanySchema.partial().extend({
+  trnVatNumber: optionalTrnSchema,
+  taxRegistrationDate: isoDateSchema().optional().nullable(),
+});
+
+// Same TRN/date refinements applied to company creation.
+const createCompanyBodySchema = insertCompanySchema.extend({
+  trnVatNumber: optionalTrnSchema,
+  taxRegistrationDate: isoDateSchema().optional().nullable(),
+});
+
+const createBankAccountBodySchema = insertBankAccountSchema
+  .omit({ companyId: true })
+  .extend({
+    iban: z
+      .string()
+      .trim()
+      .regex(/^[A-Z]{2}\d{2}[A-Z0-9]{1,30}$/, 'Invalid IBAN format')
+      .optional()
+      .or(z.literal('').transform(() => undefined)),
+  });
 
 /**
  * Seed Chart of Accounts for a company using the default UAE chart.
@@ -48,7 +75,7 @@ export function registerCompanyRoutes(app: Express) {
 
   app.post("/api/companies", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
-    const validated = insertCompanySchema.parse(req.body);
+    const validated = createCompanyBodySchema.parse(req.body);
 
     // Check if company name exists
     const existing = await storage.getCompanyByName(validated.name);
@@ -56,7 +83,7 @@ export function registerCompanyRoutes(app: Express) {
       return res.status(400).json({ message: 'Company name already exists' });
     }
 
-    const company = await storage.createCompany(validated);
+    const company = await storage.createCompany(validated as any);
 
     // Associate user with company as owner
     await storage.createCompanyUser({
@@ -99,18 +126,8 @@ export function registerCompanyRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const updateData = { ...req.body };
-    if (updateData.taxRegistrationDate) {
-      if (typeof updateData.taxRegistrationDate === 'string') {
-        updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-      } else if (!(updateData.taxRegistrationDate instanceof Date)) {
-        updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-      }
-    } else {
-      delete updateData.taxRegistrationDate;
-    }
-
-    const company = await storage.updateCompany(id, updateData);
+    const updateData = updateCompanyBodySchema.parse(req.body);
+    const company = await storage.updateCompany(id, updateData as any);
     res.json(company);
   }));
 
@@ -124,23 +141,8 @@ export function registerCompanyRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Prepare update data with proper type conversions
-    const updateData = { ...req.body };
-
-    // Convert taxRegistrationDate to Date if it exists and is not already a Date
-    if (updateData.taxRegistrationDate) {
-      if (typeof updateData.taxRegistrationDate === 'string') {
-        updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-      } else if (!(updateData.taxRegistrationDate instanceof Date)) {
-        // If it's not a string or Date, try to coerce it
-        updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-      }
-    } else {
-      // If taxRegistrationDate is undefined or null, ensure it's properly set
-      delete updateData.taxRegistrationDate;
-    }
-
-    const company = await storage.updateCompany(id, updateData);
+    const updateData = updateCompanyBodySchema.parse(req.body);
+    const company = await storage.updateCompany(id, updateData as any);
     log.info({ id: company.id }, 'Company profile updated');
     res.json(company);
   }));
@@ -183,7 +185,8 @@ export function registerCompanyRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const account = await storage.createBankAccount({ ...req.body, companyId: id });
+    const parsed = createBankAccountBodySchema.parse(req.body);
+    const account = await storage.createBankAccount({ ...parsed, companyId: id });
     res.status(201).json(account);
   }));
 

@@ -14,8 +14,33 @@ import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { db } from '../db';
 import { eq, and, desc, gte, lte, like } from 'drizzle-orm';
 import { activityLogs } from '../../shared/schema';
+import { optionalTrnSchema, phoneSchema } from '../../shared/validators';
 
 const logger = createLogger('admin-routes');
+
+// Schemas for admin client (company) management. Matching firm.routes
+// validation rules — TRN must be 15-digit numeric, phone must look like a
+// phone number, email must be a real email if supplied.
+const adminClientCreateSchema = z.object({
+  name: z.string().trim().min(1).max(255),
+  baseCurrency: z.string().trim().length(3).default('AED'),
+  locale: z.enum(['en', 'ar']).default('en'),
+  companyType: z.enum(['client', 'customer']).default('client'),
+  legalStructure: z.string().trim().max(100).nullish(),
+  industry: z.string().trim().max(100).nullish(),
+  registrationNumber: z.string().trim().max(100).nullish(),
+  businessAddress: z.string().trim().max(500).nullish(),
+  contactPhone: phoneSchema.optional().or(z.literal('').transform(() => undefined)),
+  contactEmail: z.string().trim().email().optional().or(z.literal('').transform(() => undefined)),
+  websiteUrl: z.string().trim().max(500).nullish(),
+  logoUrl: z.string().trim().max(500).nullish(),
+  trnVatNumber: optionalTrnSchema,
+  taxRegistrationType: z.string().trim().max(100).nullish(),
+  vatFilingFrequency: z.string().trim().max(50).nullish(),
+  corporateTaxId: z.string().trim().max(100).nullish(),
+});
+
+const adminClientUpdateSchema = adminClientCreateSchema.partial();
 
 // =============================================
 // Helpers (migrated from monolith routes.ts)
@@ -293,23 +318,24 @@ export function registerAdminRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
 
+      const parsed = adminClientCreateSchema.parse(req.body);
       const company = await storage.createCompany({
-        name: req.body.name,
-        baseCurrency: req.body.baseCurrency || "AED",
-        locale: req.body.locale || "en",
-        companyType: req.body.companyType || "client", // 'client' for NR-managed, 'customer' for SaaS
-        legalStructure: req.body.legalStructure,
-        industry: req.body.industry,
-        registrationNumber: req.body.registrationNumber,
-        businessAddress: req.body.businessAddress,
-        contactPhone: req.body.contactPhone,
-        contactEmail: req.body.contactEmail,
-        websiteUrl: req.body.websiteUrl,
-        logoUrl: req.body.logoUrl,
-        trnVatNumber: req.body.trnVatNumber,
-        taxRegistrationType: req.body.taxRegistrationType,
-        vatFilingFrequency: req.body.vatFilingFrequency,
-        corporateTaxId: req.body.corporateTaxId,
+        name: parsed.name,
+        baseCurrency: parsed.baseCurrency,
+        locale: parsed.locale,
+        companyType: parsed.companyType,
+        legalStructure: parsed.legalStructure ?? undefined,
+        industry: parsed.industry ?? undefined,
+        registrationNumber: parsed.registrationNumber ?? undefined,
+        businessAddress: parsed.businessAddress ?? undefined,
+        contactPhone: parsed.contactPhone ?? undefined,
+        contactEmail: parsed.contactEmail ?? undefined,
+        websiteUrl: parsed.websiteUrl ?? undefined,
+        logoUrl: parsed.logoUrl ?? undefined,
+        trnVatNumber: parsed.trnVatNumber ?? undefined,
+        taxRegistrationType: parsed.taxRegistrationType ?? undefined,
+        vatFilingFrequency: parsed.vatFilingFrequency ?? undefined,
+        corporateTaxId: parsed.corporateTaxId ?? undefined,
       });
 
       // Seed chart of accounts for the new company
@@ -336,7 +362,8 @@ export function registerAdminRoutes(app: Express): void {
       const { clientId } = req.params;
       const userId = (req as any).user.id;
 
-      const company = await storage.updateCompany(clientId, req.body);
+      const updates = adminClientUpdateSchema.parse(req.body);
+      const company = await storage.updateCompany(clientId, updates as any);
 
       // Log activity
       await storage.createActivityLog({
