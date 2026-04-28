@@ -303,12 +303,18 @@ export function registerVATRoutes(app: Express) {
     const { id } = req.params;
     const { adjustmentAmount, adjustmentReason, notes } = req.body;
 
+    const existing = await storage.getVatReturn(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'VAT return not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(404).json({ message: 'VAT return not found' });
+    }
+
     // Submitting the return finalises the VAT settlement against periodEnd —
     // refuse if the underlying period is already closed.
-    const existing = await storage.getVatReturn(id);
-    if (existing) {
-      await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
-    }
+    await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
 
     const vatReturn = await storage.updateVatReturn(id, {
       status: 'submitted',
@@ -324,11 +330,25 @@ export function registerVATRoutes(app: Express) {
 
   // Update VAT return (for editing draft returns)
   app.patch("/api/vat-returns/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { id } = req.params;
     const updateData = req.body;
 
+    const existing = await storage.getVatReturn(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'VAT return not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(404).json({ message: 'VAT return not found' });
+    }
+
+    // Strip companyId from the patch body so a caller cannot relocate the
+    // record to a different tenant.
+    const { companyId: _ignored, ...safeUpdate } = updateData ?? {};
+
     const vatReturn = await storage.updateVatReturn(id, {
-      ...updateData,
+      ...safeUpdate,
       updatedAt: new Date(),
     });
 

@@ -26,10 +26,16 @@ export function registerCorporateTaxRoutes(app: Express) {
 
   // Get a single corporate tax return
   app.get("/api/corporate-tax/returns/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
     const { id } = req.params;
 
     const taxReturn = await storage.getCorporateTaxReturn(id);
     if (!taxReturn) {
+      return res.status(404).json({ message: 'Corporate tax return not found' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, taxReturn.companyId);
+    if (!hasAccess) {
       return res.status(404).json({ message: 'Corporate tax return not found' });
     }
 
@@ -62,6 +68,7 @@ export function registerCorporateTaxRoutes(app: Express) {
 
   // Update a corporate tax return
   app.patch("/api/corporate-tax/returns/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
     const { id } = req.params;
 
     const existing = await storage.getCorporateTaxReturn(id);
@@ -69,7 +76,15 @@ export function registerCorporateTaxRoutes(app: Express) {
       return res.status(404).json({ message: 'Corporate tax return not found' });
     }
 
-    const taxReturn = await storage.updateCorporateTaxReturn(id, req.body);
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(404).json({ message: 'Corporate tax return not found' });
+    }
+
+    // Prevent relocating the return to another tenant via a body-supplied companyId.
+    const { companyId: _ignored, ...safeUpdate } = (req.body ?? {}) as Record<string, unknown>;
+
+    const taxReturn = await storage.updateCorporateTaxReturn(id, safeUpdate as any);
     res.json(taxReturn);
   }));
 

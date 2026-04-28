@@ -18,6 +18,7 @@ export function registerPortalPublicRoutes(app: Express) {
   // =====================================
   app.post("/api/portal/generate-access", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { contactId } = req.body;
+    const userId = (req as any).user?.id;
 
     if (!contactId) {
       return res.status(400).json({ message: 'contactId is required' });
@@ -25,6 +26,15 @@ export function registerPortalPublicRoutes(app: Express) {
 
     const contact = await storage.getCustomerContact(contactId);
     if (!contact) {
+      return res.status(404).json({ message: 'Contact not found' });
+    }
+
+    // Tenant guard: only members of the contact's company may mint a portal
+    // access token for it. Without this check any authenticated user could
+    // enumerate contactIds and grant themselves portal access to another
+    // company's customer data.
+    const hasAccess = await storage.hasCompanyAccess(userId, contact.companyId);
+    if (!hasAccess) {
       return res.status(404).json({ message: 'Contact not found' });
     }
 

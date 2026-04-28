@@ -313,7 +313,15 @@ export function registerFirmRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const requestingUserId = (req as any).user.id;
+      const firmRole = (req as any).user?.firmRole as string | undefined;
       const { staffUserId, action, role } = assignStaffSchema.parse(req.body);
+
+      // firm_admin users can only manage clients they have been assigned to.
+      // firm_owner returns null from getAccessibleCompanyIds (= unrestricted).
+      const accessibleIds = await getAccessibleCompanyIds(requestingUserId, firmRole ?? '');
+      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
+        return res.status(403).json({ message: 'Access denied to this client' });
+      }
 
       const company = await storage.getCompany(companyId);
       if (!company) {
