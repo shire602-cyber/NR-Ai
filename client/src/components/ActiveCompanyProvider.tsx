@@ -43,14 +43,19 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
 
   // Stay in sync with `switchActiveCompany`/`clearActiveCompany` from
   // `lib/activeCompany.ts` (CustomEvent) and with cross-tab storage updates.
+  // Also listen for same-tab `auth:logout` so the in-memory active-client id
+  // does not leak into the next user's session.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handler = () => setActiveId(getActiveCompanyId());
+    const onLogout = () => setActiveId(null);
     window.addEventListener('muhasib:active-company-changed', handler);
     window.addEventListener('storage', handler);
+    window.addEventListener('auth:logout', onLogout);
     return () => {
       window.removeEventListener('muhasib:active-company-changed', handler);
       window.removeEventListener('storage', handler);
+      window.removeEventListener('auth:logout', onLogout);
     };
   }, []);
 

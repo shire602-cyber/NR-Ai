@@ -323,16 +323,30 @@ export function registerFirmRoutes(app: Express): void {
   );
 
   // ─── POST /api/firm/clients/:companyId/assign-staff ───────────────────────
+  // Only firm_owner may assign or unassign staff. Without this restriction a
+  // firm_admin could call this endpoint with any companyId — there is no
+  // per-company access check inside the handler — and self-assign onto an
+  // unrelated client (or even a customer-type self-signup company), gaining
+  // full read/write access via the company_users → hasCompanyAccess path.
   router.post(
     '/firm/clients/:companyId/assign-staff',
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const requestingUserId = (req as any).user.id;
+      const requestingFirmRole = (req as any).user.firmRole as string | null;
+
+      if (requestingFirmRole !== 'firm_owner') {
+        return res.status(403).json({ message: 'Only firm owners may assign staff' });
+      }
+
       const { staffUserId, action, role } = assignStaffSchema.parse(req.body);
 
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: 'Client not found' });
+      }
+      if (company.companyType !== 'client' || company.deletedAt) {
+        return res.status(400).json({ message: 'Company is not an active NRA client' });
       }
 
       const staffUser = await storage.getUser(staffUserId);
