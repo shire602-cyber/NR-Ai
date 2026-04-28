@@ -1,12 +1,14 @@
 import { useState } from 'react';
+import { z } from 'zod';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Gift, Sparkles, X } from 'lucide-react';
-import { apiRequest, queryClient } from '@/lib/queryClient';
 import { apiUrl } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+
+const emailSchema = z.string().trim().toLowerCase().email();
 
 interface EmailPopupProps {
   open: boolean;
@@ -22,7 +24,8 @@ export function EmailPopup({ open, onClose, locale = 'en' }: EmailPopupProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!email || !email.includes('@')) {
+    const parsed = emailSchema.safeParse(email);
+    if (!parsed.success) {
       toast({
         title: locale === 'en' ? 'Invalid Email' : 'بريد إلكتروني غير صالح',
         description: locale === 'en' ? 'Please enter a valid email address' : 'يرجى إدخال عنوان بريد إلكتروني صالح',
@@ -32,12 +35,12 @@ export function EmailPopup({ open, onClose, locale = 'en' }: EmailPopupProps) {
     }
 
     setLoading(true);
-    
+
     try {
       const response = await fetch(apiUrl('/api/waitlist'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, source: 'popup' }),
+        body: JSON.stringify({ email: parsed.data, source: 'popup' }),
       });
 
       if (!response.ok) {

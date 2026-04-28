@@ -114,7 +114,6 @@ export default function CompanyProfile() {
           ? new Date(data.taxRegistrationDate) 
           : undefined,
       };
-      console.log('Company Profile Data:', JSON.stringify(payload, null, 2));
       return apiRequest('PATCH', `/api/companies/${companyId}`, payload);
     },
     onSuccess: () => {

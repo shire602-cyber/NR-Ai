@@ -19,15 +19,21 @@ export function OfflineIndicator({ className, showReconnect = true }: OfflineInd
   const [justReconnected, setJustReconnected] = useState(false);
 
   useEffect(() => {
-    return onConnectivityChange((next) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = onConnectivityChange((next) => {
       setOnline((prev) => {
         if (!prev && next) {
           setJustReconnected(true);
-          window.setTimeout(() => setJustReconnected(false), 2500);
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => setJustReconnected(false), 2500);
         }
         return next;
       });
     });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unsubscribe();
+    };
   }, []);
 
   if (online && !justReconnected) {

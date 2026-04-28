@@ -1,9 +1,14 @@
 // Muhasib.ai Service Worker
 // Provides offline support, caching strategies, and background sync
-
-const CACHE_NAME = 'muhasib-v1';
-const STATIC_CACHE = 'muhasib-static-v1';
-const API_CACHE = 'muhasib-api-v1';
+//
+// IMPORTANT: Bump SW_VERSION on every release that ships frontend asset changes,
+// otherwise users will continue serving stale JS/CSS from a previous cache.
+// The activate handler deletes any `muhasib-*` cache that doesn't match the
+// current version names below.
+const SW_VERSION = 'v2';
+const CACHE_NAME = `muhasib-${SW_VERSION}`;
+const STATIC_CACHE = `muhasib-static-${SW_VERSION}`;
+const API_CACHE = `muhasib-api-${SW_VERSION}`;
 
 // Static assets to pre-cache on install
 const PRECACHE_ASSETS = [

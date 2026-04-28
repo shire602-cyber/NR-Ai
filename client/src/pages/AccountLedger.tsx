@@ -81,7 +81,15 @@ export default function AccountLedger() {
   const entriesPerPage = 25;
 
   const { data: ledger, isLoading, refetch } = useQuery<LedgerResponse>({
-    queryKey: ['/api/accounts', accountId, 'ledger', { dateRange, searchQuery, currentPage }],
+    queryKey: [
+      '/api/accounts',
+      accountId,
+      'ledger',
+      dateRange.from ? format(dateRange.from, 'yyyy-MM-dd') : '',
+      dateRange.to ? format(dateRange.to, 'yyyy-MM-dd') : '',
+      searchQuery,
+      currentPage,
+    ],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (dateRange.from) params.set('dateStart', format(dateRange.from, 'yyyy-MM-dd'));

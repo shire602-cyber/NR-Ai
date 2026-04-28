@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -50,6 +50,7 @@ export default function ResetPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [done, setDone] = useState(false);
   const token = useMemo(() => getTokenFromUrl(), []);
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const form = useForm<ResetFormData>({
     resolver: zodResolver(resetSchema),
@@ -65,6 +66,14 @@ export default function ResetPassword() {
       });
     }
   }, [token, toast]);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) {
+        clearTimeout(redirectTimerRef.current);
+      }
+    };
+  }, []);
 
   const onSubmit = async (data: ResetFormData) => {
     if (!token) return;
@@ -85,7 +94,7 @@ export default function ResetPassword() {
         description: 'You can now sign in with your new password.',
       });
       // Redirect to login after a brief moment so the user sees confirmation.
-      setTimeout(() => setLocation('/login'), 1500);
+      redirectTimerRef.current = setTimeout(() => setLocation('/login'), 1500);
     } catch (error: any) {
       toast({
         variant: 'destructive',

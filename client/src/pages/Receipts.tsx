@@ -1278,6 +1278,7 @@ export default function Receipts() {
                       onClick={() => removeReceipt(index)}
                       disabled={isProcessingBulk}
                       data-testid={`button-remove-${index}`}
+                      aria-label={`Remove receipt ${index + 1}`}
                     >
                       <X className="w-3 h-3" />
                     </Button>

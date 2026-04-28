@@ -168,13 +168,23 @@ export default function ComplianceCalendar() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
             <div className="flex items-center gap-4">
-              <Button variant="outline" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+                aria-label={locale === 'ar' ? 'الشهر السابق' : 'Previous month'}
+              >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
               <h2 className="text-lg font-semibold">
                 {format(currentDate, 'MMMM yyyy')}
               </h2>
-              <Button variant="outline" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+                aria-label={locale === 'ar' ? 'الشهر التالي' : 'Next month'}
+              >
                 <ChevronRight className="w-4 h-4" />
               </Button>
             </div>

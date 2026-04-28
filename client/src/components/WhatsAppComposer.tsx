@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SiWhatsapp } from 'react-icons/si';
 import { Send } from 'lucide-react';
 import {
@@ -71,6 +71,15 @@ export function WhatsAppComposer({
   const [phone, setPhone] = useState('');
   const [message, setMessage] = useState('');
   const [templateId, setTemplateId] = useState<string>('');
+  const invalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (invalidateTimerRef.current) {
+        clearTimeout(invalidateTimerRef.current);
+      }
+    };
+  }, []);
 
   const visibleTemplates = useMemo(() => {
     if (!allowedCategories || allowedCategories.length === 0) return MESSAGE_TEMPLATES;
@@ -129,8 +138,12 @@ export function WhatsAppComposer({
     openWhatsApp(trimmed, message);
     toast({ title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...' });
 
-    setTimeout(() => {
+    if (invalidateTimerRef.current) {
+      clearTimeout(invalidateTimerRef.current);
+    }
+    invalidateTimerRef.current = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
+      invalidateTimerRef.current = null;
     }, 1000);
     onOpenChange(false);
   };
