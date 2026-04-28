@@ -123,7 +123,7 @@ import {
   invoicePayments
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, isNull, isNotNull, sql, gt, inArray, or } from "drizzle-orm";
+import { eq, and, desc, lte, isNull, isNotNull, sql, gt, inArray } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
