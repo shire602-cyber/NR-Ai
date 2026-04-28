@@ -19,9 +19,7 @@ import {
   getModelStats,
   getClassifierConfig,
   setClassifierConfig,
-  invalidateModel,
 } from '../services/training-data.service';
-import { isStandardCategory } from '../services/receipt-classifier.service';
 
 const log = createLogger('ai');
 

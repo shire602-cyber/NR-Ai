@@ -178,7 +178,7 @@ export async function runAutopilot(
     uploadedBy,
     posted: false,
     autoPosted: false,
-  } as any);
+  });
 
   // Stage 4 — log the classification for ML feedback.
   const classificationRow = await storage.createTransactionClassification({
@@ -191,7 +191,7 @@ export async function runAutopilot(
     aiConfidence: classification.confidence,
     aiReason: classification.reason,
     classifierMethod: classification.method,
-  } as any);
+  });
 
   // Stage 5 — decide whether to auto-post.
   const matchedRule = classification.matchedRuleId
@@ -240,7 +240,7 @@ export async function runAutopilot(
       journalEntryId,
       accountId: expenseAccountId,
       paymentAccountId,
-    } as any);
+    });
 
     // Bump the matched rule's times_applied so confidence stats stay correct.
     if (classification.matchedRuleId) {
@@ -284,7 +284,7 @@ export async function recordClassificationFeedback(
   await storage.updateTransactionClassification(classificationId, {
     wasAccepted,
     userSelectedAccountId: userSelectedAccountId ?? undefined,
-  } as any);
+  });
   invalidateModel(companyId);
   await applyAccuracyFailsafe(companyId);
 }
@@ -346,7 +346,7 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
       createdBy: uploadedBy,
       postedBy: uploadedBy,
       postedAt: new Date(),
-    } as any,
+    },
     lines,
   );
   return entry.id;

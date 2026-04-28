@@ -18,7 +18,6 @@ import {
   type CompanyRuleSnapshot,
   type TrainingExample,
   STANDARD_CATEGORIES,
-  isStandardCategory,
 } from './receipt-classifier.service';
 import {
   type ClassifierMethod,
