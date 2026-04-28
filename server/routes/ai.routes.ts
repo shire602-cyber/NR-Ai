@@ -132,7 +132,7 @@ Amount: ${validated.amount} ${validated.currency}`
       });
     } catch (error: any) {
       log.error({ err: error }, 'AI categorization error');
-      res.status(500).json({ message: error.message || 'AI categorization failed' });
+      throw error;
     }
   }));
 
@@ -202,7 +202,7 @@ If no valid transactions can be found, return { "transactions": [] }`
       res.json({ transactions: validTransactions });
     } catch (error: any) {
       log.error({ err: error }, 'AI bank statement parsing error');
-      res.status(500).json({ message: error.message || 'Failed to parse bank statement' });
+      throw error;
     }
   }));
 
@@ -279,7 +279,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
       });
     } catch (error: any) {
       log.error({ err: error }, 'AI CFO advice error');
-      res.status(500).json({ message: error.message || 'Failed to get AI advice' });
+      throw error;
     }
   }));
 
@@ -386,7 +386,7 @@ Respond with a JSON object:
       res.json(aiResponse);
     } catch (error: any) {
       log.error({ err: error }, 'Batch categorization error');
-      res.status(500).json({ message: error.message || 'Batch categorization failed' });
+      throw error;
     }
   }));
 
@@ -495,7 +495,7 @@ Respond with JSON:
       res.json(aiResponse);
     } catch (error: any) {
       log.error({ err: error }, 'Anomaly detection error');
-      res.status(500).json({ message: error.message || 'Anomaly detection failed' });
+      throw error;
     }
   }));
 
@@ -521,7 +521,7 @@ Respond with JSON:
 
       res.json(alerts);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -546,7 +546,7 @@ Respond with JSON:
       const resolvedAlert = await storage.resolveAnomalyAlert(id, userId, note);
       res.json(resolvedAlert);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -660,7 +660,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
       res.json(aiResponse);
     } catch (error: any) {
       log.error({ err: error }, 'Reconciliation error');
-      res.status(500).json({ message: error.message || 'Reconciliation failed' });
+      throw error;
     }
   }));
 
@@ -691,7 +691,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
       const transaction = await storage.reconcileBankTransaction(id, matchId, matchType);
       res.json(transaction);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -710,7 +710,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
       const transactions = await storage.getBankTransactionsByCompanyId(companyId);
       res.json(transactions);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -731,7 +731,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
       });
       res.json(transaction);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -767,7 +767,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
 
       res.json({ imported: imported.length, transactions: imported });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -914,7 +914,7 @@ Respond with JSON:
       });
     } catch (error: any) {
       log.error({ err: error }, 'Cash flow forecast error');
-      res.status(500).json({ message: error.message || 'Forecasting failed' });
+      throw error;
     }
   }));
 
@@ -925,7 +925,7 @@ Respond with JSON:
       const forecasts = await storage.getCashFlowForecastsByCompanyId(companyId);
       res.json(forecasts);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -941,7 +941,7 @@ Respond with JSON:
 
       res.json(classification);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -1152,7 +1152,7 @@ Company: ${company.name}`;
       });
     } catch (error: any) {
       log.error({ err: error }, 'NL Gateway error');
-      res.status(500).json({ message: error.message || 'Failed to process query' });
+      throw error;
     }
   }));
 
@@ -1376,7 +1376,7 @@ IMPORTANT GUIDELINES:
         });
       }
 
-      res.status(500).json({ message: error.message || 'Failed to process request' });
+      throw error;
     }
   }));
 
@@ -1403,7 +1403,7 @@ IMPORTANT GUIDELINES:
       res.json(conversations);
     } catch (error: any) {
       log.error({ err: error }, '/api/ask/history error');
-      res.status(500).json({ message: error.message || 'Failed to fetch history' });
+      throw error;
     }
   }));
 
@@ -1455,7 +1455,7 @@ IMPORTANT GUIDELINES:
         description: `${a.type.charAt(0).toUpperCase() + a.type.slice(1)} Account`,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -1512,7 +1512,7 @@ IMPORTANT GUIDELINES:
         invoiceCount: c.count,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -1571,7 +1571,7 @@ IMPORTANT GUIDELINES:
         lastAmount: m.lastAmount,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -1633,7 +1633,7 @@ IMPORTANT GUIDELINES:
         usageCount: d.count,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      throw error;
     }
   }));
 
@@ -1758,7 +1758,7 @@ Respond with just the category name, nothing else.`;
       res.json({ suggestions });
     } catch (error: any) {
       log.error({ err: error }, 'Smart suggest error');
-      res.status(500).json({ message: error.message || 'Failed to generate suggestions' });
+      throw error;
     }
   }));
 }

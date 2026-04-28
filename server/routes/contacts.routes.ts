@@ -48,7 +48,7 @@ export function registerContactRoutes(app: Express) {
     }
 
     const contact = await storage.createCustomerContact(contactData);
-    res.json(contact);
+    res.status(201).json(contact);
   }));
 
   // Bulk import customer contacts from Excel

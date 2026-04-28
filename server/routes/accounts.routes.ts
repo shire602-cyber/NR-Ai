@@ -51,7 +51,7 @@ export function registerAccountRoutes(app: Express) {
       req,
     });
 
-    res.json(account);
+    res.status(201).json(account);
   }));
 
   // Customer-only: Update accounts

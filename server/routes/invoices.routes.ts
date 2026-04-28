@@ -283,7 +283,7 @@ export function registerInvoiceRoutes(app: Express) {
       actionUrl: '/invoices',
     }).catch(() => {});
 
-    res.json(invoice);
+    res.status(201).json(invoice);
   }));
 
   // Post invoice journal entries
