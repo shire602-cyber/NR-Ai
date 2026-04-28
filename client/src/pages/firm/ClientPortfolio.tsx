@@ -1,11 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import {
   Building2, Plus, Search, LayoutGrid, List,
-  ChevronRight, AlertCircle, CheckCircle2, Clock,
-  FileText, Receipt, Users, Calendar, Edit, UserPlus,
-  BookOpen, Filter,
+  ChevronRight, Users, Calendar,
+  BookOpen, Filter, Upload, AlertTriangle, FileText, Receipt, FolderOpen,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +18,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { format } from 'date-fns';
 import type { Company } from '@shared/schema';
+import { useActiveCompany } from '@/components/ActiveCompanyProvider';
 
 interface ClientStats {
   invoiceCount: number;
@@ -35,6 +35,20 @@ interface ClientStats {
 }
 
 type ClientWithStats = Company & ClientStats;
+
+interface FirmOverview {
+  totalClients: number;
+  vatDueThisMonth: number;
+  overdueAr: number;
+  needsAttention: number;
+  missingDocuments: number;
+}
+
+interface ImportResult {
+  message: string;
+  created: { id: string; name: string }[];
+  errors: { row: number; name: string; error: string }[];
+}
 
 function formatAed(amount: number) {
   return new Intl.NumberFormat('en-AE', {
@@ -69,6 +83,30 @@ function StatusBadge({ active }: { active: boolean }) {
     : <Badge variant="secondary">Inactive</Badge>;
 }
 
+function clientNeedsAttention(c: ClientWithStats): boolean {
+  if (c.outstandingAr > 0) {
+    // Outstanding receivables are flagged when a recent invoice is overdue.
+    if (c.vatStatus && c.vatStatus.status !== 'filed' && c.vatStatus.status !== 'submitted') {
+      const due = new Date(c.vatStatus.dueDate);
+      if (due < new Date()) return true;
+    }
+  }
+  if (c.vatStatus && c.vatStatus.status !== 'filed' && c.vatStatus.status !== 'submitted') {
+    const due = new Date(c.vatStatus.dueDate);
+    if (due < new Date()) return true;
+  }
+  return false;
+}
+
+function vatDueSoon(c: ClientWithStats): boolean {
+  if (!c.vatStatus) return false;
+  if (c.vatStatus.status === 'filed' || c.vatStatus.status === 'submitted') return false;
+  const due = new Date(c.vatStatus.dueDate);
+  const now = new Date();
+  const days = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+  return days >= 0 && days <= 30;
+}
+
 interface AddClientFormData {
   name: string;
   trnVatNumber: string;
@@ -93,23 +131,35 @@ const emptyForm: AddClientFormData = {
   vatFilingFrequency: 'quarterly',
 };
 
+type QuickFilter = 'all' | 'attention' | 'vat-due' | 'no-docs';
+
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { setActiveClientCompany } = useActiveCompany();
   const [view, setView] = useState<'card' | 'table'>('card');
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
     queryKey: ['/api/firm/clients'],
   });
 
+  const { data: overview } = useQuery<FirmOverview>({
+    queryKey: ['/api/firm/overview'],
+  });
+
   const createMutation = useMutation({
     mutationFn: (data: AddClientFormData) => apiRequest('POST', '/api/firm/clients', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
       toast({ title: 'Client created successfully' });
       setAddOpen(false);
       setForm(emptyForm);
@@ -119,19 +169,74 @@ export default function ClientPortfolio() {
     },
   });
 
-  const filtered = clients.filter(c => {
-    const matchesSearch =
-      !search ||
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      (c.trnVatNumber || '').includes(search);
-    const matchesStatus =
-      statusFilter === 'all' ||
-      (statusFilter === 'active' && c.invoiceCount > 0) ||
-      (statusFilter === 'inactive' && c.invoiceCount === 0);
-    return matchesSearch && matchesStatus;
+  const switchMutation = useMutation({
+    mutationFn: (companyId: string) => apiRequest('POST', `/api/firm/clients/${companyId}/switch`),
+    onSuccess: (_, companyId) => {
+      setActiveClientCompany(companyId);
+      // Force a refetch of /api/companies so the active company is in cache.
+      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      navigate('/dashboard');
+    },
+    onError: (e: any) => {
+      toast({ variant: 'destructive', title: 'Could not open client books', description: e?.message });
+    },
   });
 
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const buffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      // Build base64 in chunks to avoid call-stack overflow on bigger files.
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
+      }
+      const fileData = btoa(binary);
+      return apiRequest('POST', '/api/firm/clients/import', { fileData }) as Promise<ImportResult>;
+    },
+    onSuccess: result => {
+      setImportResult(result);
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      toast({
+        title: `Imported ${result.created.length} clients`,
+        description: result.errors.length > 0 ? `${result.errors.length} errors — see details.` : undefined,
+      });
+    },
+    onError: (e: any) => {
+      toast({ variant: 'destructive', title: 'Import failed', description: e?.message });
+    },
+  });
+
+  const filtered = useMemo(() => {
+    return clients.filter(c => {
+      const matchesSearch =
+        !search ||
+        c.name.toLowerCase().includes(search.toLowerCase()) ||
+        (c.trnVatNumber || '').toLowerCase().includes(search.toLowerCase());
+      if (!matchesSearch) return false;
+
+      switch (quickFilter) {
+        case 'attention':
+          return clientNeedsAttention(c);
+        case 'vat-due':
+          return vatDueSoon(c);
+        case 'no-docs':
+          return c.invoiceCount === 0 && !c.lastReceiptDate;
+        case 'all':
+        default:
+          return true;
+      }
+    });
+  }, [clients, search, quickFilter]);
+
   const handleOpenBooks = (id: string) => {
+    switchMutation.mutate(id);
+  };
+
+  const handleViewProfile = (id: string) => {
     navigate(`/firm/clients/${id}`);
   };
 
@@ -153,13 +258,97 @@ export default function ClientPortfolio() {
             {clients.length} client{clients.length !== 1 ? 's' : ''} managed by NRA
           </p>
         </div>
-        <Button onClick={() => setAddOpen(true)} className="w-full sm:w-auto">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Client
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => { setImportResult(null); setImportFile(null); setImportOpen(true); }}>
+            <Upload className="w-4 h-4 mr-2" />
+            Import Clients
+          </Button>
+          <Button onClick={() => setAddOpen(true)} data-testid="button-add-client">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Client
+          </Button>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card data-testid="card-total-clients">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Clients</p>
+              <Users className="w-4 h-4 text-muted-foreground" />
+            </div>
+            <p className="text-2xl font-bold mt-1">{overview?.totalClients ?? clients.length}</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-vat-due">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT due 30d</p>
+              <Calendar className="w-4 h-4 text-amber-600" />
+            </div>
+            <p className="text-2xl font-bold mt-1">{overview?.vatDueThisMonth ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-overdue-ar">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Overdue AR</p>
+              <Receipt className="w-4 h-4 text-red-600" />
+            </div>
+            <p className="text-2xl font-bold mt-1">{formatAed(overview?.overdueAr ?? 0)}</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-attention">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Needs Attention</p>
+              <AlertTriangle className="w-4 h-4 text-orange-600" />
+            </div>
+            <p className="text-2xl font-bold mt-1">{overview?.needsAttention ?? 0}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant={quickFilter === 'all' ? 'secondary' : 'outline'}
+          onClick={() => setQuickFilter('all')}
+        >
+          All ({clients.length})
+        </Button>
+        <Button
+          size="sm"
+          variant={quickFilter === 'attention' ? 'secondary' : 'outline'}
+          onClick={() => setQuickFilter('attention')}
+          data-testid="filter-attention"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
+          Needs Attention
+        </Button>
+        <Button
+          size="sm"
+          variant={quickFilter === 'vat-due' ? 'secondary' : 'outline'}
+          onClick={() => setQuickFilter('vat-due')}
+          data-testid="filter-vat-due"
+        >
+          <Calendar className="w-3.5 h-3.5 mr-1.5" />
+          VAT Due Soon
+        </Button>
+        <Button
+          size="sm"
+          variant={quickFilter === 'no-docs' ? 'secondary' : 'outline'}
+          onClick={() => setQuickFilter('no-docs')}
+          data-testid="filter-no-docs"
+        >
+          <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+          Missing Documents
         </Button>
       </div>
 
-      {/* Filters */}
+      {/* Search & view toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="relative flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -168,20 +357,10 @@ export default function ClientPortfolio() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-9"
+            data-testid="input-client-search"
           />
         </div>
-        <Select value={statusFilter} onValueChange={(v: any) => setStatusFilter(v)}>
-          <SelectTrigger className="w-36">
-            <Filter className="w-4 h-4 mr-2" />
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Clients</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="inactive">Inactive</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="flex border rounded-md">
+        <div className="flex border rounded-md ml-auto">
           <Button
             variant={view === 'card' ? 'secondary' : 'ghost'}
             size="sm"
@@ -206,12 +385,12 @@ export default function ClientPortfolio() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
           <h3 className="font-semibold text-lg">
-            {clients.length === 0 ? 'No clients yet' : 'No clients match your search'}
+            {clients.length === 0 ? 'No clients yet' : 'No clients match your filters'}
           </h3>
           <p className="text-muted-foreground mt-1 mb-4">
             {clients.length === 0
               ? 'Add your first client company to get started.'
-              : 'Try adjusting your search or filters.'}
+              : 'Try adjusting your search or quick filter.'}
           </p>
           {clients.length === 0 && (
             <Button onClick={() => setAddOpen(true)}>
@@ -226,7 +405,7 @@ export default function ClientPortfolio() {
       {view === 'card' && filtered.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map(client => (
-            <Card key={client.id} className="hover:shadow-md transition-shadow">
+            <Card key={client.id} className="hover:shadow-md transition-shadow" data-testid={`client-card-${client.id}`}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
@@ -235,7 +414,7 @@ export default function ClientPortfolio() {
                       {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : 'No TRN registered'}
                     </p>
                   </div>
-                  <StatusBadge active={client.invoiceCount > 0} />
+                  <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -284,6 +463,8 @@ export default function ClientPortfolio() {
                     size="sm"
                     className="flex-1"
                     onClick={() => handleOpenBooks(client.id)}
+                    disabled={switchMutation.isPending}
+                    data-testid={`button-open-books-${client.id}`}
                   >
                     <BookOpen className="w-3.5 h-3.5 mr-1.5" />
                     Open Books
@@ -291,7 +472,7 @@ export default function ClientPortfolio() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => navigate(`/firm/clients/${client.id}`)}
+                    onClick={() => handleViewProfile(client.id)}
                   >
                     <ChevronRight className="w-4 h-4" />
                   </Button>
@@ -320,7 +501,7 @@ export default function ClientPortfolio() {
             </TableHeader>
             <TableBody>
               {filtered.map(client => (
-                <TableRow key={client.id} className="cursor-pointer hover:bg-muted/50">
+                <TableRow key={client.id} className="hover:bg-muted/50">
                   <TableCell>
                     <div>
                       <p className="font-medium">{client.name}</p>
@@ -350,9 +531,16 @@ export default function ClientPortfolio() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button size="sm" onClick={() => handleOpenBooks(client.id)}>
+                      <Button
+                        size="sm"
+                        onClick={() => handleOpenBooks(client.id)}
+                        disabled={switchMutation.isPending}
+                      >
                         <BookOpen className="w-3.5 h-3.5 mr-1" />
                         Open
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleViewProfile(client.id)}>
+                        <ChevronRight className="w-4 h-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -492,8 +680,74 @@ export default function ClientPortfolio() {
             <Button
               onClick={() => createMutation.mutate(form)}
               disabled={!form.name.trim() || createMutation.isPending}
+              data-testid="button-create-client"
             >
               {createMutation.isPending ? 'Creating...' : 'Create Client'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import Clients Dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Import Clients</DialogTitle>
+            <DialogDescription>
+              Upload a CSV or Excel file. Each row becomes a new client company with a UAE chart of
+              accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate,
+              VAT filing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid gap-1.5">
+              <Label htmlFor="import-file">CSV / XLSX file</Label>
+              <Input
+                id="import-file"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={e => {
+                  setImportFile(e.target.files?.[0] ?? null);
+                  setImportResult(null);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">Up to 500 rows per upload.</p>
+            </div>
+            {importResult && (
+              <div className="rounded border p-3 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Imported</span>
+                  <span className="text-green-700">{importResult.created.length}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">Errors</span>
+                  <span className={importResult.errors.length > 0 ? 'text-red-700' : ''}>
+                    {importResult.errors.length}
+                  </span>
+                </div>
+                {importResult.errors.length > 0 && (
+                  <div className="max-h-40 overflow-auto text-xs text-muted-foreground space-y-1">
+                    {importResult.errors.slice(0, 20).map((e, i) => (
+                      <div key={i}>
+                        Row {e.row}{e.name ? ` (${e.name})` : ''}: {e.error}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportOpen(false)}>
+              Close
+            </Button>
+            <Button
+              onClick={() => importFile && importMutation.mutate(importFile)}
+              disabled={!importFile || importMutation.isPending}
+              data-testid="button-import-clients"
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              {importMutation.isPending ? 'Importing...' : 'Import'}
             </Button>
           </DialogFooter>
         </DialogContent>
