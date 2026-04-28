@@ -418,8 +418,8 @@ Keep your tone professional but friendly, like a trusted advisor.`
           suggestedCategory: r.category,
           aiConfidence: r.confidence,
           aiReason: r.reason,
-          classifierMethod: r.method as any,
-        } as any);
+          classifierMethod: r.method,
+        });
       }
 
       // Only call OpenAI for the remaining low-confidence transactions.
@@ -487,7 +487,7 @@ Respond with a JSON object:
             aiConfidence: classification.confidence,
             aiReason: classification.reason,
             classifierMethod: 'openai',
-          } as any);
+          });
         }
       }
 
@@ -1074,37 +1074,76 @@ Respond with JSON:
   // Phase 2: Receipt Autopilot endpoints
   // ===========================================
 
+  // Hard caps protect the receipts table from oversized payloads and keep auto-
+  // post side effects bounded; they also prevent setting accuracyThreshold low
+  // enough to disable the OpenAI fallback / failsafe entirely.
+  const autopilotProcessSchema = z.object({
+    companyId: z.string().uuid(),
+    ocr: z.object({
+      merchant: z.string().min(1).max(200),
+      amount: z.number().finite().nonnegative().optional().default(0),
+      vatAmount: z.number().finite().nonnegative().optional().default(0),
+      total: z.number().finite().nonnegative(),
+      currency: z.string().min(1).max(8).optional().default('AED'),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      lineItems: z.array(z.object({ description: z.string().max(500).optional() }).passthrough())
+        .max(200)
+        .optional()
+        .default([]),
+      rawText: z.string().max(50_000).nullable().optional(),
+      imagePath: z.string().max(2_000).nullable().optional(),
+      imageData: z.string().max(15 * 1024 * 1024).nullable().optional(),
+    }),
+  });
+
+  const classifierConfigPatchSchema = z.object({
+    companyId: z.string().uuid(),
+    mode: z.enum(['hybrid', 'openai_only']).optional(),
+    // Floor at 0.5 so a user cannot effectively disable the OpenAI fallback or
+    // the auto-failsafe by setting an unreachable threshold. Cap at 0.99 so
+    // the failsafe condition `internalAccuracy < threshold` stays satisfiable.
+    accuracyThreshold: z.number().min(0.5).max(0.99).optional(),
+    autopilotEnabled: z.boolean().optional(),
+  });
+
+  const companyIdQuerySchema = z.object({
+    companyId: z.string().uuid(),
+  });
+
   // Run the full Receipt Autopilot pipeline on an OCR-extracted receipt.
-  // Body: { companyId, ocr: { merchant, amount, vatAmount, total, currency, date, lineItems?, rawText?, imagePath?, imageData? } }
   app.post("/api/ai/autopilot/process", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
-    const { companyId, ocr } = req.body || {};
-    if (!companyId || !ocr || !ocr.merchant || typeof ocr.total !== 'number') {
-      return res.status(400).json({ message: 'companyId and ocr {merchant, total} are required' });
+    const parsed = autopilotProcessSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: 'Invalid request body', errors: parsed.error.flatten() });
     }
+    const { companyId, ocr } = parsed.data;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
     const result = await runAutopilot(companyId, userId, {
-      merchant: String(ocr.merchant).slice(0, 200),
-      amount: Number(ocr.amount) || 0,
-      vatAmount: Number(ocr.vatAmount) || 0,
-      total: Number(ocr.total) || 0,
-      currency: ocr.currency || 'AED',
+      merchant: ocr.merchant.slice(0, 200),
+      amount: ocr.amount,
+      vatAmount: ocr.vatAmount,
+      total: ocr.total,
+      currency: ocr.currency,
       date: ocr.date || new Date().toISOString().slice(0, 10),
-      lineItems: Array.isArray(ocr.lineItems) ? ocr.lineItems : [],
-      rawText: ocr.rawText || null,
-      imagePath: ocr.imagePath || null,
-      imageData: ocr.imageData || null,
+      lineItems: ocr.lineItems,
+      rawText: ocr.rawText ?? null,
+      imagePath: ocr.imagePath ?? null,
+      imageData: ocr.imageData ?? null,
     });
     res.json(result);
   }));
 
   // Aggregate accuracy stats for the AI Accuracy dashboard.
-  app.get("/api/ai/classifier-stats", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/ai/classifier-stats", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
-    const companyId = (req.query.companyId as string) || '';
-    if (!companyId) return res.status(400).json({ message: 'companyId is required' });
+    const parsed = companyIdQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: 'companyId is required (uuid)' });
+    }
+    const { companyId } = parsed.data;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const stats = await getModelStats(companyId);
@@ -1112,28 +1151,32 @@ Respond with JSON:
   }));
 
   // Get / update the per-company classifier config (mode, threshold, autopilot toggle).
-  app.get("/api/ai/classifier-config", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/ai/classifier-config", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
-    const companyId = (req.query.companyId as string) || '';
-    if (!companyId) return res.status(400).json({ message: 'companyId is required' });
+    const parsed = companyIdQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ message: 'companyId is required (uuid)' });
+    }
+    const { companyId } = parsed.data;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const config = await getClassifierConfig(companyId);
     res.json(config);
   }));
 
-  app.patch("/api/ai/classifier-config", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.patch("/api/ai/classifier-config", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
-    const { companyId, mode, accuracyThreshold, autopilotEnabled } = req.body || {};
-    if (!companyId) return res.status(400).json({ message: 'companyId is required' });
+    const parsed = classifierConfigPatchSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: 'Invalid request body', errors: parsed.error.flatten() });
+    }
+    const { companyId, mode, accuracyThreshold, autopilotEnabled } = parsed.data;
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-    const patch: any = {};
-    if (mode === 'hybrid' || mode === 'openai_only') patch.mode = mode;
-    if (typeof accuracyThreshold === 'number' && accuracyThreshold >= 0 && accuracyThreshold <= 1) {
-      patch.accuracyThreshold = accuracyThreshold;
-    }
-    if (typeof autopilotEnabled === 'boolean') patch.autopilotEnabled = autopilotEnabled;
+    const patch: Partial<{ mode: 'hybrid' | 'openai_only'; accuracyThreshold: number; autopilotEnabled: boolean }> = {};
+    if (mode !== undefined) patch.mode = mode;
+    if (accuracyThreshold !== undefined) patch.accuracyThreshold = accuracyThreshold;
+    if (autopilotEnabled !== undefined) patch.autopilotEnabled = autopilotEnabled;
     const config = await setClassifierConfig(companyId, patch);
     res.json(config);
   }));

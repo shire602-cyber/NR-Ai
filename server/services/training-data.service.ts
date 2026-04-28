@@ -254,14 +254,31 @@ export async function getModelStats(companyId: string): Promise<ModelStats> {
 // Per-company config helpers
 // =============================================
 
+// Floor / ceiling for the per-company accuracy threshold. We refuse anything
+// below 0.5 because (a) it makes the OpenAI fallback unreachable in hybrid mode
+// for any successful internal classification, and (b) `internalAccuracy <
+// threshold` becomes impossible at threshold 0, neutralising the auto-failsafe.
+// The 0.99 cap leaves the failsafe condition satisfiable but lets careful
+// users run very strict.
+const MIN_ACCURACY_THRESHOLD = 0.5;
+const MAX_ACCURACY_THRESHOLD = 0.99;
+
+function clampThreshold(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_CLASSIFIER_CONFIG.accuracyThreshold;
+  return Math.min(MAX_ACCURACY_THRESHOLD, Math.max(MIN_ACCURACY_THRESHOLD, value));
+}
+
 export async function getClassifierConfig(companyId: string): Promise<ClassifierConfig> {
   const company = await storage.getCompany(companyId);
   if (!company) return { ...DEFAULT_CLASSIFIER_CONFIG };
-  const cfg = (company as any).classifierConfig as Partial<ClassifierConfig> | null;
+  const cfg = company.classifierConfig as Partial<ClassifierConfig> | null;
   if (!cfg) return { ...DEFAULT_CLASSIFIER_CONFIG };
   return {
     mode: cfg.mode === 'openai_only' ? 'openai_only' : 'hybrid',
-    accuracyThreshold: typeof cfg.accuracyThreshold === 'number' ? cfg.accuracyThreshold : DEFAULT_CLASSIFIER_CONFIG.accuracyThreshold,
+    accuracyThreshold:
+      typeof cfg.accuracyThreshold === 'number'
+        ? clampThreshold(cfg.accuracyThreshold)
+        : DEFAULT_CLASSIFIER_CONFIG.accuracyThreshold,
     autopilotEnabled: !!cfg.autopilotEnabled,
   };
 }
@@ -271,7 +288,15 @@ export async function setClassifierConfig(
   patch: Partial<ClassifierConfig>,
 ): Promise<ClassifierConfig> {
   const current = await getClassifierConfig(companyId);
-  const next: ClassifierConfig = { ...current, ...patch };
+  // Defense-in-depth: even if a service-layer caller bypasses the route schema,
+  // we re-clamp the threshold and whitelist the mode here.
+  const sanitizedPatch: Partial<ClassifierConfig> = {};
+  if (patch.mode === 'hybrid' || patch.mode === 'openai_only') sanitizedPatch.mode = patch.mode;
+  if (typeof patch.accuracyThreshold === 'number') {
+    sanitizedPatch.accuracyThreshold = clampThreshold(patch.accuracyThreshold);
+  }
+  if (typeof patch.autopilotEnabled === 'boolean') sanitizedPatch.autopilotEnabled = patch.autopilotEnabled;
+  const next: ClassifierConfig = { ...current, ...sanitizedPatch };
   await pool.query(
     `UPDATE companies SET classifier_config = $1::jsonb WHERE id = $2`,
     [JSON.stringify(next), companyId],
