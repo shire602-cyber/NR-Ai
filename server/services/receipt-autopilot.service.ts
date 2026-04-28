@@ -136,11 +136,18 @@ export async function runAutopilot(
   );
   const expenseAccountNames = expenseAccounts.map((a) => a.nameEn);
 
+  // Defensive: the route already validates, but if a caller passes a non-string
+  // merchant we must not crash on slice() / toLowerCase().
+  const merchantSafe = typeof ocr.merchant === 'string' ? ocr.merchant : '';
+  const netAmount = Number(ocr.amount) || 0;
+  const vatAmount = Number(ocr.vatAmount) || 0;
+  const grossAmount = Number(ocr.total) > 0 ? Number(ocr.total) : netAmount + vatAmount;
+
   // Stage 1 — classify.
   const model = await getModel(companyId);
   const classification = await classifyReceipt({
-    merchant: ocr.merchant,
-    amount: ocr.amount,
+    merchant: merchantSafe,
+    amount: netAmount,
     lineItems: (ocr.lineItems || []).map((li) => li?.description || '').filter(Boolean),
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
@@ -157,10 +164,10 @@ export async function runAutopilot(
   // Stage 3 — create the receipt row (always — never lose data).
   const receipt = await storage.createReceipt({
     companyId,
-    merchant: ocr.merchant.slice(0, 200),
+    merchant: merchantSafe.slice(0, 200),
     date: new Date(ocr.date),
-    amount: ocr.amount,
-    vatAmount: ocr.vatAmount,
+    amount: netAmount,
+    vatAmount,
     currency: ocr.currency || 'AED',
     category: classification.category,
     accountId: expenseAccountId,
@@ -176,9 +183,9 @@ export async function runAutopilot(
   // Stage 4 — log the classification for ML feedback.
   const classificationRow = await storage.createTransactionClassification({
     companyId,
-    description: ocr.merchant,
-    merchant: ocr.merchant,
-    amount: ocr.total,
+    description: merchantSafe,
+    merchant: merchantSafe,
+    amount: grossAmount,
     suggestedAccountId: expenseAccountId ?? null,
     suggestedCategory: classification.category,
     aiConfidence: classification.confidence,
@@ -191,12 +198,17 @@ export async function runAutopilot(
     ? model.rules.find((r) => r.id === classification.matchedRuleId)
     : null;
   const ruleAcceptedEnough = matchedRule ? matchedRule.timesAccepted >= 5 : false;
+  // Auto-post requires a positive net amount. Posting a zero/negative entry
+  // would either throw at assertBalanced (negative case) or create a
+  // meaningless balanced-zero entry (zero case) — both are surprising and
+  // belong in the manual-review queue.
   const shouldAutoPost =
     config.autopilotEnabled &&
     classification.confidence >= 0.9 &&
     ruleAcceptedEnough &&
     !!expenseAccountId &&
-    !!paymentAccountId;
+    !!paymentAccountId &&
+    netAmount > 0;
 
   if (!shouldAutoPost) {
     return {
@@ -296,9 +308,14 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
   const txnDate = new Date(ocr.date);
   await assertPeriodNotLocked(companyId, txnDate);
 
-  const net = round2(ocr.amount);
-  const vat = round2(ocr.vatAmount);
-  const total = round2(ocr.total > 0 ? ocr.total : net + vat);
+  const net = round2(Number(ocr.amount) || 0);
+  const vat = round2(Number(ocr.vatAmount) || 0);
+  // Always derive total from net + vat for the journal entry. OCR can return
+  // values whose sum disagrees with the reported total by more than the
+  // 0.01 tolerance enforced by assertBalanced(); using OCR's total here would
+  // throw on every retry and silently force the receipt into manual review.
+  // The receipt row preserves the original ocr.total separately.
+  const total = round2(net + vat);
 
   // Try to find a "VAT Input" / "Input VAT" / "Recoverable VAT" account so we
   // split the entry. If we can't find one, the gross goes to the expense.
@@ -306,14 +323,15 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
     (a) => a.isVatAccount && a.vatType === 'input' && a.isActive && !a.isArchived,
   );
 
+  const merchantLabel = typeof ocr.merchant === 'string' ? ocr.merchant : '';
   const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
   if (vatInputAccount && vat > 0) {
-    lines.push({ accountId: expenseAccountId, debit: net, credit: 0, description: ocr.merchant });
-    lines.push({ accountId: vatInputAccount.id, debit: vat, credit: 0, description: `Input VAT — ${ocr.merchant}` });
-    lines.push({ accountId: paymentAccountId, debit: 0, credit: total, description: ocr.merchant });
+    lines.push({ accountId: expenseAccountId, debit: net, credit: 0, description: merchantLabel });
+    lines.push({ accountId: vatInputAccount.id, debit: vat, credit: 0, description: `Input VAT — ${merchantLabel}` });
+    lines.push({ accountId: paymentAccountId, debit: 0, credit: total, description: merchantLabel });
   } else {
-    lines.push({ accountId: expenseAccountId, debit: total, credit: 0, description: ocr.merchant });
-    lines.push({ accountId: paymentAccountId, debit: 0, credit: total, description: ocr.merchant });
+    lines.push({ accountId: expenseAccountId, debit: total, credit: 0, description: merchantLabel });
+    lines.push({ accountId: paymentAccountId, debit: 0, credit: total, description: merchantLabel });
   }
 
   const entryNumber = await storage.generateEntryNumber(companyId, txnDate);
@@ -322,7 +340,7 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
       companyId,
       entryNumber,
       date: txnDate,
-      memo: `Receipt Autopilot: ${ocr.merchant} (${classification.method}, ${(classification.confidence * 100).toFixed(0)}% conf)`,
+      memo: `Receipt Autopilot: ${merchantLabel} (${classification.method}, ${(classification.confidence * 100).toFixed(0)}% conf)`,
       status: 'posted',
       source: 'system',
       createdBy: uploadedBy,

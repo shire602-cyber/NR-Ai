@@ -32,10 +32,18 @@ const log = createLogger('training-data');
 // =============================================
 // Cache
 // =============================================
-// Keyed by companyId. Eviction is purely manual via invalidateModel(). We keep
-// a TTL too so a long-lived process won't serve indefinitely-stale models.
+// Keyed by companyId. Eviction is manual via invalidateModel(); a TTL backstop
+// keeps a long-lived process from serving indefinitely-stale models.
+//
+// We cache the in-flight Promise rather than the resolved model so concurrent
+// first-time reads share one DB build (no thundering herd). Rejected promises
+// are evicted so a transient failure doesn't poison subsequent reads.
 const MODEL_TTL_MS = 5 * 60 * 1000;
-const modelCache = new Map<string, InternalClassifierModel>();
+interface CacheEntry {
+  promise: Promise<InternalClassifierModel>;
+  builtAt: number;
+}
+const modelCache = new Map<string, CacheEntry>();
 
 export function invalidateModel(companyId: string): void {
   modelCache.delete(companyId);
@@ -52,12 +60,22 @@ export function clearAllModels(): void {
 export async function getModel(companyId: string): Promise<InternalClassifierModel> {
   const cached = modelCache.get(companyId);
   if (cached && Date.now() - cached.builtAt < MODEL_TTL_MS) {
-    return cached;
+    return cached.promise;
   }
 
-  const model = await buildModel(companyId);
-  modelCache.set(companyId, model);
-  return model;
+  const builtAt = Date.now();
+  const promise = buildModel(companyId);
+  const entry: CacheEntry = { promise, builtAt };
+  modelCache.set(companyId, entry);
+  // On rejection, evict so the next call rebuilds instead of replaying the
+  // failure. Guard against a concurrent write replacing this entry.
+  promise.catch((err) => {
+    if (modelCache.get(companyId) === entry) {
+      modelCache.delete(companyId);
+    }
+    log.warn({ err: err?.message || err, companyId }, 'buildModel failed — cache evicted');
+  });
+  return promise;
 }
 
 export async function updateModel(companyId: string): Promise<InternalClassifierModel> {

@@ -28,12 +28,15 @@ vi.mock('../../server/storage', () => ({
 }));
 
 import {
+  getModel,
   getModelStats,
   applyAccuracyFailsafe,
   setClassifierConfig,
   getClassifierConfig,
+  invalidateModel,
   clearAllModels,
 } from '../../server/services/training-data.service';
+import { pool } from '../../server/db';
 
 beforeEach(() => {
   queryScript.length = 0;
@@ -139,5 +142,36 @@ describe('getClassifierConfig defaults', () => {
     expect(cfg.mode).toBe('hybrid');
     expect(cfg.accuracyThreshold).toBe(0.8);
     expect(cfg.autopilotEnabled).toBe(false);
+  });
+});
+
+describe('getModel cache (thundering-herd protection)', () => {
+  it('shares one in-flight build across concurrent first reads', async () => {
+    // buildModel issues two pool.query calls (rules + training examples). With
+    // a Promise cache, two concurrent getModel('co-x') calls should produce
+    // exactly two queries — not four.
+    const queryMock = pool.query as any;
+    queryMock.mockClear();
+    queryMock.mockResolvedValue({ rows: [] });
+
+    invalidateModel('co-x');
+    const [a, b] = await Promise.all([getModel('co-x'), getModel('co-x')]);
+    expect(a).toBe(b); // same resolved object
+    expect(queryMock.mock.calls.length).toBe(2);
+  });
+
+  it('evicts the cache entry when buildModel rejects so the next call retries', async () => {
+    const queryMock = pool.query as any;
+    queryMock.mockClear();
+    queryMock.mockRejectedValueOnce(new Error('db down'));
+
+    invalidateModel('co-y');
+    await expect(getModel('co-y')).rejects.toThrow('db down');
+
+    // Next call must rebuild (succeeds when the mock recovers) — proving the
+    // failed promise was not left in the cache.
+    queryMock.mockResolvedValue({ rows: [] });
+    const recovered = await getModel('co-y');
+    expect(recovered).toBeTruthy();
   });
 });

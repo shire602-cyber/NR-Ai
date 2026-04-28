@@ -50,8 +50,15 @@ vi.mock('../../server/storage', () => ({
     }),
     hasCompanyAccess: vi.fn(async () => true),
     generateEntryNumber: vi.fn(async () => 'JE-TEST-001'),
-    createJournalEntry: vi.fn(async (entry: any, _lines: any[]) => {
-      const row = { id: `je-${state.journalEntries.length + 1}`, ...entry };
+    createJournalEntry: vi.fn(async (entry: any, lines: any[]) => {
+      // Mirror the production assertion so tests fail loudly on an unbalanced
+      // entry rather than silently swallowing the bug.
+      const totalDebit = lines.reduce((s: number, l: any) => s + (Number(l.debit) || 0), 0);
+      const totalCredit = lines.reduce((s: number, l: any) => s + (Number(l.credit) || 0), 0);
+      if (Math.abs(totalDebit - totalCredit) > 0.01) {
+        throw new Error(`Test mock: unbalanced entry ${totalDebit} vs ${totalCredit}`);
+      }
+      const row = { id: `je-${state.journalEntries.length + 1}`, ...entry, lines };
       state.journalEntries.push(row);
       return row;
     }),
@@ -254,5 +261,95 @@ describe('runAutopilot pipeline', () => {
   it('records classifierMethod on the transaction_classifications row', async () => {
     await runAutopilot('co-1', 'user-1', ocr);
     expect(state.classifications[0].classifierMethod).toBe('keyword');
+  });
+
+  // ---------- regression coverage for the auto-post fixes ----------
+
+  function highConfidenceRule() {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: 'rule-1',
+        merchantPattern: 'DEWA April 2026',
+        descriptionPattern: null,
+        accountId: 'a-utilities',
+        category: 'Utilities',
+        confidence: 0.95,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+  }
+
+  it('auto-posts a balanced 3-line entry when a VAT input account exists', async () => {
+    highConfidenceRule();
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    expect(result.autoPosted).toBe(true);
+    const je = state.journalEntries[0];
+    expect(je.lines).toHaveLength(3);
+    const [expense, vatLine, payment] = je.lines;
+    expect(expense.accountId).toBe('a-utilities');
+    expect(expense.debit).toBeCloseTo(95.24, 2);
+    expect(vatLine.accountId).toBe('a-vat-input');
+    expect(vatLine.debit).toBeCloseTo(4.76, 2);
+    expect(payment.accountId).toBe('a-cash');
+    expect(payment.credit).toBeCloseTo(100, 2);
+  });
+
+  it('falls back to a 2-line entry when no VAT input account is configured', async () => {
+    state.accounts = state.accounts.filter((a) => a.id !== 'a-vat-input');
+    highConfidenceRule();
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    expect(result.autoPosted).toBe(true);
+    const je = state.journalEntries[0];
+    expect(je.lines).toHaveLength(2);
+    // Without a VAT split, the entry should still balance — gross flows
+    // straight to the expense line.
+    const sumDebit = je.lines.reduce((s: number, l: any) => s + l.debit, 0);
+    const sumCredit = je.lines.reduce((s: number, l: any) => s + l.credit, 0);
+    expect(sumDebit).toBeCloseTo(sumCredit, 2);
+  });
+
+  it('still produces a balanced entry when OCR net+vat disagrees with total', async () => {
+    // Real-world OCR rounding: 95.24 + 4.78 = 100.02, but reported total is
+    // 100.00. Auto-post must derive total from net+vat so the journal entry
+    // balances and is not bounced into manual review.
+    highConfidenceRule();
+    const result = await runAutopilot('co-1', 'user-1', {
+      ...ocr,
+      vatAmount: 4.78,
+      total: 100, // intentionally inconsistent with net+vat
+    });
+    expect(result.autoPosted).toBe(true);
+    const je = state.journalEntries[0];
+    const sumDebit = je.lines.reduce((s: number, l: any) => s + l.debit, 0);
+    const sumCredit = je.lines.reduce((s: number, l: any) => s + l.credit, 0);
+    expect(Math.abs(sumDebit - sumCredit)).toBeLessThanOrEqual(0.01);
+    expect(sumCredit).toBeCloseTo(100.02, 2); // gross derived from net+vat, not OCR total
+  });
+
+  it('does NOT auto-post when amount is zero, even with high confidence + accepted rule', async () => {
+    highConfidenceRule();
+    const result = await runAutopilot('co-1', 'user-1', { ...ocr, amount: 0, vatAmount: 0, total: 0 });
+    expect(result.autoPosted).toBe(false);
+    expect(result.queuedForReview).toBe(true);
+    expect(state.journalEntries).toHaveLength(0);
+  });
+
+  it('does NOT auto-post when amount is negative', async () => {
+    highConfidenceRule();
+    const result = await runAutopilot('co-1', 'user-1', { ...ocr, amount: -50, vatAmount: 0, total: -50 });
+    expect(result.autoPosted).toBe(false);
+    expect(result.queuedForReview).toBe(true);
+  });
+
+  it('does not crash when merchant is null (defense-in-depth past the route)', async () => {
+    const result = await runAutopilot('co-1', 'user-1', { ...ocr, merchant: null as any });
+    // Empty merchant → no internal match → OpenAI fallback unavailable →
+    // 'Other' at 0.3 confidence → cannot auto-post. Receipt still recorded.
+    expect(result.autoPosted).toBe(false);
+    expect(result.receiptId).toBeTruthy();
+    expect(state.receipts[0].merchant).toBe('');
   });
 });
