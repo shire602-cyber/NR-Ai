@@ -468,6 +468,9 @@ export const receipts = pgTable("receipts", {
   // Phase 2: Receipt Autopilot — true when journal entry was created automatically
   // by the autopilot pipeline (high confidence + ≥5 rule acceptances) without user review.
   autoPosted: boolean("auto_posted").default(false).notNull(),
+  // Phase 2: which classifier produced the suggestion for this receipt.
+  // 'rule' | 'keyword' | 'statistical' | 'openai'. Surfaced as the Internal vs. AI badge.
+  classifierMethod: text("classifier_method"),
   reverseCharge: boolean("reverse_charge").default(false).notNull(), // FTA reverse-charge: buyer self-assesses VAT
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id), // Link to created journal entry
   imageData: text("image_data"),

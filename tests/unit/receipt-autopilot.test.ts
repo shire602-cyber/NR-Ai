@@ -255,4 +255,78 @@ describe('runAutopilot pipeline', () => {
     await runAutopilot('co-1', 'user-1', ocr);
     expect(state.classifications[0].classifierMethod).toBe('keyword');
   });
+
+  it('records classifierMethod on the receipt itself (drives Internal/AI badge)', async () => {
+    await runAutopilot('co-1', 'user-1', ocr);
+    expect(state.receipts[0].classifierMethod).toBe('keyword');
+  });
+
+  it('auto-posts a balanced 3-line entry (net + VAT input + cash) when a VAT input account exists', async () => {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: 'rule-vat',
+        merchantPattern: 'DEWA April 2026',
+        descriptionPattern: null,
+        accountId: 'a-utilities',
+        category: 'Utilities',
+        confidence: 0.95,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const { storage } = await import('../../server/storage');
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    expect(result.autoPosted).toBe(true);
+
+    const calls = (storage.createJournalEntry as any).mock.calls;
+    // Mock fns accumulate calls across tests in the suite — read the latest call.
+    const lines: Array<{ accountId: string; debit: number; credit: number }> = calls[calls.length - 1][1];
+    // Three lines: expense (net), VAT input (vat), cash (gross credit)
+    expect(lines).toHaveLength(3);
+    const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
+    const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+    expect(totalDebit).toBeCloseTo(totalCredit, 6);
+    expect(totalDebit).toBeCloseTo(100, 6);
+    const expenseLine = lines.find((l) => l.accountId === 'a-utilities');
+    const vatLine = lines.find((l) => l.accountId === 'a-vat-input');
+    const cashLine = lines.find((l) => l.accountId === 'a-cash');
+    expect(expenseLine).toBeDefined();
+    expect(expenseLine!.debit).toBeCloseTo(95.24, 2);
+    expect(vatLine).toBeDefined();
+    expect(vatLine!.debit).toBeCloseTo(4.76, 2);
+    expect(cashLine).toBeDefined();
+    expect(cashLine!.credit).toBeCloseTo(100, 2);
+  });
+
+  it('auto-posts a balanced 2-line entry (gross expense + cash) when no VAT input account exists', async () => {
+    // Drop the VAT input account.
+    state.accounts = state.accounts.filter((a) => a.id !== 'a-vat-input');
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: 'rule-novat',
+        merchantPattern: 'DEWA April 2026',
+        descriptionPattern: null,
+        accountId: 'a-utilities',
+        category: 'Utilities',
+        confidence: 0.95,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const { storage } = await import('../../server/storage');
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    expect(result.autoPosted).toBe(true);
+
+    const calls = (storage.createJournalEntry as any).mock.calls;
+    const lines: Array<{ accountId: string; debit: number; credit: number }> = calls[calls.length - 1][1];
+    expect(lines).toHaveLength(2);
+    const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
+    const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
+    expect(totalDebit).toBeCloseTo(totalCredit, 6);
+    expect(totalDebit).toBeCloseTo(100, 6);
+  });
 });
