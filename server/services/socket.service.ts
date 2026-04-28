@@ -16,8 +16,9 @@ function buildAllowedOrigins(): string[] {
 
   if (env.FRONTEND_URL) origins.push(env.FRONTEND_URL);
 
-  const extra = process.env.CORS_ORIGIN;
-  if (extra) origins.push(...extra.split(',').map((s) => s.trim()).filter(Boolean));
+  if (env.CORS_ORIGIN) {
+    origins.push(...env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean));
+  }
 
   if (!isProduction()) {
     origins.push(

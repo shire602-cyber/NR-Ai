@@ -15,6 +15,8 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).default('5000'),
   FRONTEND_URL: z.string().url().optional(),
+  // Comma-separated list of additional allowed origins (used by Socket.io CORS).
+  CORS_ORIGIN: z.string().optional(),
 
   // === AI / OpenAI ===
   OPENAI_API_KEY: z.string().optional(),

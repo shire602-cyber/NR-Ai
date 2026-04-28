@@ -48,6 +48,12 @@ export function applySecurityMiddleware(app: Express): void {
     allowedOrigins.push(env.FRONTEND_URL);
   }
 
+  if (env.CORS_ORIGIN) {
+    allowedOrigins.push(
+      ...env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
+    );
+  }
+
   // In development, allow localhost origins
   if (!isProduction()) {
     allowedOrigins.push(

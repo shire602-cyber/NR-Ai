@@ -54,7 +54,7 @@ export function globalErrorHandler(
   // Handle AppError (our custom errors)
   if (err instanceof AppError) {
     if (!err.isOperational) {
-      log.error({ err, method: req.method, url: req.url }, 'Non-operational error');
+      log.error({ err, requestId: req.id, method: req.method, url: req.url }, 'Non-operational error');
     }
     res.status(err.statusCode).json({
       message: err.message,
@@ -76,6 +76,7 @@ export function globalErrorHandler(
         stack: err.stack,
         name: err.name,
       },
+      requestId: req.id,
       method: req.method,
       url: req.url,
     },
