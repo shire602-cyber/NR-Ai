@@ -5,6 +5,8 @@ import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
+import { classifyOcrReceipt } from '../services/receipt-autopilot.service';
+import { isStandardCategory } from '../services/receipt-classifier.service';
 
 const log = createLogger('ocr');
 
@@ -100,6 +102,39 @@ Respond ONLY with valid JSON matching this exact structure:
   "confidence": number between 0 and 1
 }`;
 
+    // Helper: post-process AI extraction → run our internal classifier on the
+    // merchant. Overrides AI's category if our classifier is more confident
+    // (≥ 0.8) — the same threshold as Phase 2's auto-fallback rule.
+    const enrichWithInternalClassifier = async (aiResult: any) => {
+      try {
+        const merchant = (aiResult?.merchant && String(aiResult.merchant)) || 'Unknown Merchant';
+        const lineItems = Array.isArray(aiResult?.lineItems)
+          ? aiResult.lineItems.map((li: any) => String(li?.description || ''))
+          : [];
+        const subtotal = parseFloat(aiResult?.subtotal) || 0;
+        const result = await classifyOcrReceipt(companyId, {
+          merchant,
+          amount: subtotal,
+          lineItems,
+        });
+        // Only override the AI category when our classifier is at-or-above its
+        // own confidence threshold. The AI's confidence is on the OCR
+        // extraction (numbers/date/total), not the category — so we surface
+        // both and let the caller see how the category was determined.
+        if (result.confidence >= 0.8 && isStandardCategory(result.category)) {
+          aiResult.category = result.category;
+        }
+        aiResult._classifier = {
+          method: result.method,
+          confidence: result.confidence,
+          reason: result.reason,
+        };
+      } catch (err: any) {
+        log.warn({ err: err?.message || err }, 'Internal classifier enrichment failed');
+      }
+      return aiResult;
+    };
+
     // Strategy 1: Vision API with image
     if (imageData) {
       try {
@@ -143,6 +178,7 @@ Respond ONLY with valid JSON matching this exact structure:
 
         const raw = visionResponse.choices[0]?.message?.content || '{}';
         const aiResult = JSON.parse(raw);
+        await enrichWithInternalClassifier(aiResult);
 
         return res.json(buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories));
       } catch (visionError: any) {
@@ -172,6 +208,7 @@ Respond ONLY with valid JSON matching this exact structure:
 
         const raw = textResponse.choices[0]?.message?.content || '{}';
         const aiResult = JSON.parse(raw);
+        await enrichWithInternalClassifier(aiResult);
 
         return res.json(buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories));
       } catch (textError: any) {
@@ -236,6 +273,7 @@ function buildResult(
     category,
     lineItems,
     confidence: typeof aiResult.confidence === 'number' ? Math.min(1, Math.max(0, aiResult.confidence)) : 0.85,
+    classifier: aiResult._classifier || null,
     rawText,
     companyId,
     messageId,

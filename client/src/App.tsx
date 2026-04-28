@@ -54,6 +54,7 @@ const Journal = lazy(() => import('@/pages/Journal'));
 const JournalEntryDetail = lazy(() => import('@/pages/JournalEntryDetail'));
 const Reports = lazy(() => import('@/pages/Reports'));
 const Receipts = lazy(() => import('@/pages/Receipts'));
+const ReceiptAutopilot = lazy(() => import('@/pages/ReceiptAutopilot'));
 const CompanyProfile = lazy(() => import('@/pages/CompanyProfile'));
 
 // Lazy-loaded pages (large or infrequently visited)
@@ -353,6 +354,7 @@ function Router() {
           <Route path="/journal/:id" component={JournalEntryDetail} />
           <Route path="/reports" component={Reports} />
           <Route path="/receipts" component={Receipts} />
+          <Route path="/receipt-autopilot" component={ReceiptAutopilot} />
           <Route path="/contacts" component={CustomerContacts} />
           <Route path="/inventory" component={Inventory} />
           <Route path="/payroll" component={Payroll} />

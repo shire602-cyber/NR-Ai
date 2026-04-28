@@ -90,6 +90,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     icon: ShoppingCart,
     items: [
       { titleKey: 'receipts', url: '/receipts' },
+      { titleKey: 'receiptAutopilot', url: '/receipt-autopilot' },
       { titleKey: 'billPay', url: '/bill-pay' },
       { titleKey: 'expenseClaims', url: '/expense-claims' },
       { titleKey: 'inventory', url: '/inventory' },
