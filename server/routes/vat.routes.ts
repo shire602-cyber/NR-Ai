@@ -2,8 +2,8 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { UAE_VAT_RATE } from "../constants";
 import { pool } from "../db";
+import { aggregateVatReturnTotals } from "../services/vat-return.service";
 
 export function registerVATRoutes(app: Express) {
   // =====================================
@@ -69,34 +69,6 @@ export function registerVATRoutes(app: Express) {
         && inv.status !== 'cancelled';
     });
 
-    // Fetch all invoice lines for categorization by VAT supply type
-    let standardRatedAmount = 0;
-    let standardRatedVat = 0;
-    let zeroRatedAmount = 0;
-    let exemptAmount = 0;
-
-    for (const invoice of periodInvoices) {
-      const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
-
-      for (const line of lines) {
-        const lineAmount = line.quantity * line.unitPrice;
-        const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
-        const supplyType = (line as any).vatSupplyType || 'standard_rated';
-
-        if (supplyType === 'zero_rated' || line.vatRate === 0) {
-          // Zero-rated supplies (exports, international services)
-          zeroRatedAmount += lineAmount;
-        } else if (supplyType === 'exempt') {
-          // Exempt supplies (financial services, residential rent, etc.)
-          exemptAmount += lineAmount;
-        } else {
-          // Standard rated (5% VAT)
-          standardRatedAmount += lineAmount;
-          standardRatedVat += lineVat;
-        }
-      }
-    }
-
     // Calculate input tax from receipts — only posted receipts can be
     // claimed for input VAT recovery on a VAT return.
     const periodReceipts = receipts.filter(rec => {
@@ -105,17 +77,26 @@ export function registerVATRoutes(app: Express) {
       return recDate >= startDate && recDate <= endDate;
     });
 
-    // Split receipts: reverse-charge are reported in Boxes 3 (output) and 10
-    // (input side, subject to partial-exemption recovery), ordinary receipts
-    // feed Box 9.
-    const ordinaryReceipts = periodReceipts.filter(r => !(r as any).reverseCharge);
-    const reverseChargeReceipts = periodReceipts.filter(r => (r as any).reverseCharge);
-
-    const totalExpenses = ordinaryReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
-    const inputTaxGross = ordinaryReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
-
-    let reverseChargeAmount = reverseChargeReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
-    let reverseChargeVatGross = reverseChargeReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
+    // Aggregate sales (from invoice lines) and purchases (from receipts) into
+    // FTA Box totals. All amounts are converted to AED via each record's
+    // exchangeRate; the FTA 201 must be filed in AED. Reverse-charge receipts
+    // feed Boxes 3 (output) and 10 (input, subject to partial exemption);
+    // ordinary receipts feed Box 9.
+    const linesByInvoiceId = new Map<string, any[]>();
+    for (const invoice of periodInvoices) {
+      linesByInvoiceId.set(invoice.id, await storage.getInvoiceLinesByInvoiceId(invoice.id));
+    }
+    const totals = aggregateVatReturnTotals(periodInvoices, linesByInvoiceId, periodReceipts);
+    const {
+      standardRatedAmount,
+      standardRatedVat,
+      zeroRatedAmount,
+      exemptAmount,
+      ordinaryExpenses: totalExpenses,
+      ordinaryInputVatGross: inputTaxGross,
+    } = totals;
+    let reverseChargeAmount = totals.reverseChargeAmount;
+    let reverseChargeVatGross = totals.reverseChargeVatGross;
 
     // Reverse-charge bills (foreign / unregistered vendor purchases) — pulled
     // direct from vendor_bills since the bill module isn't in Drizzle yet.

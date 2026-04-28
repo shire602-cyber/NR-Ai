@@ -190,21 +190,8 @@ function buildResult(
   messageId: string | null,
   validCategories: string[],
 ) {
-  const subtotal = parseNonNegative(aiResult.subtotal);
-  const vatAmount = parseNonNegative(aiResult.vatAmount);
-  // Treat null/undefined as missing (default to 5% for UAE); explicit 0 means zero-rated
-  const vatPercentage = aiResult.vatPercentage === null || aiResult.vatPercentage === undefined
-    ? 5
-    : parseNonNegative(aiResult.vatPercentage);
-  let total = parseNonNegative(aiResult.total);
-
-  // Reconcile amounts if any are missing
-  if (total === 0 && subtotal > 0) {
-    total = parseFloat((subtotal + vatAmount).toFixed(2));
-  }
-  const derivedSubtotal = subtotal > 0 ? subtotal : (total > 0 ? parseFloat((total / (1 + vatPercentage / 100)).toFixed(2)) : 0);
-  const derivedVat = vatAmount > 0 ? vatAmount : parseFloat((derivedSubtotal * vatPercentage / 100).toFixed(2));
-  const derivedTotal = total > 0 ? total : parseFloat((derivedSubtotal + derivedVat).toFixed(2));
+  const { subtotal: derivedSubtotal, vatAmount: derivedVat, total: derivedTotal, vatPercentage } =
+    reconcileReceiptAmounts(aiResult);
 
   const category = validCategories.includes(aiResult.category) ? aiResult.category : 'Other';
 
@@ -246,4 +233,65 @@ function parseNonNegative(val: any): number {
   if (val === null || val === undefined) return 0;
   const n = parseFloat(String(val).replace(/,/g, ''));
   return !isNaN(n) && n >= 0 ? n : 0;
+}
+
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// Reconcile OCR-extracted receipt amounts so subtotal + vatAmount === total.
+// Trusts explicit values when present; only synthesizes the missing piece using
+// the configured VAT rate. When both subtotal and total are explicit, vatAmount
+// is the gap between them — this preserves zero-rated / exempt receipts where
+// total === subtotal and the receipt has no VAT line.
+export function reconcileReceiptAmounts(aiResult: {
+  subtotal?: number | string | null;
+  vatAmount?: number | string | null;
+  vatPercentage?: number | string | null;
+  total?: number | string | null;
+}): { subtotal: number; vatAmount: number; total: number; vatPercentage: number } {
+  const subtotalIn = parseNonNegative(aiResult.subtotal);
+  const vatIn = parseNonNegative(aiResult.vatAmount);
+  // null/undefined means "missing" — default to UAE 5%. Explicit 0 means zero-rated.
+  const vatPercentage = aiResult.vatPercentage === null || aiResult.vatPercentage === undefined
+    ? 5
+    : parseNonNegative(aiResult.vatPercentage);
+  const totalIn = parseNonNegative(aiResult.total);
+  const rateMultiplier = 1 + vatPercentage / 100;
+
+  let subtotal: number;
+  let vatAmount: number;
+  let total: number;
+
+  if (subtotalIn > 0 && totalIn > 0) {
+    // Both endpoints known. The VAT amount is the gap — this correctly yields
+    // 0 for zero-rated/exempt receipts (total === subtotal).
+    subtotal = subtotalIn;
+    total = totalIn;
+    vatAmount = vatIn > 0 ? vatIn : Math.max(0, round2(total - subtotal));
+  } else if (subtotalIn > 0) {
+    // Only subtotal known — synthesize VAT at configured rate, total = sum.
+    subtotal = subtotalIn;
+    vatAmount = vatIn > 0 ? vatIn : round2(subtotal * vatPercentage / 100);
+    total = round2(subtotal + vatAmount);
+  } else if (totalIn > 0) {
+    // Only total known — back out subtotal at configured rate (or via vatIn).
+    total = totalIn;
+    if (vatIn > 0) {
+      vatAmount = vatIn;
+      subtotal = Math.max(0, round2(total - vatAmount));
+    } else if (vatPercentage > 0) {
+      subtotal = round2(total / rateMultiplier);
+      vatAmount = Math.max(0, round2(total - subtotal));
+    } else {
+      subtotal = total;
+      vatAmount = 0;
+    }
+  } else {
+    subtotal = 0;
+    vatAmount = 0;
+    total = 0;
+  }
+
+  return { subtotal, vatAmount, total, vatPercentage };
 }
