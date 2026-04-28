@@ -33,7 +33,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet, ZoomIn } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { VirtualList } from '@/components/VirtualList';
 import { formatCurrency } from '@/lib/format';
@@ -78,6 +78,88 @@ const receiptSchema = z.object({
 
 type ReceiptFormData = z.infer<typeof receiptSchema>;
 
+// Fetches a saved receipt's image via the authenticated server route and
+// returns a blob URL the parent can show as a thumbnail or full preview.
+// Returns `null` while loading and on any failure (including receipts with
+// no stored image), so the caller can render a placeholder instead.
+function useReceiptImageUrl(companyId: string | undefined, receiptId: string, hasImage: boolean): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!companyId || !receiptId || !hasImage) {
+      setUrl(null);
+      return;
+    }
+    let cancelled = false;
+    let createdUrl: string | null = null;
+
+    (async () => {
+      try {
+        const res = await fetch(apiUrl(`/api/companies/${companyId}/receipts/${receiptId}/image`), {
+          credentials: 'include',
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        createdUrl = URL.createObjectURL(blob);
+        setUrl(createdUrl);
+      } catch {
+        // Best effort — leave the placeholder visible.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [companyId, receiptId, hasImage]);
+
+  return url;
+}
+
+interface ReceiptThumbnailProps {
+  companyId: string | undefined;
+  receipt: { id: string; imagePath?: string | null; imageData?: string | null; merchant?: string | null };
+  onPreview: (src: string, merchant?: string) => void;
+}
+
+function ReceiptThumbnail({ companyId, receipt, onPreview }: ReceiptThumbnailProps) {
+  const hasImage = !!(receipt.imagePath || receipt.imageData);
+  const url = useReceiptImageUrl(companyId, receipt.id, hasImage);
+
+  if (!hasImage) {
+    return (
+      <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center" aria-hidden>
+        <FileText className="w-6 h-6" />
+      </div>
+    );
+  }
+
+  if (!url) {
+    return (
+      <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center" aria-hidden>
+        <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPreview(url, receipt.merchant ?? undefined)}
+      className="group relative w-12 h-12 rounded-md overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      aria-label={`Preview receipt image for ${receipt.merchant ?? 'this receipt'}`}
+      data-testid={`receipt-thumbnail-${receipt.id}`}
+    >
+      <img src={url} alt="" className="w-full h-full object-cover" />
+      <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+        <ZoomIn className="w-4 h-4 text-white" />
+      </span>
+    </button>
+  );
+}
+
 export default function Receipts() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -104,6 +186,7 @@ export default function Receipts() {
   const [isExporting, setIsExporting] = useState(false);
   const [isOcrExporting, setIsOcrExporting] = useState(false);
   const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
+  const [imagePreview, setImagePreview] = useState<{ src: string; merchant?: string } | null>(null);
   
   const manualExpenseForm = useForm<ReceiptFormData>({
     resolver: zodResolver(receiptSchema),
@@ -1264,13 +1347,24 @@ export default function Receipts() {
             <Card key={index} data-testid={`receipt-card-${index}`}>
               <CardContent className="p-4">
                 <div className="flex gap-4">
-                  {/* Thumbnail */}
+                  {/* Thumbnail — click to view source image alongside extracted data */}
                   <div className="relative">
-                    <img
-                      src={receipt.preview}
-                      alt={`Receipt ${index + 1}`}
-                      className="w-24 h-24 object-cover rounded-lg border"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setImagePreview({ src: receipt.preview, merchant: receipt.data?.merchant })}
+                      className="group relative block w-24 h-24 rounded-lg overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      aria-label="Preview source image"
+                      data-testid={`ocr-thumbnail-${index}`}
+                    >
+                      <img
+                        src={receipt.preview}
+                        alt={`Receipt ${index + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <ZoomIn className="w-5 h-5 text-white" />
+                      </span>
+                    </button>
                     <Button
                       variant="destructive"
                       size="icon"
@@ -1529,9 +1623,11 @@ export default function Receipts() {
                   data-testid={`receipt-${receipt.id}`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-md bg-muted flex items-center justify-center">
-                      <FileText className="w-6 h-6" />
-                    </div>
+                    <ReceiptThumbnail
+                      companyId={companyId}
+                      receipt={receipt}
+                      onPreview={(src, merchant) => setImagePreview({ src, merchant })}
+                    />
                     <div>
                       <p className="font-medium">{receipt.merchant || 'Unknown Merchant'}</p>
                       <p className="text-sm text-muted-foreground">{receipt.date}</p>
@@ -1620,6 +1716,30 @@ export default function Receipts() {
           )}
         </CardContent>
       </Card>
+
+      {/* Source Image Preview Dialog — lets users compare OCR output against the original. */}
+      <Dialog open={!!imagePreview} onOpenChange={(open) => !open && setImagePreview(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Source receipt image</DialogTitle>
+            <DialogDescription>
+              {imagePreview?.merchant
+                ? `Original scanned image for ${imagePreview.merchant}`
+                : 'Original scanned image'}
+            </DialogDescription>
+          </DialogHeader>
+          {imagePreview && (
+            <div className="flex items-center justify-center bg-muted/30 rounded-md p-2 max-h-[75vh] overflow-auto">
+              <img
+                src={imagePreview.src}
+                alt="Source receipt"
+                className="max-w-full h-auto rounded"
+                data-testid="image-preview-full"
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Receipt Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>

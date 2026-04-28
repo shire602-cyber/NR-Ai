@@ -110,7 +110,8 @@ describe('excel-export.service', () => {
     expect(sheet.getRow(2).getCell(4).numFmt ?? '').toContain('USD');
   });
 
-  it('maps a saved receipt onto an export row, preferring total over amount', () => {
+  it('maps a saved receipt to a tax-exclusive Amount, preferring stored subtotal', () => {
+    // receipts.amount IS the net subtotal — prefer it even when total is present.
     const row = receiptToExportRow({
       date: '2026-04-12',
       merchant: 'Etisalat',
@@ -124,10 +125,21 @@ describe('excel-export.service', () => {
       date: '2026-04-12',
       vendor: 'Etisalat',
       invoiceNumber: 'INV-9000',
-      amount: 105,
+      amount: 100,
       vat: 5,
       currency: 'AED',
     });
+  });
+
+  it('derives Amount from total - vatAmount when subtotal is missing', () => {
+    const row = receiptToExportRow({
+      date: '2026-04-12',
+      merchant: 'Etisalat',
+      total: 105,
+      vatAmount: 5,
+    });
+    expect(row.amount).toBe(100);
+    expect(row.vat).toBe(5);
   });
 
   it('falls back to amount when total is missing', () => {

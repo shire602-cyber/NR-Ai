@@ -177,8 +177,8 @@ export async function downloadReceiptsExcel(
 }
 
 // Convert the in-flight OCR data shape used by the Receipts page into the
-// row shape expected by the server. Lives here so callers don't have to
-// repeat the field mapping.
+// row shape expected by the server. The Amount column is tax-EXCLUSIVE: prefer
+// the OCR-extracted subtotal, otherwise derive it from total - vatAmount.
 export function ocrDataToExportRow(data: {
   merchant?: string;
   date?: string;
@@ -188,11 +188,23 @@ export function ocrDataToExportRow(data: {
   vatAmount?: number;
   currency?: string;
 }): OcrExportRow {
+  let amount: number | null = null;
+  if (typeof data.subtotal === 'number' && Number.isFinite(data.subtotal)) {
+    amount = data.subtotal;
+  } else if (
+    typeof data.total === 'number' && Number.isFinite(data.total) &&
+    typeof data.vatAmount === 'number' && Number.isFinite(data.vatAmount)
+  ) {
+    amount = parseFloat((data.total - data.vatAmount).toFixed(2));
+  } else if (typeof data.total === 'number' && Number.isFinite(data.total)) {
+    amount = data.total;
+  }
+
   return {
     date: data.date ?? null,
     vendor: data.merchant ?? null,
     invoiceNumber: data.invoiceNumber ?? null,
-    amount: data.total ?? data.subtotal ?? null,
+    amount,
     vat: data.vatAmount ?? null,
     currency: data.currency ?? 'AED',
   };

@@ -170,7 +170,9 @@ export async function buildOcrReceiptsWorkbook(
 }
 
 // Maps a saved receipt record (from `storage.getReceipt*`) onto the export row
-// shape. Lives here so frontend and OCR pre-save callers share one schema.
+// shape. The Amount column is tax-EXCLUSIVE: saved receipts store `amount` as
+// the net subtotal already, so we use that directly. If a caller supplies only
+// `total` (incl. VAT) and `vatAmount`, derive the subtotal from total - VAT.
 export function receiptToExportRow(receipt: {
   date?: string | Date | null;
   merchant?: string | null;
@@ -180,9 +182,19 @@ export function receiptToExportRow(receipt: {
   total?: number | string | null;
   currency?: string | null;
 }): OcrExportRow {
-  // Saved receipts store `amount` as the subtotal-equivalent — prefer `total`
-  // (incl. VAT) when available so the export shows what the customer paid.
-  const amount = receipt.total ?? receipt.amount ?? null;
+  const subtotal = toNumber(receipt.amount);
+  const vat = toNumber(receipt.vatAmount);
+  const total = toNumber(receipt.total);
+
+  let amount: number | null;
+  if (subtotal !== null) {
+    amount = subtotal;
+  } else if (total !== null && vat !== null) {
+    amount = parseFloat((total - vat).toFixed(2));
+  } else {
+    amount = total;
+  }
+
   return {
     date: receipt.date ?? null,
     vendor: receipt.merchant ?? null,
