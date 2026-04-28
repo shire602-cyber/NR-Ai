@@ -122,7 +122,7 @@ import {
   invoicePayments
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, isNull, sql, gt, inArray } from "drizzle-orm";
+import { eq, and, desc, lte, isNull, isNotNull, sql, gt, inArray } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
@@ -293,6 +293,9 @@ export interface IStorage {
   createBulkCustomerContacts(contacts: InsertCustomerContact[]): Promise<CustomerContact[]>;
   updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact>;
   deleteCustomerContact(id: string): Promise<void>;
+  deleteAllCustomerContactsByCompanyId(companyId: string): Promise<number>;
+  countCustomerContactsByCompanyId(companyId: string): Promise<number>;
+  countInvoicesWithContactByCompanyId(companyId: string): Promise<number>;
   getCustomerContactByPortalToken(token: string): Promise<CustomerContact | undefined>;
   setPortalAccessToken(contactId: string, token: string, expiresAt: Date): Promise<CustomerContact>;
 
@@ -1461,6 +1464,30 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCustomerContact(id: string): Promise<void> {
     await db.delete(customerContacts).where(eq(customerContacts.id, id));
+  }
+
+  async deleteAllCustomerContactsByCompanyId(companyId: string): Promise<number> {
+    const deleted = await db
+      .delete(customerContacts)
+      .where(eq(customerContacts.companyId, companyId))
+      .returning({ id: customerContacts.id });
+    return deleted.length;
+  }
+
+  async countCustomerContactsByCompanyId(companyId: string): Promise<number> {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(customerContacts)
+      .where(eq(customerContacts.companyId, companyId));
+    return row?.count ?? 0;
+  }
+
+  async countInvoicesWithContactByCompanyId(companyId: string): Promise<number> {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(invoices)
+      .where(and(eq(invoices.companyId, companyId), isNotNull(invoices.contactId)));
+    return row?.count ?? 0;
   }
 
   async getCustomerContactByPortalToken(token: string): Promise<CustomerContact | undefined> {

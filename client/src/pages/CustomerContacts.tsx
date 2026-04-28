@@ -66,6 +66,8 @@ export default function CustomerContacts() {
   const [portalLinkDialog, setPortalLinkDialog] = useState<{ open: boolean; url: string; contactName: string }>({ open: false, url: '', contactName: '' });
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
   const [composerContact, setComposerContact] = useState<CustomerContact | null>(null);
+  const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [clearAllConfirmation, setClearAllConfirmation] = useState('');
 
   const { data: contacts = [], isLoading } = useQuery<CustomerContact[]>({
     queryKey: ['/api/companies', companyId, 'customer-contacts'],
@@ -133,6 +135,32 @@ export default function CustomerContacts() {
     },
     onError: (error: any) => {
       toast({ variant: 'destructive', title: 'Failed to delete contact', description: error?.message });
+    },
+  });
+
+  const { data: clearPreview } = useQuery<{ contactCount: number; linkedInvoiceCount: number }>({
+    queryKey: ['/api/companies', companyId, 'customer-contacts/clear-preview'],
+    enabled: !!companyId && showClearAllDialog,
+  });
+
+  const clearAllMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('DELETE', `/api/companies/${companyId}/customer-contacts/clear-all`, {
+        confirm: 'DELETE ALL',
+      });
+    },
+    onSuccess: (result: { deletedCount: number; message: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts/clear-preview'] });
+      setShowClearAllDialog(false);
+      setClearAllConfirmation('');
+      toast({
+        title: 'All contacts cleared',
+        description: result.message,
+      });
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Failed to clear contacts', description: error?.message });
     },
   });
 
@@ -380,6 +408,18 @@ export default function CustomerContacts() {
           <Button variant="outline" onClick={downloadTemplate} data-testid="button-download-template">
             <Download className="w-4 h-4 mr-2" />
             Download Template
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              setClearAllConfirmation('');
+              setShowClearAllDialog(true);
+            }}
+            disabled={contacts.length === 0}
+            data-testid="button-clear-all-contacts"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Clear All
           </Button>
           <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
             <DialogTrigger asChild>
@@ -840,6 +880,83 @@ export default function CustomerContacts() {
         } : null}
         defaultTemplateId="general_reminder"
       />
+
+      <AlertDialog
+        open={showClearAllDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowClearAllDialog(false);
+            setClearAllConfirmation('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="w-5 h-5" />
+              Delete ALL contacts?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>
+                  This will permanently delete{' '}
+                  <strong>
+                    {clearPreview?.contactCount ?? contacts.length} contact
+                    {(clearPreview?.contactCount ?? contacts.length) === 1 ? '' : 's'}
+                  </strong>{' '}
+                  for this company. This action cannot be undone.
+                </p>
+                {clearPreview && clearPreview.linkedInvoiceCount > 0 && (
+                  <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3">
+                    <p className="font-medium text-destructive">
+                      {clearPreview.linkedInvoiceCount} invoice
+                      {clearPreview.linkedInvoiceCount === 1 ? ' is' : 's are'} linked to these contacts.
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      Invoices will be kept, but their customer link will be cleared. You may need to relink
+                      them after re-importing your client list.
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="clear-all-confirm">
+                    Type <strong>DELETE ALL</strong> to confirm:
+                  </Label>
+                  <Input
+                    id="clear-all-confirm"
+                    value={clearAllConfirmation}
+                    onChange={(e) => setClearAllConfirmation(e.target.value)}
+                    placeholder="DELETE ALL"
+                    autoComplete="off"
+                    data-testid="input-clear-all-confirm"
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-clear-all">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                clearAllMutation.mutate();
+              }}
+              disabled={clearAllConfirmation !== 'DELETE ALL' || clearAllMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-clear-all"
+            >
+              {clearAllMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete all contacts'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!contactToDelete} onOpenChange={(open) => { if (!open) setContactToDelete(null); }}>
         <AlertDialogContent>
