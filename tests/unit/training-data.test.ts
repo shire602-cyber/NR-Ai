@@ -33,6 +33,8 @@ import {
   setClassifierConfig,
   getClassifierConfig,
   clearAllModels,
+  getModel,
+  invalidateModel,
 } from '../../server/services/training-data.service';
 
 beforeEach(() => {
@@ -139,5 +141,102 @@ describe('getClassifierConfig defaults', () => {
     expect(cfg.mode).toBe('hybrid');
     expect(cfg.accuracyThreshold).toBe(0.8);
     expect(cfg.autopilotEnabled).toBe(false);
+  });
+});
+
+describe('multi-tenancy isolation', () => {
+  // The model cache is keyed by companyId. Building a model for company A
+  // must never serve A's training data when company B asks for its model.
+  it('caches a separate model per companyId — never cross-contaminates', async () => {
+    // Company A: 1 rule + 1 training example
+    queryScript.push({
+      rows: [
+        {
+          id: 'rule-A',
+          merchant_pattern: 'DEWA',
+          description_pattern: null,
+          account_id: 'acc-A',
+          account_name: 'Utilities Expense',
+          confidence: 0.9,
+          times_applied: 10,
+          times_accepted: 8,
+          times_rejected: 2,
+        },
+      ],
+    });
+    queryScript.push({
+      rows: [{ merchant: 'DEWA', category: 'Utilities', account_id: 'acc-A' }],
+    });
+    const modelA = await getModel('co-A');
+    expect(modelA.rules).toHaveLength(1);
+    expect(modelA.rules[0].id).toBe('rule-A');
+    expect(modelA.trainingExamples).toHaveLength(1);
+
+    // Company B: empty model
+    queryScript.push({ rows: [] }); // rules
+    queryScript.push({ rows: [] }); // training examples
+    const modelB = await getModel('co-B');
+    expect(modelB.rules).toHaveLength(0);
+    expect(modelB.trainingExamples).toHaveLength(0);
+
+    // Re-fetching company A's model must not have been clobbered by B's load.
+    // No new query script entries pushed → if A's cache was lost the call
+    // would return empty (the default mock returns { rows: [] }).
+    const modelARefetched = await getModel('co-A');
+    expect(modelARefetched.rules).toHaveLength(1);
+    expect(modelARefetched.rules[0].id).toBe('rule-A');
+  });
+
+  it('invalidateModel only affects the targeted company', async () => {
+    // Build co-A and co-B caches.
+    queryScript.push({
+      rows: [
+        {
+          id: 'rule-A',
+          merchant_pattern: 'DEWA',
+          description_pattern: null,
+          account_id: 'acc-A',
+          account_name: 'Utilities Expense',
+          confidence: 0.9,
+          times_applied: 10,
+          times_accepted: 8,
+          times_rejected: 2,
+        },
+      ],
+    });
+    queryScript.push({ rows: [] });
+    await getModel('co-A');
+
+    queryScript.push({ rows: [] });
+    queryScript.push({ rows: [] });
+    await getModel('co-B');
+
+    // Invalidate ONLY co-A.
+    invalidateModel('co-A');
+
+    // co-A must reload (next call drains the script we push now).
+    queryScript.push({
+      rows: [
+        {
+          id: 'rule-A2',
+          merchant_pattern: 'DEWA',
+          description_pattern: null,
+          account_id: 'acc-A',
+          account_name: 'Utilities Expense',
+          confidence: 0.92,
+          times_applied: 11,
+          times_accepted: 9,
+          times_rejected: 2,
+        },
+      ],
+    });
+    queryScript.push({ rows: [] });
+    const reloadedA = await getModel('co-A');
+    expect(reloadedA.rules[0].id).toBe('rule-A2');
+
+    // co-B must still serve its cached (empty) model — no new queries needed.
+    const modelB = await getModel('co-B');
+    expect(modelB.rules).toHaveLength(0);
+    expect(modelB.trainingExamples).toHaveLength(0);
   });
 });

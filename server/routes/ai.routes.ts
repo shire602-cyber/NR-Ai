@@ -1045,24 +1045,36 @@ Respond with JSON:
       const { classificationId, wasAccepted, userSelectedAccountId } = req.body;
       const userId = (req as any).user?.id;
 
+      if (!classificationId || typeof classificationId !== 'string') {
+        return res.status(400).json({ message: 'classificationId is required' });
+      }
+
+      // Verify the classification belongs to a company the caller can access
+      // BEFORE mutating it. Without this read-then-check, a malicious user
+      // could mutate (and corrupt the training data of) any tenant's row by
+      // submitting that row's id.
+      const existing = await storage.getTransactionClassification(classificationId);
+      if (!existing) {
+        return res.status(404).json({ message: 'Classification not found' });
+      }
+      const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
       const classification = await storage.updateTransactionClassification(classificationId, {
         wasAccepted,
         userSelectedAccountId,
       });
 
       // Phase 2: invalidate the cached classifier model and re-evaluate the
-      // accuracy failsafe. We have to re-fetch the row to know the company,
-      // since the request body may not include it (frontend backwards compat).
-      if (classification?.companyId) {
-        const hasAccess = await storage.hasCompanyAccess(userId, classification.companyId);
-        if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-        await recordClassificationFeedback(
-          classification.companyId,
-          classificationId,
-          !!wasAccepted,
-          userSelectedAccountId,
-        );
-      }
+      // accuracy failsafe for the company that owns this classification.
+      await recordClassificationFeedback(
+        existing.companyId,
+        classificationId,
+        !!wasAccepted,
+        userSelectedAccountId,
+      );
 
       res.json(classification);
     } catch (error: any) {

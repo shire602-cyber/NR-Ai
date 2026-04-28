@@ -326,6 +326,7 @@ export interface IStorage {
 
   // Transaction Classifications
   createTransactionClassification(classification: InsertTransactionClassification): Promise<TransactionClassification>;
+  getTransactionClassification(id: string): Promise<TransactionClassification | undefined>;
   getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]>;
   updateTransactionClassification(id: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification>;
 
@@ -1616,6 +1617,15 @@ export class DatabaseStorage implements IStorage {
       .values(insertClassification)
       .returning();
     return classification;
+  }
+
+  async getTransactionClassification(id: string): Promise<TransactionClassification | undefined> {
+    const [classification] = await db
+      .select()
+      .from(transactionClassifications)
+      .where(eq(transactionClassifications.id, id))
+      .limit(1);
+    return classification || undefined;
   }
 
   async getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]> {
