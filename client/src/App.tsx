@@ -544,9 +544,6 @@ function Router() {
           <Route path="/firm/bulk">
             <FirmRoute><BulkOperations /></FirmRoute>
           </Route>
-          <Route path="/firm/health">
-            <FirmRoute><FirmHealth /></FirmRoute>
-          </Route>
           <Route path="/firm/comms">
             <FirmRoute><FirmComms /></FirmRoute>
           </Route>

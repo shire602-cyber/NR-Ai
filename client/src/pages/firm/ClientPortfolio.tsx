@@ -4,7 +4,7 @@ import { useLocation } from 'wouter';
 import {
   Building2, Plus, Search, LayoutGrid, List,
   ChevronRight, Users, Calendar,
-  BookOpen, Filter, Upload, AlertTriangle, FileText, Receipt, FolderOpen,
+  BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -84,13 +84,11 @@ function StatusBadge({ active }: { active: boolean }) {
 }
 
 function clientNeedsAttention(c: ClientWithStats): boolean {
-  if (c.outstandingAr > 0) {
-    // Outstanding receivables are flagged when a recent invoice is overdue.
-    if (c.vatStatus && c.vatStatus.status !== 'filed' && c.vatStatus.status !== 'submitted') {
-      const due = new Date(c.vatStatus.dueDate);
-      if (due < new Date()) return true;
-    }
-  }
+  // Mirror /api/firm/overview: a client needs attention if AR is outstanding
+  // OR the latest VAT return is past its due date and not yet filed/submitted.
+  // The list endpoint doesn't expose per-invoice due dates, so outstandingAr>0
+  // is used as the AR proxy (slightly broader than server's overdue-only count).
+  if (c.outstandingAr > 0) return true;
   if (c.vatStatus && c.vatStatus.status !== 'filed' && c.vatStatus.status !== 'submitted') {
     const due = new Date(c.vatStatus.dueDate);
     if (due < new Date()) return true;
