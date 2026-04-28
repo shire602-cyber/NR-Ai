@@ -1,18 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 
-// Mock the db module before importing rbac so the firmStaffAssignments table
-// query in getAccessibleCompanyIds is intercepted.
+// Mock the db module before importing rbac so the queries inside
+// getAccessibleCompanyIds (firm_staff_assignments + company_users) are
+// intercepted. Both queries chain `.from().innerJoin().where()`, so the mock
+// supports that shape (and also bare `.from().where()` for forward-compat).
 const mockDbSelect = vi.fn();
-vi.mock('../../server/db', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => mockDbSelect(),
-      }),
-    }),
-  },
-}));
+vi.mock('../../server/db', () => {
+  const where = () => mockDbSelect();
+  const builder: any = { where, innerJoin: () => ({ where }) };
+  return {
+    db: {
+      select: () => ({ from: () => builder }),
+    },
+  };
+});
 
 import { requireFirmRole, getAccessibleCompanyIds } from '../../server/middleware/rbac';
 
@@ -98,27 +100,37 @@ describe('rbac.getAccessibleCompanyIds', () => {
     expect(mockDbSelect).not.toHaveBeenCalled();
   });
 
-  it('returns the assigned company ids for firm_admin', async () => {
-    mockDbSelect.mockResolvedValueOnce([
-      { companyId: 'c1' },
-      { companyId: 'c2' },
-    ]);
+  it('unions firm_staff_assignments + company_users for firm_admin', async () => {
+    // First call → firm_staff_assignments rows; second → company_users rows.
+    mockDbSelect.mockResolvedValueOnce([{ companyId: 'c1' }]);
+    mockDbSelect.mockResolvedValueOnce([{ companyId: 'c2' }]);
 
     const result = await getAccessibleCompanyIds('user-1', 'firm_admin');
-    expect(result).toEqual(['c1', 'c2']);
+    expect(result).not.toBeNull();
+    expect((result as string[]).sort()).toEqual(['c1', 'c2']);
   });
 
-  it('returns an empty array when firm_admin has no assignments', async () => {
+  it('deduplicates companies that appear in both access tables', async () => {
+    mockDbSelect.mockResolvedValueOnce([{ companyId: 'c1' }, { companyId: 'c2' }]);
+    mockDbSelect.mockResolvedValueOnce([{ companyId: 'c2' }, { companyId: 'c3' }]);
+
+    const result = await getAccessibleCompanyIds('user-1', 'firm_admin');
+    expect((result as string[]).sort()).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('returns an empty array when firm_admin has no access via either table', async () => {
+    mockDbSelect.mockResolvedValueOnce([]);
     mockDbSelect.mockResolvedValueOnce([]);
 
     const result = await getAccessibleCompanyIds('user-1', 'firm_admin');
     expect(result).toEqual([]);
   });
 
-  it('returns the assignments list for unknown role strings (treated as restricted)', async () => {
+  it('treats unknown role strings as restricted (does not return null)', async () => {
     // Defensive default: unknown roles fall through to the restricted-list
     // path so a misconfigured user never accidentally sees every client.
     mockDbSelect.mockResolvedValueOnce([{ companyId: 'c1' }]);
+    mockDbSelect.mockResolvedValueOnce([]);
     const result = await getAccessibleCompanyIds('user-1', 'visitor');
     expect(Array.isArray(result)).toBe(true);
   });
