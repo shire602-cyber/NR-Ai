@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import type { Express } from 'express';
 import { z } from 'zod';
+import * as XLSX from 'xlsx';
 
 import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
@@ -9,6 +10,7 @@ import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import { mapImportRow, validateImportedClient } from '../services/firm-clients.service';
 import { db } from '../db';
 import { eq, and, count, sum, max, or, desc, inArray, sql, lt, gte, ne, lte } from 'drizzle-orm';
 import {
@@ -143,6 +145,10 @@ const assignStaffSchema = z.object({
   role: z.string().default('accountant'),
 });
 
+const importPayloadSchema = z.object({
+  rows: z.array(z.record(z.any())).min(1).max(500),
+});
+
 export function registerFirmRoutes(app: Express): void {
   const router = Router();
 
@@ -232,7 +238,7 @@ export function registerFirmRoutes(app: Express): void {
   router.post(
     '/firm/clients',
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
       const validated = createClientSchema.parse(req.body);
 
       const existing = await storage.getCompanyByName(validated.name);
@@ -260,6 +266,15 @@ export function registerFirmRoutes(app: Express): void {
       });
 
       await seedChartOfAccounts(company.id);
+
+      // Auto-assign firm_admin who created the client so they retain access.
+      // firm_owner already has implicit access to all client companies via firmRole.
+      if (firmRole === 'firm_admin') {
+        await db
+          .insert(companyUsers)
+          .values({ companyId: company.id, userId, role: 'accountant' })
+          .onConflictDoNothing();
+      }
 
       await storage.createActivityLog({
         userId,
@@ -308,16 +323,30 @@ export function registerFirmRoutes(app: Express): void {
   );
 
   // ─── POST /api/firm/clients/:companyId/assign-staff ───────────────────────
+  // Only firm_owner may assign or unassign staff. Without this restriction a
+  // firm_admin could call this endpoint with any companyId — there is no
+  // per-company access check inside the handler — and self-assign onto an
+  // unrelated client (or even a customer-type self-signup company), gaining
+  // full read/write access via the company_users → hasCompanyAccess path.
   router.post(
     '/firm/clients/:companyId/assign-staff',
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const requestingUserId = (req as any).user.id;
+      const requestingFirmRole = (req as any).user.firmRole as string | null;
+
+      if (requestingFirmRole !== 'firm_owner') {
+        return res.status(403).json({ message: 'Only firm owners may assign staff' });
+      }
+
       const { staffUserId, action, role } = assignStaffSchema.parse(req.body);
 
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: 'Client not found' });
+      }
+      if (company.companyType !== 'client' || company.deletedAt) {
+        return res.status(400).json({ message: 'Company is not an active NRA client' });
       }
 
       const staffUser = await storage.getUser(staffUserId);
@@ -605,6 +634,326 @@ export function registerFirmRoutes(app: Express): void {
       );
 
       res.json(deadlines);
+    })
+  );
+
+  // ─── POST /api/firm/clients/:companyId/switch ──────────────────────────────
+  // Switch the firm staff member's active workspace to this client's company.
+  // The frontend persists the selection client-side; this endpoint validates
+  // access and returns the company so the UI can update immediately.
+  router.post(
+    '/firm/clients/:companyId/switch',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const { id: userId, firmRole } = (req as any).user;
+
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
+        return res.status(403).json({ message: 'Access denied to this client' });
+      }
+
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ message: 'Client not found' });
+      }
+      if (company.companyType !== 'client') {
+        return res.status(400).json({ message: 'Company is not an NRA client' });
+      }
+
+      await storage.createActivityLog({
+        userId,
+        companyId,
+        action: 'view',
+        entityType: 'company',
+        entityId: companyId,
+        description: `NRA staff switched into ${company.name}`,
+      });
+
+      res.json({ company });
+    })
+  );
+
+  // ─── DELETE /api/firm/clients/:companyId ───────────────────────────────────
+  // Soft-delete a client (FTA 5-year retention rules require we never hard-
+  // delete). The company is hidden from listings via deletedAt.
+  router.delete(
+    '/firm/clients/:companyId',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const { id: userId, firmRole } = (req as any).user;
+
+      // Only firm_owner may archive a client.
+      if (firmRole !== 'firm_owner') {
+        return res.status(403).json({ message: 'Only firm owners may archive clients' });
+      }
+
+      const company = await storage.getCompany(companyId);
+      if (!company) {
+        return res.status(404).json({ message: 'Client not found' });
+      }
+      if (company.companyType !== 'client') {
+        return res.status(400).json({ message: 'Company is not an NRA client' });
+      }
+
+      await db
+        .update(companies)
+        .set({ deletedAt: new Date(), isActive: false })
+        .where(eq(companies.id, companyId));
+
+      await storage.createActivityLog({
+        userId,
+        companyId,
+        action: 'delete',
+        entityType: 'company',
+        entityId: companyId,
+        description: `NRA firm archived client: ${company.name}`,
+      });
+
+      res.json({ success: true, archivedAt: new Date().toISOString() });
+    })
+  );
+
+  // ─── POST /api/firm/clients/import ─────────────────────────────────────────
+  // Bulk-create clients from a parsed CSV/Excel payload. Each row becomes a
+  // company entity (companyType=client) plus a seeded chart of accounts. Rows
+  // with missing names or duplicate company names are returned as errors so
+  // the user can correct and resubmit. Supports two input forms:
+  //   - { rows: [{...}, {...}] }      already-parsed JSON rows
+  //   - { fileData: <base64 CSV/XLSX> } raw file (server-parsed)
+  router.post(
+    '/firm/clients/import',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+
+      // firm_admin is allowed to import (their imports are auto-assigned to them);
+      // firm_owner can import freely.
+      if (firmRole !== 'firm_owner' && firmRole !== 'firm_admin') {
+        return res.status(403).json({ message: 'Firm role required' });
+      }
+
+      // Accept either pre-parsed rows or a base64-encoded file.
+      let rows: Record<string, any>[];
+      if (req.body?.fileData) {
+        try {
+          const buffer = Buffer.from(req.body.fileData, 'base64');
+          const workbook = XLSX.read(buffer, { type: 'buffer' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' }) as Record<string, any>[];
+        } catch (err: any) {
+          return res.status(400).json({ message: `Could not parse file: ${err.message}` });
+        }
+      } else {
+        const parsed = importPayloadSchema.safeParse(req.body);
+        if (!parsed.success) {
+          return res.status(400).json({ message: 'Invalid payload', errors: parsed.error.errors });
+        }
+        rows = parsed.data.rows;
+      }
+
+      if (!rows || rows.length === 0) {
+        return res.status(400).json({ message: 'No rows to import' });
+      }
+      if (rows.length > 500) {
+        return res.status(400).json({ message: 'Imports limited to 500 rows per call' });
+      }
+
+      const results = {
+        created: [] as { id: string; name: string }[],
+        errors: [] as { row: number; name: string; error: string }[],
+      };
+
+      for (let i = 0; i < rows.length; i++) {
+        const raw = rows[i];
+        const mapped = mapImportRow(raw);
+        if ('error' in mapped) {
+          results.errors.push({ row: i + 1, name: '', error: mapped.error });
+          continue;
+        }
+
+        const validated = validateImportedClient(mapped);
+        if (!validated.ok) {
+          results.errors.push({
+            row: i + 1,
+            name: mapped.name,
+            error: validated.error,
+          });
+          continue;
+        }
+
+        try {
+          const existing = await storage.getCompanyByName(validated.value.name);
+          if (existing) {
+            results.errors.push({
+              row: i + 1,
+              name: validated.value.name,
+              error: 'A company with this name already exists',
+            });
+            continue;
+          }
+
+          const company = await storage.createCompany({
+            name: validated.value.name,
+            baseCurrency: 'AED',
+            locale: 'en',
+            companyType: 'client',
+            trnVatNumber: validated.value.trnVatNumber || undefined,
+            industry: validated.value.industry || undefined,
+            legalStructure: validated.value.legalStructure || undefined,
+            contactEmail: validated.value.contactEmail || undefined,
+            contactPhone: validated.value.contactPhone || undefined,
+            businessAddress: validated.value.businessAddress || undefined,
+            emirate: validated.value.emirate || 'dubai',
+            vatFilingFrequency: validated.value.vatFilingFrequency || 'quarterly',
+            registrationNumber: validated.value.registrationNumber || undefined,
+            websiteUrl: validated.value.websiteUrl || undefined,
+          });
+
+          await seedChartOfAccounts(company.id);
+
+          // firm_admin who runs the import becomes auto-assigned so they can
+          // continue to manage what they imported.
+          if (firmRole === 'firm_admin') {
+            await db
+              .insert(companyUsers)
+              .values({ companyId: company.id, userId, role: 'accountant' })
+              .onConflictDoNothing();
+          }
+
+          await storage.createActivityLog({
+            userId,
+            companyId: company.id,
+            action: 'create',
+            entityType: 'company',
+            entityId: company.id,
+            description: `Bulk-imported NRA client: ${company.name}`,
+          });
+
+          results.created.push({ id: company.id, name: company.name });
+        } catch (err: any) {
+          results.errors.push({
+            row: i + 1,
+            name: validated.value.name,
+            error: err.message ?? 'Unknown error',
+          });
+        }
+      }
+
+      res.json({
+        message: `Imported ${results.created.length} clients (${results.errors.length} errors)`,
+        ...results,
+      });
+    })
+  );
+
+  // ─── GET /api/firm/overview ────────────────────────────────────────────────
+  // Top-level summary cards for the firm dashboard: total clients, VAT
+  // returns due in next 30 days, total overdue receivables, attention count.
+  router.get(
+    '/firm/overview',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+
+      let clientIds: string[];
+      if (accessibleIds === null) {
+        const all = await db
+          .select({ id: companies.id })
+          .from(companies)
+          .where(and(eq(companies.companyType, 'client'), sql`${companies.deletedAt} IS NULL`));
+        clientIds = all.map((c: { id: string }) => c.id);
+      } else {
+        clientIds = accessibleIds;
+      }
+
+      if (clientIds.length === 0) {
+        return res.json({
+          totalClients: 0,
+          vatDueThisMonth: 0,
+          overdueAr: 0,
+          needsAttention: 0,
+          missingDocuments: 0,
+        });
+      }
+
+      const now = new Date();
+      const monthAhead = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      const [vatDueRow, arRow, missingDocsRow] = await Promise.all([
+        db
+          .select({ cnt: count() })
+          .from(vatReturns)
+          .where(
+            and(
+              inArray(vatReturns.companyId, clientIds),
+              ne(vatReturns.status, 'filed'),
+              ne(vatReturns.status, 'submitted'),
+              lte(vatReturns.dueDate, monthAhead),
+            ),
+          )
+          .then((r: { cnt: number }[]) => r[0]),
+        db
+          .select({ total: sum(invoices.total) })
+          .from(invoices)
+          .where(
+            and(
+              inArray(invoices.companyId, clientIds),
+              or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial')),
+              lt(invoices.dueDate, now),
+            ),
+          )
+          .then((r: { total: string | null }[]) => r[0]),
+        // Clients without ANY invoices yet — proxy for "missing docs"
+        db
+          .select({ companyId: invoices.companyId })
+          .from(invoices)
+          .where(inArray(invoices.companyId, clientIds))
+          .groupBy(invoices.companyId)
+          .then((rows: { companyId: string }[]) => rows.map(r => r.companyId)),
+      ]);
+
+      const clientsWithInvoices = new Set(missingDocsRow as string[]);
+      const missingDocuments = clientIds.filter(id => !clientsWithInvoices.has(id)).length;
+
+      const overdueAr = Number(arRow?.total ?? 0);
+      const vatDueThisMonth = Number(vatDueRow?.cnt ?? 0);
+
+      // "Needs attention" combines overdue VAT + clients with overdue AR
+      const overdueArCompanies = await db
+        .select({ companyId: invoices.companyId })
+        .from(invoices)
+        .where(
+          and(
+            inArray(invoices.companyId, clientIds),
+            or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial')),
+            lt(invoices.dueDate, now),
+          ),
+        )
+        .groupBy(invoices.companyId);
+
+      const overdueVatCompanies = await db
+        .select({ companyId: vatReturns.companyId })
+        .from(vatReturns)
+        .where(
+          and(
+            inArray(vatReturns.companyId, clientIds),
+            ne(vatReturns.status, 'filed'),
+            ne(vatReturns.status, 'submitted'),
+            lt(vatReturns.dueDate, now),
+          ),
+        )
+        .groupBy(vatReturns.companyId);
+
+      const attention = new Set<string>();
+      for (const r of overdueArCompanies as { companyId: string }[]) attention.add(r.companyId);
+      for (const r of overdueVatCompanies as { companyId: string }[]) attention.add(r.companyId);
+
+      res.json({
+        totalClients: clientIds.length,
+        vatDueThisMonth,
+        overdueAr,
+        needsAttention: attention.size,
+        missingDocuments,
+      });
     })
   );
 

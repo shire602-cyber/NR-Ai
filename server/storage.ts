@@ -64,6 +64,7 @@ import {
   users,
   companies,
   companyUsers,
+  firmStaffAssignments,
   accounts,
   journalEntries,
   journalLines,
@@ -180,7 +181,17 @@ export interface IStorage {
   createCompanyUser(companyUser: InsertCompanyUser): Promise<CompanyUser>;
   getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined>;
   getCompanyUsersByCompanyId(companyId: string): Promise<CompanyUser[]>;
-  hasCompanyAccess(userId: string, companyId: string): Promise<boolean>;
+  /**
+   * Check whether the user has access to a company. Optional firmRole allows
+   * firm_owner (all client companies) or firm_admin (assigned client companies)
+   * to be treated as having access without an explicit company_users row.
+   */
+  hasCompanyAccess(userId: string, companyId: string, firmRole?: string | null): Promise<boolean>;
+  /**
+   * Return all companies a user can access — direct company_users membership
+   * plus firm-accessible client companies if firmRole is supplied.
+   */
+  getAccessibleCompanies(userId: string, firmRole?: string | null): Promise<Company[]>;
   
   // Accounts
   getAccount(id: string, companyId: string): Promise<Account | undefined>;
@@ -786,9 +797,97 @@ export class DatabaseStorage implements IStorage {
     return companyUser || undefined;
   }
 
-  async hasCompanyAccess(userId: string, companyId: string): Promise<boolean> {
-    const result = await this.getUserRole(companyId, userId);
-    return !!result;
+  async hasCompanyAccess(
+    userId: string,
+    companyId: string,
+    firmRole?: string | null,
+  ): Promise<boolean> {
+    // Direct company_users membership.
+    if (await this.getUserRole(companyId, userId)) return true;
+
+    // Look up firm role if caller didn't pass it. This makes all existing
+    // call sites firm-aware without per-route changes.
+    let role: string | null = firmRole ?? null;
+    if (firmRole === undefined) {
+      const [u] = await db
+        .select({ firmRole: users.firmRole })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+      role = u?.firmRole ?? null;
+    }
+
+    if (role !== 'firm_owner' && role !== 'firm_admin') return false;
+
+    const company = await this.getCompany(companyId);
+    if (!company || company.companyType !== 'client') return false;
+
+    if (role === 'firm_owner') return true;
+
+    // firm_admin: must have an explicit assignment.
+    const [assignment] = await db
+      .select({ id: firmStaffAssignments.id })
+      .from(firmStaffAssignments)
+      .where(
+        and(
+          eq(firmStaffAssignments.userId, userId),
+          eq(firmStaffAssignments.companyId, companyId),
+        ),
+      )
+      .limit(1);
+    return !!assignment;
+  }
+
+  async getAccessibleCompanies(
+    userId: string,
+    firmRole?: string | null,
+  ): Promise<Company[]> {
+    const direct = await this.getCompaniesByUserId(userId);
+
+    if (firmRole !== 'firm_owner' && firmRole !== 'firm_admin') {
+      return direct;
+    }
+
+    // Add firm-accessible client companies (not already in direct list).
+    const directIds = new Set(direct.map(c => c.id));
+
+    let firmCompanies: Company[];
+    if (firmRole === 'firm_owner') {
+      firmCompanies = await db
+        .select()
+        .from(companies)
+        .where(
+          and(eq(companies.companyType, 'client'), isNull(companies.deletedAt)),
+        );
+    } else {
+      // firm_admin: only assigned companies.
+      const assignedIds = await db
+        .select({ companyId: firmStaffAssignments.companyId })
+        .from(firmStaffAssignments)
+        .where(eq(firmStaffAssignments.userId, userId));
+
+      const ids = assignedIds.map((a: { companyId: string }) => a.companyId);
+      if (ids.length === 0) {
+        firmCompanies = [];
+      } else {
+        firmCompanies = await db
+          .select()
+          .from(companies)
+          .where(
+            and(
+              inArray(companies.id, ids),
+              eq(companies.companyType, 'client'),
+              isNull(companies.deletedAt),
+            ),
+          );
+      }
+    }
+
+    const merged = [...direct];
+    for (const c of firmCompanies) {
+      if (!directIds.has(c.id)) merged.push(c);
+    }
+    return merged;
   }
 
   async getCompanyUsersByCompanyId(companyId: string): Promise<CompanyUser[]> {

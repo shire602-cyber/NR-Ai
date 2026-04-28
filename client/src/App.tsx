@@ -11,7 +11,8 @@ import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { ErrorBoundary, SectionBoundary } from '@/components/ErrorBoundary';
 import { useI18n, useTranslation } from '@/lib/i18n';
 import { getToken } from '@/lib/auth';
-import { User } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { User, Building2, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 import { PageSkeleton } from '@/components/PageSkeleton';
@@ -144,6 +145,7 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import { RouteGuard } from '@/components/layout/RouteGuard';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { ActiveCompanyProvider, useActiveCompany } from '@/components/ActiveCompanyProvider';
 import { RTLProvider } from '@/components/RTLProvider';
 import '@/styles/rtl.css';
 import '@/styles/mobile.css';
@@ -154,13 +156,60 @@ import { CommandPaletteProvider } from '@/components/CommandPalette';
 import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
 import { SkipLink } from '@/components/SkipLink';
 
+function FirmContextBanner() {
+  const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
+  const [, navigate] = useLocation();
+
+  if (!isFirmContext || !company) return null;
+
+  const goBackToFirm = () => {
+    clearActiveClientCompany();
+    navigate('/firm/clients');
+  };
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 bg-primary/10 border-b border-primary/20 px-3 py-2 md:px-4"
+      data-testid="firm-context-banner"
+    >
+      <div className="flex items-center gap-2 min-w-0">
+        <Building2 className="w-4 h-4 text-primary shrink-0" />
+        <span className="text-xs uppercase tracking-wide text-primary/80 shrink-0">Managing</span>
+        <span className="font-semibold text-sm truncate" data-testid="firm-context-company-name">
+          {company.name}
+        </span>
+        {company.trnVatNumber && (
+          <span className="text-xs text-muted-foreground hidden sm:inline">
+            · TRN {company.trnVatNumber}
+          </span>
+        )}
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={goBackToFirm}
+        data-testid="button-back-to-firm"
+      >
+        <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
+        Back to Firm
+      </Button>
+    </div>
+  );
+}
+
 function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
+  const { isFirmContext } = useActiveCompany();
 
   useEffect(() => {
     if (companyLoading || location === '/onboarding') return;
+
+    // Skip the customer-onboarding redirect when a firm staffer is operating
+    // inside a client workspace — the client's onboarding state is the firm's
+    // problem to manage, not a hard redirect for the staff member.
+    if (isFirmContext) return;
 
     // No company yet — send the user to onboarding so they can create one.
     if (hasNoCompanies) {
@@ -171,7 +220,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     if (company && !company.onboardingCompleted) {
       navigate('/onboarding');
     }
-  }, [company, hasNoCompanies, companyLoading, location, navigate]);
+  }, [company, hasNoCompanies, companyLoading, location, navigate, isFirmContext]);
 
 
   const style = {
@@ -230,6 +279,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               </Link>
             </div>
           </motion.header>
+          <FirmContextBanner />
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
@@ -494,9 +544,6 @@ function Router() {
           <Route path="/firm/bulk">
             <FirmRoute><BulkOperations /></FirmRoute>
           </Route>
-          <Route path="/firm/health">
-            <FirmRoute><FirmHealth /></FirmRoute>
-          </Route>
           <Route path="/firm/comms">
             <FirmRoute><FirmComms /></FirmRoute>
           </Route>
@@ -526,14 +573,16 @@ export default function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <RTLProvider>
-          <TooltipProvider>
-            <Router />
-            <PWAInstallPrompt />
-            <MobileNav />
-            <Toaster />
-          </TooltipProvider>
-        </RTLProvider>
+        <ActiveCompanyProvider>
+          <RTLProvider>
+            <TooltipProvider>
+              <Router />
+              <PWAInstallPrompt />
+              <MobileNav />
+              <Toaster />
+            </TooltipProvider>
+          </RTLProvider>
+        </ActiveCompanyProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

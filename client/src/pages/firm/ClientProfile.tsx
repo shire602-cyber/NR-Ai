@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { format } from 'date-fns';
 import type { Company } from '@shared/schema';
+import { useActiveCompany } from '@/components/ActiveCompanyProvider';
 
 interface AssignedStaff {
   id: string;
@@ -103,10 +104,23 @@ export default function ClientProfile() {
   const { companyId } = useParams<{ companyId: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { setActiveClientCompany } = useActiveCompany();
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<Partial<Company>>({});
   const [assignOpen, setAssignOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState('');
+
+  const switchMutation = useMutation({
+    mutationFn: () => apiRequest('POST', `/api/firm/clients/${companyId}/switch`),
+    onSuccess: () => {
+      if (companyId) setActiveClientCompany(companyId);
+      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      navigate('/dashboard');
+    },
+    onError: (e: any) => {
+      toast({ variant: 'destructive', title: 'Could not open client books', description: e?.message });
+    },
+  });
 
   const { data: summary, isLoading } = useQuery<ClientSummary>({
     queryKey: [`/api/firm/clients/${companyId}/summary`],
@@ -246,9 +260,13 @@ export default function ClientProfile() {
                 <Edit className="w-4 h-4 mr-1" />
                 Edit
               </Button>
-              <Button onClick={() => navigate(`/admin/clients/${companyId}`)}>
+              <Button
+                onClick={() => switchMutation.mutate()}
+                disabled={switchMutation.isPending}
+                data-testid="button-open-books-profile"
+              >
                 <BookOpen className="w-4 h-4 mr-2" />
-                Open Books
+                {switchMutation.isPending ? 'Switching...' : 'Open Books'}
                 <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
               </Button>
             </>

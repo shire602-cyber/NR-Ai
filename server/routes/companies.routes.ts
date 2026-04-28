@@ -124,8 +124,8 @@ export function registerCompanyRoutes(app: Express) {
   // =====================================
 
   app.get("/api/companies", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user.id;
-    const companies = await storage.getCompaniesByUserId(userId);
+    const { id: userId, firmRole } = (req as any).user;
+    const companies = await storage.getAccessibleCompanies(userId, firmRole);
     res.json(companies);
   }));
 
@@ -164,10 +164,10 @@ export function registerCompanyRoutes(app: Express) {
 
   app.get("/api/companies/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const userId = (req as any).user.id;
+    const { id: userId, firmRole } = (req as any).user;
 
-    // Check if user has access to this company
-    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    // Check if user has access to this company (or via firm role)
+    const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -183,9 +183,9 @@ export function registerCompanyRoutes(app: Express) {
   // PUT is an alias for PATCH — some clients send PUT for full updates
   app.put("/api/companies/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const userId = (req as any).user.id;
+    const { id: userId, firmRole } = (req as any).user;
 
-    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -214,10 +214,10 @@ export function registerCompanyRoutes(app: Express) {
 
   app.patch("/api/companies/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const userId = (req as any).user.id;
+    const { id: userId, firmRole } = (req as any).user;
 
-    // Check if user has access to this company
-    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    // Check if user has access to this company (or via firm role)
+    const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -332,10 +332,10 @@ export function registerCompanyRoutes(app: Express) {
   // Customer-only: Seed chart of accounts
   app.post("/api/companies/:id/seed-accounts", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const userId = (req as any).user.id;
+    const { id: userId, firmRole } = (req as any).user;
 
-    // Check if user has access to this company
-    const hasAccess = await storage.hasCompanyAccess(userId, id);
+    // Check if user has access to this company (or via firm role)
+    const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
