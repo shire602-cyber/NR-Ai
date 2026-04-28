@@ -12,8 +12,8 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { db } from '../db';
-import { eq, and, desc, gte, lte, like } from 'drizzle-orm';
-import { activityLogs } from '../../shared/schema';
+import { eq, and, desc, gte, lte, like, inArray, sql } from 'drizzle-orm';
+import { activityLogs, companyUsers, documents as documentsTable, invoices as invoicesTable } from '../../shared/schema';
 
 const logger = createLogger('admin-routes');
 
@@ -233,21 +233,53 @@ export function registerAdminRoutes(app: Express): void {
         companies = await storage.getAllCompanies();
       }
 
-      // Get user counts per company
-      const clientsWithStats = await Promise.all(
-        companies.map(async (company) => {
-          const companyUsers = await storage.getCompanyUsersByCompanyId(company.id);
-          const documents = await storage.getDocuments(company.id);
-          const invoices = await storage.getInvoicesByCompanyId(company.id);
+      // Compute user / document / invoice counts in three GROUP BY queries
+      // instead of three queries per company. The previous Promise.all
+      // pattern fanned out to 3N round trips and would slow to a crawl as
+      // the customer base grew.
+      const companyIds = companies.map((c) => c.id);
+      const userCountByCompany = new Map<string, number>();
+      const documentCountByCompany = new Map<string, number>();
+      const invoiceCountByCompany = new Map<string, number>();
 
-          return {
-            ...company,
-            userCount: companyUsers.length,
-            documentCount: documents.length,
-            invoiceCount: invoices.length,
-          };
-        })
-      );
+      if (companyIds.length > 0) {
+        const userCountRows = await db
+          .select({
+            companyId: companyUsers.companyId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(companyUsers)
+          .where(inArray(companyUsers.companyId, companyIds))
+          .groupBy(companyUsers.companyId);
+        for (const r of userCountRows) userCountByCompany.set(r.companyId, r.count);
+
+        const documentCountRows = await db
+          .select({
+            companyId: documentsTable.companyId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(documentsTable)
+          .where(inArray(documentsTable.companyId, companyIds))
+          .groupBy(documentsTable.companyId);
+        for (const r of documentCountRows) documentCountByCompany.set(r.companyId, r.count);
+
+        const invoiceCountRows = await db
+          .select({
+            companyId: invoicesTable.companyId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(invoicesTable)
+          .where(inArray(invoicesTable.companyId, companyIds))
+          .groupBy(invoicesTable.companyId);
+        for (const r of invoiceCountRows) invoiceCountByCompany.set(r.companyId, r.count);
+      }
+
+      const clientsWithStats = companies.map((company) => ({
+        ...company,
+        userCount: userCountByCompany.get(company.id) ?? 0,
+        documentCount: documentCountByCompany.get(company.id) ?? 0,
+        invoiceCount: invoiceCountByCompany.get(company.id) ?? 0,
+      }));
 
       res.json(clientsWithStats);
     })

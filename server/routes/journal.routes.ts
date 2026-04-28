@@ -30,19 +30,32 @@ export function registerJournalRoutes(app: Express) {
 
     const entries = await storage.getJournalEntriesByCompanyId(companyId);
 
-    // Fetch lines and accounts for each entry
-    const entriesWithLines = await Promise.all(
-      entries.map(async (entry) => {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
-        const linesWithAccounts = await Promise.all(
-          lines.map(async (line) => {
-            const account = await storage.getAccount(line.accountId);
-            return { ...line, account };
-          })
-        );
-        return { ...entry, lines: linesWithAccounts };
-      })
-    );
+    // Batch-fetch all lines for these entries and all accounts for the
+    // company in two queries, then group in-memory. The previous loop did
+    // 1 + 2N queries (one per entry, then one per line) — for 500 entries
+    // with 5 lines each that was 3000+ DB round trips per page load.
+    const entryIds = entries.map((e) => e.id);
+    const [allLines, accountsList] = await Promise.all([
+      storage.getJournalLinesByEntryIds(entryIds),
+      storage.getAccountsByCompanyId(companyId),
+    ]);
+
+    const accountById = new Map(accountsList.map((a) => [a.id, a]));
+    const linesByEntry = new Map<string, typeof allLines>();
+    for (const line of allLines) {
+      const arr = linesByEntry.get(line.entryId);
+      if (arr) arr.push(line);
+      else linesByEntry.set(line.entryId, [line]);
+    }
+
+    const entriesWithLines = entries.map((entry) => {
+      const lines = linesByEntry.get(entry.id) ?? [];
+      const linesWithAccounts = lines.map((line) => ({
+        ...line,
+        account: accountById.get(line.accountId),
+      }));
+      return { ...entry, lines: linesWithAccounts };
+    });
 
     res.json(entriesWithLines);
   }));

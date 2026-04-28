@@ -87,6 +87,20 @@ export function registerReportRoutes(app: Express) {
         periodLength = 'quarter';
     }
 
+    // Batch-fetch every journal line we need for both the opening balance
+    // and the period buckets in one query, then group by entry. The
+    // previous implementation re-queried lines per entry, which fanned out
+    // to thousands of round trips on a multi-year cash flow report.
+    const allLines = await storage.getJournalLinesByEntryIds(
+      journalEntriesData.map(e => e.id),
+    );
+    const linesByEntry = new Map<string, JournalLine[]>();
+    for (const line of allLines) {
+      const arr = linesByEntry.get(line.entryId);
+      if (arr) arr.push(line);
+      else linesByEntry.set(line.entryId, [line]);
+    }
+
     // Establish opening cash balance: sum of all cash-account debits/credits
     // before the report window so the running balance is accurate, not
     // implicitly anchored at zero.
@@ -94,7 +108,7 @@ export function registerReportRoutes(app: Express) {
     {
       const priorEntries = journalEntriesData.filter(je => new Date(je.date) < startDate);
       for (const entry of priorEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
+        const lines = linesByEntry.get(entry.id) ?? [];
         for (const line of lines) {
           if (cashAccountIds.has(line.accountId)) {
             runningBalance += (line.debit || 0) - (line.credit || 0);
@@ -134,7 +148,7 @@ export function registerReportRoutes(app: Express) {
       let financingOutflow = 0;
 
       for (const entry of periodEntries) {
-        const lines = await storage.getJournalLinesByEntryId(entry.id);
+        const lines = linesByEntry.get(entry.id) ?? [];
         const cashLines = lines.filter(l => cashAccountIds.has(l.accountId));
         const nonCashLines = lines.filter(l => !cashAccountIds.has(l.accountId));
         if (cashLines.length === 0) continue; // No cash movement — skip.

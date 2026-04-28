@@ -19,7 +19,7 @@ import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
 import { registerRoutes } from './routes';
 import { initSocketServer } from './services/socket.service';
 import { setupVite, serveStatic } from './vite';
-import { initScheduler } from './services/scheduler.service';
+import { initScheduler, stopScheduler } from './services/scheduler.service';
 import { runMigrations, checkDbConnectivity, closePool, ensureCriticalSchema } from './db';
 
 // ─── Validate environment on startup ─────────────────────────
@@ -189,6 +189,13 @@ async function shutdown(signal: string) {
       setTimeout(() => resolve(), 10_000);
     });
     log.info('HTTP server closed');
+  }
+
+  // Cancel cron jobs so they don't keep the event loop alive past shutdown.
+  try {
+    stopScheduler();
+  } catch (err) {
+    log.error({ err }, 'Error stopping scheduler');
   }
 
   try {

@@ -38,6 +38,7 @@
     { "idx": 33, "version": "7", "when": 1768200000000, "tag": "0033_partial_exemption_vat", "breakpoints": false },
     { "idx": 34, "version": "7", "when": 1768300000000, "tag": "0034_invoice_number_sequences", "breakpoints": false },
     { "idx": 35, "version": "7", "when": 1768400000000, "tag": "0035_fta_exchange_rates", "breakpoints": false },
-    { "idx": 36, "version": "7", "when": 1768500000000, "tag": "0036_retention_policy", "breakpoints": false }
+    { "idx": 36, "version": "7", "when": 1768500000000, "tag": "0036_retention_policy", "breakpoints": false },
+    { "idx": 37, "version": "7", "when": 1768600000000, "tag": "0037_performance_indexes", "breakpoints": false }
   ]
 }

@@ -221,16 +221,17 @@ export function registerDashboardRoutes(app: Express) {
     const accounts = await storage.getAccountsByCompanyId(companyId);
     const expenseAccounts = accounts.filter(a => a.type === 'expense');
 
-    const balances = new Map<string, number>();
-    for (const entry of entries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account || account.type !== 'expense') continue;
+    // Batch-fetch all journal lines for the company's posted entries in one
+    // query — previously this loop ran one query per entry.
+    const allLines = await storage.getJournalLinesByEntryIds(entries.map(e => e.id));
+    const accountById = new Map(accounts.map(a => [a.id, a]));
 
-        const current = balances.get(account.id) || 0;
-        balances.set(account.id, current + line.debit - line.credit);
-      }
+    const balances = new Map<string, number>();
+    for (const line of allLines) {
+      const account = accountById.get(line.accountId);
+      if (!account || account.type !== 'expense') continue;
+      const current = balances.get(account.id) || 0;
+      balances.set(account.id, current + line.debit - line.credit);
     }
 
     const breakdown = expenseAccounts
@@ -266,7 +267,19 @@ export function registerDashboardRoutes(app: Express) {
       };
     });
 
-    const trends = await Promise.all(months.map(async ({ month, monthNum, yearNum }) => {
+    // Batch-fetch all lines for the period entries in one query, plus build
+    // an account lookup map. Previous code did N queries per month × 6
+    // months — easily 6,000+ DB round trips on a busy company.
+    const allLines = await storage.getJournalLinesByEntryIds(entries.map(e => e.id));
+    const accountById = new Map(accounts.map(a => [a.id, a]));
+    const linesByEntry = new Map<string, typeof allLines>();
+    for (const line of allLines) {
+      const arr = linesByEntry.get(line.entryId);
+      if (arr) arr.push(line);
+      else linesByEntry.set(line.entryId, [line]);
+    }
+
+    const trends = months.map(({ month, monthNum, yearNum }) => {
       const revenue = invoices
         .filter(inv => {
           if (inv.status === 'draft' || inv.status === 'void' || inv.status === 'cancelled') return false;
@@ -278,19 +291,18 @@ export function registerDashboardRoutes(app: Express) {
       let expenses = 0;
       for (const entry of entries) {
         const entryDate = new Date(entry.date);
-        if (entryDate.getMonth() === monthNum && entryDate.getFullYear() === yearNum) {
-          const lines = await storage.getJournalLinesByEntryId(entry.id);
-          for (const line of lines) {
-            const account = accounts.find(a => a.id === line.accountId);
-            if (account && account.type === 'expense') {
-              expenses += line.debit - line.credit;
-            }
+        if (entryDate.getMonth() !== monthNum || entryDate.getFullYear() !== yearNum) continue;
+        const lines = linesByEntry.get(entry.id) ?? [];
+        for (const line of lines) {
+          const account = accountById.get(line.accountId);
+          if (account && account.type === 'expense') {
+            expenses += line.debit - line.credit;
           }
         }
       }
 
       return { month, revenue, expenses };
-    }));
+    });
 
     res.json(trends);
   }));
@@ -323,20 +335,20 @@ export function registerDashboardRoutes(app: Express) {
       });
     }
 
+    // Batch-fetch all lines for the period entries in a single query.
+    const allLines = await storage.getJournalLinesByEntryIds(entries.map(e => e.id));
+    const accountById = new Map(accounts.map(a => [a.id, a]));
+
     const balances = new Map<string, number>();
+    for (const line of allLines) {
+      const account = accountById.get(line.accountId);
+      if (!account) continue;
 
-    for (const entry of entries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account) continue;
-
-        const current = balances.get(account.id) || 0;
-        if (account.type === 'income') {
-          balances.set(account.id, current + line.credit - line.debit);
-        } else if (account.type === 'expense') {
-          balances.set(account.id, current + line.debit - line.credit);
-        }
+      const current = balances.get(account.id) || 0;
+      if (account.type === 'income') {
+        balances.set(account.id, current + line.credit - line.debit);
+      } else if (account.type === 'expense') {
+        balances.set(account.id, current + line.debit - line.credit);
       }
     }
 
@@ -393,21 +405,28 @@ export function registerDashboardRoutes(app: Express) {
       return true;
     });
 
+    // Batch-fetch lines for both the cumulative (point-in-time) and the
+    // period slices in two queries instead of one-per-entry. The two slices
+    // overlap, so we union the entry IDs and partition in memory.
+    const accountById = new Map(accounts.map(a => [a.id, a]));
+    const balanceSheetEntryIds = new Set(balanceSheetEntries.map(e => e.id));
+    const periodEntryIds = new Set(periodEntries.map(e => e.id));
+    const unionEntryIds = Array.from(new Set([...balanceSheetEntryIds, ...periodEntryIds]));
+    const allLines = await storage.getJournalLinesByEntryIds(unionEntryIds);
+
     // Cumulative balances for asset/liability/equity accounts.
     const balances = new Map<string, number>();
-    for (const entry of balanceSheetEntries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account) continue;
-        if (account.type !== 'asset' && account.type !== 'liability' && account.type !== 'equity') continue;
+    for (const line of allLines) {
+      if (!balanceSheetEntryIds.has(line.entryId)) continue;
+      const account = accountById.get(line.accountId);
+      if (!account) continue;
+      if (account.type !== 'asset' && account.type !== 'liability' && account.type !== 'equity') continue;
 
-        const current = balances.get(account.id) || 0;
-        if (account.type === 'asset') {
-          balances.set(account.id, current + line.debit - line.credit);
-        } else {
-          balances.set(account.id, current + line.credit - line.debit);
-        }
+      const current = balances.get(account.id) || 0;
+      if (account.type === 'asset') {
+        balances.set(account.id, current + line.debit - line.credit);
+      } else {
+        balances.set(account.id, current + line.credit - line.debit);
       }
     }
 
@@ -416,14 +435,12 @@ export function registerDashboardRoutes(app: Express) {
     // statement reports a phantom imbalance equal to YTD profit.
     let periodRevenue = 0;
     let periodExpenses = 0;
-    for (const entry of periodEntries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account) continue;
-        if (account.type === 'income') periodRevenue += (line.credit - line.debit);
-        else if (account.type === 'expense') periodExpenses += (line.debit - line.credit);
-      }
+    for (const line of allLines) {
+      if (!periodEntryIds.has(line.entryId)) continue;
+      const account = accountById.get(line.accountId);
+      if (!account) continue;
+      if (account.type === 'income') periodRevenue += (line.credit - line.debit);
+      else if (account.type === 'expense') periodExpenses += (line.debit - line.credit);
     }
     const netIncome = periodRevenue - periodExpenses;
 
@@ -577,18 +594,18 @@ export function registerDashboardRoutes(app: Express) {
     const entries = (await storage.getJournalEntriesByCompanyId(companyId as string))
       .filter(e => e.status === 'posted');
 
+    // Batch-fetch all lines for the company's posted entries in one query.
+    const allLines = await storage.getJournalLinesByEntryIds(entries.map(e => e.id));
+    const accountById = new Map(accounts.map(a => [a.id, a]));
+
     const balances = new Map<string, { name: string; value: number }>();
+    for (const line of allLines) {
+      const account = accountById.get(line.accountId);
+      if (!account || account.type !== 'expense') continue;
 
-    for (const entry of entries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accounts.find(a => a.id === line.accountId);
-        if (!account || account.type !== 'expense') continue;
-
-        const current = balances.get(account.id) || { name: account.nameEn, value: 0 };
-        current.value += line.debit - line.credit;
-        balances.set(account.id, current);
-      }
+      const current = balances.get(account.id) || { name: account.nameEn, value: 0 };
+      current.value += line.debit - line.credit;
+      balances.set(account.id, current);
     }
 
     res.json(

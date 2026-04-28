@@ -168,8 +168,30 @@ export function applySecurityMiddleware(app: Express): void {
     ];
 
     const fullUrl = req.originalUrl || req.url;
+
+    // Body scanning is opt-in for small JSON payloads only. Some routes
+    // (OCR, receipt upload) accept up to 10MB of base64 image data — we
+    // must NOT JSON.stringify those on every request, that blocks the
+    // event loop. Skip files / buffers / large objects entirely; they
+    // can't carry text-based attacks the URL doesn't already expose.
+    let bodyText = '';
+    const body = req.body;
+    if (body && typeof body === 'object' && !Buffer.isBuffer(body)) {
+      const keys = Object.keys(body);
+      if (keys.length > 0 && keys.length <= 50) {
+        try {
+          const serialized = JSON.stringify(body);
+          if (serialized.length <= 10_000) {
+            bodyText = serialized;
+          }
+        } catch {
+          // Circular / unserializable bodies — skip silently.
+        }
+      }
+    }
+
     for (const pattern of suspiciousPatterns) {
-      if (pattern.test(fullUrl) || pattern.test(JSON.stringify(req.body || ''))) {
+      if (pattern.test(fullUrl) || (bodyText && pattern.test(bodyText))) {
         log.warn(
           { ip: req.ip, method: req.method, url: fullUrl },
           'Suspicious request detected'

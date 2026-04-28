@@ -121,7 +121,7 @@ import {
   invoicePayments
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, lte, isNull, sql, inArray } from "drizzle-orm";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
@@ -237,6 +237,7 @@ export interface IStorage {
   // Journal Lines
   createJournalLine(line: InsertJournalLine): Promise<JournalLine>;
   getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]>;
+  getJournalLinesByEntryIds(entryIds: string[]): Promise<JournalLine[]>;
   deleteJournalLinesByEntryId(entryId: string): Promise<void>;
   
   // Invoices
@@ -254,6 +255,7 @@ export interface IStorage {
   // Invoice Lines
   createInvoiceLine(line: InsertInvoiceLine): Promise<InvoiceLine>;
   getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]>;
+  getInvoiceLinesByInvoiceIds(invoiceIds: string[]): Promise<InvoiceLine[]>;
   deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void>;
   
   // Receipts
@@ -828,48 +830,52 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAccountsWithBalances(companyId: string, dateRange?: { start: Date; end: Date }) {
-    const accountsList = await db.select().from(accounts).where(eq(accounts.companyId, companyId));
-    
-    const results = await Promise.all(accountsList.map(async (account: any) => {
-      let lines = await db
+    // Fetch accounts and all relevant posted journal lines for the company
+    // in two queries, then aggregate per-account in memory. Previously this
+    // ran one extra query per account, which fanned out to hundreds of
+    // round-trips on the trial balance / chart-of-accounts pages.
+    const [accountsList, allLines] = await Promise.all([
+      db.select().from(accounts).where(eq(accounts.companyId, companyId)),
+      db
         .select({
+          accountId: journalLines.accountId,
           debit: journalLines.debit,
           credit: journalLines.credit,
           date: journalEntries.date,
-          status: journalEntries.status
+          status: journalEntries.status,
         })
         .from(journalLines)
         .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-        .where(eq(journalLines.accountId, account.id));
-      
-      if (dateRange) {
-        lines = lines.filter((line: any) => {
-          const lineDate = new Date(line.date);
-          return lineDate >= dateRange.start && lineDate <= dateRange.end;
-        });
-      }
-      
-      const postedLines = lines.filter((l: any) => l.status === 'posted');
+        .where(eq(journalEntries.companyId, companyId)),
+    ]);
 
-      const debitTotal = postedLines.reduce((sum: any, l: any) => sum + (l.debit || 0), 0);
-      const creditTotal = postedLines.reduce((sum: any, l: any) => sum + (l.credit || 0), 0);
-      
-      let balance = 0;
-      if (['asset', 'expense'].includes(account.type)) {
-        balance = debitTotal - creditTotal;
-      } else {
-        balance = creditTotal - debitTotal;
+    type Totals = { debitTotal: number; creditTotal: number };
+    const totalsByAccount = new Map<string, Totals>();
+    for (const line of allLines as Array<{
+      accountId: string;
+      debit: number | null;
+      credit: number | null;
+      date: Date;
+      status: string;
+    }>) {
+      if (line.status !== 'posted') continue;
+      if (dateRange) {
+        const lineDate = new Date(line.date);
+        if (lineDate < dateRange.start || lineDate > dateRange.end) continue;
       }
-      
-      return {
-        account,
-        balance,
-        debitTotal,
-        creditTotal
-      };
-    }));
-    
-    return results;
+      const t = totalsByAccount.get(line.accountId) ?? { debitTotal: 0, creditTotal: 0 };
+      t.debitTotal += line.debit || 0;
+      t.creditTotal += line.credit || 0;
+      totalsByAccount.set(line.accountId, t);
+    }
+
+    return accountsList.map((account: any) => {
+      const { debitTotal, creditTotal } = totalsByAccount.get(account.id) ?? { debitTotal: 0, creditTotal: 0 };
+      const balance = ['asset', 'expense'].includes(account.type)
+        ? debitTotal - creditTotal
+        : creditTotal - debitTotal;
+      return { account, balance, debitTotal, creditTotal };
+    });
   }
 
   async getAccountLedger(accountId: string, options?: { 
@@ -1116,6 +1122,15 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(journalLines).where(eq(journalLines.entryId, entryId));
   }
 
+  // Batch variant: fetch full JournalLine rows for many entry IDs in a single
+  // query. Use this anywhere you would otherwise loop calling
+  // getJournalLinesByEntryId(entry.id) — it removes the per-entry round trip
+  // and is what every report / list endpoint should use.
+  async getJournalLinesByEntryIds(entryIds: string[]): Promise<JournalLine[]> {
+    if (entryIds.length === 0) return [];
+    return await db.select().from(journalLines).where(inArray(journalLines.entryId, entryIds));
+  }
+
   async deleteJournalLinesByEntryId(entryId: string): Promise<void> {
     await db.delete(journalLines).where(eq(journalLines.entryId, entryId));
   }
@@ -1195,6 +1210,14 @@ export class DatabaseStorage implements IStorage {
 
   async getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]> {
     return await db.select().from(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
+  }
+
+  // Batch variant: fetch full InvoiceLine rows for many invoice IDs in one
+  // query. Used by VAT return generation and any other report that
+  // categorizes lines across many invoices.
+  async getInvoiceLinesByInvoiceIds(invoiceIds: string[]): Promise<InvoiceLine[]> {
+    if (invoiceIds.length === 0) return [];
+    return await db.select().from(invoiceLines).where(inArray(invoiceLines.invoiceId, invoiceIds));
   }
 
   async deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void> {

@@ -139,49 +139,78 @@ function buildWhatsAppLink(phone: string | undefined | null, message: string): s
 // Scheduler entry point
 // ---------------------------------------------------------------------------
 
+// Track scheduled tasks so they can be cancelled cleanly on shutdown.
+// Without this, node-cron retains the callbacks indefinitely and the
+// process can't exit promptly during a redeploy or SIGTERM, and tests
+// that spin up the scheduler leak timers across runs.
+type ScheduledTask = ReturnType<typeof cron.schedule>;
+const scheduledTasks: ScheduledTask[] = [];
+
 export function initScheduler() {
   log.info('Initializing background scheduler...');
 
   // Run every hour: scan for payment-related engagement triggers
-  cron.schedule('0 * * * *', async () => {
-    try {
-      log.info('Running hourly payment reminder scan...');
-      await scanPaymentReminders();
-      log.info('Hourly payment reminder scan complete');
-    } catch (err) {
-      log.error({ err }, 'Scheduler error during payment reminder scan');
-    }
-  });
+  scheduledTasks.push(
+    cron.schedule('0 * * * *', async () => {
+      try {
+        log.info('Running hourly payment reminder scan...');
+        await scanPaymentReminders();
+        log.info('Hourly payment reminder scan complete');
+      } catch (err) {
+        log.error({ err }, 'Scheduler error during payment reminder scan');
+      }
+    }),
+  );
 
   // Run every 30 minutes: autonomous GL classification scan
-  cron.schedule('*/30 * * * *', async () => {
-    try {
-      log.info('Running autonomous GL classification scan...');
-      const { scanAndClassifyAllCompanies } = await import('../services/autonomous-gl.service');
-      await scanAndClassifyAllCompanies();
-      log.info('Autonomous GL classification scan complete');
-    } catch (err: any) {
-      // If the module doesn't exist yet, log and skip gracefully
-      if (err?.code === 'MODULE_NOT_FOUND' || err?.code === 'ERR_MODULE_NOT_FOUND') {
-        log.info('autonomous-gl.service not available yet — skipping GL scan');
-      } else {
-        log.error({ err }, 'Scheduler error during autonomous GL scan');
+  scheduledTasks.push(
+    cron.schedule('*/30 * * * *', async () => {
+      try {
+        log.info('Running autonomous GL classification scan...');
+        const { scanAndClassifyAllCompanies } = await import('../services/autonomous-gl.service');
+        await scanAndClassifyAllCompanies();
+        log.info('Autonomous GL classification scan complete');
+      } catch (err: any) {
+        // If the module doesn't exist yet, log and skip gracefully
+        if (err?.code === 'MODULE_NOT_FOUND' || err?.code === 'ERR_MODULE_NOT_FOUND') {
+          log.info('autonomous-gl.service not available yet — skipping GL scan');
+        } else {
+          log.error({ err }, 'Scheduler error during autonomous GL scan');
+        }
       }
-    }
-  });
+    }),
+  );
 
   // Run daily at 06:00 UTC: generate recurring invoices that are due
-  cron.schedule('0 6 * * *', async () => {
-    try {
-      log.info('Running daily recurring invoice generation...');
-      await generateDueRecurringInvoices();
-      log.info('Daily recurring invoice generation complete');
-    } catch (err) {
-      log.error({ err }, 'Scheduler error during recurring invoice generation');
-    }
-  });
+  scheduledTasks.push(
+    cron.schedule('0 6 * * *', async () => {
+      try {
+        log.info('Running daily recurring invoice generation...');
+        await generateDueRecurringInvoices();
+        log.info('Daily recurring invoice generation complete');
+      } catch (err) {
+        log.error({ err }, 'Scheduler error during recurring invoice generation');
+      }
+    }),
+  );
 
   log.info('Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC');
+}
+
+/**
+ * Cancel every scheduled task. Call this from the graceful shutdown
+ * path (SIGTERM / SIGINT) so the process exits without orphaned timers.
+ */
+export function stopScheduler() {
+  for (const task of scheduledTasks) {
+    try {
+      task.stop();
+    } catch (err) {
+      log.error({ err }, 'Error stopping scheduled task');
+    }
+  }
+  scheduledTasks.length = 0;
+  log.info('Scheduler stopped');
 }
 
 // ---------------------------------------------------------------------------

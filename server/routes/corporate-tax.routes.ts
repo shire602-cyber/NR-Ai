@@ -102,21 +102,23 @@ export function registerCorporateTaxRoutes(app: Express) {
     let totalRevenue = 0;
     let totalExpenses = 0;
 
-    // Process each journal entry's lines
-    for (const entry of periodEntries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
+    // Batch-fetch all lines for the period entries in one query and
+    // aggregate in memory — previously this ran one query per entry,
+    // multiplying the cost of every CT calculation by the number of
+    // entries in the period.
+    const allLines = await storage.getJournalLinesByEntryIds(
+      periodEntries.map(e => e.id)
+    );
+    for (const line of allLines) {
+      const account = accountMap.get(line.accountId);
+      if (!account) continue;
 
-      for (const line of lines) {
-        const account = accountMap.get(line.accountId);
-        if (!account) continue;
-
-        if (account.type === 'income') {
-          // Revenue accounts: credit side increases revenue
-          totalRevenue += (line.credit || 0) - (line.debit || 0);
-        } else if (account.type === 'expense') {
-          // Expense accounts: debit side increases expenses
-          totalExpenses += (line.debit || 0) - (line.credit || 0);
-        }
+      if (account.type === 'income') {
+        // Revenue accounts: credit side increases revenue
+        totalRevenue += (line.credit || 0) - (line.debit || 0);
+      } else if (account.type === 'expense') {
+        // Expense accounts: debit side increases expenses
+        totalExpenses += (line.debit || 0) - (line.credit || 0);
       }
     }
 
