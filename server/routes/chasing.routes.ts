@@ -91,12 +91,18 @@ const sendChaseSchema = z.object({
   senderName: z.string().min(1).max(200).optional(),
 });
 
+// Cap bulk-send batch size. The general API rate limiter (100 req/min) doesn't
+// help here because one request can fan out into many DB writes; bound the
+// blast radius per request and cap total candidates we'll process even when
+// `invoiceIds` is omitted (i.e. "chase everything overdue").
+const BULK_SEND_MAX = 200;
+
 const bulkSendSchema = z.object({
   language: z.enum(['en', 'ar']).optional(),
   method: z.enum(['whatsapp', 'email', 'manual']).default('whatsapp'),
   paymentLink: z.string().url().optional().or(z.literal('')),
   senderName: z.string().min(1).max(200).optional(),
-  invoiceIds: z.array(z.string().uuid()).optional(),
+  invoiceIds: z.array(z.string().uuid()).max(BULK_SEND_MAX).optional(),
 });
 
 const updateConfigSchema = z.object({
@@ -328,11 +334,13 @@ export function registerChasingRoutes(app: Express) {
       const restrictTo = body.invoiceIds ? new Set(body.invoiceIds) : null;
 
       const allRows = await loadAgingRows(companyId);
-      const candidates = allRows
+      const candidatesAll = allRows
         .filter(isOverdueAndChaseable)
         .filter(r => (restrictTo ? restrictTo.has(r.invoice.id) : true))
         .filter(r => !(r.invoice.contactId && dnc.has(r.invoice.contactId)))
         .filter(r => isFrequencyEligible(r.invoice.lastChasedAt, frequency));
+      const truncated = candidatesAll.length > BULK_SEND_MAX;
+      const candidates = truncated ? candidatesAll.slice(0, BULK_SEND_MAX) : candidatesAll;
 
       const results: Array<{ invoiceId: string; level: number; status: string; waLink?: string | null; error?: string }> = [];
       for (const row of candidates) {
@@ -392,6 +400,9 @@ export function registerChasingRoutes(app: Express) {
         skipped: results.filter(r => r.status.startsWith('skipped')).length,
         failed: results.filter(r => r.status === 'failed').length,
         results,
+        truncated,
+        maxBatch: BULK_SEND_MAX,
+        eligibleTotal: candidatesAll.length,
       });
     }),
   );
@@ -490,8 +501,15 @@ export function registerChasingRoutes(app: Express) {
       }
       const parse = upsertTemplateSchema.partial().safeParse(req.body);
       if (!parse.success) return res.status(400).json({ message: 'Invalid payload', errors: parse.error.errors });
-      const updated = await storage.updateChaseTemplate(id, parse.data as any);
-      res.json(updated);
+      try {
+        const updated = await storage.updateChaseTemplate(id, companyId, parse.data as any);
+        res.json(updated);
+      } catch (e) {
+        // Storage throws when no row matches the (id, companyId) pair — i.e. the
+        // template either doesn't exist or belongs to another tenant (or is a
+        // system default). Return 404 so we don't leak which case applies.
+        return res.status(404).json({ message: 'Chase template not found' });
+      }
     }),
   );
 
@@ -505,7 +523,10 @@ export function registerChasingRoutes(app: Express) {
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: 'Access denied' });
       }
-      await storage.deleteChaseTemplate(id);
+      const { deleted } = await storage.deleteChaseTemplate(id, companyId);
+      if (deleted === 0) {
+        return res.status(404).json({ message: 'Chase template not found' });
+      }
       res.json({ success: true });
     }),
   );

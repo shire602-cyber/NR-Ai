@@ -651,8 +651,8 @@ export interface IStorage {
   getChaseTemplatesForCompany(companyId: string): Promise<ChaseTemplate[]>;
   getChaseTemplate(level: number, language: string, companyId: string | null): Promise<ChaseTemplate | undefined>;
   createChaseTemplate(data: InsertChaseTemplate): Promise<ChaseTemplate>;
-  updateChaseTemplate(id: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate>;
-  deleteChaseTemplate(id: string): Promise<void>;
+  updateChaseTemplate(id: string, companyId: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate>;
+  deleteChaseTemplate(id: string, companyId: string): Promise<{ deleted: number }>;
 
   getChaseConfig(companyId: string): Promise<ChaseConfig | undefined>;
   upsertChaseConfig(companyId: string, data: Partial<InsertChaseConfig>): Promise<ChaseConfig>;
@@ -3366,18 +3366,28 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async updateChaseTemplate(id: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate> {
+  async updateChaseTemplate(
+    id: string,
+    companyId: string,
+    data: Partial<InsertChaseTemplate>,
+  ): Promise<ChaseTemplate> {
+    // Scoped by companyId to prevent cross-tenant edits and to keep system
+    // defaults (company_id IS NULL) immutable from the customer-facing API.
     const [row] = await db
       .update(chaseTemplates)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(chaseTemplates.id, id))
+      .where(and(eq(chaseTemplates.id, id), eq(chaseTemplates.companyId, companyId)))
       .returning();
     if (!row) throw new Error('Chase template not found');
     return row;
   }
 
-  async deleteChaseTemplate(id: string): Promise<void> {
-    await db.delete(chaseTemplates).where(eq(chaseTemplates.id, id));
+  async deleteChaseTemplate(id: string, companyId: string): Promise<{ deleted: number }> {
+    const rows = await db
+      .delete(chaseTemplates)
+      .where(and(eq(chaseTemplates.id, id), eq(chaseTemplates.companyId, companyId)))
+      .returning({ id: chaseTemplates.id });
+    return { deleted: rows.length };
   }
 
   async getChaseConfig(companyId: string): Promise<ChaseConfig | undefined> {
