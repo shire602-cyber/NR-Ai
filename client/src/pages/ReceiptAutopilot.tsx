@@ -142,6 +142,14 @@ export default function ReceiptAutopilot() {
         </CardHeader>
         <CardContent>
           <Progress value={accuracyPct} className="h-2" />
+          {statsQuery.isError && (
+            <Alert className="mt-4" variant="destructive" data-testid="alert-stats-error">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Could not load classifier stats: {(statsQuery.error as any)?.message || 'Please try again.'}
+              </AlertDescription>
+            </Alert>
+          )}
           {stats?.belowThreshold && (
             <Alert className="mt-4" variant="destructive">
               <AlertTriangle className="h-4 w-4" />
@@ -153,8 +161,22 @@ export default function ReceiptAutopilot() {
             </Alert>
           )}
 
+          {statsQuery.isLoading && (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-6" data-testid="stats-skeleton">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-32 w-full" />
+              ))}
+            </div>
+          )}
+
+          {!statsQuery.isLoading && stats && stats.totalPredictions === 0 && (
+            <div className="mt-6 text-center text-sm text-muted-foreground py-8 border rounded-lg" data-testid="stats-empty">
+              No receipts classified yet. Upload receipts to start training the model.
+            </div>
+          )}
+
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mt-6">
-            {stats?.byMethod.map((m) => (
+            {!statsQuery.isLoading && stats && stats.totalPredictions > 0 && stats.byMethod.map((m) => (
               <Card key={m.method} className="border-muted">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">

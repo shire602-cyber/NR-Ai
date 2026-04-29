@@ -263,6 +263,11 @@ describe('runAutopilot pipeline', () => {
     expect(state.classifications[0].classifierMethod).toBe('keyword');
   });
 
+  it('records classifierMethod on the receipt itself (drives Internal/AI badge)', async () => {
+    await runAutopilot('co-1', 'user-1', ocr);
+    expect(state.receipts[0].classifierMethod).toBe('keyword');
+  });
+
   // ---------- regression coverage for the auto-post fixes ----------
 
   function highConfidenceRule() {

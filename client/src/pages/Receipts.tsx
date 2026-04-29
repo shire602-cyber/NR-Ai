@@ -23,7 +23,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet } from 'lucide-react';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet, Brain, Bot, Zap } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { formatCurrency } from '@/lib/format';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -1386,11 +1386,44 @@ export default function Receipts() {
                       <p className="font-mono font-semibold">
                         {formatCurrency(receipt.amount || 0, 'AED', locale)}
                       </p>
-                      <div className="flex gap-2 mt-1">
+                      <div className="flex gap-2 mt-1 flex-wrap justify-end">
                         <Badge variant="outline">
                           {receipt.category || 'Uncategorized'}
                         </Badge>
-                        {receipt.posted && (
+                        {receipt.classifierMethod && receipt.classifierMethod !== 'openai' && (
+                          <Badge
+                            variant="secondary"
+                            className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
+                            data-testid={`badge-classifier-internal-${receipt.id}`}
+                            title={`Classified by internal ${receipt.classifierMethod} stage`}
+                          >
+                            <Brain className="w-3 h-3 mr-1" />
+                            Internal
+                          </Badge>
+                        )}
+                        {receipt.classifierMethod === 'openai' && (
+                          <Badge
+                            variant="secondary"
+                            className="bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30"
+                            data-testid={`badge-classifier-ai-${receipt.id}`}
+                            title="Classified by OpenAI fallback"
+                          >
+                            <Bot className="w-3 h-3 mr-1" />
+                            AI
+                          </Badge>
+                        )}
+                        {receipt.autoPosted && (
+                          <Badge
+                            variant="default"
+                            className="bg-emerald-600 hover:bg-emerald-600"
+                            data-testid={`badge-auto-posted-${receipt.id}`}
+                            title="Auto-posted by Receipt Autopilot"
+                          >
+                            <Zap className="w-3 h-3 mr-1" />
+                            Auto-posted
+                          </Badge>
+                        )}
+                        {receipt.posted && !receipt.autoPosted && (
                           <Badge variant="default" className="bg-green-600">
                             Posted
                           </Badge>

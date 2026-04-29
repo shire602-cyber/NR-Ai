@@ -178,7 +178,8 @@ export async function runAutopilot(
     uploadedBy,
     posted: false,
     autoPosted: false,
-  });
+    classifierMethod: classification.method,
+  } as any);
 
   // Stage 4 — log the classification for ML feedback.
   const classificationRow = await storage.createTransactionClassification({
