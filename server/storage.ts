@@ -328,7 +328,7 @@ export interface IStorage {
   createTransactionClassification(classification: InsertTransactionClassification): Promise<TransactionClassification>;
   getTransactionClassification(id: string): Promise<TransactionClassification | undefined>;
   getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]>;
-  updateTransactionClassification(id: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification>;
+  updateTransactionClassification(id: string, companyId: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification>;
 
   // Journal Lines (for analytics)
   getJournalLinesByCompanyId(companyId: string): Promise<JournalLine[]>;
@@ -1636,11 +1636,18 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(transactionClassifications.createdAt));
   }
 
-  async updateTransactionClassification(id: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification> {
+  async updateTransactionClassification(id: string, companyId: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification> {
+    // Scoping by company_id is defense-in-depth: the route layer already
+    // verifies tenant access, but a regression there must not silently mutate
+    // another tenant's row. The UPDATE returns no rows when the id/company
+    // pair doesn't match, which we surface as a not-found error.
     const [classification] = await db
       .update(transactionClassifications)
       .set(data)
-      .where(eq(transactionClassifications.id, id))
+      .where(and(
+        eq(transactionClassifications.id, id),
+        eq(transactionClassifications.companyId, companyId),
+      ))
       .returning();
     if (!classification) {
       throw new Error('Transaction classification not found');

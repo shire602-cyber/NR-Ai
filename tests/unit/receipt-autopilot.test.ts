@@ -43,8 +43,9 @@ vi.mock('../../server/storage', () => ({
       state.classifications.push(row);
       return row;
     }),
-    updateTransactionClassification: vi.fn(async (id: string, patch: any) => {
-      const c = state.classifications.find((x) => x.id === id);
+    updateTransactionClassification: vi.fn(async (id: string, companyId: string, patch: any) => {
+      const c = state.classifications.find((x) => x.id === id && x.companyId === companyId);
+      if (!c) throw new Error('Transaction classification not found');
       Object.assign(c, patch);
       return c;
     }),
@@ -105,6 +106,7 @@ vi.mock('../../server/services/training-data.service', async () => {
 import {
   runAutopilot,
   classifyOcrReceipt,
+  recordClassificationFeedback,
   __setOpenAIForTests,
   __test,
 } from '../../server/services/receipt-autopilot.service';
@@ -356,5 +358,29 @@ describe('runAutopilot pipeline', () => {
     expect(result.autoPosted).toBe(false);
     expect(result.receiptId).toBeTruthy();
     expect(state.receipts[0].merchant).toBe('');
+  });
+});
+
+// =========================================================
+// recordClassificationFeedback — multi-tenancy defense-in-depth
+// =========================================================
+
+describe('recordClassificationFeedback companyId scoping', () => {
+  // The storage layer scopes UPDATE by (id, company_id). A regression in the
+  // route that lets a feedback request through with the wrong companyId must
+  // not silently mutate another tenant's row.
+  it('refuses to update a row that exists under a different companyId', async () => {
+    state.classifications.push({
+      id: 'c-foreign',
+      companyId: 'co-other',
+      wasAccepted: null,
+      userSelectedAccountId: null,
+    });
+    await expect(
+      recordClassificationFeedback('co-1', 'c-foreign', true, null),
+    ).rejects.toThrow(/Transaction classification not found/);
+    // The foreign row must remain untouched.
+    const foreign = state.classifications.find((x) => x.id === 'c-foreign');
+    expect(foreign.wasAccepted).toBeNull();
   });
 });
