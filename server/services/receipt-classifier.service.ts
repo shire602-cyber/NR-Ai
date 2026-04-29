@@ -244,8 +244,13 @@ interface KeywordHit {
 }
 
 function matchKeywords(merchant: string, lineItems: string[] = []): KeywordHit | null {
-  const haystack = [merchant, ...lineItems].join(' ').toLowerCase();
-  if (!haystack.trim()) return null;
+  const inner = [merchant, ...lineItems].join(' ').toLowerCase();
+  if (!inner.trim()) return null;
+  // Pad with spaces so keywords that use leading/trailing spaces as a word
+  // boundary (e.g. ' du ', 'hp ', 'meta ') match when the token sits at the
+  // very start or end of the haystack. Without padding, "DU Telecom" would
+  // miss the ' du ' keyword because there is no leading space in the input.
+  const haystack = ` ${inner} `;
 
   let best: KeywordHit | null = null;
 

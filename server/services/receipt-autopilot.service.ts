@@ -93,15 +93,23 @@ export function __setOpenAIForTests(client: OpenAI | null): void {
 /**
  * Classify a single OCR-extracted receipt without touching the receipts table.
  * Used by /api/ai/categorize and the OCR route to surface a suggestion.
+ *
+ * `prefetched` is an optional escape hatch for callers (e.g. batch loops) that
+ * already have the company config + accounts in hand and want to avoid the
+ * per-call DB round trips. Pass it whenever you're calling this in a hot loop.
  */
 export async function classifyOcrReceipt(
   companyId: string,
   ocr: Pick<OcrReceipt, 'merchant' | 'amount' | 'lineItems'>,
+  prefetched?: {
+    config?: { accuracyThreshold: number; mode: 'hybrid' | 'openai_only' };
+    accounts?: Account[];
+  },
 ): Promise<ClassificationResult> {
-  const config = await getClassifierConfig(companyId);
+  const config = prefetched?.config ?? (await getClassifierConfig(companyId));
   const model = await getModel(companyId);
 
-  const accounts = await storage.getAccountsByCompanyId(companyId);
+  const accounts = prefetched?.accounts ?? (await storage.getAccountsByCompanyId(companyId));
   const expenseAccountNames = accounts
     .filter((a) => a.type === 'expense' && a.isActive && !a.isArchived)
     .map((a) => a.nameEn);
@@ -156,9 +164,18 @@ export async function runAutopilot(
   });
 
   // Stage 2 — resolve account ids.
-  const expenseAccountId =
-    classification.accountId ||
-    pickExpenseAccountForCategory(expenseAccounts, classification.category);
+  // A rule's accountId may point to an account that has since been archived /
+  // deactivated. Validate it against the live expense accounts before using it,
+  // otherwise the auto-post would create a JE against a hidden account. If the
+  // rule's account is no longer eligible, fall back to category-based pick so
+  // the receipt can still be classified (and queued for review when picking
+  // also fails).
+  const ruleAccountStillActive =
+    classification.accountId &&
+    expenseAccounts.some((a) => a.id === classification.accountId);
+  const expenseAccountId = ruleAccountStillActive
+    ? classification.accountId
+    : pickExpenseAccountForCategory(expenseAccounts, classification.category);
   const paymentAccountId = pickPaymentAccount(accounts);
 
   // Stage 3 — create the receipt row (always — never lose data).
@@ -203,13 +220,20 @@ export async function runAutopilot(
   // would either throw at assertBalanced (negative case) or create a
   // meaningless balanced-zero entry (zero case) — both are surprising and
   // belong in the manual-review queue.
+  // Also require AED: the journal entry uses the OCR amounts directly with no
+  // FX conversion. A USD/EUR receipt would post foreign-currency numbers as if
+  // they were AED, which is a real correctness bug the user can't easily spot.
+  // Foreign-currency receipts go to manual review until the autopilot grows
+  // an FX path.
+  const isAed = (ocr.currency || 'AED').toUpperCase() === 'AED';
   const shouldAutoPost =
     config.autopilotEnabled &&
     classification.confidence >= 0.9 &&
     ruleAcceptedEnough &&
     !!expenseAccountId &&
     !!paymentAccountId &&
-    netAmount > 0;
+    netAmount > 0 &&
+    isAed;
 
   if (!shouldAutoPost) {
     return {
@@ -224,8 +248,9 @@ export async function runAutopilot(
 
   // Auto-post the balanced journal entry. Net + VAT is split if there is a VAT
   // input account, otherwise the gross goes straight to the expense account.
+  let journalEntryId: string;
   try {
-    const journalEntryId = await autoPostJournalEntry({
+    journalEntryId = await autoPostJournalEntry({
       companyId,
       uploadedBy,
       ocr,
@@ -234,33 +259,11 @@ export async function runAutopilot(
       accounts,
       classification,
     });
-
-    await storage.updateReceipt(receipt.id, {
-      posted: true,
-      autoPosted: true,
-      journalEntryId,
-      accountId: expenseAccountId,
-      paymentAccountId,
-    });
-
-    // Bump the matched rule's times_applied so confidence stats stay correct.
-    if (classification.matchedRuleId) {
-      await pool.query(
-        `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1`,
-        [classification.matchedRuleId],
-      );
-    }
-
-    return {
-      receiptId: receipt.id,
-      classification,
-      journalEntryId,
-      autoPosted: true,
-      queuedForReview: false,
-      classificationId: classificationRow.id,
-    };
   } catch (err: any) {
-    log.error({ err: err?.message || err, receiptId: receipt.id }, 'Auto-post failed — leaving receipt for manual review');
+    log.error(
+      { err: err?.message || err, receiptId: receipt.id },
+      'Auto-post failed before JE creation — leaving receipt for manual review',
+    );
     return {
       receiptId: receipt.id,
       classification,
@@ -270,6 +273,49 @@ export async function runAutopilot(
       classificationId: classificationRow.id,
     };
   }
+
+  // The JE is now committed. Receipt-link update and rule-counter bump are
+  // best-effort — failing them does NOT mean the JE rolled back. Returning
+  // autoPosted: false here would diverge from DB reality (the JE exists), so
+  // we always report autoPosted: true once the JE id is in hand and log any
+  // post-JE failures for repair.
+  try {
+    await storage.updateReceipt(receipt.id, {
+      posted: true,
+      autoPosted: true,
+      journalEntryId,
+      accountId: expenseAccountId,
+      paymentAccountId,
+    });
+  } catch (err: any) {
+    log.error(
+      { err: err?.message || err, receiptId: receipt.id, journalEntryId },
+      'Auto-post: JE created but receipt link update failed — manual repair needed',
+    );
+  }
+
+  if (classification.matchedRuleId) {
+    try {
+      await pool.query(
+        `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1`,
+        [classification.matchedRuleId],
+      );
+    } catch (err: any) {
+      log.warn(
+        { err: err?.message || err, ruleId: classification.matchedRuleId },
+        'Auto-post: rule times_applied bump failed — non-fatal',
+      );
+    }
+  }
+
+  return {
+    receiptId: receipt.id,
+    classification,
+    journalEntryId,
+    autoPosted: true,
+    queuedForReview: false,
+    classificationId: classificationRow.id,
+  };
 }
 
 /**

@@ -77,17 +77,25 @@ export function registerAIRoutes(app: Express) {
       // Phase 2: Try internal classifier first. Only fall through to OpenAI when
       // the internal pipeline returns < 0.8 confidence (or the company is in
       // openai_only mode — handled inside classifyOcrReceipt itself).
-      const internal = await classifyOcrReceipt(validated.companyId, {
-        merchant: validated.description,
-        amount: parseFloat(String(validated.amount)) || 0,
-        lineItems: [],
-      });
+      // Wrapped: a transient internal-classifier failure (DB blip, etc.) must
+      // not break /categorize — fall through to the OpenAI path instead of
+      // surfacing a 500. This preserves the pre-Phase-2 behaviour as a floor.
+      let internal: Awaited<ReturnType<typeof classifyOcrReceipt>> | null = null;
+      try {
+        internal = await classifyOcrReceipt(validated.companyId, {
+          merchant: validated.description,
+          amount: parseFloat(String(validated.amount)) || 0,
+          lineItems: [],
+        });
+      } catch (err: any) {
+        log.warn({ err: err?.message || err }, 'Internal classifier failed — falling through to OpenAI');
+      }
 
       // Get company's Chart of Accounts
       const accounts = await storage.getAccountsByCompanyId(validated.companyId);
       const expenseAccounts = accounts.filter(a => a.type === 'expense');
 
-      if (internal.method !== 'openai' && internal.confidence >= 0.8) {
+      if (internal && internal.method !== 'openai' && internal.confidence >= 0.8) {
         // We can short-circuit OpenAI entirely. Resolve the suggested account.
         const suggested = internal.accountId
           ? expenseAccounts.find(a => a.id === internal.accountId)
@@ -352,6 +360,9 @@ Keep your tone professional but friendly, like a trusted advisor.`
       // Phase 2: try the internal classifier on each transaction. High-confidence
       // hits (≥ 0.8) skip the OpenAI call entirely and are merged into the
       // response; the rest are passed to OpenAI as a smaller batch.
+      // Pre-fetch config + accounts ONCE so the per-transaction loop doesn't
+      // re-issue getCompany / getAccountsByCompanyId on every call (N+1 fix).
+      const classifierConfig = await getClassifierConfig(companyId);
       const internalResults: Record<number, { category: string; confidence: number; reason: string; method: string; accountName?: string }> = {};
       const remaining: Array<{ originalIndex: number; t: any }> = [];
       for (let i = 0; i < transactions.length; i++) {
@@ -361,7 +372,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
             merchant: t.description || t.merchant || '',
             amount: parseFloat(String(t.amount)) || 0,
             lineItems: [],
-          });
+          }, { config: classifierConfig, accounts });
           if (r.method !== 'openai' && r.confidence >= 0.8) {
             const matched = r.accountId
               ? expenseAccounts.find(a => a.id === r.accountId)
