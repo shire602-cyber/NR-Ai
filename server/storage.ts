@@ -57,7 +57,10 @@ import type {
   Product, InsertProduct,
   InventoryMovement, InsertInventoryMovement,
   BankAccount, InsertBankAccount,
-  InvoicePayment, InsertInvoicePayment
+  InvoicePayment, InsertInvoicePayment,
+  PaymentChase, InsertPaymentChase,
+  ChaseTemplate, InsertChaseTemplate,
+  ChaseConfig, InsertChaseConfig
 } from "@shared/schema";
 import {
   users,
@@ -118,10 +121,13 @@ import {
   corporateTaxReturns,
   products,
   inventoryMovements,
-  invoicePayments
+  invoicePayments,
+  paymentChases,
+  chaseTemplates,
+  chaseConfigs
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, isNull, sql } from "drizzle-orm";
+import { eq, and, desc, lte, gte, isNull, or, inArray, sql } from "drizzle-orm";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
@@ -633,6 +639,23 @@ export interface IStorage {
   getInventoryMovementsByProductId(productId: string): Promise<InventoryMovement[]>;
   getInventoryMovementsByCompanyId(companyId: string): Promise<InventoryMovement[]>;
   createInventoryMovement(data: InsertInventoryMovement): Promise<InventoryMovement>;
+
+  // Payment Chasing (Phase 4)
+  createPaymentChase(data: InsertPaymentChase): Promise<PaymentChase>;
+  getPaymentChasesByCompanyId(companyId: string, opts?: { invoiceId?: string; sinceDays?: number }): Promise<PaymentChase[]>;
+  getPaymentChasesByInvoiceId(invoiceId: string): Promise<PaymentChase[]>;
+  markChasesPaidForInvoice(invoiceId: string, paidAt: Date): Promise<void>;
+  setInvoiceChaseLevel(invoiceId: string, level: number, lastChasedAt: Date): Promise<void>;
+  setInvoiceDoNotChase(invoiceId: string, value: boolean): Promise<void>;
+
+  getChaseTemplatesForCompany(companyId: string): Promise<ChaseTemplate[]>;
+  getChaseTemplate(level: number, language: string, companyId: string | null): Promise<ChaseTemplate | undefined>;
+  createChaseTemplate(data: InsertChaseTemplate): Promise<ChaseTemplate>;
+  updateChaseTemplate(id: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate>;
+  deleteChaseTemplate(id: string): Promise<void>;
+
+  getChaseConfig(companyId: string): Promise<ChaseConfig | undefined>;
+  upsertChaseConfig(companyId: string, data: Partial<InsertChaseConfig>): Promise<ChaseConfig>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3248,6 +3271,139 @@ export class DatabaseStorage implements IStorage {
       .values(data)
       .returning();
     return movement;
+  }
+
+  // ─── Payment Chasing (Phase 4) ─────────────────────────────────────────────
+
+  async createPaymentChase(data: InsertPaymentChase): Promise<PaymentChase> {
+    const [row] = await db.insert(paymentChases).values(data).returning();
+    return row;
+  }
+
+  async getPaymentChasesByCompanyId(
+    companyId: string,
+    opts: { invoiceId?: string; sinceDays?: number } = {},
+  ): Promise<PaymentChase[]> {
+    const conds = [eq(paymentChases.companyId, companyId)];
+    if (opts.invoiceId) conds.push(eq(paymentChases.invoiceId, opts.invoiceId));
+    if (opts.sinceDays && opts.sinceDays > 0) {
+      const cutoff = new Date(Date.now() - opts.sinceDays * 86_400_000);
+      conds.push(gte(paymentChases.sentAt, cutoff));
+    }
+    return await db
+      .select()
+      .from(paymentChases)
+      .where(and(...conds))
+      .orderBy(desc(paymentChases.sentAt));
+  }
+
+  async getPaymentChasesByInvoiceId(invoiceId: string): Promise<PaymentChase[]> {
+    return await db
+      .select()
+      .from(paymentChases)
+      .where(eq(paymentChases.invoiceId, invoiceId))
+      .orderBy(desc(paymentChases.sentAt));
+  }
+
+  async markChasesPaidForInvoice(invoiceId: string, paidAt: Date): Promise<void> {
+    await db
+      .update(paymentChases)
+      .set({ paidAt })
+      .where(and(eq(paymentChases.invoiceId, invoiceId), isNull(paymentChases.paidAt)));
+  }
+
+  async setInvoiceChaseLevel(invoiceId: string, level: number, lastChasedAt: Date): Promise<void> {
+    await db
+      .update(invoices)
+      .set({ chaseLevel: level, lastChasedAt })
+      .where(eq(invoices.id, invoiceId));
+  }
+
+  async setInvoiceDoNotChase(invoiceId: string, value: boolean): Promise<void> {
+    await db.update(invoices).set({ doNotChase: value }).where(eq(invoices.id, invoiceId));
+  }
+
+  async getChaseTemplatesForCompany(companyId: string): Promise<ChaseTemplate[]> {
+    return await db
+      .select()
+      .from(chaseTemplates)
+      .where(or(eq(chaseTemplates.companyId, companyId), isNull(chaseTemplates.companyId)))
+      .orderBy(chaseTemplates.level, chaseTemplates.language);
+  }
+
+  async getChaseTemplate(
+    level: number,
+    language: string,
+    companyId: string | null,
+  ): Promise<ChaseTemplate | undefined> {
+    // Prefer company override, fall back to system default.
+    if (companyId) {
+      const [override] = await db
+        .select()
+        .from(chaseTemplates)
+        .where(and(
+          eq(chaseTemplates.companyId, companyId),
+          eq(chaseTemplates.level, level),
+          eq(chaseTemplates.language, language),
+        ))
+        .limit(1);
+      if (override) return override;
+    }
+    const [system] = await db
+      .select()
+      .from(chaseTemplates)
+      .where(and(
+        isNull(chaseTemplates.companyId),
+        eq(chaseTemplates.level, level),
+        eq(chaseTemplates.language, language),
+      ))
+      .limit(1);
+    return system || undefined;
+  }
+
+  async createChaseTemplate(data: InsertChaseTemplate): Promise<ChaseTemplate> {
+    const [row] = await db.insert(chaseTemplates).values(data).returning();
+    return row;
+  }
+
+  async updateChaseTemplate(id: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate> {
+    const [row] = await db
+      .update(chaseTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(chaseTemplates.id, id))
+      .returning();
+    if (!row) throw new Error('Chase template not found');
+    return row;
+  }
+
+  async deleteChaseTemplate(id: string): Promise<void> {
+    await db.delete(chaseTemplates).where(eq(chaseTemplates.id, id));
+  }
+
+  async getChaseConfig(companyId: string): Promise<ChaseConfig | undefined> {
+    const [row] = await db
+      .select()
+      .from(chaseConfigs)
+      .where(eq(chaseConfigs.companyId, companyId))
+      .limit(1);
+    return row || undefined;
+  }
+
+  async upsertChaseConfig(companyId: string, data: Partial<InsertChaseConfig>): Promise<ChaseConfig> {
+    const existing = await this.getChaseConfig(companyId);
+    if (existing) {
+      const [row] = await db
+        .update(chaseConfigs)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(chaseConfigs.companyId, companyId))
+        .returning();
+      return row;
+    }
+    const [row] = await db
+      .insert(chaseConfigs)
+      .values({ companyId, ...data } as InsertChaseConfig)
+      .returning();
+    return row;
   }
 }
 

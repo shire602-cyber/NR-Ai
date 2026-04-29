@@ -339,6 +339,13 @@ export const invoices = pgTable("invoices", {
   einvoiceStatus: text("einvoice_status"), // null | generated | submitted | accepted | rejected
   reminderCount: integer("reminder_count").notNull().default(0),
   lastReminderSentAt: timestamp("last_reminder_sent_at"),
+  // Phase 4: Payment Chasing Autopilot
+  // chaseLevel reflects the highest escalation level reached for this invoice
+  // (0 = never chased, 1..4 = friendly..final notice). lastChasedAt drives
+  // the chase queue (frequency throttling per company config).
+  chaseLevel: integer("chase_level").notNull().default(0),
+  lastChasedAt: timestamp("last_chased_at"),
+  doNotChase: boolean("do_not_chase").notNull().default(false),
   invoiceType: text("invoice_type").notNull().default("invoice"),
   originalInvoiceId: uuid("original_invoice_id"),
   isRecurring: boolean("is_recurring").notNull().default(false),
@@ -2185,3 +2192,100 @@ export const updateFirmLeadSchema = insertFirmLeadSchema.partial();
 export type InsertFirmLead = z.infer<typeof insertFirmLeadSchema>;
 export type UpdateFirmLead = z.infer<typeof updateFirmLeadSchema>;
 export type FirmLead = typeof firmLeads.$inferSelect;
+
+// ===========================
+// Payment Chasing Autopilot (Phase 4)
+// ===========================
+// Tracks every "chase" action taken against an overdue invoice. A chase is a
+// reminder communication (WhatsApp / email / manual) that escalates with the
+// number of days the invoice is overdue. We log each attempt — even when the
+// user only previews a wa.me link without sending — so that the next chase
+// level is computed deterministically and effectiveness can be measured.
+export const paymentChases = pgTable("payment_chases", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  invoiceId: uuid("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id").references(() => customerContacts.id, { onDelete: "set null" }),
+  level: integer("level").notNull(), // 1..4 escalation level applied
+  method: text("method").notNull().default("whatsapp"), // whatsapp | email | manual
+  language: text("language").notNull().default("en"), // en | ar
+  messageText: text("message_text").notNull(),
+  daysOverdueAtSend: integer("days_overdue_at_send").notNull().default(0),
+  amountAtSend: money("amount_at_send").notNull().default(0),
+  // pending = queued / draft, sent = wa.me link generated, responded = client
+  // replied, paid = invoice was paid after this chase, failed = send failed.
+  status: text("status").notNull().default("sent"),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  respondedAt: timestamp("responded_at"),
+  paidAt: timestamp("paid_at"),
+  triggeredBy: uuid("triggered_by").references(() => users.id, { onDelete: "set null" }),
+  // Free-form metadata for future webhook integrations (Business API IDs etc.)
+  meta: text("meta"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdx: index("idx_payment_chases_company_id").on(table.companyId),
+  invoiceIdx: index("idx_payment_chases_invoice_id").on(table.invoiceId),
+  sentAtIdx: index("idx_payment_chases_sent_at").on(table.sentAt),
+}));
+
+export const insertPaymentChaseSchema = createInsertSchema(paymentChases).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPaymentChase = z.infer<typeof insertPaymentChaseSchema>;
+export type PaymentChase = typeof paymentChases.$inferSelect;
+
+// Customizable chase message templates per company / level / language. There
+// is exactly one "default" template per (level, language) seeded by the
+// migration; companies can override or add custom templates.
+export const chaseTemplates = pgTable("chase_templates", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }), // null = system default
+  level: integer("level").notNull(), // 1..4
+  language: text("language").notNull().default("en"), // en | ar
+  subject: text("subject"),
+  body: text("body").notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
+}, (table) => ({
+  companyLevelLangIdx: index("idx_chase_templates_lookup").on(table.companyId, table.level, table.language),
+}));
+
+export const insertChaseTemplateSchema = createInsertSchema(chaseTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChaseTemplate = z.infer<typeof insertChaseTemplateSchema>;
+export type ChaseTemplate = typeof chaseTemplates.$inferSelect;
+
+// Per-company configuration. One row per company; absence means defaults.
+export const chaseConfigs = pgTable("chase_configs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().unique().references(() => companies.id, { onDelete: "cascade" }),
+  autoChaseEnabled: boolean("auto_chase_enabled").notNull().default(false),
+  // Minimum days between chases for the same invoice — prevents spamming
+  // when overdue lingers across multiple polling cycles.
+  chaseFrequencyDays: integer("chase_frequency_days").notNull().default(7),
+  maxLevel: integer("max_level").notNull().default(4),
+  preferredMethod: text("preferred_method").notNull().default("whatsapp"), // whatsapp | email
+  // JSON-encoded array of customer_contacts.id values that must never be
+  // chased. Stored as text to avoid pulling in jsonb tooling here; routes
+  // parse / serialize on the way in/out.
+  doNotChaseContactIds: text("do_not_chase_contact_ids").notNull().default("[]"),
+  defaultLanguage: text("default_language").notNull().default("en"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
+});
+
+export const insertChaseConfigSchema = createInsertSchema(chaseConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChaseConfig = z.infer<typeof insertChaseConfigSchema>;
+export type ChaseConfig = typeof chaseConfigs.$inferSelect;

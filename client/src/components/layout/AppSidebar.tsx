@@ -81,6 +81,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     items: [
       { titleKey: 'invoices', url: '/invoices' },
       { titleKey: 'recurringInvoices', url: '/recurring-invoices' },
+      { titleKey: 'paymentChasing', url: '/payment-chasing' },
       { titleKey: 'contacts', url: '/contacts' },
     ],
   },
