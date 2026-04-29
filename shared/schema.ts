@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, index, customType } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, index, customType, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -105,7 +105,12 @@ export const companies = pgTable("companies", {
   // Partial exemption: fraction of supplies that are exempt (0..1). When > 0, input VAT
   // is reduced by this ratio per FTA partial-exemption rules.
   exemptSupplyRatio: vatRateType("exempt_supply_ratio").notNull().default(0),
-  
+  // VAT autopilot configuration. periodStartMonth is the calendar month (1-12)
+  // that the VAT period cycle starts on — defaults to January but FTA assigns
+  // each registrant a stagger so quarterly periods may begin in Feb or Mar.
+  vatAutoCalculate: boolean("vat_auto_calculate").notNull().default(true),
+  vatPeriodStartMonth: integer("vat_period_start_month").notNull().default(1),
+
   // Soft delete — UAE FTA requires 5-year retention; hard deletes are disallowed
   deletedAt: timestamp("deleted_at"),
   isActive: boolean("is_active").notNull().default(true),
@@ -1552,6 +1557,64 @@ export const insertVatReturnSchema = createInsertSchema(vatReturns).omit({
 
 export type InsertVatReturn = z.infer<typeof insertVatReturnSchema>;
 export type VatReturn = typeof vatReturns.$inferSelect;
+
+// ===========================
+// VAT Return Periods (Phase 3: VAT Autopilot)
+// Tracks each filing window per company so deadlines, calculation snapshots,
+// and adjustments can be reasoned about independently of the immutable
+// `vat_returns` row. A period progresses through draft → ready → submitted →
+// accepted; an `adjustments` JSONB column carries an audit-trailed list of
+// manual overrides applied on top of the auto-calculated boxes.
+// ===========================
+export const vatReturnPeriods = pgTable("vat_return_periods", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  frequency: text("frequency").notNull().default("quarterly"), // quarterly | monthly
+  status: text("status").notNull().default("draft"), // draft | ready | submitted | accepted
+  // Snapshot of the most recent auto-calculation. Stored so the UI can show
+  // last-calculated totals without re-running the full aggregation.
+  outputVat: money("output_vat").notNull().default(0),
+  inputVat: money("input_vat").notNull().default(0),
+  netVatPayable: money("net_vat_payable").notNull().default(0),
+  calculatedAt: timestamp("calculated_at"),
+  // adjustments: array of { id, box, amount, reason, userId, createdAt } items.
+  // Applied additively to the auto-calculated baseline.
+  adjustments: jsonb("adjustments").notNull().default(sql`'[]'::jsonb`),
+  // Link to the formal vat_returns row once one has been generated/submitted.
+  vatReturnId: uuid("vat_return_id").references(() => vatReturns.id),
+  submittedAt: timestamp("submitted_at"),
+  submittedBy: uuid("submitted_by").references(() => users.id),
+  ftaReferenceNumber: text("fta_reference_number"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyPeriodUnique: unique("vat_return_periods_company_period_unique").on(table.companyId, table.periodStart, table.periodEnd),
+  companyIdIdx: index("idx_vat_return_periods_company_id").on(table.companyId),
+  dueDateIdx: index("idx_vat_return_periods_due_date").on(table.dueDate),
+  statusIdx: index("idx_vat_return_periods_status").on(table.status),
+}));
+
+export const insertVatReturnPeriodSchema = createInsertSchema(vatReturnPeriods).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertVatReturnPeriod = z.infer<typeof insertVatReturnPeriodSchema>;
+export type VatReturnPeriod = typeof vatReturnPeriods.$inferSelect;
+
+export interface VatReturnAdjustment {
+  id: string;
+  box: string;             // e.g. "box1bDubaiVat", "box9ExpensesVat"
+  amount: number;          // positive or negative AED delta
+  reason: string;
+  userId: string;
+  createdAt: string;       // ISO timestamp
+}
 
 // ===========================
 // Corporate Tax Returns (9% UAE CT)

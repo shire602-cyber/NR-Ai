@@ -34,6 +34,7 @@ import { registerBackupRoutes } from './routes/backups.routes';
 import { registerReferralRoutes } from './routes/referrals.routes';
 import { registerFeedbackRoutes } from './routes/feedback.routes';
 import { registerVATRoutes } from './routes/vat.routes';
+import { registerVATAutopilotRoutes } from './routes/vat-autopilot.routes';
 import { registerCorporateTaxRoutes } from './routes/corporate-tax.routes';
 import { registerTeamRoutes } from './routes/team.routes';
 import { registerPortalRoutes } from './routes/portal.routes';
@@ -119,6 +120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── UAE Compliance ─────────────────────────────────────
   registerVATRoutes(app);
+  registerVATAutopilotRoutes(app);
   registerCorporateTaxRoutes(app);
   registerExchangeRateRoutes(app);
 
