@@ -263,7 +263,8 @@ export default function PaymentChasing() {
 
   // ── Derived ────────────────────────────────────────────────────────────
   const overdue = overdueQuery.data?.rows ?? [];
-  const buckets = overdueQuery.data?.buckets ?? { '1-7': 0, '8-30': 0, '31-60': 0, '60+': 0 } as any;
+  const buckets: Record<AgingBucket, number> =
+    overdueQuery.data?.buckets ?? { '1-7': 0, '8-30': 0, '31-60': 0, '60+': 0 };
   const totalOutstanding = overdueQuery.data?.totalOutstanding ?? 0;
   const queue = queueQuery.data?.queue ?? [];
 
@@ -666,7 +667,7 @@ export default function PaymentChasing() {
                   <Label>Default language</Label>
                   <Select
                     value={configQuery.data?.defaultLanguage ?? 'en'}
-                    onValueChange={(v) => saveConfig.mutate({ defaultLanguage: v as any })}
+                    onValueChange={(v) => saveConfig.mutate({ defaultLanguage: v })}
                   >
                     <SelectTrigger data-testid="select-language"><SelectValue /></SelectTrigger>
                     <SelectContent>

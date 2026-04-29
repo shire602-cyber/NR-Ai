@@ -21,7 +21,6 @@ import { createLogger } from '../config/logger';
 import { recordAudit } from '../services/audit.service';
 import {
   type ChaseAgingRow,
-  type ChaseInvoice,
   type ChasePayment,
   type ChaseLanguage,
   buildAgingRow,
@@ -65,7 +64,7 @@ async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
         chaseLevel: inv.chaseLevel ?? 0,
         lastChasedAt: inv.lastChasedAt,
         doNotChase: inv.doNotChase ?? false,
-      } as ChaseInvoice,
+      },
       flatPayments,
     ),
   );
@@ -221,7 +220,7 @@ export function registerChasingRoutes(app: Express) {
           chaseLevel: invoice.chaseLevel ?? 0,
           lastChasedAt: invoice.lastChasedAt,
           doNotChase: invoice.doNotChase ?? false,
-        } as ChaseInvoice,
+        },
         payments.map(p => ({ invoiceId: p.invoiceId, amount: Number(p.amount) || 0 })),
       );
 
@@ -250,7 +249,6 @@ export function registerChasingRoutes(app: Express) {
       const messageText = renderTemplate(template.body, { ...ctx });
       const subject = template.subject ? renderTemplate(template.subject, { ...ctx }) : null;
 
-      // Persist chase
       const chase = await storage.createPaymentChase({
         companyId: invoice.companyId,
         invoiceId: invoice.id,
@@ -264,7 +262,7 @@ export function registerChasingRoutes(app: Express) {
         status: 'sent',
         sentAt: new Date(),
         triggeredBy: userId,
-      } as any);
+      });
 
       // Mirror state on invoice
       await storage.setInvoiceChaseLevel(invoice.id, level, new Date());
@@ -366,7 +364,7 @@ export function registerChasingRoutes(app: Express) {
             status: 'sent',
             sentAt: new Date(),
             triggeredBy: userId,
-          } as any);
+          });
           await storage.setInvoiceChaseLevel(row.invoice.id, level, new Date());
           const waLink = body.method === 'whatsapp' && contact?.phone ? buildWaMeLink(contact.phone, messageText) : null;
           results.push({ invoiceId: row.invoice.id, level, status: 'sent', waLink });
@@ -473,7 +471,7 @@ export function registerChasingRoutes(app: Express) {
         subject: body.subject ?? null,
         body: body.body,
         isDefault: false,
-      } as any);
+      });
       res.json(created);
     }),
   );
@@ -490,7 +488,7 @@ export function registerChasingRoutes(app: Express) {
       }
       const parse = upsertTemplateSchema.partial().safeParse(req.body);
       if (!parse.success) return res.status(400).json({ message: 'Invalid payload', errors: parse.error.errors });
-      const updated = await storage.updateChaseTemplate(id, parse.data as any);
+      const updated = await storage.updateChaseTemplate(id, parse.data);
       res.json(updated);
     }),
   );
@@ -550,7 +548,7 @@ export function registerChasingRoutes(app: Express) {
       const updated = await storage.upsertChaseConfig(companyId, {
         ...rest,
         ...(doNotChaseContactIds ? { doNotChaseContactIds: JSON.stringify(doNotChaseContactIds) } : {}),
-      } as any);
+      });
       res.json(updated);
     }),
   );
