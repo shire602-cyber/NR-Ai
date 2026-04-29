@@ -15,6 +15,8 @@ import {
   runAutopilot,
   recordClassificationFeedback,
 } from '../services/receipt-autopilot.service';
+import { saveReceiptImage } from '../services/fileStorage';
+import { randomUUID } from 'crypto';
 import {
   getModelStats,
   getClassifierConfig,
@@ -1087,6 +1089,14 @@ Respond with JSON:
   // Hard caps protect the receipts table from oversized payloads and keep auto-
   // post side effects bounded; they also prevent setting accuracyThreshold low
   // enough to disable the OpenAI fallback / failsafe entirely.
+  //
+  // `imagePath` is intentionally NOT accepted from the client. The server
+  // derives a sanitized path itself by writing `imageData` (base64) through
+  // saveReceiptImage(); accepting a client-supplied filesystem path would
+  // allow path traversal — a forged value like "../../../etc/passwd" would
+  // round-trip through resolveImagePath() in the receipts image-serve route
+  // and disclose arbitrary server-readable files to anyone with access to
+  // their own company.
   const autopilotProcessSchema = z.object({
     companyId: z.string().uuid(),
     ocr: z.object({
@@ -1101,7 +1111,6 @@ Respond with JSON:
         .optional()
         .default([]),
       rawText: z.string().max(50_000).nullable().optional(),
-      imagePath: z.string().max(2_000).nullable().optional(),
       imageData: z.string().max(15 * 1024 * 1024).nullable().optional(),
     }),
   });
@@ -1131,6 +1140,13 @@ Respond with JSON:
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
+    // Persist any submitted image bytes through the sanitizing helper so the
+    // DB only ever sees a server-generated relative path under uploads/receipts.
+    let safeImagePath: string | null = null;
+    if (ocr.imageData) {
+      safeImagePath = await saveReceiptImage(ocr.imageData, `${randomUUID()}.jpg`);
+    }
+
     const result = await runAutopilot(companyId, userId, {
       merchant: ocr.merchant.slice(0, 200),
       amount: ocr.amount,
@@ -1140,8 +1156,8 @@ Respond with JSON:
       date: ocr.date || new Date().toISOString().slice(0, 10),
       lineItems: ocr.lineItems,
       rawText: ocr.rawText ?? null,
-      imagePath: ocr.imagePath ?? null,
-      imageData: ocr.imageData ?? null,
+      imagePath: safeImagePath,
+      imageData: null,
     });
     res.json(result);
   }));
