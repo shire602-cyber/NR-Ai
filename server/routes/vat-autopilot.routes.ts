@@ -7,6 +7,7 @@
  */
 
 import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
 import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
@@ -18,7 +19,7 @@ import {
   addAdjustment,
   updatePeriodStatus,
   listDueDates,
-  type VatPeriodStatus,
+  isValidVat201BoxKey,
   type VatPeriod,
 } from '../services/vat-autopilot.service';
 
@@ -26,41 +27,81 @@ function userId(req: Request): string {
   return (req as any).user?.id;
 }
 
-function parsePeriod(body: any): VatPeriod | undefined {
-  if (!body || !body.periodStart || !body.periodEnd) return undefined;
-  const start = new Date(body.periodStart);
-  const end = new Date(body.periodEnd);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return undefined;
+// ─── Zod schemas ─────────────────────────────────────────────────────────────
+
+const isoDate = z.string().refine(
+  v => !Number.isNaN(new Date(v).getTime()),
+  { message: 'Invalid ISO date' },
+);
+
+const calculateQuerySchema = z.object({
+  periodStart: isoDate.optional(),
+  periodEnd: isoDate.optional(),
+  frequency: z.enum(['monthly', 'quarterly']).optional(),
+  persist: z.union([z.literal('true'), z.literal('false')]).optional(),
+});
+
+// `amount` is bounded to ±1 trillion AED so a malicious or fat-fingered value
+// can't blow up downstream numeric columns. NaN/Infinity are rejected by the
+// `.finite()` clause.
+const adjustmentBodySchema = z.object({
+  companyId: z.string().uuid(),
+  periodId: z.string().uuid(),
+  box: z.string().refine(isValidVat201BoxKey, { message: 'Unknown VAT 201 box key' }),
+  amount: z.number().finite().min(-1e12).max(1e12),
+  reason: z.string().min(1).max(2000),
+});
+
+const statusBodySchema = z.object({
+  companyId: z.string().uuid(),
+  status: z.enum(['draft', 'ready', 'submitted', 'accepted']),
+  ftaReferenceNumber: z.string().min(1).max(100).optional(),
+});
+
+const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
+
+function parsePeriod(parsed: z.infer<typeof calculateQuerySchema>): VatPeriod | undefined {
+  if (!parsed.periodStart || !parsed.periodEnd) return undefined;
+  const start = new Date(parsed.periodStart);
+  const end = new Date(parsed.periodEnd);
   if (end <= start) return undefined;
-  // Due date defaults to FTA-mandated period_end + 28 days, but allow override.
-  const due = body.dueDate ? new Date(body.dueDate) : new Date(end.getTime() + 28 * 24 * 60 * 60 * 1000);
   return {
     start,
     end,
-    dueDate: due,
-    frequency: body.frequency === 'monthly' ? 'monthly' : 'quarterly',
+    // FTA-mandated: due 28 days after period end. Override is intentionally not
+    // accepted from the request body — the deadline is statutory, not user data.
+    dueDate: new Date(end.getTime() + 28 * 24 * 60 * 60 * 1000),
+    frequency: parsed.frequency === 'monthly' ? 'monthly' : 'quarterly',
   };
+}
+
+function badRequest(res: Response, err: z.ZodError) {
+  return res.status(400).json({
+    message: 'Invalid request',
+    issues: err.issues.map(i => ({ path: i.path, message: i.message })),
+  });
 }
 
 export function registerVATAutopilotRoutes(app: Express) {
   // ─── Auto-calculate the current (or specified) period ─────────────────────
   app.get('/api/vat/autopilot/calculate/:companyId', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const { companyId } = req.params;
+    const params = companyIdParamSchema.safeParse(req.params);
+    if (!params.success) return badRequest(res, params.error);
+    const query = calculateQuerySchema.safeParse(req.query);
+    if (!query.success) return badRequest(res, query.error);
+
+    const { companyId } = params.data;
     const uid = userId(req);
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
     // Optional period override via query string for historical calculations.
-    const period = parsePeriod({
-      periodStart: req.query.periodStart,
-      periodEnd: req.query.periodEnd,
-      frequency: req.query.frequency,
-    });
+    const period = parsePeriod(query.data);
 
     try {
       const calc = await calculateVatReturn(companyId, period);
       // Persist the snapshot so the periods listing reflects it.
-      const persist = String(req.query.persist ?? 'true').toLowerCase() !== 'false';
+      const persist = query.data.persist !== 'false';
       let periodId: string | null = null;
       if (persist) {
         periodId = await upsertCalculatedPeriod(calc);
@@ -75,7 +116,10 @@ export function registerVATAutopilotRoutes(app: Express) {
 
   // ─── List all periods (with status, calculation snapshot, deadline) ───────
   app.get('/api/vat/autopilot/periods/:companyId', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const { companyId } = req.params;
+    const params = companyIdParamSchema.safeParse(req.params);
+    if (!params.success) return badRequest(res, params.error);
+
+    const { companyId } = params.data;
     const uid = userId(req);
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
@@ -85,7 +129,13 @@ export function registerVATAutopilotRoutes(app: Express) {
 
   // ─── Single period detail (with adjustments) ──────────────────────────────
   app.get('/api/vat/autopilot/periods/:companyId/:periodId', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const { companyId, periodId } = req.params;
+    const params = z.object({
+      companyId: z.string().uuid(),
+      periodId: z.string().uuid(),
+    }).safeParse(req.params);
+    if (!params.success) return badRequest(res, params.error);
+
+    const { companyId, periodId } = params.data;
     const uid = userId(req);
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
@@ -100,28 +150,20 @@ export function registerVATAutopilotRoutes(app: Express) {
 
   // ─── Add a manual adjustment to a period ──────────────────────────────────
   app.post('/api/vat/autopilot/adjustments', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const body = adjustmentBodySchema.safeParse(req.body);
+    if (!body.success) return badRequest(res, body.error);
+
+    const { companyId, periodId, box, amount, reason } = body.data;
     const uid = userId(req);
-    const { periodId, box, amount, reason, companyId } = req.body || {};
-    if (!periodId || !box || typeof amount !== 'number' || !reason || !companyId) {
-      return res.status(400).json({
-        message: 'periodId, box, amount, reason, and companyId are required',
-      });
-    }
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    // Verify the period belongs to the claimed company before mutating it.
-    const ownership = await pool.query(
-      `SELECT company_id FROM vat_return_periods WHERE id = $1`,
-      [periodId],
-    );
-    if (ownership.rows.length === 0 || String(ownership.rows[0].company_id) !== companyId) {
-      return res.status(404).json({ message: 'Period not found' });
-    }
-
+    // Service-layer also filters by company_id on the UPDATE — that's the
+    // authoritative gate. The pre-check here only exists so we can surface a
+    // 404 distinct from "period belongs to another tenant" without leaking it.
     try {
       const adjustment = await addAdjustment({
-        periodId, box, amount, reason, userId: uid,
+        periodId, companyId, box, amount, reason, userId: uid,
       });
       res.status(201).json(adjustment);
     } catch (err: any) {
@@ -131,28 +173,21 @@ export function registerVATAutopilotRoutes(app: Express) {
 
   // ─── Update period filing status ──────────────────────────────────────────
   app.patch('/api/vat/autopilot/periods/:periodId/status', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const params = z.object({ periodId: z.string().uuid() }).safeParse(req.params);
+    if (!params.success) return badRequest(res, params.error);
+    const body = statusBodySchema.safeParse(req.body);
+    if (!body.success) return badRequest(res, body.error);
+
+    const { periodId } = params.data;
+    const { companyId, status, ftaReferenceNumber } = body.data;
     const uid = userId(req);
-    const { periodId } = req.params;
-    const { status, companyId, ftaReferenceNumber } = req.body || {};
-    const allowed: VatPeriodStatus[] = ['draft', 'ready', 'submitted', 'accepted'];
-    if (!allowed.includes(status)) {
-      return res.status(400).json({ message: `status must be one of ${allowed.join(', ')}` });
-    }
-    if (!companyId) return res.status(400).json({ message: 'companyId is required' });
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-
-    const ownership = await pool.query(
-      `SELECT company_id FROM vat_return_periods WHERE id = $1`,
-      [periodId],
-    );
-    if (ownership.rows.length === 0 || String(ownership.rows[0].company_id) !== companyId) {
-      return res.status(404).json({ message: 'Period not found' });
-    }
 
     try {
       const summary = await updatePeriodStatus({
         periodId,
+        companyId,
         newStatus: status,
         userId: uid,
         ftaReferenceNumber,
@@ -167,8 +202,10 @@ export function registerVATAutopilotRoutes(app: Express) {
   // ─── Firm-wide upcoming deadlines ─────────────────────────────────────────
   app.get('/api/vat/autopilot/due-dates', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const uid = userId(req);
-    // Resolve every company the caller can access (firm role widens this set
-    // to all assigned clients; ordinary users see only their own companies).
+    // Resolve every company the caller has direct membership in. Firm staff
+    // see all assigned clients via the same companyUsers join; ordinary users
+    // see only their own companies. Either way the SQL is server-side
+    // filtered to the caller — no client-supplied company list is trusted.
     const companies = await storage.getCompaniesByUserId(uid);
     const accessibleIds = companies.map(c => c.id);
     if (accessibleIds.length === 0) return res.json([]);

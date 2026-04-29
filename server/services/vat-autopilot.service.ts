@@ -454,9 +454,12 @@ export interface SavedAdjustment {
 export function applyAdjustments(boxes: Vat201BoxValues, adjustments: SavedAdjustment[]): Vat201BoxValues {
   const next: Vat201BoxValues = { ...boxes };
   for (const adj of adjustments) {
-    if (adj.box in next) {
-      (next as any)[adj.box] = round2(((next as any)[adj.box] ?? 0) + adj.amount);
-    }
+    // Strict allow-list — `box in next` would also match inherited prototype
+    // keys (`__proto__`, `constructor`, `toString`...) which historic data may
+    // contain if it bypassed the route validation.
+    if (!isValidVat201BoxKey(adj.box)) continue;
+    if (!Number.isFinite(adj.amount)) continue;
+    (next as any)[adj.box] = round2(((next as any)[adj.box] ?? 0) + adj.amount);
   }
   // Re-derive totals after adjustment so Box 8/11/12/13/14 stay consistent.
   next.box8TotalVat = round2(
@@ -827,32 +830,73 @@ export async function listPeriodsForCompany(
 }
 
 /**
+ * Allow-list of valid VAT 201 box keys. Used to reject adjustments targeting
+ * inherited Object.prototype keys (`__proto__`, `constructor`, `toString`...)
+ * which would otherwise pass `if (adj.box in next)` checks downstream.
+ */
+export const VAT201_BOX_KEYS: ReadonlyArray<keyof Vat201BoxValues> = [
+  'box1aAbuDhabiAmount', 'box1aAbuDhabiVat',
+  'box1bDubaiAmount', 'box1bDubaiVat',
+  'box1cSharjahAmount', 'box1cSharjahVat',
+  'box1dAjmanAmount', 'box1dAjmanVat',
+  'box1eUmmAlQuwainAmount', 'box1eUmmAlQuwainVat',
+  'box1fRasAlKhaimahAmount', 'box1fRasAlKhaimahVat',
+  'box1gFujairahAmount', 'box1gFujairahVat',
+  'box3ReverseChargeAmount', 'box3ReverseChargeVat',
+  'box4ZeroRatedAmount',
+  'box5ExemptAmount',
+  'box8TotalAmount', 'box8TotalVat',
+  'box9ExpensesAmount', 'box9ExpensesVat',
+  'box10ReverseChargeAmount', 'box10ReverseChargeVat',
+  'box11TotalAmount', 'box11TotalVat',
+  'box12TotalDueTax',
+  'box13RecoverableTax',
+  'box14PayableTax',
+];
+const VAT201_BOX_KEY_SET: ReadonlySet<string> = new Set(VAT201_BOX_KEYS);
+
+export function isValidVat201BoxKey(value: unknown): value is keyof Vat201BoxValues {
+  return typeof value === 'string' && VAT201_BOX_KEY_SET.has(value);
+}
+
+/**
  * Add a manual adjustment to an open period. Adjustments are append-only —
  * they form an audit trail visible in the period record.
+ *
+ * `companyId` is required and the UPDATE filters on it as a defense-in-depth
+ * boundary in case a caller forgets to verify period ownership at the route.
  */
 export async function addAdjustment(input: {
   periodId: string;
+  companyId: string;
   box: string;
   amount: number;
   reason: string;
   userId: string;
 }): Promise<SavedAdjustment> {
+  if (!isValidVat201BoxKey(input.box)) {
+    throw new Error(`Invalid VAT 201 box key: '${input.box}'`);
+  }
+  if (!Number.isFinite(input.amount)) {
+    throw new Error('Adjustment amount must be a finite number');
+  }
   const adjustment: SavedAdjustment = {
     id: cryptoRandomId(),
-    box: input.box as keyof Vat201BoxValues,
-    amount: input.amount,
+    box: input.box,
+    amount: round2(input.amount),
     reason: input.reason,
     userId: input.userId,
     createdAt: new Date().toISOString(),
   };
   const res = await pool.query(
     `UPDATE vat_return_periods
-     SET adjustments = COALESCE(adjustments, '[]'::jsonb) || $2::jsonb,
+     SET adjustments = COALESCE(adjustments, '[]'::jsonb) || $3::jsonb,
          updated_at = now()
      WHERE id = $1
+       AND company_id = $2
        AND status IN ('draft','ready')
      RETURNING id`,
-    [input.periodId, JSON.stringify(adjustment)],
+    [input.periodId, input.companyId, JSON.stringify(adjustment)],
   );
   if (res.rows.length === 0) {
     throw new Error('Period not found or no longer editable');
@@ -861,9 +905,14 @@ export async function addAdjustment(input: {
 }
 
 /**
- * Update the lifecycle status of a period. Status transitions are guarded:
+ * Update the lifecycle status of a period. Status transitions are forward-only
+ * and may not skip stages:
  *   draft → ready → submitted → accepted
- * Backwards transitions are not allowed once submitted.
+ * Same-status no-ops are allowed (e.g. re-marking submitted to attach an FTA
+ * reference number) so the UI doesn't have to special-case them.
+ *
+ * `companyId` is required so the SQL filter rejects cross-tenant attempts even
+ * if the caller forgot to verify ownership at the route.
  */
 const STATUS_RANK: Record<VatPeriodStatus, number> = {
   draft: 0, ready: 1, submitted: 2, accepted: 3,
@@ -871,17 +920,23 @@ const STATUS_RANK: Record<VatPeriodStatus, number> = {
 
 export async function updatePeriodStatus(input: {
   periodId: string;
+  companyId: string;
   newStatus: VatPeriodStatus;
   userId: string;
   ftaReferenceNumber?: string;
 }): Promise<VatPeriodSummary | null> {
   const cur = await pool.query(
-    `SELECT id, company_id, status FROM vat_return_periods WHERE id = $1`,
-    [input.periodId],
+    `SELECT id, company_id, status FROM vat_return_periods
+     WHERE id = $1 AND company_id = $2`,
+    [input.periodId, input.companyId],
   );
   if (cur.rows.length === 0) return null;
   const currentStatus = cur.rows[0].status as VatPeriodStatus;
-  if (STATUS_RANK[input.newStatus] < STATUS_RANK[currentStatus]) {
+  const cur_rank = STATUS_RANK[currentStatus];
+  const new_rank = STATUS_RANK[input.newStatus];
+  // Forward-only, single-step (or same-status no-op). Reject backwards moves
+  // and skips like draft→submitted or ready→accepted.
+  if (new_rank < cur_rank || new_rank > cur_rank + 1) {
     throw new Error(`Cannot transition VAT period from '${currentStatus}' to '${input.newStatus}'`);
   }
   const setSubmitted = input.newStatus === 'submitted' || input.newStatus === 'accepted';
@@ -892,13 +947,14 @@ export async function updatePeriodStatus(input: {
          submitted_by = CASE WHEN $3::boolean AND submitted_by IS NULL THEN $4::uuid ELSE submitted_by END,
          fta_reference_number = COALESCE($5, fta_reference_number),
          updated_at = now()
-     WHERE id = $1`,
+     WHERE id = $1 AND company_id = $6`,
     [
       input.periodId,
       input.newStatus,
       setSubmitted,
       input.userId,
       input.ftaReferenceNumber ?? null,
+      input.companyId,
     ],
   );
   // Return refreshed summary

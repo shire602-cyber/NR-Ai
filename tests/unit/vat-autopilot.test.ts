@@ -12,6 +12,8 @@ import {
   reconcile,
   applyAdjustments,
   frequencyFromCompany,
+  isValidVat201BoxKey,
+  VAT201_BOX_KEYS,
   type Vat201BoxValues,
   type SavedAdjustment,
 } from '../../server/services/vat-autopilot.service';
@@ -403,5 +405,85 @@ describe('frequencyFromCompany', () => {
     expect(frequencyFromCompany('Quarterly')).toBe('quarterly');
     expect(frequencyFromCompany(null)).toBe('quarterly');
     expect(frequencyFromCompany('')).toBe('quarterly');
+  });
+});
+
+// ─── isValidVat201BoxKey (security: prevent prototype-pollution-style keys) ─
+
+describe('isValidVat201BoxKey', () => {
+  it('accepts every documented VAT 201 box key', () => {
+    for (const k of VAT201_BOX_KEYS) {
+      expect(isValidVat201BoxKey(k)).toBe(true);
+    }
+  });
+
+  it('rejects inherited Object.prototype keys', () => {
+    expect(isValidVat201BoxKey('__proto__')).toBe(false);
+    expect(isValidVat201BoxKey('constructor')).toBe(false);
+    expect(isValidVat201BoxKey('toString')).toBe(false);
+    expect(isValidVat201BoxKey('hasOwnProperty')).toBe(false);
+  });
+
+  it('rejects unknown box names and non-string inputs', () => {
+    expect(isValidVat201BoxKey('box99Imaginary')).toBe(false);
+    expect(isValidVat201BoxKey('')).toBe(false);
+    expect(isValidVat201BoxKey(undefined)).toBe(false);
+    expect(isValidVat201BoxKey(null)).toBe(false);
+    expect(isValidVat201BoxKey(42)).toBe(false);
+    expect(isValidVat201BoxKey({})).toBe(false);
+  });
+});
+
+// ─── applyAdjustments hardening (defense-in-depth on stored adjustments) ────
+
+describe('applyAdjustments security', () => {
+  function blankBoxes(): Vat201BoxValues {
+    return {
+      box1aAbuDhabiAmount: 0, box1aAbuDhabiVat: 0,
+      box1bDubaiAmount: 1000, box1bDubaiVat: 50,
+      box1cSharjahAmount: 0, box1cSharjahVat: 0,
+      box1dAjmanAmount: 0, box1dAjmanVat: 0,
+      box1eUmmAlQuwainAmount: 0, box1eUmmAlQuwainVat: 0,
+      box1fRasAlKhaimahAmount: 0, box1fRasAlKhaimahVat: 0,
+      box1gFujairahAmount: 0, box1gFujairahVat: 0,
+      box3ReverseChargeAmount: 0, box3ReverseChargeVat: 0,
+      box4ZeroRatedAmount: 200,
+      box5ExemptAmount: 100,
+      box8TotalAmount: 1300, box8TotalVat: 50,
+      box9ExpensesAmount: 500, box9ExpensesVat: 25,
+      box10ReverseChargeAmount: 0, box10ReverseChargeVat: 0,
+      box11TotalAmount: 500, box11TotalVat: 25,
+      box12TotalDueTax: 50,
+      box13RecoverableTax: 25,
+      box14PayableTax: 25,
+    };
+  }
+
+  function rawAdj(box: string, amount: number): SavedAdjustment {
+    return { id: 'a', box: box as any, amount, reason: 'r', userId: 'u', createdAt: new Date().toISOString() };
+  }
+
+  it('does not mutate prototype-keyed adjustments stored in legacy data', () => {
+    const start = blankBoxes();
+    const before = JSON.stringify(start);
+    const result = applyAdjustments(start, [
+      rawAdj('__proto__', 999),
+      rawAdj('constructor', 999),
+      rawAdj('toString', 999),
+    ]);
+    expect(JSON.stringify(result)).toBe(before);
+    // Prototype is not polluted.
+    expect((Object.prototype as any).box1bDubaiVat).toBeUndefined();
+  });
+
+  it('drops adjustments whose amount is non-finite', () => {
+    const start = blankBoxes();
+    const before = JSON.stringify(start);
+    const result = applyAdjustments(start, [
+      rawAdj('box1bDubaiVat', Number.NaN),
+      rawAdj('box1bDubaiVat', Number.POSITIVE_INFINITY),
+      rawAdj('box1bDubaiVat', Number.NEGATIVE_INFINITY),
+    ]);
+    expect(JSON.stringify(result)).toBe(before);
   });
 });
