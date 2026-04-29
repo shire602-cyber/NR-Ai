@@ -427,6 +427,67 @@ describe('runAutopilot pipeline', () => {
     const result = await runAutopilot('co-1', 'user-1', ocr);
     expect(result.autoPosted).toBe(true);
   });
+
+  // ---------- regression: foreign-currency must not auto-post ----------
+
+  it('does NOT auto-post when currency is non-AED, even with high confidence + accepted rule', async () => {
+    highConfidenceRule();
+    const result = await runAutopilot('co-1', 'user-1', { ...ocr, currency: 'USD' });
+    // Auto-posting USD numbers as AED in the GL would be a real-money mistake.
+    // The pipeline must queue these for manual review until FX is wired in.
+    expect(result.autoPosted).toBe(false);
+    expect(result.queuedForReview).toBe(true);
+    expect(state.journalEntries).toHaveLength(0);
+  });
+
+  it('still auto-posts when currency is "aed" (case-insensitive)', async () => {
+    highConfidenceRule();
+    const result = await runAutopilot('co-1', 'user-1', { ...ocr, currency: 'aed' });
+    expect(result.autoPosted).toBe(true);
+  });
+
+  // ---------- regression: archived rule account must not be used for auto-post ----------
+
+  it('falls back to category pick when rule account has been archived', async () => {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: 'rule-1',
+        merchantPattern: 'DEWA April 2026',
+        descriptionPattern: null,
+        accountId: 'a-archived', // an account NOT in state.accounts
+        category: 'Utilities',
+        confidence: 0.95,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    // We should still auto-post — but to the live Utilities Expense account,
+    // not the archived one named in the rule.
+    expect(result.autoPosted).toBe(true);
+    const je = state.journalEntries[0];
+    const debitLine = je.lines.find((l: any) => l.debit > 0 && l.accountId !== 'a-vat-input');
+    expect(debitLine.accountId).toBe('a-utilities');
+  });
+
+  // ---------- regression: post-JE failures preserve autoPosted: true ----------
+
+  it('returns autoPosted: true when JE is created even if the receipt link update fails', async () => {
+    highConfidenceRule();
+    const { storage: mockedStorage } = await import('../../server/storage');
+    // Simulate DB blip on the post-JE updateReceipt — the JE itself succeeds.
+    (mockedStorage.updateReceipt as any).mockImplementationOnce(async () => {
+      throw new Error('connection lost');
+    });
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    // The JE was created, so the response must report autoPosted: true. A false
+    // response would diverge from DB reality (the JE row exists).
+    expect(result.autoPosted).toBe(true);
+    expect(result.journalEntryId).toBeTruthy();
+    expect(state.journalEntries).toHaveLength(1);
+  });
 });
 
 // =========================================================

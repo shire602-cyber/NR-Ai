@@ -374,3 +374,27 @@ describe('keyword coverage', () => {
     }
   });
 });
+
+// =========================================================
+// Word-boundary keywords: ' du ', 'hp ', 'meta ' must match
+// at the START or END of the haystack as well as the middle
+// =========================================================
+
+describe('keyword word-boundary matching', () => {
+  it('matches " du " at the very start of the merchant', () => {
+    // Pre-fix: haystack was "du telecom" with no leading space, so " du "
+    // missed. After padding, it should hit Communication.
+    const hit = __test.matchKeywords('DU Telecom');
+    expect(hit?.category).toBe('Communication');
+  });
+
+  it('matches "hp " at the very end of the merchant', () => {
+    const hit = __test.matchKeywords('Buy new HP');
+    expect(hit?.category).toBe('Equipment');
+  });
+
+  it('matches "meta " at the very end of the merchant', () => {
+    const hit = __test.matchKeywords('Ad spend with Meta');
+    expect(hit?.category).toBe('Marketing');
+  });
+});
