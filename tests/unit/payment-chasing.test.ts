@@ -178,6 +178,46 @@ describe('nextLevelFor', () => {
     const row = buildAgingRow(inv({ status: 'paid' }), [], today);
     expect(nextLevelFor(row)).toBe(null);
   });
+
+  // Regression: the L3 → L4 boundary must trigger at exactly 61 days overdue.
+  // Spec is L3 = 31..60, L4 = 60+ meaning ≥61. Off-by-one here would either
+  // (a) fail to escalate stale invoices, or (b) prematurely flip a 60-day
+  // invoice into "Final notice" before policy allows.
+  describe('day-60 → day-61 escalation boundary', () => {
+    const today60 = new Date('2026-04-29T10:00:00Z');
+    // Due dates chosen so daysBetween(due, today60) lands on the target day.
+    const dueAt60 = '2026-02-28T00:00:00Z'; // 60 days before 2026-04-29
+    const dueAt61 = '2026-02-27T00:00:00Z'; // 61 days
+
+    it('day 60, never chased → L3', () => {
+      const row = buildAgingRow(inv({ dueDate: dueAt60 }), [], today60);
+      expect(row.daysOverdue).toBe(60);
+      expect(row.recommendedLevel).toBe(3);
+      expect(nextLevelFor(row)).toBe(3);
+    });
+
+    it('day 61, never chased → L4', () => {
+      const row = buildAgingRow(inv({ dueDate: dueAt61 }), [], today60);
+      expect(row.daysOverdue).toBe(61);
+      expect(row.recommendedLevel).toBe(4);
+      expect(nextLevelFor(row)).toBe(4);
+    });
+
+    it('day 60 already at L3 → escalates to L4', () => {
+      const row = buildAgingRow(inv({ dueDate: dueAt60, chaseLevel: 3 }), [], today60);
+      expect(nextLevelFor(row)).toBe(4);
+    });
+
+    it('day 61 already at L4 → no further escalation (returns null)', () => {
+      const row = buildAgingRow(inv({ dueDate: dueAt61, chaseLevel: 4 }), [], today60);
+      expect(nextLevelFor(row)).toBe(null);
+    });
+
+    it('day 60 already at L4 → no further escalation (no downgrade)', () => {
+      const row = buildAgingRow(inv({ dueDate: dueAt60, chaseLevel: 4 }), [], today60);
+      expect(nextLevelFor(row)).toBe(null);
+    });
+  });
 });
 
 describe('isFrequencyEligible', () => {
@@ -195,6 +235,29 @@ describe('isFrequencyEligible', () => {
 
   it('treats invalid dates as eligible (fail-open)', () => {
     expect(isFrequencyEligible('not a date', 7, today)).toBe(true);
+  });
+
+  // Boundary: with frequencyDays=7, a chase sent exactly 7 calendar days ago
+  // must be eligible (>=, not >); 6 days ago must be blocked.
+  it('is eligible at exactly the configured frequency window', () => {
+    expect(isFrequencyEligible('2026-04-22T00:00:00Z', 7, today)).toBe(true);
+  });
+
+  it('is ineligible at one day under the window', () => {
+    expect(isFrequencyEligible('2026-04-23T00:00:00Z', 7, today)).toBe(false);
+  });
+
+  it('treats lastChasedAt later in the day as same calendar day (UTC-midnight aging)', () => {
+    // 7 days ago at 23:59 UTC is still day-7 by UTC-midnight bucketing.
+    expect(isFrequencyEligible('2026-04-22T23:59:59Z', 7, today)).toBe(true);
+  });
+
+  it('with frequencyDays=0 always re-allows (no throttle)', () => {
+    expect(isFrequencyEligible('2026-04-29T09:00:00Z', 0, today)).toBe(true);
+  });
+
+  it('clamps negative frequencyDays to 0 (defensive)', () => {
+    expect(isFrequencyEligible('2026-04-29T09:00:00Z', -5, today)).toBe(true);
   });
 });
 
@@ -214,6 +277,48 @@ describe('renderTemplate', () => {
   it('escapes nothing — caller controls trust boundary', () => {
     // Ensures we don't accidentally HTML-encode WhatsApp message content.
     expect(renderTemplate('A & B {x}', { x: '<' })).toBe('A & B <');
+  });
+
+  // Edge cases that have bitten template engines before — explicit tests so
+  // we don't regress on real customer messages.
+  it('substitutes the same placeholder multiple times', () => {
+    expect(renderTemplate('{x}/{x}/{x}', { x: 'A' })).toBe('A/A/A');
+  });
+
+  it('renders zero values (not null/undefined)', () => {
+    expect(renderTemplate('{daysOverdue} days', { daysOverdue: 0 })).toBe('0 days');
+  });
+
+  it('renders empty-string values rather than leaving the token', () => {
+    expect(renderTemplate('Re: {invoiceNumber}', { invoiceNumber: '' })).toBe('Re: ');
+  });
+
+  it('returns the body unchanged when there are no placeholders', () => {
+    expect(renderTemplate('Plain text — no tokens.', { x: 'Y' })).toBe('Plain text — no tokens.');
+  });
+
+  it('handles adjacent placeholders without separators', () => {
+    expect(renderTemplate('{a}{b}{c}', { a: '1', b: '2', c: '3' })).toBe('123');
+  });
+
+  it('does not recursively expand placeholder values that look like tokens', () => {
+    // Values are inserted verbatim — a malicious or accidental "{customerName}"
+    // inside a value must NOT trigger another substitution pass.
+    expect(renderTemplate('{x}', { x: '{customerName}', customerName: 'Acme' })).toBe('{customerName}');
+  });
+
+  it('only matches \\w+ tokens (not arbitrary punctuation)', () => {
+    // Dotted "tokens" should be treated as plain text.
+    expect(renderTemplate('{a.b}', { a: 'A', b: 'B' })).toBe('{a.b}');
+  });
+
+  it('substitutes Arabic placeholder values without mangling characters', () => {
+    expect(renderTemplate('عميل: {customerName}', { customerName: 'شركة الفجر' }))
+      .toBe('عميل: شركة الفجر');
+  });
+
+  it('returns empty string for empty body input', () => {
+    expect(renderTemplate('', { x: 'Y' })).toBe('');
   });
 });
 
@@ -279,6 +384,20 @@ describe('groupByClient', () => {
     const groups = groupByClient(rows);
     expect(groups.map(g => g.contactId)).toEqual(['c1', 'c3', 'c2']);
   });
+
+  it('returns an empty array for an empty input list', () => {
+    expect(groupByClient([])).toEqual([]);
+  });
+
+  it('uses normalised name fallback regardless of case/whitespace', () => {
+    const rows = [
+      row('  Acme LLC ', null, 5, 100, 'a'),
+      row('acme llc', null, 7, 50, 'b'),
+    ];
+    const groups = groupByClient(rows);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].rows).toHaveLength(2);
+  });
 });
 
 describe('renderGroupedMessage', () => {
@@ -313,6 +432,29 @@ describe('computeEffectiveness', () => {
     expect(s.totalChases).toBe(0);
     expect(s.conversionRate).toBe(0);
     expect(s.avgDaysToPayment).toBe(null);
+    expect(s.uniqueInvoices).toBe(0);
+    expect(s.byLevel[1]).toEqual({ sent: 0, paid: 0 });
+    expect(s.byLevel[4]).toEqual({ sent: 0, paid: 0 });
+  });
+
+  it('ignores paidAt earlier than sentAt for window/avg metrics', () => {
+    // Data corruption guard: a chase logged after the payment shouldn't
+    // count toward the "paid within N days" funnel — that would make the
+    // dashboard show fictional negative response times.
+    const stats = computeEffectiveness([
+      { invoiceId: 'a', level: 1, sentAt: '2026-04-10', paidAt: '2026-04-01' },
+    ]);
+    expect(stats.paidAfterChase).toBe(1); // still counts as paid
+    expect(stats.paidWithin7).toBe(0); // negative span excluded
+    expect(stats.paidWithin30).toBe(0);
+    expect(stats.avgDaysToPayment).toBe(null);
+  });
+
+  it('clamps unknown levels into level 1 (defensive)', () => {
+    const stats = computeEffectiveness([
+      { invoiceId: 'a', level: 99 as any, sentAt: '2026-04-01', paidAt: null },
+    ]);
+    expect(stats.byLevel[1].sent).toBe(1);
   });
 
   it('counts paid-after-chase per unique invoice', () => {
@@ -351,5 +493,37 @@ describe('WhatsApp helpers', () => {
 
   it('returns null for empty phone', () => {
     expect(buildWaMeLink('', 'msg')).toBe(null);
+  });
+
+  it('URL-encodes Arabic and newlines correctly', () => {
+    const link = buildWaMeLink('+971501234567', 'مرحبا\nشكرا');
+    expect(link).toContain('https://wa.me/971501234567?text=');
+    // Newline must be encoded; Arabic must round-trip via decodeURIComponent.
+    const text = decodeURIComponent(link!.split('?text=')[1]);
+    expect(text).toBe('مرحبا\nشكرا');
+  });
+});
+
+// ─── Edge-case coverage for outstandingFor ───────────────────────────────────
+describe('outstandingFor edge cases', () => {
+  it('treats null/undefined invoice.total as zero', () => {
+    // Bypass the helper's `?? 1000` default so we can assert the service
+    // clamps a missing total to zero (rather than returning negative paid).
+    const i = { ...inv(), total: undefined as unknown as number };
+    expect(outstandingFor(i, [{ invoiceId: 'inv-1', amount: 100 }])).toBe(0);
+  });
+
+  it('ignores NaN payment amounts', () => {
+    const i = inv({ total: 1000 });
+    expect(outstandingFor(i, [{ invoiceId: 'inv-1', amount: NaN as any }])).toBe(1000);
+  });
+
+  it('rounds to two decimals (no floating-point drift)', () => {
+    const i = inv({ total: 100 });
+    expect(outstandingFor(i, [
+      { invoiceId: 'inv-1', amount: 33.33 },
+      { invoiceId: 'inv-1', amount: 33.33 },
+      { invoiceId: 'inv-1', amount: 33.33 },
+    ])).toBe(0.01);
   });
 });
