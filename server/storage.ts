@@ -127,7 +127,7 @@ import {
   chaseConfigs
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, gte, isNull, or, sql } from "drizzle-orm";
+import { eq, and, desc, lt, lte, gte, isNull, or, inArray, sql } from "drizzle-orm";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
@@ -585,6 +585,7 @@ export interface IStorage {
 
   // Invoice Payments
   getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]>;
+  getInvoicePaymentsByCompanyId(companyId: string): Promise<InvoicePayment[]>;
   createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment>;
   getInvoicePaidTotal(invoiceId: string): Promise<number>;
   getDueInvoicesForRecurring(): Promise<Invoice[]>;
@@ -646,6 +647,18 @@ export interface IStorage {
   getPaymentChasesByInvoiceId(invoiceId: string): Promise<PaymentChase[]>;
   markChasesPaidForInvoice(invoiceId: string, paidAt: Date): Promise<void>;
   setInvoiceChaseLevel(invoiceId: string, level: number, lastChasedAt: Date): Promise<void>;
+  /**
+   * Atomically set chase_level/last_chased_at iff the invoice has not been
+   * chased within the last `minSecondsBetween` seconds. Returns true when the
+   * caller has won the slot (and may safely send), false otherwise. Prevents
+   * duplicate chases from concurrent requests / double-clicks.
+   */
+  tryClaimChaseSlot(
+    invoiceId: string,
+    level: number,
+    now: Date,
+    minSecondsBetween: number,
+  ): Promise<boolean>;
   setInvoiceDoNotChase(invoiceId: string, value: boolean): Promise<void>;
 
   getChaseTemplatesForCompany(companyId: string): Promise<ChaseTemplate[]>;
@@ -2956,6 +2969,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(invoicePayments.createdAt));
   }
 
+  async getInvoicePaymentsByCompanyId(companyId: string): Promise<InvoicePayment[]> {
+    return await db
+      .select()
+      .from(invoicePayments)
+      .where(eq(invoicePayments.companyId, companyId))
+      .orderBy(desc(invoicePayments.createdAt));
+  }
+
   async createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment> {
     const [payment] = await db.insert(invoicePayments).values(data).returning();
     return payment;
@@ -3317,6 +3338,24 @@ export class DatabaseStorage implements IStorage {
       .update(invoices)
       .set({ chaseLevel: level, lastChasedAt })
       .where(eq(invoices.id, invoiceId));
+  }
+
+  async tryClaimChaseSlot(
+    invoiceId: string,
+    level: number,
+    now: Date,
+    minSecondsBetween: number,
+  ): Promise<boolean> {
+    const cutoff = new Date(now.getTime() - Math.max(0, minSecondsBetween) * 1000);
+    const claimed = await db
+      .update(invoices)
+      .set({ chaseLevel: level, lastChasedAt: now })
+      .where(and(
+        eq(invoices.id, invoiceId),
+        or(isNull(invoices.lastChasedAt), lt(invoices.lastChasedAt, cutoff)),
+      ))
+      .returning({ id: invoices.id });
+    return claimed.length > 0;
   }
 
   async setInvoiceDoNotChase(invoiceId: string, value: boolean): Promise<void> {

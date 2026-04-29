@@ -486,9 +486,31 @@ describe('WhatsApp helpers', () => {
     expect(normalizePhoneForWa(null)).toBe('');
   });
 
+  it('rewrites UAE local format (leading 0) to E.164', () => {
+    // wa.me requires a country-coded number — "0501234567" alone won't route.
+    expect(normalizePhoneForWa('0501234567')).toBe('971501234567');
+    expect(normalizePhoneForWa('050 123 4567')).toBe('971501234567');
+    expect(normalizePhoneForWa('04 123 4567')).toBe('97141234567'); // landline
+  });
+
+  it('drops the 00 international prefix', () => {
+    expect(normalizePhoneForWa('00971501234567')).toBe('971501234567');
+    expect(normalizePhoneForWa('00 971 50 123 4567')).toBe('971501234567');
+  });
+
+  it('leaves already-country-coded foreign numbers alone', () => {
+    expect(normalizePhoneForWa('+966501234567')).toBe('966501234567'); // KSA
+    expect(normalizePhoneForWa('+15551234567')).toBe('15551234567'); // US
+  });
+
   it('builds wa.me links and URL-encodes the message', () => {
     const link = buildWaMeLink('+971501234567', 'Hello there!');
     expect(link).toBe('https://wa.me/971501234567?text=Hello%20there!');
+  });
+
+  it('builds wa.me links for UAE local-format phone input', () => {
+    const link = buildWaMeLink('050-123-4567', 'Hi');
+    expect(link).toBe('https://wa.me/971501234567?text=Hi');
   });
 
   it('returns null for empty phone', () => {
