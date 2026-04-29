@@ -19,11 +19,12 @@ import {
   addAdjustment,
   updatePeriodStatus,
   listDueDates,
+  computeDueDate,
   isValidVat201BoxKey,
   type VatPeriod,
 } from '../services/vat-autopilot.service';
 
-function userId(req: Request): string {
+function userId(req: Request): string | undefined {
   return (req as any).user?.id;
 }
 
@@ -68,9 +69,11 @@ function parsePeriod(parsed: z.infer<typeof calculateQuerySchema>): VatPeriod | 
   return {
     start,
     end,
-    // FTA-mandated: due 28 days after period end. Override is intentionally not
-    // accepted from the request body — the deadline is statutory, not user data.
-    dueDate: new Date(end.getTime() + 28 * 24 * 60 * 60 * 1000),
+    // FTA-mandated: due 28 days after period end (normalised to UTC midnight
+    // by computeDueDate so it matches what the service produces for
+    // auto-detected periods). Override is intentionally not accepted from the
+    // request body — the deadline is statutory, not user data.
+    dueDate: computeDueDate(end),
     frequency: parsed.frequency === 'monthly' ? 'monthly' : 'quarterly',
   };
 }
@@ -80,6 +83,18 @@ function badRequest(res: Response, err: z.ZodError) {
     message: 'Invalid request',
     issues: err.issues.map(i => ({ path: i.path, message: i.message })),
   });
+}
+
+/**
+ * Map service-thrown errors onto HTTP responses. Known validation failures
+ * produce 4xx; anything else (DB outage, code bug) must propagate as 500 so
+ * it isn't silently masked as a generic "calculation failed" 400.
+ */
+function mapCalculationError(err: unknown): { status: number; code: string; message: string } {
+  const message = (err as { message?: string })?.message || 'Failed to calculate VAT return';
+  if (/TRN/.test(message)) return { status: 400, code: 'NO_TRN', message };
+  if (/not found/i.test(message)) return { status: 404, code: 'NOT_FOUND', message };
+  return { status: 500, code: 'CALCULATION_FAILED', message };
 }
 
 export function registerVATAutopilotRoutes(app: Express) {
@@ -92,6 +107,7 @@ export function registerVATAutopilotRoutes(app: Express) {
 
     const { companyId } = params.data;
     const uid = userId(req);
+    if (!uid) return res.status(401).json({ message: 'Unauthenticated' });
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
@@ -107,10 +123,9 @@ export function registerVATAutopilotRoutes(app: Express) {
         periodId = await upsertCalculatedPeriod(calc);
       }
       res.json({ ...calc, periodId });
-    } catch (err: any) {
-      const message = err?.message || 'Failed to calculate VAT return';
-      const code = message.includes('TRN') ? 'NO_TRN' : 'CALCULATION_FAILED';
-      res.status(400).json({ message, code });
+    } catch (err) {
+      const mapped = mapCalculationError(err);
+      res.status(mapped.status).json({ message: mapped.message, code: mapped.code });
     }
   }));
 
@@ -121,6 +136,7 @@ export function registerVATAutopilotRoutes(app: Express) {
 
     const { companyId } = params.data;
     const uid = userId(req);
+    if (!uid) return res.status(401).json({ message: 'Unauthenticated' });
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
     const periods = await listPeriodsForCompany(companyId);
@@ -137,6 +153,7 @@ export function registerVATAutopilotRoutes(app: Express) {
 
     const { companyId, periodId } = params.data;
     const uid = userId(req);
+    if (!uid) return res.status(401).json({ message: 'Unauthenticated' });
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
@@ -155,6 +172,7 @@ export function registerVATAutopilotRoutes(app: Express) {
 
     const { companyId, periodId, box, amount, reason } = body.data;
     const uid = userId(req);
+    if (!uid) return res.status(401).json({ message: 'Unauthenticated' });
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
@@ -181,6 +199,7 @@ export function registerVATAutopilotRoutes(app: Express) {
     const { periodId } = params.data;
     const { companyId, status, ftaReferenceNumber } = body.data;
     const uid = userId(req);
+    if (!uid) return res.status(401).json({ message: 'Unauthenticated' });
     const hasAccess = await storage.hasCompanyAccess(uid, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
@@ -202,6 +221,7 @@ export function registerVATAutopilotRoutes(app: Express) {
   // ─── Firm-wide upcoming deadlines ─────────────────────────────────────────
   app.get('/api/vat/autopilot/due-dates', authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const uid = userId(req);
+    if (!uid) return res.status(401).json({ message: 'Unauthenticated' });
     // Resolve every company the caller has direct membership in. Firm staff
     // see all assigned clients via the same companyUsers join; ordinary users
     // see only their own companies. Either way the SQL is server-side

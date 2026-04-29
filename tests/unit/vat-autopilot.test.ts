@@ -263,6 +263,7 @@ describe('aggregateInvoiceLines', () => {
     expect(result.standardRatedVat).toBe(10);
     expect(result.zeroRatedAmount).toBe(500);
     expect(result.exemptAmount).toBe(300);
+    expect(result.outOfScopeAmount).toBe(0);
   });
 
   it('treats vatRate=0 with no supply type as zero-rated', () => {
@@ -287,6 +288,7 @@ describe('aggregateInvoiceLines', () => {
       standardRatedVat: 0,
       zeroRatedAmount: 0,
       exemptAmount: 0,
+      outOfScopeAmount: 0,
     });
   });
 
@@ -308,6 +310,21 @@ describe('aggregateInvoiceLines', () => {
     ]);
     expect(result.exemptAmount).toBe(1000);
     expect(result.zeroRatedAmount).toBe(0);
+  });
+
+  it('excludes out_of_scope supplies from every VAT 201 bucket', () => {
+    // Out-of-scope supplies (e.g. designated-zone transactions, supplies made
+    // outside UAE) must not appear in Box 1, 4, or 5 — they are not reportable
+    // on the FTA VAT 201 form. Tracked separately so callers can verify.
+    const result = aggregateInvoiceLines([
+      { quantity: 1, unitPrice: 100, vatRate: 0.05, vatSupplyType: 'standard_rated' },
+      { quantity: 2, unitPrice: 250, vatRate: 0.05, vatSupplyType: 'out_of_scope' },
+    ]);
+    expect(result.standardRatedAmount).toBe(100);
+    expect(result.standardRatedVat).toBe(5);
+    expect(result.zeroRatedAmount).toBe(0);
+    expect(result.exemptAmount).toBe(0);
+    expect(result.outOfScopeAmount).toBe(500);
   });
 });
 
@@ -664,6 +681,12 @@ describe('isValidVat201BoxKey', () => {
     expect(isValidVat201BoxKey(null)).toBe(false);
     expect(isValidVat201BoxKey(42)).toBe(false);
     expect(isValidVat201BoxKey({})).toBe(false);
+  });
+
+  it('runtime list includes all final-total boxes (12, 13, 14)', () => {
+    expect(VAT201_BOX_KEYS).toContain('box12TotalDueTax');
+    expect(VAT201_BOX_KEYS).toContain('box13RecoverableTax');
+    expect(VAT201_BOX_KEYS).toContain('box14PayableTax');
   });
 });
 
