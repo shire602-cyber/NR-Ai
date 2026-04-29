@@ -34,6 +34,7 @@ import {
   setClassifierConfig,
   getClassifierConfig,
   invalidateModel,
+  updateModel,
   clearAllModels,
 } from '../../server/services/training-data.service';
 import { pool } from '../../server/db';
@@ -140,6 +141,131 @@ describe('setClassifierConfig', () => {
     const next = await setClassifierConfig('co-1', { autopilotEnabled: true });
     expect(next.autopilotEnabled).toBe(true);
     expect(next.mode).toBe('hybrid'); // preserved from default
+  });
+
+  it('clamps a sub-floor accuracyThreshold up to 0.5', async () => {
+    queryScript.push({ rows: [] });
+    const next = await setClassifierConfig('co-1', { accuracyThreshold: 0.1 });
+    expect(next.accuracyThreshold).toBe(0.5);
+  });
+
+  it('clamps a super-ceiling accuracyThreshold down to 0.99', async () => {
+    queryScript.push({ rows: [] });
+    const next = await setClassifierConfig('co-1', { accuracyThreshold: 1.5 });
+    expect(next.accuracyThreshold).toBe(0.99);
+  });
+
+  it('accepts a threshold at the exact 0.5 floor', async () => {
+    queryScript.push({ rows: [] });
+    const next = await setClassifierConfig('co-1', { accuracyThreshold: 0.5 });
+    expect(next.accuracyThreshold).toBe(0.5);
+  });
+
+  it('accepts a threshold at the exact 0.8 default', async () => {
+    queryScript.push({ rows: [] });
+    const next = await setClassifierConfig('co-1', { accuracyThreshold: 0.8 });
+    expect(next.accuracyThreshold).toBe(0.8);
+  });
+
+  it('ignores unknown patch fields rather than persisting them', async () => {
+    queryScript.push({ rows: [] });
+    const next = await setClassifierConfig('co-1', { mode: 'banana' as any, accuracyThreshold: 'oops' as any });
+    // mode falls through unchanged ('hybrid' default), threshold stays default.
+    expect(next.mode).toBe('hybrid');
+    expect(next.accuracyThreshold).toBe(0.8);
+  });
+});
+
+describe('clampThreshold (via getClassifierConfig)', () => {
+  it('clamps a malformed stored threshold up to the 0.5 floor', async () => {
+    const { storage } = await import('../../server/storage');
+    (storage.getCompany as any).mockResolvedValueOnce({
+      id: 'co-1',
+      classifierConfig: { mode: 'hybrid', accuracyThreshold: 0.0, autopilotEnabled: false },
+    });
+    const cfg = await getClassifierConfig('co-1');
+    expect(cfg.accuracyThreshold).toBe(0.5);
+  });
+
+  it('falls back to default when stored threshold is non-finite', async () => {
+    const { storage } = await import('../../server/storage');
+    (storage.getCompany as any).mockResolvedValueOnce({
+      id: 'co-1',
+      classifierConfig: { mode: 'hybrid', accuracyThreshold: NaN, autopilotEnabled: false },
+    });
+    const cfg = await getClassifierConfig('co-1');
+    // Non-numeric → fall through to DEFAULT_CLASSIFIER_CONFIG.accuracyThreshold (0.8).
+    expect(cfg.accuracyThreshold).toBe(0.8);
+  });
+});
+
+describe('updateModel', () => {
+  it('forces a rebuild even when the cache is fresh', async () => {
+    const queryMock = pool.query as any;
+    queryMock.mockClear();
+    queryMock.mockResolvedValue({ rows: [] });
+
+    invalidateModel('co-fresh');
+    const first = await getModel('co-fresh');
+    const callsAfterFirst = queryMock.mock.calls.length;
+    expect(callsAfterFirst).toBe(2); // rules + training examples
+
+    // updateModel must invalidate then rebuild — a second pair of queries.
+    const next = await updateModel('co-fresh');
+    expect(queryMock.mock.calls.length).toBe(callsAfterFirst + 2);
+    expect(next).not.toBe(first); // fresh promise / object
+  });
+});
+
+describe('boundary sample sizes for the failsafe', () => {
+  it('does NOT trip the failsafe with a single judged classification (way below MIN_SAMPLE)', async () => {
+    queryScript.push({
+      rows: [
+        { method: 'rule', accepted: '0', rejected: '1', pending: '0', total: '1' },
+      ],
+    });
+    const stats = await getModelStats('co-1');
+    expect(stats.totalPredictions).toBe(1);
+    expect(stats.belowThreshold).toBe(false);
+  });
+
+  it('does NOT trip the failsafe at exactly 19 internal judged (one shy of MIN_SAMPLE)', async () => {
+    queryScript.push({
+      rows: [
+        { method: 'rule', accepted: '0', rejected: '19', pending: '0', total: '19' },
+      ],
+    });
+    const stats = await getModelStats('co-1');
+    expect(stats.belowThreshold).toBe(false);
+  });
+
+  it('trips the failsafe at exactly 20 internal judged with accuracy below threshold', async () => {
+    queryScript.push({
+      rows: [
+        { method: 'rule', accepted: '10', rejected: '10', pending: '0', total: '20' }, // 50% < 80%
+      ],
+    });
+    const stats = await getModelStats('co-1');
+    expect(stats.belowThreshold).toBe(true);
+  });
+});
+
+describe('classifier_method bucketing', () => {
+  it('coalesces NULL/legacy classifier_method into the openai bucket', async () => {
+    queryScript.push({
+      rows: [
+        // The SQL `COALESCE(classifier_method, 'openai')` collapses these rows.
+        { method: 'openai', accepted: '5', rejected: '2', pending: '0', total: '7' },
+      ],
+    });
+    const stats = await getModelStats('co-1');
+    const openai = stats.byMethod.find((m) => m.method === 'openai')!;
+    expect(openai.accepted).toBe(5);
+    expect(openai.rejected).toBe(2);
+    // The four canonical methods are always represented (zero-filled).
+    expect(stats.byMethod.map((m) => m.method).sort()).toEqual(
+      ['keyword', 'openai', 'rule', 'statistical'],
+    );
   });
 });
 
