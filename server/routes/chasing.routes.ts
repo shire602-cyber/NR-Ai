@@ -501,15 +501,15 @@ export function registerChasingRoutes(app: Express) {
       }
       const parse = upsertTemplateSchema.partial().safeParse(req.body);
       if (!parse.success) return res.status(400).json({ message: 'Invalid payload', errors: parse.error.errors });
-      try {
-        const updated = await storage.updateChaseTemplate(id, companyId, parse.data as any);
-        res.json(updated);
-      } catch (e) {
-        // Storage throws when no row matches the (id, companyId) pair — i.e. the
-        // template either doesn't exist or belongs to another tenant (or is a
-        // system default). Return 404 so we don't leak which case applies.
+      // Storage filters by (id, companyId) — guarantees a caller scoped to
+      // company A cannot mutate company B's (or a system-default) template.
+      // Missing row could mean: doesn't exist, belongs to another tenant, or
+      // is a system default. Return 404 so we don't leak which case applies.
+      const updated = await storage.updateChaseTemplate(id, companyId, parse.data as any);
+      if (!updated) {
         return res.status(404).json({ message: 'Chase template not found' });
       }
+      res.json(updated);
     }),
   );
 
@@ -523,8 +523,8 @@ export function registerChasingRoutes(app: Express) {
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: 'Access denied' });
       }
-      const { deleted } = await storage.deleteChaseTemplate(id, companyId);
-      if (deleted === 0) {
+      const removed = await storage.deleteChaseTemplate(id, companyId);
+      if (!removed) {
         return res.status(404).json({ message: 'Chase template not found' });
       }
       res.json({ success: true });
