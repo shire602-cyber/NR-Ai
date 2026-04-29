@@ -490,7 +490,12 @@ export function registerChasingRoutes(app: Express) {
       }
       const parse = upsertTemplateSchema.partial().safeParse(req.body);
       if (!parse.success) return res.status(400).json({ message: 'Invalid payload', errors: parse.error.errors });
-      const updated = await storage.updateChaseTemplate(id, parse.data as any);
+      // Storage filters by (id, companyId) — guarantees a caller scoped to
+      // company A cannot mutate company B's (or a system-default) template.
+      const updated = await storage.updateChaseTemplate(id, companyId, parse.data as any);
+      if (!updated) {
+        return res.status(404).json({ message: 'Template not found' });
+      }
       res.json(updated);
     }),
   );
@@ -505,7 +510,10 @@ export function registerChasingRoutes(app: Express) {
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
         return res.status(403).json({ message: 'Access denied' });
       }
-      await storage.deleteChaseTemplate(id);
+      const removed = await storage.deleteChaseTemplate(id, companyId);
+      if (!removed) {
+        return res.status(404).json({ message: 'Template not found' });
+      }
       res.json({ success: true });
     }),
   );

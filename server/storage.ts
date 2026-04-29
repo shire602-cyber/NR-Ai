@@ -651,8 +651,8 @@ export interface IStorage {
   getChaseTemplatesForCompany(companyId: string): Promise<ChaseTemplate[]>;
   getChaseTemplate(level: number, language: string, companyId: string | null): Promise<ChaseTemplate | undefined>;
   createChaseTemplate(data: InsertChaseTemplate): Promise<ChaseTemplate>;
-  updateChaseTemplate(id: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate>;
-  deleteChaseTemplate(id: string): Promise<void>;
+  updateChaseTemplate(id: string, companyId: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate | undefined>;
+  deleteChaseTemplate(id: string, companyId: string): Promise<boolean>;
 
   getChaseConfig(companyId: string): Promise<ChaseConfig | undefined>;
   upsertChaseConfig(companyId: string, data: Partial<InsertChaseConfig>): Promise<ChaseConfig>;
@@ -3366,18 +3366,27 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async updateChaseTemplate(id: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate> {
+  async updateChaseTemplate(
+    id: string,
+    companyId: string,
+    data: Partial<InsertChaseTemplate>,
+  ): Promise<ChaseTemplate | undefined> {
+    // Scoped by companyId so a member of company A cannot mutate company B's
+    // (or a system-default, companyId IS NULL) template by guessing its id.
     const [row] = await db
       .update(chaseTemplates)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(chaseTemplates.id, id))
+      .where(and(eq(chaseTemplates.id, id), eq(chaseTemplates.companyId, companyId)))
       .returning();
-    if (!row) throw new Error('Chase template not found');
-    return row;
+    return row || undefined;
   }
 
-  async deleteChaseTemplate(id: string): Promise<void> {
-    await db.delete(chaseTemplates).where(eq(chaseTemplates.id, id));
+  async deleteChaseTemplate(id: string, companyId: string): Promise<boolean> {
+    const rows = await db
+      .delete(chaseTemplates)
+      .where(and(eq(chaseTemplates.id, id), eq(chaseTemplates.companyId, companyId)))
+      .returning({ id: chaseTemplates.id });
+    return rows.length > 0;
   }
 
   async getChaseConfig(companyId: string): Promise<ChaseConfig | undefined> {
