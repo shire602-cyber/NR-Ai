@@ -41,13 +41,14 @@ const log = createLogger('chasing');
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
-  const invoices = await storage.getInvoicesByCompanyId(companyId);
-  // Pull payments per invoice — done in parallel to keep the dashboard snappy
-  // for companies with hundreds of invoices.
-  const paymentLists = await Promise.all(
-    invoices.map(inv => storage.getInvoicePaymentsByInvoiceId(inv.id)),
-  );
-  const flatPayments: ChasePayment[] = paymentLists.flat().map(p => ({
+  // Fetch invoices and all their payments in two queries, not 1+N. Each
+  // invoice row only needs its own payments, but a single SELECT scoped to
+  // companyId is far cheaper than fanning out per-invoice on a large book.
+  const [invoices, payments] = await Promise.all([
+    storage.getInvoicesByCompanyId(companyId),
+    storage.getInvoicePaymentsByCompanyId(companyId),
+  ]);
+  const flatPayments: ChasePayment[] = payments.map(p => ({
     invoiceId: p.invoiceId,
     amount: Number(p.amount) || 0,
   }));
@@ -70,6 +71,11 @@ async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
     ),
   );
 }
+
+// Minimum seconds between successive chases for the same invoice — protects
+// against double-clicks and concurrent bulk runs at the database layer. The
+// human-readable frequency (chaseFrequencyDays) is enforced separately.
+const CHASE_RACE_LOCKOUT_SECONDS = 30;
 
 function parseDoNotChaseList(raw: string | null | undefined): string[] {
   if (!raw) return [];
@@ -250,6 +256,14 @@ export function registerChasingRoutes(app: Express) {
       const messageText = renderTemplate(template.body, { ...ctx });
       const subject = template.subject ? renderTemplate(template.subject, { ...ctx }) : null;
 
+      // Atomically claim the chase slot — if another request just sent a
+      // chase for this invoice, bail out with 409 instead of duplicating.
+      const sentAt = new Date();
+      const claimed = await storage.tryClaimChaseSlot(invoice.id, level, sentAt, CHASE_RACE_LOCKOUT_SECONDS);
+      if (!claimed) {
+        return res.status(409).json({ message: 'Another chase was just sent for this invoice — please wait a moment.' });
+      }
+
       // Persist chase
       const chase = await storage.createPaymentChase({
         companyId: invoice.companyId,
@@ -262,12 +276,9 @@ export function registerChasingRoutes(app: Express) {
         daysOverdueAtSend: row.daysOverdue,
         amountAtSend: row.outstanding,
         status: 'sent',
-        sentAt: new Date(),
+        sentAt,
         triggeredBy: userId,
       } as any);
-
-      // Mirror state on invoice
-      await storage.setInvoiceChaseLevel(invoice.id, level, new Date());
 
       // Mirror in WhatsApp message log (only when method = whatsapp)
       let waLink: string | null = null;
@@ -334,6 +345,26 @@ export function registerChasingRoutes(app: Express) {
         .filter(r => !(r.invoice.contactId && dnc.has(r.invoice.contactId)))
         .filter(r => isFrequencyEligible(r.invoice.lastChasedAt, frequency));
 
+      // Cache templates and contacts within a single bulk run. Without this,
+      // 100 invoices at L2 would issue 100 redundant template lookups and
+      // potentially many redundant contact lookups.
+      const templateCache = new Map<string, Awaited<ReturnType<typeof storage.getChaseTemplate>>>();
+      const contactCache = new Map<string, Awaited<ReturnType<typeof storage.getCustomerContact>>>();
+      const getTemplate = async (level: number) => {
+        const key = `${level}:${language}`;
+        if (templateCache.has(key)) return templateCache.get(key)!;
+        const tpl = await storage.getChaseTemplate(level, language, companyId);
+        templateCache.set(key, tpl);
+        return tpl;
+      };
+      const getContact = async (id: string | null | undefined) => {
+        if (!id) return null;
+        if (contactCache.has(id)) return contactCache.get(id)!;
+        const c = await storage.getCustomerContact(id);
+        contactCache.set(id, c);
+        return c ?? null;
+      };
+
       const results: Array<{ invoiceId: string; level: number; status: string; waLink?: string | null; error?: string }> = [];
       for (const row of candidates) {
         const level = nextLevelFor(row, { maxLevel });
@@ -341,18 +372,25 @@ export function registerChasingRoutes(app: Express) {
           results.push({ invoiceId: row.invoice.id, level: 0, status: 'skipped_max_level' });
           continue;
         }
-        const template = await storage.getChaseTemplate(level, language, companyId);
+        const template = await getTemplate(level);
         if (!template) {
           results.push({ invoiceId: row.invoice.id, level, status: 'skipped_no_template' });
           continue;
         }
-        const contact = row.invoice.contactId ? await storage.getCustomerContact(row.invoice.contactId) : null;
+        const contact = await getContact(row.invoice.contactId);
         const ctx = contextForInvoice(row, contact ? { id: contact.id, name: contact.name, phone: contact.phone, email: contact.email } : null, {
           senderName: body.senderName ?? company?.name ?? 'Accounting Team',
           paymentLink: body.paymentLink || '',
         });
         const messageText = renderTemplate(template.body, { ...ctx });
         try {
+          const sentAt = new Date();
+          // Atomic claim — if a concurrent run already sent this chase, skip.
+          const claimed = await storage.tryClaimChaseSlot(row.invoice.id, level, sentAt, CHASE_RACE_LOCKOUT_SECONDS);
+          if (!claimed) {
+            results.push({ invoiceId: row.invoice.id, level, status: 'skipped_recent_chase' });
+            continue;
+          }
           const chase = await storage.createPaymentChase({
             companyId,
             invoiceId: row.invoice.id,
@@ -364,10 +402,9 @@ export function registerChasingRoutes(app: Express) {
             daysOverdueAtSend: row.daysOverdue,
             amountAtSend: row.outstanding,
             status: 'sent',
-            sentAt: new Date(),
+            sentAt,
             triggeredBy: userId,
           } as any);
-          await storage.setInvoiceChaseLevel(row.invoice.id, level, new Date());
           const waLink = body.method === 'whatsapp' && contact?.phone ? buildWaMeLink(contact.phone, messageText) : null;
           results.push({ invoiceId: row.invoice.id, level, status: 'sent', waLink });
           log.info(`Bulk chase L${level} for invoice ${row.invoice.number} (chase=${chase.id})`);

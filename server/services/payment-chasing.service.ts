@@ -407,13 +407,32 @@ export function computeEffectiveness(chases: EffectivenessChase[]): Effectivenes
 
 // ─── WhatsApp deep-link helpers ──────────────────────────────────────────────
 
+const UAE_DIAL_CODE = '971';
+
 /**
- * Normalize a phone number to digits-only for wa.me. Drops leading "+" and
- * any whitespace/dashes; keeps the country code. Empty input → empty string.
+ * Normalize a phone number to E.164 digits (no plus) for wa.me. UAE numbers
+ * are commonly entered in three forms — all of which should reach the same
+ * destination:
+ *   - "+971 50 123 4567" / "971501234567"  → already country-coded
+ *   - "0501234567" (UAE local trunk format) → strip the trunk 0, prepend 971
+ *   - "00971501234567" (00 international prefix) → drop the 00
+ *
+ * We only auto-prepend 971 when the input starts with a single leading 0,
+ * which is the unambiguous UAE local convention. Foreign numbers should be
+ * stored with their own country code; we don't guess.
+ *
+ * Empty / non-digit input → empty string.
  */
 export function normalizePhoneForWa(phone: string | null | undefined): string {
   if (!phone) return '';
-  return phone.replace(/[^0-9]/g, '');
+  let digits = phone.replace(/[^0-9]/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('00')) {
+    digits = digits.slice(2);
+  } else if (digits.startsWith('0')) {
+    digits = UAE_DIAL_CODE + digits.slice(1);
+  }
+  return digits;
 }
 
 export function buildWaMeLink(phone: string | null | undefined, message: string): string | null {
