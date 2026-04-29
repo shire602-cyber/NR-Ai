@@ -41,6 +41,15 @@ import { pool } from '../../server/db';
 beforeEach(() => {
   queryScript.length = 0;
   clearAllModels();
+  // Restore the queryScript-based implementation. Earlier tests (notably the
+  // thundering-herd block) call mockResolvedValue / mockRejectedValueOnce on
+  // pool.query, which would otherwise persist and starve subsequent tests of
+  // their scripted rows.
+  (pool.query as any).mockReset();
+  (pool.query as any).mockImplementation(async () => {
+    const next = queryScript.shift();
+    return next || { rows: [] };
+  });
 });
 
 describe('getModelStats', () => {
