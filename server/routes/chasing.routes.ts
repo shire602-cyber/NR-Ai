@@ -21,7 +21,6 @@ import { createLogger } from '../config/logger';
 import { recordAudit } from '../services/audit.service';
 import {
   type ChaseAgingRow,
-  type ChaseInvoice,
   type ChasePayment,
   type ChaseLanguage,
   buildAgingRow,
@@ -65,7 +64,7 @@ async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
         chaseLevel: inv.chaseLevel ?? 0,
         lastChasedAt: inv.lastChasedAt,
         doNotChase: inv.doNotChase ?? false,
-      } as ChaseInvoice,
+      },
       flatPayments,
     ),
   );
@@ -227,7 +226,7 @@ export function registerChasingRoutes(app: Express) {
           chaseLevel: invoice.chaseLevel ?? 0,
           lastChasedAt: invoice.lastChasedAt,
           doNotChase: invoice.doNotChase ?? false,
-        } as ChaseInvoice,
+        },
         payments.map(p => ({ invoiceId: p.invoiceId, amount: Number(p.amount) || 0 })),
       );
 
@@ -256,7 +255,6 @@ export function registerChasingRoutes(app: Express) {
       const messageText = renderTemplate(template.body, { ...ctx });
       const subject = template.subject ? renderTemplate(template.subject, { ...ctx }) : null;
 
-      // Persist chase
       const chase = await storage.createPaymentChase({
         companyId: invoice.companyId,
         invoiceId: invoice.id,
@@ -270,7 +268,7 @@ export function registerChasingRoutes(app: Express) {
         status: 'sent',
         sentAt: new Date(),
         triggeredBy: userId,
-      } as any);
+      });
 
       // Mirror state on invoice
       await storage.setInvoiceChaseLevel(invoice.id, level, new Date());
@@ -374,7 +372,7 @@ export function registerChasingRoutes(app: Express) {
             status: 'sent',
             sentAt: new Date(),
             triggeredBy: userId,
-          } as any);
+          });
           await storage.setInvoiceChaseLevel(row.invoice.id, level, new Date());
           const waLink = body.method === 'whatsapp' && contact?.phone ? buildWaMeLink(contact.phone, messageText) : null;
           results.push({ invoiceId: row.invoice.id, level, status: 'sent', waLink });
@@ -484,7 +482,7 @@ export function registerChasingRoutes(app: Express) {
         subject: body.subject ?? null,
         body: body.body,
         isDefault: false,
-      } as any);
+      });
       res.json(created);
     }),
   );
@@ -505,7 +503,7 @@ export function registerChasingRoutes(app: Express) {
       // company A cannot mutate company B's (or a system-default) template.
       // Missing row could mean: doesn't exist, belongs to another tenant, or
       // is a system default. Return 404 so we don't leak which case applies.
-      const updated = await storage.updateChaseTemplate(id, companyId, parse.data as any);
+      const updated = await storage.updateChaseTemplate(id, companyId, parse.data);
       if (!updated) {
         return res.status(404).json({ message: 'Chase template not found' });
       }
@@ -571,7 +569,7 @@ export function registerChasingRoutes(app: Express) {
       const updated = await storage.upsertChaseConfig(companyId, {
         ...rest,
         ...(doNotChaseContactIds ? { doNotChaseContactIds: JSON.stringify(doNotChaseContactIds) } : {}),
-      } as any);
+      });
       res.json(updated);
     }),
   );

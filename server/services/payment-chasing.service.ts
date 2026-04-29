@@ -67,13 +67,9 @@ export interface RenderContext {
   daysOverdue: number;
   paymentLink: string;
   senderName: string;
-  // Optional extras:
-  multipleInvoices?: number; // when chasing a grouped set
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-export const CHASE_LEVELS: ChaseLevel[] = [1, 2, 3, 4];
 
 // Spec: L1 = 1-7, L2 = 8-30, L3 = 31-60, L4 = 60+ (i.e. ≥61).
 const LEVEL_THRESHOLDS: Array<{ minDays: number; level: ChaseLevel }> = [

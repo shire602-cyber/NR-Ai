@@ -127,7 +127,7 @@ import {
   chaseConfigs
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, gte, isNull, or, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, lte, gte, isNull, or, sql } from "drizzle-orm";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 
 // Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
