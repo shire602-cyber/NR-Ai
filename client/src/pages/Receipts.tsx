@@ -488,7 +488,7 @@ export default function Receipts() {
             'Content-Type': 'application/json',
             ...getAuthHeaders(),
           },
-          body: JSON.stringify({ imageData }),
+          body: JSON.stringify({ imageData, companyId }),
         });
 
         if (response.ok) {

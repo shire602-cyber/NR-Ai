@@ -24,13 +24,35 @@ export function registerOCRRoutes(app: Express) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const companies = await storage.getCompaniesByUserId(userId);
-    if (companies.length === 0) {
-      return res.status(404).json({ message: 'No company found' });
-    }
-    const companyId = companies[0].id;
+    const { messageId, mediaId, content, imageData, companyId: requestedCompanyId } = req.body;
 
-    const { messageId, mediaId, content, imageData } = req.body;
+    // Phase 2 enriches the OCR result with the company's per-tenant classifier
+    // (training data + rules). The active company MUST come from the request so
+    // a multi-company user (firm_owner, firm_admin, or anyone with multiple
+    // companies) gets predictions trained on the correct tenant's data — never
+    // company A's model bleeding into a receipt being processed for company B.
+    let companyId: string;
+    if (requestedCompanyId && typeof requestedCompanyId === 'string') {
+      const hasAccess = await storage.hasCompanyAccess(userId, requestedCompanyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      companyId = requestedCompanyId;
+    } else {
+      // Backwards-compat fallback for older clients: only safe when the user
+      // has exactly one company. For multi-company users we require an
+      // explicit companyId so we never silently pick the wrong tenant.
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+      if (companies.length > 1) {
+        return res.status(400).json({
+          message: 'companyId is required when the user has access to multiple companies',
+        });
+      }
+      companyId = companies[0].id;
+    }
 
     const sanitizedContent = content ? String(content).slice(0, 10000) : '';
     const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
