@@ -26,14 +26,25 @@ function userId(req: Request): string {
   return (req as any).user?.id;
 }
 
-function parsePeriod(body: any): VatPeriod | undefined {
-  if (!body || !body.periodStart || !body.periodEnd) return undefined;
+interface PeriodInput {
+  periodStart?: unknown;
+  periodEnd?: unknown;
+  dueDate?: unknown;
+  frequency?: unknown;
+}
+
+function parsePeriod(body: PeriodInput): VatPeriod | undefined {
+  if (!body.periodStart || !body.periodEnd) return undefined;
+  if (typeof body.periodStart !== 'string' && !(body.periodStart instanceof Date)) return undefined;
+  if (typeof body.periodEnd !== 'string' && !(body.periodEnd instanceof Date)) return undefined;
   const start = new Date(body.periodStart);
   const end = new Date(body.periodEnd);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return undefined;
   if (end <= start) return undefined;
   // Due date defaults to FTA-mandated period_end + 28 days, but allow override.
-  const due = body.dueDate ? new Date(body.dueDate) : new Date(end.getTime() + 28 * 24 * 60 * 60 * 1000);
+  const due = body.dueDate
+    ? new Date(body.dueDate as string | Date)
+    : new Date(end.getTime() + 28 * 24 * 60 * 60 * 1000);
   return {
     start,
     end,

@@ -81,7 +81,7 @@ export function registerVATRoutes(app: Express) {
       for (const line of lines) {
         const lineAmount = line.quantity * line.unitPrice;
         const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
-        const supplyType = (line as any).vatSupplyType || 'standard_rated';
+        const supplyType = line.vatSupplyType ?? 'standard_rated';
 
         if (supplyType === 'zero_rated' || line.vatRate === 0) {
           // Zero-rated supplies (exports, international services)
@@ -108,8 +108,8 @@ export function registerVATRoutes(app: Express) {
     // Split receipts: reverse-charge are reported in Boxes 3 (output) and 10
     // (input side, subject to partial-exemption recovery), ordinary receipts
     // feed Box 9.
-    const ordinaryReceipts = periodReceipts.filter(r => !(r as any).reverseCharge);
-    const reverseChargeReceipts = periodReceipts.filter(r => (r as any).reverseCharge);
+    const ordinaryReceipts = periodReceipts.filter(r => !r.reverseCharge);
+    const reverseChargeReceipts = periodReceipts.filter(r => r.reverseCharge);
 
     const totalExpenses = ordinaryReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
     const inputTaxGross = ordinaryReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);

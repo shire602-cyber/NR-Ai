@@ -14,6 +14,7 @@
  * those pure helpers using `pool.query` (matching the rest of the codebase).
  */
 
+import { randomUUID } from 'node:crypto';
 import { pool } from '../db';
 import { UAE_VAT_RATE } from '../constants';
 
@@ -455,7 +456,7 @@ export function applyAdjustments(boxes: Vat201BoxValues, adjustments: SavedAdjus
   const next: Vat201BoxValues = { ...boxes };
   for (const adj of adjustments) {
     if (adj.box in next) {
-      (next as any)[adj.box] = round2(((next as any)[adj.box] ?? 0) + adj.amount);
+      next[adj.box] = round2((next[adj.box] ?? 0) + adj.amount);
     }
   }
   // Re-derive totals after adjustment so Box 8/11/12/13/14 stay consistent.
@@ -558,7 +559,7 @@ export async function calculateVatReturn(
   );
 
   const invoiceIdSet = new Set<string>();
-  const lines: InvoiceLineForVat[] = invoiceLineRes.rows.map((row: any) => {
+  const lines: InvoiceLineForVat[] = (invoiceLineRes.rows as Array<Record<string, unknown>>).map(row => {
     invoiceIdSet.add(String(row.invoice_id));
     return {
       quantity: Number(row.quantity) || 0,
@@ -777,8 +778,21 @@ export async function listPeriodsForCompany(
     [companyId, recentCount * 2],
   );
 
-  const storedByKey = new Map<string, any>();
-  for (const row of stored.rows) {
+  interface StoredPeriodRow {
+    id: string;
+    period_start: string | Date;
+    period_end: string | Date;
+    due_date: string | Date;
+    frequency: string;
+    status: string;
+    output_vat: string | number;
+    input_vat: string | number;
+    net_vat_payable: string | number;
+    calculated_at: string | Date | null;
+  }
+
+  const storedByKey = new Map<string, StoredPeriodRow>();
+  for (const row of stored.rows as StoredPeriodRow[]) {
     const key = `${new Date(row.period_start).toISOString()}::${new Date(row.period_end).toISOString()}`;
     storedByKey.set(key, row);
   }
@@ -976,13 +990,5 @@ export async function listDueDates(
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 function cryptoRandomId(): string {
-  // Ambient `crypto.randomUUID` is available on Node 18+; fall back if missing.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const c = (globalThis as any).crypto;
-    if (c && typeof c.randomUUID === 'function') return c.randomUUID();
-  } catch {
-    /* fall through */
-  }
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return randomUUID();
 }
