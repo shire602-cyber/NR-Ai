@@ -265,23 +265,30 @@ interface InvoiceLineForVat {
   quantity: number;
   unitPrice: number;
   vatRate: number | null;
-  vatSupplyType?: 'standard_rated' | 'zero_rated' | 'exempt' | null;
+  vatSupplyType?: 'standard_rated' | 'zero_rated' | 'exempt' | 'out_of_scope' | null;
 }
 
 /**
- * Aggregate invoice lines into the three FTA supply-type buckets used by the
- * VAT 201 form. Pure — accepts already-fetched line data.
+ * Aggregate invoice lines into the FTA supply-type buckets used by the VAT 201
+ * form. Pure — accepts already-fetched line data.
+ *
+ * `out_of_scope` supplies (e.g. supplies made outside the UAE, transactions
+ * between designated-zone entities) are excluded from all VAT 201 boxes per
+ * FTA rules — they're tracked separately so callers can verify the count but
+ * never roll into Box 1/4/5.
  */
 export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
   standardRatedAmount: number;
   standardRatedVat: number;
   zeroRatedAmount: number;
   exemptAmount: number;
+  outOfScopeAmount: number;
 } {
   let standardRatedAmount = 0;
   let standardRatedVat = 0;
   let zeroRatedAmount = 0;
   let exemptAmount = 0;
+  let outOfScopeAmount = 0;
   for (const line of lines) {
     const lineAmount = (line.quantity || 0) * (line.unitPrice || 0);
     const rate = line.vatRate ?? UAE_VAT_RATE;
@@ -289,7 +296,9 @@ export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
     // Explicit supply type wins over rate-based inference. An exempt supply
     // with rate 0 must land in the exempt bucket, not zero-rated — they map
     // to different boxes on the FTA 201 form.
-    if (supply === 'exempt') {
+    if (supply === 'out_of_scope') {
+      outOfScopeAmount += lineAmount;
+    } else if (supply === 'exempt') {
       exemptAmount += lineAmount;
     } else if (supply === 'zero_rated' || rate === 0) {
       zeroRatedAmount += lineAmount;
@@ -303,6 +312,7 @@ export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
     standardRatedVat: round2(standardRatedVat),
     zeroRatedAmount: round2(zeroRatedAmount),
     exemptAmount: round2(exemptAmount),
+    outOfScopeAmount: round2(outOfScopeAmount),
   };
 }
 
@@ -449,6 +459,37 @@ export interface SavedAdjustment {
   reason: string;
   userId: string;
   createdAt: string;
+}
+
+/**
+ * Runtime list of valid VAT 201 box keys. Kept in sync with `Vat201BoxValues`
+ * — used by the routes layer to validate that user-supplied adjustments target
+ * an actual box, not an arbitrary string that would silently be ignored.
+ */
+export const VAT201_BOX_KEYS: ReadonlyArray<keyof Vat201BoxValues> = [
+  'box1aAbuDhabiAmount', 'box1aAbuDhabiVat',
+  'box1bDubaiAmount', 'box1bDubaiVat',
+  'box1cSharjahAmount', 'box1cSharjahVat',
+  'box1dAjmanAmount', 'box1dAjmanVat',
+  'box1eUmmAlQuwainAmount', 'box1eUmmAlQuwainVat',
+  'box1fRasAlKhaimahAmount', 'box1fRasAlKhaimahVat',
+  'box1gFujairahAmount', 'box1gFujairahVat',
+  'box3ReverseChargeAmount', 'box3ReverseChargeVat',
+  'box4ZeroRatedAmount',
+  'box5ExemptAmount',
+  'box8TotalAmount', 'box8TotalVat',
+  'box9ExpensesAmount', 'box9ExpensesVat',
+  'box10ReverseChargeAmount', 'box10ReverseChargeVat',
+  'box11TotalAmount', 'box11TotalVat',
+  'box12TotalDueTax',
+  'box13RecoverableTax',
+  'box14PayableTax',
+];
+
+const VAT201_BOX_KEY_SET = new Set<string>(VAT201_BOX_KEYS as readonly string[]);
+
+export function isValidVat201BoxKey(key: string): key is keyof Vat201BoxValues {
+  return VAT201_BOX_KEY_SET.has(key);
 }
 
 export function applyAdjustments(boxes: Vat201BoxValues, adjustments: SavedAdjustment[]): Vat201BoxValues {
@@ -610,7 +651,8 @@ export async function calculateVatReturn(
   }
 
   // Reverse-charge bills come from the bill-pay schema which isn't always
-  // installed in dev — fail soft.
+  // installed in dev — only swallow the missing-table case, surface anything
+  // else (a real query failure must not silently mask reverse-charge VAT).
   let billReverseChargeAmount = 0;
   let billReverseChargeVat = 0;
   try {
@@ -626,8 +668,9 @@ export async function calculateVatReturn(
     );
     billReverseChargeAmount = Number(billRes.rows[0]?.amount || 0);
     billReverseChargeVat = Number(billRes.rows[0]?.vat || 0);
-  } catch {
-    // bill-pay tables not present in this environment
+  } catch (err) {
+    // PG SQLSTATE 42P01 = undefined_table. Anything else is a real error.
+    if ((err as { code?: string })?.code !== '42P01') throw err;
   }
 
   const reverseChargeAmount = receiptReverseChargeAmount + billReverseChargeAmount;
@@ -837,9 +880,17 @@ export async function addAdjustment(input: {
   reason: string;
   userId: string;
 }): Promise<SavedAdjustment> {
+  // Reject NaN / Infinity — `typeof NaN === 'number'` so the route-level
+  // typeof check isn't sufficient; persisting them corrupts the audit trail.
+  if (!Number.isFinite(input.amount)) {
+    throw new Error('Adjustment amount must be a finite number');
+  }
+  if (!isValidVat201BoxKey(input.box)) {
+    throw new Error(`Unknown VAT 201 box key: ${input.box}`);
+  }
   const adjustment: SavedAdjustment = {
     id: cryptoRandomId(),
-    box: input.box as keyof Vat201BoxValues,
+    box: input.box,
     amount: input.amount,
     reason: input.reason,
     userId: input.userId,

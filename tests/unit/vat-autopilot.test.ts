@@ -12,6 +12,8 @@ import {
   reconcile,
   applyAdjustments,
   frequencyFromCompany,
+  isValidVat201BoxKey,
+  VAT201_BOX_KEYS,
   type Vat201BoxValues,
   type SavedAdjustment,
 } from '../../server/services/vat-autopilot.service';
@@ -192,6 +194,7 @@ describe('aggregateInvoiceLines', () => {
     expect(result.standardRatedVat).toBe(10);
     expect(result.zeroRatedAmount).toBe(500);
     expect(result.exemptAmount).toBe(300);
+    expect(result.outOfScopeAmount).toBe(0);
   });
 
   it('treats vatRate=0 with no supply type as zero-rated', () => {
@@ -207,6 +210,21 @@ describe('aggregateInvoiceLines', () => {
       { quantity: 1, unitPrice: 100, vatRate: null, vatSupplyType: 'standard_rated' },
     ]);
     expect(result.standardRatedVat).toBe(5);
+  });
+
+  it('excludes out_of_scope supplies from every VAT 201 bucket', () => {
+    // Out-of-scope supplies (e.g. designated-zone transactions, supplies made
+    // outside UAE) must not appear in Box 1, 4, or 5 — they are not reportable
+    // on the FTA VAT 201 form. Tracked separately so callers can verify.
+    const result = aggregateInvoiceLines([
+      { quantity: 1, unitPrice: 100, vatRate: 0.05, vatSupplyType: 'standard_rated' },
+      { quantity: 2, unitPrice: 250, vatRate: 0.05, vatSupplyType: 'out_of_scope' },
+    ]);
+    expect(result.standardRatedAmount).toBe(100);
+    expect(result.standardRatedVat).toBe(5);
+    expect(result.zeroRatedAmount).toBe(0);
+    expect(result.exemptAmount).toBe(0);
+    expect(result.outOfScopeAmount).toBe(500);
   });
 });
 
@@ -403,5 +421,27 @@ describe('frequencyFromCompany', () => {
     expect(frequencyFromCompany('Quarterly')).toBe('quarterly');
     expect(frequencyFromCompany(null)).toBe('quarterly');
     expect(frequencyFromCompany('')).toBe('quarterly');
+  });
+});
+
+// ─── isValidVat201BoxKey + VAT201_BOX_KEYS ──────────────────────────────────
+
+describe('isValidVat201BoxKey', () => {
+  it('accepts every key in the runtime list', () => {
+    for (const key of VAT201_BOX_KEYS) {
+      expect(isValidVat201BoxKey(key)).toBe(true);
+    }
+  });
+
+  it('rejects unknown keys', () => {
+    expect(isValidVat201BoxKey('box99NotReal')).toBe(false);
+    expect(isValidVat201BoxKey('')).toBe(false);
+    expect(isValidVat201BoxKey('__proto__')).toBe(false);
+  });
+
+  it('runtime list includes all final-total boxes (12, 13, 14)', () => {
+    expect(VAT201_BOX_KEYS).toContain('box12TotalDueTax');
+    expect(VAT201_BOX_KEYS).toContain('box13RecoverableTax');
+    expect(VAT201_BOX_KEYS).toContain('box14PayableTax');
   });
 });
