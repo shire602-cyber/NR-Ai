@@ -105,9 +105,15 @@ vi.mock('../../server/services/training-data.service', async () => {
 import {
   runAutopilot,
   classifyOcrReceipt,
+  recordClassificationFeedback,
   __setOpenAIForTests,
   __test,
 } from '../../server/services/receipt-autopilot.service';
+import {
+  invalidateModel as invalidateModelMock,
+  applyAccuracyFailsafe as applyAccuracyFailsafeMock,
+} from '../../server/services/training-data.service';
+import { storage as storageMock } from '../../server/storage';
 
 beforeEach(() => {
   state.accounts = [
@@ -356,5 +362,122 @@ describe('runAutopilot pipeline', () => {
     expect(result.autoPosted).toBe(false);
     expect(result.receiptId).toBeTruthy();
     expect(state.receipts[0].merchant).toBe('');
+  });
+
+  // ---------- confidence boundary regression ----------
+  // The auto-post gate is `confidence >= 0.9`. We pin both sides of the
+  // boundary so a future refactor cannot silently change the threshold.
+
+  it('auto-posts at the exact 0.9 confidence boundary', async () => {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: 'rule-1',
+        merchantPattern: 'DEWA April 2026',
+        descriptionPattern: null,
+        accountId: 'a-utilities',
+        category: 'Utilities',
+        confidence: 0.9, // exact boundary
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    expect(result.autoPosted).toBe(true);
+  });
+
+  it('does NOT auto-post just below the 0.9 confidence boundary', async () => {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: 'rule-1',
+        merchantPattern: 'DEWA April 2026',
+        descriptionPattern: null,
+        accountId: 'a-utilities',
+        category: 'Utilities',
+        confidence: 0.89, // just under the boundary
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    expect(result.classification.method).toBe('rule');
+    expect(result.autoPosted).toBe(false);
+    expect(result.queuedForReview).toBe(true);
+  });
+
+  it('auto-posts at the exact 5-accept boundary (timesAccepted === 5)', async () => {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: 'rule-1',
+        merchantPattern: 'DEWA April 2026',
+        descriptionPattern: null,
+        accountId: 'a-utilities',
+        category: 'Utilities',
+        confidence: 0.95,
+        timesApplied: 6,
+        timesAccepted: 5, // exact boundary
+        timesRejected: 1,
+      },
+    ];
+    const result = await runAutopilot('co-1', 'user-1', ocr);
+    expect(result.autoPosted).toBe(true);
+  });
+});
+
+// =========================================================
+// recordClassificationFeedback
+// =========================================================
+
+describe('recordClassificationFeedback', () => {
+  it('updates the classification row, invalidates cache, and runs the failsafe', async () => {
+    // Seed a classification row to update.
+    const cls = await storageMock.createTransactionClassification({
+      companyId: 'co-1',
+      description: 'DEWA',
+      merchant: 'DEWA',
+      amount: 100,
+      suggestedAccountId: 'a-utilities',
+      suggestedCategory: 'Utilities',
+      aiConfidence: 0.95,
+      aiReason: 'rule match',
+      classifierMethod: 'rule',
+    } as any);
+
+    (invalidateModelMock as any).mockClear?.();
+    (applyAccuracyFailsafeMock as any).mockClear?.();
+
+    await recordClassificationFeedback('co-1', cls.id, true, 'a-utilities');
+
+    const stored = state.classifications.find((c) => c.id === cls.id)!;
+    expect(stored.wasAccepted).toBe(true);
+    expect(stored.userSelectedAccountId).toBe('a-utilities');
+    // Cache must be invalidated so the next prediction uses fresh training data.
+    expect(invalidateModelMock).toHaveBeenCalledWith('co-1');
+    // Failsafe runs after every feedback to flip below-threshold companies.
+    expect(applyAccuracyFailsafeMock).toHaveBeenCalledWith('co-1');
+  });
+
+  it('records a rejection without overwriting a missing userSelectedAccountId', async () => {
+    const cls = await storageMock.createTransactionClassification({
+      companyId: 'co-1',
+      description: 'unknown vendor',
+      merchant: 'unknown vendor',
+      amount: 10,
+      suggestedAccountId: 'a-other',
+      suggestedCategory: 'Other',
+      aiConfidence: 0.4,
+      aiReason: 'low conf',
+      classifierMethod: 'openai',
+    } as any);
+
+    await recordClassificationFeedback('co-1', cls.id, false);
+
+    const stored = state.classifications.find((c) => c.id === cls.id)!;
+    expect(stored.wasAccepted).toBe(false);
+    expect(stored.userSelectedAccountId).toBeUndefined();
   });
 });

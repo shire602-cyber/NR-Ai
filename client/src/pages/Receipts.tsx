@@ -67,6 +67,15 @@ const receiptSchema = z.object({
 
 type ReceiptFormData = z.infer<typeof receiptSchema>;
 
+// Phase 2 — internal classifier methods that drive the "Internal" badge.
+// Anything outside this set (typo, future schema value, null) renders no badge
+// rather than a misleading "Internal" label with raw value text.
+const INTERNAL_CLASSIFIER_METHODS = ['rule', 'keyword', 'statistical'] as const;
+type InternalClassifierMethod = typeof INTERNAL_CLASSIFIER_METHODS[number];
+function isInternalClassifierMethod(value: unknown): value is InternalClassifierMethod {
+  return typeof value === 'string' && (INTERNAL_CLASSIFIER_METHODS as readonly string[]).includes(value);
+}
+
 export default function Receipts() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -1390,7 +1399,7 @@ export default function Receipts() {
                         <Badge variant="outline">
                           {receipt.category || 'Uncategorized'}
                         </Badge>
-                        {receipt.classifierMethod && receipt.classifierMethod !== 'openai' && (
+                        {isInternalClassifierMethod(receipt.classifierMethod) && (
                           <Badge
                             variant="secondary"
                             className="bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30"
