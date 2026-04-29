@@ -298,6 +298,16 @@ export function registerVATRoutes(app: Express) {
     const { id } = req.params;
     const { adjustmentAmount, adjustmentReason, notes } = req.body;
 
+    const existing = await storage.getVatReturn(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'VAT return not found' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     const vatReturn = await storage.updateVatReturn(id, {
       status: 'submitted',
       adjustmentAmount: adjustmentAmount || 0,
@@ -312,8 +322,23 @@ export function registerVATRoutes(app: Express) {
 
   // Update VAT return (for editing draft returns)
   app.patch("/api/vat-returns/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { id } = req.params;
     const updateData = req.body;
+
+    const existing = await storage.getVatReturn(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'VAT return not found' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Never allow the client to rewrite the tenant scope of a VAT return.
+    delete (updateData as any).companyId;
+    delete (updateData as any).id;
 
     const vatReturn = await storage.updateVatReturn(id, {
       ...updateData,
