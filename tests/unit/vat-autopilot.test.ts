@@ -101,6 +101,30 @@ describe('detectPeriod', () => {
     // normalises to date-only granularity so timezone math cannot push it).
     expect(period.dueDate.toISOString()).toBe('2026-04-28T00:00:00.000Z');
   });
+
+  it('keeps the last instant of a period inside that period', () => {
+    // 2026-03-31T23:59:59.999Z is the very last millisecond of Q1; an invoice
+    // dated then must still land in the Jan-Mar bucket.
+    const ref = new Date('2026-03-31T23:59:59.999Z');
+    const period = detectPeriod('quarterly', 1, ref);
+    expect(period.start.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(period.end.toISOString()).toBe('2026-03-31T23:59:59.999Z');
+  });
+
+  it('flips to the next period at the first instant of the new month', () => {
+    // 1 ms later than the test above must be in Q2 (Apr-Jun).
+    const ref = new Date('2026-04-01T00:00:00.000Z');
+    const period = detectPeriod('quarterly', 1, ref);
+    expect(period.start.toISOString()).toBe('2026-04-01T00:00:00.000Z');
+    expect(period.end.toISOString()).toBe('2026-06-30T23:59:59.999Z');
+  });
+
+  it('handles December → January year rollover for monthly filers', () => {
+    const ref = new Date(Date.UTC(2026, 0, 5));  // 5 Jan 2026
+    const period = detectPeriod('monthly', 1, ref);
+    expect(period.start.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+    expect(period.end.toISOString()).toBe('2026-01-31T23:59:59.999Z');
+  });
 });
 
 // ─── listRecentPeriods ──────────────────────────────────────────────────────
@@ -124,6 +148,29 @@ describe('listRecentPeriods', () => {
       '2026-04-01T00:00:00.000Z',
       '2026-03-01T00:00:00.000Z',
       '2026-02-01T00:00:00.000Z',
+    ]);
+  });
+
+  it('walks across a year boundary for monthly filers', () => {
+    const ref = new Date(Date.UTC(2026, 1, 5));    // 5 Feb 2026
+    const periods = listRecentPeriods('monthly', 1, 4, ref);
+    expect(periods.map(p => p.start.toISOString())).toEqual([
+      '2026-02-01T00:00:00.000Z',
+      '2026-01-01T00:00:00.000Z',
+      '2025-12-01T00:00:00.000Z',
+      '2025-11-01T00:00:00.000Z',
+    ]);
+  });
+
+  it('walks across a year boundary for staggered quarterly filers', () => {
+    // Feb-anchor stagger (Feb-Apr / May-Jul / Aug-Oct / Nov-Jan) — going back
+    // from Feb 2026 must produce Nov 2025-Jan 2026 immediately before.
+    const ref = new Date(Date.UTC(2026, 1, 15));   // 15 Feb 2026
+    const periods = listRecentPeriods('quarterly', 2, 3, ref);
+    expect(periods.map(p => p.start.toISOString())).toEqual([
+      '2026-02-01T00:00:00.000Z',
+      '2025-11-01T00:00:00.000Z',
+      '2025-08-01T00:00:00.000Z',
     ]);
   });
 });
@@ -159,6 +206,23 @@ describe('deadlineStatus', () => {
     expect(result.level).toBe('ok');
     expect(result.isOverdue).toBe(false);
   });
+
+  it('treats the day after the deadline as overdue (not critical)', () => {
+    // Due was yesterday at midnight, now is the next day — clearly overdue.
+    const due = new Date(Date.UTC(2026, 2, 31, 0, 0, 0));   // 31 Mar 2026
+    const oneDayLater = new Date(Date.UTC(2026, 3, 1, 0, 0, 0)); // 1 Apr 2026
+    const result = deadlineStatus(due, oneDayLater);
+    expect(result.level).toBe('overdue');
+    expect(result.isOverdue).toBe(true);
+  });
+
+  it('treats due-today as critical (not overdue) with 0 days remaining', () => {
+    const due = new Date(Date.UTC(2026, 3, 1, 12, 0, 0));   // 1 Apr 2026 noon
+    const result = deadlineStatus(due, now);
+    expect(result.level).toBe('critical');
+    expect(result.isOverdue).toBe(false);
+    expect(result.daysUntilDue).toBe(1);
+  });
 });
 
 // ─── convertToAed ───────────────────────────────────────────────────────────
@@ -172,6 +236,11 @@ describe('convertToAed', () => {
     expect(convertToAed(NaN, 1)).toBe(0);
     expect(convertToAed(100, 0)).toBe(0);
     expect(convertToAed(100, -1)).toBe(0);
+  });
+
+  it('returns zero for non-finite rate (Infinity)', () => {
+    expect(convertToAed(100, Number.POSITIVE_INFINITY)).toBe(0);
+    expect(convertToAed(Number.POSITIVE_INFINITY, 3.67)).toBe(0);
   });
 
   it('rounds to AED cents', () => {
@@ -208,6 +277,36 @@ describe('aggregateInvoiceLines', () => {
     ]);
     expect(result.standardRatedVat).toBe(5);
   });
+
+  it('returns all-zero buckets for zero invoices (empty array)', () => {
+    const result = aggregateInvoiceLines([]);
+    expect(result).toEqual({
+      standardRatedAmount: 0,
+      standardRatedVat: 0,
+      zeroRatedAmount: 0,
+      exemptAmount: 0,
+    });
+  });
+
+  it('aggregates a single invoice line correctly', () => {
+    const result = aggregateInvoiceLines([
+      { quantity: 3, unitPrice: 250, vatRate: 0.05, vatSupplyType: 'standard_rated' },
+    ]);
+    expect(result.standardRatedAmount).toBe(750);
+    expect(result.standardRatedVat).toBe(37.5);
+    expect(result.zeroRatedAmount).toBe(0);
+    expect(result.exemptAmount).toBe(0);
+  });
+
+  it('treats an exempt supply with rate 0 as exempt, not zero-rated', () => {
+    // Boundary: explicit "exempt" supply type must take precedence over the
+    // rate=0 inference, since exempt and zero-rated map to different boxes.
+    const result = aggregateInvoiceLines([
+      { quantity: 1, unitPrice: 1000, vatRate: 0, vatSupplyType: 'exempt' },
+    ]);
+    expect(result.exemptAmount).toBe(1000);
+    expect(result.zeroRatedAmount).toBe(0);
+  });
 });
 
 // ─── applyPartialExemption ──────────────────────────────────────────────────
@@ -241,6 +340,18 @@ describe('applyPartialExemption', () => {
     const r = applyPartialExemption(100, -0.5);
     expect(r.recoverable).toBe(100);
     expect(r.irrecoverable).toBe(0);
+  });
+
+  it('returns zero recoverable for zero gross input VAT', () => {
+    const r = applyPartialExemption(0, 0.4);
+    expect(r.recoverable).toBe(0);
+    expect(r.irrecoverable).toBe(0);
+    expect(r.recoverableRatio).toBe(0.6);
+  });
+
+  it('keeps recoverable + irrecoverable summing to gross within rounding', () => {
+    const r = applyPartialExemption(123.45, 0.37);
+    expect(round2(r.recoverable + r.irrecoverable)).toBe(123.45);
   });
 });
 
@@ -303,6 +414,52 @@ describe('buildVat201Boxes', () => {
     // Box 12 includes reverse charge VAT on output side
     expect(b.box12TotalDueTax).toBe(70);
   });
+
+  it('routes standard-rated sales to Box 1c for Sharjah', () => {
+    const b = buildVat201Boxes(baseComponents, 'sharjah');
+    expect(b.box1cSharjahAmount).toBe(1000);
+    expect(b.box1cSharjahVat).toBe(50);
+    expect(b.box1bDubaiAmount).toBe(0);
+  });
+
+  it('routes standard-rated sales to Box 1d for Ajman', () => {
+    const b = buildVat201Boxes(baseComponents, 'ajman');
+    expect(b.box1dAjmanAmount).toBe(1000);
+    expect(b.box1dAjmanVat).toBe(50);
+  });
+
+  it('routes standard-rated sales to Box 1e for Umm Al Quwain', () => {
+    const b = buildVat201Boxes(baseComponents, 'umm_al_quwain');
+    expect(b.box1eUmmAlQuwainAmount).toBe(1000);
+    expect(b.box1eUmmAlQuwainVat).toBe(50);
+  });
+
+  it('routes standard-rated sales to Box 1f for Ras Al Khaimah', () => {
+    const b = buildVat201Boxes(baseComponents, 'ras_al_khaimah');
+    expect(b.box1fRasAlKhaimahAmount).toBe(1000);
+    expect(b.box1fRasAlKhaimahVat).toBe(50);
+  });
+
+  it('routes standard-rated sales to Box 1g for Fujairah', () => {
+    const b = buildVat201Boxes(baseComponents, 'fujairah');
+    expect(b.box1gFujairahAmount).toBe(1000);
+    expect(b.box1gFujairahVat).toBe(50);
+  });
+
+  it('produces an all-zero VAT 201 form when there is no activity', () => {
+    const empty = {
+      standardRatedAmount: 0, standardRatedVat: 0,
+      zeroRatedAmount: 0, exemptAmount: 0,
+      reverseChargeAmount: 0, reverseChargeVat: 0, reverseChargeVatRecoverable: 0,
+      totalExpenses: 0, inputVatRecoverable: 0,
+    };
+    const b = buildVat201Boxes(empty, 'dubai');
+    expect(b.box8TotalAmount).toBe(0);
+    expect(b.box8TotalVat).toBe(0);
+    expect(b.box11TotalAmount).toBe(0);
+    expect(b.box11TotalVat).toBe(0);
+    expect(b.box14PayableTax).toBe(0);
+  });
 });
 
 // ─── reconcile ──────────────────────────────────────────────────────────────
@@ -323,6 +480,43 @@ describe('reconcile', () => {
 
   it('absorbs sub-cent rounding differences', () => {
     const r = reconcile({ outputVat: 100.005, inputVat: 50 }, { outputVat: 100, inputVat: 50 });
+    expect(r.hasDiscrepancy).toBe(false);
+  });
+
+  it('does not flag a delta exactly at the 0.01 AED tolerance boundary', () => {
+    // Service uses Math.abs(delta) > tolerance, so a delta of exactly 0.01
+    // must NOT trip the discrepancy flag — it's the maximum allowed rounding.
+    const r = reconcile({ outputVat: 100.01, inputVat: 50 }, { outputVat: 100, inputVat: 50 });
+    expect(r.outputVatDelta).toBe(0.01);
+    expect(r.hasDiscrepancy).toBe(false);
+  });
+
+  it('flags a delta just above the 0.01 AED tolerance boundary', () => {
+    const r = reconcile({ outputVat: 100.02, inputVat: 50 }, { outputVat: 100, inputVat: 50 });
+    expect(r.outputVatDelta).toBe(0.02);
+    expect(r.hasDiscrepancy).toBe(true);
+  });
+
+  it('flags negative output deltas (calculated lower than ledger)', () => {
+    const r = reconcile({ outputVat: 95, inputVat: 50 }, { outputVat: 100, inputVat: 50 });
+    expect(r.outputVatDelta).toBe(-5);
+    expect(r.hasDiscrepancy).toBe(true);
+  });
+
+  it('flags input-side discrepancies independently of output side', () => {
+    const r = reconcile({ outputVat: 100, inputVat: 60 }, { outputVat: 100, inputVat: 50 });
+    expect(r.hasDiscrepancy).toBe(true);
+    expect(r.outputVatDelta).toBe(0);
+    expect(r.inputVatDelta).toBe(10);
+  });
+
+  it('respects a custom tolerance argument', () => {
+    const r = reconcile(
+      { outputVat: 100.5, inputVat: 50 },
+      { outputVat: 100, inputVat: 50 },
+      1, // 1.00 AED tolerance
+    );
+    expect(r.outputVatDelta).toBe(0.5);
     expect(r.hasDiscrepancy).toBe(false);
   });
 });
@@ -389,6 +583,45 @@ describe('applyAdjustments', () => {
       [adj('box1bDubaiVat', 10), adj('box1bDubaiVat', -3)],
     );
     expect(result.box1bDubaiVat).toBe(57);
+  });
+
+  it('updates Box 8 amount when zero-rated supplies are adjusted', () => {
+    const result = applyAdjustments(blankBoxes(), [adj('box4ZeroRatedAmount', 200)]);
+    expect(result.box4ZeroRatedAmount).toBe(400);
+    // Box 8 amount = 1000 (1b) + 400 (zero) + 100 (exempt) = 1500
+    expect(result.box8TotalAmount).toBe(1500);
+    // VAT total unchanged because zero-rated has no VAT
+    expect(result.box8TotalVat).toBe(50);
+  });
+
+  it('updates Box 8 amount when exempt supplies are adjusted', () => {
+    const result = applyAdjustments(blankBoxes(), [adj('box5ExemptAmount', 50)]);
+    expect(result.box5ExemptAmount).toBe(150);
+    expect(result.box8TotalAmount).toBe(1350);
+  });
+
+  it('routes a Sharjah-emirate adjustment into Box 1c and propagates to totals', () => {
+    const result = applyAdjustments(blankBoxes(), [
+      adj('box1cSharjahAmount', 500),
+      adj('box1cSharjahVat', 25),
+    ]);
+    expect(result.box1cSharjahAmount).toBe(500);
+    expect(result.box1cSharjahVat).toBe(25);
+    // Box 8 amount = 1000 (Dubai) + 500 (Sharjah) + 200 (zero) + 100 (exempt) = 1800
+    expect(result.box8TotalAmount).toBe(1800);
+    // Box 8 VAT = 50 (Dubai) + 25 (Sharjah) = 75
+    expect(result.box8TotalVat).toBe(75);
+    expect(result.box14PayableTax).toBe(50);
+  });
+
+  it('updates Box 11 totals when input boxes are adjusted', () => {
+    const result = applyAdjustments(blankBoxes(), [
+      adj('box9ExpensesVat', 5),
+      adj('box10ReverseChargeVat', 3),
+    ]);
+    expect(result.box11TotalVat).toBe(33);
+    expect(result.box13RecoverableTax).toBe(33);
+    expect(result.box14PayableTax).toBe(17);
   });
 });
 
