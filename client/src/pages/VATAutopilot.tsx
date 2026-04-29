@@ -22,7 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
 import {
-  Calculator, AlertTriangle, CheckCircle2, Clock, FileText, RefreshCw, Send, Loader2,
+  Calculator, AlertTriangle, CheckCircle2, Clock, FileText, RefreshCw, Send, Loader2, XCircle,
 } from 'lucide-react';
 
 // ─── Types matching the server's VAT autopilot service ───────────────────────
@@ -155,6 +155,26 @@ export default function VATAutopilot() {
 
   const lastCalc = calcMutation.data;
   const currentPeriodId = lastCalc?.periodId ?? periodsQuery.data?.[0]?.id ?? null;
+  const currentPeriodStatus: VatPeriodStatus | null = useMemo(() => {
+    if (!periodsQuery.data) return null;
+    if (currentPeriodId) {
+      const byId = periodsQuery.data.find(p => p.id === currentPeriodId);
+      if (byId) return byId.status;
+    }
+    if (lastCalc) {
+      const byPeriod = periodsQuery.data.find(
+        p => p.periodStart === lastCalc.period.start && p.periodEnd === lastCalc.period.end,
+      );
+      if (byPeriod) return byPeriod.status;
+    }
+    return periodsQuery.data[0]?.status ?? null;
+  }, [periodsQuery.data, currentPeriodId, lastCalc]);
+
+  const parsedAdjustmentAmount = Number(adjustmentAmount);
+  const adjustmentAmountValid =
+    adjustmentAmount.trim() !== '' &&
+    Number.isFinite(parsedAdjustmentAmount) &&
+    parsedAdjustmentAmount !== 0;
 
   const adjustmentMutation = useMutation({
     mutationFn: () =>
@@ -162,7 +182,7 @@ export default function VATAutopilot() {
         companyId,
         periodId: currentPeriodId,
         box: adjustmentBox,
-        amount: Number(adjustmentAmount),
+        amount: parsedAdjustmentAmount,
         reason: adjustmentReason,
       }),
     onSuccess: () => {
@@ -303,25 +323,44 @@ export default function VATAutopilot() {
               <Button variant="outline" onClick={() => setAdjustmentOpen(true)} disabled={!currentPeriodId}>
                 Add manual adjustment
               </Button>
-              {currentPeriodId && (
-                <>
-                  <Button
-                    variant="default"
-                    onClick={() => statusMutation.mutate({ periodId: currentPeriodId, status: 'ready' })}
-                    disabled={statusMutation.isPending}
-                  >
-                    <CheckCircle2 className="h-4 w-4 mr-2" />
-                    Mark ready
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => statusMutation.mutate({ periodId: currentPeriodId, status: 'submitted' })}
-                    disabled={statusMutation.isPending}
-                  >
-                    <Send className="h-4 w-4 mr-2" />
-                    Mark submitted
-                  </Button>
-                </>
+              {currentPeriodId && currentPeriodStatus === 'draft' && (
+                <Button
+                  variant="default"
+                  onClick={() => statusMutation.mutate({ periodId: currentPeriodId, status: 'ready' })}
+                  disabled={statusMutation.isPending}
+                  data-testid="button-mark-ready"
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Mark ready
+                </Button>
+              )}
+              {currentPeriodId && currentPeriodStatus === 'ready' && (
+                <Button
+                  variant="secondary"
+                  onClick={() => statusMutation.mutate({ periodId: currentPeriodId, status: 'submitted' })}
+                  disabled={statusMutation.isPending}
+                  data-testid="button-mark-submitted"
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Mark submitted
+                </Button>
+              )}
+              {currentPeriodId && currentPeriodStatus === 'submitted' && (
+                <Button
+                  variant="secondary"
+                  onClick={() => statusMutation.mutate({ periodId: currentPeriodId, status: 'accepted' })}
+                  disabled={statusMutation.isPending}
+                  data-testid="button-mark-accepted"
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Mark accepted by FTA
+                </Button>
+              )}
+              {currentPeriodId && currentPeriodStatus === 'accepted' && (
+                <Badge variant="secondary" className="text-xs">
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                  Accepted by FTA
+                </Badge>
               )}
             </div>
           </CardContent>
@@ -336,7 +375,24 @@ export default function VATAutopilot() {
         </CardHeader>
         <CardContent>
           {periodsQuery.isLoading ? (
-            <Skeleton className="h-32" />
+            <Skeleton className="h-32" data-testid="periods-loading" />
+          ) : periodsQuery.isError ? (
+            <div
+              className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+              data-testid="periods-error"
+            >
+              <XCircle className="h-4 w-4 mt-0.5" />
+              <div>
+                <p className="font-medium">Could not load VAT periods</p>
+                <p className="text-xs">
+                  {(periodsQuery.error as Error)?.message || 'Please try again or contact support.'}
+                </p>
+              </div>
+            </div>
+          ) : (periodsQuery.data?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="periods-empty">
+              No VAT periods yet. Click “Calculate now” to generate the first one.
+            </p>
           ) : (
             <Table>
               <TableHeader>
@@ -386,9 +442,22 @@ export default function VATAutopilot() {
         </CardHeader>
         <CardContent>
           {dueDatesQuery.isLoading ? (
-            <Skeleton className="h-32" />
+            <Skeleton className="h-32" data-testid="due-dates-loading" />
+          ) : dueDatesQuery.isError ? (
+            <div
+              className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+              data-testid="due-dates-error"
+            >
+              <XCircle className="h-4 w-4 mt-0.5" />
+              <div>
+                <p className="font-medium">Could not load upcoming deadlines</p>
+                <p className="text-xs">
+                  {(dueDatesQuery.error as Error)?.message || 'Please try again or contact support.'}
+                </p>
+              </div>
+            </div>
           ) : upcoming.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No upcoming VAT deadlines.</p>
+            <p className="text-sm text-muted-foreground" data-testid="due-dates-empty">No upcoming VAT deadlines.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -439,13 +508,29 @@ export default function VATAutopilot() {
             <div>
               <Label>Box</Label>
               <Select value={adjustmentBox} onValueChange={setAdjustmentBox}>
-                <SelectTrigger><SelectValue placeholder="Select a box" /></SelectTrigger>
+                <SelectTrigger data-testid="select-adjustment-box"><SelectValue placeholder="Select a box" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="box1bDubaiVat">Box 1b — Dubai standard rated VAT</SelectItem>
-                  <SelectItem value="box1aAbuDhabiVat">Box 1a — Abu Dhabi standard rated VAT</SelectItem>
+                  <SelectItem value="box1aAbuDhabiAmount">Box 1a — Abu Dhabi standard supplies (amount)</SelectItem>
+                  <SelectItem value="box1aAbuDhabiVat">Box 1a — Abu Dhabi standard supplies (VAT)</SelectItem>
+                  <SelectItem value="box1bDubaiAmount">Box 1b — Dubai standard supplies (amount)</SelectItem>
+                  <SelectItem value="box1bDubaiVat">Box 1b — Dubai standard supplies (VAT)</SelectItem>
+                  <SelectItem value="box1cSharjahAmount">Box 1c — Sharjah standard supplies (amount)</SelectItem>
+                  <SelectItem value="box1cSharjahVat">Box 1c — Sharjah standard supplies (VAT)</SelectItem>
+                  <SelectItem value="box1dAjmanAmount">Box 1d — Ajman standard supplies (amount)</SelectItem>
+                  <SelectItem value="box1dAjmanVat">Box 1d — Ajman standard supplies (VAT)</SelectItem>
+                  <SelectItem value="box1eUmmAlQuwainAmount">Box 1e — Umm Al Quwain standard supplies (amount)</SelectItem>
+                  <SelectItem value="box1eUmmAlQuwainVat">Box 1e — Umm Al Quwain standard supplies (VAT)</SelectItem>
+                  <SelectItem value="box1fRasAlKhaimahAmount">Box 1f — Ras Al Khaimah standard supplies (amount)</SelectItem>
+                  <SelectItem value="box1fRasAlKhaimahVat">Box 1f — Ras Al Khaimah standard supplies (VAT)</SelectItem>
+                  <SelectItem value="box1gFujairahAmount">Box 1g — Fujairah standard supplies (amount)</SelectItem>
+                  <SelectItem value="box1gFujairahVat">Box 1g — Fujairah standard supplies (VAT)</SelectItem>
+                  <SelectItem value="box3ReverseChargeAmount">Box 3 — Reverse-charge supplies (amount)</SelectItem>
+                  <SelectItem value="box3ReverseChargeVat">Box 3 — Reverse-charge supplies (VAT)</SelectItem>
                   <SelectItem value="box4ZeroRatedAmount">Box 4 — Zero rated supplies</SelectItem>
                   <SelectItem value="box5ExemptAmount">Box 5 — Exempt supplies</SelectItem>
+                  <SelectItem value="box9ExpensesAmount">Box 9 — Standard expenses (amount)</SelectItem>
                   <SelectItem value="box9ExpensesVat">Box 9 — Standard expenses input VAT</SelectItem>
+                  <SelectItem value="box10ReverseChargeAmount">Box 10 — Reverse-charge expenses (amount)</SelectItem>
                   <SelectItem value="box10ReverseChargeVat">Box 10 — Reverse-charge input VAT</SelectItem>
                 </SelectContent>
               </Select>
@@ -459,6 +544,11 @@ export default function VATAutopilot() {
                 onChange={e => setAdjustmentAmount(e.target.value)}
                 data-testid="input-adjustment-amount"
               />
+              {adjustmentAmount.trim() !== '' && !adjustmentAmountValid && (
+                <p className="text-xs text-destructive mt-1">
+                  Amount must be a non-zero number (negatives allowed for corrections).
+                </p>
+              )}
             </div>
             <div>
               <Label>Reason</Label>
@@ -474,7 +564,13 @@ export default function VATAutopilot() {
             <Button variant="outline" onClick={() => setAdjustmentOpen(false)}>Cancel</Button>
             <Button
               onClick={() => adjustmentMutation.mutate()}
-              disabled={!adjustmentBox || !adjustmentReason || adjustmentMutation.isPending}
+              disabled={
+                !adjustmentBox ||
+                !adjustmentReason.trim() ||
+                !adjustmentAmountValid ||
+                adjustmentMutation.isPending
+              }
+              data-testid="button-save-adjustment"
             >
               {adjustmentMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               <FileText className="h-4 w-4 mr-2" />
