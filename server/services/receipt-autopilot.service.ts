@@ -244,10 +244,14 @@ export async function runAutopilot(
     });
 
     // Bump the matched rule's times_applied so confidence stats stay correct.
+    // Scope the UPDATE by company_id as well — the matchedRuleId came from the
+    // in-memory model loaded for this companyId, so the WHERE is a
+    // defense-in-depth guard against any future caller passing through an
+    // attacker-controlled rule id.
     if (classification.matchedRuleId) {
       await pool.query(
-        `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1`,
-        [classification.matchedRuleId],
+        `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1 AND company_id = $2`,
+        [classification.matchedRuleId, companyId],
       );
     }
 
@@ -282,7 +286,7 @@ export async function recordClassificationFeedback(
   wasAccepted: boolean,
   userSelectedAccountId?: string | null,
 ): Promise<void> {
-  await storage.updateTransactionClassification(classificationId, {
+  await storage.updateTransactionClassification(classificationId, companyId, {
     wasAccepted,
     userSelectedAccountId: userSelectedAccountId ?? undefined,
   });

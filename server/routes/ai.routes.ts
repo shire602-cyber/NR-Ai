@@ -1038,14 +1038,21 @@ Respond with JSON:
   }));
 
   // Transaction Classification Feedback (for ML learning)
+  const classificationFeedbackSchema = z.object({
+    classificationId: z.string().uuid(),
+    wasAccepted: z.boolean(),
+    // null clears the column; undefined leaves it untouched.
+    userSelectedAccountId: z.string().uuid().nullable().optional(),
+  });
+
   app.post("/api/ai/classification-feedback", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     try {
-      const { classificationId, wasAccepted, userSelectedAccountId } = req.body;
       const userId = (req as any).user?.id;
-
-      if (!classificationId || typeof classificationId !== 'string') {
-        return res.status(400).json({ message: 'classificationId is required' });
+      const parsed = classificationFeedbackSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: 'Invalid request body', errors: parsed.error.flatten() });
       }
+      const { classificationId, wasAccepted, userSelectedAccountId } = parsed.data;
 
       // Verify the classification belongs to a company the caller can access
       // BEFORE mutating it. Without this read-then-check, a malicious user
@@ -1060,20 +1067,31 @@ Respond with JSON:
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const classification = await storage.updateTransactionClassification(classificationId, {
-        wasAccepted,
-        userSelectedAccountId,
-      });
+      // Cross-tenant guard: a feedback submission for our own classification id
+      // could still smuggle a sibling company's accountId into the row. That
+      // bad row then leaks back via training-data joins (e.g. autonomous-gl's
+      // few-shot prompt joins user_selected_account_id and would pull the
+      // foreign account name into another tenant's OpenAI context). Reject
+      // outright when the account doesn't belong to this classification's
+      // company.
+      if (typeof userSelectedAccountId === 'string') {
+        const account = await storage.getAccount(userSelectedAccountId);
+        if (!account || account.companyId !== existing.companyId) {
+          return res.status(403).json({ message: 'userSelectedAccountId does not belong to this company' });
+        }
+      }
 
-      // Phase 2: invalidate the cached classifier model and re-evaluate the
-      // accuracy failsafe for the company that owns this classification.
+      // Single write via recordClassificationFeedback — also invalidates the
+      // cached classifier model and re-evaluates the accuracy failsafe for the
+      // company that owns this classification.
       await recordClassificationFeedback(
         existing.companyId,
         classificationId,
-        !!wasAccepted,
+        wasAccepted,
         userSelectedAccountId,
       );
 
+      const classification = await storage.getTransactionClassification(classificationId);
       res.json(classification);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
