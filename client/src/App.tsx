@@ -102,6 +102,7 @@ const IntegrationsHub = lazy(() => import('@/pages/IntegrationsHub'));
 const WhatsAppDashboard = lazy(() => import('@/pages/WhatsAppDashboard'));
 const Notifications = lazy(() => import('@/pages/Notifications'));
 const Reminders = lazy(() => import('@/pages/Reminders'));
+const DocumentChasing = lazy(() => import('@/pages/DocumentChasing'));
 const Referrals = lazy(() => import('@/pages/Referrals'));
 const Feedback = lazy(() => import('@/pages/Feedback'));
 
@@ -503,6 +504,7 @@ function Router() {
           <Route path="/whatsapp" component={WhatsAppDashboard} />
           <Route path="/notifications" component={Notifications} />
           <Route path="/reminders" component={Reminders} />
+          <Route path="/document-chasing" component={DocumentChasing} />
           <Route path="/referrals" component={Referrals} />
           <Route path="/feedback" component={Feedback} />
           <Route path="/analytics" component={Analytics} />

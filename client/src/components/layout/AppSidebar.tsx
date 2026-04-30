@@ -133,6 +133,15 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     ],
   },
   {
+    key: 'compliance',
+    titleKey: 'compliance',
+    icon: ClipboardList,
+    items: [
+      { titleKey: 'documentChasing', url: '/document-chasing' },
+      { titleKey: 'complianceCalendar', url: '/compliance-calendar' },
+    ],
+  },
+  {
     key: 'settings',
     titleKey: 'settings',
     icon: Settings,

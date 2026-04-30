@@ -63,6 +63,7 @@ import { registerFirmBulkRoutes } from './routes/firm-bulk.routes';
 import { registerFirmCommsRoutes } from './routes/firm-comms.routes';
 import { registerFirmAnalyticsRoutes } from './routes/firm-analytics.routes';
 import { registerClientPortalRoutes } from './routes/client-portal.routes';
+import { registerDocumentChasingRoutes } from './routes/document-chasing.routes';
 
 const log = createLogger('routes');
 
@@ -116,6 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── Platform Features ──────────────────────────────────
   registerNotificationRoutes(app);
   registerReminderRoutes(app);
+  registerDocumentChasingRoutes(app);
   registerOnboardingRoutes(app);
   registerBackupRoutes(app);
   registerReferralRoutes(app);
