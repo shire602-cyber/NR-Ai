@@ -59,6 +59,10 @@ export const t = {
     complianceCalendar: 'Compliance Calendar',
     taskCenter: 'Task Center',
     newsFeed: 'UAE Tax News',
+
+    // Compliance
+    compliance: 'Compliance',
+    documentChasing: 'Document Chasing',
     
     // Settings items
     history: 'Activity History',
@@ -381,6 +385,10 @@ export const t = {
     complianceCalendar: 'تقويم الامتثال',
     taskCenter: 'مركز المهام',
     newsFeed: 'أخبار الضرائب',
+
+    // Compliance
+    compliance: 'الامتثال',
+    documentChasing: 'متابعة المستندات',
     
     // Settings items
     history: 'سجل النشاط',

@@ -2185,3 +2185,158 @@ export const updateFirmLeadSchema = insertFirmLeadSchema.partial();
 export type InsertFirmLead = z.infer<typeof insertFirmLeadSchema>;
 export type UpdateFirmLead = z.infer<typeof updateFirmLeadSchema>;
 export type FirmLead = typeof firmLeads.$inferSelect;
+
+// ===========================
+// Phase 5: Document Chasing Autopilot
+// ===========================
+//
+// Document requirements describe what a client must supply for bookkeeping
+// and UAE compliance (trade licence renewals, Emirates IDs, bank statements,
+// tenancy contracts, visa copies, etc.). The chase pipeline escalates a
+// missing document through four levels (friendly → follow_up → urgent →
+// final), mirroring the Phase 4 payment-chasing model. The compliance
+// calendar is the source of truth for upcoming UAE deadlines that drive
+// auto-scheduled reminders.
+
+// UAE-specific document types — kept as a const tuple so the Zod enum below
+// stays in lockstep. Free-form types are stored under "other".
+export const DOCUMENT_TYPES = [
+  'trade_license',
+  'emirates_id',
+  'visa_copy',
+  'passport_copy',
+  'bank_statement',
+  'tenancy_contract',
+  'moa_aoa',
+  'vat_certificate',
+  'corporate_tax_certificate',
+  'esr_notification',
+  'esr_report',
+  'audited_financials',
+  'invoice',
+  'receipt',
+  'payslip',
+  'other',
+] as const;
+export type DocumentType = typeof DOCUMENT_TYPES[number];
+
+export const CHASE_LEVELS = ['friendly', 'follow_up', 'urgent', 'final'] as const;
+export type ChaseLevel = typeof CHASE_LEVELS[number];
+
+export const CHASE_CHANNELS = ['whatsapp', 'email', 'sms', 'in_app'] as const;
+export type ChaseChannel = typeof CHASE_CHANNELS[number];
+
+export const REQUIREMENT_STATUSES = [
+  'pending',
+  'requested',
+  'received',
+  'overdue',
+  'waived',
+] as const;
+export type RequirementStatus = typeof REQUIREMENT_STATUSES[number];
+
+export const COMPLIANCE_EVENT_TYPES = [
+  'trade_license_renewal',
+  'visa_expiry',
+  'emirates_id_expiry',
+  'vat_filing',
+  'corporate_tax_filing',
+  'esr_notification',
+  'esr_report',
+  'tenancy_renewal',
+  'audit_deadline',
+  'other',
+] as const;
+export type ComplianceEventType = typeof COMPLIANCE_EVENT_TYPES[number];
+
+// Document requirements: what a client owes the firm per period.
+export const documentRequirements = pgTable("document_requirements", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  documentType: text("document_type").notNull(), // DocumentType
+  description: text("description"),
+  dueDate: timestamp("due_date").notNull(),
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  recurringIntervalDays: integer("recurring_interval_days"), // null when isRecurring is false
+  status: text("status").notNull().default("pending"), // RequirementStatus
+  receivedAt: timestamp("received_at"),
+  uploadedDocumentId: uuid("uploaded_document_id"), // optional pointer to a document store row
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_document_requirements_company_id").on(table.companyId),
+  dueDateIdx: index("idx_document_requirements_due_date").on(table.dueDate),
+  statusIdx: index("idx_document_requirements_status").on(table.status),
+}));
+
+export const insertDocumentRequirementSchema = createInsertSchema(documentRequirements).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const updateDocumentRequirementSchema = insertDocumentRequirementSchema.partial();
+
+export type InsertDocumentRequirement = z.infer<typeof insertDocumentRequirementSchema>;
+export type UpdateDocumentRequirement = z.infer<typeof updateDocumentRequirementSchema>;
+export type DocumentRequirement = typeof documentRequirements.$inferSelect;
+
+// Document chases: one row per send. Level escalates as the same requirement
+// stays open across multiple sends.
+export const documentChases = pgTable("document_chases", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  requirementId: uuid("requirement_id").notNull().references(() => documentRequirements.id, { onDelete: "cascade" }),
+  chaseLevel: text("chase_level").notNull(), // ChaseLevel
+  sentVia: text("sent_via").notNull(), // ChaseChannel
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  messageContent: text("message_content").notNull(),
+  recipientPhone: text("recipient_phone"),
+  recipientEmail: text("recipient_email"),
+  responseReceived: boolean("response_received").notNull().default(false),
+  responseReceivedAt: timestamp("response_received_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_document_chases_company_id").on(table.companyId),
+  requirementIdIdx: index("idx_document_chases_requirement_id").on(table.requirementId),
+  sentAtIdx: index("idx_document_chases_sent_at").on(table.sentAt),
+}));
+
+export const insertDocumentChaseSchema = createInsertSchema(documentChases).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDocumentChase = z.infer<typeof insertDocumentChaseSchema>;
+export type DocumentChase = typeof documentChases.$inferSelect;
+
+// Compliance calendar: UAE-specific events that drive document requirements
+// and chase scheduling. Reminder days is stored as a comma-separated list of
+// day offsets ("30,14,7,0") for portability across Postgres versions.
+export const complianceCalendar = pgTable("compliance_calendar", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(), // ComplianceEventType
+  description: text("description").notNull(),
+  eventDate: timestamp("event_date").notNull(),
+  reminderDays: text("reminder_days").notNull().default("30,14,7,0"),
+  status: text("status").notNull().default("upcoming"), // upcoming | completed | overdue | dismissed
+  completedAt: timestamp("completed_at"),
+  linkedRequirementId: uuid("linked_requirement_id"), // optional link back to a requirement
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_compliance_calendar_company_id").on(table.companyId),
+  eventDateIdx: index("idx_compliance_calendar_event_date").on(table.eventDate),
+}));
+
+export const insertComplianceCalendarSchema = createInsertSchema(complianceCalendar).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const updateComplianceCalendarSchema = insertComplianceCalendarSchema.partial();
+
+export type InsertComplianceEvent = z.infer<typeof insertComplianceCalendarSchema>;
+export type UpdateComplianceEvent = z.infer<typeof updateComplianceCalendarSchema>;
+export type ComplianceEvent = typeof complianceCalendar.$inferSelect;
