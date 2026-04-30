@@ -2,7 +2,7 @@ import { Router, type Express, type Request, type Response } from 'express';
 import { storage } from '../storage';
 import { z } from 'zod';
 import * as googleSheets from '../integrations/googleSheets';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
+import { authMiddleware, requireCompanyAccess, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { insertWaitlistSchema } from '../../shared/schema';
 import { createLogger } from '../config/logger';
@@ -96,7 +96,7 @@ export function registerIntegrationRoutes(app: Express) {
 
   // Export invoices to Google Sheets
   // Customer-only: Export invoices to Google Sheets
-  app.post("/api/integrations/google-sheets/export/invoices", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/google-sheets/export/invoices", authMiddleware, requireCustomer, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     const { companyId, spreadsheetId } = req.body;
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
@@ -134,7 +134,7 @@ export function registerIntegrationRoutes(app: Express) {
 
   // Export expenses to Google Sheets
   // Customer-only: Export expenses to Google Sheets
-  app.post("/api/integrations/google-sheets/export/expenses", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/google-sheets/export/expenses", authMiddleware, requireCustomer, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     const { companyId, spreadsheetId } = req.body;
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
@@ -172,7 +172,7 @@ export function registerIntegrationRoutes(app: Express) {
 
   // Export journal entries to Google Sheets
   // Customer-only: Export journal entries to Google Sheets
-  app.post("/api/integrations/google-sheets/export/journal-entries", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/google-sheets/export/journal-entries", authMiddleware, requireCustomer, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     const { companyId, spreadsheetId } = req.body;
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
@@ -229,7 +229,7 @@ export function registerIntegrationRoutes(app: Express) {
 
   // Export chart of accounts to Google Sheets
   // Customer-only: Export chart of accounts to Google Sheets
-  app.post("/api/integrations/google-sheets/export/chart-of-accounts", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/google-sheets/export/chart-of-accounts", authMiddleware, requireCustomer, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     const { companyId, spreadsheetId } = req.body;
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
@@ -266,7 +266,7 @@ export function registerIntegrationRoutes(app: Express) {
   }));
 
   // Import invoices from Google Sheets
-  app.post("/api/integrations/google-sheets/import/invoices", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/google-sheets/import/invoices", authMiddleware, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     const { companyId, sheetUrl } = req.body;
     if (!companyId || !sheetUrl) {
       return res.status(400).json({ message: 'Company ID and sheet URL required' });
@@ -327,7 +327,7 @@ export function registerIntegrationRoutes(app: Express) {
   }));
 
   // Import expenses from Google Sheets
-  app.post("/api/integrations/google-sheets/import/expenses", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/google-sheets/import/expenses", authMiddleware, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     const { companyId, sheetUrl } = req.body;
     if (!companyId || !sheetUrl || !userId) {
@@ -390,7 +390,7 @@ export function registerIntegrationRoutes(app: Express) {
 
   // Custom export to Google Sheets (for filtered/custom data from frontend)
   // Customer-only: Custom export to Google Sheets
-  app.post("/api/integrations/google-sheets/export/custom", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/integrations/google-sheets/export/custom", authMiddleware, requireCustomer, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     const { companyId, title, sheets } = req.body;
     if (!companyId || !title || !sheets) {
       return res.status(400).json({ message: 'Company ID, title, and sheets data required' });

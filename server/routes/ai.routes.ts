@@ -5,13 +5,17 @@ import OpenAI from 'openai';
 import { z } from 'zod';
 
 import { storage } from '../storage';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
+import { authMiddleware, requireCompanyAccess, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 import { categorizationRequestSchema } from '../../shared/schema';
 
 const log = createLogger('ai');
+
+// RFC 4122 UUID format guard — used before validating AI-returned IDs against
+// tenant ownership, so we don't waste a DB round-trip on garbage strings.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // =============================================
 // AI client initialisation
@@ -207,7 +211,7 @@ If no valid transactions can be found, return { "transactions": [] }`
   }));
 
   // AI CFO Advice Route
-  app.post("/api/ai/cfo-advice", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/ai/cfo-advice", authMiddleware, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     try {
       const { companyId, question, context } = req.body;
 
@@ -477,8 +481,56 @@ Respond with JSON:
 
       const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
 
-      // Store detected anomalies
+      // Store detected anomalies. AI-returned UUIDs (entityId, duplicateOfId)
+      // are NOT trusted: a hallucinated or prompt-injected UUID could reference
+      // another tenant's record, producing cross-tenant pollution. We validate
+      // each ID belongs to the calling company before persisting; on mismatch
+      // we drop the field so the alert remains useful but not poisoned.
+      const validateBelongsToCompany = async (
+        entityType: string | undefined,
+        entityId: string | undefined,
+      ): Promise<string | undefined> => {
+        if (!entityId || typeof entityId !== 'string') return undefined;
+        if (!UUID_RE.test(entityId)) return undefined;
+        try {
+          if (entityType === 'invoice') {
+            const r = await storage.getInvoice(entityId);
+            return r && r.companyId === companyId ? entityId : undefined;
+          }
+          if (entityType === 'receipt') {
+            const r = await storage.getReceipt(entityId);
+            return r && r.companyId === companyId ? entityId : undefined;
+          }
+          if (entityType === 'journal_entry') {
+            const r = await storage.getJournalEntry(entityId);
+            return r && r.companyId === companyId ? entityId : undefined;
+          }
+        } catch (err) {
+          log.warn({ err, entityType, entityId }, 'AI anomaly entity validation failed');
+          return undefined;
+        }
+        return undefined;
+      };
+
       for (const anomaly of aiResponse.anomalies || []) {
+        const safeRelatedId = await validateBelongsToCompany(anomaly.entityType, anomaly.entityId);
+        // duplicateOfId must reference the same entity type as the anomaly
+        // (a "duplicate invoice" alert points at another invoice).
+        const safeDuplicateId = await validateBelongsToCompany(anomaly.entityType, anomaly.duplicateOfId);
+
+        if (anomaly.entityId && !safeRelatedId) {
+          log.warn(
+            { companyId, entityType: anomaly.entityType, aiReturnedId: anomaly.entityId },
+            'AI returned entityId not owned by tenant — dropping field',
+          );
+        }
+        if (anomaly.duplicateOfId && !safeDuplicateId) {
+          log.warn(
+            { companyId, entityType: anomaly.entityType, aiReturnedId: anomaly.duplicateOfId },
+            'AI returned duplicateOfId not owned by tenant — dropping field',
+          );
+        }
+
         await storage.createAnomalyAlert({
           companyId,
           type: anomaly.type,
@@ -486,8 +538,8 @@ Respond with JSON:
           title: anomaly.title,
           description: anomaly.description,
           relatedEntityType: anomaly.entityType,
-          relatedEntityId: anomaly.entityId,
-          duplicateOfId: anomaly.duplicateOfId,
+          relatedEntityId: safeRelatedId,
+          duplicateOfId: safeDuplicateId,
           aiConfidence: anomaly.confidence,
         });
       }
@@ -919,7 +971,7 @@ Respond with JSON:
   }));
 
   // Get stored forecasts
-  app.get("/api/companies/:companyId/forecasts", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/companies/:companyId/forecasts", authMiddleware, requireCompanyAccess('params'), asyncHandler(async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const forecasts = await storage.getCashFlowForecastsByCompanyId(companyId);
@@ -933,6 +985,19 @@ Respond with JSON:
   app.post("/api/ai/classification-feedback", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     try {
       const { classificationId, wasAccepted, userSelectedAccountId } = req.body;
+      if (!classificationId) {
+        return res.status(400).json({ message: 'classificationId required' });
+      }
+
+      const existing = await storage.getTransactionClassificationById(classificationId);
+      if (!existing) {
+        return res.status(404).json({ message: 'Classification not found' });
+      }
+
+      const allowed = await storage.hasCompanyAccess(req.user!.id, existing.companyId);
+      if (!allowed) {
+        return res.status(403).json({ message: 'Access denied to this classification' });
+      }
 
       const classification = await storage.updateTransactionClassification(classificationId, {
         wasAccepted,

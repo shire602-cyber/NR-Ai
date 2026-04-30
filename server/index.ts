@@ -117,14 +117,21 @@ let httpServer: any = null;
 async function bootstrap() {
   log.info({ environment: env.NODE_ENV, port: env.PORT }, 'Starting server');
 
-  // Run database migrations before starting the server (non-fatal: app continues if already up-to-date or migration errors)
-  const migrationsFolder = path.join(projectRoot, 'migrations');
-  log.info({ migrationsFolder }, 'Running database migrations...');
-  try {
-    await runMigrations(migrationsFolder);
-    log.info('Database migrations completed successfully');
-  } catch (migrationErr) {
-    log.error({ err: migrationErr }, 'Database migration failed — continuing startup with existing schema');
+  // Migrations are deploy-phase work, not boot-phase work. Default off in
+  // prod; opt-in via AUTO_MIGRATE_ON_BOOT=true (dev/test/single-instance).
+  // For prod, run `npm run db:migrate` in the Railway release command
+  // (railway.json -> deploy.preDeployCommand or equivalent).
+  if (env.AUTO_MIGRATE_ON_BOOT) {
+    const migrationsFolder = path.join(projectRoot, 'migrations');
+    log.info({ migrationsFolder }, 'Running database migrations...');
+    try {
+      await runMigrations(migrationsFolder);
+      log.info('Database migrations completed successfully');
+    } catch (migrationErr) {
+      log.error({ err: migrationErr }, 'Database migration failed — continuing startup with existing schema');
+    }
+  } else {
+    log.info('Skipping boot-time migrations (AUTO_MIGRATE_ON_BOOT=false). Run `npm run db:migrate` in deploy phase.');
   }
 
   // Belt-and-suspenders: ensure critical schema columns exist regardless of migration state

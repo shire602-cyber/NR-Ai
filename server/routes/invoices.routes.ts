@@ -9,6 +9,8 @@ import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
 import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
 import { createAndEmitNotification } from '../services/socket.service';
+import { db } from '../db';
+import { invoices as invoicesTable, invoiceLines as invoiceLinesTable } from '../../shared/schema';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { canTransition, isTerminal, isValidStatus } from '../services/invoice-state-machine';
 import { recordAudit } from '../services/audit.service';
@@ -160,40 +162,47 @@ export function registerInvoiceRoutes(app: Express) {
     // posts a revenue-recognition journal entry on this date.
     await assertPeriodNotLocked(companyId, invoiceDate);
 
-    // FTA requires sequential, gap-free invoice numbering. The server is the
-    // sole authority — any number sent by the client is ignored.
-    const allocatedNumber = await allocateInvoiceNumber(companyId, 'invoice', invoiceDate);
+    // FTA requires sequential, gap-free invoice numbering. We MUST allocate
+    // and insert the invoice in a single transaction — otherwise a failed
+    // insert after a successful allocation burns the number permanently and
+    // the next allocation produces a gap (FTA Article 78 violation).
+    const { allocatedNumber, invoice } = await db.transaction(async (tx: typeof db) => {
+      const number = await allocateInvoiceNumber(companyId, 'invoice', invoiceDate, tx);
 
-    log.info({
-      companyId,
-      userId,
-      number: allocatedNumber,
-      clientSuppliedNumber: invoiceData.number,
-      date: invoiceDate,
-      subtotal,
-      vatAmount,
-      total,
-      linesCount: lines.length
-    }, 'Creating invoice');
+      log.info({
+        companyId,
+        userId,
+        number,
+        clientSuppliedNumber: invoiceData.number,
+        date: invoiceDate,
+        subtotal,
+        vatAmount,
+        total,
+        linesCount: lines.length,
+      }, 'Creating invoice');
 
-    // Create invoice
-    const invoice = await storage.createInvoice({
-      ...invoiceData,
-      number: allocatedNumber,
-      date: invoiceDate,
-      companyId,
-      subtotal,
-      vatAmount,
-      total,
+      const [insertedInvoice] = await tx
+        .insert(invoicesTable)
+        .values({
+          ...invoiceData,
+          number,
+          date: invoiceDate,
+          companyId,
+          subtotal,
+          vatAmount,
+          total,
+        })
+        .returning();
+
+      for (const line of lines) {
+        await tx.insert(invoiceLinesTable).values({
+          invoiceId: insertedInvoice.id,
+          ...line,
+        });
+      }
+
+      return { allocatedNumber: number, invoice: insertedInvoice };
     });
-
-    // Create invoice lines
-    for (const line of lines) {
-      await storage.createInvoiceLine({
-        invoiceId: invoice.id,
-        ...line,
-      });
-    }
 
     // Revenue recognition: create journal entry immediately when invoice is raised
     const accounts = await storage.getAccountsByCompanyId(companyId);
@@ -976,34 +985,43 @@ export function registerInvoiceRoutes(app: Express) {
 
     const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
 
-    // Generate credit note number — FTA: sequential, gap-free per company per year.
-    const cnNumber = await allocateInvoiceNumber(companyId, 'credit_note', new Date());
+    // Allocate credit-note number AND insert the credit note + its lines in
+    // a single transaction so a failed insert rolls back the sequence
+    // increment (otherwise FTA-required gap-free numbering breaks).
+    const { cnNumber, creditNote } = await db.transaction(async (tx: typeof db) => {
+      const number = await allocateInvoiceNumber(companyId, 'credit_note', new Date(), tx);
 
-    const creditNote = await storage.createInvoice({
-      companyId,
-      number: cnNumber,
-      customerName: original.customerName,
-      customerTrn: original.customerTrn || undefined,
-      date: new Date(),
-      currency: original.currency,
-      subtotal: -original.subtotal,
-      vatAmount: -original.vatAmount,
-      total: -original.total,
-      status: 'sent',
-      invoiceType: 'credit_note',
-      originalInvoiceId: invoiceId,
-    } as any);
+      const [insertedCreditNote] = await tx
+        .insert(invoicesTable)
+        .values({
+          companyId,
+          number,
+          customerName: original.customerName,
+          customerTrn: original.customerTrn || undefined,
+          date: new Date(),
+          currency: original.currency,
+          subtotal: -original.subtotal,
+          vatAmount: -original.vatAmount,
+          total: -original.total,
+          status: 'sent',
+          invoiceType: 'credit_note',
+          originalInvoiceId: invoiceId,
+        } as any)
+        .returning();
 
-    for (const line of originalLines) {
-      await storage.createInvoiceLine({
-        invoiceId: creditNote.id,
-        description: `[Credit] ${line.description}`,
-        quantity: -line.quantity,
-        unitPrice: line.unitPrice,
-        vatRate: line.vatRate,
-        vatSupplyType: line.vatSupplyType || undefined,
-      } as any);
-    }
+      for (const line of originalLines) {
+        await tx.insert(invoiceLinesTable).values({
+          invoiceId: insertedCreditNote.id,
+          description: `[Credit] ${line.description}`,
+          quantity: -line.quantity,
+          unitPrice: line.unitPrice,
+          vatRate: line.vatRate,
+          vatSupplyType: line.vatSupplyType || undefined,
+        } as any);
+      }
+
+      return { cnNumber: number, creditNote: insertedCreditNote };
+    });
 
     // Reverse journal entry: Debit Sales Revenue + VAT, Credit Accounts Receivable
     const accounts = await storage.getAccountsByCompanyId(companyId);

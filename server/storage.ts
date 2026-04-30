@@ -327,6 +327,7 @@ export interface IStorage {
   // Transaction Classifications
   createTransactionClassification(classification: InsertTransactionClassification): Promise<TransactionClassification>;
   getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]>;
+  getTransactionClassificationById(id: string): Promise<TransactionClassification | undefined>;
   updateTransactionClassification(id: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification>;
 
   // Journal Lines (for analytics)
@@ -567,15 +568,14 @@ export interface IStorage {
   getRecurringInvoicesByCompanyId(companyId: string): Promise<RecurringInvoice[]>;
   getRecurringInvoice(id: string): Promise<RecurringInvoice | undefined>;
   getDueRecurringInvoices(): Promise<RecurringInvoice[]>;
+  // Lock-and-fetch a single due template inside an open tx using
+  // SELECT ... FOR UPDATE SKIP LOCKED. Returns null if no due template is
+  // available (or another runner already holds the lock). Caller must do
+  // its work and commit the tx to release the lock.
+  fetchAndLockNextDueRecurringInvoice(tx: typeof db): Promise<RecurringInvoice | undefined>;
   createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice>;
   updateRecurringInvoice(id: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice>;
   deleteRecurringInvoice(id: string): Promise<void>;
-  tryClaimRecurringInvoice(
-    id: string,
-    expectedNextRunDate: Date,
-    newNextRunDate: Date,
-    newLastGeneratedInvoiceId: string | null,
-  ): Promise<RecurringInvoice | null>;
 
   // Invoice Payments
   getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]>;
@@ -1624,6 +1624,15 @@ export class DatabaseStorage implements IStorage {
       .from(transactionClassifications)
       .where(eq(transactionClassifications.companyId, companyId))
       .orderBy(desc(transactionClassifications.createdAt));
+  }
+
+  async getTransactionClassificationById(id: string): Promise<TransactionClassification | undefined> {
+    const [classification] = await db
+      .select()
+      .from(transactionClassifications)
+      .where(eq(transactionClassifications.id, id))
+      .limit(1);
+    return classification;
   }
 
   async updateTransactionClassification(id: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification> {
@@ -2872,6 +2881,25 @@ export class DatabaseStorage implements IStorage {
       );
   }
 
+  async fetchAndLockNextDueRecurringInvoice(
+    tx: typeof db,
+  ): Promise<RecurringInvoice | undefined> {
+    // Pessimistic row lock with SKIP LOCKED — concurrent cron runners see
+    // the row as "unavailable" rather than the same row twice. Eliminates
+    // the throwaway-invoice + safeDeleteInvoice pattern that left holes in
+    // the FTA-required sequential allocator.
+    const result: any = await tx.execute(sql`
+      SELECT * FROM recurring_invoices
+      WHERE is_active = true
+        AND next_run_date <= now()
+      ORDER BY next_run_date ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    `);
+    const rows = (result.rows ?? result) as RecurringInvoice[];
+    return rows[0];
+  }
+
   async createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice> {
     const [item] = await db
       .insert(recurringInvoices)
@@ -2894,34 +2922,6 @@ export class DatabaseStorage implements IStorage {
 
   async deleteRecurringInvoice(id: string): Promise<void> {
     await db.delete(recurringInvoices).where(eq(recurringInvoices.id, id));
-  }
-
-  /**
-   * Atomic compare-and-swap on recurring_invoices.next_run_date. Only the
-   * caller whose `expected_next_run_date` matches the row will succeed; all
-   * others get null. This is the cron's idempotency guarantee — even if two
-   * cron invocations overlap, exactly one will advance the date and proceed
-   * to generate.
-   *
-   * Returns the updated row, or null if the CAS lost.
-   */
-  async tryClaimRecurringInvoice(
-    id: string,
-    expectedNextRunDate: Date,
-    newNextRunDate: Date,
-    newLastGeneratedInvoiceId: string | null,
-  ): Promise<RecurringInvoice | null> {
-    const result: any = await db.execute(sql`
-      UPDATE recurring_invoices
-      SET next_run_date = ${newNextRunDate.toISOString()},
-          last_generated_invoice_id = COALESCE(${newLastGeneratedInvoiceId}, last_generated_invoice_id),
-          total_generated = total_generated + 1
-      WHERE id = ${id}
-        AND next_run_date = ${expectedNextRunDate.toISOString()}
-      RETURNING *
-    `);
-    const rows = (result.rows ?? result) as RecurringInvoice[];
-    return rows[0] ?? null;
   }
 
   // Invoice Payments
