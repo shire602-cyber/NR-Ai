@@ -726,7 +726,11 @@ export function registerReceiptRoutes(app: Express) {
     }
 
     if (receipt.imagePath) {
-      return res.sendFile(resolveImagePath(receipt.imagePath));
+      try {
+        return res.sendFile(resolveImagePath(receipt.imagePath));
+      } catch {
+        return res.status(404).json({ message: 'No image available for this receipt' });
+      }
     }
 
     // Backward compat: legacy records that have base64 imageData but no imagePath

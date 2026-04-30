@@ -46,6 +46,8 @@
     { "idx": 41, "version": "7", "when": 1769000000000, "tag": "0041_invoice_fta_pdf_fields", "breakpoints": false },
     { "idx": 42, "version": "7", "when": 1769100000000, "tag": "0042_password_reset_tokens", "breakpoints": false },
     { "idx": 43, "version": "7", "when": 1769200000000, "tag": "0043_performance_indexes", "breakpoints": false },
-    { "idx": 44, "version": "7", "when": 1769300000000, "tag": "0044_company_preferences", "breakpoints": false }
+    { "idx": 44, "version": "7", "when": 1769300000000, "tag": "0044_company_preferences", "breakpoints": false },
+    { "idx": 45, "version": "7", "when": 1769400000000, "tag": "0045_receipt_autopilot", "breakpoints": false },
+    { "idx": 46, "version": "7", "when": 1769500000000, "tag": "0046_receipt_classifier_method", "breakpoints": false }
   ]
 }

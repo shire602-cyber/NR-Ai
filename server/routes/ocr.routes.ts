@@ -13,6 +13,8 @@ import {
   buildExportFilename,
   type OcrExportRow,
 } from '../services/excel-export.service';
+import { classifyOcrReceipt } from '../services/receipt-autopilot.service';
+import { isStandardCategory } from '../services/receipt-classifier.service';
 
 const log = createLogger('ocr');
 
@@ -50,13 +52,35 @@ export function registerOCRRoutes(app: Express) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
-    const companies = await storage.getCompaniesByUserId(userId);
-    if (companies.length === 0) {
-      return res.status(404).json({ message: 'No company found' });
-    }
-    const companyId = companies[0].id;
+    const { messageId, content, imageData, companyId: requestedCompanyId } = req.body;
 
-    const { messageId, content, imageData } = req.body;
+    // Phase 2 enriches the OCR result with the company's per-tenant classifier
+    // (training data + rules). The active company MUST come from the request so
+    // a multi-company user (firm_owner, firm_admin, or anyone with multiple
+    // companies) gets predictions trained on the correct tenant's data — never
+    // company A's model bleeding into a receipt being processed for company B.
+    let companyId: string;
+    if (requestedCompanyId && typeof requestedCompanyId === 'string') {
+      const hasAccess = await storage.hasCompanyAccess(userId, requestedCompanyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      companyId = requestedCompanyId;
+    } else {
+      // Backwards-compat fallback for older clients: only safe when the user
+      // has exactly one company. For multi-company users we require an
+      // explicit companyId so we never silently pick the wrong tenant.
+      const companies = await storage.getCompaniesByUserId(userId);
+      if (companies.length === 0) {
+        return res.status(404).json({ message: 'No company found' });
+      }
+      if (companies.length > 1) {
+        return res.status(400).json({
+          message: 'companyId is required when the user has access to multiple companies',
+        });
+      }
+      companyId = companies[0].id;
+    }
 
     const sanitizedContent = content ? String(content).slice(0, 10000) : '';
     const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
@@ -118,10 +142,44 @@ Respond ONLY with valid JSON matching this exact structure:
   "confidence": number between 0 and 1
 }`;
 
+    // Helper: post-process AI extraction → run our internal classifier on the
+    // merchant. Overrides AI's category if our classifier is more confident
+    // (≥ 0.8) — the same threshold as Phase 2's auto-fallback rule.
+    const enrichWithInternalClassifier = async (aiResult: any) => {
+      try {
+        const merchant = (aiResult?.merchant && String(aiResult.merchant)) || 'Unknown Merchant';
+        const lineItems = Array.isArray(aiResult?.lineItems)
+          ? aiResult.lineItems.map((li: any) => String(li?.description || ''))
+          : [];
+        const subtotal = parseFloat(aiResult?.subtotal) || 0;
+        const result = await classifyOcrReceipt(companyId, {
+          merchant,
+          amount: subtotal,
+          lineItems,
+        });
+        // Only override the AI category when our classifier is at-or-above its
+        // own confidence threshold. The AI's confidence is on the OCR
+        // extraction (numbers/date/total), not the category — so we surface
+        // both and let the caller see how the category was determined.
+        if (result.confidence >= 0.8 && isStandardCategory(result.category)) {
+          aiResult.category = result.category;
+        }
+        aiResult._classifier = {
+          method: result.method,
+          confidence: result.confidence,
+          reason: result.reason,
+        };
+      } catch (err: any) {
+        log.warn({ err: err?.message || err }, 'Internal classifier enrichment failed');
+      }
+      return aiResult;
+    };
+
     // Strategy 1: Vision API with image (Anthropic preferred, OpenAI fallback)
     if (imageData) {
       try {
         const aiResult = await runVisionOCR(imageData, extractionPrompt, anthropic, openai);
+        await enrichWithInternalClassifier(aiResult);
         return res.json(buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories));
       } catch (visionError: any) {
         const provider = anthropic ? 'Anthropic' : 'OpenAI';
@@ -143,6 +201,7 @@ Respond ONLY with valid JSON matching this exact structure:
     if (sanitizedContent) {
       try {
         const aiResult = await runTextOCR(sanitizedContent, extractionPrompt, anthropic, openai);
+        await enrichWithInternalClassifier(aiResult);
         return res.json(buildResult(aiResult, sanitizedContent, companyId, sanitizedMessageId, validCategories));
       } catch (textError: any) {
         const provider = anthropic ? 'Anthropic' : 'OpenAI';
@@ -363,6 +422,7 @@ function buildResult(
     category,
     lineItems,
     confidence: typeof aiResult.confidence === 'number' ? Math.min(1, Math.max(0, aiResult.confidence)) : 0.85,
+    classifier: aiResult._classifier || null,
     rawText,
     companyId,
     messageId,

@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, index, customType } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, index, customType, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -181,6 +181,18 @@ export const companies = pgTable("companies", {
   invoiceFooterNote: text("invoice_footer_note"),
 
   onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
+
+  // Phase 2: Receipt Autopilot — per-company classifier config.
+  // mode: 'hybrid' uses internal classifier first with OpenAI fallback; 'openai_only' bypasses internal model.
+  // accuracyThreshold: when internal accuracy drops below this, the company is auto-switched to openai_only.
+  // autopilotEnabled: when true, high-confidence receipts are auto-posted to the GL without user review.
+  classifierConfig: jsonb("classifier_config").notNull().default(
+    sql`'{"mode":"hybrid","accuracyThreshold":0.8,"autopilotEnabled":false}'::jsonb`
+  ).$type<{
+    mode: 'hybrid' | 'openai_only';
+    accuracyThreshold: number;
+    autopilotEnabled: boolean;
+  }>(),
 
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -575,6 +587,12 @@ export const receipts = pgTable("receipts", {
   accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
   paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit
   posted: boolean("posted").default(false).notNull(), // Whether journal entry has been created
+  // Phase 2: Receipt Autopilot — true when journal entry was created automatically
+  // by the autopilot pipeline (high confidence + ≥5 rule acceptances) without user review.
+  autoPosted: boolean("auto_posted").default(false).notNull(),
+  // Phase 2: which classifier produced the suggestion for this receipt.
+  // 'rule' | 'keyword' | 'statistical' | 'openai'. Surfaced as the Internal vs. AI badge.
+  classifierMethod: text("classifier_method"),
   reverseCharge: boolean("reverse_charge").default(false).notNull(), // FTA reverse-charge: buyer self-assesses VAT
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id), // Link to created journal entry
   imageData: text("image_data"),
@@ -1008,6 +1026,10 @@ export const transactionClassifications = pgTable("transaction_classifications",
   aiReason: text("ai_reason"),
   wasAccepted: boolean("was_accepted"), // User feedback for ML improvement
   userSelectedAccountId: uuid("user_selected_account_id").references(() => accounts.id),
+  // Phase 2: Receipt Autopilot — which classifier produced this suggestion.
+  // 'rule' = ai_company_rules match, 'keyword' = UAE keyword pattern, 'statistical' = Naive Bayes,
+  // 'openai' = LLM fallback. Used to compute per-method accuracy and trip the openai_only failsafe.
+  classifierMethod: text("classifier_method"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   companyIdIdx: index("idx_transaction_classifications_company_id").on(table.companyId),
@@ -1020,6 +1042,21 @@ export const insertTransactionClassificationSchema = createInsertSchema(transact
 
 export type InsertTransactionClassification = z.infer<typeof insertTransactionClassificationSchema>;
 export type TransactionClassification = typeof transactionClassifications.$inferSelect;
+
+export type ClassifierMethod = 'rule' | 'keyword' | 'statistical' | 'openai';
+export type ClassifierMode = 'hybrid' | 'openai_only';
+
+export interface ClassifierConfig {
+  mode: ClassifierMode;
+  accuracyThreshold: number;
+  autopilotEnabled: boolean;
+}
+
+export const DEFAULT_CLASSIFIER_CONFIG: ClassifierConfig = {
+  mode: 'hybrid',
+  accuracyThreshold: 0.8,
+  autopilotEnabled: false,
+};
 
 // ===========================
 // Budgets (for Budget vs Actual)
