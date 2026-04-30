@@ -645,8 +645,6 @@ export interface IStorage {
   createPaymentChase(data: InsertPaymentChase): Promise<PaymentChase>;
   getPaymentChasesByCompanyId(companyId: string, opts?: { invoiceId?: string; sinceDays?: number }): Promise<PaymentChase[]>;
   getPaymentChasesByInvoiceId(invoiceId: string): Promise<PaymentChase[]>;
-  markChasesPaidForInvoice(invoiceId: string, paidAt: Date): Promise<void>;
-  setInvoiceChaseLevel(invoiceId: string, level: number, lastChasedAt: Date): Promise<void>;
   /**
    * Atomically set chase_level/last_chased_at iff the invoice has not been
    * chased within the last `minSecondsBetween` seconds. Returns true when the
@@ -3161,6 +3159,21 @@ export class DatabaseStorage implements IStorage {
         .where(eq(invoices.id, input.invoiceId))
         .returning();
 
+      // When the invoice transitions to fully paid, stamp paidAt on every
+      // open chase row for it. This is what makes the chase effectiveness
+      // dashboard work — without it, conversionRate is permanently 0.
+      // Done inside the same txn so a payment write can't leave chase
+      // analytics inconsistent with invoice state.
+      if (newStatus === 'paid') {
+        await tx
+          .update(paymentChases)
+          .set({ paidAt: input.date })
+          .where(and(
+            eq(paymentChases.invoiceId, input.invoiceId),
+            isNull(paymentChases.paidAt),
+          ));
+      }
+
       return {
         payment,
         invoice: updatedInvoice,
@@ -3324,20 +3337,6 @@ export class DatabaseStorage implements IStorage {
       .from(paymentChases)
       .where(eq(paymentChases.invoiceId, invoiceId))
       .orderBy(desc(paymentChases.sentAt));
-  }
-
-  async markChasesPaidForInvoice(invoiceId: string, paidAt: Date): Promise<void> {
-    await db
-      .update(paymentChases)
-      .set({ paidAt })
-      .where(and(eq(paymentChases.invoiceId, invoiceId), isNull(paymentChases.paidAt)));
-  }
-
-  async setInvoiceChaseLevel(invoiceId: string, level: number, lastChasedAt: Date): Promise<void> {
-    await db
-      .update(invoices)
-      .set({ chaseLevel: level, lastChasedAt })
-      .where(eq(invoices.id, invoiceId));
   }
 
   async tryClaimChaseSlot(
