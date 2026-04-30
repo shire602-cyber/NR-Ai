@@ -463,9 +463,11 @@ export interface SavedAdjustment {
 }
 
 /**
- * Runtime list of valid VAT 201 box keys. Kept in sync with `Vat201BoxValues`
- * — used by the routes layer to validate that user-supplied adjustments target
- * an actual box, not an arbitrary string that would silently be ignored.
+ * Allow-list of valid VAT 201 box keys. Used both by the routes layer (to
+ * validate user-supplied adjustments target an actual box) and by
+ * `applyAdjustments` to reject inherited Object.prototype keys
+ * (`__proto__`, `constructor`, `toString`...) that would otherwise pass a
+ * naive `if (adj.box in next)` check.
  */
 export const VAT201_BOX_KEYS: ReadonlyArray<keyof Vat201BoxValues> = [
   'box1aAbuDhabiAmount', 'box1aAbuDhabiVat',
@@ -487,10 +489,10 @@ export const VAT201_BOX_KEYS: ReadonlyArray<keyof Vat201BoxValues> = [
   'box14PayableTax',
 ];
 
-const VAT201_BOX_KEY_SET = new Set<string>(VAT201_BOX_KEYS as readonly string[]);
+const VAT201_BOX_KEY_SET: ReadonlySet<string> = new Set(VAT201_BOX_KEYS);
 
-export function isValidVat201BoxKey(key: string): key is keyof Vat201BoxValues {
-  return VAT201_BOX_KEY_SET.has(key);
+export function isValidVat201BoxKey(value: unknown): value is keyof Vat201BoxValues {
+  return typeof value === 'string' && VAT201_BOX_KEY_SET.has(value);
 }
 
 export function applyAdjustments(boxes: Vat201BoxValues, adjustments: SavedAdjustment[]): Vat201BoxValues {
@@ -884,36 +886,6 @@ export async function listPeriodsForCompany(
 
   summaries.sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
   return summaries;
-}
-
-/**
- * Allow-list of valid VAT 201 box keys. Used to reject adjustments targeting
- * inherited Object.prototype keys (`__proto__`, `constructor`, `toString`...)
- * which would otherwise pass `if (adj.box in next)` checks downstream.
- */
-export const VAT201_BOX_KEYS: ReadonlyArray<keyof Vat201BoxValues> = [
-  'box1aAbuDhabiAmount', 'box1aAbuDhabiVat',
-  'box1bDubaiAmount', 'box1bDubaiVat',
-  'box1cSharjahAmount', 'box1cSharjahVat',
-  'box1dAjmanAmount', 'box1dAjmanVat',
-  'box1eUmmAlQuwainAmount', 'box1eUmmAlQuwainVat',
-  'box1fRasAlKhaimahAmount', 'box1fRasAlKhaimahVat',
-  'box1gFujairahAmount', 'box1gFujairahVat',
-  'box3ReverseChargeAmount', 'box3ReverseChargeVat',
-  'box4ZeroRatedAmount',
-  'box5ExemptAmount',
-  'box8TotalAmount', 'box8TotalVat',
-  'box9ExpensesAmount', 'box9ExpensesVat',
-  'box10ReverseChargeAmount', 'box10ReverseChargeVat',
-  'box11TotalAmount', 'box11TotalVat',
-  'box12TotalDueTax',
-  'box13RecoverableTax',
-  'box14PayableTax',
-];
-const VAT201_BOX_KEY_SET: ReadonlySet<string> = new Set(VAT201_BOX_KEYS);
-
-export function isValidVat201BoxKey(value: unknown): value is keyof Vat201BoxValues {
-  return typeof value === 'string' && VAT201_BOX_KEY_SET.has(value);
 }
 
 /**
