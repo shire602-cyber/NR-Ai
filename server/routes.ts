@@ -17,6 +17,7 @@ import { registerAuthRoutes } from './routes/auth.routes';
 import { registerCompanyRoutes } from './routes/companies.routes';
 import { registerAccountRoutes } from './routes/accounts.routes';
 import { registerInvoiceRoutes } from './routes/invoices.routes';
+import { registerChasingRoutes } from './routes/chasing.routes';
 import { registerReceiptRoutes } from './routes/receipts.routes';
 import { registerContactRoutes } from './routes/contacts.routes';
 import { registerJournalRoutes } from './routes/journal.routes';
@@ -74,6 +75,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAccountRoutes(app);
   registerInvoiceRoutes(app);
   registerRecurringInvoiceRoutes(app);
+  registerChasingRoutes(app);
   registerReceiptRoutes(app);
   registerContactRoutes(app);
   registerJournalRoutes(app);

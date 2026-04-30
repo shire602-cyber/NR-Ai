@@ -49,6 +49,7 @@
     { "idx": 44, "version": "7", "when": 1769300000000, "tag": "0044_company_preferences", "breakpoints": false },
     { "idx": 45, "version": "7", "when": 1769400000000, "tag": "0045_receipt_autopilot", "breakpoints": false },
     { "idx": 46, "version": "7", "when": 1769500000000, "tag": "0046_receipt_classifier_method", "breakpoints": false },
-    { "idx": 47, "version": "7", "when": 1769600000000, "tag": "0047_vat_autopilot", "breakpoints": false }
+    { "idx": 47, "version": "7", "when": 1769600000000, "tag": "0047_vat_autopilot", "breakpoints": false },
+    { "idx": 48, "version": "7", "when": 1769700000000, "tag": "0048_payment_chasing", "breakpoints": false }
   ]
 }

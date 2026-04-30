@@ -57,7 +57,10 @@ import type {
   Product, InsertProduct,
   InventoryMovement, InsertInventoryMovement,
   BankAccount, InsertBankAccount,
-  InvoicePayment, InsertInvoicePayment
+  InvoicePayment, InsertInvoicePayment,
+  PaymentChase, InsertPaymentChase,
+  ChaseTemplate, InsertChaseTemplate,
+  ChaseConfig, InsertChaseConfig
 } from "@shared/schema";
 import {
   passwordResetTokens,
@@ -120,10 +123,13 @@ import {
   corporateTaxReturns,
   products,
   inventoryMovements,
-  invoicePayments
+  invoicePayments,
+  paymentChases,
+  chaseTemplates,
+  chaseConfigs
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, lte, isNull, isNotNull, sql, gt, inArray } from "drizzle-orm";
+import { eq, and, desc, lt, lte, gt, gte, isNull, isNotNull, or, sql, inArray } from "drizzle-orm";
 import Decimal from "decimal.js";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
@@ -621,6 +627,7 @@ export interface IStorage {
 
   // Invoice Payments
   getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]>;
+  getInvoicePaymentsByCompanyId(companyId: string): Promise<InvoicePayment[]>;
   createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment>;
   getInvoicePaidTotal(invoiceId: string): Promise<number>;
   getDueInvoicesForRecurring(): Promise<Invoice[]>;
@@ -675,6 +682,33 @@ export interface IStorage {
   getInventoryMovementsByProductId(productId: string): Promise<InventoryMovement[]>;
   getInventoryMovementsByCompanyId(companyId: string): Promise<InventoryMovement[]>;
   createInventoryMovement(data: InsertInventoryMovement): Promise<InventoryMovement>;
+
+  // Payment Chasing (Phase 4)
+  createPaymentChase(data: InsertPaymentChase): Promise<PaymentChase>;
+  getPaymentChasesByCompanyId(companyId: string, opts?: { invoiceId?: string; sinceDays?: number }): Promise<PaymentChase[]>;
+  getPaymentChasesByInvoiceId(invoiceId: string): Promise<PaymentChase[]>;
+  /**
+   * Atomically set chase_level/last_chased_at iff the invoice has not been
+   * chased within the last `minSecondsBetween` seconds. Returns true when the
+   * caller has won the slot (and may safely send), false otherwise. Prevents
+   * duplicate chases from concurrent requests / double-clicks.
+   */
+  tryClaimChaseSlot(
+    invoiceId: string,
+    level: number,
+    now: Date,
+    minSecondsBetween: number,
+  ): Promise<boolean>;
+  setInvoiceDoNotChase(invoiceId: string, value: boolean): Promise<void>;
+
+  getChaseTemplatesForCompany(companyId: string): Promise<ChaseTemplate[]>;
+  getChaseTemplate(level: number, language: string, companyId: string | null): Promise<ChaseTemplate | undefined>;
+  createChaseTemplate(data: InsertChaseTemplate): Promise<ChaseTemplate>;
+  updateChaseTemplate(id: string, companyId: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate | undefined>;
+  deleteChaseTemplate(id: string, companyId: string): Promise<boolean>;
+
+  getChaseConfig(companyId: string): Promise<ChaseConfig | undefined>;
+  upsertChaseConfig(companyId: string, data: Partial<InsertChaseConfig>): Promise<ChaseConfig>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3340,6 +3374,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(invoicePayments.createdAt));
   }
 
+  async getInvoicePaymentsByCompanyId(companyId: string): Promise<InvoicePayment[]> {
+    return await db
+      .select()
+      .from(invoicePayments)
+      .where(eq(invoicePayments.companyId, companyId))
+      .orderBy(desc(invoicePayments.createdAt));
+  }
+
   async createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment> {
     const [payment] = await db.insert(invoicePayments).values(data).returning();
     return payment;
@@ -3529,6 +3571,21 @@ export class DatabaseStorage implements IStorage {
         .where(eq(invoices.id, input.invoiceId))
         .returning();
 
+      // When the invoice transitions to fully paid, stamp paidAt on every
+      // open chase row for it. This is what makes the chase effectiveness
+      // dashboard work — without it, conversionRate is permanently 0.
+      // Done inside the same txn so a payment write can't leave chase
+      // analytics inconsistent with invoice state.
+      if (newStatus === 'paid') {
+        await tx
+          .update(paymentChases)
+          .set({ paidAt: input.date })
+          .where(and(
+            eq(paymentChases.invoiceId, input.invoiceId),
+            isNull(paymentChases.paidAt),
+          ));
+      }
+
       return {
         payment,
         invoice: updatedInvoice,
@@ -3660,6 +3717,152 @@ export class DatabaseStorage implements IStorage {
       .values(data)
       .returning();
     return movement;
+  }
+
+  // ─── Payment Chasing (Phase 4) ─────────────────────────────────────────────
+
+  async createPaymentChase(data: InsertPaymentChase): Promise<PaymentChase> {
+    const [row] = await db.insert(paymentChases).values(data).returning();
+    return row;
+  }
+
+  async getPaymentChasesByCompanyId(
+    companyId: string,
+    opts: { invoiceId?: string; sinceDays?: number } = {},
+  ): Promise<PaymentChase[]> {
+    const conds = [eq(paymentChases.companyId, companyId)];
+    if (opts.invoiceId) conds.push(eq(paymentChases.invoiceId, opts.invoiceId));
+    if (opts.sinceDays && opts.sinceDays > 0) {
+      const cutoff = new Date(Date.now() - opts.sinceDays * 86_400_000);
+      conds.push(gte(paymentChases.sentAt, cutoff));
+    }
+    return await db
+      .select()
+      .from(paymentChases)
+      .where(and(...conds))
+      .orderBy(desc(paymentChases.sentAt));
+  }
+
+  async getPaymentChasesByInvoiceId(invoiceId: string): Promise<PaymentChase[]> {
+    return await db
+      .select()
+      .from(paymentChases)
+      .where(eq(paymentChases.invoiceId, invoiceId))
+      .orderBy(desc(paymentChases.sentAt));
+  }
+
+  async tryClaimChaseSlot(
+    invoiceId: string,
+    level: number,
+    now: Date,
+    minSecondsBetween: number,
+  ): Promise<boolean> {
+    const cutoff = new Date(now.getTime() - Math.max(0, minSecondsBetween) * 1000);
+    const claimed = await db
+      .update(invoices)
+      .set({ chaseLevel: level, lastChasedAt: now })
+      .where(and(
+        eq(invoices.id, invoiceId),
+        or(isNull(invoices.lastChasedAt), lt(invoices.lastChasedAt, cutoff)),
+      ))
+      .returning({ id: invoices.id });
+    return claimed.length > 0;
+  }
+
+  async setInvoiceDoNotChase(invoiceId: string, value: boolean): Promise<void> {
+    await db.update(invoices).set({ doNotChase: value }).where(eq(invoices.id, invoiceId));
+  }
+
+  async getChaseTemplatesForCompany(companyId: string): Promise<ChaseTemplate[]> {
+    return await db
+      .select()
+      .from(chaseTemplates)
+      .where(or(eq(chaseTemplates.companyId, companyId), isNull(chaseTemplates.companyId)))
+      .orderBy(chaseTemplates.level, chaseTemplates.language);
+  }
+
+  async getChaseTemplate(
+    level: number,
+    language: string,
+    companyId: string | null,
+  ): Promise<ChaseTemplate | undefined> {
+    // Prefer company override, fall back to system default.
+    if (companyId) {
+      const [override] = await db
+        .select()
+        .from(chaseTemplates)
+        .where(and(
+          eq(chaseTemplates.companyId, companyId),
+          eq(chaseTemplates.level, level),
+          eq(chaseTemplates.language, language),
+        ))
+        .limit(1);
+      if (override) return override;
+    }
+    const [system] = await db
+      .select()
+      .from(chaseTemplates)
+      .where(and(
+        isNull(chaseTemplates.companyId),
+        eq(chaseTemplates.level, level),
+        eq(chaseTemplates.language, language),
+      ))
+      .limit(1);
+    return system || undefined;
+  }
+
+  async createChaseTemplate(data: InsertChaseTemplate): Promise<ChaseTemplate> {
+    const [row] = await db.insert(chaseTemplates).values(data).returning();
+    return row;
+  }
+
+  async updateChaseTemplate(
+    id: string,
+    companyId: string,
+    data: Partial<InsertChaseTemplate>,
+  ): Promise<ChaseTemplate | undefined> {
+    // Scoped by companyId to prevent cross-tenant edits and keep system
+    // defaults (company_id IS NULL) immutable from the customer-facing API.
+    const [row] = await db
+      .update(chaseTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(chaseTemplates.id, id), eq(chaseTemplates.companyId, companyId)))
+      .returning();
+    return row || undefined;
+  }
+
+  async deleteChaseTemplate(id: string, companyId: string): Promise<boolean> {
+    const rows = await db
+      .delete(chaseTemplates)
+      .where(and(eq(chaseTemplates.id, id), eq(chaseTemplates.companyId, companyId)))
+      .returning({ id: chaseTemplates.id });
+    return rows.length > 0;
+  }
+
+  async getChaseConfig(companyId: string): Promise<ChaseConfig | undefined> {
+    const [row] = await db
+      .select()
+      .from(chaseConfigs)
+      .where(eq(chaseConfigs.companyId, companyId))
+      .limit(1);
+    return row || undefined;
+  }
+
+  async upsertChaseConfig(companyId: string, data: Partial<InsertChaseConfig>): Promise<ChaseConfig> {
+    const existing = await this.getChaseConfig(companyId);
+    if (existing) {
+      const [row] = await db
+        .update(chaseConfigs)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(chaseConfigs.companyId, companyId))
+        .returning();
+      return row;
+    }
+    const [row] = await db
+      .insert(chaseConfigs)
+      .values({ companyId, ...data } as InsertChaseConfig)
+      .returning();
+    return row;
   }
 }
 

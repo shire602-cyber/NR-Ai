@@ -88,6 +88,7 @@ const BillPay = lazy(() => import('@/pages/BillPay'));
 const ExpenseClaims = lazy(() => import('@/pages/ExpenseClaims'));
 const Inventory = lazy(() => import('@/pages/Inventory'));
 const RecurringInvoices = lazy(() => import('@/pages/RecurringInvoices'));
+const PaymentChasing = lazy(() => import('@/pages/PaymentChasing'));
 
 const AICFO = lazy(() => import('@/pages/AICFO'));
 const AIChat = lazy(() => import('@/pages/AIChat'));
@@ -474,6 +475,7 @@ function Router() {
           <Route path="/accounts/:id/ledger" component={AccountLedger} />
           <Route path="/invoices" component={Invoices} />
           <Route path="/recurring-invoices" component={RecurringInvoices} />
+          <Route path="/payment-chasing" component={PaymentChasing} />
           <Route path="/journal" component={Journal} />
           <Route path="/journal/:id" component={JournalEntryDetail} />
           <Route path="/reports" component={Reports} />
