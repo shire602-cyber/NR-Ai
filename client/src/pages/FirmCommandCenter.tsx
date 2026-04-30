@@ -290,11 +290,12 @@ export default function FirmCommandCenter() {
   const batchVat = useMutation({
     mutationFn: (companyIds: string[]) =>
       apiRequest('POST', '/api/firm/command-center/batch/vat-calculate', { companyIds }),
-    onSuccess: (data: any) => {
+    onSuccess: (data: { results?: unknown[] }) => {
       toast({
         title: 'Batch VAT calc complete',
         description: `${data.results?.length ?? 0} clients calculated.`,
       });
+      setSelectedClients(new Set());
     },
     onError: (e: Error) =>
       toast({ title: 'Batch VAT failed', description: e.message, variant: 'destructive' }),
@@ -303,11 +304,12 @@ export default function FirmCommandCenter() {
   const batchChasePayments = useMutation({
     mutationFn: (companyIds: string[]) =>
       apiRequest('POST', '/api/firm/command-center/batch/chase-payments', { companyIds }),
-    onSuccess: (data: any) => {
+    onSuccess: (data: { chasedInvoiceCount?: number }) => {
       toast({
         title: 'Payment chase queued',
         description: `${data.chasedInvoiceCount ?? 0} invoices queued.`,
       });
+      setSelectedClients(new Set());
     },
     onError: (e: Error) =>
       toast({ title: 'Chase failed', description: e.message, variant: 'destructive' }),
@@ -316,12 +318,13 @@ export default function FirmCommandCenter() {
   const batchChaseDocuments = useMutation({
     mutationFn: (companyIds: string[]) =>
       apiRequest('POST', '/api/firm/command-center/batch/chase-documents', { companyIds }),
-    onSuccess: (data: any) => {
+    onSuccess: (data: { chasedClientCount?: number }) => {
       qc.invalidateQueries({ queryKey: ['/api/firm/command-center/alerts'] });
       toast({
         title: 'Document chase queued',
         description: `${data.chasedClientCount ?? 0} clients notified.`,
       });
+      setSelectedClients(new Set());
     },
     onError: (e: Error) =>
       toast({ title: 'Chase failed', description: e.message, variant: 'destructive' }),
@@ -375,6 +378,31 @@ export default function FirmCommandCenter() {
   }, [comparisonQuery.data]);
 
   // ─── Render ────────────────────────────────────────────────────────
+  if (dashboardQuery.isError) {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-red-200 bg-red-50 dark:bg-red-950 dark:border-red-900 p-6 text-sm"
+        data-testid="firm-command-center-error"
+      >
+        <div className="font-medium mb-1">Failed to load firm dashboard.</div>
+        <div className="text-muted-foreground">
+          {dashboardQuery.error instanceof Error
+            ? dashboardQuery.error.message
+            : 'An unexpected error occurred.'}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => dashboardQuery.refetch()}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -546,7 +574,9 @@ export default function FirmCommandCenter() {
                     <TableHead className="text-right">Overdue AR</TableHead>
                     <TableHead>VAT</TableHead>
                     <TableHead>Last activity</TableHead>
-                    <TableHead></TableHead>
+                    <TableHead>
+                      <span className="sr-only">Open client</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -609,7 +639,7 @@ export default function FirmCommandCenter() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Alert feed</CardTitle>
-                <Select value={severityFilter} onValueChange={(v) => setSeverityFilter(v as any)}>
+                <Select value={severityFilter} onValueChange={(v) => setSeverityFilter(v as Severity | 'all')}>
                   <SelectTrigger className="w-[180px]" data-testid="select-severity-filter">
                     <SelectValue />
                   </SelectTrigger>

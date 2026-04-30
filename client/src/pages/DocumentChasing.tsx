@@ -38,6 +38,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from '@shared/schema';
 
 // ── Types echoed from server response shape ───────────────────────────
 interface Requirement {
@@ -76,38 +89,6 @@ interface Effectiveness {
   responseRate: number;
   avgDaysToUpload: number | null;
 }
-
-const DOCUMENT_TYPES = [
-  'trade_license',
-  'emirates_id',
-  'visa_copy',
-  'passport_copy',
-  'bank_statement',
-  'tenancy_contract',
-  'moa_aoa',
-  'vat_certificate',
-  'corporate_tax_certificate',
-  'esr_notification',
-  'esr_report',
-  'audited_financials',
-  'invoice',
-  'receipt',
-  'payslip',
-  'other',
-];
-
-const COMPLIANCE_EVENT_TYPES = [
-  'trade_license_renewal',
-  'visa_expiry',
-  'emirates_id_expiry',
-  'vat_filing',
-  'corporate_tax_filing',
-  'esr_notification',
-  'esr_report',
-  'tenancy_renewal',
-  'audit_deadline',
-  'other',
-];
 
 function humanize(s: string) {
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -161,7 +142,7 @@ export default function DocumentChasing() {
         overrideMessage: input.overrideMessage,
         channel: input.channel ?? 'whatsapp',
       }),
-    onSuccess: (data) => {
+    onSuccess: (data: { whatsappLink?: string | null }) => {
       toast({ title: 'Chase recorded', description: 'Marked as sent.' });
       if (data?.whatsappLink) window.open(data.whatsappLink, '_blank', 'noopener,noreferrer');
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'queue'] });
@@ -169,7 +150,7 @@ export default function DocumentChasing() {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-requirements'] });
       setPreviewItem(null);
     },
-    onError: (e: any) => toast({ title: 'Failed', description: e?.message ?? 'Send failed', variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: 'Failed', description: e.message ?? 'Send failed', variant: 'destructive' }),
   });
 
   const bulkSendMutation = useMutation({
@@ -179,7 +160,7 @@ export default function DocumentChasing() {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'queue'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'effectiveness'] });
     },
-    onError: (e: any) => toast({ title: 'Failed', description: e?.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
   });
 
   const markReceivedMutation = useMutation({
@@ -190,6 +171,7 @@ export default function DocumentChasing() {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-requirements'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'queue'] });
     },
+    onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
   });
 
   const requirements = requirementsQuery.data ?? [];
@@ -221,7 +203,36 @@ export default function DocumentChasing() {
 
   if (!companyId) {
     return (
-      <div className="p-6 text-muted-foreground">No company selected.</div>
+      <div className="p-6 text-muted-foreground" data-testid="document-chasing-no-company">
+        No company selected.
+      </div>
+    );
+  }
+
+  if (requirementsQuery.isError || queueQuery.isError) {
+    const err = requirementsQuery.error ?? queueQuery.error;
+    return (
+      <div
+        role="alert"
+        className="m-6 rounded-md border border-red-200 bg-red-50 dark:bg-red-950 dark:border-red-900 p-6 text-sm"
+        data-testid="document-chasing-error"
+      >
+        <div className="font-medium mb-1">Failed to load document chasing data.</div>
+        <div className="text-muted-foreground">
+          {err instanceof Error ? err.message : 'An unexpected error occurred.'}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => {
+            requirementsQuery.refetch();
+            queueQuery.refetch();
+          }}
+        >
+          Retry
+        </Button>
+      </div>
     );
   }
 
@@ -235,15 +246,34 @@ export default function DocumentChasing() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="default"
-            onClick={() => bulkSendMutation.mutate()}
-            disabled={queue.length === 0 || bulkSendMutation.isPending}
-            data-testid="btn-bulk-send"
-          >
-            <Send className="w-4 h-4 mr-2" />
-            Send all ({queue.length})
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="default"
+                disabled={queue.length === 0 || bulkSendMutation.isPending}
+                data-testid="btn-bulk-send"
+              >
+                <Send className="w-4 h-4 mr-2" />
+                Send all ({queue.length})
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Send {queue.length} chase reminder{queue.length === 1 ? '' : 's'}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will record a chase event for every queued requirement and may
+                  trigger outbound WhatsApp/email messages depending on your channel
+                  configuration. This action can&apos;t be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => bulkSendMutation.mutate()}>
+                  Send all
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
 
@@ -622,7 +652,7 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
       queryClient.invalidateQueries({ queryKey: ['/api/companies', props.companyId, 'document-chases', 'queue'] });
       props.onClose();
     },
-    onError: (e: any) => toast({ title: 'Failed', description: e?.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
   });
 
   return (
@@ -634,9 +664,9 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label>Document type</Label>
+            <Label htmlFor="docType">Document type</Label>
             <Select value={form.documentType} onValueChange={(v) => setForm((f) => ({ ...f, documentType: v }))}>
-              <SelectTrigger data-testid="select-doctype">
+              <SelectTrigger id="docType" data-testid="select-doctype">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -649,48 +679,60 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
             </Select>
           </div>
           <div>
-            <Label>Description (optional)</Label>
+            <Label htmlFor="docDescription">Description (optional)</Label>
             <Input
+              id="docDescription"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               placeholder="Q1 2026 bank statement"
             />
           </div>
           <div>
-            <Label>Due date</Label>
+            <Label htmlFor="docDueDate">Due date</Label>
             <Input
+              id="docDueDate"
               type="date"
               value={form.dueDate}
               onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
             />
           </div>
           <div className="flex items-center gap-2">
-            <input
+            <Checkbox
               id="isRecurring"
-              type="checkbox"
               checked={form.isRecurring}
-              onChange={(e) => setForm((f) => ({ ...f, isRecurring: e.target.checked }))}
+              onCheckedChange={(checked) =>
+                setForm((f) => ({ ...f, isRecurring: checked === true }))
+              }
             />
-            <Label htmlFor="isRecurring">Recurring</Label>
+            <Label htmlFor="isRecurring" className="cursor-pointer">Recurring</Label>
             {form.isRecurring && (
-              <Input
-                type="number"
-                min={1}
-                value={form.recurringIntervalDays}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, recurringIntervalDays: Number(e.target.value) || 0 }))
-                }
-                className="w-32"
-              />
+              <>
+                <Input
+                  type="number"
+                  min={1}
+                  value={form.recurringIntervalDays}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      recurringIntervalDays: Math.max(1, Number(e.target.value) || 1),
+                    }))
+                  }
+                  className="w-32"
+                  aria-label="Recurring interval in days"
+                />
+                <span className="text-sm text-muted-foreground">days</span>
+              </>
             )}
-            {form.isRecurring && <span className="text-sm text-muted-foreground">days</span>}
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={props.onClose}>
             Cancel
           </Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>
+          <Button
+            onClick={() => mutation.mutate(form)}
+            disabled={mutation.isPending || !form.dueDate}
+          >
             Add
           </Button>
         </DialogFooter>
@@ -720,7 +762,7 @@ function AddComplianceEventDialog(props: { open: boolean; onClose: () => void; c
       queryClient.invalidateQueries({ queryKey: ['/api/companies', props.companyId, 'compliance-calendar'] });
       props.onClose();
     },
-    onError: (e: any) => toast({ title: 'Failed', description: e?.message, variant: 'destructive' }),
+    onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
   });
 
   return (
@@ -732,9 +774,9 @@ function AddComplianceEventDialog(props: { open: boolean; onClose: () => void; c
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <Label>Event type</Label>
+            <Label htmlFor="eventType">Event type</Label>
             <Select value={form.eventType} onValueChange={(v) => setForm((f) => ({ ...f, eventType: v }))}>
-              <SelectTrigger>
+              <SelectTrigger id="eventType">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -747,16 +789,18 @@ function AddComplianceEventDialog(props: { open: boolean; onClose: () => void; c
             </Select>
           </div>
           <div>
-            <Label>Description</Label>
+            <Label htmlFor="eventDescription">Description</Label>
             <Input
+              id="eventDescription"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               placeholder="Trade licence renewal at Dubai Economy"
             />
           </div>
           <div>
-            <Label>Date</Label>
+            <Label htmlFor="eventDate">Date</Label>
             <Input
+              id="eventDate"
               type="date"
               value={form.eventDate}
               onChange={(e) => setForm((f) => ({ ...f, eventDate: e.target.value }))}
@@ -769,7 +813,7 @@ function AddComplianceEventDialog(props: { open: boolean; onClose: () => void; c
           </Button>
           <Button
             onClick={() => mutation.mutate(form)}
-            disabled={mutation.isPending || !form.description}
+            disabled={mutation.isPending || !form.description.trim() || !form.eventDate}
           >
             Add
           </Button>

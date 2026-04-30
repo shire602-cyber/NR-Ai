@@ -71,6 +71,7 @@ export const t = {
     backupRestore: 'Backup & Restore',
     
     // NRA Center items
+    firmCommandCenter: 'Command Center',
     clientPortfolio: 'Client Portfolio',
     staffManagement: 'Staff Management',
     bulkOperations: 'Bulk Operations',
@@ -401,6 +402,7 @@ export const t = {
     backupRestore: 'النسخ الاحتياطي',
     
     // NRA Center items
+    firmCommandCenter: 'مركز القيادة',
     clientPortfolio: 'محفظة العملاء',
     staffManagement: 'إدارة الموظفين',
     bulkOperations: 'العمليات الجماعية',
