@@ -33,7 +33,7 @@ vi.mock('../../server/storage', () => ({
       state.receipts.push(row);
       return row;
     }),
-    updateReceipt: vi.fn(async (id: string, patch: any) => {
+    updateReceipt: vi.fn(async (id: string, _companyId: string, patch: any) => {
       const r = state.receipts.find((x) => x.id === id);
       Object.assign(r, patch);
       return r;

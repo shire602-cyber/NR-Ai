@@ -280,7 +280,7 @@ export async function runAutopilot(
   // we always report autoPosted: true once the JE id is in hand and log any
   // post-JE failures for repair.
   try {
-    await storage.updateReceipt(receipt.id, {
+    await storage.updateReceipt(receipt.id, companyId, {
       posted: true,
       autoPosted: true,
       journalEntryId,

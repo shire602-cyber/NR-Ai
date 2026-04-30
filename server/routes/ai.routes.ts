@@ -1096,8 +1096,8 @@ Respond with JSON:
       // outright when the account doesn't belong to this classification's
       // company.
       if (typeof userSelectedAccountId === 'string') {
-        const account = await storage.getAccount(userSelectedAccountId);
-        if (!account || account.companyId !== existing.companyId) {
+        const account = await storage.getAccount(userSelectedAccountId, existing.companyId);
+        if (!account) {
           return res.status(403).json({ message: 'userSelectedAccountId does not belong to this company' });
         }
       }
