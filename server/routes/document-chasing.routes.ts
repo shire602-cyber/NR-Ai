@@ -9,6 +9,7 @@ import {
   COMPLIANCE_EVENT_TYPES,
   DOCUMENT_TYPES,
   REQUIREMENT_STATUSES,
+  type ChaseLevel,
 } from "@shared/schema";
 import {
   buildChaseQueue,
@@ -90,13 +91,51 @@ const createComplianceEventSchema = z.object({
   linkedRequirementId: z.string().uuid().nullable().optional(),
 });
 
+// Path-param schemas. Drizzle parameterizes, but invalid UUIDs reach Postgres
+// and surface as 500 (22P02). Validate at the edge so malformed input returns
+// 400 deterministically and never touches the DB.
+const companyIdParams = z.object({ companyId: z.string().uuid() });
+const companyIdAndIdParams = z.object({
+  companyId: z.string().uuid(),
+  id: z.string().uuid(),
+});
+const companyIdAndRequirementIdParams = z.object({
+  companyId: z.string().uuid(),
+  requirementId: z.string().uuid(),
+});
+
+// Query-param schema for the compliance-calendar range. Reject anything that
+// isn't a full ISO datetime or YYYY-MM-DD date instead of silently coercing
+// "abc" to Invalid Date and dropping the filter.
+const calendarRangeQuerySchema = z.object({
+  from: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
+  to: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
+});
+
+// Parse path params via the given Zod schema; on failure write a 400 and
+// return null so the caller can early-return.
+function parsePathParams<S extends z.ZodTypeAny>(
+  schema: S,
+  params: unknown,
+  res: Response,
+): z.infer<S> | null {
+  const result = schema.safeParse(params);
+  if (!result.success) {
+    res.status(400).json({ message: "Invalid path parameters" });
+    return null;
+  }
+  return result.data;
+}
+
 export function registerDocumentChasingRoutes(app: Express) {
   // ─── Document Requirements ────────────────────────────────────────
   app.get(
     "/api/companies/:companyId/document-requirements",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const params = parsePathParams(companyIdParams, req.params, res);
+      if (!params) return;
+      const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const rows = await listRequirements(companyId);
@@ -108,7 +147,9 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/document-requirements",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const params = parsePathParams(companyIdParams, req.params, res);
+      if (!params) return;
+      const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const validated = createRequirementSchema.parse(req.body);
@@ -129,7 +170,9 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/document-requirements/:id",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, id } = req.params;
+      const params = parsePathParams(companyIdAndIdParams, req.params, res);
+      if (!params) return;
+      const { companyId, id } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const patch = updateRequirementSchema.parse(req.body);
@@ -155,7 +198,9 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/document-chases/queue",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const params = parsePathParams(companyIdParams, req.params, res);
+      if (!params) return;
+      const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const queue = await buildChaseQueue(
@@ -171,7 +216,9 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/document-chases/history/:requirementId",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, requirementId } = req.params;
+      const params = parsePathParams(companyIdAndRequirementIdParams, req.params, res);
+      if (!params) return;
+      const { companyId, requirementId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const rows = await listChasesForRequirement(companyId, requirementId);
@@ -183,7 +230,9 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/document-chases/send/:requirementId",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, requirementId } = req.params;
+      const params = parsePathParams(companyIdAndRequirementIdParams, req.params, res);
+      if (!params) return;
+      const { companyId, requirementId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const validated = sendChaseSchema.parse(req.body ?? {});
@@ -197,12 +246,7 @@ export function registerDocumentChasingRoutes(app: Express) {
       const dUntil = daysUntil(requirement.dueDate);
       const overdue = dUntil < 0 ? -dUntil : 0;
       const history = await listChasesForRequirement(companyId, requirementId);
-      const lastLevel = history[0]?.chaseLevel as
-        | "friendly"
-        | "follow_up"
-        | "urgent"
-        | "final"
-        | undefined;
+      const lastLevel = history[0]?.chaseLevel as ChaseLevel | undefined;
       const computedLevel = nextChaseLevel(lastLevel ?? null, overdue);
       const level = validated.overrideLevel ?? computedLevel;
       const message =
@@ -226,7 +270,9 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/document-chases/bulk-send",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const params = parsePathParams(companyIdParams, req.params, res);
+      if (!params) return;
+      const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const queue = await buildChaseQueue(
@@ -259,7 +305,9 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/document-chases/effectiveness",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const params = parsePathParams(companyIdParams, req.params, res);
+      if (!params) return;
+      const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const report = await effectivenessReport(companyId);
@@ -272,11 +320,14 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/compliance-calendar",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const params = parsePathParams(companyIdParams, req.params, res);
+      if (!params) return;
+      const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
-      const fromQ = typeof req.query.from === "string" ? new Date(req.query.from) : undefined;
-      const toQ = typeof req.query.to === "string" ? new Date(req.query.to) : undefined;
+      const range = calendarRangeQuerySchema.parse(req.query);
+      const fromQ = range.from ? new Date(range.from) : undefined;
+      const toQ = range.to ? new Date(range.to) : undefined;
       const events = await listComplianceEvents(companyId, { from: fromQ, to: toQ });
       res.json(events);
     }),
@@ -286,10 +337,24 @@ export function registerDocumentChasingRoutes(app: Express) {
     "/api/companies/:companyId/compliance-calendar",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
+      const params = parsePathParams(companyIdParams, req.params, res);
+      if (!params) return;
+      const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
       const validated = createComplianceEventSchema.parse(req.body);
+      // Cross-tenant guard: a UUID-shaped linkedRequirementId is no proof of
+      // ownership. Resolve it scoped to companyId so callers can never link
+      // a calendar event in their tenant to a requirement row in another.
+      if (validated.linkedRequirementId) {
+        const linked = await getRequirement(companyId, validated.linkedRequirementId);
+        if (!linked) {
+          res
+            .status(400)
+            .json({ message: "linkedRequirementId does not belong to this company" });
+          return;
+        }
+      }
       const row = await createComplianceEvent({
         companyId,
         eventType: validated.eventType,
