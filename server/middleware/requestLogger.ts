@@ -18,6 +18,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     if (!path.startsWith('/api') && path !== '/health') return;
 
     const logData = {
+      requestId: req.id,
       method: req.method,
       path,
       statusCode: res.statusCode,

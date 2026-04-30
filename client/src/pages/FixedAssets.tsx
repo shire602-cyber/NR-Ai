@@ -20,6 +20,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton, StatCardSkeleton } from '@/components/ui/loading-skeletons';
 import {
   Table,
   TableBody,
@@ -367,11 +370,11 @@ export default function FixedAssets() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Active</Badge>;
+        return <StatusBadge tone="success">Active</StatusBadge>;
       case 'disposed':
-        return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Disposed</Badge>;
+        return <StatusBadge tone="danger">Disposed</StatusBadge>;
       case 'fully_depreciated':
-        return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Fully Depreciated</Badge>;
+        return <StatusBadge tone="warning">Fully Depreciated</StatusBadge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -393,17 +396,24 @@ export default function FixedAssets() {
 
   if (isLoadingCompany) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || 'Loading...'}</div>
+      <div className="space-y-6">
+        <StatCardSkeleton count={3} />
+        <Card>
+          <CardContent className="pt-6">
+            <TableSkeleton rows={5} columns={7} />
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (!companyId) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Please create a company first.</div>
-      </div>
+      <EmptyState
+        icon={Building2}
+        title="No company selected"
+        description="Create or select a company before tracking fixed assets."
+      />
     );
   }
 
@@ -531,11 +541,25 @@ export default function FixedAssets() {
         </CardHeader>
         <CardContent>
           {isLoadingAssets ? (
-            <div className="text-center py-8 text-muted-foreground">{t.loading || 'Loading...'}</div>
+            <TableSkeleton rows={5} columns={7} />
           ) : filteredAssets.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              {searchQuery ? 'No assets match your search.' : 'No fixed assets yet. Add your first asset to get started.'}
-            </div>
+            searchQuery ? (
+              <EmptyState
+                icon={Building2}
+                title="No matching assets"
+                description={`No assets match "${searchQuery}". Try a different keyword or clear the search.`}
+                action={{ label: 'Clear search', onClick: () => setSearchQuery(''), variant: 'outline' }}
+                testId="empty-state-fixed-assets-search"
+              />
+            ) : (
+              <EmptyState
+                icon={Building2}
+                title="No fixed assets yet"
+                description="Track equipment, vehicles, and other depreciable assets to keep your books accurate."
+                action={{ label: 'Add Asset', icon: Plus, onClick: handleOpenCreateDialog }}
+                testId="empty-state-fixed-assets"
+              />
+            )
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -599,7 +623,7 @@ export default function FixedAssets() {
                                 size="sm"
                                 onClick={() => handleOpenDisposeDialog(asset)}
                                 title="Dispose"
-                                className="text-amber-600 hover:text-amber-700"
+                                className="text-[hsl(var(--chart-4))] hover:text-[hsl(var(--chart-4))]"
                               >
                                 <Ban className="w-4 h-4" />
                               </Button>

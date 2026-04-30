@@ -1,20 +1,22 @@
-import { useQuery } from '@tanstack/react-query';
-import type { Company } from '@shared/schema';
+import { useActiveCompany } from '@/components/ActiveCompanyProvider';
 
 /**
- * Hook to automatically get the user's default company (first company)
- * Since we only support one company per user, this returns the first company
+ * Returns the user's currently-active company. For NRA firm staff this honours
+ * an explicitly-switched client workspace; for everyone else it returns the
+ * user's first company (or the company they last switched to via the
+ * CompanySwitcher).
+ *
+ * Kept as a thin wrapper around `useActiveCompany` so the dozens of existing
+ * call sites continue to work without changes.
  */
 export function useDefaultCompany() {
-  const { data: companies, isLoading, error } = useQuery<Company[]>({
-    queryKey: ['/api/companies'],
-  });
-
-  const defaultCompany = companies?.[0];
-
+  const { company, companyId, companies, isLoading, error, hasNoCompanies } =
+    useActiveCompany();
   return {
-    company: defaultCompany,
-    companyId: defaultCompany?.id,
+    company,
+    companyId,
+    companies,
+    hasNoCompanies,
     isLoading,
     error,
   };

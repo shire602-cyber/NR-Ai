@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import type { Express } from 'express';
 import bcrypt from 'bcryptjs';
+import { randomBytes, createHash } from 'crypto';
 import { z } from 'zod';
 
 import { storage } from '../storage';
@@ -13,9 +14,24 @@ import {
   authMiddleware,
 } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { validate } from '../middleware/validate';
 import { insertUserSchema } from '../../shared/schema';
+import {
+  loginSchema as sharedLoginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  trnSchema,
+} from '../../shared/validators';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { createLogger } from '../config/logger';
+import {
+  blacklistToken,
+  createEmailVerificationToken,
+  consumeEmailVerificationToken,
+} from '../services/auth-tokens.service';
+import { db } from '../db';
+import { users } from '../../shared/schema';
+import { eq } from 'drizzle-orm';
 
 const log = createLogger('auth');
 
@@ -75,10 +91,30 @@ export function registerAuthRoutes(app: Express): void {
       // Strengthen password validation (8+ chars)
       passwordSchema.parse(validated.password);
 
-      // Check if user exists
+      // Optional TRN at signup. We accept it here (instead of forcing the user
+      // through onboarding first) so the auto-created company is seeded with a
+      // valid value. Format is enforced via the shared schema.
+      const trnFromBody = (req.body as any)?.trn as string | undefined;
+      let trn: string | undefined;
+      if (typeof trnFromBody === 'string' && trnFromBody.trim() !== '') {
+        const trnParse = trnSchema.safeParse(trnFromBody.trim());
+        if (!trnParse.success) {
+          return res.status(400).json({
+            message: trnParse.error.issues[0]?.message || 'Invalid TRN',
+            field: 'trn',
+          });
+        }
+        trn = trnParse.data;
+      }
+
+      // Check if user exists. Return a generic message either way to prevent
+      // email enumeration via differing 200/400 responses.
       const existingUser = await storage.getUserByEmail(validated.email);
       if (existingUser) {
-        return res.status(400).json({ message: 'Email already registered' });
+        return res.status(400).json({
+          message:
+            'Unable to create account. Please try again or use a different email.',
+        });
       }
 
       // Hash password
@@ -105,6 +141,7 @@ export function registerAuthRoutes(app: Express): void {
         baseCurrency: 'AED',
         locale: 'en',
         companyType: 'customer', // Self-signup companies are customer type (not managed by NR)
+        trnVatNumber: trn,
       });
 
       // Associate user with company as owner
@@ -131,6 +168,19 @@ export function registerAuthRoutes(app: Express): void {
         currentPeriodEnd: periodEnd,
       });
 
+      // Issue email verification token. The token is logged for now —
+      // when a transactional-email provider is wired up this should be
+      // delivered via email instead.
+      try {
+        const verificationToken = await createEmailVerificationToken(user.id);
+        log.info(
+          { userId: user.id, email: user.email },
+          `Email verification pending — verify URL: /verify-email/${verificationToken}`,
+        );
+      } catch (err) {
+        log.error({ err, userId: user.id }, 'Failed to issue email verification token');
+      }
+
       // Generate tokens
       const token = generateToken(user);
       const refreshToken = generateRefreshToken(user);
@@ -144,6 +194,7 @@ export function registerAuthRoutes(app: Express): void {
           name: user.name,
           isAdmin: false,
           userType: 'customer',
+          emailVerified: false,
         },
         company: {
           id: company.id,
@@ -153,16 +204,12 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  const loginSchema = z.object({
-    email: z.string().email('Invalid email address'),
-    password: z.string().min(1, 'Password is required'),
-  });
-
-  // Login
+  // Login — body validated up-front via shared schema before reaching handler.
   router.post(
     '/auth/login',
+    validate({ body: sharedLoginSchema }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { email, password } = loginSchema.parse(req.body);
+      const { email, password } = req.body as { email: string; password: string };
 
       const user = await storage.getUserByEmail(email);
       if (!user) {
@@ -193,6 +240,7 @@ export function registerAuthRoutes(app: Express): void {
           name: user.name,
           isAdmin: isAdminBoolean,
           userType: user.userType || 'customer', // Include userType in response
+          emailVerified: user.emailVerified === true,
         },
       });
     })
@@ -232,6 +280,92 @@ export function registerAuthRoutes(app: Express): void {
 
   // Alias for frontend compatibility: POST /api/auth/refresh
   router.post('/auth/refresh', handleRefreshToken);
+
+  // =====================================
+  // PASSWORD RESET
+  // =====================================
+
+  // Hash a raw token before storing or looking up — DB only ever sees the digest.
+  const hashResetToken = (token: string): string =>
+    createHash('sha256').update(token).digest('hex');
+
+  // Request a password reset link. Always returns 200 to prevent email enumeration.
+  router.post(
+    '/auth/forgot-password',
+    validate({ body: forgotPasswordSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { email } = req.body as { email: string };
+      const user = await storage.getUserByEmail(email);
+
+      // Generic response — never reveal whether the email exists
+      const genericResponse = {
+        message: 'If that email is registered, a reset link has been sent.',
+      };
+
+      if (!user) {
+        return res.json(genericResponse);
+      }
+
+      // Issue a one-time token; raw token only exists in memory long enough
+      // to email the user. The DB stores only the SHA-256 digest.
+      const rawToken = randomBytes(32).toString('hex');
+      const tokenHash = hashResetToken(rawToken);
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+      // Invalidate any prior outstanding tokens so only the latest one works.
+      await storage.deletePasswordResetTokensForUser(user.id);
+      await storage.createPasswordResetToken({
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      });
+
+      const env = getEnv();
+      const appUrl = (env as any).APP_URL || (env as any).PUBLIC_URL || '';
+      const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+
+      log.info({ userId: user.id, email }, 'Password reset requested');
+
+      // TODO(email): wire to outbound email service when configured.
+      // In non-production, return the URL so QA can verify the flow.
+      const isProd = (env as any).NODE_ENV === 'production';
+      if (!isProd) {
+        return res.json({
+          ...genericResponse,
+          devResetUrl: resetUrl,
+        });
+      }
+
+      return res.json(genericResponse);
+    }),
+  );
+
+  // Consume a reset token and set a new password.
+  router.post(
+    '/auth/reset-password',
+    validate({ body: resetPasswordSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { token, password } = req.body as { token: string; password: string };
+
+      const tokenHash = hashResetToken(token);
+      const record = await storage.findValidPasswordResetToken(tokenHash);
+
+      if (!record) {
+        return res.status(400).json({ message: 'This reset link is invalid or has expired. Please request a new one.' });
+      }
+
+      const newHash = await bcrypt.hash(password, 10);
+      await storage.updateUserPassword(record.userId, newHash);
+      await storage.markPasswordResetTokenUsed(record.id);
+      // Revoke any other outstanding reset tokens — one successful reset
+      // invalidates the whole batch.
+      await storage.deletePasswordResetTokensForUser(record.userId);
+
+      log.info({ userId: record.userId }, 'Password reset completed');
+
+      res.json({ message: 'Your password has been reset. You can now sign in with your new password.' });
+    }),
+  );
 
   // =====================================
   // PUBLIC - INVITATION ACCEPTANCE
@@ -369,12 +503,64 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  // Logout — invalidates the client-side token (stateless JWT, so just acknowledge)
+  // Logout — server-side JWT invalidation via the token_blacklist table.
   router.post(
     '/auth/logout',
     authMiddleware as any,
-    asyncHandler(async (_req: Request, res: Response) => {
+    asyncHandler(async (req: Request, res: Response) => {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        try {
+          await blacklistToken(token);
+        } catch (err) {
+          log.error({ err }, 'Failed to blacklist token on logout');
+        }
+      }
       res.json({ message: 'Logged out successfully' });
+    })
+  );
+
+  // ─── Email verification ────────────────────────────────────────────
+
+  router.post(
+    '/auth/verify-email/:token',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { token } = req.params;
+      const userId = await consumeEmailVerificationToken(token);
+      if (!userId) {
+        return res
+          .status(400)
+          .json({ message: 'Verification link is invalid or has expired' });
+      }
+      await db.update(users).set({ emailVerified: true }).where(eq(users.id, userId));
+      res.json({ message: 'Email verified successfully' });
+    })
+  );
+
+  // Resend verification email — authenticated; rate-limited at the network layer.
+  router.post(
+    '/auth/resend-verification',
+    authMiddleware as any,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      if (user.emailVerified) {
+        return res.json({ message: 'Email is already verified' });
+      }
+      try {
+        const verificationToken = await createEmailVerificationToken(user.id);
+        log.info(
+          { userId: user.id, email: user.email },
+          `Verification re-issued — verify URL: /verify-email/${verificationToken}`,
+        );
+      } catch (err) {
+        log.error({ err, userId: user.id }, 'Failed to re-issue verification token');
+      }
+      res.json({ message: 'Verification email sent' });
     })
   );
 

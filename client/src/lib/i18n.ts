@@ -35,7 +35,9 @@ export const t = {
     accounts: 'Manage Accounts',
     invoices: 'Invoices',
     receipts: 'Expenses',
+    receiptAutopilot: 'Receipt Autopilot',
     recurringInvoices: 'Recurring Invoices',
+    paymentChasing: 'Payment Chasing',
     journal: 'Journal Entries',
     reports: 'Financial Reports',
     aiTools: 'AI Tools',
@@ -59,12 +61,17 @@ export const t = {
     complianceCalendar: 'Compliance Calendar',
     taskCenter: 'Task Center',
     newsFeed: 'UAE Tax News',
+
+    // Compliance
+    compliance: 'Compliance',
+    documentChasing: 'Document Chasing',
     
     // Settings items
     history: 'Activity History',
     backupRestore: 'Backup & Restore',
     
     // NRA Center items
+    firmCommandCenter: 'Command Center',
     clientPortfolio: 'Client Portfolio',
     staffManagement: 'Staff Management',
     bulkOperations: 'Bulk Operations',
@@ -197,6 +204,7 @@ export const t = {
     whatsappInbox: 'WhatsApp Inbox',
     bankReconciliation: 'Bank Reconciliation',
     vatFiling: 'VAT Filing',
+    vatAutopilot: 'VAT Autopilot',
     corporateTax: 'Corporate Tax',
     teamManagement: 'Team Management',
     advancedReports: 'Advanced Reports',
@@ -346,6 +354,7 @@ export const t = {
     purchases: 'Purchases',
     nraCenter: 'NRA Center',
     companyProfile: 'Company Profile',
+    companySettings: 'Company Settings',
     healthDashboard: 'Health Dashboard',
     communications: 'Communications',
   },
@@ -357,7 +366,9 @@ export const t = {
     accounts: 'إدارة الحسابات',
     invoices: 'الفواتير',
     receipts: 'المصروفات',
+    receiptAutopilot: 'الطيار الآلي للإيصالات',
     recurringInvoices: 'الفواتير المتكررة',
+    paymentChasing: 'متابعة المدفوعات',
     journal: 'القيود',
     reports: 'التقارير المالية',
     aiTools: 'أدوات الذكاء الاصطناعي',
@@ -381,12 +392,17 @@ export const t = {
     complianceCalendar: 'تقويم الامتثال',
     taskCenter: 'مركز المهام',
     newsFeed: 'أخبار الضرائب',
+
+    // Compliance
+    compliance: 'الامتثال',
+    documentChasing: 'متابعة المستندات',
     
     // Settings items
     history: 'سجل النشاط',
     backupRestore: 'النسخ الاحتياطي',
     
     // NRA Center items
+    firmCommandCenter: 'مركز القيادة',
     clientPortfolio: 'محفظة العملاء',
     staffManagement: 'إدارة الموظفين',
     bulkOperations: 'العمليات الجماعية',
@@ -519,6 +535,7 @@ export const t = {
     whatsappInbox: 'صندوق الواتساب',
     bankReconciliation: 'التسوية البنكية',
     vatFiling: 'إقرارات الضريبة',
+    vatAutopilot: 'الطيار الآلي للضريبة',
     corporateTax: 'ضريبة الشركات',
     teamManagement: 'إدارة الفريق',
     advancedReports: 'التقارير المتقدمة',
@@ -668,6 +685,7 @@ export const t = {
     purchases: 'المشتريات',
     nraCenter: 'مركز NRA',
     companyProfile: 'ملف الشركة',
+    companySettings: 'إعدادات الشركة',
     healthDashboard: 'لوحة الصحة',
     communications: 'التواصل',
   },

@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, index, customType } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, index, customType, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -55,6 +55,7 @@ export const users = pgTable("users", {
   firmRole: text("firm_role"), // firm_owner | firm_admin | null
   phone: text("phone"),
   avatarUrl: text("avatar_url"),
+  emailVerified: boolean("email_verified").notNull().default(false),
   lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -63,8 +64,9 @@ export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   passwordHash: true,
   createdAt: true,
+  emailVerified: true,
 }).extend({
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -72,24 +74,75 @@ export type User = typeof users.$inferSelect;
 export type UserPublic = Omit<User, 'passwordHash'>;
 
 // ===========================
+// Auth security tables
+// ===========================
+// Blacklisted JWTs — entries are kept until token expiry, then swept.
+export const tokenBlacklist = pgTable("token_blacklist", {
+  tokenHash: text("token_hash").primaryKey(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type TokenBlacklistEntry = typeof tokenBlacklist.$inferSelect;
+
+// One-time tokens issued by /auth/forgot-password and consumed by /auth/reset-password.
+// usedAt is set the moment the token is redeemed so a captured token cannot be replayed.
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the token; raw token only ever lives in the email
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tokenHashIdx: index("idx_password_reset_token_hash").on(table.tokenHash),
+  userIdIdx: index("idx_password_reset_user_id").on(table.userId),
+}));
+
+export const insertPasswordResetTokenSchema = createInsertSchema(passwordResetTokens).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPasswordResetToken = z.infer<typeof insertPasswordResetTokenSchema>;
+export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
+
+// Email-verification tokens — issued on registration.
+export const emailVerificationTokens = pgTable("email_verification_tokens", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type EmailVerificationToken = typeof emailVerificationTokens.$inferSelect;
+
+
+// ===========================
 // Companies
 // ===========================
 export const companies = pgTable("companies", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
+  legalName: text("legal_name"), // Registered legal name (may differ from trading name)
   baseCurrency: text("base_currency").notNull().default("AED"),
   locale: text("locale").notNull().default("en"), // 'en' or 'ar'
-  
+  dateFormat: text("date_format").notNull().default("DD/MM/YYYY"), // DD/MM/YYYY | MM/DD/YYYY | YYYY-MM-DD
+  fiscalYearStartMonth: integer("fiscal_year_start_month").notNull().default(1), // 1..12
+  defaultVatRate: vatRateType("default_vat_rate").notNull().default(0.05), // UAE standard rate
+
   // Company Type - determines access model
   companyType: text("company_type").notNull().default("customer"), // client | customer
   // client = Managed by NR Accounting, invite-only portal access
   // customer = Self-service SaaS user
-  
+
   // Company Information
   legalStructure: text("legal_structure"), // Sole Proprietorship, LLC, Corporation, Partnership, Other
   industry: text("industry"),
   registrationNumber: text("registration_number"),
-  businessAddress: text("business_address"),
+  businessAddress: text("business_address"), // Free-text legacy single-line address
+  addressStreet: text("address_street"),
+  addressCity: text("address_city"),
+  addressCountry: text("address_country").default("AE"),
   contactPhone: text("contact_phone"),
   contactEmail: text("contact_email"),
   websiteUrl: text("website_url"),
@@ -102,10 +155,23 @@ export const companies = pgTable("companies", {
   taxRegistrationDate: timestamp("tax_registration_date"),
   corporateTaxId: text("corporate_tax_id"),
   emirate: text("emirate").default("dubai"), // abu_dhabi | dubai | sharjah | ajman | umm_al_quwain | ras_al_khaimah | fujairah
+
+  // WPS / Payroll — MOHRE establishment ID and employer bank fields used to
+  // build the SCR (Salary Control Record) line of the SIF file. Distinct from
+  // `registrationNumber` (trade-license number).
+  mohreEstablishmentId: text("mohre_establishment_id"),
+  wpsEmployerBankName: text("wps_employer_bank_name"),
+  wpsEmployerIban: text("wps_employer_iban"),
+  wpsEmployerRoutingCode: text("wps_employer_routing_code"),
   // Partial exemption: fraction of supplies that are exempt (0..1). When > 0, input VAT
   // is reduced by this ratio per FTA partial-exemption rules.
   exemptSupplyRatio: vatRateType("exempt_supply_ratio").notNull().default(0),
-  
+  // VAT autopilot configuration. periodStartMonth is the calendar month (1-12)
+  // that the VAT period cycle starts on — defaults to January but FTA assigns
+  // each registrant a stagger so quarterly periods may begin in Feb or Mar.
+  vatAutoCalculate: boolean("vat_auto_calculate").notNull().default(true),
+  vatPeriodStartMonth: integer("vat_period_start_month").notNull().default(1),
+
   // Soft delete — UAE FTA requires 5-year retention; hard deletes are disallowed
   deletedAt: timestamp("deleted_at"),
   isActive: boolean("is_active").notNull().default(true),
@@ -121,6 +187,18 @@ export const companies = pgTable("companies", {
 
   onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
 
+  // Phase 2: Receipt Autopilot — per-company classifier config.
+  // mode: 'hybrid' uses internal classifier first with OpenAI fallback; 'openai_only' bypasses internal model.
+  // accuracyThreshold: when internal accuracy drops below this, the company is auto-switched to openai_only.
+  // autopilotEnabled: when true, high-confidence receipts are auto-posted to the GL without user review.
+  classifierConfig: jsonb("classifier_config").notNull().default(
+    sql`'{"mode":"hybrid","accuracyThreshold":0.8,"autopilotEnabled":false}'::jsonb`
+  ).$type<{
+    mode: 'hybrid' | 'openai_only';
+    accuracyThreshold: number;
+    autopilotEnabled: boolean;
+  }>(),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -131,6 +209,53 @@ export const insertCompanySchema = createInsertSchema(companies).omit({
 
 export type InsertCompany = z.infer<typeof insertCompanySchema>;
 export type Company = typeof companies.$inferSelect;
+
+// Schema for the QuickBooks-style Company Preferences page (PATCH /api/companies/:id).
+// All fields are optional so the page can be saved partially and so legacy clients
+// that omit a field continue to work.
+export const companyPreferencesSchema = z.object({
+  name: z.string().min(2, "Company name must be at least 2 characters").optional(),
+  legalName: z.string().max(200).optional().nullable(),
+  trnVatNumber: z
+    .string()
+    .regex(/^\d{15}$/u, "TRN must be exactly 15 digits")
+    .optional()
+    .nullable()
+    .or(z.literal("").transform(() => null)),
+  baseCurrency: z
+    .enum(["AED", "USD", "EUR", "GBP", "SAR", "QAR", "KWD", "BHD", "OMR", "INR"]) // common GCC + global currencies
+    .optional(),
+  fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
+  defaultVatRate: z.number().min(0).max(1).optional(), // stored as fraction (0.05 = 5%)
+  addressStreet: z.string().max(200).optional().nullable(),
+  addressCity: z.string().max(100).optional().nullable(),
+  emirate: z
+    .enum([
+      "abu_dhabi",
+      "dubai",
+      "sharjah",
+      "ajman",
+      "umm_al_quwain",
+      "ras_al_khaimah",
+      "fujairah",
+    ])
+    .optional()
+    .nullable(),
+  addressCountry: z.string().max(2).optional().nullable(), // ISO-3166 alpha-2
+  contactPhone: z.string().max(40).optional().nullable(),
+  contactEmail: z
+    .string()
+    .email("Invalid email address")
+    .optional()
+    .nullable()
+    .or(z.literal("").transform(() => null)),
+  industry: z.string().max(100).optional().nullable(),
+  logoUrl: z.string().optional().nullable(),
+  dateFormat: z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]).optional(),
+  locale: z.enum(["en", "ar"]).optional(),
+});
+
+export type CompanyPreferences = z.infer<typeof companyPreferencesSchema>;
 
 // ===========================
 // Company Users (Many-to-Many)
@@ -164,9 +289,14 @@ export const firmStaffAssignments = pgTable("firm_staff_assignments", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  // Role this staff member plays for the assigned client (e.g. accountant | reviewer | manager).
+  // Phase 6 added this column so workload analytics can group by responsibility, not just assignment.
+  role: text("role").notNull().default("accountant"),
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
 }, (table) => ({
   userCompanyUnique: unique().on(table.userId, table.companyId),
+  userIdIdx: index("idx_firm_staff_assignments_user_id").on(table.userId),
+  companyIdIdx: index("idx_firm_staff_assignments_company_id").on(table.companyId),
 }));
 
 export const insertFirmStaffAssignmentSchema = createInsertSchema(firmStaffAssignments).omit({
@@ -198,6 +328,7 @@ export const accounts = pgTable("accounts", {
   updatedAt: timestamp("updated_at"),
 }, (table) => ({
   companyCodeUnique: unique().on(table.companyId, table.code),
+  companyIdIdx: index("idx_accounts_company_id").on(table.companyId),
 }));
 
 export const insertAccountSchema = createInsertSchema(accounts).omit({
@@ -247,6 +378,8 @@ export const journalEntries = pgTable("journal_entries", {
 }, (table) => ({
   companyEntryUnique: unique().on(table.companyId, table.entryNumber),
   companyIdIdx: index("idx_journal_entries_company_id").on(table.companyId),
+  companyDateIdx: index("idx_journal_entries_company_date").on(table.companyId, table.date),
+  companyStatusIdx: index("idx_journal_entries_company_status").on(table.companyId, table.status),
 }));
 
 export const insertJournalEntrySchema = createInsertSchema(journalEntries).omit({
@@ -321,6 +454,7 @@ export const invoices = pgTable("invoices", {
   number: text("number").notNull(),
   customerName: text("customer_name").notNull(),
   customerTrn: text("customer_trn"),
+  customerAddress: text("customer_address"),
   date: timestamp("date").notNull(),
   dueDate: timestamp("due_date"),
   paymentTerms: text("payment_terms").default("net30"),
@@ -339,7 +473,15 @@ export const invoices = pgTable("invoices", {
   einvoiceStatus: text("einvoice_status"), // null | generated | submitted | accepted | rejected
   reminderCount: integer("reminder_count").notNull().default(0),
   lastReminderSentAt: timestamp("last_reminder_sent_at"),
+  // Phase 4: Payment Chasing Autopilot
+  // chaseLevel reflects the highest escalation level reached for this invoice
+  // (0 = never chased, 1..4 = friendly..final notice). lastChasedAt drives
+  // the chase queue (frequency throttling per company config).
+  chaseLevel: integer("chase_level").notNull().default(0),
+  lastChasedAt: timestamp("last_chased_at"),
+  doNotChase: boolean("do_not_chase").notNull().default(false),
   invoiceType: text("invoice_type").notNull().default("invoice"),
+  reverseCharge: boolean("reverse_charge").notNull().default(false), // FTA reverse-charge: recipient self-assesses VAT
   originalInvoiceId: uuid("original_invoice_id"),
   isRecurring: boolean("is_recurring").notNull().default(false),
   recurringInterval: text("recurring_interval"), // weekly | monthly | quarterly | yearly
@@ -350,6 +492,9 @@ export const invoices = pgTable("invoices", {
 }, (table) => ({
   companyNumberUnique: unique("invoices_company_number_unique").on(table.companyId, table.number),
   companyIdIdx: index("idx_invoices_company_id").on(table.companyId),
+  companyDateIdx: index("idx_invoices_company_date").on(table.companyId, table.date),
+  companyStatusIdx: index("idx_invoices_company_status").on(table.companyId, table.status),
+  contactIdIdx: index("idx_invoices_contact_id").on(table.contactId),
 }));
 
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
@@ -371,7 +516,9 @@ export const invoiceLines = pgTable("invoice_lines", {
   unitPrice: money("unit_price").notNull(),
   vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE standard 5%
   vatSupplyType: text("vat_supply_type").default("standard_rated"), // standard_rated | zero_rated | exempt | out_of_scope
-});
+}, (table) => ({
+  invoiceIdIdx: index("idx_invoice_lines_invoice_id").on(table.invoiceId),
+}));
 
 export const insertInvoiceLineSchema = createInsertSchema(invoiceLines).omit({
   id: true,
@@ -398,6 +545,7 @@ export const invoicePayments = pgTable("invoice_payments", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   invoiceIdIdx: index("idx_invoice_payments_invoice_id").on(table.invoiceId),
+  companyIdIdx: index("idx_invoice_payments_company_id").on(table.companyId),
 }));
 
 export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({
@@ -426,7 +574,10 @@ export const recurringInvoices = pgTable("recurring_invoices", {
   lastGeneratedInvoiceId: uuid("last_generated_invoice_id"),
   totalGenerated: integer("total_generated").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_recurring_invoices_company_id").on(table.companyId),
+  nextRunActiveIdx: index("idx_recurring_invoices_next_run_active").on(table.isActive, table.nextRunDate),
+}));
 
 export const insertRecurringInvoiceSchema = createInsertSchema(recurringInvoices).omit({
   id: true,
@@ -453,6 +604,12 @@ export const receipts = pgTable("receipts", {
   accountId: uuid("account_id").references(() => accounts.id), // Expense account to debit
   paymentAccountId: uuid("payment_account_id").references(() => accounts.id), // Cash/Bank account to credit
   posted: boolean("posted").default(false).notNull(), // Whether journal entry has been created
+  // Phase 2: Receipt Autopilot — true when journal entry was created automatically
+  // by the autopilot pipeline (high confidence + ≥5 rule acceptances) without user review.
+  autoPosted: boolean("auto_posted").default(false).notNull(),
+  // Phase 2: which classifier produced the suggestion for this receipt.
+  // 'rule' | 'keyword' | 'statistical' | 'openai'. Surfaced as the Internal vs. AI badge.
+  classifierMethod: text("classifier_method"),
   reverseCharge: boolean("reverse_charge").default(false).notNull(), // FTA reverse-charge: buyer self-assesses VAT
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id), // Link to created journal entry
   imageData: text("image_data"),
@@ -462,6 +619,8 @@ export const receipts = pgTable("receipts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   companyIdIdx: index("idx_receipts_company_id").on(table.companyId),
+  companyDateIdx: index("idx_receipts_company_date").on(table.companyId, table.date),
+  companyPostedIdx: index("idx_receipts_company_posted").on(table.companyId, table.posted),
 }));
 
 export const insertReceiptSchema = createInsertSchema(receipts).omit({
@@ -490,7 +649,9 @@ export const products = pgTable("products", {
   lowStockThreshold: integer("low_stock_threshold").default(10),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_products_company_id").on(table.companyId),
+}));
 
 export const insertProductSchema = createInsertSchema(products).omit({
   id: true,
@@ -513,7 +674,10 @@ export const inventoryMovements = pgTable("inventory_movements", {
   reference: text("reference"), // e.g., "Invoice INV-001" or "Manual adjustment"
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  productIdIdx: index("idx_inventory_movements_product_id").on(table.productId),
+  companyIdIdx: index("idx_inventory_movements_company_id").on(table.companyId),
+}));
 
 export const insertInventoryMovementSchema = createInsertSchema(inventoryMovements).omit({
   id: true,
@@ -533,6 +697,7 @@ export const customerContacts = pgTable("customer_contacts", {
   nameAr: text("name_ar"),
   email: text("email"),
   phone: text("phone"),
+  whatsappNumber: text("whatsapp_number"),
   trnNumber: text("trn_number"),
   address: text("address"),
   city: text("city"),
@@ -545,7 +710,9 @@ export const customerContacts = pgTable("customer_contacts", {
   portalAccessExpiresAt: timestamp("portal_access_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at"),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_customer_contacts_company_id").on(table.companyId),
+}));
 
 export const insertCustomerContactSchema = createInsertSchema(customerContacts).omit({
   id: true,
@@ -674,7 +841,9 @@ export const integrationSyncs = pgTable("integration_syncs", {
   externalUrl: text("external_url"), // Link to the spreadsheet, etc.
   errorMessage: text("error_message"),
   syncedAt: timestamp("synced_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_integration_syncs_company_id").on(table.companyId),
+}));
 
 export const insertIntegrationSyncSchema = createInsertSchema(integrationSyncs).omit({
   id: true,
@@ -697,7 +866,9 @@ export const whatsappConfigs = pgTable("whatsapp_configs", {
   isActive: boolean("is_active").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_whatsapp_configs_company_id").on(table.companyId),
+}));
 
 export const insertWhatsappConfigSchema = createInsertSchema(whatsappConfigs).omit({
   id: true,
@@ -725,7 +896,9 @@ export const whatsappMessages = pgTable("whatsapp_messages", {
   errorMessage: text("error_message"),
   processedAt: timestamp("processed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_whatsapp_messages_company_id").on(table.companyId),
+}));
 
 export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).omit({
   id: true,
@@ -754,7 +927,10 @@ export const anomalyAlerts = pgTable("anomaly_alerts", {
   resolvedAt: timestamp("resolved_at"),
   resolutionNote: text("resolution_note"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_anomaly_alerts_company_id").on(table.companyId),
+  companyResolvedIdx: index("idx_anomaly_alerts_company_resolved").on(table.companyId, table.isResolved),
+}));
 
 export const insertAnomalyAlertSchema = createInsertSchema(anomalyAlerts).omit({
   id: true,
@@ -778,7 +954,9 @@ export const bankAccounts = pgTable("bank_accounts", {
   glAccountId: uuid("gl_account_id").references(() => accounts.id), // Linked GL account
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_bank_accounts_company_id").on(table.companyId),
+}));
 
 export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({
   id: true,
@@ -812,6 +990,8 @@ export const bankTransactions = pgTable("bank_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({
   bankAccountIdIdx: index("idx_bank_transactions_bank_account_id").on(table.bankAccountId),
+  companyIdIdx: index("idx_bank_transactions_company_id").on(table.companyId),
+  companyMatchStatusIdx: index("idx_bank_transactions_company_match").on(table.companyId, table.matchStatus),
 }));
 
 export const insertBankTransactionSchema = createInsertSchema(bankTransactions).omit({
@@ -836,7 +1016,9 @@ export const cashFlowForecasts = pgTable("cash_flow_forecasts", {
   confidenceLevel: real("confidence_level"), // 0-1
   factors: text("factors"), // JSON string of contributing factors
   generatedAt: timestamp("generated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_cash_flow_forecasts_company_id").on(table.companyId),
+}));
 
 export const insertCashFlowForecastSchema = createInsertSchema(cashFlowForecasts).omit({
   id: true,
@@ -861,8 +1043,14 @@ export const transactionClassifications = pgTable("transaction_classifications",
   aiReason: text("ai_reason"),
   wasAccepted: boolean("was_accepted"), // User feedback for ML improvement
   userSelectedAccountId: uuid("user_selected_account_id").references(() => accounts.id),
+  // Phase 2: Receipt Autopilot — which classifier produced this suggestion.
+  // 'rule' = ai_company_rules match, 'keyword' = UAE keyword pattern, 'statistical' = Naive Bayes,
+  // 'openai' = LLM fallback. Used to compute per-method accuracy and trip the openai_only failsafe.
+  classifierMethod: text("classifier_method"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_transaction_classifications_company_id").on(table.companyId),
+}));
 
 export const insertTransactionClassificationSchema = createInsertSchema(transactionClassifications).omit({
   id: true,
@@ -871,6 +1059,21 @@ export const insertTransactionClassificationSchema = createInsertSchema(transact
 
 export type InsertTransactionClassification = z.infer<typeof insertTransactionClassificationSchema>;
 export type TransactionClassification = typeof transactionClassifications.$inferSelect;
+
+export type ClassifierMethod = 'rule' | 'keyword' | 'statistical' | 'openai';
+export type ClassifierMode = 'hybrid' | 'openai_only';
+
+export interface ClassifierConfig {
+  mode: ClassifierMode;
+  accuracyThreshold: number;
+  autopilotEnabled: boolean;
+}
+
+export const DEFAULT_CLASSIFIER_CONFIG: ClassifierConfig = {
+  mode: 'hybrid',
+  accuracyThreshold: 0.8,
+  autopilotEnabled: false,
+};
 
 // ===========================
 // Budgets (for Budget vs Actual)
@@ -886,7 +1089,9 @@ export const budgets = pgTable("budgets", {
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyPeriodIdx: index("idx_budgets_company_period").on(table.companyId, table.year, table.month),
+}));
 
 export const insertBudgetSchema = createInsertSchema(budgets).omit({
   id: true,
@@ -917,7 +1122,9 @@ export const ecommerceIntegrations = pgTable("ecommerce_integrations", {
   settings: text("settings"), // JSON config for mapping
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_ecommerce_integrations_company_id").on(table.companyId),
+}));
 
 export const insertEcommerceIntegrationSchema = createInsertSchema(ecommerceIntegrations).omit({
   id: true,
@@ -952,7 +1159,10 @@ export const ecommerceTransactions = pgTable("ecommerce_transactions", {
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
   invoiceId: uuid("invoice_id").references(() => invoices.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_ecommerce_transactions_company_id").on(table.companyId),
+  integrationIdIdx: index("idx_ecommerce_transactions_integration_id").on(table.integrationId),
+}));
 
 export const insertEcommerceTransactionSchema = createInsertSchema(ecommerceTransactions).omit({
   id: true,
@@ -978,7 +1188,9 @@ export const financialKpis = pgTable("financial_kpis", {
   trend: text("trend"), // up | down | stable
   benchmark: real("benchmark"), // Industry benchmark
   calculatedAt: timestamp("calculated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_financial_kpis_company_id").on(table.companyId),
+}));
 
 export const insertFinancialKpiSchema = createInsertSchema(financialKpis).omit({
   id: true,
@@ -1008,7 +1220,11 @@ export const notifications = pgTable("notifications", {
   scheduledFor: timestamp("scheduled_for"), // For future notifications
   expiresAt: timestamp("expires_at"), // Auto-dismiss after this date
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_notifications_user_id").on(table.userId),
+  userUnreadIdx: index("idx_notifications_user_unread").on(table.userId, table.isRead),
+  companyIdIdx: index("idx_notifications_company_id").on(table.companyId),
+}));
 
 export const insertNotificationSchema = createInsertSchema(notifications).omit({
   id: true,
@@ -1073,7 +1289,9 @@ export const reminderSettings = pgTable("reminder_settings", {
   whatsappTemplate: text("whatsapp_template"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_reminder_settings_company_id").on(table.companyId),
+}));
 
 export const insertReminderSettingSchema = createInsertSchema(reminderSettings).omit({
   id: true,
@@ -1104,7 +1322,10 @@ export const reminderLogs = pgTable("reminder_logs", {
   deliveredAt: timestamp("delivered_at"),
   openedAt: timestamp("opened_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_reminder_logs_company_id").on(table.companyId),
+  relatedEntityIdx: index("idx_reminder_logs_related_entity").on(table.relatedEntityType, table.relatedEntityId),
+}));
 
 export const insertReminderLogSchema = createInsertSchema(reminderLogs).omit({
   id: true,
@@ -1140,7 +1361,9 @@ export const userOnboarding = pgTable("user_onboarding", {
   dismissedTips: text("dismissed_tips"), // JSON array of dismissed tip IDs
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_user_onboarding_user_id").on(table.userId),
+}));
 
 export const insertUserOnboardingSchema = createInsertSchema(userOnboarding).omit({
   id: true,
@@ -1538,11 +1761,14 @@ export const vatReturns = pgTable("vat_returns", {
   declarantName: text("declarant_name"),
   declarantPosition: text("declarant_position"),
   declarationDate: timestamp("declaration_date"),
-  
+
   createdBy: uuid("created_by").notNull().references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_vat_returns_company_id").on(table.companyId),
+  companyPeriodIdx: index("idx_vat_returns_company_period").on(table.companyId, table.periodStart),
+}));
 
 export const insertVatReturnSchema = createInsertSchema(vatReturns).omit({
   id: true,
@@ -1552,6 +1778,64 @@ export const insertVatReturnSchema = createInsertSchema(vatReturns).omit({
 
 export type InsertVatReturn = z.infer<typeof insertVatReturnSchema>;
 export type VatReturn = typeof vatReturns.$inferSelect;
+
+// ===========================
+// VAT Return Periods (Phase 3: VAT Autopilot)
+// Tracks each filing window per company so deadlines, calculation snapshots,
+// and adjustments can be reasoned about independently of the immutable
+// `vat_returns` row. A period progresses through draft → ready → submitted →
+// accepted; an `adjustments` JSONB column carries an audit-trailed list of
+// manual overrides applied on top of the auto-calculated boxes.
+// ===========================
+export const vatReturnPeriods = pgTable("vat_return_periods", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  frequency: text("frequency").notNull().default("quarterly"), // quarterly | monthly
+  status: text("status").notNull().default("draft"), // draft | ready | submitted | accepted
+  // Snapshot of the most recent auto-calculation. Stored so the UI can show
+  // last-calculated totals without re-running the full aggregation.
+  outputVat: money("output_vat").notNull().default(0),
+  inputVat: money("input_vat").notNull().default(0),
+  netVatPayable: money("net_vat_payable").notNull().default(0),
+  calculatedAt: timestamp("calculated_at"),
+  // adjustments: array of { id, box, amount, reason, userId, createdAt } items.
+  // Applied additively to the auto-calculated baseline.
+  adjustments: jsonb("adjustments").notNull().default(sql`'[]'::jsonb`),
+  // Link to the formal vat_returns row once one has been generated/submitted.
+  vatReturnId: uuid("vat_return_id").references(() => vatReturns.id),
+  submittedAt: timestamp("submitted_at"),
+  submittedBy: uuid("submitted_by").references(() => users.id),
+  ftaReferenceNumber: text("fta_reference_number"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyPeriodUnique: unique("vat_return_periods_company_period_unique").on(table.companyId, table.periodStart, table.periodEnd),
+  companyIdIdx: index("idx_vat_return_periods_company_id").on(table.companyId),
+  dueDateIdx: index("idx_vat_return_periods_due_date").on(table.dueDate),
+  statusIdx: index("idx_vat_return_periods_status").on(table.status),
+}));
+
+export const insertVatReturnPeriodSchema = createInsertSchema(vatReturnPeriods).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertVatReturnPeriod = z.infer<typeof insertVatReturnPeriodSchema>;
+export type VatReturnPeriod = typeof vatReturnPeriods.$inferSelect;
+
+export interface VatReturnAdjustment {
+  id: string;
+  box: string;             // e.g. "box1bDubaiVat", "box9ExpensesVat"
+  amount: number;          // positive or negative AED delta
+  reason: string;
+  userId: string;
+  createdAt: string;       // ISO timestamp
+}
 
 // ===========================
 // Corporate Tax Returns (9% UAE CT)
@@ -1572,7 +1856,9 @@ export const corporateTaxReturns = pgTable("corporate_tax_returns", {
   filedAt: timestamp("filed_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_corporate_tax_returns_company_id").on(table.companyId),
+}));
 
 export const insertCorporateTaxReturnSchema = createInsertSchema(corporateTaxReturns).omit({
   id: true,
@@ -1595,7 +1881,11 @@ export const auditLogs = pgTable("audit_logs", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_audit_logs_user_id").on(table.userId),
+  resourceIdx: index("idx_audit_logs_resource").on(table.resourceType, table.resourceId),
+  createdAtIdx: index("idx_audit_logs_created_at").on(table.createdAt),
+}));
 
 export const insertAuditLogSchema = createInsertSchema(auditLogs).omit({
   id: true,
@@ -1627,7 +1917,9 @@ export const documents = pgTable("documents", {
   uploadedBy: uuid("uploaded_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_documents_company_id").on(table.companyId),
+}));
 
 export const insertDocumentSchema = createInsertSchema(documents).omit({
   id: true,
@@ -1657,7 +1949,9 @@ export const taxReturnArchive = pgTable("tax_return_archive", {
   notes: text("notes"),
   filedBy: uuid("filed_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_tax_return_archive_company_id").on(table.companyId),
+}));
 
 export const insertTaxReturnArchiveSchema = createInsertSchema(taxReturnArchive).omit({
   id: true,
@@ -1693,7 +1987,10 @@ export const complianceTasks = pgTable("compliance_tasks", {
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_compliance_tasks_company_id").on(table.companyId),
+  companyStatusDueIdx: index("idx_compliance_tasks_company_status_due").on(table.companyId, table.status, table.dueDate),
+}));
 
 export const insertComplianceTaskSchema = createInsertSchema(complianceTasks).omit({
   id: true,
@@ -1722,7 +2019,10 @@ export const messages = pgTable("messages", {
   messageType: text("message_type").default("general"), // general | inquiry | update | urgent | system
   isArchived: boolean("is_archived").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_messages_company_id").on(table.companyId),
+  threadIdx: index("idx_messages_thread_id").on(table.threadId),
+}));
 
 export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
@@ -1775,7 +2075,9 @@ export const invitations = pgTable("invitations", {
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_invitations_company_id").on(table.companyId),
+}));
 
 export const insertInvitationSchema = createInsertSchema(invitations).omit({
   id: true,
@@ -1823,7 +2125,9 @@ export const clientNotes = pgTable("client_notes", {
   isPinned: boolean("is_pinned").default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_client_notes_company_id").on(table.companyId),
+}));
 
 export const insertClientNoteSchema = createInsertSchema(clientNotes).omit({
   id: true,
@@ -1861,10 +2165,13 @@ export const engagements = pgTable("engagements", {
   // Onboarding
   onboardingCompleted: boolean("onboarding_completed").default(false),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
-  
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_engagements_company_id").on(table.companyId),
+  accountManagerIdx: index("idx_engagements_account_manager_id").on(table.accountManagerId),
+}));
 
 export const insertEngagementSchema = createInsertSchema(engagements).omit({
   id: true,
@@ -1911,11 +2218,14 @@ export const serviceInvoices = pgTable("service_invoices", {
   
   // PDF
   pdfUrl: text("pdf_url"),
-  
+
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_service_invoices_company_id").on(table.companyId),
+  engagementIdIdx: index("idx_service_invoices_engagement_id").on(table.engagementId),
+}));
 
 export const insertServiceInvoiceSchema = createInsertSchema(serviceInvoices).omit({
   id: true,
@@ -1937,7 +2247,9 @@ export const serviceInvoiceLines = pgTable("service_invoice_lines", {
   unitPrice: money("unit_price").notNull(),
   vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE 5%
   amount: money("amount").notNull(), // quantity * unitPrice
-});
+}, (table) => ({
+  serviceInvoiceIdIdx: index("idx_service_invoice_lines_service_invoice_id").on(table.serviceInvoiceId),
+}));
 
 export const insertServiceInvoiceLineSchema = createInsertSchema(serviceInvoiceLines).omit({
   id: true,
@@ -1981,9 +2293,11 @@ export const ftaEmails = pgTable("fta_emails", {
   actionRequired: boolean("action_required").default(false),
   actionDescription: text("action_description"),
   actionDueDate: timestamp("action_due_date"),
-  
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_fta_emails_company_id").on(table.companyId),
+}));
 
 export const insertFtaEmailSchema = createInsertSchema(ftaEmails).omit({
   id: true,
@@ -2013,16 +2327,18 @@ export const subscriptions = pgTable("subscriptions", {
   // Stripe Integration (if using)
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
-  
+
   // Usage Limits
   maxUsers: integer("max_users").default(1),
   maxInvoices: integer("max_invoices").default(50),
   maxReceipts: integer("max_receipts").default(100),
   aiCreditsRemaining: integer("ai_credits_remaining").default(100),
-  
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_subscriptions_company_id").on(table.companyId),
+}));
 
 export const insertSubscriptionSchema = createInsertSchema(subscriptions).omit({
   id: true,
@@ -2057,13 +2373,15 @@ export const backups = pgTable("backups", {
   dataSnapshot: text("data_snapshot"), // JSON stringified backup data
   checksum: text("checksum"), // SHA256 for integrity verification
   sizeBytes: integer("size_bytes").default(0),
-  
+
   // Timestamps
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   completedAt: timestamp("completed_at"),
   expiresAt: timestamp("expires_at"), // Auto-cleanup after 90 days
-});
+}, (table) => ({
+  companyIdIdx: index("idx_backups_company_id").on(table.companyId),
+}));
 
 export const insertBackupSchema = createInsertSchema(backups).omit({
   id: true,
@@ -2091,10 +2409,13 @@ export const aiConversations = pgTable("ai_conversations", {
   tokensUsed: integer("tokens_used"), // If available from OpenAI
   responseTime: integer("response_time"), // Milliseconds
   error: text("error"), // Error message if request failed
-  
+
   // Timestamps
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_ai_conversations_user_id").on(table.userId),
+  companyIdIdx: index("idx_ai_conversations_company_id").on(table.companyId),
+}));
 
 export const insertAiConversationSchema = createInsertSchema(aiConversations).omit({
   id: true,
@@ -2122,7 +2443,9 @@ export const clientCommunications = pgTable("client_communications", {
   metadata: text("metadata"), // JSON string
   sentAt: timestamp("sent_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  companyIdIdx: index("idx_client_communications_company_id").on(table.companyId),
+}));
 
 export const insertClientCommunicationSchema = createInsertSchema(clientCommunications).omit({
   id: true,
@@ -2172,7 +2495,10 @@ export const firmLeads = pgTable("firm_leads", {
   convertedAt: timestamp("converted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  userIdIdx: index("idx_firm_leads_user_id").on(table.userId),
+  stageIdx: index("idx_firm_leads_stage").on(table.stage),
+}));
 
 export const insertFirmLeadSchema = createInsertSchema(firmLeads).omit({
   id: true,
@@ -2185,3 +2511,327 @@ export const updateFirmLeadSchema = insertFirmLeadSchema.partial();
 export type InsertFirmLead = z.infer<typeof insertFirmLeadSchema>;
 export type UpdateFirmLead = z.infer<typeof updateFirmLeadSchema>;
 export type FirmLead = typeof firmLeads.$inferSelect;
+
+// ===========================
+// Payment Chasing Autopilot (Phase 4)
+// ===========================
+// Tracks every "chase" action taken against an overdue invoice. A chase is a
+// reminder communication (WhatsApp / email / manual) that escalates with the
+// number of days the invoice is overdue. We log each attempt — even when the
+// user only previews a wa.me link without sending — so that the next chase
+// level is computed deterministically and effectiveness can be measured.
+export const paymentChases = pgTable("payment_chases", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  invoiceId: uuid("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  contactId: uuid("contact_id").references(() => customerContacts.id, { onDelete: "set null" }),
+  level: integer("level").notNull(), // 1..4 escalation level applied
+  method: text("method").notNull().default("whatsapp"), // whatsapp | email | manual
+  language: text("language").notNull().default("en"), // en | ar
+  messageText: text("message_text").notNull(),
+  daysOverdueAtSend: integer("days_overdue_at_send").notNull().default(0),
+  amountAtSend: money("amount_at_send").notNull().default(0),
+  // pending = queued / draft, sent = wa.me link generated, responded = client
+  // replied, paid = invoice was paid after this chase, failed = send failed.
+  status: text("status").notNull().default("sent"),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  respondedAt: timestamp("responded_at"),
+  paidAt: timestamp("paid_at"),
+  triggeredBy: uuid("triggered_by").references(() => users.id, { onDelete: "set null" }),
+  // Free-form metadata for future webhook integrations (Business API IDs etc.)
+  meta: text("meta"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdx: index("idx_payment_chases_company_id").on(table.companyId),
+  invoiceIdx: index("idx_payment_chases_invoice_id").on(table.invoiceId),
+  sentAtIdx: index("idx_payment_chases_sent_at").on(table.sentAt),
+}));
+
+export const insertPaymentChaseSchema = createInsertSchema(paymentChases).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertPaymentChase = z.infer<typeof insertPaymentChaseSchema>;
+export type PaymentChase = typeof paymentChases.$inferSelect;
+
+// Customizable chase message templates per company / level / language. There
+// is exactly one "default" template per (level, language) seeded by the
+// migration; companies can override or add custom templates.
+export const chaseTemplates = pgTable("chase_templates", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }), // null = system default
+  level: integer("level").notNull(), // 1..4
+  language: text("language").notNull().default("en"), // en | ar
+  subject: text("subject"),
+  body: text("body").notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
+}, (table) => ({
+  companyLevelLangIdx: index("idx_chase_templates_lookup").on(table.companyId, table.level, table.language),
+}));
+
+export const insertChaseTemplateSchema = createInsertSchema(chaseTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChaseTemplate = z.infer<typeof insertChaseTemplateSchema>;
+export type ChaseTemplate = typeof chaseTemplates.$inferSelect;
+
+// Per-company configuration. One row per company; absence means defaults.
+export const chaseConfigs = pgTable("chase_configs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().unique().references(() => companies.id, { onDelete: "cascade" }),
+  autoChaseEnabled: boolean("auto_chase_enabled").notNull().default(false),
+  // Minimum days between chases for the same invoice — prevents spamming
+  // when overdue lingers across multiple polling cycles.
+  chaseFrequencyDays: integer("chase_frequency_days").notNull().default(7),
+  maxLevel: integer("max_level").notNull().default(4),
+  preferredMethod: text("preferred_method").notNull().default("whatsapp"), // whatsapp | email
+  // JSON-encoded array of customer_contacts.id values that must never be
+  // chased. Stored as text to avoid pulling in jsonb tooling here; routes
+  // parse / serialize on the way in/out.
+  doNotChaseContactIds: text("do_not_chase_contact_ids").notNull().default("[]"),
+  defaultLanguage: text("default_language").notNull().default("en"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at"),
+});
+
+export const insertChaseConfigSchema = createInsertSchema(chaseConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertChaseConfig = z.infer<typeof insertChaseConfigSchema>;
+export type ChaseConfig = typeof chaseConfigs.$inferSelect;
+
+// ===========================
+// Phase 5: Document Chasing Autopilot
+// ===========================
+//
+// Document requirements describe what a client must supply for bookkeeping
+// and UAE compliance (trade licence renewals, Emirates IDs, bank statements,
+// tenancy contracts, visa copies, etc.). The chase pipeline escalates a
+// missing document through four levels (friendly → follow_up → urgent →
+// final), mirroring the Phase 4 payment-chasing model. The compliance
+// calendar is the source of truth for upcoming UAE deadlines that drive
+// auto-scheduled reminders.
+
+// UAE-specific document types — kept as a const tuple so the Zod enum below
+// stays in lockstep. Free-form types are stored under "other".
+export const DOCUMENT_TYPES = [
+  'trade_license',
+  'emirates_id',
+  'visa_copy',
+  'passport_copy',
+  'bank_statement',
+  'tenancy_contract',
+  'moa_aoa',
+  'vat_certificate',
+  'corporate_tax_certificate',
+  'esr_notification',
+  'esr_report',
+  'audited_financials',
+  'invoice',
+  'receipt',
+  'payslip',
+  'other',
+] as const;
+export type DocumentType = typeof DOCUMENT_TYPES[number];
+
+export const CHASE_LEVELS = ['friendly', 'follow_up', 'urgent', 'final'] as const;
+export type ChaseLevel = typeof CHASE_LEVELS[number];
+
+export const CHASE_CHANNELS = ['whatsapp', 'email', 'sms', 'in_app'] as const;
+export type ChaseChannel = typeof CHASE_CHANNELS[number];
+
+export const REQUIREMENT_STATUSES = [
+  'pending',
+  'requested',
+  'received',
+  'overdue',
+  'waived',
+] as const;
+export type RequirementStatus = typeof REQUIREMENT_STATUSES[number];
+
+export const COMPLIANCE_EVENT_TYPES = [
+  'trade_license_renewal',
+  'visa_expiry',
+  'emirates_id_expiry',
+  'vat_filing',
+  'corporate_tax_filing',
+  'esr_notification',
+  'esr_report',
+  'tenancy_renewal',
+  'audit_deadline',
+  'other',
+] as const;
+export type ComplianceEventType = typeof COMPLIANCE_EVENT_TYPES[number];
+
+// Document requirements: what a client owes the firm per period.
+export const documentRequirements = pgTable("document_requirements", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  documentType: text("document_type").notNull(), // DocumentType
+  description: text("description"),
+  dueDate: timestamp("due_date").notNull(),
+  isRecurring: boolean("is_recurring").notNull().default(false),
+  recurringIntervalDays: integer("recurring_interval_days"), // null when isRecurring is false
+  status: text("status").notNull().default("pending"), // RequirementStatus
+  receivedAt: timestamp("received_at"),
+  uploadedDocumentId: uuid("uploaded_document_id"), // optional pointer to a document store row
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_document_requirements_company_id").on(table.companyId),
+  dueDateIdx: index("idx_document_requirements_due_date").on(table.dueDate),
+  statusIdx: index("idx_document_requirements_status").on(table.status),
+}));
+
+export const insertDocumentRequirementSchema = createInsertSchema(documentRequirements).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const updateDocumentRequirementSchema = insertDocumentRequirementSchema.partial();
+
+export type InsertDocumentRequirement = z.infer<typeof insertDocumentRequirementSchema>;
+export type UpdateDocumentRequirement = z.infer<typeof updateDocumentRequirementSchema>;
+export type DocumentRequirement = typeof documentRequirements.$inferSelect;
+
+// Document chases: one row per send. Level escalates as the same requirement
+// stays open across multiple sends.
+export const documentChases = pgTable("document_chases", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  requirementId: uuid("requirement_id").notNull().references(() => documentRequirements.id, { onDelete: "cascade" }),
+  chaseLevel: text("chase_level").notNull(), // ChaseLevel
+  sentVia: text("sent_via").notNull(), // ChaseChannel
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  messageContent: text("message_content").notNull(),
+  recipientPhone: text("recipient_phone"),
+  recipientEmail: text("recipient_email"),
+  responseReceived: boolean("response_received").notNull().default(false),
+  responseReceivedAt: timestamp("response_received_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_document_chases_company_id").on(table.companyId),
+  requirementIdIdx: index("idx_document_chases_requirement_id").on(table.requirementId),
+  sentAtIdx: index("idx_document_chases_sent_at").on(table.sentAt),
+}));
+
+export const insertDocumentChaseSchema = createInsertSchema(documentChases).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDocumentChase = z.infer<typeof insertDocumentChaseSchema>;
+export type DocumentChase = typeof documentChases.$inferSelect;
+
+// Compliance calendar: UAE-specific events that drive document requirements
+// and chase scheduling. Reminder days is stored as a comma-separated list of
+// day offsets ("30,14,7,0") for portability across Postgres versions.
+export const complianceCalendar = pgTable("compliance_calendar", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(), // ComplianceEventType
+  description: text("description").notNull(),
+  eventDate: timestamp("event_date").notNull(),
+  reminderDays: text("reminder_days").notNull().default("30,14,7,0"),
+  status: text("status").notNull().default("upcoming"), // upcoming | completed | overdue | dismissed
+  completedAt: timestamp("completed_at"),
+  linkedRequirementId: uuid("linked_requirement_id"), // optional link back to a requirement
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_compliance_calendar_company_id").on(table.companyId),
+  eventDateIdx: index("idx_compliance_calendar_event_date").on(table.eventDate),
+}));
+
+export const insertComplianceCalendarSchema = createInsertSchema(complianceCalendar).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const updateComplianceCalendarSchema = insertComplianceCalendarSchema.partial();
+
+export type InsertComplianceEvent = z.infer<typeof insertComplianceCalendarSchema>;
+export type UpdateComplianceEvent = z.infer<typeof updateComplianceCalendarSchema>;
+export type ComplianceEvent = typeof complianceCalendar.$inferSelect;
+
+// ===========================
+// Firm Alerts (Phase 6: Command Center)
+// ===========================
+// Surfaces critical items across all firm-managed clients (FTA deadlines, stale
+// activity, large overdue balances, incomplete onboarding, etc.).
+// firmId = user.id of the firm_owner. companyId is nullable for firm-wide alerts.
+export const firmAlerts = pgTable("firm_alerts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  firmId: uuid("firm_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  alertType: text("alert_type").notNull(), // vat_deadline | stale_activity | overdue_balance | incomplete_onboarding | document_missing
+  severity: text("severity").notNull().default("info"), // critical | warning | info
+  message: text("message").notNull(),
+  metadata: text("metadata"), // optional JSON-encoded extras (amounts, dueDate, etc.)
+  isRead: boolean("is_read").notNull().default(false),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  firmIdIdx: index("idx_firm_alerts_firm_id").on(table.firmId),
+  companyIdIdx: index("idx_firm_alerts_company_id").on(table.companyId),
+  severityIdx: index("idx_firm_alerts_severity").on(table.severity),
+  unreadIdx: index("idx_firm_alerts_unread").on(table.firmId, table.isRead),
+}));
+
+export const insertFirmAlertSchema = createInsertSchema(firmAlerts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFirmAlert = z.infer<typeof insertFirmAlertSchema>;
+export type FirmAlert = typeof firmAlerts.$inferSelect;
+export type FirmAlertSeverity = 'critical' | 'warning' | 'info';
+export type FirmAlertType =
+  | 'vat_deadline'
+  | 'stale_activity'
+  | 'overdue_balance'
+  | 'incomplete_onboarding'
+  | 'document_missing';
+
+// ===========================
+// Firm Metrics Cache (Phase 6: Command Center)
+// ===========================
+// Caches expensive firm-wide aggregations so dashboards don't recompute on every
+// page load. metricValue is a JSON-encoded payload (numbers or full objects).
+// Caller is responsible for invalidating entries past their TTL.
+export const firmMetricsCache = pgTable("firm_metrics_cache", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  firmId: uuid("firm_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  metricType: text("metric_type").notNull(), // dashboard_summary | period_comparison | health_scores | staff_workload
+  metricValue: text("metric_value").notNull(), // JSON payload
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  calculatedAt: timestamp("calculated_at").defaultNow().notNull(),
+}, (table) => ({
+  firmTypeIdx: index("idx_firm_metrics_cache_firm_type").on(table.firmId, table.metricType),
+  // One row per (firm, type, period) so we can update-on-conflict.
+  firmTypePeriodUnique: unique("firm_metrics_cache_firm_type_period_unique").on(
+    table.firmId,
+    table.metricType,
+    table.periodStart,
+    table.periodEnd
+  ),
+}));
+
+export const insertFirmMetricsCacheSchema = createInsertSchema(firmMetricsCache).omit({
+  id: true,
+  calculatedAt: true,
+});
+
+export type InsertFirmMetricsCache = z.infer<typeof insertFirmMetricsCacheSchema>;
+export type FirmMetricsCache = typeof firmMetricsCache.$inferSelect;

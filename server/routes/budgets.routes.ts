@@ -1,11 +1,71 @@
 import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
 import { pool } from '../db';
 import { storage } from '../storage';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { validate } from '../middleware/validate';
 import { createLogger } from '../config/logger';
 
 const log = createLogger('budgets');
+
+// =====================================
+// Zod schemas
+// =====================================
+
+const isoDate = z
+  .string()
+  .min(1, 'Date is required')
+  .refine((v) => !Number.isNaN(Date.parse(v)), { message: 'Must be a valid ISO date' });
+
+const budgetPlanCreateSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(255),
+  fiscalYear: z
+    .union([z.string(), z.number()])
+    .transform((v) => (typeof v === 'string' ? parseInt(v, 10) : v))
+    .pipe(z.number().int().min(1900).max(2200)),
+  startDate: isoDate,
+  endDate: isoDate,
+  notes: z.string().max(2000).optional().nullable(),
+});
+
+const budgetPlanUpdateSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  fiscalYear: z
+    .union([z.string(), z.number()])
+    .transform((v) => (typeof v === 'string' ? parseInt(v, 10) : v))
+    .pipe(z.number().int().min(1900).max(2200))
+    .optional(),
+  startDate: isoDate.optional(),
+  endDate: isoDate.optional(),
+  notes: z.string().max(2000).optional().nullable(),
+  status: z.enum(['draft', 'approved', 'closed']).optional(),
+});
+
+const monthAmount = z
+  .union([z.string(), z.number()])
+  .optional()
+  .nullable();
+
+const budgetLineCreateSchema = z.object({
+  accountId: z.string().uuid().optional().nullable(),
+  category: z.string().min(1, 'Category is required').max(255),
+  description: z.string().max(1000).optional().nullable(),
+  jan: monthAmount,
+  feb: monthAmount,
+  mar: monthAmount,
+  apr: monthAmount,
+  may: monthAmount,
+  jun: monthAmount,
+  jul: monthAmount,
+  aug: monthAmount,
+  sep: monthAmount,
+  oct: monthAmount,
+  nov: monthAmount,
+  dec: monthAmount,
+});
+
+const budgetLineUpdateSchema = budgetLineCreateSchema.partial();
 
 export function registerBudgetRoutes(app: Express) {
   // =====================================
@@ -53,7 +113,7 @@ export function registerBudgetRoutes(app: Express) {
   }));
 
   // Create budget plan
-  app.post("/api/companies/:companyId/budget-plans", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/budget-plans", authMiddleware, requireCustomer, validate({ body: budgetPlanCreateSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
 
@@ -63,10 +123,6 @@ export function registerBudgetRoutes(app: Express) {
     }
 
     const { name, fiscalYear, startDate, endDate, notes } = req.body;
-
-    if (!name || !fiscalYear || !startDate || !endDate) {
-      return res.status(400).json({ message: 'name, fiscalYear, startDate, and endDate are required' });
-    }
 
     const result = await pool.query(
       `INSERT INTO budget_plans (company_id, name, fiscal_year, start_date, end_date, notes)
@@ -80,7 +136,7 @@ export function registerBudgetRoutes(app: Express) {
   }));
 
   // Update budget plan
-  app.patch("/api/budget-plans/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.patch("/api/budget-plans/:id", authMiddleware, requireCustomer, validate({ body: budgetPlanUpdateSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
@@ -162,7 +218,7 @@ export function registerBudgetRoutes(app: Express) {
   }));
 
   // Add budget line
-  app.post("/api/budget-plans/:id/lines", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/budget-plans/:id/lines", authMiddleware, requireCustomer, validate({ body: budgetLineCreateSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
@@ -182,10 +238,6 @@ export function registerBudgetRoutes(app: Express) {
       jan, feb, mar, apr, may, jun,
       jul, aug, sep, oct, nov, dec
     } = req.body;
-
-    if (!category) {
-      return res.status(400).json({ message: 'category is required' });
-    }
 
     const months = [
       parseFloat(jan || 0), parseFloat(feb || 0), parseFloat(mar || 0),
@@ -207,7 +259,7 @@ export function registerBudgetRoutes(app: Express) {
   }));
 
   // Update budget line
-  app.patch("/api/budget-lines/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.patch("/api/budget-lines/:id", authMiddleware, requireCustomer, validate({ body: budgetLineUpdateSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
@@ -322,34 +374,34 @@ export function registerBudgetRoutes(app: Express) {
       return entryDate >= startDate && entryDate <= endDate && entry.status === 'posted';
     });
 
-    // Build actual amounts per account per month
+    // Build actual amounts per account per month — fetch all period lines
+    // up-front rather than one round-trip per entry.
     const actualsByAccountMonth: Map<string, Map<number, number>> = new Map();
+    const entryDateById = new Map(periodEntries.map(e => [e.id, new Date(e.date)]));
+    const periodLines = await storage.getJournalLinesByEntryIds(periodEntries.map(e => e.id));
 
-    for (const entry of periodEntries) {
-      const entryDate = new Date(entry.date);
-      const month = entryDate.getMonth() + 1; // 1-12
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
+    for (const line of periodLines) {
+      const account = accountMap.get(line.accountId);
+      if (!account) continue;
+      const entryDate = entryDateById.get(line.entryId);
+      if (!entryDate) continue;
+      const month = entryDate.getMonth() + 1;
 
-      for (const line of lines) {
-        const account = accountMap.get(line.accountId);
-        if (!account) continue;
+      const accountId = line.accountId;
+      if (!actualsByAccountMonth.has(accountId)) {
+        actualsByAccountMonth.set(accountId, new Map());
+      }
+      const monthMap = actualsByAccountMonth.get(accountId)!;
+      const currentVal = monthMap.get(month) || 0;
 
-        const accountId = line.accountId;
-        if (!actualsByAccountMonth.has(accountId)) {
-          actualsByAccountMonth.set(accountId, new Map());
-        }
-        const monthMap = actualsByAccountMonth.get(accountId)!;
-        const currentVal = monthMap.get(month) || 0;
-
-        // For expense accounts, debit increases; for income, credit increases
-        if (account.type === 'expense') {
-          monthMap.set(month, currentVal + (line.debit || 0) - (line.credit || 0));
-        } else if (account.type === 'income') {
-          monthMap.set(month, currentVal + (line.credit || 0) - (line.debit || 0));
-        } else {
-          // For other account types, use net debit
-          monthMap.set(month, currentVal + (line.debit || 0) - (line.credit || 0));
-        }
+      // For expense accounts, debit increases; for income, credit increases
+      if (account.type === 'expense') {
+        monthMap.set(month, currentVal + (line.debit || 0) - (line.credit || 0));
+      } else if (account.type === 'income') {
+        monthMap.set(month, currentVal + (line.credit || 0) - (line.debit || 0));
+      } else {
+        // For other account types, use net debit
+        monthMap.set(month, currentVal + (line.debit || 0) - (line.credit || 0));
       }
     }
 

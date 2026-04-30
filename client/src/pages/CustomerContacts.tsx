@@ -28,6 +28,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { VirtualTable, type VirtualTableColumn } from '@/components/VirtualTable';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -36,6 +37,11 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import type { CustomerContact } from '@shared/schema';
 import * as XLSX from 'xlsx';
+import { SiWhatsapp } from 'react-icons/si';
+import { WhatsAppComposer } from '@/components/WhatsAppComposer';
+import { pickWhatsAppNumber } from '@/lib/whatsapp-templates';
+import { EmptyState } from '@/components/ui/empty-state';
+import { TableSkeleton } from '@/components/ui/loading-skeletons';
 
 interface ImportResult {
   message: string;
@@ -59,6 +65,9 @@ export default function CustomerContacts() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [portalLinkDialog, setPortalLinkDialog] = useState<{ open: boolean; url: string; contactName: string }>({ open: false, url: '', contactName: '' });
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
+  const [composerContact, setComposerContact] = useState<CustomerContact | null>(null);
+  const [showClearAllDialog, setShowClearAllDialog] = useState(false);
+  const [clearAllConfirmation, setClearAllConfirmation] = useState('');
 
   const { data: contacts = [], isLoading } = useQuery<CustomerContact[]>({
     queryKey: ['/api/companies', companyId, 'customer-contacts'],
@@ -126,6 +135,32 @@ export default function CustomerContacts() {
     },
     onError: (error: any) => {
       toast({ variant: 'destructive', title: 'Failed to delete contact', description: error?.message });
+    },
+  });
+
+  const { data: clearPreview } = useQuery<{ contactCount: number; linkedInvoiceCount: number }>({
+    queryKey: ['/api/companies', companyId, 'customer-contacts/clear-preview'],
+    enabled: !!companyId && showClearAllDialog,
+  });
+
+  const clearAllMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest('DELETE', `/api/companies/${companyId}/customer-contacts/clear-all`, {
+        confirm: 'DELETE ALL',
+      });
+    },
+    onSuccess: (result: { deletedCount: number; message: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts/clear-preview'] });
+      setShowClearAllDialog(false);
+      setClearAllConfirmation('');
+      toast({
+        title: 'All contacts cleared',
+        description: result.message,
+      });
+    },
+    onError: (error: any) => {
+      toast({ variant: 'destructive', title: 'Failed to clear contacts', description: error?.message });
     },
   });
 
@@ -252,6 +287,7 @@ export default function CustomerContacts() {
       name: contact?.name || '',
       email: contact?.email || '',
       phone: contact?.phone || '',
+      whatsappNumber: contact?.whatsappNumber || '',
       trnNumber: contact?.trnNumber || '',
       address: contact?.address || '',
       city: contact?.city || '',
@@ -284,7 +320,7 @@ export default function CustomerContacts() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Phone</Label>
-            <Input 
+            <Input
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
               placeholder="+971-50-XXX-XXXX"
@@ -292,14 +328,29 @@ export default function CustomerContacts() {
             />
           </div>
           <div className="space-y-2">
+            <Label className="flex items-center gap-1.5">
+              <MessageCircle className="w-3.5 h-3.5 text-green-600" />
+              WhatsApp Number
+            </Label>
+            <Input
+              value={formData.whatsappNumber}
+              onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
+              placeholder="971501234567 (defaults to phone)"
+              data-testid="input-contact-whatsapp"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
             <Label>TRN Number</Label>
-            <Input 
+            <Input
               value={formData.trnNumber}
               onChange={(e) => setFormData({ ...formData, trnNumber: e.target.value })}
               placeholder="100XXXXXXXXX003"
               data-testid="input-contact-trn"
             />
           </div>
+          <div />
         </div>
         <div className="space-y-2">
           <Label>Address</Label>
@@ -358,6 +409,18 @@ export default function CustomerContacts() {
             <Download className="w-4 h-4 mr-2" />
             Download Template
           </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              setClearAllConfirmation('');
+              setShowClearAllDialog(true);
+            }}
+            disabled={contacts.length === 0}
+            data-testid="button-clear-all-contacts"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Clear All
+          </Button>
           <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
             <DialogTrigger asChild>
               <Button data-testid="button-add-contact">
@@ -408,103 +471,142 @@ export default function CustomerContacts() {
           <Card>
             <CardContent className="p-0">
               {isLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <div className="p-4">
+                  <TableSkeleton rows={6} columns={6} />
                 </div>
               ) : filteredContacts.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
-                  <p className="text-lg font-medium">No contacts found</p>
-                  <p className="text-muted-foreground text-sm mt-1">
-                    {searchTerm ? 'Try a different search term' : 'Add your first contact or import from Excel'}
-                  </p>
-                </div>
+                <EmptyState
+                  icon={Building2}
+                  title={searchTerm ? 'No matching contacts' : 'No contacts yet'}
+                  description={
+                    searchTerm
+                      ? 'Try a different search term or clear the search.'
+                      : 'Add your first contact, or import a list from an Excel/CSV file.'
+                  }
+                  action={
+                    searchTerm
+                      ? undefined
+                      : {
+                          label: 'Add contact',
+                          onClick: () => setShowAddDialog(true),
+                          testId: 'button-add-first-contact',
+                        }
+                  }
+                  secondaryAction={
+                    searchTerm
+                      ? { label: 'Clear search', onClick: () => setSearchTerm('') }
+                      : { label: 'Import from Excel', onClick: () => setActiveTab('import') }
+                  }
+                />
               ) : (
-                <ScrollArea className="h-[500px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Phone</TableHead>
-                        <TableHead>TRN</TableHead>
-                        <TableHead>Location</TableHead>
-                        <TableHead className="w-[140px]">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredContacts.map((contact) => (
-                        <TableRow key={contact.id} data-testid={`row-contact-${contact.id}`}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Building2 className="w-4 h-4 text-muted-foreground" />
-                              <span className="font-medium">{contact.name}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Mail className="w-4 h-4 text-muted-foreground" />
-                              {contact.email}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {contact.phone && (
-                              <div className="flex items-center gap-2">
-                                <Phone className="w-4 h-4 text-muted-foreground" />
-                                {contact.phone}
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {contact.trnNumber ? (
-                              <Badge variant="outline">{contact.trnNumber}</Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {(contact.city || contact.country) && (
-                              <div className="flex items-center gap-2">
-                                <MapPin className="w-4 h-4 text-muted-foreground" />
-                                {[contact.city, contact.country].filter(Boolean).join(', ')}
-                              </div>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                title="Generate Portal Link"
-                                onClick={() => portalLinkMutation.mutate({ contactId: contact.id, contactName: contact.name })}
-                                disabled={portalLinkMutation.isPending}
-                                data-testid={`button-portal-link-${contact.id}`}
-                              >
-                                <Link2 className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => setEditContact(contact)}
-                                data-testid={`button-edit-contact-${contact.id}`}
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => setContactToDelete(contact)}
-                                data-testid={`button-delete-contact-${contact.id}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
+                <VirtualTable<CustomerContact>
+                  rows={filteredContacts}
+                  height={500}
+                  estimateRowHeight={56}
+                  getRowId={(contact) => contact.id}
+                  rowTestId={(contact) => `row-contact-${contact.id}`}
+                  columns={[
+                    {
+                      key: 'name',
+                      header: 'Name',
+                      cell: (contact) => (
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-muted-foreground" />
+                          <span className="font-medium">{contact.name}</span>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: 'email',
+                      header: 'Email',
+                      cell: (contact) => (
+                        <div className="flex items-center gap-2 truncate">
+                          <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="truncate">{contact.email}</span>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: 'phone',
+                      header: 'Phone',
+                      cell: (contact) =>
+                        contact.phone ? (
+                          <div className="flex items-center gap-2">
+                            <Phone className="w-4 h-4 text-muted-foreground" />
+                            {contact.phone}
+                          </div>
+                        ) : null,
+                    },
+                    {
+                      key: 'trn',
+                      header: 'TRN',
+                      cell: (contact) =>
+                        contact.trnNumber ? (
+                          <Badge variant="outline">{contact.trnNumber}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        ),
+                    },
+                    {
+                      key: 'location',
+                      header: 'Location',
+                      cell: (contact) =>
+                        (contact.city || contact.country) ? (
+                          <div className="flex items-center gap-2">
+                            <MapPin className="w-4 h-4 text-muted-foreground" />
+                            {[contact.city, contact.country].filter(Boolean).join(', ')}
+                          </div>
+                        ) : null,
+                    },
+                    {
+                      key: 'actions',
+                      header: 'Actions',
+                      width: '170px',
+                      cell: (contact) => (
+                        <div className="flex items-center gap-1">
+                          {pickWhatsAppNumber(contact) && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              title="Send via WhatsApp"
+                              className="text-green-600 hover:text-green-700"
+                              onClick={() => setComposerContact(contact)}
+                              data-testid={`button-whatsapp-contact-${contact.id}`}
+                            >
+                              <SiWhatsapp className="w-4 h-4" />
+                            </Button>
+                          )}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title="Generate Portal Link"
+                            onClick={() => portalLinkMutation.mutate({ contactId: contact.id, contactName: contact.name })}
+                            disabled={portalLinkMutation.isPending}
+                            data-testid={`button-portal-link-${contact.id}`}
+                          >
+                            <Link2 className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditContact(contact)}
+                            data-testid={`button-edit-contact-${contact.id}`}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setContactToDelete(contact)}
+                            data-testid={`button-delete-contact-${contact.id}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ),
+                    },
+                  ]}
+                />
               )}
             </CardContent>
           </Card>
@@ -767,6 +869,94 @@ export default function CustomerContacts() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <WhatsAppComposer
+        open={!!composerContact}
+        onOpenChange={(open) => { if (!open) setComposerContact(null); }}
+        recipient={composerContact ? {
+          name: composerContact.name,
+          phone: composerContact.phone,
+          whatsappNumber: composerContact.whatsappNumber,
+        } : null}
+        defaultTemplateId="general_reminder"
+      />
+
+      <AlertDialog
+        open={showClearAllDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowClearAllDialog(false);
+            setClearAllConfirmation('');
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="w-5 h-5" />
+              Delete ALL contacts?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>
+                  This will permanently delete{' '}
+                  <strong>
+                    {clearPreview?.contactCount ?? contacts.length} contact
+                    {(clearPreview?.contactCount ?? contacts.length) === 1 ? '' : 's'}
+                  </strong>{' '}
+                  for this company. This action cannot be undone.
+                </p>
+                {clearPreview && clearPreview.linkedInvoiceCount > 0 && (
+                  <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3">
+                    <p className="font-medium text-destructive">
+                      {clearPreview.linkedInvoiceCount} invoice
+                      {clearPreview.linkedInvoiceCount === 1 ? ' is' : 's are'} linked to these contacts.
+                    </p>
+                    <p className="text-muted-foreground mt-1">
+                      Invoices will be kept, but their customer link will be cleared. You may need to relink
+                      them after re-importing your client list.
+                    </p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="clear-all-confirm">
+                    Type <strong>DELETE ALL</strong> to confirm:
+                  </Label>
+                  <Input
+                    id="clear-all-confirm"
+                    value={clearAllConfirmation}
+                    onChange={(e) => setClearAllConfirmation(e.target.value)}
+                    placeholder="DELETE ALL"
+                    autoComplete="off"
+                    data-testid="input-clear-all-confirm"
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-clear-all">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                clearAllMutation.mutate();
+              }}
+              disabled={clearAllConfirmation !== 'DELETE ALL' || clearAllMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-clear-all"
+            >
+              {clearAllMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete all contacts'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!contactToDelete} onOpenChange={(open) => { if (!open) setContactToDelete(null); }}>
         <AlertDialogContent>

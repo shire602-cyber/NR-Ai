@@ -12,7 +12,7 @@
 # does NOT default to a production URL or carry credentials —
 # the previous default (https://nr-ai-production.up.railway.app
 # with a hardcoded firm_owner password) was a security incident.
-# See migrations/0037_revoke_test_backdoor_accounts.sql.
+# See migrations/0051_revoke_test_backdoor_accounts.sql.
 # ============================================================
 
 set -u

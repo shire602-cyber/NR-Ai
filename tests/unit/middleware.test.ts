@@ -68,7 +68,9 @@ describe('Error Handler Middleware', () => {
       globalErrorHandler(error, req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(404);
-      expect(res.json).toHaveBeenCalledWith({ message: 'Not Found' });
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Not Found', code: expect.any(String) })
+      );
     });
 
     it('should handle ZodError with validation details', () => {
@@ -92,7 +94,10 @@ describe('Error Handler Middleware', () => {
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
           message: 'Validation error',
-          errors: expect.any(Object),
+          code: 'VALIDATION_ERROR',
+          details: expect.objectContaining({
+            errors: expect.any(Object),
+          }),
         })
       );
     });

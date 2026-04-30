@@ -1,10 +1,49 @@
 import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
 import { storage } from '../storage';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { validate } from '../middleware/validate';
 import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('inventory');
+
+// =====================================
+// Zod schemas
+// =====================================
+
+const decimalString = z
+  .union([z.string(), z.number()])
+  .transform((v) => (typeof v === 'number' ? v.toString() : v))
+  .refine((v) => /^-?\d+(\.\d+)?$/.test(v), { message: 'Must be a valid decimal number' });
+
+const productCreateSchema = z.object({
+  name: z.string().min(1, 'Name is required').max(255),
+  nameAr: z.string().max(255).optional().nullable(),
+  sku: z.string().max(64).optional().nullable(),
+  description: z.string().max(2000).optional().nullable(),
+  unitPrice: decimalString,
+  costPrice: decimalString.optional().nullable(),
+  vatRate: decimalString.optional(),
+  unit: z.string().min(1).max(32).optional(),
+  currentStock: z.number().int().optional(),
+  lowStockThreshold: z.number().int().nonnegative().optional().nullable(),
+  isActive: z.boolean().optional(),
+});
+
+const productUpdateSchema = productCreateSchema.partial();
+
+const inventoryMovementSchema = z.object({
+  type: z.enum(['purchase', 'sale', 'adjustment', 'return']),
+  quantity: z
+    .number({ invalid_type_error: 'Quantity must be a number' })
+    .int('Quantity must be an integer')
+    .refine((n) => n !== 0, { message: 'Quantity must not be zero' }),
+  unitCost: decimalString.optional().nullable(),
+  reference: z.string().max(255).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+});
 
 export function registerInventoryRoutes(app: Express) {
   // =====================================
@@ -46,7 +85,7 @@ export function registerInventoryRoutes(app: Express) {
   }));
 
   // Create product
-  app.post("/api/companies/:companyId/products", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/products", authMiddleware, requireCustomer, validate({ body: productCreateSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
 
@@ -65,7 +104,7 @@ export function registerInventoryRoutes(app: Express) {
   }));
 
   // Update product
-  app.patch("/api/products/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.patch("/api/products/:id", authMiddleware, requireCustomer, validate({ body: productUpdateSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
@@ -109,7 +148,7 @@ export function registerInventoryRoutes(app: Express) {
   // =====================================
 
   // Add inventory movement and update stock
-  app.post("/api/products/:id/movements", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/products/:id/movements", authMiddleware, requireCustomer, validate({ body: inventoryMovementSchema }), asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
@@ -125,15 +164,10 @@ export function registerInventoryRoutes(app: Express) {
 
     const { type, quantity, unitCost, reference, notes } = req.body;
 
-    // Validate type
-    const validTypes = ['purchase', 'sale', 'adjustment', 'return'];
-    if (!type || !validTypes.includes(type)) {
-      return res.status(400).json({ message: 'Invalid movement type. Must be one of: purchase, sale, adjustment, return' });
-    }
+    // Inventory movements change stock value (and COGS for sales) as of today —
+    // refuse if today falls inside a closed period.
+    await assertPeriodNotLocked(product.companyId, new Date());
 
-    if (quantity === undefined || quantity === null || quantity === 0) {
-      return res.status(400).json({ message: 'Quantity is required and must not be zero' });
-    }
 
     // Create the movement
     const movement = await storage.createInventoryMovement({

@@ -1,54 +1,62 @@
 import { motion, useInView, useAnimation, Variants } from 'framer-motion';
 import { useEffect, useRef, useState, ReactNode } from 'react';
 
-// Reusable animation variants
+// Reusable animation variants.
+//
+// The "hidden" variants intentionally keep `opacity: 1` and only animate
+// transform offsets. Earlier variants set `opacity: 0` for the entry state,
+// which left landing-page content invisible whenever the underlying scroll-
+// reveal trigger (IntersectionObserver) or framer-motion's RAF loop didn't
+// fire on first paint — the symptom users reported as "blank page".
+// Animating transform-only keeps the slide-in flourish for visitors whose
+// browsers run the animation, and degrades to plain visible text otherwise.
 export const fadeInUp: Variants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { 
-    opacity: 1, 
+  hidden: { opacity: 1, y: 20 },
+  visible: {
+    opacity: 1,
     y: 0,
     transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] }
   }
 };
 
 export const fadeInDown: Variants = {
-  hidden: { opacity: 0, y: -20 },
-  visible: { 
-    opacity: 1, 
+  hidden: { opacity: 1, y: -20 },
+  visible: {
+    opacity: 1,
     y: 0,
     transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] }
   }
 };
 
 export const fadeInLeft: Variants = {
-  hidden: { opacity: 0, x: -30 },
-  visible: { 
-    opacity: 1, 
+  hidden: { opacity: 1, x: -30 },
+  visible: {
+    opacity: 1,
     x: 0,
     transition: { duration: 0.6, ease: [0.6, -0.05, 0.01, 0.99] }
   }
 };
 
 export const fadeInRight: Variants = {
-  hidden: { opacity: 0, x: 30 },
-  visible: { 
-    opacity: 1, 
+  hidden: { opacity: 1, x: 30 },
+  visible: {
+    opacity: 1,
     x: 0,
     transition: { duration: 0.6, ease: [0.6, -0.05, 0.01, 0.99] }
   }
 };
 
 export const scaleIn: Variants = {
-  hidden: { opacity: 0, scale: 0.9 },
-  visible: { 
-    opacity: 1, 
+  hidden: { opacity: 1, scale: 0.95 },
+  visible: {
+    opacity: 1,
     scale: 1,
     transition: { duration: 0.4, ease: [0.6, -0.05, 0.01, 0.99] }
   }
 };
 
 export const staggerContainer: Variants = {
-  hidden: { opacity: 0 },
+  hidden: { opacity: 1 },
   visible: {
     opacity: 1,
     transition: {
@@ -59,9 +67,9 @@ export const staggerContainer: Variants = {
 };
 
 export const staggerItem: Variants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { 
-    opacity: 1, 
+  hidden: { opacity: 1, y: 20 },
+  visible: {
+    opacity: 1,
     y: 0,
     transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] }
   }
@@ -78,7 +86,10 @@ export const hoverLift = {
   transition: { duration: 0.2, ease: "easeOut" }
 };
 
-// Scroll-triggered animation component
+// Scroll-triggered animation component.
+// Falls back to 'visible' after a short timeout if `useInView` never fires —
+// IntersectionObserver can no-op when the page is loaded into a backgrounded
+// tab (zero-area root) which left landing-page content stuck at opacity:0.
 export function ScrollReveal({
   children,
   delay = 0,
@@ -97,7 +108,10 @@ export function ScrollReveal({
   useEffect(() => {
     if (isInView) {
       controls.start('visible');
+      return;
     }
+    const fallback = setTimeout(() => controls.start('visible'), 200);
+    return () => clearTimeout(fallback);
   }, [isInView, controls]);
 
   const variants = {
@@ -121,7 +135,8 @@ export function ScrollReveal({
   );
 }
 
-// Stagger children animation wrapper
+// Stagger children animation wrapper. Same fallback as ScrollReveal so the
+// stagger reveal never strands its children at opacity:0 if useInView no-ops.
 export function StaggerContainer({
   children,
   className = '',
@@ -131,12 +146,19 @@ export function StaggerContainer({
 }) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-50px" });
+  const [fallbackVisible, setFallbackVisible] = useState(false);
+
+  useEffect(() => {
+    if (isInView) return;
+    const t = setTimeout(() => setFallbackVisible(true), 200);
+    return () => clearTimeout(t);
+  }, [isInView]);
 
   return (
     <motion.div
       ref={ref}
       initial="hidden"
-      animate={isInView ? "visible" : "hidden"}
+      animate={isInView || fallbackVisible ? "visible" : "hidden"}
       variants={staggerContainer}
       className={className}
     >

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
-import { eq, and } from 'drizzle-orm';
-import { companyUsers, firmStaffAssignments } from '../../shared/schema';
+import { eq, and, isNull } from 'drizzle-orm';
+import { companyUsers, companies, firmStaffAssignments } from '../../shared/schema';
 
 const FIRM_ROLES = ['firm_owner', 'firm_admin'] as const;
 export type FirmRole = typeof FIRM_ROLES[number];
@@ -82,9 +82,64 @@ export function requireFirmRole() {
 }
 
 /**
+ * Require firm_owner specifically (firm_admin is rejected).
+ * Used to gate destructive / batch / firm-wide configuration endpoints.
+ *
+ * Must be used AFTER authMiddleware.
+ */
+export function requireFirmOwner() {
+  return function (req: Request, res: Response, next: NextFunction): void {
+    if (!req.user) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+    const firmRole = (req.user as any).firmRole as string | undefined;
+    if (firmRole !== 'firm_owner') {
+      res.status(403).json({ message: 'Firm owner access required' });
+      return;
+    }
+    next();
+  };
+}
+
+/**
+ * Require firm_admin or firm_owner (read-only firm endpoints).
+ * Alias for the broader requireFirmRole(); kept as a separate name so route
+ * intent is obvious at the call site.
+ *
+ * Must be used AFTER authMiddleware.
+ */
+export function requireFirmAdmin() {
+  return function (req: Request, res: Response, next: NextFunction): void {
+    if (!req.user) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+    const firmRole = (req.user as any).firmRole as string | undefined;
+    if (!firmRole || !FIRM_ROLES.includes(firmRole as FirmRole)) {
+      res.status(403).json({ message: 'NRA firm staff access required' });
+      return;
+    }
+    next();
+  };
+}
+
+/**
  * Returns the list of company IDs a firm staff member may access.
  * - firm_owner: all companies (returns null → caller should not filter)
- * - firm_admin: only assigned companies
+ * - firm_admin: client companies the user is linked to via either
+ *     (a) firm_staff_assignments — explicit firm-staff assignment, or
+ *     (b) company_users — direct membership added through /assign-staff or
+ *         auto-assigned when the firm_admin creates/imports the client.
+ *   Soft-deleted and non-client companies are excluded so firm-admin
+ *   listings stay consistent with the firm_owner view (which always
+ *   filters by companyType='client' AND deletedAt IS NULL).
+ *
+ * Why both tables? POST /firm/clients, POST /firm/clients/import and
+ * POST /firm/clients/:id/assign-staff write to company_users; the
+ * firm_staff_assignments table was added later for analytics joins.
+ * Filtering on assignments alone would silently hide every client a
+ * firm_admin has access to, so we union both sources.
  */
 export async function getAccessibleCompanyIds(
   userId: string,
@@ -92,10 +147,33 @@ export async function getAccessibleCompanyIds(
 ): Promise<string[] | null> {
   if (firmRole === 'firm_owner') return null;
 
-  const rows = await db
-    .select({ companyId: firmStaffAssignments.companyId })
-    .from(firmStaffAssignments)
-    .where(eq(firmStaffAssignments.userId, userId));
+  const [byAssignment, byMembership] = await Promise.all([
+    db
+      .select({ companyId: companies.id })
+      .from(firmStaffAssignments)
+      .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
+      .where(
+        and(
+          eq(firmStaffAssignments.userId, userId),
+          eq(companies.companyType, 'client'),
+          isNull(companies.deletedAt),
+        ),
+      ),
+    db
+      .select({ companyId: companies.id })
+      .from(companyUsers)
+      .innerJoin(companies, eq(companies.id, companyUsers.companyId))
+      .where(
+        and(
+          eq(companyUsers.userId, userId),
+          eq(companies.companyType, 'client'),
+          isNull(companies.deletedAt),
+        ),
+      ),
+  ]);
 
-  return rows.map((r: { companyId: string }) => r.companyId);
+  const ids = new Set<string>();
+  for (const r of byAssignment as { companyId: string }[]) ids.add(r.companyId);
+  for (const r of byMembership as { companyId: string }[]) ids.add(r.companyId);
+  return Array.from(ids);
 }

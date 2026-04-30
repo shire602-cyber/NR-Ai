@@ -1,5 +1,20 @@
 import * as XLSX from 'xlsx';
 import { apiRequest } from './queryClient';
+import { apiUrl } from './api';
+import { getAuthHeaders } from './auth';
+import { withCsrfHeader } from './csrf';
+
+// Shape of one row in the OCR-format Excel export. Matches the server-side
+// schema in `server/services/excel-export.service.ts` so the request body and
+// the workbook columns stay in sync.
+export interface OcrExportRow {
+  date: string | null;
+  vendor: string | null;
+  invoiceNumber: string | null;
+  amount: number | string | null;
+  vat: number | string | null;
+  currency?: string | null;
+}
 
 export interface ExportColumn {
   header: string;
@@ -69,6 +84,130 @@ export async function exportToGoogleSheets(
       error: error?.message || 'Failed to export to Google Sheets',
     };
   }
+}
+
+// Pull the filename out of a Content-Disposition header. Falls back to the
+// supplied default if the header is missing or malformed.
+function filenameFromContentDisposition(
+  disposition: string | null,
+  fallback: string,
+): string {
+  if (!disposition) return fallback;
+  const match = disposition.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+  return match ? decodeURIComponent(match[1]) : fallback;
+}
+
+async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function postForBlob(
+  url: string,
+  body: unknown,
+  fallbackFilename: string,
+): Promise<{ blob: Blob; filename: string }> {
+  let headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...getAuthHeaders(),
+  };
+  if (!headers.Authorization) {
+    headers = await withCsrfHeader('POST', headers);
+  }
+
+  const res = await fetch(apiUrl(url), {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const json = await res.json();
+      message = json.message || json.error || message;
+    } catch {
+      /* binary body — keep status */
+    }
+    throw new Error(message);
+  }
+
+  const blob = await res.blob();
+  const filename = filenameFromContentDisposition(
+    res.headers.get('Content-Disposition'),
+    fallbackFilename,
+  );
+  return { blob, filename };
+}
+
+// Download an .xlsx file containing the supplied OCR-extracted rows. Uses the
+// server-side workbook builder so formatting (bold headers, currency cells,
+// totals row) stays consistent across in-flight and bulk exports.
+export async function downloadOcrExcel(
+  rows: OcrExportRow[],
+  options: { filename?: string } = {},
+): Promise<void> {
+  const { blob, filename } = await postForBlob(
+    '/api/ocr/export-excel',
+    { rows, filename: options.filename },
+    'muhasib-ocr-receipts.xlsx',
+  );
+  await triggerBlobDownload(blob, filename);
+}
+
+// Bulk-export saved receipts for a company as .xlsx via the server. Pass
+// `ids` to filter to a subset, or omit it to export every saved receipt.
+export async function downloadReceiptsExcel(
+  companyId: string,
+  options: { ids?: string[] } = {},
+): Promise<void> {
+  const { blob, filename } = await postForBlob(
+    `/api/companies/${companyId}/receipts/export-excel`,
+    options.ids ? { ids: options.ids } : {},
+    'muhasib-receipts.xlsx',
+  );
+  await triggerBlobDownload(blob, filename);
+}
+
+// Convert the in-flight OCR data shape used by the Receipts page into the
+// row shape expected by the server. The Amount column is tax-EXCLUSIVE: prefer
+// the OCR-extracted subtotal, otherwise derive it from total - vatAmount.
+export function ocrDataToExportRow(data: {
+  merchant?: string;
+  date?: string;
+  invoiceNumber?: string | null;
+  total?: number;
+  subtotal?: number;
+  vatAmount?: number;
+  currency?: string;
+}): OcrExportRow {
+  let amount: number | null = null;
+  if (typeof data.subtotal === 'number' && Number.isFinite(data.subtotal)) {
+    amount = data.subtotal;
+  } else if (
+    typeof data.total === 'number' && Number.isFinite(data.total) &&
+    typeof data.vatAmount === 'number' && Number.isFinite(data.vatAmount)
+  ) {
+    amount = parseFloat((data.total - data.vatAmount).toFixed(2));
+  } else if (typeof data.total === 'number' && Number.isFinite(data.total)) {
+    amount = data.total;
+  }
+
+  return {
+    date: data.date ?? null,
+    vendor: data.merchant ?? null,
+    invoiceNumber: data.invoiceNumber ?? null,
+    amount,
+    vat: data.vatAmount ?? null,
+    currency: data.currency ?? 'AED',
+  };
 }
 
 export function formatDateForExport(date: Date | string | null | undefined): string {

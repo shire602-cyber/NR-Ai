@@ -4,7 +4,7 @@
 # seeded firm_owner accounts with bcrypt hashes for cleartext passwords that
 # were also committed to tests/test-firm-endpoints.sh, producing a full
 # cross-tenant compromise vector. The same hash also lived in server/db.ts
-# as a "dev seed". See migrations/0037_revoke_test_backdoor_accounts.sql.
+# as a "dev seed". See migrations/0051_revoke_test_backdoor_accounts.sql.
 #
 # This guard scans BOTH migrations/* AND server/* + tests/* + tools/* +
 # shared/* for bcrypt-hash patterns and INSERT-into-users statements.
@@ -21,7 +21,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 #   - the auth route file (calls bcrypt.hash with a runtime variable, not a
 #     literal hash)
 #   - tests that mock bcrypt or test the format of hashes
-ALLOWLIST_REGEX='/(0023_seed_test_firm_owner|0024_fix_test_firm_owner_role|0028_fix_test_credentials|0037_revoke_test_backdoor_accounts)\.sql:|tools/check-migrations-no-secrets\.sh:|server/routes/auth\.routes\.ts:|tests/.*\.test\.(ts|tsx|js):'
+ALLOWLIST_REGEX='/(0023_seed_test_firm_owner|0024_fix_test_firm_owner_role|0028_fix_test_credentials|0051_revoke_test_backdoor_accounts)\.sql:|tools/check-migrations-no-secrets\.sh:|server/routes/auth\.routes\.ts:|tests/.*\.test\.(ts|tsx|js):'
 
 # Patterns that should never appear:
 #   - bcrypt hash literals ($2a$, $2b$, $2y$ followed by cost)

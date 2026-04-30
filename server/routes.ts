@@ -17,6 +17,7 @@ import { registerAuthRoutes } from './routes/auth.routes';
 import { registerCompanyRoutes } from './routes/companies.routes';
 import { registerAccountRoutes } from './routes/accounts.routes';
 import { registerInvoiceRoutes } from './routes/invoices.routes';
+import { registerChasingRoutes } from './routes/chasing.routes';
 import { registerReceiptRoutes } from './routes/receipts.routes';
 import { registerContactRoutes } from './routes/contacts.routes';
 import { registerJournalRoutes } from './routes/journal.routes';
@@ -33,7 +34,9 @@ import { registerOnboardingRoutes } from './routes/onboarding.routes';
 import { registerBackupRoutes } from './routes/backups.routes';
 import { registerReferralRoutes } from './routes/referrals.routes';
 import { registerFeedbackRoutes } from './routes/feedback.routes';
+import { registerClientErrorRoutes } from './routes/client-errors.routes';
 import { registerVATRoutes } from './routes/vat.routes';
+import { registerVATAutopilotRoutes } from './routes/vat-autopilot.routes';
 import { registerCorporateTaxRoutes } from './routes/corporate-tax.routes';
 import { registerTeamRoutes } from './routes/team.routes';
 import { registerPortalRoutes } from './routes/portal.routes';
@@ -59,7 +62,9 @@ import { registerFirmRoutes } from './routes/firm.routes';
 import { registerFirmBulkRoutes } from './routes/firm-bulk.routes';
 import { registerFirmCommsRoutes } from './routes/firm-comms.routes';
 import { registerFirmAnalyticsRoutes } from './routes/firm-analytics.routes';
+import { registerFirmCommandCenterRoutes } from './routes/firm-command-center.routes';
 import { registerClientPortalRoutes } from './routes/client-portal.routes';
+import { registerDocumentChasingRoutes } from './routes/document-chasing.routes';
 
 const log = createLogger('routes');
 
@@ -72,6 +77,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerAccountRoutes(app);
   registerInvoiceRoutes(app);
   registerRecurringInvoiceRoutes(app);
+  registerChasingRoutes(app);
   registerReceiptRoutes(app);
   registerContactRoutes(app);
   registerJournalRoutes(app);
@@ -112,13 +118,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── Platform Features ──────────────────────────────────
   registerNotificationRoutes(app);
   registerReminderRoutes(app);
+  registerDocumentChasingRoutes(app);
   registerOnboardingRoutes(app);
   registerBackupRoutes(app);
   registerReferralRoutes(app);
   registerFeedbackRoutes(app);
+  registerClientErrorRoutes(app);
 
   // ─── UAE Compliance ─────────────────────────────────────
   registerVATRoutes(app);
+  registerVATAutopilotRoutes(app);
   registerCorporateTaxRoutes(app);
   registerExchangeRateRoutes(app);
 
@@ -138,6 +147,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerFirmBulkRoutes(app);
   registerFirmCommsRoutes(app);
   registerFirmAnalyticsRoutes(app);
+  registerFirmCommandCenterRoutes(app);
 
   log.info('All route modules registered');
 

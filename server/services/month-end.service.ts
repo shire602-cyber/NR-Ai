@@ -549,6 +549,9 @@ export async function lockPeriod(
 
 /**
  * Check if a given date falls within a locked period.
+ *
+ * A month_end_close row locks ONLY the month it represents (the calendar month
+ * ending at period_end). Locking February must not retroactively close January.
  */
 export async function isPeriodLocked(
   companyId: string,
@@ -557,15 +560,58 @@ export async function isPeriodLocked(
   await ensureMonthEndTable();
 
   const result = await pool.query(
-    `SELECT COUNT(*) AS cnt
+    `SELECT 1
      FROM month_end_close
      WHERE company_id = $1
-       AND period_end >= $2::date
-       AND status = 'locked'`,
+       AND status = 'locked'
+       AND $2::date >= date_trunc('month', period_end)::date
+       AND $2::date <= period_end
+     LIMIT 1`,
     [companyId, date]
   );
 
-  return parseInt(result.rows[0]?.cnt || '0') > 0;
+  return result.rowCount! > 0;
+}
+
+/**
+ * Unlock a previously-locked period. Reverses lockPeriod by flipping status
+ * back to 'open'. The month_end_close row itself is preserved so that audit
+ * trail (closed_by / closed_at) survives the unlock.
+ */
+export async function unlockPeriod(
+  companyId: string,
+  periodEnd: string
+): Promise<MonthEndCloseRecord | null> {
+  await ensureMonthEndTable();
+
+  const result = await pool.query(
+    `UPDATE month_end_close
+     SET status = 'open', updated_at = now()
+     WHERE company_id = $1 AND period_end = $2::date
+     RETURNING *`,
+    [companyId, periodEnd]
+  );
+
+  if (result.rowCount === 0) return null;
+  return formatCloseRecord(result.rows[0]);
+}
+
+/**
+ * List all locked periods for a company.
+ */
+export async function listLockedPeriods(
+  companyId: string
+): Promise<MonthEndCloseRecord[]> {
+  await ensureMonthEndTable();
+
+  const result = await pool.query(
+    `SELECT * FROM month_end_close
+     WHERE company_id = $1 AND status = 'locked'
+     ORDER BY period_end DESC`,
+    [companyId]
+  );
+
+  return result.rows.map(formatCloseRecord);
 }
 
 /**

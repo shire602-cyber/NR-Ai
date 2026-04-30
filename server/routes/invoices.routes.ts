@@ -1,10 +1,11 @@
 import { Router, type Express, type Request, type Response } from 'express';
 import crypto from 'crypto';
+import Decimal from 'decimal.js';
 import { storage } from '../storage';
 import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { insertInvoiceSchema } from '../../shared/schema';
+import { insertInvoiceSchema, type Invoice } from '../../shared/schema';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
 import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
@@ -20,6 +21,17 @@ import { allocateInvoiceNumber, peekNextInvoiceNumber } from '../services/invoic
 import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('invoices');
+
+// Walk the user's companies to find the invoice. Storage queries are
+// tenant-scoped, so a hit also proves the user has access.
+async function findInvoiceForUser(userId: string, invoiceId: string): Promise<Invoice | undefined> {
+  const userCompanies = await storage.getCompaniesByUserId(userId);
+  for (const c of userCompanies) {
+    const invoice = await storage.getInvoice(invoiceId, c.id);
+    if (invoice) return invoice;
+  }
+  return undefined;
+}
 
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
@@ -37,7 +49,12 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const invoices = await storage.getInvoicesByCompanyId(companyId);
+    // Use the trimmed projection so list responses don't carry full UBL XML
+    // (einvoice_xml can be 10-50KB per row). The detail endpoint pulls the
+    // full record on demand. limit/offset accept optional pagination.
+    const limit = Math.min(Number(req.query.limit) || 1000, 1000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const invoices = await storage.getInvoicesSummaryByCompanyId(companyId, { limit, offset });
     res.json(invoices);
   }));
 
@@ -46,16 +63,10 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
 
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    // Verify company access
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Fetch invoice lines
@@ -143,17 +154,22 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Calculate totals
-    let subtotal = 0;
-    let vatAmount = 0;
+    // Calculate totals using decimal.js to avoid binary-float drift on
+    // NUMERIC(15,2) columns. Sums are kept as Decimal until the very end.
+    let subtotalD = new Decimal(0);
+    let vatAmountD = new Decimal(0);
 
     for (const line of lines) {
-      const lineTotal = line.quantity * line.unitPrice;
-      subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
+      const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
+      subtotalD = subtotalD.plus(lineTotal);
+      vatAmountD = vatAmountD.plus(
+        lineTotal.times(line.vatRate ?? UAE_VAT_RATE),
+      );
     }
 
-    const total = subtotal + vatAmount;
+    const subtotal = subtotalD.toDecimalPlaces(2).toNumber();
+    const vatAmount = vatAmountD.toDecimalPlaces(2).toNumber();
+    const total = subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber();
 
     // Convert date string to Date object if it's a string
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
@@ -301,16 +317,10 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    // Get invoice
-    const invoice = await storage.getInvoice(id);
+    // Tenant-scoped lookup also enforces access.
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    // Check access
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Get all draft entries for this invoice
@@ -328,7 +338,7 @@ export function registerInvoiceRoutes(app: Express) {
 
     // Post all draft entries
     for (const entry of invoiceEntries) {
-      await storage.updateJournalEntry(entry.id, {
+      await storage.updateJournalEntry(entry.id, invoice.companyId, {
         status: 'posted',
         postedBy: userId,
         postedAt: new Date(),
@@ -344,14 +354,9 @@ export function registerInvoiceRoutes(app: Express) {
     const userId = (req as any).user.id;
     const { lines, date, ...invoiceData } = req.body;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     if (isTerminal(invoice.status)) {
@@ -361,15 +366,19 @@ export function registerInvoiceRoutes(app: Express) {
       });
     }
 
-    // Recompute totals from lines.
-    let subtotal = 0;
-    let vatAmount = 0;
+    // Recompute totals from lines using decimal.js for precise money math.
+    let subtotalD = new Decimal(0);
+    let vatAmountD = new Decimal(0);
     for (const line of lines) {
-      const lineTotal = line.quantity * line.unitPrice;
-      subtotal += lineTotal;
-      vatAmount += lineTotal * (line.vatRate ?? UAE_VAT_RATE);
+      const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
+      subtotalD = subtotalD.plus(lineTotal);
+      vatAmountD = vatAmountD.plus(
+        lineTotal.times(line.vatRate ?? UAE_VAT_RATE),
+      );
     }
-    const total = subtotal + vatAmount;
+    const subtotal = subtotalD.toDecimalPlaces(2).toNumber();
+    const vatAmount = vatAmountD.toDecimalPlaces(2).toNumber();
+    const total = subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber();
 
     // If a posted journal entry exists for this invoice and the amount is
     // changing, refuse. The user must void & reissue (or issue a credit
@@ -403,7 +412,7 @@ export function registerInvoiceRoutes(app: Express) {
     }
 
     // Update invoice
-    const updatedInvoice = await storage.updateInvoice(id, {
+    const updatedInvoice = await storage.updateInvoice(id, invoice.companyId, {
       ...invoiceData,
       date: invoiceDate,
       subtotal,
@@ -444,14 +453,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // FTA: 5-year retention. Throws RetentionViolationError → 409 via global handler.
@@ -498,23 +502,19 @@ export function registerInvoiceRoutes(app: Express) {
       });
     }
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     const oldStatus = invoice.status;
 
     // Status transitions that post journal entries (currently only
-    // draft/sent -> paid) must respect period locks. Block before mutating
-    // status so we don't end up with a status flipped but no JE.
+    // draft/sent -> paid) must respect period locks. Use the invoice's
+    // own date — that's the period the JE is being posted into — not the
+    // wall-clock now, which can mismatch when paying historic invoices.
     if (status === 'paid' && oldStatus !== 'paid') {
-      await assertPeriodNotLocked(invoice.companyId, new Date());
+      await assertPeriodNotLocked(invoice.companyId, invoice.date);
     }
 
     // No-op transition is fine.
@@ -532,8 +532,8 @@ export function registerInvoiceRoutes(app: Express) {
       if (!paymentAccountId) {
         return res.status(400).json({ message: 'Payment account is required when marking invoice as paid' });
       }
-      const paymentAccount = await storage.getAccount(paymentAccountId);
-      if (!paymentAccount || paymentAccount.companyId !== invoice.companyId) {
+      const paymentAccount = await storage.getAccount(paymentAccountId, invoice.companyId);
+      if (!paymentAccount) {
         return res.status(400).json({ message: 'Invalid payment account' });
       }
       if (paymentAccount.type !== 'asset') {
@@ -566,7 +566,7 @@ export function registerInvoiceRoutes(app: Express) {
             createdBy: userId,
           });
         } else {
-          await storage.updateInvoiceStatus(id, 'paid');
+          await storage.updateInvoiceStatus(id, invoice.companyId, 'paid');
         }
       } catch (err: any) {
         if (err?.code === 'INVOICE_TERMINAL') {
@@ -578,10 +578,99 @@ export function registerInvoiceRoutes(app: Express) {
         throw err;
       }
     } else if (oldStatus !== status) {
-      await storage.updateInvoiceStatus(id, status);
+      // Void must reverse the original revenue-recognition JE so the GL
+      // doesn't keep recognising sales that were never realised. Without
+      // this, a voided invoice would still inflate revenue and AR.
+      if (status === 'void') {
+        const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
+        const accountsReceivable = accounts.find(
+          a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount,
+        );
+        const salesRevenue = accounts.find(
+          a =>
+            a.isSystemAccount &&
+            a.type === 'income' &&
+            (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT),
+        );
+        const vatPayable = accounts.find(
+          a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT,
+        );
+
+        const existingEntries = await storage.getJournalEntriesBySource(
+          invoice.companyId,
+          'invoice',
+          id,
+        );
+        const originalEntry = existingEntries.find(e => e.status === 'posted');
+
+        if (originalEntry && accountsReceivable && salesRevenue) {
+          const reversalDate = new Date();
+          // Block reversal posting into a locked period — without this we
+          // could flip status without writing the offsetting JE.
+          await assertPeriodNotLocked(invoice.companyId, reversalDate);
+
+          const entryNumber = await storage.generateEntryNumber(
+            invoice.companyId,
+            reversalDate,
+          );
+
+          const reversalLines: Array<{
+            accountId: string;
+            debit: number;
+            credit: number;
+            description: string;
+          }> = [
+            {
+              accountId: salesRevenue.id,
+              debit: Number(invoice.subtotal),
+              credit: 0,
+              description: `Reverse revenue - Void Invoice ${invoice.number}`,
+            },
+          ];
+          if (Number(invoice.vatAmount) > 0 && vatPayable) {
+            reversalLines.push({
+              accountId: vatPayable.id,
+              debit: Number(invoice.vatAmount),
+              credit: 0,
+              description: `Reverse VAT - Void Invoice ${invoice.number}`,
+            });
+          }
+          reversalLines.push({
+            accountId: accountsReceivable.id,
+            debit: 0,
+            credit: Number(invoice.total),
+            description: `Reverse A/R - Void Invoice ${invoice.number}`,
+          });
+
+          await storage.createJournalEntry(
+            {
+              companyId: invoice.companyId,
+              date: reversalDate,
+              memo: `Void Invoice ${invoice.number} - reversal of original posting`,
+              entryNumber,
+              status: 'posted',
+              source: 'invoice',
+              sourceId: id,
+              reversedEntryId: originalEntry.id,
+              reversalReason: 'Invoice voided',
+              createdBy: userId,
+              postedBy: userId,
+              postedAt: reversalDate,
+            } as any,
+            reversalLines,
+          );
+
+          log.info(
+            { invoiceId: id, originalEntryId: originalEntry.id, entryNumber },
+            'Void reversal journal entry created',
+          );
+        }
+      }
+
+      await storage.updateInvoiceStatus(id, invoice.companyId, status);
     }
 
-    const updatedInvoice = await storage.getInvoice(id);
+    const updatedInvoice = await storage.getInvoice(id, invoice.companyId);
     log.info({ id, oldStatus, status }, 'Status transition');
 
     await recordAudit({
@@ -621,14 +710,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     const lines = await storage.getInvoiceLinesByInvoiceId(id);
@@ -644,7 +728,7 @@ export function registerInvoiceRoutes(app: Express) {
     const { xml, uuid, hash } = generateEInvoiceXML(invoice, lines, company, customer);
 
     // Save e-invoice data to the invoice record
-    await storage.updateInvoice(id, {
+    await storage.updateInvoice(id, invoice.companyId, {
       einvoiceUuid: uuid,
       einvoiceXml: xml,
       einvoiceHash: hash,
@@ -661,14 +745,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     if (!invoice.einvoiceXml) {
@@ -689,14 +768,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Generate a random token
@@ -718,14 +792,9 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
 
-    const invoice = await storage.getInvoice(id);
+    const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     const lines = await storage.getInvoiceLinesByInvoiceId(id);
@@ -827,8 +896,8 @@ export function registerInvoiceRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -854,8 +923,8 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(400).json({ message: 'paymentAccountId is required' });
     }
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -868,8 +937,8 @@ export function registerInvoiceRoutes(app: Express) {
       });
     }
 
-    const paymentAccount = await storage.getAccount(paymentAccountId);
-    if (!paymentAccount || paymentAccount.companyId !== companyId || paymentAccount.type !== 'asset') {
+    const paymentAccount = await storage.getAccount(paymentAccountId, companyId);
+    if (!paymentAccount || paymentAccount.type !== 'asset') {
       return res.status(400).json({ message: 'Invalid payment account — must be an asset (cash/bank) account' });
     }
     // Currency validation: bank-account currency (if present) must match the invoice.
@@ -957,8 +1026,8 @@ export function registerInvoiceRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const original = await storage.getInvoice(invoiceId);
-    if (!original || original.companyId !== companyId) {
+    const original = await storage.getInvoice(invoiceId, companyId);
+    if (!original) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -1141,8 +1210,8 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -1195,8 +1264,8 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
+    const invoice = await storage.getInvoice(invoiceId, companyId);
+    if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
 
@@ -1215,7 +1284,7 @@ export function registerInvoiceRoutes(app: Express) {
 
     await sendPaymentReminderEmail(to, invoice, company, pdfBuffer, newReminderCount);
 
-    await storage.updateInvoice(invoiceId, {
+    await storage.updateInvoice(invoiceId, companyId, {
       reminderCount: newReminderCount,
       lastReminderSentAt: new Date(),
     });

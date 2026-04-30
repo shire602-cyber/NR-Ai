@@ -30,9 +30,26 @@ export interface MessageTemplate {
 
 // ─── Helpers ──────────────────────────────────────────────
 
+// Normalize a UAE-leaning phone number into an E.164 digit string suitable
+// for the wa.me URL. Returns "" when the input cannot be reasonably normalized.
 export function formatPhoneForWhatsApp(phone: string): string {
-  let cleaned = phone.replace(/[^\d]/g, '');
-  if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+  let cleaned = (phone || '').replace(/[^\d]/g, '');
+  if (!cleaned) return '';
+  // 10 digits starting with 05 -> UAE local mobile, strip leading 0, add 971
+  if (cleaned.length === 10 && cleaned.startsWith('05')) {
+    cleaned = '971' + cleaned.substring(1);
+  } else if (cleaned.length === 9 && cleaned.startsWith('5')) {
+    // 9 digits starting with 5 -> UAE mobile without country/leading 0
+    cleaned = '971' + cleaned;
+  } else if (cleaned.startsWith('00')) {
+    // International prefix 00 -> drop it
+    cleaned = cleaned.substring(2);
+  } else if (cleaned.startsWith('0')) {
+    // Generic leading 0 (national prefix) -> drop it
+    cleaned = cleaned.substring(1);
+  }
+  // E.164 allows 8..15 digits after the country code; reject anything outside that.
+  if (cleaned.length < 8 || cleaned.length > 15) return '';
   return cleaned;
 }
 
@@ -40,6 +57,17 @@ export function openWhatsApp(phone: string, message: string) {
   const formatted = formatPhoneForWhatsApp(phone);
   const encoded = encodeURIComponent(message);
   window.open(`https://wa.me/${formatted}?text=${encoded}`, '_blank');
+}
+
+// Prefer a contact's dedicated WhatsApp number, fall back to phone.
+export function pickWhatsAppNumber(contact: {
+  whatsappNumber?: string | null;
+  phone?: string | null;
+}): string | null {
+  const wa = contact.whatsappNumber?.trim();
+  if (wa) return wa;
+  const ph = contact.phone?.trim();
+  return ph || null;
 }
 
 export function fillTemplate(templateStr: string, data: Record<string, string>): string {

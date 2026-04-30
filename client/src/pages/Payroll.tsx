@@ -358,15 +358,29 @@ export default function Payroll() {
   const approvePayrollMutation = useMutation({
     mutationFn: (runId: string) =>
       apiRequest('POST', `/api/payroll-runs/${runId}/approve`),
+    onMutate: async (runId: string) => {
+      const queryKey = [`/api/companies/${companyId}/payroll-runs`] as const;
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<any[]>(queryKey);
+      queryClient.setQueryData<any[]>(queryKey, (old) =>
+        old?.map((run: any) => (run.id === runId ? { ...run, status: 'approved' } : run)) ?? [],
+      );
+      return { previous, queryKey };
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
       toast({ title: 'Payroll Approved', description: 'The payroll run has been approved and items marked as paid.' });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _runId, context: any) => {
+      if (context?.previous && context?.queryKey) {
+        queryClient.setQueryData(context.queryKey, context.previous);
+      }
       toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
     },
   });
 

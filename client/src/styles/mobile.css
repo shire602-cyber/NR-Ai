@@ -413,12 +413,12 @@
 }
 
 /* RTL responsive table */
-[dir="rtl"] @media (max-width: 480px) {
-  .responsive-table tbody td {
+@media (max-width: 480px) {
+  [dir="rtl"] .responsive-table tbody td {
     flex-direction: row-reverse;
   }
 
-  .responsive-table tbody td::before {
+  [dir="rtl"] .responsive-table tbody td::before {
     margin-right: 0;
     margin-left: 1rem;
   }

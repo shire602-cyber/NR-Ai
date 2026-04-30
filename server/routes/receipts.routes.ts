@@ -3,17 +3,34 @@ import { storage } from '../storage';
 import { z } from 'zod';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { insertInvoiceSchema } from '../../shared/schema';
+import { validate } from '../middleware/validate';
+import { insertInvoiceSchema, type Account, type Receipt } from '../../shared/schema';
 import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
 import { createAndEmitNotification } from '../services/socket.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
 import { createLogger } from '../config/logger';
 import { assertRetentionExpired } from '../services/retention.service';
+import {
+  buildOcrReceiptsWorkbook,
+  buildExportFilename,
+  receiptToExportRow,
+} from '../services/excel-export.service';
 // @ts-ignore
 import PDFDocument from 'pdfkit';
 
 const log = createLogger('receipts');
+
+// Walk the user's companies and return the first match — storage.getReceipt is
+// tenant-scoped, so a hit here also proves the user has access.
+async function findReceiptForUser(userId: string, receiptId: string): Promise<Receipt | undefined> {
+  const userCompanies = await storage.getCompaniesByUserId(userId);
+  for (const c of userCompanies) {
+    const receipt = await storage.getReceipt(receiptId, c.id);
+    if (receipt) return receipt;
+  }
+  return undefined;
+}
 
 export function registerReceiptRoutes(app: Express) {
   // =====================================
@@ -34,6 +51,59 @@ export function registerReceiptRoutes(app: Express) {
     const receipts = await storage.getReceiptsByCompanyId(companyId);
     res.json(receipts);
   }));
+
+  // Bulk Excel export for saved receipts. Optional `ids` filters down to a
+  // specific subset (e.g. user selected rows in the UI). All filtering happens
+  // server-side after a tenant scope check so cross-company leaks are
+  // impossible.
+  app.post(
+    '/api/companies/:companyId/receipts/export-excel',
+    authMiddleware,
+    requireCustomer,
+    validate({ body: receiptsExportSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = (req as any).user.id;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+
+      const { ids } = req.body as z.infer<typeof receiptsExportSchema>;
+      const all = await storage.getReceiptsByCompanyId(companyId);
+      const subset = ids && ids.length > 0
+        ? all.filter((r) => ids.includes(r.id))
+        : all;
+
+      const rows = subset.map((r) =>
+        receiptToExportRow({
+          date: r.date,
+          merchant: r.merchant,
+          // receipts table doesn't store invoiceNumber; export it as blank.
+          invoiceNumber: null,
+          amount: r.amount as unknown as number,
+          vatAmount: r.vatAmount as unknown as number,
+          currency: r.currency,
+        }),
+      );
+
+      const buffer = await buildOcrReceiptsWorkbook(rows, {
+        sheetName: 'Receipts',
+        title: 'Muhasib Receipts Export',
+      });
+      const filename = buildExportFilename('muhasib-receipts');
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', String(buffer.length));
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(buffer);
+    }),
+  );
 
   // Check for similar transactions
   // Customer-only: Check for similar receipts/transactions
@@ -87,7 +157,7 @@ export function registerReceiptRoutes(app: Express) {
     });
   }));
 
-  app.post("/api/companies/:companyId/receipts", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/companies/:companyId/receipts", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
 
@@ -114,9 +184,21 @@ export function registerReceiptRoutes(app: Express) {
       imageDataLength: imageData?.length,
     }, 'Creating receipt');
 
-    // Save image to disk; store only the path in Postgres (not the base64 blob)
+    // Save image to disk; store only the path in Postgres (not the base64 blob).
+    // Validate MIME type from the data URL — never trust the filename extension.
+    const ALLOWED_RECEIPT_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     let imagePath: string | undefined;
     if (imageData) {
+      if (typeof imageData !== 'string') {
+        return res.status(400).json({ message: 'Invalid image data' });
+      }
+      const dataUrlMatch = imageData.match(/^data:([^;]+);base64,/);
+      const mimeType = dataUrlMatch ? dataUrlMatch[1].toLowerCase() : null;
+      if (!mimeType || !ALLOWED_RECEIPT_MIME.includes(mimeType)) {
+        return res.status(400).json({
+          message: 'Invalid image MIME type. Allowed: JPEG, PNG, WebP, GIF.',
+        });
+      }
       const { randomUUID } = await import('crypto');
       imagePath = await saveReceiptImage(imageData, `${randomUUID()}.jpg`);
     }
@@ -167,17 +249,18 @@ export function registerReceiptRoutes(app: Express) {
       req.body.category = null;
     }
 
-    const before = await storage.getReceipt(id);
-    const updatedReceipt = await storage.updateReceipt(id, req.body);
+    const before = await findReceiptForUser(userId, id);
+    if (!before) {
+      return res.status(404).json({ message: 'Receipt not found' });
+    }
+    const updatedReceipt = await storage.updateReceipt(id, before.companyId, req.body);
     await recordAudit({
       userId,
       companyId: updatedReceipt.companyId,
       action: 'receipt.update',
       entityType: 'receipt',
       entityId: id,
-      before: before
-        ? { merchant: before.merchant, amount: before.amount, accountId: before.accountId }
-        : null,
+      before: { merchant: before.merchant, amount: before.amount, accountId: before.accountId },
       after: {
         merchant: updatedReceipt.merchant,
         amount: updatedReceipt.amount,
@@ -195,9 +278,13 @@ export function registerReceiptRoutes(app: Express) {
     const userId = (req as any).user.id;
 
     // Remove image file before deleting DB row (best-effort; don't block on failure)
-    const existing = await storage.getReceipt(id);
+    const existing = await findReceiptForUser(userId, id);
     if (!existing) {
       return res.status(404).json({ message: 'Receipt not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
     }
     // FTA 5-year retention.
     assertRetentionExpired(existing as { createdAt: Date | string; retentionExpiresAt?: Date | string | null }, 'Receipt');
@@ -206,7 +293,7 @@ export function registerReceiptRoutes(app: Express) {
       await deleteReceiptImage(existing.imagePath);
     }
 
-    await storage.deleteReceipt(id);
+    await storage.deleteReceipt(id, existing.companyId);
 
     await recordAudit({
       userId,
@@ -233,8 +320,8 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(400).json({ message: 'Expense account and payment account are required' });
     }
 
-    // Get receipt
-    const receipt = await storage.getReceipt(id);
+    // Get receipt — findReceiptForUser also enforces tenant access.
+    const receipt = await findReceiptForUser(userId, id);
     if (!receipt) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
@@ -244,35 +331,38 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(400).json({ message: 'Receipt has already been posted' });
     }
 
-    // Check if user has access to this company
-    const hasAccess = await storage.hasCompanyAccess(userId, receipt.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-
     // Validate amount is present and positive
-    const subtotal = receipt.amount || 0;
-    const vatAmount = receipt.vatAmount || 0;
-    const totalAmount = subtotal + vatAmount;
-    if (totalAmount <= 0) {
+    const subtotalForeign = receipt.amount || 0;
+    const vatAmountForeign = receipt.vatAmount || 0;
+    const totalAmountForeign = subtotalForeign + vatAmountForeign;
+    if (totalAmountForeign <= 0) {
       return res.status(400).json({ message: 'Receipt amount must be greater than zero' });
     }
 
-    // Get accounts to validate they exist and are correct types
-    const expenseAccount = await storage.getAccount(accountId);
-    const paymentAccount = await storage.getAccount(paymentAccountId);
+    // FX: convert foreign-currency receipt amounts to AED for the journal,
+    // since journal lines are stored in base currency (AED). Receipts created
+    // before FX support default to currency='AED' and exchangeRate=1, so this
+    // is a no-op for AED receipts.
+    const receiptCurrency = receipt.currency || 'AED';
+    const isForeign = receiptCurrency !== 'AED';
+    const fxRate = Number(receipt.exchangeRate) || 1;
+    if (isForeign && fxRate <= 0) {
+      return res.status(400).json({ message: 'Foreign-currency receipt is missing a valid exchange rate' });
+    }
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+    const subtotal = isForeign ? round2(subtotalForeign * fxRate) : subtotalForeign;
+    const vatAmount = isForeign ? round2(vatAmountForeign * fxRate) : vatAmountForeign;
+    // Recompute the total from rounded components so debits/credits balance
+    // exactly (avoids 1-cent rounding drift that would fail the JE balance check).
+    const totalAmount = subtotal + vatAmount;
+
+    // Get accounts (tenant-scoped to the receipt's company — cross-tenant
+    // accounts simply won't be found) and validate they exist and are correct types.
+    const expenseAccount = await storage.getAccount(accountId, receipt.companyId);
+    const paymentAccount = await storage.getAccount(paymentAccountId, receipt.companyId);
 
     if (!expenseAccount || !paymentAccount) {
       return res.status(404).json({ message: 'Account not found' });
-    }
-
-    // CRITICAL: Validate accounts belong to the same company as the receipt
-    if (expenseAccount.companyId !== receipt.companyId) {
-      return res.status(403).json({ message: 'Expense account must belong to the same company as the receipt' });
-    }
-
-    if (paymentAccount.companyId !== receipt.companyId) {
-      return res.status(403).json({ message: 'Payment account must belong to the same company as the receipt' });
     }
 
     // Validate account types
@@ -284,13 +374,26 @@ export function registerReceiptRoutes(app: Express) {
       return res.status(400).json({ message: 'Payment account must be a cash or bank account (asset)' });
     }
 
-    // Look up VAT Recoverable (Input VAT) account by vatType to avoid hardcoded name matching
-    let vatRecoverableAccount = null;
+    // Look up Input VAT (recoverable) and, for reverse-charge receipts, Output
+    // VAT (payable) accounts by vatType to avoid hardcoded name matching.
+    const isReverseCharge = !!(receipt as any).reverseCharge;
+    let vatRecoverableAccount: Account | null = null;
+    let vatPayableAccount: Account | null = null;
     if (vatAmount > 0) {
       const companyAccounts = await storage.getAccountsByCompanyId(receipt.companyId);
       vatRecoverableAccount = companyAccounts.find(
         a => a.isVatAccount && a.vatType === 'input' && a.isActive
       ) || null;
+      if (isReverseCharge) {
+        vatPayableAccount = companyAccounts.find(
+          a => a.isVatAccount && a.vatType === 'output' && a.isActive
+        ) || null;
+        if (!vatRecoverableAccount || !vatPayableAccount) {
+          return res.status(400).json({
+            message: 'Reverse-charge posting requires both Input VAT and Output VAT accounts in the chart of accounts',
+          });
+        }
+      }
     }
 
     // Parse date safely
@@ -312,45 +415,97 @@ export function registerReceiptRoutes(app: Express) {
     // Generate entry number atomically via storage helper
     const entryNumber = await storage.generateEntryNumber(receipt.companyId, entryDate);
 
-    // Build journal lines:
-    // If VAT is present and we have a VAT Recoverable account, use 3-line entry
-    // Else use 2-line entry (debit expense full total, credit cash)
-    const journalLineInputs: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
+    // Build journal lines. Three shapes:
+    //  - Reverse-charge with VAT: 4-line entry. The vendor doesn't charge VAT,
+    //    so cash payable = subtotal. The buyer self-assesses both sides:
+    //    Dr Expense, Dr Input VAT, Cr Output VAT, Cr Cash.
+    //  - Standard with VAT: 3-line entry (Dr Expense, Dr Input VAT, Cr Cash).
+    //  - No VAT (or no Input VAT account): 2-line entry (Dr Expense, Cr Cash).
+    type JournalLineInput = {
+      accountId: string;
+      debit: number;
+      credit: number;
+      description: string;
+      foreignCurrency?: string | null;
+      foreignDebit?: number;
+      foreignCredit?: number;
+      exchangeRate?: number;
+    };
+    const journalLineInputs: JournalLineInput[] = [];
 
-    if (vatAmount > 0 && vatRecoverableAccount) {
-      // 3-line entry: Debit Expense (subtotal), Debit VAT Recoverable (VAT), Credit Cash (total)
-      journalLineInputs.push({
+    // Helper to attach foreign-currency tracking to a line when the receipt
+    // is in a non-AED currency, so the original amount and rate are preserved.
+    const withFx = (line: JournalLineInput, foreignDebit: number, foreignCredit: number): JournalLineInput => {
+      if (!isForeign) return line;
+      return {
+        ...line,
+        foreignCurrency: receiptCurrency,
+        foreignDebit: round2(foreignDebit),
+        foreignCredit: round2(foreignCredit),
+        exchangeRate: fxRate,
+      };
+    };
+
+    if (isReverseCharge && vatAmount > 0 && vatRecoverableAccount && vatPayableAccount) {
+      // Reverse-charge: vendor charges no VAT, buyer self-assesses both legs.
+      journalLineInputs.push(withFx({
         accountId: expenseAccount.id,
         debit: subtotal,
         credit: 0,
         description: `${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
-      });
-      journalLineInputs.push({
+      }, subtotalForeign, 0));
+      journalLineInputs.push(withFx({
+        accountId: vatRecoverableAccount.id,
+        debit: vatAmount,
+        credit: 0,
+        description: `Input VAT (reverse-charge) - ${receipt.merchant || 'expense'}`,
+      }, vatAmountForeign, 0));
+      journalLineInputs.push(withFx({
+        accountId: vatPayableAccount.id,
+        debit: 0,
+        credit: vatAmount,
+        description: `Output VAT (reverse-charge) - ${receipt.merchant || 'expense'}`,
+      }, 0, vatAmountForeign));
+      journalLineInputs.push(withFx({
+        accountId: paymentAccount.id,
+        debit: 0,
+        credit: subtotal,
+        description: `Payment for ${receipt.merchant || 'expense'}`,
+      }, 0, subtotalForeign));
+    } else if (vatAmount > 0 && vatRecoverableAccount) {
+      // 3-line entry: Debit Expense (subtotal), Debit VAT Recoverable (VAT), Credit Cash (total)
+      journalLineInputs.push(withFx({
+        accountId: expenseAccount.id,
+        debit: subtotal,
+        credit: 0,
+        description: `${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
+      }, subtotalForeign, 0));
+      journalLineInputs.push(withFx({
         accountId: vatRecoverableAccount.id,
         debit: vatAmount,
         credit: 0,
         description: `Input VAT - ${receipt.merchant || 'expense'}`,
-      });
-      journalLineInputs.push({
+      }, vatAmountForeign, 0));
+      journalLineInputs.push(withFx({
         accountId: paymentAccount.id,
         debit: 0,
         credit: totalAmount,
         description: `Payment for ${receipt.merchant || 'expense'}`,
-      });
+      }, 0, totalAmountForeign));
     } else {
       // 2-line entry: Debit Expense (total), Credit Cash (total)
-      journalLineInputs.push({
+      journalLineInputs.push(withFx({
         accountId: expenseAccount.id,
         debit: totalAmount,
         credit: 0,
         description: `${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
-      });
-      journalLineInputs.push({
+      }, totalAmountForeign, 0));
+      journalLineInputs.push(withFx({
         accountId: paymentAccount.id,
         debit: 0,
         credit: totalAmount,
         description: `Payment for ${receipt.merchant || 'expense'}`,
-      });
+      }, 0, totalAmountForeign));
     }
 
     // Create journal entry with lines atomically (validates balance & wraps in transaction)
@@ -371,7 +526,7 @@ export function registerReceiptRoutes(app: Express) {
     );
 
     // Update receipt with posting information
-    const updatedReceipt = await storage.updateReceipt(id, {
+    const updatedReceipt = await storage.updateReceipt(id, receipt.companyId, {
       accountId,
       paymentAccountId,
       posted: true,
@@ -565,13 +720,17 @@ export function registerReceiptRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const receipt = await storage.getReceipt(id);
-    if (!receipt || receipt.companyId !== companyId) {
+    const receipt = await storage.getReceipt(id, companyId);
+    if (!receipt) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
 
     if (receipt.imagePath) {
-      return res.sendFile(resolveImagePath(receipt.imagePath));
+      try {
+        return res.sendFile(resolveImagePath(receipt.imagePath));
+      } catch {
+        return res.status(404).json({ message: 'No image available for this receipt' });
+      }
     }
 
     // Backward compat: legacy records that have base64 imageData but no imagePath
@@ -593,8 +752,8 @@ export function registerReceiptRoutes(app: Express) {
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
 
-    const receipt = await storage.getReceipt(id);
-    if (!receipt || receipt.companyId !== companyId) {
+    const receipt = await storage.getReceipt(id, companyId);
+    if (!receipt) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
 
@@ -675,3 +834,9 @@ export function registerReceiptRoutes(app: Express) {
     res.send(pdfBuffer);
   }));
 }
+
+// Body schema for the bulk Excel export. `ids` is optional — omitting it (or
+// passing an empty array) exports every receipt the company has access to.
+const receiptsExportSchema = z.object({
+  ids: z.array(z.string().uuid()).max(5000).optional(),
+});

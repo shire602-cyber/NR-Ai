@@ -77,7 +77,7 @@ export function registerAutoReconcileRoutes(app: Express) {
         matchedType: m.matchedType === 'journal_entry' ? 'journal' : m.matchedType,
       }));
 
-      const result = await applyReconcileMatches(companyId, normalizedMatches);
+      const result = await applyReconcileMatches(companyId, normalizedMatches, userId);
       res.json({
         message: `Successfully reconciled ${result.applied} transaction(s)`,
         applied: result.applied,
