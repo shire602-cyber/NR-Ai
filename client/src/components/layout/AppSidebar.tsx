@@ -117,6 +117,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     items: [
       { titleKey: 'reports', url: '/reports' },
       { titleKey: 'vatFiling', url: '/vat-filing' },
+      { titleKey: 'vatAutopilot', url: '/vat-autopilot' },
       { titleKey: 'corporateTax', url: '/corporate-tax' },
       { titleKey: 'budgeting', url: '/budgets' },
       { titleKey: 'cashFlowForecast', url: '/cashflow-forecast' },

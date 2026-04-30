@@ -113,8 +113,8 @@ export function registerVATRoutes(app: Express) {
     // Split receipts: reverse-charge are reported in Boxes 3 (output) and 10
     // (input side, subject to partial-exemption recovery), ordinary receipts
     // feed Box 9.
-    const ordinaryReceipts = periodReceipts.filter(r => !(r as any).reverseCharge);
-    const reverseChargeReceipts = periodReceipts.filter(r => (r as any).reverseCharge);
+    const ordinaryReceipts = periodReceipts.filter(r => !r.reverseCharge);
+    const reverseChargeReceipts = periodReceipts.filter(r => r.reverseCharge);
 
     const totalExpenses = ordinaryReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
     const inputTaxGross = ordinaryReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
@@ -303,12 +303,19 @@ export function registerVATRoutes(app: Express) {
     const { id } = req.params;
     const { adjustmentAmount, adjustmentReason, notes } = req.body;
 
+    const existing = await storage.getVatReturn(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'VAT return not found' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     // Submitting the return finalises the VAT settlement against periodEnd —
     // refuse if the underlying period is already closed.
-    const existing = await storage.getVatReturn(id);
-    if (existing) {
-      await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
-    }
+    await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
 
     const vatReturn = await storage.updateVatReturn(id, {
       status: 'submitted',
@@ -324,8 +331,23 @@ export function registerVATRoutes(app: Express) {
 
   // Update VAT return (for editing draft returns)
   app.patch("/api/vat-returns/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
     const { id } = req.params;
     const updateData = req.body;
+
+    const existing = await storage.getVatReturn(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'VAT return not found' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    // Never allow the client to rewrite the tenant scope of a VAT return.
+    delete (updateData as any).companyId;
+    delete (updateData as any).id;
 
     const vatReturn = await storage.updateVatReturn(id, {
       ...updateData,
