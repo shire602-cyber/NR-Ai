@@ -138,9 +138,18 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { company, isLoading: companyLoading } = useDefaultCompany();
 
   useEffect(() => {
-    if (!companyLoading && company && !company.onboardingCompleted && location !== '/onboarding') {
-      navigate('/onboarding');
-    }
+    if (companyLoading || !company) return;
+    if (company.onboardingCompleted) return;
+    if (location === '/onboarding') return;
+
+    // Only auto-redirect once per session. If the user has dismissed the
+    // wizard (or already filled in company details) we must not trap them
+    // in a loop on every navigation — they can resume onboarding manually.
+    const REDIRECT_FLAG = 'onboarding_redirect_seen';
+    if (sessionStorage.getItem(REDIRECT_FLAG)) return;
+    sessionStorage.setItem(REDIRECT_FLAG, '1');
+
+    navigate('/onboarding');
   }, [company, companyLoading, location, navigate]);
 
 
