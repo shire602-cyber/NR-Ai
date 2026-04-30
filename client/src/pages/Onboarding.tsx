@@ -395,7 +395,15 @@ function CustomerOnboarding() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setLocation('/dashboard')}
+            onClick={async () => {
+              // Mark onboarding complete so the user is not bounced back here
+              // by ProtectedLayout's redirect on every navigation.
+              if (company) {
+                try { await completeMutation.mutateAsync(); } catch {}
+              }
+              setLocation('/dashboard');
+            }}
+            disabled={completeMutation.isPending}
             className="text-muted-foreground text-sm"
           >
             Save & continue later

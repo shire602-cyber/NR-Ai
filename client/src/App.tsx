@@ -216,13 +216,21 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     // problem to manage, not a hard redirect for the staff member.
     if (isFirmContext) return;
 
+    // Only auto-redirect once per session. If the user has dismissed the
+    // wizard (or already filled in company details) we must not trap them
+    // in a loop on every navigation — they can resume onboarding manually.
+    const REDIRECT_FLAG = 'onboarding_redirect_seen';
+    if (sessionStorage.getItem(REDIRECT_FLAG)) return;
+
     // No company yet — send the user to onboarding so they can create one.
     if (hasNoCompanies) {
+      sessionStorage.setItem(REDIRECT_FLAG, '1');
       navigate('/onboarding');
       return;
     }
 
     if (company && !company.onboardingCompleted) {
+      sessionStorage.setItem(REDIRECT_FLAG, '1');
       navigate('/onboarding');
     }
   }, [company, hasNoCompanies, companyLoading, location, navigate, isFirmContext]);
