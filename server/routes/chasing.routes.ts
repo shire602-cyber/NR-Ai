@@ -39,6 +39,18 @@ const log = createLogger('chasing');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// Walk the user's companies to find the invoice. Storage queries are
+// tenant-scoped, so a hit also proves the user has access — the multi-tenant
+// version of getInvoice requires companyId so we cannot fetch by id alone.
+async function findInvoiceForUser(userId: string, invoiceId: string) {
+  const userCompanies = await storage.getCompaniesByUserId(userId);
+  for (const c of userCompanies) {
+    const invoice = await storage.getInvoice(invoiceId, c.id);
+    if (invoice) return invoice;
+  }
+  return undefined;
+}
+
 async function loadAgingRows(companyId: string): Promise<ChaseAgingRow[]> {
   // Fetch invoices and all their payments in two queries, not 1+N. Each
   // invoice row only needs its own payments, but a single SELECT scoped to
@@ -203,11 +215,8 @@ export function registerChasingRoutes(app: Express) {
       const { invoiceId } = req.params;
       const userId = (req as any).user.id;
 
-      const invoice = await storage.getInvoice(invoiceId);
+      const invoice = await findInvoiceForUser(userId, invoiceId);
       if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
-      if (!(await storage.hasCompanyAccess(userId, invoice.companyId))) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
 
       const parse = sendChaseSchema.safeParse(req.body ?? {});
       if (!parse.success) return res.status(400).json({ message: 'Invalid payload', errors: parse.error.errors });
@@ -620,11 +629,8 @@ export function registerChasingRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { invoiceId } = req.params;
       const userId = (req as any).user.id;
-      const invoice = await storage.getInvoice(invoiceId);
+      const invoice = await findInvoiceForUser(userId, invoiceId);
       if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
-      if (!(await storage.hasCompanyAccess(userId, invoice.companyId))) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
       const value = Boolean(req.body?.doNotChase);
       await storage.setInvoiceDoNotChase(invoiceId, value);
       res.json({ invoiceId, doNotChase: value });
@@ -639,11 +645,8 @@ export function registerChasingRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { invoiceId } = req.params;
       const userId = (req as any).user.id;
-      const invoice = await storage.getInvoice(invoiceId);
+      const invoice = await findInvoiceForUser(userId, invoiceId);
       if (!invoice) return res.status(404).json({ message: 'Invoice not found' });
-      if (!(await storage.hasCompanyAccess(userId, invoice.companyId))) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
       const chases = await storage.getPaymentChasesByInvoiceId(invoiceId);
       res.json(chases);
     }),
