@@ -23,7 +23,6 @@ import {
   gte,
   inArray,
   lt,
-  lte,
   max,
   ne,
   or,
@@ -44,6 +43,7 @@ import {
   type FirmAlertSeverity,
   type FirmAlertType,
 } from '../../shared/schema';
+import { NotFoundError, ValidationError } from '../errors';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -802,6 +802,57 @@ export async function persistAlertCandidates(
   return db.insert(firmAlerts).values(rows).returning();
 }
 
+/**
+ * Atomically generate alert candidates and persist only the ones that don't
+ * already have an unresolved row for the same (companyId, alertType).
+ *
+ * Uses a transaction-scoped advisory lock keyed on the firm id so concurrent
+ * /alerts/refresh calls from the same firm serialize on the dedupe step. This
+ * prevents the read-then-insert race that would otherwise let two callers each
+ * pass the dedupe filter and create duplicate alerts.
+ */
+export async function refreshFirmAlerts(
+  firmId: string,
+  candidates: AlertCandidate[]
+): Promise<{ generated: number; created: FirmAlert[] }> {
+  if (candidates.length === 0) return { generated: 0, created: [] };
+
+  return await db.transaction(async (tx: typeof db) => {
+    // Hash the firm id into two int4 keys to fit pg_advisory_xact_lock(int, int).
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${'firm_alerts_refresh'}), hashtext(${firmId}))`,
+    );
+
+    const existing = await tx
+      .select({ companyId: firmAlerts.companyId, alertType: firmAlerts.alertType })
+      .from(firmAlerts)
+      .where(and(eq(firmAlerts.firmId, firmId), sql`${firmAlerts.resolvedAt} IS NULL`));
+
+    const existingKeys = new Set(
+      existing.map(
+        (a: { companyId: string | null; alertType: string }) =>
+          `${a.companyId ?? ''}|${a.alertType}`,
+      ),
+    );
+    const fresh = candidates.filter(
+      (c) => !existingKeys.has(`${c.companyId ?? ''}|${c.alertType}`),
+    );
+    if (fresh.length === 0) return { generated: candidates.length, created: [] };
+
+    const rows = fresh.map((c) => ({
+      firmId,
+      companyId: c.companyId,
+      alertType: c.alertType,
+      severity: c.severity,
+      message: c.message,
+      metadata: c.metadata ? JSON.stringify(c.metadata) : null,
+    }));
+
+    const created = await tx.insert(firmAlerts).values(rows).returning();
+    return { generated: candidates.length, created };
+  });
+}
+
 export async function markAlertRead(firmId: string, alertId: string): Promise<FirmAlert | null> {
   const [updated] = await db
     .update(firmAlerts)
@@ -868,15 +919,15 @@ export async function assignStaffToCompany(
 ): Promise<void> {
   // Validate the user is firm_admin. firm_owner doesn't need explicit assignment.
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  if (!u) throw new Error('User not found');
+  if (!u) throw new NotFoundError('User');
   if (u.firmRole !== 'firm_admin') {
-    throw new Error('Only firm_admin users can be assigned via this endpoint');
+    throw new ValidationError('Only firm_admin users can be assigned via this endpoint');
   }
   // Validate the target is a managed client company.
   const [c] = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
-  if (!c) throw new Error('Company not found');
+  if (!c) throw new NotFoundError('Company');
   if (c.companyType !== 'client') {
-    throw new Error('Only managed client companies can have staff assignments');
+    throw new ValidationError('Only managed client companies can have staff assignments');
   }
 
   await db
@@ -1052,6 +1103,3 @@ export async function buildFirmDashboard(
   return result;
 }
 
-// ─── Suppress unused warnings (keep imports tree-shakable) ────────────────────
-// `lte` is referenced in routes; keep here so shared utility lookups stay simple.
-void lte;

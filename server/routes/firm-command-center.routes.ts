@@ -30,11 +30,14 @@ import {
   persistAlertCandidates,
   previousPeriodRange,
   rankClients,
+  refreshFirmAlerts,
   resolveAccessibleClientIds,
   resolveAlert,
   scopeBatchToAccessible,
   assignStaffToCompany,
+  type ClientHealthScore,
   type ClientRankBy,
+  type ClientSnapshot,
   type SortDir,
 } from '../services/firm-command-center.service';
 
@@ -88,6 +91,50 @@ function currentPeriodRange(granularity: 'month' | 'quarter', now: Date = new Da
   return { start, end };
 }
 
+// ─── Local helpers ────────────────────────────────────────────────────────────
+
+// Snapshot → health-score input projection. Reused by /clients/health and
+// /clients/:companyId/health so the field list stays in sync.
+function snapshotToHealthScore(snap: ClientSnapshot): ClientHealthScore {
+  return calculateHealthScore({
+    companyId: snap.companyId,
+    companyName: snap.companyName,
+    missingDocuments: snap.missingDocuments,
+    overdueBalance: snap.overdueBalance,
+    overdueInvoiceCount: snap.overdueInvoiceCount,
+    vatStatus: snap.vatStatus,
+    vatDueDate: snap.vatDueDate,
+    receiptBacklog: snap.receiptBacklog,
+    lastActivityAt: snap.lastActivityAt,
+    onboardingCompleted: snap.onboardingCompleted,
+  });
+}
+
+// Resolve the requested companyIds against the caller's accessible set. On
+// total denial (none accessible) writes a 403 and returns null so callers can
+// early-return; otherwise returns the allowed/rejected split.
+async function resolveBatchScope(
+  req: Request,
+  res: Response,
+  requested: string[],
+): Promise<{ allowed: string[]; rejected: string[] } | null> {
+  const { id: userId, firmRole } = (req as { user?: { id: string; firmRole?: string | null } }).user ?? {};
+  if (!userId) {
+    res.status(401).json({ message: 'Authentication required' });
+    return null;
+  }
+  const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
+  const { allowedCompanyIds, rejectedCompanyIds } = scopeBatchToAccessible(requested, accessible);
+  if (allowedCompanyIds.length === 0) {
+    res.status(403).json({
+      message: 'None of the requested companies are accessible',
+      rejectedCompanyIds,
+    });
+    return null;
+  }
+  return { allowed: allowedCompanyIds, rejected: rejectedCompanyIds };
+}
+
 // ─── Registration ─────────────────────────────────────────────────────────────
 
 export function registerFirmCommandCenterRoutes(app: Express): void {
@@ -139,18 +186,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const revenueMap = new Map(revenueRows.map((r) => [r.companyId, Number(r.total ?? 0)]));
 
       const ranked = snapshots.map((s) => {
-        const health = calculateHealthScore({
-          companyId: s.companyId,
-          companyName: s.companyName,
-          missingDocuments: s.missingDocuments,
-          overdueBalance: s.overdueBalance,
-          overdueInvoiceCount: s.overdueInvoiceCount,
-          vatStatus: s.vatStatus,
-          vatDueDate: s.vatDueDate,
-          receiptBacklog: s.receiptBacklog,
-          lastActivityAt: s.lastActivityAt,
-          onboardingCompleted: s.onboardingCompleted,
-        });
+        const health = snapshotToHealthScore(s);
         return {
           ...health,
           healthScore: health.score,
@@ -194,18 +230,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const snap = snapshots[0];
       if (!snap) return res.status(404).json({ message: 'Client not found' });
 
-      const health = calculateHealthScore({
-        companyId: snap.companyId,
-        companyName: snap.companyName,
-        missingDocuments: snap.missingDocuments,
-        overdueBalance: snap.overdueBalance,
-        overdueInvoiceCount: snap.overdueInvoiceCount,
-        vatStatus: snap.vatStatus,
-        vatDueDate: snap.vatDueDate,
-        receiptBacklog: snap.receiptBacklog,
-        lastActivityAt: snap.lastActivityAt,
-        onboardingCompleted: snap.onboardingCompleted,
-      });
+      const health = snapshotToHealthScore(snap);
       const alerts = generateAlertsForClient(snap);
 
       res.json({ snapshot: snap, health, alerts });
@@ -225,8 +250,9 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── POST /alerts/refresh ───────────────────────────────────────────────
   // Recompute alert candidates for accessible clients and persist new ones.
-  // Existing alerts are not duplicated — we drop any candidate whose
-  // (companyId, alertType) already has an unresolved row.
+  // Dedupe + insert run inside a transaction with a per-firm advisory lock so
+  // concurrent refreshes for the same firm cannot both pass the dedupe check
+  // and create duplicate rows.
   router.post(
     '/alerts/refresh',
     requireFirmOwner(),
@@ -234,22 +260,10 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const { id: userId, firmRole } = (req as any).user;
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const snapshots = await buildClientSnapshots(companyIds);
-
       const candidates = snapshots.flatMap((s) => generateAlertsForClient(s));
 
-      // Dedupe against existing unresolved alerts.
-      const existing = await listFirmAlerts(userId);
-      const existingKeys = new Set(
-        existing
-          .filter((a) => !a.resolvedAt)
-          .map((a) => `${a.companyId ?? ''}|${a.alertType}`)
-      );
-      const fresh = candidates.filter(
-        (c) => !existingKeys.has(`${c.companyId ?? ''}|${c.alertType}`)
-      );
-
-      const created = await persistAlertCandidates(userId, fresh);
-      res.json({ generated: candidates.length, created: created.length, alerts: created });
+      const { generated, created } = await refreshFirmAlerts(userId, candidates);
+      res.json({ generated, created: created.length, alerts: created });
     })
   );
 
@@ -298,18 +312,16 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   );
 
   // ─── POST /staff/assign ─────────────────────────────────────────────────
+  // The service throws NotFoundError (404) / ValidationError (400) for known
+  // failure modes; asyncHandler routes these to the global error handler with
+  // the correct status. Unknown DB errors surface as 500 (default), not 400.
   router.post(
     '/staff/assign',
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { userId, companyId, role } = assignStaffSchema.parse(req.body);
-      try {
-        await assignStaffToCompany(userId, companyId, role);
-        res.json({ success: true, userId, companyId, role });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to assign staff';
-        res.status(400).json({ message });
-      }
+      await assignStaffToCompany(userId, companyId, role);
+      res.json({ success: true, userId, companyId, role });
     })
   );
 
@@ -340,19 +352,11 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     '/batch/vat-calculate',
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId } = (req as any).user;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
-      const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
-      const { allowedCompanyIds, rejectedCompanyIds } = scopeBatchToAccessible(
-        companyIds,
-        accessible
-      );
-
-      if (allowedCompanyIds.length === 0) {
-        return res
-          .status(403)
-          .json({ message: 'None of the requested companies are accessible', rejectedCompanyIds });
-      }
+      const scope = await resolveBatchScope(req, res, companyIds);
+      if (!scope) return;
+      const { allowed: allowedCompanyIds, rejected: rejectedCompanyIds } = scope;
 
       const now = new Date();
       const quarter = Math.floor(now.getMonth() / 3);
@@ -445,19 +449,11 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     '/batch/chase-payments',
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId } = (req as any).user;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
-      const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
-      const { allowedCompanyIds, rejectedCompanyIds } = scopeBatchToAccessible(
-        companyIds,
-        accessible
-      );
-
-      if (allowedCompanyIds.length === 0) {
-        return res
-          .status(403)
-          .json({ message: 'None of the requested companies are accessible', rejectedCompanyIds });
-      }
+      const scope = await resolveBatchScope(req, res, companyIds);
+      if (!scope) return;
+      const { allowed: allowedCompanyIds, rejected: rejectedCompanyIds } = scope;
 
       const now = new Date();
       // Surface overdue invoices for chasing — actual reminder dispatch lives
@@ -523,19 +519,11 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     '/batch/chase-documents',
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId } = (req as any).user;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
-      const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
-      const { allowedCompanyIds, rejectedCompanyIds } = scopeBatchToAccessible(
-        companyIds,
-        accessible
-      );
-
-      if (allowedCompanyIds.length === 0) {
-        return res
-          .status(403)
-          .json({ message: 'None of the requested companies are accessible', rejectedCompanyIds });
-      }
+      const scope = await resolveBatchScope(req, res, companyIds);
+      if (!scope) return;
+      const { allowed: allowedCompanyIds, rejected: rejectedCompanyIds } = scope;
 
       // Phase 6 records the chase intent as info alerts. The Phase 5 chase
       // worker reads these and dispatches reminders to the client portal.

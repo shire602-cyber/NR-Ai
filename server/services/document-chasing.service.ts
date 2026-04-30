@@ -6,7 +6,7 @@
 // so they can be unit-tested in isolation; the DB-bound helpers at the
 // bottom drive the routes layer.
 
-import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, ne, sql } from 'drizzle-orm';
 import { db } from '../db';
 import {
   documentRequirements,
@@ -244,23 +244,24 @@ export function computeEffectiveness(
   requirements: Array<Pick<DocumentRequirement, 'id' | 'status' | 'createdAt' | 'receivedAt'>>,
   chases: Array<Pick<DocumentChase, 'requirementId' | 'sentAt' | 'responseReceived'>>,
 ): { totalChased: number; totalReceived: number; responseRate: number; avgDaysToUpload: number | null } {
-  const chasedRequirementIds = new Set(chases.map((c) => c.requirementId));
-  const totalChased = chasedRequirementIds.size;
+  // Pre-group chases by requirementId in one O(N) pass so per-requirement
+  // lookups are O(1) instead of an O(N*M) inner filter.
+  const earliestSentByReq = new Map<string, number>();
+  for (const c of chases) {
+    const ts = new Date(c.sentAt).getTime();
+    const existing = earliestSentByReq.get(c.requirementId);
+    if (existing === undefined || ts < existing) earliestSentByReq.set(c.requirementId, ts);
+  }
+  const totalChased = earliestSentByReq.size;
   let totalReceived = 0;
   const uploadDelaysDays: number[] = [];
   for (const r of requirements) {
-    if (!chasedRequirementIds.has(r.id)) continue;
+    const sent = earliestSentByReq.get(r.id);
+    if (sent === undefined) continue;
     if (r.status === 'received' && r.receivedAt) {
       totalReceived++;
-      // Use the first chase send for that requirement as t0.
-      const sent = chases
-        .filter((c) => c.requirementId === r.id)
-        .map((c) => new Date(c.sentAt).getTime())
-        .sort((a, b) => a - b)[0];
-      if (sent) {
-        const recv = new Date(r.receivedAt).getTime();
-        uploadDelaysDays.push(Math.max(0, (recv - sent) / MS_PER_DAY));
-      }
+      const recv = new Date(r.receivedAt).getTime();
+      uploadDelaysDays.push(Math.max(0, (recv - sent) / MS_PER_DAY));
     }
   }
   const responseRate = totalChased === 0 ? 0 : totalReceived / totalChased;
@@ -343,33 +344,69 @@ export async function updateRequirement(
 // Mark a requirement as received and (when it is recurring) auto-create the
 // next instance one interval forward. Returns both rows so the caller can
 // surface the new requirement in UI.
+//
+// Wrapped in a transaction with a status-guarded UPDATE to prevent two
+// concurrent calls from both spawning a next occurrence: the second call's
+// UPDATE returns no rows because the first has already flipped status to
+// 'received', so it short-circuits before the recurring INSERT.
 export async function markRequirementReceived(
   companyId: string,
   id: string,
   uploadedDocumentId: string | null = null,
 ): Promise<{ updated: DocumentRequirement | undefined; nextOccurrence: DocumentRequirement | null }> {
-  const existing = await getRequirement(companyId, id);
-  if (!existing) return { updated: undefined, nextOccurrence: null };
-  const updated = await updateRequirement(companyId, id, {
-    status: 'received',
-    receivedAt: new Date(),
-    uploadedDocumentId,
+  return await db.transaction(async (tx: typeof db) => {
+    const [existing] = await tx
+      .select()
+      .from(documentRequirements)
+      .where(and(eq(documentRequirements.companyId, companyId), eq(documentRequirements.id, id)));
+    if (!existing) return { updated: undefined, nextOccurrence: null };
+
+    // Guard against a concurrent receive: only flip rows that are not already
+    // received/waived. If the row is already received, return it as-is and
+    // skip the recurring next-occurrence creation entirely.
+    const [updated] = await tx
+      .update(documentRequirements)
+      .set({
+        status: 'received',
+        receivedAt: new Date(),
+        uploadedDocumentId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(documentRequirements.companyId, companyId),
+          eq(documentRequirements.id, id),
+          ne(documentRequirements.status, 'received'),
+          ne(documentRequirements.status, 'waived'),
+        ),
+      )
+      .returning();
+
+    if (!updated) {
+      return { updated: existing, nextOccurrence: null };
+    }
+
+    let nextOccurrence: DocumentRequirement | null = null;
+    if (existing.isRecurring && existing.recurringIntervalDays && existing.recurringIntervalDays > 0) {
+      const nextDue = new Date(existing.dueDate);
+      nextDue.setUTCDate(nextDue.getUTCDate() + existing.recurringIntervalDays);
+      const [created] = await tx
+        .insert(documentRequirements)
+        .values({
+          companyId,
+          documentType: existing.documentType,
+          description: existing.description,
+          dueDate: nextDue,
+          isRecurring: true,
+          recurringIntervalDays: existing.recurringIntervalDays,
+          notes: existing.notes,
+          status: 'pending',
+        })
+        .returning();
+      nextOccurrence = created ?? null;
+    }
+    return { updated, nextOccurrence };
   });
-  let nextOccurrence: DocumentRequirement | null = null;
-  if (existing.isRecurring && existing.recurringIntervalDays && existing.recurringIntervalDays > 0) {
-    const nextDue = new Date(existing.dueDate);
-    nextDue.setUTCDate(nextDue.getUTCDate() + existing.recurringIntervalDays);
-    nextOccurrence = await createRequirement({
-      companyId,
-      documentType: existing.documentType,
-      description: existing.description,
-      dueDate: nextDue,
-      isRecurring: true,
-      recurringIntervalDays: existing.recurringIntervalDays,
-      notes: existing.notes,
-    });
-  }
-  return { updated, nextOccurrence };
 }
 
 export async function listChasesForRequirement(
