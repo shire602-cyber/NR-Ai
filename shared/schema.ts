@@ -164,9 +164,14 @@ export const firmStaffAssignments = pgTable("firm_staff_assignments", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  // Role this staff member plays for the assigned client (e.g. accountant | reviewer | manager).
+  // Phase 6 added this column so workload analytics can group by responsibility, not just assignment.
+  role: text("role").notNull().default("accountant"),
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
 }, (table) => ({
   userCompanyUnique: unique().on(table.userId, table.companyId),
+  userIdIdx: index("idx_firm_staff_assignments_user_id").on(table.userId),
+  companyIdIdx: index("idx_firm_staff_assignments_company_id").on(table.companyId),
 }));
 
 export const insertFirmStaffAssignmentSchema = createInsertSchema(firmStaffAssignments).omit({
@@ -2185,3 +2190,75 @@ export const updateFirmLeadSchema = insertFirmLeadSchema.partial();
 export type InsertFirmLead = z.infer<typeof insertFirmLeadSchema>;
 export type UpdateFirmLead = z.infer<typeof updateFirmLeadSchema>;
 export type FirmLead = typeof firmLeads.$inferSelect;
+
+// ===========================
+// Firm Alerts (Phase 6: Command Center)
+// ===========================
+// Surfaces critical items across all firm-managed clients (FTA deadlines, stale
+// activity, large overdue balances, incomplete onboarding, etc.).
+// firmId = user.id of the firm_owner. companyId is nullable for firm-wide alerts.
+export const firmAlerts = pgTable("firm_alerts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  firmId: uuid("firm_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  alertType: text("alert_type").notNull(), // vat_deadline | stale_activity | overdue_balance | incomplete_onboarding | document_missing
+  severity: text("severity").notNull().default("info"), // critical | warning | info
+  message: text("message").notNull(),
+  metadata: text("metadata"), // optional JSON-encoded extras (amounts, dueDate, etc.)
+  isRead: boolean("is_read").notNull().default(false),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  firmIdIdx: index("idx_firm_alerts_firm_id").on(table.firmId),
+  companyIdIdx: index("idx_firm_alerts_company_id").on(table.companyId),
+  severityIdx: index("idx_firm_alerts_severity").on(table.severity),
+  unreadIdx: index("idx_firm_alerts_unread").on(table.firmId, table.isRead),
+}));
+
+export const insertFirmAlertSchema = createInsertSchema(firmAlerts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFirmAlert = z.infer<typeof insertFirmAlertSchema>;
+export type FirmAlert = typeof firmAlerts.$inferSelect;
+export type FirmAlertSeverity = 'critical' | 'warning' | 'info';
+export type FirmAlertType =
+  | 'vat_deadline'
+  | 'stale_activity'
+  | 'overdue_balance'
+  | 'incomplete_onboarding'
+  | 'document_missing';
+
+// ===========================
+// Firm Metrics Cache (Phase 6: Command Center)
+// ===========================
+// Caches expensive firm-wide aggregations so dashboards don't recompute on every
+// page load. metricValue is a JSON-encoded payload (numbers or full objects).
+// Caller is responsible for invalidating entries past their TTL.
+export const firmMetricsCache = pgTable("firm_metrics_cache", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  firmId: uuid("firm_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  metricType: text("metric_type").notNull(), // dashboard_summary | period_comparison | health_scores | staff_workload
+  metricValue: text("metric_value").notNull(), // JSON payload
+  periodStart: timestamp("period_start"),
+  periodEnd: timestamp("period_end"),
+  calculatedAt: timestamp("calculated_at").defaultNow().notNull(),
+}, (table) => ({
+  firmTypeIdx: index("idx_firm_metrics_cache_firm_type").on(table.firmId, table.metricType),
+  // One row per (firm, type, period) so we can update-on-conflict.
+  firmTypePeriodUnique: unique("firm_metrics_cache_firm_type_period_unique").on(
+    table.firmId,
+    table.metricType,
+    table.periodStart,
+    table.periodEnd
+  ),
+}));
+
+export const insertFirmMetricsCacheSchema = createInsertSchema(firmMetricsCache).omit({
+  id: true,
+  calculatedAt: true,
+});
+
+export type InsertFirmMetricsCache = z.infer<typeof insertFirmMetricsCacheSchema>;
+export type FirmMetricsCache = typeof firmMetricsCache.$inferSelect;
