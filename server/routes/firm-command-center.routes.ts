@@ -66,8 +66,13 @@ const batchCompanyIdsSchema = z.object({
 const assignStaffSchema = z.object({
   userId: z.string().uuid(),
   companyId: z.string().uuid(),
-  role: z.string().default('accountant'),
+  role: z.enum(['accountant', 'reviewer', 'manager']).default('accountant'),
 });
+
+// Path-param schemas. Drizzle parameterizes queries, but invalid UUIDs reach
+// Postgres and surface as 500s with 22P02. Validate at the edge to return 400.
+const uuidParamSchema = z.object({ id: z.string().uuid() });
+const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
 
 // ─── Range helpers ────────────────────────────────────────────────────────────
 
@@ -115,6 +120,12 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       });
 
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      if (companyIds.length === 0) {
+        // firm_admin with no assigned clients — return empty list instead of
+        // running aggregations that hit Postgres with `IN ()` or a placeholder
+        // non-UUID value.
+        return res.json([]);
+      }
       const snapshots = await buildClientSnapshots(companyIds);
 
       // Per-client revenue + overdue for ranking
@@ -122,7 +133,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         .select({ companyId: invoices.companyId, total: sum(invoices.total) })
         .from(invoices)
         .where(
-          and(inArray(invoices.companyId, companyIds.length ? companyIds : [' ']), eq(invoices.status, 'paid'))
+          and(inArray(invoices.companyId, companyIds), eq(invoices.status, 'paid'))
         )
         .groupBy(invoices.companyId)) as Array<{ companyId: string; total: string | null }>;
       const revenueMap = new Map(revenueRows.map((r) => [r.companyId, Number(r.total ?? 0)]));
@@ -168,7 +179,11 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     '/clients/:companyId/health',
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const { companyId } = req.params;
+      const parsed = companyIdParamSchema.safeParse(req.params);
+      if (!parsed.success) {
+        return res.status(400).json({ message: 'Invalid companyId' });
+      }
+      const { companyId } = parsed.data;
 
       const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
       if (!accessible.includes(companyId)) {
@@ -239,11 +254,19 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   );
 
   // ─── PATCH /alerts/:id/read ─────────────────────────────────────────────
+  // Mutates alert state; per project RBAC convention, mutations on firm-wide
+  // resources are gated to firm_owner. firm_admin reads alerts but can't toggle
+  // read/resolved state.
   router.patch(
     '/alerts/:id/read',
+    requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
-      const updated = await markAlertRead(userId, req.params.id);
+      const parsed = uuidParamSchema.safeParse(req.params);
+      if (!parsed.success) {
+        return res.status(400).json({ message: 'Invalid alert id' });
+      }
+      const updated = await markAlertRead(userId, parsed.data.id);
       if (!updated) return res.status(404).json({ message: 'Alert not found' });
       res.json(updated);
     })
@@ -252,9 +275,14 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // ─── PATCH /alerts/:id/resolve ──────────────────────────────────────────
   router.patch(
     '/alerts/:id/resolve',
+    requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
-      const updated = await resolveAlert(userId, req.params.id);
+      const parsed = uuidParamSchema.safeParse(req.params);
+      if (!parsed.success) {
+        return res.status(400).json({ message: 'Invalid alert id' });
+      }
+      const updated = await resolveAlert(userId, parsed.data.id);
       if (!updated) return res.status(404).json({ message: 'Alert not found' });
       res.json(updated);
     })
