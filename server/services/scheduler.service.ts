@@ -451,7 +451,13 @@ async function generateDueRecurringInvoices() {
   // gap in the per-(company, year) sequence. With SKIP LOCKED, only one
   // runner ever processes a template at a time, so we can safely use
   // `allocateInvoiceNumber` and never need to delete anything.
+  //
+  // `seen` prevents infinite loops: a "skipped" template (period-lock
+  // failure, invalid lines disabled, etc.) leaves next_run_date untouched,
+  // so the SELECT would re-pick the same row in this same cron tick. Once
+  // a template id is in `seen`, we exit the loop when we'd revisit it.
   let processed = 0;
+  const seen = new Set<string>();
 
   while (true) {
     type ProcessResult =
@@ -468,9 +474,18 @@ async function generateDueRecurringInvoices() {
           advancedNextRunDate: Date;
         };
 
-    const result: ProcessResult = await db.transaction(async (tx: typeof db) => {
-      const template = await storage.fetchAndLockNextDueRecurringInvoice(tx);
+    let result: ProcessResult;
+    try {
+      result = await db.transaction(async (tx: typeof db) => {
+      // Pass seen ids so the SQL skips templates we've already visited.
+      // Without this, a period-locked or errored template stays "earliest
+      // due" and starves later templates.
+      const template = await storage.fetchAndLockNextDueRecurringInvoice(tx, Array.from(seen));
       if (!template) return null;
+      // Add to seen BEFORE any risky work — even if the tx rolls back, the
+      // seen set persists in the outer scope, so the SQL skips this id on
+      // the next iteration.
+      seen.add(template.id);
 
       const today = new Date();
 
@@ -588,7 +603,20 @@ async function generateDueRecurringInvoices() {
         invoiceDate,
         advancedNextRunDate,
       };
-    });
+      });
+    } catch (err) {
+      // Per-template error boundary: a single template's failure (insert
+      // race, allocator error, period-lock state mid-tx, etc.) must not
+      // crash the entire cron tick and starve other due templates. The
+      // failed template's row lock is released by tx rollback; `seen`
+      // already contains its id so we won't loop on it. Surfaces in logs
+      // for follow-up.
+      log.error(
+        { err },
+        'Recurring invoice tx failed for one template — continuing with others',
+      );
+      continue;
+    }
 
     if (result === null) break; // queue empty (or all locked elsewhere)
     if (result.skipped) {

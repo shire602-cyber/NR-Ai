@@ -801,31 +801,18 @@ export function registerInvoiceRoutes(app: Express) {
   // =====================================
 
   // POST /api/companies/:companyId/invoices/:invoiceId/set-recurring
-  app.post("/api/companies/:companyId/invoices/:invoiceId/set-recurring", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
-    const { companyId, invoiceId } = req.params;
-    const userId = (req as any).user.id;
-    const { isRecurring, recurringInterval, nextRecurringDate, recurringEndDate } = req.body;
-
-    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-    if (!hasAccess) return res.status(403).json({ message: 'Access denied' });
-
-    const invoice = await storage.getInvoice(invoiceId);
-    if (!invoice || invoice.companyId !== companyId) {
-      return res.status(404).json({ message: 'Invoice not found' });
-    }
-
-    if (isRecurring && !['weekly', 'monthly', 'quarterly', 'yearly'].includes(recurringInterval)) {
-      return res.status(400).json({ message: 'recurringInterval must be weekly, monthly, quarterly, or yearly' });
-    }
-
-    const updated = await storage.updateInvoice(invoiceId, {
-      isRecurring: !!isRecurring,
-      recurringInterval: isRecurring ? recurringInterval : null,
-      nextRecurringDate: isRecurring && nextRecurringDate ? new Date(nextRecurringDate) : null,
-      recurringEndDate: recurringEndDate ? new Date(recurringEndDate) : null,
-    } as any);
-
-    res.json(updated);
+  // DEPRECATED — returns 410 Gone. The scheduler reads recurring_invoices
+  // template rows (created via /api/companies/:companyId/recurring-invoices),
+  // NOT invoices.is_recurring + invoices.next_recurring_date. Setting those
+  // legacy invoice-level fields had no effect on scheduling — invoices
+  // marked recurring this way were never picked up by the cron. Migrate
+  // callers to POST /api/companies/:companyId/recurring-invoices.
+  app.post("/api/companies/:companyId/invoices/:invoiceId/set-recurring", authMiddleware, requireCustomer, asyncHandler(async (_req: Request, res: Response) => {
+    return res.status(410).json({
+      message: 'This endpoint is deprecated and no longer schedules invoices. Use POST /api/companies/:companyId/recurring-invoices instead.',
+      code: 'ENDPOINT_DEPRECATED',
+      replacement: '/api/companies/:companyId/recurring-invoices',
+    });
   }));
 
   // =====================================

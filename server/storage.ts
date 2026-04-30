@@ -569,10 +569,16 @@ export interface IStorage {
   getRecurringInvoice(id: string): Promise<RecurringInvoice | undefined>;
   getDueRecurringInvoices(): Promise<RecurringInvoice[]>;
   // Lock-and-fetch a single due template inside an open tx using
-  // SELECT ... FOR UPDATE SKIP LOCKED. Returns null if no due template is
-  // available (or another runner already holds the lock). Caller must do
-  // its work and commit the tx to release the lock.
-  fetchAndLockNextDueRecurringInvoice(tx: typeof db): Promise<RecurringInvoice | undefined>;
+  // SELECT ... FOR UPDATE SKIP LOCKED. Returns undefined if no due template
+  // is available (or another runner already holds the lock). Caller must do
+  // its work and commit the tx to release the lock. `excludeIds` lets the
+  // scheduler advance past templates it has already visited this cron tick
+  // (period-locked, errored, or already processed) so a single bad template
+  // can't starve later due templates.
+  fetchAndLockNextDueRecurringInvoice(
+    tx: typeof db,
+    excludeIds?: string[],
+  ): Promise<RecurringInvoice | undefined>;
   createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice>;
   updateRecurringInvoice(id: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice>;
   deleteRecurringInvoice(id: string): Promise<void>;
@@ -2883,19 +2889,35 @@ export class DatabaseStorage implements IStorage {
 
   async fetchAndLockNextDueRecurringInvoice(
     tx: typeof db,
+    excludeIds: string[] = [],
   ): Promise<RecurringInvoice | undefined> {
     // Pessimistic row lock with SKIP LOCKED — concurrent cron runners see
     // the row as "unavailable" rather than the same row twice. Eliminates
     // the throwaway-invoice + safeDeleteInvoice pattern that left holes in
     // the FTA-required sequential allocator.
-    const result: any = await tx.execute(sql`
-      SELECT * FROM recurring_invoices
-      WHERE is_active = true
-        AND next_run_date <= now()
-      ORDER BY next_run_date ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
-    `);
+    //
+    // `excludeIds` skips templates the caller has already visited in this
+    // cron tick. Without this, a period-locked or errored template stays
+    // "earliest due" and the scheduler would re-fetch it on every loop
+    // iteration, starving later due templates.
+    const result: any = excludeIds.length === 0
+      ? await tx.execute(sql`
+          SELECT * FROM recurring_invoices
+          WHERE is_active = true
+            AND next_run_date <= now()
+          ORDER BY next_run_date ASC
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+        `)
+      : await tx.execute(sql`
+          SELECT * FROM recurring_invoices
+          WHERE is_active = true
+            AND next_run_date <= now()
+            AND id <> ALL(${excludeIds}::uuid[])
+          ORDER BY next_run_date ASC
+          LIMIT 1
+          FOR UPDATE SKIP LOCKED
+        `);
     const rows = (result.rows ?? result) as RecurringInvoice[];
     return rows[0];
   }

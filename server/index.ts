@@ -130,12 +130,13 @@ async function bootstrap() {
     } catch (migrationErr) {
       log.error({ err: migrationErr }, 'Database migration failed — continuing startup with existing schema');
     }
+    // Belt-and-suspenders: only run alongside boot-time migrations. In prod
+    // (AUTO_MIGRATE_ON_BOOT=false), this band-aid is also off — every
+    // replica running DDL on boot is a multi-instance race risk.
+    await ensureCriticalSchema();
   } else {
-    log.info('Skipping boot-time migrations (AUTO_MIGRATE_ON_BOOT=false). Run `npm run db:migrate` in deploy phase.');
+    log.info('Skipping boot-time migrations and schema guard (AUTO_MIGRATE_ON_BOOT=false). Run `npm run db:migrate` in deploy phase.');
   }
-
-  // Belt-and-suspenders: ensure critical schema columns exist regardless of migration state
-  await ensureCriticalSchema();
 
   // Register all API routes
   const server = await registerRoutes(app);

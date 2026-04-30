@@ -351,13 +351,10 @@ export async function ensureCriticalSchema(): Promise<void> {
   // Dev/test seed data was removed 2026-04-30. The previous block contained
   // a committed bcrypt hash for the `test_firm_owner@nra.ae` account that
   // was applied to production by migrations 0023/0024/0028 (see
-  // 0037_revoke_test_backdoor_accounts.sql for the cleanup). To prevent
-  // recurrence:
-  //   - tools/check-migrations-no-secrets.sh blocks bcrypt hashes in
-  //     migrations/* AND in any source file scanned by the guard.
-  //   - Local dev should seed test users via `npm run seed:dev` (TODO: build
-  //     a seed script that calls /api/auth/register and prints generated
-  //     passwords once to stdout — never committing them).
+  // 0037_revoke_test_backdoor_accounts.sql for the cleanup).
+  // tools/check-migrations-no-secrets.sh blocks recurrence by scanning all
+  // source dirs for bcrypt-hash literals and user-row seed statements.
+  // Local dev should create test accounts via the registration API.
   const steps = schemaSteps;
 
   let ok = 0;

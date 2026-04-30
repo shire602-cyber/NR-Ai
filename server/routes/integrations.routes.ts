@@ -67,7 +67,7 @@ export function registerIntegrationRoutes(app: Express) {
   }));
 
   // Get sync history
-  app.get("/api/integrations/sync-history", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/integrations/sync-history", authMiddleware, requireCompanyAccess('query'), asyncHandler(async (req: Request, res: Response) => {
     const { companyId, integrationType } = req.query;
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
