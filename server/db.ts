@@ -85,8 +85,6 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
  * been tracked-but-not-executed in the production database.
  */
 export async function ensureCriticalSchema(): Promise<void> {
-  const isDev = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-
   const schemaSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     // ── 0003: invoice share token ────────────────────────────────────────
     {
@@ -511,78 +509,14 @@ export async function ensureCriticalSchema(): Promise<void> {
     },
   ];
 
-  // Dev/test-only seed data — never executed in production.
-  // The seeded password hash (TestFirmOwner123!) is in git history but is
-  // gated here so production environments do not accept it.
-  const devSeedSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
-    {
-      name: 'seed nra test firm_owner user',
-      sql: sql`INSERT INTO users (email, name, password_hash, is_admin, user_type, firm_role)
-        VALUES (
-          'nra.test.owner@testmail.com',
-          'NRA Test Owner',
-          '$2b$10$17KhNf4OVbKwuWeBLcJop.aECfiBQzfd2XVmAfIZ3AvYLgvhv59ea',
-          false,
-          'customer',
-          'firm_owner'
-        )
-        ON CONFLICT (email) DO UPDATE SET firm_role = 'firm_owner'`,
-    },
-    {
-      name: 'seed nra test firm company',
-      sql: sql`INSERT INTO companies (name, base_currency, locale, company_type)
-        VALUES ('NRA Test Firm', 'AED', 'en', 'customer')
-        ON CONFLICT (name) DO NOTHING`,
-    },
-    {
-      name: 'seed nra test firm company_users link',
-      sql: sql`INSERT INTO company_users (company_id, user_id, role)
-        SELECT c.id, u.id, 'owner'
-        FROM companies c
-        CROSS JOIN users u
-        WHERE c.name = 'NRA Test Firm'
-          AND u.email = 'nra.test.owner@testmail.com'
-          AND NOT EXISTS (
-            SELECT 1 FROM company_users cu
-            WHERE cu.company_id = c.id AND cu.user_id = u.id
-          )`,
-    },
-    {
-      name: 'update test_firm_owner firm_role',
-      sql: sql`UPDATE users SET firm_role = 'firm_owner' WHERE email = 'test_firm_owner@nra.ae'`,
-    },
-    {
-      name: 'seed NRA Test Company',
-      sql: sql`INSERT INTO companies (name, base_currency, locale, company_type)
-        VALUES ('NRA Test Company', 'AED', 'en', 'customer')
-        ON CONFLICT (name) DO NOTHING`,
-    },
-    {
-      name: 'seed test_firm_owner company link',
-      sql: sql`INSERT INTO company_users (company_id, user_id, role)
-        SELECT c.id, u.id, 'owner'
-        FROM companies c
-        CROSS JOIN users u
-        WHERE c.name = 'NRA Test Company'
-          AND u.email = 'test_firm_owner@nra.ae'
-          AND NOT EXISTS (
-            SELECT 1 FROM company_users cu
-            WHERE cu.company_id = c.id AND cu.user_id = u.id
-          )`,
-    },
-    {
-      name: 'seed NRA Test Company subscription',
-      sql: sql`INSERT INTO subscriptions (company_id, plan_id, plan_name, status, current_period_start, current_period_end)
-        SELECT c.id, 'free', 'Free', 'active', now(), now() + interval '100 years'
-        FROM companies c
-        WHERE c.name = 'NRA Test Company'
-          AND NOT EXISTS (
-            SELECT 1 FROM subscriptions s WHERE s.company_id = c.id
-          )`,
-    },
-  ];
-
-  const steps = isDev ? [...schemaSteps, ...devSeedSteps] : schemaSteps;
+  // Dev/test seed data was removed 2026-04-30. The previous block contained
+  // a committed bcrypt hash for the `test_firm_owner@nra.ae` account that
+  // was applied to production by migrations 0023/0024/0028 (see
+  // 0051_revoke_test_backdoor_accounts.sql for the cleanup).
+  // tools/check-migrations-no-secrets.sh blocks recurrence by scanning all
+  // source dirs for bcrypt-hash literals and user-row seed statements.
+  // Local dev should create test accounts via the registration API.
+  const steps = schemaSteps;
 
   let ok = 0;
   let failed = 0;
@@ -595,10 +529,7 @@ export async function ensureCriticalSchema(): Promise<void> {
       failed++;
     }
   }
-  log.info(
-    { ok, failed, mode: isDev ? 'dev+seeds' : 'schema-only' },
-    'Critical schema guard completed',
-  );
+  log.info({ ok, failed, mode: 'schema-only' }, 'Critical schema guard completed');
 }
 
 /** Ping the database — used by /health and connection validation. */

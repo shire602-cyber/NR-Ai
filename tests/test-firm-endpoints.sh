@@ -1,13 +1,25 @@
 #!/usr/bin/env bash
 # ============================================================
 # NRA Management Center — full endpoint smoke test
-# Usage: bash tests/test-firm-endpoints.sh
-# Pre-req: migration 0023 deployed (nra.test.owner@testmail.com exists)
+#
+# Usage:
+#   TEST_BASE=http://localhost:5000/api \
+#   TEST_EMAIL=you@example.com \
+#   TEST_PASS=yourpass \
+#   bash tests/test-firm-endpoints.sh
+#
+# All three env vars are required. The script intentionally
+# does NOT default to a production URL or carry credentials —
+# the previous default (https://nr-ai-production.up.railway.app
+# with a hardcoded firm_owner password) was a security incident.
+# See migrations/0051_revoke_test_backdoor_accounts.sql.
 # ============================================================
 
-BASE="https://nr-ai-production.up.railway.app/api"
-EMAIL="nra.test.owner@testmail.com"
-PASS="NRAtest2024!"
+set -u
+
+BASE="${TEST_BASE:?TEST_BASE env var required (e.g. http://localhost:5000/api)}"
+EMAIL="${TEST_EMAIL:?TEST_EMAIL env var required}"
+PASS="${TEST_PASS:?TEST_PASS env var required}"
 
 echo "=========================================="
 echo "  NRA Management Center — Endpoint Tests"

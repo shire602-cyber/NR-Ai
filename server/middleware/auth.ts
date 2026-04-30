@@ -175,6 +175,60 @@ export function requireUserType(...allowedTypes: string[]) {
 }
 
 /**
+ * Require that the authenticated user has access to the company referenced
+ * by the request. Reads companyId from req.params, then req.body, then
+ * req.query (in that order). Admins are NOT bypassed — admin-only routes
+ * should use requireAdmin instead.
+ *
+ * Returns 400 if no companyId can be resolved, 403 if the user is not a
+ * member of that company. Designed to be mounted after authMiddleware on
+ * any handler that previously did the check ad-hoc, so that uncited routes
+ * (and future routes) cannot leak cross-tenant data by omission.
+ */
+export function requireCompanyAccess(
+  paramSource?: 'params' | 'body' | 'query',
+) {
+  return async function (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<void> {
+    if (!req.user) {
+      res.status(401).json({ message: 'Authentication required' });
+      return;
+    }
+
+    const candidate =
+      paramSource === 'params'
+        ? req.params?.companyId
+        : paramSource === 'body'
+          ? req.body?.companyId
+          : paramSource === 'query'
+            ? (req.query?.companyId as string | undefined)
+            : (req.params?.companyId ??
+              req.body?.companyId ??
+              (req.query?.companyId as string | undefined));
+
+    if (!candidate || typeof candidate !== 'string') {
+      res.status(400).json({ message: 'Company ID required' });
+      return;
+    }
+
+    const allowed = await storage.hasCompanyAccess(req.user.id, candidate);
+    if (!allowed) {
+      log.warn(
+        { userId: req.user.id, companyId: candidate, path: req.path },
+        'requireCompanyAccess denied',
+      );
+      res.status(403).json({ message: 'Access denied to this company' });
+      return;
+    }
+
+    next();
+  };
+}
+
+/**
  * Generate a JWT token for a user.
  */
 export function generateToken(user: { id: string; email: string; isAdmin?: boolean; userType?: string; firmRole?: string | null }): string {

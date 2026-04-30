@@ -317,6 +317,7 @@ export function registerVATRoutes(app: Express) {
     // refuse if the underlying period is already closed.
     await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
 
+
     const vatReturn = await storage.updateVatReturn(id, {
       status: 'submitted',
       adjustmentAmount: adjustmentAmount || 0,
@@ -348,6 +349,7 @@ export function registerVATRoutes(app: Express) {
     // Never allow the client to rewrite the tenant scope of a VAT return.
     delete (updateData as any).companyId;
     delete (updateData as any).id;
+
 
     const vatReturn = await storage.updateVatReturn(id, {
       ...updateData,

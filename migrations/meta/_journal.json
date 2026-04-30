@@ -52,6 +52,7 @@
     { "idx": 47, "version": "7", "when": 1769600000000, "tag": "0047_vat_autopilot", "breakpoints": false },
     { "idx": 48, "version": "7", "when": 1769700000000, "tag": "0048_payment_chasing", "breakpoints": false },
     { "idx": 49, "version": "7", "when": 1769800000000, "tag": "0049_document_chasing", "breakpoints": false },
-    { "idx": 50, "version": "7", "when": 1769900000000, "tag": "0050_firm_command_center", "breakpoints": false }
+    { "idx": 50, "version": "7", "when": 1769900000000, "tag": "0050_firm_command_center", "breakpoints": false },
+    { "idx": 51, "version": "7", "when": 1770000000000, "tag": "0051_revoke_test_backdoor_accounts", "breakpoints": false }
   ]
 }

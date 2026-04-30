@@ -38,6 +38,17 @@ const envSchema = z.object({
   // === Logging ===
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
+  // === Database / migrations ===
+  // Default OFF in production: migrations should run in the deploy release
+  // phase (`npm run db:migrate`), not on every app boot. Multi-replica boot
+  // races on DDL, and a failing migration on boot takes down ALL instances
+  // with no rollback story. Set AUTO_MIGRATE_ON_BOOT=true explicitly only in
+  // dev/test or single-instance environments.
+  AUTO_MIGRATE_ON_BOOT: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
   // === Email / SMTP (optional — features gracefully degrade if not set) ===
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).optional(),

@@ -5,7 +5,7 @@ import OpenAI from 'openai';
 import { z } from 'zod';
 
 import { storage } from '../storage';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
+import { authMiddleware, requireCompanyAccess, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
@@ -24,6 +24,10 @@ import {
 } from '../services/training-data.service';
 
 const log = createLogger('ai');
+
+// RFC 4122 UUID format guard — used before validating AI-returned IDs against
+// tenant ownership, so we don't waste a DB round-trip on garbage strings.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // =============================================
 // AI client initialisation
@@ -254,21 +258,16 @@ If no valid transactions can be found, return { "transactions": [] }`
   }));
 
   // AI CFO Advice Route
-  app.post("/api/ai/cfo-advice", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+  app.post("/api/ai/cfo-advice", authMiddleware, requireCustomer, requireCompanyAccess('body'), asyncHandler(async (req: Request, res: Response) => {
     try {
       const { companyId, question, context } = req.body;
-      const userId = (req as any).user.id;
 
       if (!companyId || !question) {
         return res.status(400).json({ message: 'Company ID and question are required' });
       }
 
-      // Verify the caller has access to this company before exposing any
-      // financial context to the AI prompt.
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
-      }
+      // Tenant access already enforced by requireCompanyAccess middleware above
+      // — no inline check needed.
 
       // Get additional company data for context
       const company = await storage.getCompany(companyId);
@@ -606,8 +605,56 @@ Respond with JSON:
 
       const aiResponse = JSON.parse(completion.choices[0].message.content || '{}');
 
-      // Store detected anomalies
+      // Store detected anomalies. AI-returned UUIDs (entityId, duplicateOfId)
+      // are NOT trusted: a hallucinated or prompt-injected UUID could reference
+      // another tenant's record, producing cross-tenant pollution. We validate
+      // each ID belongs to the calling company before persisting; on mismatch
+      // we drop the field so the alert remains useful but not poisoned.
+      const validateBelongsToCompany = async (
+        entityType: string | undefined,
+        entityId: string | undefined,
+      ): Promise<string | undefined> => {
+        if (!entityId || typeof entityId !== 'string') return undefined;
+        if (!UUID_RE.test(entityId)) return undefined;
+        try {
+          // Storage getters are tenant-scoped: passing companyId means a
+          // hit also proves the record belongs to the tenant — no need to
+          // re-check r.companyId === companyId.
+          if (entityType === 'invoice') {
+            return (await storage.getInvoice(entityId, companyId)) ? entityId : undefined;
+          }
+          if (entityType === 'receipt') {
+            return (await storage.getReceipt(entityId, companyId)) ? entityId : undefined;
+          }
+          if (entityType === 'journal_entry') {
+            return (await storage.getJournalEntry(entityId, companyId)) ? entityId : undefined;
+          }
+        } catch (err) {
+          log.warn({ err, entityType, entityId }, 'AI anomaly entity validation failed');
+          return undefined;
+        }
+        return undefined;
+      };
+
       for (const anomaly of aiResponse.anomalies || []) {
+        const safeRelatedId = await validateBelongsToCompany(anomaly.entityType, anomaly.entityId);
+        // duplicateOfId must reference the same entity type as the anomaly
+        // (a "duplicate invoice" alert points at another invoice).
+        const safeDuplicateId = await validateBelongsToCompany(anomaly.entityType, anomaly.duplicateOfId);
+
+        if (anomaly.entityId && !safeRelatedId) {
+          log.warn(
+            { companyId, entityType: anomaly.entityType, aiReturnedId: anomaly.entityId },
+            'AI returned entityId not owned by tenant — dropping field',
+          );
+        }
+        if (anomaly.duplicateOfId && !safeDuplicateId) {
+          log.warn(
+            { companyId, entityType: anomaly.entityType, aiReturnedId: anomaly.duplicateOfId },
+            'AI returned duplicateOfId not owned by tenant — dropping field',
+          );
+        }
+
         await storage.createAnomalyAlert({
           companyId,
           type: anomaly.type,
@@ -615,8 +662,8 @@ Respond with JSON:
           title: anomaly.title,
           description: anomaly.description,
           relatedEntityType: anomaly.entityType,
-          relatedEntityId: anomaly.entityId,
-          duplicateOfId: anomaly.duplicateOfId,
+          relatedEntityId: safeRelatedId,
+          duplicateOfId: safeDuplicateId,
           aiConfidence: anomaly.confidence,
         });
       }
@@ -1048,7 +1095,7 @@ Respond with JSON:
   }));
 
   // Get stored forecasts
-  app.get("/api/companies/:companyId/forecasts", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  app.get("/api/companies/:companyId/forecasts", authMiddleware, requireCompanyAccess('params'), asyncHandler(async (req: Request, res: Response) => {
     try {
       const { companyId } = req.params;
       const forecasts = await storage.getCashFlowForecastsByCompanyId(companyId);
