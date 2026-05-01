@@ -64,12 +64,21 @@ export function registerCorporateTaxRoutes(app: Express) {
   app.patch("/api/corporate-tax/returns/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
 
+    const userId = (req as any).user?.id;
     const existing = await storage.getCorporateTaxReturn(id);
     if (!existing) {
       return res.status(404).json({ message: 'Corporate tax return not found' });
     }
 
-    const taxReturn = await storage.updateCorporateTaxReturn(id, req.body);
+    // Tenant guard: previous code allowed any authenticated user to mutate
+    // any corporate tax return by guessing the id. Verify membership in the
+    // owning company before update.
+    const allowed = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!allowed) {
+      return res.status(403).json({ message: 'Access denied to this corporate tax return' });
+    }
+
+    const taxReturn = await storage.updateCorporateTaxReturn(id, existing.companyId, req.body);
     res.json(taxReturn);
   }));
 

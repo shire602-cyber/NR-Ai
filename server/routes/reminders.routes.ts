@@ -63,7 +63,22 @@ export function registerReminderRoutes(app: Express) {
   // Update reminder setting
   app.patch("/api/reminder-settings/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const setting = await storage.updateReminderSetting(id, req.body);
+    const userId = (req as any).user?.id;
+
+    const existing = await storage.getReminderSettingById(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Reminder setting not found' });
+    }
+
+    // Tenant guard: previous code allowed any authenticated user to mutate
+    // any reminder setting by guessing the id. Verify membership in the
+    // owning company before update.
+    const allowed = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!allowed) {
+      return res.status(403).json({ message: 'Access denied to this reminder setting' });
+    }
+
+    const setting = await storage.updateReminderSetting(id, existing.companyId, req.body);
     res.json(setting);
   }));
 

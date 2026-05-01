@@ -391,7 +391,7 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       const { nameEn, bankName, accountNumber, iban, currency, glAccountId, isActive } = req.body;
-      const updated = await storage.updateBankAccount(accountId, {
+      const updated = await storage.updateBankAccount(accountId, companyId, {
         ...(nameEn !== undefined && { nameEn }),
         ...(bankName !== undefined && { bankName }),
         ...(accountNumber !== undefined && { accountNumber }),

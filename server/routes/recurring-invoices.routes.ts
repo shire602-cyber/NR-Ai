@@ -134,7 +134,7 @@ export function registerRecurringInvoiceRoutes(app: Express) {
     if (endDate !== undefined) updateData.endDate = endDate ? new Date(endDate) : null;
     if (linesJson !== undefined) updateData.linesJson = typeof linesJson === 'string' ? linesJson : JSON.stringify(linesJson);
 
-    const item = await storage.updateRecurringInvoice(id, updateData);
+    const item = await storage.updateRecurringInvoice(id, existing.companyId, updateData);
     log.info({ id }, 'Updated recurring invoice');
     res.json(item);
   }));
@@ -154,7 +154,7 @@ export function registerRecurringInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const item = await storage.updateRecurringInvoice(id, {
+    const item = await storage.updateRecurringInvoice(id, existing.companyId, {
       isActive: !existing.isActive,
     });
 
@@ -177,7 +177,7 @@ export function registerRecurringInvoiceRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    await storage.deleteRecurringInvoice(id);
+    await storage.deleteRecurringInvoice(id, existing.companyId);
     log.info({ id }, 'Deleted recurring invoice');
     res.json({ message: 'Recurring invoice deleted successfully' });
   }));

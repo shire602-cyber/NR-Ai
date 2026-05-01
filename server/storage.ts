@@ -309,8 +309,8 @@ export interface IStorage {
   getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined>;
   createCustomerContact(contact: InsertCustomerContact): Promise<CustomerContact>;
   createBulkCustomerContacts(contacts: InsertCustomerContact[]): Promise<CustomerContact[]>;
-  updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact>;
-  deleteCustomerContact(id: string): Promise<void>;
+  updateCustomerContact(id: string, companyId: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact>;
+  deleteCustomerContact(id: string, companyId: string): Promise<void>;
   deleteAllCustomerContactsByCompanyId(companyId: string): Promise<number>;
   countCustomerContactsByCompanyId(companyId: string): Promise<number>;
   countInvoicesWithContactByCompanyId(companyId: string): Promise<number>;
@@ -330,27 +330,27 @@ export interface IStorage {
   getWhatsappConfig(companyId: string): Promise<WhatsappConfig | undefined>;
   getWhatsappConfigByPhoneNumberId(phoneNumberId: string): Promise<WhatsappConfig | undefined>;
   createWhatsappConfig(config: InsertWhatsappConfig): Promise<WhatsappConfig>;
-  updateWhatsappConfig(id: string, data: Partial<InsertWhatsappConfig>): Promise<WhatsappConfig>;
+  updateWhatsappConfig(id: string, companyId: string, data: Partial<InsertWhatsappConfig>): Promise<WhatsappConfig>;
 
   // WhatsApp Messages
   createWhatsappMessage(message: InsertWhatsappMessage): Promise<WhatsappMessage>;
   getWhatsappMessagesByCompanyId(companyId: string): Promise<WhatsappMessage[]>;
   getWhatsappMessage(id: string): Promise<WhatsappMessage | undefined>;
-  updateWhatsappMessage(id: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage>;
+  updateWhatsappMessage(id: string, companyId: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage>;
 
   // AI Anomaly Alerts
   createAnomalyAlert(alert: InsertAnomalyAlert): Promise<AnomalyAlert>;
   getAnomalyAlertById(id: string): Promise<AnomalyAlert | undefined>;
   getAnomalyAlertsByCompanyId(companyId: string): Promise<AnomalyAlert[]>;
   getUnresolvedAnomalyAlerts(companyId: string): Promise<AnomalyAlert[]>;
-  updateAnomalyAlert(id: string, data: Partial<InsertAnomalyAlert>): Promise<AnomalyAlert>;
+  updateAnomalyAlert(id: string, companyId: string, data: Partial<InsertAnomalyAlert>): Promise<AnomalyAlert>;
   resolveAnomalyAlert(id: string, userId: string, note?: string): Promise<AnomalyAlert>;
 
   // Bank Accounts
   createBankAccount(account: InsertBankAccount): Promise<BankAccount>;
   getBankAccountsByCompanyId(companyId: string): Promise<BankAccount[]>;
   getBankAccountById(id: string): Promise<BankAccount | undefined>;
-  updateBankAccount(id: string, data: Partial<InsertBankAccount>): Promise<BankAccount>;
+  updateBankAccount(id: string, companyId: string, data: Partial<InsertBankAccount>): Promise<BankAccount>;
 
   // Bank Transactions
   createBankTransaction(transaction: InsertBankTransaction): Promise<BankTransaction>;
@@ -390,8 +390,8 @@ export interface IStorage {
   getEcommerceIntegrations(companyId: string): Promise<EcommerceIntegration[]>;
   getEcommerceIntegrationById(id: string): Promise<EcommerceIntegration | undefined>;
   createEcommerceIntegration(integration: InsertEcommerceIntegration): Promise<EcommerceIntegration>;
-  updateEcommerceIntegration(id: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration>;
-  deleteEcommerceIntegration(id: string): Promise<void>;
+  updateEcommerceIntegration(id: string, companyId: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration>;
+  deleteEcommerceIntegration(id: string, companyId: string): Promise<void>;
 
   // E-Commerce Transactions
   getEcommerceTransactions(companyId: string): Promise<EcommerceTransaction[]>;
@@ -420,12 +420,13 @@ export interface IStorage {
   // Reminder Settings
   getReminderSettingsByCompanyId(companyId: string): Promise<ReminderSetting[]>;
   createReminderSetting(setting: InsertReminderSetting): Promise<ReminderSetting>;
-  updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting>;
+  getReminderSettingById(id: string): Promise<ReminderSetting | undefined>;
+  updateReminderSetting(id: string, companyId: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting>;
   
   // Reminder Logs
   getReminderLogsByCompanyId(companyId: string): Promise<ReminderLog[]>;
   createReminderLog(log: InsertReminderLog): Promise<ReminderLog>;
-  updateReminderLog(id: string, data: Partial<InsertReminderLog>): Promise<ReminderLog>;
+  updateReminderLog(id: string, companyId: string, data: Partial<InsertReminderLog>): Promise<ReminderLog>;
   
   // User Onboarding
   getUserOnboarding(userId: string): Promise<UserOnboarding | undefined>;
@@ -487,14 +488,14 @@ export interface IStorage {
   getVatReturnsByCompanyId(companyId: string): Promise<VatReturn[]>;
   getVatReturn(id: string): Promise<VatReturn | undefined>;
   createVatReturn(vatReturn: InsertVatReturn): Promise<VatReturn>;
-  updateVatReturn(id: string, data: Partial<InsertVatReturn>): Promise<VatReturn>;
-  deleteVatReturn(id: string): Promise<void>;
+  updateVatReturn(id: string, companyId: string, data: Partial<InsertVatReturn>): Promise<VatReturn>;
+  deleteVatReturn(id: string, companyId: string): Promise<void>;
 
   // Corporate Tax Returns
   getCorporateTaxReturnsByCompanyId(companyId: string): Promise<CorporateTaxReturn[]>;
   getCorporateTaxReturn(id: string): Promise<CorporateTaxReturn | undefined>;
   createCorporateTaxReturn(data: InsertCorporateTaxReturn): Promise<CorporateTaxReturn>;
-  updateCorporateTaxReturn(id: string, data: Partial<CorporateTaxReturn>): Promise<CorporateTaxReturn>;
+  updateCorporateTaxReturn(id: string, companyId: string, data: Partial<CorporateTaxReturn>): Promise<CorporateTaxReturn>;
 
   // Team Management
   // Tenant-scoped: requires companyId so an owner of company A cannot
@@ -513,8 +514,8 @@ export interface IStorage {
   getDocuments(companyId: string): Promise<Document[]>;
   getDocument(id: string): Promise<Document | undefined>;
   createDocument(document: InsertDocument): Promise<Document>;
-  updateDocument(id: string, data: Partial<InsertDocument>): Promise<Document>;
-  deleteDocument(id: string): Promise<void>;
+  updateDocument(id: string, companyId: string, data: Partial<InsertDocument>): Promise<Document>;
+  deleteDocument(id: string, companyId: string): Promise<void>;
 
   // Tax Return Archive
   getTaxReturnArchive(companyId: string): Promise<TaxReturnArchive[]>;
@@ -525,8 +526,8 @@ export interface IStorage {
   getComplianceTasks(companyId: string): Promise<ComplianceTask[]>;
   getComplianceTask(id: string): Promise<ComplianceTask | undefined>;
   createComplianceTask(task: InsertComplianceTask): Promise<ComplianceTask>;
-  updateComplianceTask(id: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask>;
-  deleteComplianceTask(id: string): Promise<void>;
+  updateComplianceTask(id: string, companyId: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask>;
+  deleteComplianceTask(id: string, companyId: string): Promise<void>;
 
   // Messages
   getMessages(companyId: string): Promise<Message[]>;
@@ -556,8 +557,9 @@ export interface IStorage {
   // Client Notes (Admin internal notes)
   getClientNotes(companyId: string): Promise<ClientNote[]>;
   createClientNote(note: InsertClientNote): Promise<ClientNote>;
-  updateClientNote(id: string, data: Partial<InsertClientNote>): Promise<ClientNote>;
-  deleteClientNote(id: string): Promise<void>;
+  getClientNoteById(id: string): Promise<ClientNote | undefined>;
+  updateClientNote(id: string, companyId: string, data: Partial<InsertClientNote>): Promise<ClientNote>;
+  deleteClientNote(id: string, companyId: string): Promise<void>;
 
   // Admin User Management
   updateUser(id: string, data: { name?: string; email?: string; isAdmin?: boolean }): Promise<User>;
@@ -571,15 +573,15 @@ export interface IStorage {
   getEngagementsByCompany(companyId: string): Promise<Engagement[]>;
   getEngagement(id: string): Promise<Engagement | undefined>;
   createEngagement(engagement: InsertEngagement): Promise<Engagement>;
-  updateEngagement(id: string, data: Partial<InsertEngagement>): Promise<Engagement>;
-  deleteEngagement(id: string): Promise<void>;
+  updateEngagement(id: string, companyId: string, data: Partial<InsertEngagement>): Promise<Engagement>;
+  deleteEngagement(id: string, companyId: string): Promise<void>;
 
   // Service Invoices (NR billing to clients)
   getServiceInvoices(companyId?: string): Promise<ServiceInvoice[]>;
   getServiceInvoice(id: string): Promise<ServiceInvoice | undefined>;
   createServiceInvoice(invoice: InsertServiceInvoice): Promise<ServiceInvoice>;
-  updateServiceInvoice(id: string, data: Partial<InsertServiceInvoice>): Promise<ServiceInvoice>;
-  deleteServiceInvoice(id: string): Promise<void>;
+  updateServiceInvoice(id: string, companyId: string, data: Partial<InsertServiceInvoice>): Promise<ServiceInvoice>;
+  deleteServiceInvoice(id: string, companyId: string): Promise<void>;
 
   // Service Invoice Lines
   getServiceInvoiceLines(serviceInvoiceId: string): Promise<ServiceInvoiceLine[]>;
@@ -589,12 +591,12 @@ export interface IStorage {
   // FTA Emails
   getFtaEmails(companyId: string): Promise<FtaEmail[]>;
   createFtaEmail(email: InsertFtaEmail): Promise<FtaEmail>;
-  updateFtaEmail(id: string, data: Partial<InsertFtaEmail>): Promise<FtaEmail>;
+  updateFtaEmail(id: string, companyId: string, data: Partial<InsertFtaEmail>): Promise<FtaEmail>;
 
   // Customer Subscriptions
   getSubscription(companyId: string): Promise<Subscription | undefined>;
   createSubscription(subscription: InsertSubscription): Promise<Subscription>;
-  updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription>;
+  updateSubscription(id: string, companyId: string, data: Partial<InsertSubscription>): Promise<Subscription>;
 
   // User type management
   updateUserType(id: string, userType: string): Promise<User>;
@@ -606,15 +608,15 @@ export interface IStorage {
   getBackupsByCompanyId(companyId: string): Promise<Backup[]>;
   getBackup(id: string): Promise<Backup | undefined>;
   createBackup(backup: InsertBackup): Promise<Backup>;
-  updateBackup(id: string, data: Partial<InsertBackup>): Promise<Backup>;
-  deleteBackup(id: string): Promise<void>;
+  updateBackup(id: string, companyId: string, data: Partial<InsertBackup>): Promise<Backup>;
+  deleteBackup(id: string, companyId: string): Promise<void>;
   
   // AI Conversations
   createAiConversation(conversation: InsertAiConversation): Promise<AiConversation>;
   getAiConversationsByUserId(userId: string, limit?: number): Promise<AiConversation[]>;
   getAiConversationsByCompanyId(companyId: string, limit?: number): Promise<AiConversation[]>;
   getAiConversation(id: string): Promise<AiConversation | undefined>;
-  deleteAiConversation(id: string): Promise<void>;
+  deleteAiConversation(id: string, companyId: string): Promise<void>;
 
   // Recurring Invoices
   getRecurringInvoicesByCompanyId(companyId: string): Promise<RecurringInvoice[]>;
@@ -632,8 +634,8 @@ export interface IStorage {
     excludeIds?: string[],
   ): Promise<RecurringInvoice | undefined>;
   createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice>;
-  updateRecurringInvoice(id: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice>;
-  deleteRecurringInvoice(id: string): Promise<void>;
+  updateRecurringInvoice(id: string, companyId: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice>;
+  deleteRecurringInvoice(id: string, companyId: string): Promise<void>;
 
   // Invoice Payments
   getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]>;
@@ -685,8 +687,8 @@ export interface IStorage {
   getProductsByCompanyId(companyId: string): Promise<Product[]>;
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(data: InsertProduct): Promise<Product>;
-  updateProduct(id: string, data: Partial<Product>): Promise<Product>;
-  deleteProduct(id: string): Promise<void>;
+  updateProduct(id: string, companyId: string, data: Partial<Product>): Promise<Product>;
+  deleteProduct(id: string, companyId: string): Promise<void>;
 
   // Inventory Movements
   getInventoryMovementsByProductId(productId: string): Promise<InventoryMovement[]>;
@@ -1597,17 +1599,21 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact> {
+  async updateCustomerContact(id: string, companyId: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact> {
     const [contact] = await db.update(customerContacts)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(customerContacts.id, id))
+      .where(and(eq(customerContacts.id, id), eq(customerContacts.companyId, companyId)))
       .returning();
-    if (!contact) throw new Error('Customer contact not found');
+    if (!contact) throw new NotFoundError('Customer contact');
     return contact;
   }
 
-  async deleteCustomerContact(id: string): Promise<void> {
-    await db.delete(customerContacts).where(eq(customerContacts.id, id));
+  async deleteCustomerContact(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(customerContacts)
+      .where(and(eq(customerContacts.id, id), eq(customerContacts.companyId, companyId)))
+      .returning({ id: customerContacts.id });
+    if (result.length === 0) throw new NotFoundError('Customer contact');
   }
 
   async deleteAllCustomerContactsByCompanyId(companyId: string): Promise<number> {
@@ -1716,14 +1722,14 @@ export class DatabaseStorage implements IStorage {
     return config;
   }
 
-  async updateWhatsappConfig(id: string, data: Partial<InsertWhatsappConfig>): Promise<WhatsappConfig> {
+  async updateWhatsappConfig(id: string, companyId: string, data: Partial<InsertWhatsappConfig>): Promise<WhatsappConfig> {
     const [config] = await db
       .update(whatsappConfigs)
       .set(data)
-      .where(eq(whatsappConfigs.id, id))
+      .where(and(eq(whatsappConfigs.id, id), eq(whatsappConfigs.companyId, companyId)))
       .returning();
     if (!config) {
-      throw new Error('WhatsApp configuration not found');
+      throw new NotFoundError('WhatsApp configuration');
     }
     return config;
   }
@@ -1753,14 +1759,14 @@ export class DatabaseStorage implements IStorage {
     return message || undefined;
   }
 
-  async updateWhatsappMessage(id: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage> {
+  async updateWhatsappMessage(id: string, companyId: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage> {
     const [message] = await db
       .update(whatsappMessages)
       .set(data)
-      .where(eq(whatsappMessages.id, id))
+      .where(and(eq(whatsappMessages.id, id), eq(whatsappMessages.companyId, companyId)))
       .returning();
     if (!message) {
-      throw new Error('WhatsApp message not found');
+      throw new NotFoundError('WhatsApp message');
     }
     return message;
   }
@@ -1801,14 +1807,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(anomalyAlerts.createdAt));
   }
 
-  async updateAnomalyAlert(id: string, data: Partial<InsertAnomalyAlert>): Promise<AnomalyAlert> {
+  async updateAnomalyAlert(id: string, companyId: string, data: Partial<InsertAnomalyAlert>): Promise<AnomalyAlert> {
     const [alert] = await db
       .update(anomalyAlerts)
       .set(data)
-      .where(eq(anomalyAlerts.id, id))
+      .where(and(eq(anomalyAlerts.id, id), eq(anomalyAlerts.companyId, companyId)))
       .returning();
     if (!alert) {
-      throw new Error('Anomaly alert not found');
+      throw new NotFoundError('Anomaly alert');
     }
     return alert;
   }
@@ -1849,13 +1855,13 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async updateBankAccount(id: string, data: Partial<InsertBankAccount>): Promise<BankAccount> {
+  async updateBankAccount(id: string, companyId: string, data: Partial<InsertBankAccount>): Promise<BankAccount> {
     const [result] = await db
       .update(bankAccounts)
       .set(data)
-      .where(eq(bankAccounts.id, id))
+      .where(and(eq(bankAccounts.id, id), eq(bankAccounts.companyId, companyId)))
       .returning();
-    if (!result) throw new Error('Bank account not found');
+    if (!result) throw new NotFoundError('Bank account');
     return result;
   }
 
@@ -2161,20 +2167,24 @@ export class DatabaseStorage implements IStorage {
     return integration;
   }
 
-  async updateEcommerceIntegration(id: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration> {
+  async updateEcommerceIntegration(id: string, companyId: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration> {
     const [integration] = await db
       .update(ecommerceIntegrations)
       .set(data)
-      .where(eq(ecommerceIntegrations.id, id))
+      .where(and(eq(ecommerceIntegrations.id, id), eq(ecommerceIntegrations.companyId, companyId)))
       .returning();
     if (!integration) {
-      throw new Error('E-commerce integration not found');
+      throw new NotFoundError('E-commerce integration');
     }
     return integration;
   }
 
-  async deleteEcommerceIntegration(id: string): Promise<void> {
-    await db.delete(ecommerceIntegrations).where(eq(ecommerceIntegrations.id, id));
+  async deleteEcommerceIntegration(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(ecommerceIntegrations)
+      .where(and(eq(ecommerceIntegrations.id, id), eq(ecommerceIntegrations.companyId, companyId)))
+      .returning({ id: ecommerceIntegrations.id });
+    if (result.length === 0) throw new NotFoundError('E-commerce integration');
   }
 
   // E-Commerce Transactions
@@ -2314,6 +2324,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(reminderSettings.companyId, companyId));
   }
 
+  async getReminderSettingById(id: string): Promise<ReminderSetting | undefined> {
+    const [setting] = await db
+      .select()
+      .from(reminderSettings)
+      .where(eq(reminderSettings.id, id));
+    return setting;
+  }
+
   async createReminderSetting(insertSetting: InsertReminderSetting): Promise<ReminderSetting> {
     const [setting] = await db
       .insert(reminderSettings)
@@ -2322,12 +2340,13 @@ export class DatabaseStorage implements IStorage {
     return setting;
   }
 
-  async updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting> {
+  async updateReminderSetting(id: string, companyId: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting> {
     const [setting] = await db
       .update(reminderSettings)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(reminderSettings.id, id))
+      .where(and(eq(reminderSettings.id, id), eq(reminderSettings.companyId, companyId)))
       .returning();
+    if (!setting) throw new NotFoundError('Reminder setting');
     return setting;
   }
 
@@ -2348,12 +2367,13 @@ export class DatabaseStorage implements IStorage {
     return log;
   }
 
-  async updateReminderLog(id: string, data: Partial<InsertReminderLog>): Promise<ReminderLog> {
+  async updateReminderLog(id: string, companyId: string, data: Partial<InsertReminderLog>): Promise<ReminderLog> {
     const [log] = await db
       .update(reminderLogs)
       .set(data)
-      .where(eq(reminderLogs.id, id))
+      .where(and(eq(reminderLogs.id, id), eq(reminderLogs.companyId, companyId)))
       .returning();
+    if (!log) throw new NotFoundError('Reminder log');
     return log;
   }
 
@@ -2680,17 +2700,22 @@ export class DatabaseStorage implements IStorage {
     return vatReturn;
   }
 
-  async updateVatReturn(id: string, data: Partial<InsertVatReturn>): Promise<VatReturn> {
+  async updateVatReturn(id: string, companyId: string, data: Partial<InsertVatReturn>): Promise<VatReturn> {
     const [vatReturn] = await db
       .update(vatReturns)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(vatReturns.id, id))
+      .where(and(eq(vatReturns.id, id), eq(vatReturns.companyId, companyId)))
       .returning();
+    if (!vatReturn) throw new NotFoundError('VAT return');
     return vatReturn;
   }
 
-  async deleteVatReturn(id: string): Promise<void> {
-    await db.delete(vatReturns).where(eq(vatReturns.id, id));
+  async deleteVatReturn(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(vatReturns)
+      .where(and(eq(vatReturns.id, id), eq(vatReturns.companyId, companyId)))
+      .returning({ id: vatReturns.id });
+    if (result.length === 0) throw new NotFoundError('VAT return');
   }
 
   // Corporate Tax Returns
@@ -2715,12 +2740,13 @@ export class DatabaseStorage implements IStorage {
     return taxReturn;
   }
 
-  async updateCorporateTaxReturn(id: string, data: Partial<CorporateTaxReturn>): Promise<CorporateTaxReturn> {
+  async updateCorporateTaxReturn(id: string, companyId: string, data: Partial<CorporateTaxReturn>): Promise<CorporateTaxReturn> {
     const [taxReturn] = await db
       .update(corporateTaxReturns)
       .set(data)
-      .where(eq(corporateTaxReturns.id, id))
+      .where(and(eq(corporateTaxReturns.id, id), eq(corporateTaxReturns.companyId, companyId)))
       .returning();
+    if (!taxReturn) throw new NotFoundError('Corporate tax return');
     return taxReturn;
   }
 
@@ -2791,17 +2817,22 @@ export class DatabaseStorage implements IStorage {
     return document;
   }
 
-  async updateDocument(id: string, data: Partial<InsertDocument>): Promise<Document> {
+  async updateDocument(id: string, companyId: string, data: Partial<InsertDocument>): Promise<Document> {
     const [document] = await db
       .update(documents)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(documents.id, id))
+      .where(and(eq(documents.id, id), eq(documents.companyId, companyId)))
       .returning();
+    if (!document) throw new NotFoundError('Document');
     return document;
   }
 
-  async deleteDocument(id: string): Promise<void> {
-    await db.delete(documents).where(eq(documents.id, id));
+  async deleteDocument(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(documents)
+      .where(and(eq(documents.id, id), eq(documents.companyId, companyId)))
+      .returning({ id: documents.id });
+    if (result.length === 0) throw new NotFoundError('Document');
   }
 
   // Tax Return Archive
@@ -2848,17 +2879,22 @@ export class DatabaseStorage implements IStorage {
     return task;
   }
 
-  async updateComplianceTask(id: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask> {
+  async updateComplianceTask(id: string, companyId: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask> {
     const [task] = await db
       .update(complianceTasks)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(complianceTasks.id, id))
+      .where(and(eq(complianceTasks.id, id), eq(complianceTasks.companyId, companyId)))
       .returning();
+    if (!task) throw new NotFoundError('Compliance task');
     return task;
   }
 
-  async deleteComplianceTask(id: string): Promise<void> {
-    await db.delete(complianceTasks).where(eq(complianceTasks.id, id));
+  async deleteComplianceTask(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(complianceTasks)
+      .where(and(eq(complianceTasks.id, id), eq(complianceTasks.companyId, companyId)))
+      .returning({ id: complianceTasks.id });
+    if (result.length === 0) throw new NotFoundError('Compliance task');
   }
 
   // Messages
@@ -3006,6 +3042,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(clientNotes.createdAt));
   }
 
+  async getClientNoteById(id: string): Promise<ClientNote | undefined> {
+    const [note] = await db.select().from(clientNotes).where(eq(clientNotes.id, id));
+    return note;
+  }
+
   async createClientNote(insertNote: InsertClientNote): Promise<ClientNote> {
     const [note] = await db
       .insert(clientNotes)
@@ -3014,17 +3055,22 @@ export class DatabaseStorage implements IStorage {
     return note;
   }
 
-  async updateClientNote(id: string, data: Partial<InsertClientNote>): Promise<ClientNote> {
+  async updateClientNote(id: string, companyId: string, data: Partial<InsertClientNote>): Promise<ClientNote> {
     const [note] = await db
       .update(clientNotes)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(clientNotes.id, id))
+      .where(and(eq(clientNotes.id, id), eq(clientNotes.companyId, companyId)))
       .returning();
+    if (!note) throw new NotFoundError('Client note');
     return note;
   }
 
-  async deleteClientNote(id: string): Promise<void> {
-    await db.delete(clientNotes).where(eq(clientNotes.id, id));
+  async deleteClientNote(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(clientNotes)
+      .where(and(eq(clientNotes.id, id), eq(clientNotes.companyId, companyId)))
+      .returning({ id: clientNotes.id });
+    if (result.length === 0) throw new NotFoundError('Client note');
   }
 
   // Admin User Management
@@ -3078,17 +3124,22 @@ export class DatabaseStorage implements IStorage {
     return engagement;
   }
 
-  async updateEngagement(id: string, data: Partial<InsertEngagement>): Promise<Engagement> {
+  async updateEngagement(id: string, companyId: string, data: Partial<InsertEngagement>): Promise<Engagement> {
     const [engagement] = await db
       .update(engagements)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(engagements.id, id))
+      .where(and(eq(engagements.id, id), eq(engagements.companyId, companyId)))
       .returning();
+    if (!engagement) throw new NotFoundError('Engagement');
     return engagement;
   }
 
-  async deleteEngagement(id: string): Promise<void> {
-    await db.delete(engagements).where(eq(engagements.id, id));
+  async deleteEngagement(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(engagements)
+      .where(and(eq(engagements.id, id), eq(engagements.companyId, companyId)))
+      .returning({ id: engagements.id });
+    if (result.length === 0) throw new NotFoundError('Engagement');
   }
 
   // Service Invoices (NR billing to clients)
@@ -3122,17 +3173,22 @@ export class DatabaseStorage implements IStorage {
     return invoice;
   }
 
-  async updateServiceInvoice(id: string, data: Partial<InsertServiceInvoice>): Promise<ServiceInvoice> {
+  async updateServiceInvoice(id: string, companyId: string, data: Partial<InsertServiceInvoice>): Promise<ServiceInvoice> {
     const [invoice] = await db
       .update(serviceInvoices)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(serviceInvoices.id, id))
+      .where(and(eq(serviceInvoices.id, id), eq(serviceInvoices.companyId, companyId)))
       .returning();
+    if (!invoice) throw new NotFoundError('Service invoice');
     return invoice;
   }
 
-  async deleteServiceInvoice(id: string): Promise<void> {
-    await db.delete(serviceInvoices).where(eq(serviceInvoices.id, id));
+  async deleteServiceInvoice(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(serviceInvoices)
+      .where(and(eq(serviceInvoices.id, id), eq(serviceInvoices.companyId, companyId)))
+      .returning({ id: serviceInvoices.id });
+    if (result.length === 0) throw new NotFoundError('Service invoice');
   }
 
   // Service Invoice Lines
@@ -3172,12 +3228,13 @@ export class DatabaseStorage implements IStorage {
     return email;
   }
 
-  async updateFtaEmail(id: string, data: Partial<InsertFtaEmail>): Promise<FtaEmail> {
+  async updateFtaEmail(id: string, companyId: string, data: Partial<InsertFtaEmail>): Promise<FtaEmail> {
     const [email] = await db
       .update(ftaEmails)
       .set(data)
-      .where(eq(ftaEmails.id, id))
+      .where(and(eq(ftaEmails.id, id), eq(ftaEmails.companyId, companyId)))
       .returning();
+    if (!email) throw new NotFoundError('FTA email');
     return email;
   }
 
@@ -3198,12 +3255,13 @@ export class DatabaseStorage implements IStorage {
     return subscription;
   }
 
-  async updateSubscription(id: string, data: Partial<InsertSubscription>): Promise<Subscription> {
+  async updateSubscription(id: string, companyId: string, data: Partial<InsertSubscription>): Promise<Subscription> {
     const [subscription] = await db
       .update(subscriptions)
       .set({ ...data, updatedAt: new Date() })
-      .where(eq(subscriptions.id, id))
+      .where(and(eq(subscriptions.id, id), eq(subscriptions.companyId, companyId)))
       .returning();
+    if (!subscription) throw new NotFoundError('Subscription');
     return subscription;
   }
 
@@ -3263,17 +3321,22 @@ export class DatabaseStorage implements IStorage {
     return backup;
   }
 
-  async updateBackup(id: string, data: Partial<InsertBackup>): Promise<Backup> {
+  async updateBackup(id: string, companyId: string, data: Partial<InsertBackup>): Promise<Backup> {
     const [backup] = await db
       .update(backups)
       .set(data)
-      .where(eq(backups.id, id))
+      .where(and(eq(backups.id, id), eq(backups.companyId, companyId)))
       .returning();
+    if (!backup) throw new NotFoundError('Backup');
     return backup;
   }
 
-  async deleteBackup(id: string): Promise<void> {
-    await db.delete(backups).where(eq(backups.id, id));
+  async deleteBackup(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(backups)
+      .where(and(eq(backups.id, id), eq(backups.companyId, companyId)))
+      .returning({ id: backups.id });
+    if (result.length === 0) throw new NotFoundError('Backup');
   }
 
   // AI Conversations
@@ -3311,8 +3374,12 @@ export class DatabaseStorage implements IStorage {
     return conversation || undefined;
   }
 
-  async deleteAiConversation(id: string): Promise<void> {
-    await db.delete(aiConversations).where(eq(aiConversations.id, id));
+  async deleteAiConversation(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(aiConversations)
+      .where(and(eq(aiConversations.id, id), eq(aiConversations.companyId, companyId)))
+      .returning({ id: aiConversations.id });
+    if (result.length === 0) throw new NotFoundError('AI conversation');
   }
 
   // Recurring Invoices
@@ -3384,20 +3451,24 @@ export class DatabaseStorage implements IStorage {
     return item;
   }
 
-  async updateRecurringInvoice(id: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice> {
+  async updateRecurringInvoice(id: string, companyId: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice> {
     const [item] = await db
       .update(recurringInvoices)
       .set(data)
-      .where(eq(recurringInvoices.id, id))
+      .where(and(eq(recurringInvoices.id, id), eq(recurringInvoices.companyId, companyId)))
       .returning();
     if (!item) {
-      throw new Error('Recurring invoice not found');
+      throw new NotFoundError('Recurring invoice');
     }
     return item;
   }
 
-  async deleteRecurringInvoice(id: string): Promise<void> {
-    await db.delete(recurringInvoices).where(eq(recurringInvoices.id, id));
+  async deleteRecurringInvoice(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(recurringInvoices)
+      .where(and(eq(recurringInvoices.id, id), eq(recurringInvoices.companyId, companyId)))
+      .returning({ id: recurringInvoices.id });
+    if (result.length === 0) throw new NotFoundError('Recurring invoice');
   }
 
   // Invoice Payments
@@ -3713,20 +3784,24 @@ export class DatabaseStorage implements IStorage {
     return product;
   }
 
-  async updateProduct(id: string, data: Partial<Product>): Promise<Product> {
+  async updateProduct(id: string, companyId: string, data: Partial<Product>): Promise<Product> {
     const [product] = await db
       .update(products)
       .set(data)
-      .where(eq(products.id, id))
+      .where(and(eq(products.id, id), eq(products.companyId, companyId)))
       .returning();
     if (!product) {
-      throw new Error('Product not found');
+      throw new NotFoundError('Product');
     }
     return product;
   }
 
-  async deleteProduct(id: string): Promise<void> {
-    await db.delete(products).where(eq(products.id, id));
+  async deleteProduct(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(products)
+      .where(and(eq(products.id, id), eq(products.companyId, companyId)))
+      .returning({ id: products.id });
+    if (result.length === 0) throw new NotFoundError('Product');
   }
 
   // Inventory Movements

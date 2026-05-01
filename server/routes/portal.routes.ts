@@ -107,7 +107,7 @@ export function registerPortalRoutes(app: Express) {
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    await storage.deleteDocument(documentId);
+    await storage.deleteDocument(documentId, document.companyId);
     res.json({ success: true });
   }));
 
@@ -235,7 +235,7 @@ export function registerPortalRoutes(app: Express) {
     if (req.body.dueDate) updates.dueDate = new Date(req.body.dueDate);
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
 
-    const task = await storage.updateComplianceTask(taskId, updates);
+    const task = await storage.updateComplianceTask(taskId, existing.companyId, updates);
     res.json(task);
   }));
 
@@ -251,7 +251,7 @@ export function registerPortalRoutes(app: Express) {
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    await storage.deleteComplianceTask(taskId);
+    await storage.deleteComplianceTask(taskId, existing.companyId);
     res.json({ success: true });
   }));
 

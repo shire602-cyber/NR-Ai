@@ -323,16 +323,17 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Update sync status
-    await storage.updateEcommerceIntegration(integrationId, {
+    // Update sync status (companyId is from the previously-loaded integration row, so this is tenant-scoped by construction)
+    await storage.updateEcommerceIntegration(integrationId, integration.companyId, {
       syncStatus: 'syncing',
       lastSyncAt: new Date(),
     });
 
     // In a real implementation, this would fetch data from the platform
     // For now, we'll simulate a successful sync
+    const integrationCompanyId = integration.companyId;
     setTimeout(async () => {
-      await storage.updateEcommerceIntegration(integrationId, {
+      await storage.updateEcommerceIntegration(integrationId, integrationCompanyId, {
         syncStatus: 'success',
       });
     }, 2000);
@@ -356,7 +357,7 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    await storage.updateEcommerceIntegration(integrationId, { isActive });
+    await storage.updateEcommerceIntegration(integrationId, integration.companyId, { isActive });
     res.json({ message: 'Integration updated' });
   }));
 

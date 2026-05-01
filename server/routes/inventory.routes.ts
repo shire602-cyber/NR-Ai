@@ -118,7 +118,7 @@ export function registerInventoryRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const updated = await storage.updateProduct(id, req.body);
+    const updated = await storage.updateProduct(id, product.companyId, req.body);
     log.info({ productId: id }, 'Product updated');
     res.json(updated);
   }));
@@ -138,7 +138,7 @@ export function registerInventoryRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    await storage.deleteProduct(id);
+    await storage.deleteProduct(id, product.companyId);
     log.info({ productId: id }, 'Product deleted');
     res.json({ message: 'Product deleted successfully' });
   }));
@@ -196,7 +196,7 @@ export function registerInventoryRoutes(app: Express) {
     }
 
     const newStock = product.currentStock + stockChange;
-    await storage.updateProduct(id, { currentStock: newStock });
+    await storage.updateProduct(id, product.companyId, { currentStock: newStock });
 
     log.info({ productId: id, type, quantity, newStock }, 'Inventory movement recorded');
     res.json({ movement, newStock });

@@ -682,7 +682,11 @@ export function registerAdminRoutes(app: Express): void {
     '/admin/notes/:noteId',
     asyncHandler(async (req: Request, res: Response) => {
       const { noteId } = req.params;
-      const note = await storage.updateClientNote(noteId, req.body);
+      const existing = await storage.getClientNoteById(noteId);
+      if (!existing) {
+        return res.status(404).json({ message: 'Note not found' });
+      }
+      const note = await storage.updateClientNote(noteId, existing.companyId, req.body);
       res.json(note);
     })
   );
@@ -692,7 +696,11 @@ export function registerAdminRoutes(app: Express): void {
     '/admin/notes/:noteId',
     asyncHandler(async (req: Request, res: Response) => {
       const { noteId } = req.params;
-      await storage.deleteClientNote(noteId);
+      const existing = await storage.getClientNoteById(noteId);
+      if (!existing) {
+        return res.status(404).json({ message: 'Note not found' });
+      }
+      await storage.deleteClientNote(noteId, existing.companyId);
       res.json({ success: true });
     })
   );

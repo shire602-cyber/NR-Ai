@@ -90,7 +90,7 @@ export function registerContactRoutes(app: Express) {
 
         if (existing) {
           // Update existing contact
-          await storage.updateCustomerContact(existing.id, {
+          await storage.updateCustomerContact(existing.id, companyId, {
             name: contact.name,
             phone: contact.phone || null,
             trnNumber: contact.trnNumber || contact.trn || null,
@@ -195,7 +195,7 @@ export function registerContactRoutes(app: Express) {
       return res.status(404).json({ message: 'Contact not found' });
     }
 
-    const contact = await storage.updateCustomerContact(id, req.body);
+    const contact = await storage.updateCustomerContact(id, companyId, req.body);
     res.json(contact);
   }));
 
@@ -215,7 +215,7 @@ export function registerContactRoutes(app: Express) {
       return res.status(404).json({ message: 'Contact not found' });
     }
 
-    await storage.deleteCustomerContact(id);
+    await storage.deleteCustomerContact(id, companyId);
     res.json({ message: 'Contact deleted successfully' });
   }));
 }

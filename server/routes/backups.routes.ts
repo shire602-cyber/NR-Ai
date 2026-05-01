@@ -84,7 +84,7 @@ export function registerBackupRoutes(app: Express) {
       const checksum = crypto.createHash('sha256').update(snapshotJson).digest('hex');
 
       // Update backup with data
-      backup = await storage.updateBackup(backup.id, {
+      backup = await storage.updateBackup(backup.id, backup.companyId, {
         status: 'completed',
         dataSnapshot: snapshotJson,
         checksum,
@@ -113,7 +113,7 @@ export function registerBackupRoutes(app: Express) {
       res.status(201).json(sanitizedBackup);
     } catch (error: any) {
       // Mark as failed
-      await storage.updateBackup(backup.id, {
+      await storage.updateBackup(backup.id, backup.companyId, {
         status: 'failed',
       });
       throw error;
@@ -294,7 +294,7 @@ export function registerBackupRoutes(app: Express) {
       const preRestoreJson = JSON.stringify(preRestoreSnapshot);
       const preRestoreChecksum = crypto.createHash('sha256').update(preRestoreJson).digest('hex');
 
-      await storage.updateBackup(preRestoreBackup.id, {
+      await storage.updateBackup(preRestoreBackup.id, preRestoreBackup.companyId, {
         status: 'completed',
         dataSnapshot: preRestoreJson,
         checksum: preRestoreChecksum,
@@ -334,7 +334,7 @@ export function registerBackupRoutes(app: Express) {
         },
       });
     } catch (error: any) {
-      await storage.updateBackup(preRestoreBackup.id, { status: 'failed' });
+      await storage.updateBackup(preRestoreBackup.id, preRestoreBackup.companyId, { status: 'failed' });
       throw error;
     }
   }));
@@ -360,7 +360,7 @@ export function registerBackupRoutes(app: Express) {
       return res.status(403).json({ message: 'Only company owners can delete backups' });
     }
 
-    await storage.deleteBackup(id);
+    await storage.deleteBackup(id, backup.companyId);
 
     await storage.createActivityLog({
       companyId: backup.companyId,

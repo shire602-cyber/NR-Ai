@@ -318,7 +318,7 @@ export function registerVATRoutes(app: Express) {
     await assertPeriodNotLocked(existing.companyId, existing.periodEnd as any);
 
 
-    const vatReturn = await storage.updateVatReturn(id, {
+    const vatReturn = await storage.updateVatReturn(id, existing.companyId, {
       status: 'submitted',
       adjustmentAmount: adjustmentAmount || 0,
       adjustmentReason: adjustmentReason || null,
@@ -351,7 +351,7 @@ export function registerVATRoutes(app: Express) {
     delete (updateData as any).id;
 
 
-    const vatReturn = await storage.updateVatReturn(id, {
+    const vatReturn = await storage.updateVatReturn(id, existing.companyId, {
       ...updateData,
       updatedAt: new Date(),
     });
