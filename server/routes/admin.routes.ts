@@ -400,17 +400,36 @@ export function registerAdminRoutes(app: Express): void {
     })
   );
 
-  // Update user (admin can promote to admin, change details) - Admin only
+  // Update user (change name/email) - Admin only.
+  // H-5 mitigation: this endpoint USED to accept `isAdmin` from req.body,
+  // letting any single admin silently promote (or demote) any other user.
+  // That made the invitation-path lockdown moot. Admin promotion is now
+  // out-of-band only (direct DB op, or a future 2-admin-approval flow).
+  // Demotion is also blocked here to prevent a compromised admin from
+  // locking out other admins. If a client passes `isAdmin`, we reject
+  // 400 to make the contract explicit (silently dropping would mask
+  // bugs in callers that thought they were granting/revoking admin).
   router.patch(
     '/admin/users/:userId',
     asyncHandler(async (req: Request, res: Response) => {
       const { userId: targetUserId } = req.params;
       const adminUserId = (req as any).user.id;
 
+      if ('isAdmin' in req.body) {
+        logger.warn(
+          { adminUserId, targetUserId, attempted: req.body.isAdmin },
+          'Rejected admin user-update that tried to set isAdmin via API',
+        );
+        return res.status(400).json({
+          message:
+            'isAdmin cannot be changed via this endpoint. Admin promotion/demotion is out-of-band only.',
+          code: 'ADMIN_PROMOTION_VIA_API_FORBIDDEN',
+        });
+      }
+
       const updates: any = {};
       if (req.body.name) updates.name = req.body.name;
       if (req.body.email) updates.email = req.body.email;
-      if (typeof req.body.isAdmin === 'boolean') updates.isAdmin = req.body.isAdmin;
 
       const user = await storage.updateUser(targetUserId, updates);
 
@@ -480,6 +499,28 @@ export function registerAdminRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const adminUserId = (req as any).user.id;
 
+      // H-5 mitigation: invitations must NEVER grant admin privileges. The
+      // accept handler used to OR `userType==='admin'` and `role==='staff'`
+      // into the new user's `isAdmin` flag, which would let a single
+      // compromised admin account silently create unlimited new admins
+      // (lateral privilege escalation). Admin promotion is now out-of-band
+      // — direct DB operation or a future 2-admin-approval flow.
+      const requestedRole: string = (req.body.role || 'client').toString().toLowerCase();
+      const requestedUserType: string = (req.body.userType || 'client').toString().toLowerCase();
+      const allowedRoles = new Set(['client', 'customer', 'member', 'owner']);
+      const allowedUserTypes = new Set(['client', 'customer', 'client_portal']);
+      if (!allowedRoles.has(requestedRole) || !allowedUserTypes.has(requestedUserType)) {
+        logger.warn(
+          { adminUserId, requestedRole, requestedUserType, email: req.body.email },
+          'Rejected invitation that would have granted admin/staff privileges',
+        );
+        return res.status(400).json({
+          message:
+            'Invitations cannot grant admin or staff roles. Allowed userType: client, customer, client_portal. Allowed role: client, customer, member, owner. Promote users to admin out-of-band.',
+          code: 'INVITATION_ROLE_FORBIDDEN',
+        });
+      }
+
       // Check if email already has pending invitation
       const existing = await storage.getInvitationByEmail(req.body.email);
       if (existing && existing.status === 'pending') {
@@ -494,8 +535,8 @@ export function registerAdminRoutes(app: Express): void {
       const invitation = await storage.createInvitation({
         email: req.body.email,
         companyId: req.body.companyId || null,
-        role: req.body.role || 'client',
-        userType: req.body.userType || 'client', // admin | client | customer
+        role: requestedRole,
+        userType: requestedUserType,
         token,
         invitedBy: adminUserId,
         status: 'pending',

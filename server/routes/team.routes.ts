@@ -72,7 +72,7 @@ export function registerTeamRoutes(app: Express) {
       return res.status(403).json({ message: 'Only company owners can update roles' });
     }
 
-    const companyUser = await storage.updateCompanyUser(memberId, { role });
+    const companyUser = await storage.updateCompanyUser(memberId, companyId, { role });
 
     await recordAudit({
       userId,
@@ -98,7 +98,7 @@ export function registerTeamRoutes(app: Express) {
       return res.status(403).json({ message: 'Only company owners can remove team members' });
     }
 
-    await storage.deleteCompanyUser(memberId);
+    await storage.deleteCompanyUser(memberId, companyId);
 
     await recordAudit({
       userId,

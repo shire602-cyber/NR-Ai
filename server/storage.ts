@@ -133,6 +133,7 @@ import { eq, and, desc, lt, lte, gt, gte, isNull, isNotNull, or, sql, inArray } 
 import Decimal from "decimal.js";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
+import { NotFoundError } from "./errors";
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
 // runaway invoice/journal volume can pull tens of MB into memory. Pages that
@@ -496,8 +497,12 @@ export interface IStorage {
   updateCorporateTaxReturn(id: string, data: Partial<CorporateTaxReturn>): Promise<CorporateTaxReturn>;
 
   // Team Management
-  updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser>;
-  deleteCompanyUser(id: string): Promise<void>;
+  // Tenant-scoped: requires companyId so an owner of company A cannot
+  // mutate a companyUsers row belonging to company B by guessing the
+  // memberId. The UPDATE / DELETE filter on (id, companyId); a mismatched
+  // pair returns no rows and the storage method throws.
+  updateCompanyUser(id: string, companyId: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser>;
+  deleteCompanyUser(id: string, companyId: string): Promise<void>;
   getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]>;
 
   // Admin Stats
@@ -2720,17 +2725,35 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Team Management
-  async updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser> {
+  // Tenant-scoping by companyId is defense-in-depth: the route layer is
+  // owner-gated per-company, but a regression there must not allow an
+  // owner to mutate a row belonging to a different company by passing
+  // its memberId. The UPDATE/DELETE returns no rows when (id, companyId)
+  // doesn't match — we throw so the caller surfaces it as 404.
+  async updateCompanyUser(id: string, companyId: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser> {
     const [companyUser] = await db
       .update(companyUsers)
       .set(data)
-      .where(eq(companyUsers.id, id))
+      .where(and(eq(companyUsers.id, id), eq(companyUsers.companyId, companyId)))
       .returning();
+    if (!companyUser) {
+      // Typed NotFoundError → 404 via globalErrorHandler. Plain Error here
+      // would surface as 500 / INTERNAL_ERROR which is wrong status AND
+      // leaks "the row exists somewhere" by being indistinguishable from
+      // an actual server bug.
+      throw new NotFoundError('Team member');
+    }
     return companyUser;
   }
 
-  async deleteCompanyUser(id: string): Promise<void> {
-    await db.delete(companyUsers).where(eq(companyUsers.id, id));
+  async deleteCompanyUser(id: string, companyId: string): Promise<void> {
+    const result = await db
+      .delete(companyUsers)
+      .where(and(eq(companyUsers.id, id), eq(companyUsers.companyId, companyId)))
+      .returning({ id: companyUsers.id });
+    if (result.length === 0) {
+      throw new NotFoundError('Team member');
+    }
   }
 
   async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {

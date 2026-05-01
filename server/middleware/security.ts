@@ -95,6 +95,11 @@ export function applySecurityMiddleware(app: Express): void {
   app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
   app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));
   app.use('/api/firm/bulk/ocr', buildLimiter(limiterProfiles.ai));
+  // /api/ask is the LLM-streaming chat endpoint and is just as expensive
+  // per-call as /api/ai/* — must be in the AI bucket so it doesn't fall
+  // through to the cheap general /api/ limiter and become a $/min DoS
+  // vector for any signed-in user.
+  app.use('/api/ask', buildLimiter(limiterProfiles.ai));
   app.use('/api/', buildLimiter(limiterProfiles.api));
 
   // ─── Request Size Limits ──────────────────────────────────

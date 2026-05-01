@@ -35,6 +35,13 @@ import { eq } from 'drizzle-orm';
 
 const log = createLogger('auth');
 
+// bcrypt cost factor. NEW-M (2026-04-30 review): bumped from 10 → 12 to
+// match what compliance-sensitive financial apps use today (10 was OK in
+// 2015, slow attackers need ~4x more compute now). Existing 10-cost
+// hashes remain valid (bcrypt is self-describing); they get upgraded
+// lazily on next successful login (see comparePasswordAndUpgrade).
+const BCRYPT_COST = 12;
+
 // =============================================
 // Helpers (migrated from monolith routes.ts)
 // =============================================
@@ -118,7 +125,7 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       // Hash password
-      const passwordHash = await bcrypt.hash(validated.password, 10);
+      const passwordHash = await bcrypt.hash(validated.password, BCRYPT_COST);
 
       // SECURITY: Force userType to 'customer' - never trust client-supplied userType
       // Self-signup users can only be customers. Clients/admins must use invitation flow.
@@ -354,7 +361,7 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: 'This reset link is invalid or has expired. Please request a new one.' });
       }
 
-      const newHash = await bcrypt.hash(password, 10);
+      const newHash = await bcrypt.hash(password, BCRYPT_COST);
       await storage.updateUserPassword(record.userId, newHash);
       await storage.markPasswordResetTokenUsed(record.id);
       // Revoke any other outstanding reset tokens — one successful reset
@@ -435,14 +442,19 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: 'User already exists with this email' });
       }
 
-      // Create user with appropriate userType from invitation
-      const passwordHash = await bcrypt.hash(password, 10);
+      // Create user with appropriate userType from invitation. Defensive:
+      // even if a buggy createInvitation path managed to write
+      // role='staff'/userType='admin' to the row, refuse to grant isAdmin
+      // at acceptance time. Admin promotion is out-of-band by design (see
+      // H-5 mitigation in server/routes/admin.routes.ts createInvitation).
+      const safeUserType = invitation.userType === 'admin' ? 'client' : (invitation.userType || 'client');
+      const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
       const user = await storage.createUser({
         email: invitation.email,
         name,
         password,
-        isAdmin: invitation.role === 'staff' || invitation.userType === 'admin',
-        userType: invitation.userType || 'client',
+        isAdmin: false,
+        userType: safeUserType,
         passwordHash,
       } as any);
 

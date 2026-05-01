@@ -142,7 +142,13 @@ const updateClientSchema = createClientSchema.partial();
 const assignStaffSchema = z.object({
   staffUserId: z.string().uuid(),
   action: z.enum(['assign', 'unassign']),
-  role: z.string().default('accountant'),
+  // companyUsers.role accepts 'owner | accountant | cfo | employee' but
+  // 'owner' grants full per-company control and is reserved for the
+  // customer themselves. Firm staff assignments are intentionally limited
+  // to non-owner roles so a firm_owner can't laterally escalate by
+  // assigning themselves (or another staff member) as the owner of any
+  // client company. (z.string().default() previously accepted any value.)
+  role: z.enum(['accountant', 'cfo', 'employee']).default('accountant'),
 });
 
 const importPayloadSchema = z.object({
