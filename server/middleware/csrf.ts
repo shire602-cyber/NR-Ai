@@ -10,8 +10,6 @@ const log = createLogger('csrf');
 const CSRF_BEARER_EXEMPT = [
   /^\/api\/auth\/login$/,
   /^\/api\/auth\/register$/,
-  /^\/api\/auth\/refresh$/,
-  /^\/api\/portal\//,
 ];
 
 function hasBearerAuth(req: Request): boolean {

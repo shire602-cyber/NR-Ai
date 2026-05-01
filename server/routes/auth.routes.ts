@@ -9,8 +9,6 @@ import { storage } from '../storage';
 import { getEnv } from '../config/env';
 import {
   generateToken,
-  generateRefreshToken,
-  verifyRefreshToken,
   authMiddleware,
 } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
@@ -26,9 +24,19 @@ import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { createLogger } from '../config/logger';
 import {
   blacklistToken,
+  createRefreshSession,
+  rotateRefreshSession,
+  revokeRefreshSession,
   createEmailVerificationToken,
   consumeEmailVerificationToken,
 } from '../services/auth-tokens.service';
+import {
+  clearAuthCookies,
+  getAccessTokenFromRequest,
+  getRefreshTokenFromRequest,
+  sessionMetaFromRequest,
+  setAuthCookies,
+} from '../services/auth-cookies.service';
 import { db } from '../db';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
@@ -66,6 +74,17 @@ async function seedChartOfAccounts(
     }
     throw error;
   }
+}
+
+async function issueAuthCookies(user: { id: string; email: string; isAdmin?: boolean; userType?: string; firmRole?: string | null }, req: Request, res: Response): Promise<void> {
+  const accessToken = generateToken(user);
+  const refresh = await createRefreshSession(user.id, sessionMetaFromRequest(req));
+  setAuthCookies(res, accessToken, refresh.token, refresh.expiresAt);
+}
+
+function publicUser(user: any) {
+  const { passwordHash: _passwordHash, password: _password, ...safeUser } = user;
+  return safeUser;
 }
 
 // Stronger password validation: 8+ characters
@@ -181,13 +200,9 @@ export function registerAuthRoutes(app: Express): void {
         log.error({ err, userId: user.id }, 'Failed to issue email verification token');
       }
 
-      // Generate tokens
-      const token = generateToken(user);
-      const refreshToken = generateRefreshToken(user);
+      await issueAuthCookies(user, req, res);
 
       res.json({
-        token,
-        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -227,13 +242,9 @@ export function registerAuthRoutes(app: Express): void {
         (user.isAdmin as any) === 'true' ||
         (user.isAdmin as any) === 1;
 
-      // Generate tokens
-      const token = generateToken(user);
-      const refreshToken = generateRefreshToken(user);
+      await issueAuthCookies(user, req, res);
 
       res.json({
-        token,
-        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -248,31 +259,31 @@ export function registerAuthRoutes(app: Express): void {
 
   // Refresh token handler (shared by both /auth/refresh-token and /auth/refresh)
   const handleRefreshToken = asyncHandler(async (req: Request, res: Response) => {
-    const { refreshToken } = req.body;
-
+    const refreshToken = getRefreshTokenFromRequest(req);
     if (!refreshToken) {
-      return res.status(400).json({ message: 'Refresh token is required' });
-    }
-
-    const payload = verifyRefreshToken(refreshToken);
-    if (!payload) {
       return res.status(401).json({ message: 'Invalid or expired refresh token' });
     }
 
-    // Verify user still exists in DB
-    const user = await storage.getUser(payload.userId);
+    const rotated = await rotateRefreshSession(refreshToken, sessionMetaFromRequest(req));
+    if (!rotated.ok) {
+      clearAuthCookies(res);
+      const message =
+        rotated.reason === 'reused'
+          ? 'Refresh token reuse detected. Please sign in again.'
+          : 'Invalid or expired refresh token';
+      return res.status(401).json({ message });
+    }
+
+    const user = await storage.getUser(rotated.userId);
     if (!user) {
+      clearAuthCookies(res);
       return res.status(401).json({ message: 'User not found' });
     }
 
-    // Issue new access + refresh tokens
     const newToken = generateToken(user);
-    const newRefreshToken = generateRefreshToken(user);
+    setAuthCookies(res, newToken, rotated.token, rotated.expiresAt);
 
-    res.json({
-      token: newToken,
-      refreshToken: newRefreshToken,
-    });
+    res.json({ ok: true });
   });
 
   // Refresh token endpoint (canonical path)
@@ -478,13 +489,8 @@ export function registerAuthRoutes(app: Express): void {
         description: `User registered via invitation: ${user.email}`,
       });
 
-      // Generate tokens for immediate login
-      const isAdminBoolean = user.isAdmin === true;
-      const jwtToken = generateToken(user);
-      const refreshToken = generateRefreshToken(user);
-
-      const { passwordHash: _, ...safeUser } = user;
-      res.json({ user: safeUser, token: jwtToken, refreshToken });
+      await issueAuthCookies(user, req, res);
+      res.json({ user: publicUser(user) });
     })
   );
 
@@ -498,8 +504,7 @@ export function registerAuthRoutes(app: Express): void {
       if (!user) {
         return res.status(404).json({ message: 'User not found' });
       }
-      const { passwordHash: _, ...safeUser } = user;
-      res.json(safeUser);
+      res.json(publicUser(user));
     })
   );
 
@@ -509,14 +514,24 @@ export function registerAuthRoutes(app: Express): void {
     authMiddleware as any,
     asyncHandler(async (req: Request, res: Response) => {
       const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
+      const accessToken =
+        getAccessTokenFromRequest(req) ||
+        (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+      const refreshToken = getRefreshTokenFromRequest(req);
+
+      if (accessToken) {
         try {
-          await blacklistToken(token);
+          await blacklistToken(accessToken);
         } catch (err) {
           log.error({ err }, 'Failed to blacklist token on logout');
         }
       }
+
+      await revokeRefreshSession(refreshToken).catch((err) => {
+        log.error({ err }, 'Failed to revoke refresh session on logout');
+      });
+      clearAuthCookies(res);
+
       res.json({ message: 'Logged out successfully' });
     })
   );

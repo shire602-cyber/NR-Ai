@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Link } from 'wouter';
-import { getStoredUser } from '@/lib/auth';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatDate } from '@/lib/format';
 import {
@@ -21,7 +21,7 @@ import { SiWhatsapp } from 'react-icons/si';
 import { formatPhoneForWhatsApp } from '@/lib/whatsapp-templates';
 
 export default function ClientDashboard() {
-  const user = getStoredUser();
+  const { data: user } = useCurrentUser();
   const userName = user?.name || user?.email || 'Client';
   const { company, companyId } = useDefaultCompany();
   const contactPhone = company?.contactPhone?.trim() || '';

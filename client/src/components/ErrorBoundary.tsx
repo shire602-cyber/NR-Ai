@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { AlertCircle, RefreshCw, Home } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
+import { withCsrfHeader } from '@/lib/csrf';
 
 interface Props {
   children: ReactNode;
@@ -23,7 +24,7 @@ async function reportToServer(error: Error, info: ErrorInfo, name?: string) {
   try {
     await fetch(apiUrl('/api/client-errors'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await withCsrfHeader('POST', { 'Content-Type': 'application/json' }),
       credentials: 'include',
       body: JSON.stringify({
         message: error.message,

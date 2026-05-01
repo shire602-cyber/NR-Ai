@@ -21,6 +21,7 @@ let deferredPrompt: BeforeInstallPromptEvent | null = null;
 let swRegistration: ServiceWorkerRegistration | null = null;
 const updateCallbacks: UpdateCallback[] = [];
 const installPromptCallbacks: InstallPromptCallback[] = [];
+const SESSION_MARKER_KEY = 'muhasib_session_marker';
 
 // ─── Service Worker Registration ────────────────────────────────────────────
 
@@ -40,6 +41,7 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
     });
 
     swRegistration = registration;
+    syncSessionMarkerToServiceWorker();
 
     // Detect updates
     registration.addEventListener('updatefound', () => {
@@ -204,7 +206,13 @@ export async function queueForSync(request: {
 
   navigator.serviceWorker.controller.postMessage({
     type: 'QUEUE_REQUEST',
-    request,
+    request: {
+      url: request.url,
+      method: request.method,
+      contentType: request.headers['Content-Type'] || request.headers['content-type'] || 'application/json',
+      body: request.body,
+      sessionMarker: getSessionMarker(),
+    },
   });
 }
 
@@ -219,6 +227,39 @@ export async function clearAllCaches(): Promise<void> {
   }
 
   navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+}
+
+export function rotatePwaSessionMarker(): string {
+  const marker = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  sessionStorage.setItem(SESSION_MARKER_KEY, marker);
+  navigator.serviceWorker.controller?.postMessage({
+    type: 'SET_SESSION_MARKER',
+    sessionMarker: marker,
+  });
+  return marker;
+}
+
+export function clearPwaSessionMarker(): void {
+  sessionStorage.removeItem(SESSION_MARKER_KEY);
+  navigator.serviceWorker.controller?.postMessage({
+    type: 'SET_SESSION_MARKER',
+    sessionMarker: null,
+  });
+}
+
+function syncSessionMarkerToServiceWorker(): void {
+  const marker = sessionStorage.getItem(SESSION_MARKER_KEY);
+  if (!marker) return;
+  navigator.serviceWorker.controller?.postMessage({
+    type: 'SET_SESSION_MARKER',
+    sessionMarker: marker,
+  });
+}
+
+function getSessionMarker(): string {
+  const existing = sessionStorage.getItem(SESSION_MARKER_KEY);
+  if (existing) return existing;
+  return rotatePwaSessionMarker();
 }
 
 // ─── Connectivity ───────────────────────────────────────────────────────────

@@ -3,15 +3,6 @@ import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
-import { db } from '../db';
-import { eq, and, or, desc } from 'drizzle-orm';
-import {
-  journalEntries,
-  journalLines,
-  accounts,
-  companyUsers,
-  companies,
-} from '../../shared/schema';
 
 /**
  * Middleware: restrict to client_portal (and client) userType.
@@ -27,10 +18,15 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
     res.status(403).json({ message: 'Client portal access required' });
     return;
   }
-  // Resolve user's company (portal users have exactly one)
+  // Resolve user's company. Portal users must map to exactly one company so
+  // broad read-only portal views cannot drift across tenants.
   const userCompanies = await storage.getCompaniesByUserId(user.id);
   if (!userCompanies.length) {
     res.status(403).json({ message: 'No company associated with this account' });
+    return;
+  }
+  if (user.userType === 'client_portal' && userCompanies.length !== 1) {
+    res.status(403).json({ message: 'Client portal account must be linked to exactly one company' });
     return;
   }
   (req as any).portalCompanyId = userCompanies[0].id;
@@ -38,12 +34,74 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
   next();
 }
 
+function sanitizeCompany(company: any) {
+  return {
+    id: company.id,
+    name: company.name,
+    legalName: company.legalName ?? null,
+    baseCurrency: company.baseCurrency,
+    locale: company.locale,
+    dateFormat: company.dateFormat,
+    trnVatNumber: company.trnVatNumber ?? null,
+    logoUrl: company.logoUrl ?? null,
+  };
+}
+
+function sanitizeInvoice(inv: any) {
+  return {
+    id: inv.id,
+    number: inv.number,
+    customerName: inv.customerName,
+    date: inv.date,
+    dueDate: inv.dueDate ?? null,
+    currency: inv.currency,
+    subtotal: inv.subtotal,
+    vatAmount: inv.vatAmount,
+    total: inv.total,
+    status: inv.status,
+    createdAt: inv.createdAt,
+  };
+}
+
+function sanitizeDocument(doc: any) {
+  return {
+    id: doc.id,
+    name: doc.name,
+    nameAr: doc.nameAr ?? null,
+    category: doc.category,
+    description: doc.description ?? null,
+    fileUrl: doc.fileUrl,
+    fileName: doc.fileName,
+    fileSize: doc.fileSize,
+    mimeType: doc.mimeType,
+    expiryDate: doc.expiryDate ?? null,
+    tags: doc.tags ?? null,
+    createdAt: doc.createdAt,
+  };
+}
+
+function sanitizeMessage(message: any) {
+  return {
+    id: message.id,
+    threadId: message.threadId ?? null,
+    subject: message.subject ?? null,
+    content: message.content,
+    senderId: message.senderId,
+    recipientId: message.recipientId ?? null,
+    isRead: message.isRead,
+    readAt: message.readAt ?? null,
+    attachmentUrl: message.attachmentUrl ?? null,
+    attachmentName: message.attachmentName ?? null,
+    createdAt: message.createdAt,
+  };
+}
+
 export function registerClientPortalRoutes(app: Express): void {
   const chain = [authMiddleware as any, requirePortalUser];
 
   // ─── Company Info ─────────────────────────────────────────────────────────
   app.get('/api/client-portal/company', ...chain, asyncHandler(async (req: Request, res: Response) => {
-    res.json((req as any).portalCompany);
+    res.json(sanitizeCompany((req as any).portalCompany));
   }));
 
   // ─── Dashboard ────────────────────────────────────────────────────────────
@@ -84,7 +142,7 @@ export function registerClientPortalRoutes(app: Express): void {
         ? { status: latestVat.status, dueDate: latestVat.dueDate, periodEnd: latestVat.periodEnd }
         : null,
       documents: { total: documents.length },
-      recentInvoices,
+      recentInvoices: recentInvoices.map(sanitizeInvoice),
     });
   }));
 
@@ -95,7 +153,7 @@ export function registerClientPortalRoutes(app: Express): void {
     const sorted = [...invoices].sort((a, b) =>
       new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime()
     );
-    res.json(sorted);
+    res.json(sorted.map(sanitizeInvoice));
   }));
 
   // ─── Invoice PDF download ─────────────────────────────────────────────────
@@ -120,48 +178,11 @@ export function registerClientPortalRoutes(app: Express): void {
   app.get('/api/client-portal/documents', ...chain, asyncHandler(async (req: Request, res: Response) => {
     const companyId: string = (req as any).portalCompanyId;
     const docs = await storage.getDocuments(companyId);
-    res.json(docs);
+    res.json(docs.map(sanitizeDocument));
   }));
 
-  app.post('/api/client-portal/documents', ...chain, asyncHandler(async (req: Request, res: Response) => {
-    const companyId: string = (req as any).portalCompanyId;
-    const userId = (req.user as any).id;
-
-    const ALLOWED_TYPES = [
-      'application/pdf', 'image/jpeg', 'image/png', 'image/webp',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/plain', 'text/csv',
-    ];
-    const mimeType: string = req.body.mimeType || 'application/pdf';
-    if (!ALLOWED_TYPES.includes(mimeType.toLowerCase())) {
-      return res.status(400).json({ message: 'Invalid file type' });
-    }
-    const fileSize = Number(req.body.fileSize) || 0;
-    if (fileSize > 50 * 1024 * 1024) {
-      return res.status(400).json({ message: 'File exceeds 50 MB limit' });
-    }
-
-    const doc = await storage.createDocument({
-      companyId,
-      name: req.body.name || 'Uploaded Document',
-      nameAr: req.body.nameAr || null,
-      category: req.body.category || 'other',
-      description: req.body.description || null,
-      fileUrl: req.body.fileUrl || '/uploads/placeholder.pdf',
-      fileName: req.body.fileName || 'document.pdf',
-      fileSize: fileSize || null,
-      mimeType,
-      expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
-      reminderDays: req.body.reminderDays || 30,
-      reminderSent: false,
-      tags: req.body.tags || null,
-      isArchived: false,
-      uploadedBy: userId,
-    });
-    res.status(201).json(doc);
+  app.post('/api/client-portal/documents', ...chain, asyncHandler(async (_req: Request, res: Response) => {
+    res.status(405).json({ message: 'Client portal is read-only' });
   }));
 
   // ─── Financial Statements (P&L + Balance Sheet summary) ──────────────────
@@ -238,29 +259,10 @@ export function registerClientPortalRoutes(app: Express): void {
   app.get('/api/client-portal/messages', ...chain, asyncHandler(async (req: Request, res: Response) => {
     const companyId: string = (req as any).portalCompanyId;
     const messages = await storage.getMessages(companyId);
-    res.json(messages);
+    res.json(messages.map(sanitizeMessage));
   }));
 
-  app.post('/api/client-portal/messages', ...chain, asyncHandler(async (req: Request, res: Response) => {
-    const companyId: string = (req as any).portalCompanyId;
-    const userId = (req.user as any).id;
-    if (!req.body.content?.trim()) {
-      return res.status(400).json({ message: 'Message content is required' });
-    }
-    const message = await storage.createMessage({
-      companyId,
-      threadId: req.body.threadId || null,
-      subject: req.body.subject || null,
-      content: req.body.content,
-      senderId: userId,
-      recipientId: req.body.recipientId || null,
-      isRead: false,
-      readAt: null,
-      attachmentUrl: req.body.attachmentUrl || null,
-      attachmentName: req.body.attachmentName || null,
-      messageType: 'general',
-      isArchived: false,
-    });
-    res.status(201).json(message);
+  app.post('/api/client-portal/messages', ...chain, asyncHandler(async (_req: Request, res: Response) => {
+    res.status(405).json({ message: 'Client portal is read-only' });
   }));
 }

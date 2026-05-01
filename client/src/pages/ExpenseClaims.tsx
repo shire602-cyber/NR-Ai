@@ -63,7 +63,7 @@ import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { getStoredUser } from '@/lib/auth';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { formatCurrency } from '@/lib/format';
 
 // ─── Types ────────────────────────────────────────────────
@@ -158,7 +158,7 @@ export default function ExpenseClaims() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
-  const currentUser = getStoredUser();
+  const { data: currentUser } = useCurrentUser();
 
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [editingClaim, setEditingClaim] = useState<ExpenseClaim | null>(null);

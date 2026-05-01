@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { apiUrl } from '@/lib/api';
+import { withCsrfHeader } from '@/lib/csrf';
 import { ArrowLeft, Briefcase, CheckCircle2, Mail } from 'lucide-react';
 
 const forgotSchema = z.object({
@@ -47,7 +48,8 @@ export default function ForgotPassword() {
     try {
       const res = await fetch(apiUrl('/api/auth/forgot-password'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: await withCsrfHeader('POST', { 'Content-Type': 'application/json' }),
         body: JSON.stringify(data),
       });
       if (!res.ok) {

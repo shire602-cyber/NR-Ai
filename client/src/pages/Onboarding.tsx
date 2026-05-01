@@ -2,7 +2,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { queryClient, apiRequest, ApiError } from '@/lib/queryClient';
-import { getToken } from '@/lib/auth';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,25 +75,13 @@ function stepIndex(step: Step): number {
 
 const STORAGE_KEY = (companyId: string) => `onboarding_step_${companyId}`;
 
-/** Decode the role bits the JWT carries so we can split firm and customer flows. */
-function readRoleFromToken(): { firmRole: string | null; userType: string } {
-  try {
-    const token = getToken();
-    if (!token) return { firmRole: null, userType: 'customer' };
-    const parts = token.split('.');
-    if (parts.length !== 3) return { firmRole: null, userType: 'customer' };
-    const payload = JSON.parse(atob(parts[1]));
-    return {
-      firmRole: payload.firmRole ?? null,
-      userType: payload.userType ?? 'customer',
-    };
-  } catch {
-    return { firmRole: null, userType: 'customer' };
-  }
-}
-
 export default function Onboarding() {
-  const role = useMemo(readRoleFromToken, []);
+  const { data: user, isLoading } = useCurrentUser();
+  if (isLoading) return null;
+  const role = {
+    firmRole: user?.firmRole ?? null,
+    userType: user?.userType ?? 'customer',
+  };
   // Firm owners and firm admins manage clients, not their own books — they
   // get a different onboarding tailored around staff and client setup.
   if (role.firmRole === 'firm_owner' || role.firmRole === 'firm_admin') {

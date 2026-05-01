@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { isAuthenticated } from '@/lib/auth';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -8,14 +8,15 @@ interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const [, setLocation] = useLocation();
+  const { data: user, isLoading } = useCurrentUser();
 
   useEffect(() => {
-    if (!isAuthenticated()) {
+    if (!isLoading && !user) {
       setLocation('/login');
     }
-  }, [setLocation]);
+  }, [isLoading, user, setLocation]);
 
-  if (!isAuthenticated()) {
+  if (isLoading || !user) {
     return null;
   }
 

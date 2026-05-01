@@ -2,7 +2,6 @@ import type { Request, Response } from 'express';
 import { Router } from 'express';
 import type { Express } from 'express';
 import { z } from 'zod';
-import * as XLSX from 'xlsx';
 
 import { storage } from '../storage';
 import { authMiddleware } from '../middleware/auth';
@@ -11,6 +10,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { mapImportRow, validateImportedClient } from '../services/firm-clients.service';
+import { parseSpreadsheetBuffer } from '../utils/spreadsheet';
 import { db } from '../db';
 import { eq, and, count, sum, max, or, desc, inArray, sql, lt, gte, ne, lte } from 'drizzle-orm';
 import {
@@ -736,9 +736,7 @@ export function registerFirmRoutes(app: Express): void {
       if (req.body?.fileData) {
         try {
           const buffer = Buffer.from(req.body.fileData, 'base64');
-          const workbook = XLSX.read(buffer, { type: 'buffer' });
-          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-          rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' }) as Record<string, any>[];
+          rows = (await parseSpreadsheetBuffer(buffer, req.body.fileName)).rows;
         } catch (err: any) {
           return res.status(400).json({ message: `Could not parse file: ${err.message}` });
         }

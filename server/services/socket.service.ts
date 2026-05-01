@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { getEnv, isProduction } from '../config/env';
 import { storage } from '../storage';
 import { createLogger } from '../config/logger';
+import { accessCookieName } from './auth-cookies.service';
 import type { InsertNotification, Notification } from '../../shared/schema';
 
 const log = createLogger('socket');
@@ -51,7 +52,9 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
   });
 
   io.use(async (socket, next) => {
+    const cookies = parseCookieHeader(socket.handshake.headers.cookie || '');
     const rawToken =
+      cookies[accessCookieName()] ||
       (socket.handshake.auth as Record<string, string>).token ||
       socket.handshake.headers.authorization?.replace('Bearer ', '');
 
@@ -84,6 +87,16 @@ export function initSocketServer(httpServer: HttpServer): SocketServer {
 
   log.info('Socket.io server initialized');
   return io;
+}
+
+function parseCookieHeader(header: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const part of header.split(';')) {
+    const [rawName, ...rawValue] = part.trim().split('=');
+    if (!rawName || rawValue.length === 0) continue;
+    result[rawName] = decodeURIComponent(rawValue.join('='));
+  }
+  return result;
 }
 
 export function getIO(): SocketServer | null {

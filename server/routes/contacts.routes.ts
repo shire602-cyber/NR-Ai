@@ -1,6 +1,5 @@
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import * as XLSX from 'xlsx';
 import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';

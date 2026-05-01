@@ -54,10 +54,11 @@ import {
 import { cn } from '@/lib/utils';
 import { useTranslation, useI18n } from '@/lib/i18n';
 import { useRTL } from '@/components/RTLProvider';
-import { removeToken, getToken } from '@/lib/auth';
-import { apiUrl } from '@/lib/api';
+import { removeToken } from '@/lib/auth';
+import { apiRequest } from '@/lib/queryClient';
 import { useQueryClient } from '@tanstack/react-query';
 import { CompanySwitcher } from '@/components/CompanySwitcher';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -218,45 +219,11 @@ export function AppSidebar() {
   const { setLocale } = useI18n();
   const { isRTL, rtlValue } = useRTL();
   const queryClient = useQueryClient();
+  const { data: currentUser } = useCurrentUser();
 
-  const checkUserStatus = (): {
-    isAdmin: boolean;
-    userType: 'admin' | 'client' | 'customer';
-    firmRole: 'firm_owner' | 'firm_admin' | null;
-    needsRelogin: boolean;
-  } => {
-    try {
-      const token = getToken();
-      if (!token) {
-        return { isAdmin: false, userType: 'customer', firmRole: null, needsRelogin: false };
-      }
-      const parts = token.split('.');
-      if (parts.length !== 3) {
-        return { isAdmin: false, userType: 'customer', firmRole: null, needsRelogin: false };
-      }
-      const payload = JSON.parse(atob(parts[1]));
-      if (payload.isAdmin === undefined) {
-        return { isAdmin: false, userType: 'customer', firmRole: null, needsRelogin: true };
-      }
-      return {
-        isAdmin: payload.isAdmin === true,
-        userType: payload.userType || 'customer',
-        firmRole: payload.firmRole ?? null,
-        needsRelogin: false,
-      };
-    } catch {
-      return { isAdmin: false, userType: 'customer', firmRole: null, needsRelogin: false };
-    }
-  };
-
-  const { isAdmin, userType, firmRole, needsRelogin } = checkUserStatus();
-
-  useEffect(() => {
-    if (needsRelogin) {
-      removeToken();
-      setLocation('/');
-    }
-  }, [needsRelogin, setLocation]);
+  const isAdmin = currentUser?.isAdmin === true;
+  const userType = currentUser?.userType || 'customer';
+  const firmRole = currentUser?.firmRole ?? null;
 
   const hasFirmRole = firmRole === 'firm_owner' || firmRole === 'firm_admin';
 
@@ -306,16 +273,10 @@ export function AppSidebar() {
   };
 
   const handleLogout = async () => {
-    const token = getToken();
-    if (token) {
-      try {
-        await fetch(apiUrl('/api/auth/logout'), {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } catch {
-        // Network failure shouldn't block local sign-out — JWT still expires.
-      }
+    try {
+      await apiRequest('POST', '/api/auth/logout');
+    } catch {
+      // Network failure shouldn't block local sign-out; cookies still expire.
     }
     removeToken();
     queryClient.clear();

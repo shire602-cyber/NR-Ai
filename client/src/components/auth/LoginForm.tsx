@@ -20,7 +20,7 @@ const loginSchema = z.object({
 type LoginFormData = z.infer<typeof loginSchema>;
 
 interface LoginFormProps {
-  onSuccess: (token: string, user: any) => void;
+  onSuccess: (user: any) => void;
 }
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
@@ -42,6 +42,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       const response = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(data),
       });
 
@@ -51,7 +52,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       }
 
       const result = await response.json();
-      onSuccess(result.token, result.user);
+      onSuccess(result.user);
       
       toast({
         title: 'Welcome back!',

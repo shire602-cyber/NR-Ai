@@ -88,11 +88,11 @@ export default function ClientImport() {
   });
 
   const handleFileSelect = useCallback((selectedFile: File) => {
-    if (!selectedFile.name.match(/\.(xlsx|xls|csv)$/i)) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'Invalid file type', 
-        description: 'Please upload an Excel file (.xlsx, .xls) or CSV file' 
+    if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid file type',
+        description: 'Please upload an Excel file (.xlsx) or CSV file'
       });
       return;
     }
@@ -136,11 +136,8 @@ export default function ClientImport() {
 
   const downloadTemplate = async () => {
     try {
-      const token = localStorage.getItem('auth_token');
       const response = await fetch(apiUrl('/api/admin/import/template'), {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+        credentials: 'include',
       });
       
       if (!response.ok) throw new Error('Failed to download template');
@@ -189,7 +186,7 @@ export default function ClientImport() {
                 Upload Excel File
               </CardTitle>
               <CardDescription>
-                Upload an Excel file (.xlsx, .xls) or CSV containing your client data. 
+                Upload an Excel file (.xlsx) or CSV containing your client data.
                 We'll automatically map common column names like "Company Name", "Email", "Phone", etc.
               </CardDescription>
             </CardHeader>
@@ -227,7 +224,7 @@ export default function ClientImport() {
                     </div>
                     <input
                       type="file"
-                      accept=".xlsx,.xls,.csv"
+                      accept=".xlsx,.csv"
                       className="absolute inset-0 opacity-0 cursor-pointer"
                       onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
                       data-testid="input-file-upload"

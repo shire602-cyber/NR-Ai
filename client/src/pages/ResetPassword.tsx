@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { apiUrl } from '@/lib/api';
+import { withCsrfHeader } from '@/lib/csrf';
 import { ArrowLeft, Briefcase, CheckCircle2, KeyRound } from 'lucide-react';
 
 const resetSchema = z
@@ -72,7 +73,8 @@ export default function ResetPassword() {
     try {
       const res = await fetch(apiUrl('/api/auth/reset-password'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: await withCsrfHeader('POST', { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ token, password: data.password }),
       });
       if (!res.ok) {

@@ -25,7 +25,12 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
     staleTime: 5 * 60 * 1000,
   });
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      await apiRequest('POST', '/api/auth/logout');
+    } catch {
+      // Local logout should still complete if the network is unavailable.
+    }
     removeToken();
     navigate('/login');
   }

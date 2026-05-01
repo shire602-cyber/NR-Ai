@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
 import { LoginForm } from '@/components/auth/LoginForm';
-import { setToken, setStoredUser, isAuthenticated } from '@/lib/auth';
+import { setStoredUser, fetchCurrentUser } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Briefcase } from 'lucide-react';
 
@@ -9,15 +9,16 @@ export default function Login() {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    if (isAuthenticated()) {
-      setLocation('/dashboard');
-    }
+    fetchCurrentUser()
+      .then((user) => {
+        if (user) setLocation(user.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
+      })
+      .catch(() => {});
   }, [setLocation]);
 
-  const handleSuccess = (token: string, user: any) => {
-    setToken(token);
+  const handleSuccess = (user: any) => {
     setStoredUser(user);
-    setLocation('/dashboard');
+    setLocation(user?.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
   };
 
   return (

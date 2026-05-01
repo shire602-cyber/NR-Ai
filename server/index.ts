@@ -19,6 +19,7 @@ import { requestId } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
 import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
 import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from './middleware/csrf';
+import { authMiddleware, adminMiddleware } from './middleware/auth';
 import { registerRoutes } from './routes';
 import { initSocketServer } from './services/socket.service';
 import { setupVite, serveStatic } from './vite';
@@ -103,7 +104,7 @@ app.use(requestLogger);
 app.get('/api/csrf-token', csrfTokenHandler);
 
 // ─── CSRF protection on state-changing requests ─────────────
-// Skips Bearer-auth requests and a small allowlist (login/register/portal).
+// Skips legacy Bearer-auth requests and a small allowlist (login/register).
 app.use(csrfProtection);
 
 // ─── Health check (before auth, always accessible) ───────────
@@ -112,8 +113,8 @@ app.get('/health/live', (_req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
 
-// Readiness/full health — depends on DB. Reports pool + memory + version.
-app.get('/health', async (_req, res) => {
+// Detailed readiness/full health — admin-only because it reports internals.
+app.get('/health', authMiddleware, adminMiddleware, async (_req, res) => {
   const ping = await pingDb();
   const status = ping.ok ? 'ok' : 'degraded';
   const mem = process.memoryUsage();

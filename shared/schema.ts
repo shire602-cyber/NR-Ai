@@ -84,6 +84,34 @@ export const tokenBlacklist = pgTable("token_blacklist", {
 });
 export type TokenBlacklistEntry = typeof tokenBlacklist.$inferSelect;
 
+// Rotating refresh sessions. Raw refresh tokens only live in httpOnly cookies;
+// the database stores SHA-256 digests so a DB leak cannot mint sessions.
+export const refreshSessions = pgTable("refresh_sessions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  replacedByTokenHash: text("replaced_by_token_hash"),
+  expiresAt: timestamp("expires_at").notNull(),
+  revokedAt: timestamp("revoked_at"),
+  reuseDetectedAt: timestamp("reuse_detected_at"),
+  lastUsedAt: timestamp("last_used_at"),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  tokenHashIdx: index("idx_refresh_sessions_token_hash").on(table.tokenHash),
+  userIdIdx: index("idx_refresh_sessions_user_id").on(table.userId),
+  expiresAtIdx: index("idx_refresh_sessions_expires_at").on(table.expiresAt),
+}));
+
+export const insertRefreshSessionSchema = createInsertSchema(refreshSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertRefreshSession = z.infer<typeof insertRefreshSessionSchema>;
+export type RefreshSession = typeof refreshSessions.$inferSelect;
+
 // One-time tokens issued by /auth/forgot-password and consumed by /auth/reset-password.
 // usedAt is set the moment the token is redeemed so a captured token cannot be replayed.
 export const passwordResetTokens = pgTable("password_reset_tokens", {

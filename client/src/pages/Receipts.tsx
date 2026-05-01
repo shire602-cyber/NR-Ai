@@ -19,6 +19,7 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { apiUrl } from '@/lib/api';
 import { getAuthHeaders } from '@/lib/auth';
+import { withCsrfHeader } from '@/lib/csrf';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import {
   exportToExcel,
@@ -615,10 +616,11 @@ export default function Receipts() {
       try {
         const response = await fetch(apiUrl('/api/ocr/process'), {
           method: 'POST',
-          headers: {
+          headers: await withCsrfHeader('POST', {
             'Content-Type': 'application/json',
             ...getAuthHeaders(),
-          },
+          }),
+          credentials: 'include',
           body: JSON.stringify({ imageData, companyId }),
         });
 
@@ -854,10 +856,11 @@ export default function Receipts() {
     try {
       const response = await fetch(apiUrl('/api/ai/categorize'), {
         method: 'POST',
-        headers: {
+        headers: await withCsrfHeader('POST', {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
-        },
+        }),
+        credentials: 'include',
         body: JSON.stringify({
           companyId,
           description: `${data.merchant || 'Unknown'} - ${data.total} ${data.currency}`,
