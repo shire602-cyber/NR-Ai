@@ -36,7 +36,8 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import type { CustomerContact } from '@shared/schema';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { exportToExcel } from '@/lib/export';
 import { SiWhatsapp } from 'react-icons/si';
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
 import { pickWhatsAppNumber } from '@/lib/whatsapp-templates';
@@ -49,6 +50,85 @@ interface ImportResult {
   updated: number;
   skipped: number;
   errors: string[];
+}
+
+async function parseXlsxRows(buffer: ArrayBuffer): Promise<Record<string, any>[]> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) return [];
+  const headers = rowValues(worksheet.getRow(1)).map((value, index) =>
+    value ? String(value) : `Column ${index + 1}`,
+  );
+  const rows: Record<string, any>[] = [];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+    const values = rowValues(row);
+    if (values.every((value) => value === '')) return;
+    rows.push(rowToObject(headers, values));
+  });
+  return rows;
+}
+
+function parseCsvRows(input: string): Record<string, any>[] {
+  const table: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+    const next = input[i + 1];
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"';
+      i++;
+      continue;
+    }
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (char === ',' && !inQuotes) {
+      row.push(cell);
+      cell = '';
+      continue;
+    }
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i++;
+      row.push(cell);
+      if (row.some((value) => value !== '')) table.push(row);
+      row = [];
+      cell = '';
+      continue;
+    }
+    cell += char;
+  }
+
+  row.push(cell);
+  if (row.some((value) => value !== '')) table.push(row);
+  const headers = table[0] ?? [];
+  return table.slice(1).map((values) => rowToObject(headers, values));
+}
+
+function rowValues(row: ExcelJS.Row): any[] {
+  const values = Array.isArray(row.values) ? row.values.slice(1) : [];
+  return values.map((value: any) => {
+    if (value == null) return '';
+    if (value instanceof Date) return value.toISOString();
+    if (typeof value === 'object') {
+      if ('text' in value) return value.text ?? '';
+      if ('result' in value) return value.result ?? '';
+    }
+    return value;
+  });
+}
+
+function rowToObject(headers: string[], values: any[]): Record<string, any> {
+  const row: Record<string, any> = {};
+  headers.forEach((header, index) => {
+    row[header] = values[index] ?? '';
+  });
+  return row;
 }
 
 export default function CustomerContacts() {
@@ -179,11 +259,11 @@ export default function CustomerContacts() {
   });
 
   const handleFileSelect = useCallback((selectedFile: File) => {
-    if (!selectedFile.name.match(/\.(xlsx|xls|csv)$/i)) {
-      toast({ 
-        variant: 'destructive', 
-        title: 'Invalid file type', 
-        description: 'Please upload an Excel file (.xlsx, .xls) or CSV file' 
+    if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
+      toast({
+        variant: 'destructive',
+        title: 'Invalid file type',
+        description: 'Please upload an Excel file (.xlsx) or CSV file'
       });
       return;
     }
@@ -192,14 +272,11 @@ export default function CustomerContacts() {
     setPreviewData(null);
     setImportResults(null);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    (async () => {
       try {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet);
+        const jsonData = selectedFile.name.match(/\.csv$/i)
+          ? parseCsvRows(await selectedFile.text())
+          : await parseXlsxRows(await selectedFile.arrayBuffer());
         
         const mappedData = jsonData.map((row: any) => ({
           name: row['Name'] || row['name'] || row['Company Name'] || row['company_name'] || '',
@@ -216,8 +293,7 @@ export default function CustomerContacts() {
       } catch (err: any) {
         toast({ variant: 'destructive', title: 'Failed to parse file', description: err?.message });
       }
-    };
-    reader.readAsBinaryString(selectedFile);
+    })();
   }, [toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -264,12 +340,13 @@ export default function CustomerContacts() {
       }
     ];
     
-    const ws = XLSX.utils.json_to_sheet(template);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Contacts');
-    XLSX.writeFile(wb, 'contact_import_template.xlsx');
-    
-    toast({ title: 'Template downloaded' });
+    void exportToExcel([{
+      sheetName: 'Contacts',
+      columns: Object.keys(template[0]).map((key) => ({ header: key, key, width: 22 })),
+      rows: template,
+    }], 'contact_import_template').then(() => {
+      toast({ title: 'Template downloaded' });
+    });
   };
 
   const filteredContacts = contacts.filter(contact => 
@@ -622,7 +699,7 @@ export default function CustomerContacts() {
                     Upload Excel File
                   </CardTitle>
                   <CardDescription>
-                    Upload an Excel file (.xlsx, .xls) or CSV containing your customer contacts.
+                    Upload an Excel file (.xlsx) or CSV containing your customer contacts.
                     We'll automatically map common column names like "Name", "Email", "Phone", "TRN", etc.
                   </CardDescription>
                 </CardHeader>
@@ -655,7 +732,7 @@ export default function CustomerContacts() {
                         </div>
                         <input
                           type="file"
-                          accept=".xlsx,.xls,.csv"
+                          accept=".xlsx,.csv"
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                           onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
                           data-testid="input-file-upload"

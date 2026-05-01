@@ -41,7 +41,7 @@ export default defineConfig({
           if (!id.includes("node_modules")) return undefined;
           // Heavy vendor libs deserve dedicated chunks so route bundles stay small.
           if (id.includes("jspdf") || id.includes("qrcode")) return "vendor-pdf";
-          if (id.includes("xlsx")) return "vendor-xlsx";
+          if (id.includes("exceljs")) return "vendor-spreadsheet";
           if (id.includes("pdfjs-dist") || id.includes("pdf.worker")) return "vendor-pdfjs";
           if (id.includes("html2canvas")) return "vendor-html2canvas";
           // recharts + d3-* are NOT manually grouped: bundling them together

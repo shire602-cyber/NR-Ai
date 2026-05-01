@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { apiRequest } from './queryClient';
 import { apiUrl } from './api';
 import { getAuthHeaders } from './auth';
@@ -28,8 +28,8 @@ export interface ExportData {
   sheetName?: string;
 }
 
-export function exportToExcel(data: ExportData[], filename: string) {
-  const workbook = XLSX.utils.book_new();
+export async function exportToExcel(data: ExportData[], filename: string) {
+  const workbook = new ExcelJS.Workbook();
 
   data.forEach((sheet) => {
     const headers = sheet.columns.map(col => col.header);
@@ -37,17 +37,21 @@ export function exportToExcel(data: ExportData[], filename: string) {
       sheet.columns.map(col => row[col.key] ?? '')
     );
 
-    const worksheetData = [headers, ...rows];
-    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-
-    const colWidths = sheet.columns.map(col => ({ wch: col.width || 15 }));
-    worksheet['!cols'] = colWidths;
-
     const sheetName = (sheet.sheetName || 'Sheet1').substring(0, 31);
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    const worksheet = workbook.addWorksheet(sheetName);
+    worksheet.columns = sheet.columns.map((col) => ({
+      header: col.header,
+      key: col.key,
+      width: col.width || 15,
+    }));
+    rows.forEach((row) => worksheet.addRow(row));
   });
 
-  XLSX.writeFile(workbook, `${filename}.xlsx`);
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  await triggerBlobDownload(blob, `${filename}.xlsx`);
 }
 
 export async function exportToGoogleSheets(

@@ -83,7 +83,7 @@ export function registerAIGLRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const result = await processUserFeedback(id, 'accept', userId);
+      const result = await processUserFeedback(companyId, id, 'accept', userId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }
@@ -112,7 +112,7 @@ export function registerAIGLRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const result = await processUserFeedback(id, 'reject', userId);
+      const result = await processUserFeedback(companyId, id, 'reject', userId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }
@@ -147,7 +147,7 @@ export function registerAIGLRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const result = await processUserFeedback(id, 'correct', userId, accountId);
+      const result = await processUserFeedback(companyId, id, 'correct', userId, accountId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }

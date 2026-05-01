@@ -32,7 +32,7 @@ const registerSchema = z.object({
 type RegisterFormData = z.infer<typeof registerSchema>;
 
 interface RegisterFormProps {
-  onSuccess: (token: string, user: any) => void;
+  onSuccess: (user: any) => void;
 }
 
 export function RegisterForm({ onSuccess }: RegisterFormProps) {
@@ -62,6 +62,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       const response = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
 
@@ -71,7 +72,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       }
 
       const result = await response.json();
-      onSuccess(result.token, result.user);
+      onSuccess(result.user);
       
       toast({
         title: 'Account created!',

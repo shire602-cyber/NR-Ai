@@ -1,11 +1,8 @@
-import { useState, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Upload, FileText, FileImage, File, Loader2, CheckCircle2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import { FolderOpen, FileText, FileImage, File, Loader2, CheckCircle2 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiRequest } from '@/lib/queryClient';
-import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -33,64 +30,17 @@ function formatBytes(bytes: number | null) {
 }
 
 export default function PortalDocuments() {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-
   const { data: documents = [], isLoading } = useQuery<any[]>({
     queryKey: ['portal-documents'],
     queryFn: () => apiRequest('GET', '/api/client-portal/documents'),
   });
-
-  const uploadMutation = useMutation({
-    mutationFn: (payload: any) => apiRequest('POST', '/api/client-portal/documents', payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['portal-documents'] });
-      toast({ title: 'Document uploaded', description: 'NR Accounting can now see your file.' });
-    },
-    onError: (e: any) => toast({ title: 'Upload failed', description: e.message, variant: 'destructive' }),
-  });
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      // In production this would upload to S3; here we send metadata only
-      await uploadMutation.mutateAsync({
-        name: file.name.replace(/\.[^.]+$/, ''),
-        fileName: file.name,
-        mimeType: file.type || 'application/octet-stream',
-        fileSize: file.size,
-        category: 'other',
-        fileUrl: `/uploads/${file.name}`,
-      });
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">Documents</h2>
-          <p className="text-sm text-gray-500 mt-1">Upload receipts and documents for NR Accounting to process.</p>
-        </div>
-        <div>
-          <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange}
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
-          />
-          <Button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {uploading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
-            Upload Document
-          </Button>
+          <p className="text-sm text-gray-500 mt-1">Documents shared by NR Accounting.</p>
         </div>
       </div>
 
@@ -102,9 +52,8 @@ export default function PortalDocuments() {
             </div>
           ) : documents.length === 0 ? (
             <div className="text-center py-14">
-              <Upload className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-              <p className="text-sm font-medium text-gray-500">No documents yet</p>
-              <p className="text-xs text-gray-400 mt-1">Upload receipts or files for your accountant.</p>
+              <FolderOpen className="w-10 h-10 text-gray-300 mx-auto mb-3" />
+              <p className="text-sm font-medium text-gray-500">No documents available</p>
             </div>
           ) : (
             <div className="divide-y divide-gray-100">

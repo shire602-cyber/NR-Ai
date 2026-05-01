@@ -3,7 +3,7 @@
 
 const CACHE_NAME = 'muhasib-v1';
 const STATIC_CACHE = 'muhasib-static-v1';
-const API_CACHE = 'muhasib-api-v1';
+let currentSessionMarker = null;
 
 // Static assets to pre-cache on install
 const PRECACHE_ASSETS = [
@@ -30,23 +30,6 @@ const STATIC_PATTERNS = [
   /\.ico$/,
 ];
 
-// API paths that should never be cached
-const NO_CACHE_API_PATHS = [
-  '/api/auth/',
-  '/api/notifications',
-  '/api/ai-',
-  '/api/chat',
-];
-
-// API paths safe to cache briefly (network-first with fallback)
-const CACHEABLE_API_PATHS = [
-  '/api/accounts',
-  '/api/chart-of-accounts',
-  '/api/company',
-  '/api/contacts',
-  '/api/inventory',
-];
-
 // ─── Install ────────────────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -69,8 +52,7 @@ self.addEventListener('activate', (event) => {
             return (
               name.startsWith('muhasib-') &&
               name !== CACHE_NAME &&
-              name !== STATIC_CACHE &&
-              name !== API_CACHE
+              name !== STATIC_CACHE
             );
           })
           .map((name) => caches.delete(name))
@@ -98,7 +80,7 @@ self.addEventListener('fetch', (event) => {
 
   // API requests: network-first strategy
   if (url.pathname.startsWith('/api/')) {
-    event.respondWith(handleApiRequest(request, url));
+    event.respondWith(handleApiRequest(request));
     return;
   }
 
@@ -160,39 +142,13 @@ async function handleStaticRequest(request) {
 }
 
 /**
- * Network-first strategy for API requests.
- * Tries network, falls back to cache for safe endpoints.
- * Never caches auth or AI endpoints.
+ * Network-only strategy for API requests.
+ * Authenticated financial responses are never cached by the service worker.
  */
-async function handleApiRequest(request, url) {
-  const shouldNeverCache = NO_CACHE_API_PATHS.some((path) =>
-    url.pathname.includes(path)
-  );
-
-  const isCacheable = CACHEABLE_API_PATHS.some((path) =>
-    url.pathname.startsWith(path)
-  );
-
+async function handleApiRequest(request) {
   try {
-    const response = await fetch(request);
-
-    // Cache successful GET responses for cacheable API paths
-    if (response.ok && isCacheable && !shouldNeverCache) {
-      const responseClone = response.clone();
-      const cache = await caches.open(API_CACHE);
-      cache.put(request, responseClone);
-    }
-
-    return response;
+    return await fetch(request);
   } catch {
-    // Network failed - try cache for cacheable endpoints
-    if (isCacheable && !shouldNeverCache) {
-      const cachedResponse = await caches.match(request);
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-    }
-
     // Return a proper error response
     return new Response(
       JSON.stringify({ error: 'You are offline. Please check your connection.' }),
@@ -264,10 +220,23 @@ async function replayFailedRequests() {
     const requests = await getAllFromStore(store);
 
     for (const entry of requests) {
+      if (!entry.sessionMarker || entry.sessionMarker !== currentSessionMarker) {
+        const deleteTx = db.transaction('requests', 'readwrite');
+        deleteTx.objectStore('requests').delete(entry.id);
+        continue;
+      }
+
       try {
+        const csrfToken = await getFreshCsrfToken();
+        const headers = {
+          ...(entry.contentType ? { 'Content-Type': entry.contentType } : {}),
+          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+        };
+
         const response = await fetch(entry.url, {
           method: entry.method,
-          headers: entry.headers,
+          credentials: 'include',
+          headers,
           body: entry.body,
         });
 
@@ -283,6 +252,20 @@ async function replayFailedRequests() {
     }
   } catch (error) {
     console.error('[SW] Background sync error:', error);
+  }
+}
+
+async function getFreshCsrfToken() {
+  try {
+    const response = await fetch('/api/csrf-token', {
+      method: 'GET',
+      credentials: 'include',
+    });
+    if (!response.ok) return null;
+    const json = await response.json();
+    return json.csrfToken || null;
+  } catch {
+    return null;
   }
 }
 
@@ -325,6 +308,10 @@ self.addEventListener('message', (event) => {
       queueFailedRequest(event.data.request);
       break;
 
+    case 'SET_SESSION_MARKER':
+      currentSessionMarker = event.data.sessionMarker || null;
+      break;
+
     case 'CLEAR_CACHE':
       caches.keys().then((names) => {
         names.forEach((name) => {
@@ -333,6 +320,7 @@ self.addEventListener('message', (event) => {
           }
         });
       });
+      clearQueuedRequests();
       break;
   }
 });
@@ -344,8 +332,9 @@ async function queueFailedRequest(requestData) {
     tx.objectStore('requests').add({
       url: requestData.url,
       method: requestData.method,
-      headers: requestData.headers,
+      contentType: requestData.contentType || 'application/json',
       body: requestData.body,
+      sessionMarker: requestData.sessionMarker || null,
       timestamp: Date.now(),
     });
 
@@ -355,5 +344,15 @@ async function queueFailedRequest(requestData) {
     }
   } catch (error) {
     console.error('[SW] Failed to queue request:', error);
+  }
+}
+
+async function clearQueuedRequests() {
+  try {
+    const db = await openSyncDB();
+    const tx = db.transaction('requests', 'readwrite');
+    tx.objectStore('requests').clear();
+  } catch (error) {
+    console.error('[SW] Failed to clear queued requests:', error);
   }
 }

@@ -16,6 +16,7 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest } from '@/lib/queryClient';
 import { getAuthHeaders } from '@/lib/auth';
 import { apiUrl } from '@/lib/api';
+import { withCsrfHeader } from '@/lib/csrf';
 import { 
   Send, 
   Bot, 
@@ -112,10 +113,10 @@ export default function AIChat() {
       abortControllerRef.current = new AbortController();
       const response = await fetch(apiUrl('/api/ask'), {
         method: 'POST',
-        headers: {
+        headers: await withCsrfHeader('POST', {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
-        },
+        }),
         credentials: 'include',
         body: JSON.stringify({
           message,
@@ -594,4 +595,3 @@ export default function AIChat() {
     </div>
   );
 }
-

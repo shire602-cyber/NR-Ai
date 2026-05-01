@@ -28,6 +28,12 @@ export function registerPortalPublicRoutes(app: Express) {
       return res.status(404).json({ message: 'Contact not found' });
     }
 
+    const user = req.user as any;
+    const hasAccess = user?.isAdmin || await storage.hasCompanyAccess(user.id, contact.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
     // Generate crypto-random token
     const token = crypto.randomBytes(32).toString('hex');
 

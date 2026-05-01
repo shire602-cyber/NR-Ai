@@ -497,6 +497,7 @@ export default function Payroll() {
     try {
       const response = await fetch(apiUrl(`/api/payroll-runs/${runId}/generate-sif`), {
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
       if (!response.ok) {
         const err = await response.json();

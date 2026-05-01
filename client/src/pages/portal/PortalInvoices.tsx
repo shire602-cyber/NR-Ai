@@ -23,6 +23,7 @@ const STATUS_STYLES: Record<string, string> = {
 async function downloadPdf(invoiceId: string, invoiceNumber: string) {
   const res = await fetch(apiUrl(`/api/client-portal/invoices/${invoiceId}/pdf`), {
     headers: getAuthHeaders(),
+    credentials: 'include',
   });
   if (!res.ok) return;
   const blob = await res.blob();

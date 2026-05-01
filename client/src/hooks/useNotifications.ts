@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { getToken, getAuthHeaders } from '@/lib/auth';
+import { apiRequest } from '@/lib/queryClient';
+import { useCurrentUser } from './useCurrentUser';
 
 export interface AppNotification {
   id: string;
@@ -32,10 +33,11 @@ export function useNotifications(): UseNotificationsReturn {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+  const { data: user } = useCurrentUser();
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications', { headers: getAuthHeaders() });
+      const res = await fetch('/api/notifications', { credentials: 'include' });
       if (!res.ok) return;
       const data = await res.json();
       setNotifications(data.notifications ?? []);
@@ -46,14 +48,13 @@ export function useNotifications(): UseNotificationsReturn {
   }, []);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
+    if (!user) return;
 
     fetchNotifications();
 
     const socket = io(window.location.origin, {
       path: '/socket.io',
-      auth: { token },
+      withCredentials: true,
       transports: ['websocket', 'polling'],
     });
 
@@ -71,15 +72,11 @@ export function useNotifications(): UseNotificationsReturn {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [fetchNotifications]);
+  }, [fetchNotifications, user]);
 
   const markAsRead = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/api/notifications/${id}/read`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) return;
+      await apiRequest('PATCH', `/api/notifications/${id}/read`);
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
       );
@@ -91,11 +88,7 @@ export function useNotifications(): UseNotificationsReturn {
 
   const markAllAsRead = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications/read-all', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-      });
-      if (!res.ok) return;
+      await apiRequest('POST', '/api/notifications/read-all');
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } catch {

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'wouter';
-import { getToken } from '@/lib/auth';
 import { useToast } from '@/hooks/use-toast';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface Props {
   allowedTypes: string[];
@@ -12,25 +12,13 @@ interface Props {
 export function RequireUserType({ allowedTypes, children, redirectTo = '/dashboard' }: Props) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { data: user, isLoading } = useCurrentUser();
 
-  const getUserType = (): string => {
-    try {
-      const token = getToken();
-      if (!token) return 'customer';
-      const parts = token.split('.');
-      if (parts.length !== 3) return 'customer';
-      const payload = JSON.parse(atob(parts[1]));
-      return payload.userType || 'customer';
-    } catch {
-      return 'customer';
-    }
-  };
-
-  const userType = getUserType();
+  const userType = user?.userType || 'customer';
   const isAllowed = allowedTypes.includes(userType);
 
   useEffect(() => {
-    if (!isAllowed) {
+    if (!isLoading && !isAllowed) {
       toast({
         title: 'Access Restricted',
         description: 'You do not have access to this page.',
@@ -38,8 +26,8 @@ export function RequireUserType({ allowedTypes, children, redirectTo = '/dashboa
       });
       setLocation(redirectTo);
     }
-  }, [isAllowed, setLocation, redirectTo]);
+  }, [isLoading, isAllowed, setLocation, redirectTo]);
 
-  if (!isAllowed) return null;
+  if (isLoading || !isAllowed) return null;
   return <>{children}</>;
 }

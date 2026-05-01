@@ -449,6 +449,34 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'email_verification_tokens.user_id index',
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_email_verification_tokens_user_id" ON "email_verification_tokens" ("user_id")`,
     },
+    {
+      name: 'refresh_sessions table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "refresh_sessions" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "token_hash" text NOT NULL UNIQUE,
+        "replaced_by_token_hash" text,
+        "expires_at" timestamp NOT NULL,
+        "revoked_at" timestamp,
+        "reuse_detected_at" timestamp,
+        "last_used_at" timestamp,
+        "user_agent" text,
+        "ip_address" text,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      name: 'refresh_sessions.token_hash index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_refresh_sessions_token_hash" ON "refresh_sessions" ("token_hash")`,
+    },
+    {
+      name: 'refresh_sessions.user_id index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_refresh_sessions_user_id" ON "refresh_sessions" ("user_id")`,
+    },
+    {
+      name: 'refresh_sessions.expires_at index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_refresh_sessions_expires_at" ON "refresh_sessions" ("expires_at")`,
+    },
     // ── 0033: companies.exempt_supply_ratio (partial-exemption VAT) ──────
     // Schema-required column. If migration 0033 was tracked-but-not-run,
     // any SELECT/UPDATE...RETURNING on companies fails with 42703 because

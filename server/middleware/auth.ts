@@ -4,6 +4,10 @@ import { storage } from '../storage';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 import { isTokenBlacklisted } from '../services/auth-tokens.service';
+import {
+  ACCESS_TOKEN_TTL_SECONDS,
+  getAccessTokenFromRequest,
+} from '../services/auth-cookies.service';
 
 const log = createLogger('auth');
 
@@ -53,12 +57,15 @@ export async function authMiddleware(
   next: NextFunction
 ): Promise<void> {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+  const cookieToken = getAccessTokenFromRequest(req);
+  const token = cookieToken || bearerToken;
+
+  if (!token) {
     res.status(401).json({ message: 'Authentication required' });
     return;
   }
 
-  const token = authHeader.substring(7);
   try {
     const decoded = jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload;
 
@@ -242,31 +249,6 @@ export function generateToken(user: { id: string; email: string; isAdmin?: boole
       firmRole: user.firmRole ?? null,
     },
     env.JWT_SECRET,
-    { expiresIn: '24h' }
+    { expiresIn: ACCESS_TOKEN_TTL_SECONDS }
   );
-}
-
-/**
- * Generate a refresh token (longer-lived).
- */
-export function generateRefreshToken(user: { id: string; email: string }): string {
-  const env = getEnv();
-  return jwt.sign(
-    { userId: user.id, email: user.email, type: 'refresh' },
-    env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-}
-
-/**
- * Verify a refresh token and return the payload.
- */
-export function verifyRefreshToken(token: string): JwtPayload | null {
-  try {
-    const decoded = jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload & { type?: string };
-    if (decoded.type !== 'refresh') return null;
-    return decoded;
-  } catch {
-    return null;
-  }
 }

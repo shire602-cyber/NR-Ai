@@ -703,7 +703,7 @@ export default function ClientPortfolio() {
               <Input
                 id="import-file"
                 type="file"
-                accept=".csv,.xlsx,.xls"
+                accept=".csv,.xlsx"
                 onChange={e => {
                   setImportFile(e.target.files?.[0] ?? null);
                   setImportResult(null);

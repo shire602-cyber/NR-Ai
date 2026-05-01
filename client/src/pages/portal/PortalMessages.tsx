@@ -1,40 +1,14 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Send, MessageSquare, Loader2 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { MessageSquare, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
 import { apiRequest } from '@/lib/queryClient';
-import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 
 export default function PortalMessages() {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [subject, setSubject] = useState('');
-  const [content, setContent] = useState('');
-
   const { data: messages = [], isLoading } = useQuery<any[]>({
     queryKey: ['portal-messages'],
     queryFn: () => apiRequest('GET', '/api/client-portal/messages'),
   });
-
-  const sendMutation = useMutation({
-    mutationFn: (payload: any) => apiRequest('POST', '/api/client-portal/messages', payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['portal-messages'] });
-      setSubject('');
-      setContent('');
-      toast({ title: 'Message sent', description: 'NR Accounting will respond shortly.' });
-    },
-    onError: (e: any) => toast({ title: 'Failed to send', description: e.message, variant: 'destructive' }),
-  });
-
-  function handleSend() {
-    if (!content.trim()) return;
-    sendMutation.mutate({ subject: subject.trim() || null, content: content.trim() });
-  }
 
   const sorted = [...messages].sort(
     (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
@@ -44,40 +18,9 @@ export default function PortalMessages() {
     <div className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold text-gray-900">Messages</h2>
-        <p className="text-sm text-gray-500 mt-1">Communicate with your NR Accounting team.</p>
+        <p className="text-sm text-gray-500 mt-1">Messages from your NR Accounting team.</p>
       </div>
 
-      {/* Compose */}
-      <Card>
-        <CardContent className="pt-4 space-y-3">
-          <p className="text-sm font-medium text-gray-700">New Message</p>
-          <Input
-            placeholder="Subject (optional)"
-            value={subject}
-            onChange={e => setSubject(e.target.value)}
-          />
-          <Textarea
-            placeholder="Write your message..."
-            rows={4}
-            value={content}
-            onChange={e => setContent(e.target.value)}
-          />
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSend}
-              disabled={!content.trim() || sendMutation.isPending}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              {sendMutation.isPending
-                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                : <Send className="w-4 h-4 mr-2" />}
-              Send
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Message list */}
       <Card>
         <CardContent className="p-0">
           {isLoading ? (

@@ -3,7 +3,6 @@ import { Router } from 'express';
 import type { Express } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
-import * as XLSX from 'xlsx';
 import crypto from 'crypto';
 
 import { storage } from '../storage';
@@ -14,6 +13,7 @@ import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import { db } from '../db';
 import { eq, and, desc, gte, lte, like } from 'drizzle-orm';
 import { activityLogs } from '../../shared/schema';
+import { buildXlsxBufferFromRows, parseSpreadsheetBuffer } from '../utils/spreadsheet';
 
 const logger = createLogger('admin-routes');
 
@@ -778,22 +778,13 @@ export function registerAdminRoutes(app: Express): void {
       // Convert base64 to buffer
       const buffer = Buffer.from(fileData, 'base64');
 
-      // Parse Excel file
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-
-      // Convert to JSON with headers
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-
-      // Get column headers
-      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-      const headers: string[] = [];
-      for (let col = range.s.c; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: col });
-        const cell = worksheet[cellAddress];
-        headers.push(cell ? String(cell.v) : `Column ${col + 1}`);
+      let parsed;
+      try {
+        parsed = await parseSpreadsheetBuffer(buffer, fileName);
+      } catch (err: any) {
+        return res.status(400).json({ message: `Could not parse file: ${err.message}` });
       }
+      const { sheetName, headers, rows: jsonData } = parsed;
 
       // Map data to expected format based on column headers
       const mappedData = jsonData.map((row: any) => {
@@ -846,7 +837,7 @@ export function registerAdminRoutes(app: Express): void {
 
       res.json({
         fileName,
-        sheetName: firstSheetName,
+        sheetName,
         headers,
         totalRows: jsonData.length,
         preview: mappedData.slice(0, 10), // First 10 rows for preview
@@ -883,26 +874,11 @@ export function registerAdminRoutes(app: Express): void {
         },
       ];
 
-      // Create workbook
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(sampleData);
-
-      // Set column widths
-      worksheet['!cols'] = [
-        { wch: 25 }, // Company Name
-        { wch: 25 }, // Email
-        { wch: 18 }, // Phone
-        { wch: 18 }, // TRN
-        { wch: 30 }, // Address
-        { wch: 15 }, // Industry
-        { wch: 20 }, // Website
-        { wch: 18 }, // Legal Structure
-      ];
-
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
-
-      // Generate buffer
-      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const buffer = await buildXlsxBufferFromRows(
+        sampleData,
+        'Clients',
+        [25, 25, 18, 18, 30, 15, 20, 18],
+      );
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', 'attachment; filename=client_import_template.xlsx');

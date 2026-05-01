@@ -1,5 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { getAuthHeaders } from "./auth";
+import { getAuthHeaders, refreshSession } from "./auth";
 import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
@@ -69,12 +69,26 @@ export async function apiRequest(
     throw new ApiError('You are offline. This change will sync when you reconnect.', 0);
   }
 
-  const res = await fetch(fullUrl, {
+  let res = await fetch(fullUrl, {
     method,
     headers,
     body,
     credentials: "include",
   });
+
+  if (res.status === 401) {
+    const refreshed = await refreshSession();
+    if (refreshed) {
+      headers = data ? { "Content-Type": "application/json" } : {};
+      headers = await withCsrfHeader(method, headers);
+      res = await fetch(fullUrl, {
+        method,
+        headers,
+        body,
+        credentials: "include",
+      });
+    }
+  }
 
   // 403 with CSRF code → token rotated/expired; clear cache so next call refetches.
   if (res.status === 403) {
@@ -99,10 +113,21 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(apiUrl(queryKey.join("/") as string), {
+    const url = apiUrl(queryKey.join("/") as string);
+    let res = await fetch(url, {
       credentials: "include",
       headers: getAuthHeaders(),
     });
+
+    if (res.status === 401) {
+      const refreshed = await refreshSession();
+      if (refreshed) {
+        res = await fetch(url, {
+          credentials: "include",
+          headers: getAuthHeaders(),
+        });
+      }
+    }
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
