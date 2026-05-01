@@ -195,7 +195,9 @@ export function registerContactRoutes(app: Express) {
       return res.status(404).json({ message: 'Contact not found' });
     }
 
-    const contact = await storage.updateCustomerContact(id, companyId, req.body);
+    // Strip companyId/id so the client can't reassign tenancy via body.
+    const { companyId: _ignoredCompanyId, id: _ignoredId, ...updateData } = req.body ?? {};
+    const contact = await storage.updateCustomerContact(id, companyId, updateData);
     res.json(contact);
   }));
 

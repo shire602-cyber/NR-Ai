@@ -78,7 +78,9 @@ export function registerCorporateTaxRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied to this corporate tax return' });
     }
 
-    const taxReturn = await storage.updateCorporateTaxReturn(id, existing.companyId, req.body);
+    // Strip companyId/id so the client can't reassign tenancy via body.
+    const { companyId: _ignoredCompanyId, id: _ignoredId, ...updateData } = req.body ?? {};
+    const taxReturn = await storage.updateCorporateTaxReturn(id, existing.companyId, updateData);
     res.json(taxReturn);
   }));
 

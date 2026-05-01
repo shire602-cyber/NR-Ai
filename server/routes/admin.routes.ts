@@ -686,7 +686,9 @@ export function registerAdminRoutes(app: Express): void {
       if (!existing) {
         return res.status(404).json({ message: 'Note not found' });
       }
-      const note = await storage.updateClientNote(noteId, existing.companyId, req.body);
+      // Strip companyId/id so the client can't reassign tenancy via body.
+      const { companyId: _ignoredCompanyId, id: _ignoredId, ...updateData } = req.body ?? {};
+      const note = await storage.updateClientNote(noteId, existing.companyId, updateData);
       res.json(note);
     })
   );

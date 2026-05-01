@@ -118,7 +118,9 @@ export function registerInventoryRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const updated = await storage.updateProduct(id, product.companyId, req.body);
+    // Strip companyId/id so the client can't reassign tenancy via body.
+    const { companyId: _ignoredCompanyId, id: _ignoredId, ...updateData } = req.body ?? {};
+    const updated = await storage.updateProduct(id, product.companyId, updateData);
     log.info({ productId: id }, 'Product updated');
     res.json(updated);
   }));

@@ -78,7 +78,9 @@ export function registerReminderRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied to this reminder setting' });
     }
 
-    const setting = await storage.updateReminderSetting(id, existing.companyId, req.body);
+    // Strip companyId/id so the client can't reassign tenancy via body.
+    const { companyId: _ignoredCompanyId, id: _ignoredId, ...updateData } = req.body ?? {};
+    const setting = await storage.updateReminderSetting(id, existing.companyId, updateData);
     res.json(setting);
   }));
 
