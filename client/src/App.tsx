@@ -50,6 +50,7 @@ const FirmHealth = lazy(() => import('@/pages/firm/FirmHealth'));
 const FirmComms = lazy(() => import('@/pages/firm/FirmComms'));
 const FirmAnalytics = lazy(() => import('@/pages/firm/FirmAnalytics'));
 const LeadPipeline = lazy(() => import('@/pages/firm/LeadPipeline'));
+const ValueOps = lazy(() => import('@/pages/firm/ValueOps'));
 const FirmCommandCenter = lazy(() => import('@/pages/FirmCommandCenter'));
 
 // Core accounting
@@ -548,6 +549,9 @@ function Router() {
           {/* NRA Firm Management Center */}
           <Route path="/firm/command-center">
             <FirmRoute><FirmCommandCenter /></FirmRoute>
+          </Route>
+          <Route path="/firm/value-ops">
+            <FirmRoute><ValueOps /></FirmRoute>
           </Route>
           <Route path="/firm/health">
             <FirmRoute><FirmHealth /></FirmRoute>

@@ -72,6 +72,7 @@ export const t = {
     
     // NRA Center items
     firmCommandCenter: 'Command Center',
+    valueOps: 'Value Ops',
     clientPortfolio: 'Client Portfolio',
     staffManagement: 'Staff Management',
     bulkOperations: 'Bulk Operations',
@@ -403,6 +404,7 @@ export const t = {
     
     // NRA Center items
     firmCommandCenter: 'مركز القيادة',
+    valueOps: 'عمليات القيمة',
     clientPortfolio: 'محفظة العملاء',
     staffManagement: 'إدارة الموظفين',
     bulkOperations: 'العمليات الجماعية',
