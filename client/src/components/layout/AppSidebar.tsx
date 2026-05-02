@@ -164,6 +164,7 @@ const NRA_GROUP: NavGroup = {
   icon: Briefcase,
   items: [
     { titleKey: 'firmCommandCenter', url: '/firm/command-center' },
+    { titleKey: 'valueOps', url: '/firm/value-ops' },
     { titleKey: 'clientPortfolio', url: '/firm/clients' },
     { titleKey: 'staffManagement', url: '/firm/staff' },
     { titleKey: 'healthDashboard', url: '/firm/health' },
