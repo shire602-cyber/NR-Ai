@@ -39,6 +39,8 @@ let pool: any;
 let db: any;
 let _driver: 'neon' | 'pg' = 'pg';
 
+type QueryRow = Record<string, unknown>;
+
 if (isNeon) {
   // Use Neon serverless driver (WebSocket-based) for Neon databases
   const { Pool: NeonPool, neonConfig } = await import('@neondatabase/serverless');
@@ -61,9 +63,89 @@ if (isNeon) {
   _driver = 'pg';
 }
 
+function rowsFromResult<T extends QueryRow = QueryRow>(result: unknown): T[] {
+  if (Array.isArray(result)) {
+    return result as T[];
+  }
+
+  const rows = (result as { rows?: unknown })?.rows;
+  return Array.isArray(rows) ? (rows as T[]) : [];
+}
+
+async function queryRows<T extends QueryRow = QueryRow>(query: ReturnType<typeof sql>): Promise<T[]> {
+  return rowsFromResult<T>(await db.execute(query));
+}
+
+async function tableExists(schemaName: string, tableName: string): Promise<boolean> {
+  const rows = await queryRows<{ exists: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = ${schemaName}
+        AND table_name = ${tableName}
+    ) AS "exists"
+  `);
+  return Boolean(rows[0]?.exists);
+}
+
+/**
+ * Production has gone through a few migration systems. Some Railway databases
+ * already contain the app schema but have an empty Drizzle migration ledger,
+ * which makes Drizzle replay 0000 and fail on CREATE TABLE accounts. When the
+ * core schema is present and the ledger is empty, mark the current migration
+ * set as the baseline so future migrations can proceed normally.
+ */
+async function baselineMigrationLedgerForExistingSchema(migrationsFolder: string): Promise<void> {
+  const hasExistingAppSchema = await Promise.all([
+    tableExists('public', 'accounts'),
+    tableExists('public', 'companies'),
+    tableExists('public', 'users'),
+    tableExists('public', 'journal_entries'),
+  ]).then((checks) => checks.every(Boolean));
+
+  if (!hasExistingAppSchema) {
+    return;
+  }
+
+  const ledgerExists = await tableExists('drizzle', '__drizzle_migrations');
+  if (ledgerExists) {
+    const rows = await queryRows<{ count: string | number }>(
+      sql`SELECT COUNT(*) AS "count" FROM "drizzle"."__drizzle_migrations"`
+    );
+    if (Number(rows[0]?.count ?? 0) > 0) {
+      return;
+    }
+  }
+
+  const { readMigrationFiles } = await import('drizzle-orm/migrator');
+  const migrations = readMigrationFiles({ migrationsFolder });
+
+  await db.execute(sql`CREATE SCHEMA IF NOT EXISTS "drizzle"`);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
+      id SERIAL PRIMARY KEY,
+      hash text NOT NULL,
+      created_at bigint
+    )
+  `);
+
+  for (const migration of migrations) {
+    await db.execute(sql`
+      INSERT INTO "drizzle"."__drizzle_migrations" ("hash", "created_at")
+      VALUES (${migration.hash}, ${migration.folderMillis})
+    `);
+  }
+
+  log.warn(
+    { count: migrations.length },
+    'Baselined Drizzle migration ledger for existing app schema'
+  );
+}
+
 export async function runMigrations(migrationsFolder: string): Promise<void> {
   log.info({ migrationsFolder, driver: _driver }, 'Running migrations');
   try {
+    await baselineMigrationLedgerForExistingSchema(migrationsFolder);
     if (_driver === 'neon') {
       const { migrate } = await import('drizzle-orm/neon-serverless/migrator');
       await migrate(db, { migrationsFolder });
