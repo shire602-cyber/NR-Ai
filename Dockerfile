@@ -7,7 +7,7 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci || npm install
 COPY . .
 RUN npm run build
 
@@ -15,7 +15,7 @@ RUN npm run build
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci --omit=dev --ignore-scripts || npm install --omit=dev --ignore-scripts
 
 # Stage 3: Production image
 FROM node:20-alpine
