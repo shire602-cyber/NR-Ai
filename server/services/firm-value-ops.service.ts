@@ -129,6 +129,37 @@ export interface ValueOpsDashboard {
   clients: ValueOpsClient[];
 }
 
+export interface ValueOpsOperatingMove {
+  lane: ValueLane;
+  priority: Priority;
+  title: string;
+  metric: string;
+  detail: string;
+  href: string;
+}
+
+export interface ValueOpsClientBrief {
+  companyId: string;
+  companyName: string;
+  priority: Priority;
+  headline: string;
+  whyNow: string;
+  commercialImpactAed: number;
+  dueInDays: number | null;
+  ownerRole: string;
+  recommendedActions: string[];
+  healthSignals: string[];
+  href: string;
+}
+
+export interface ValueOpsActionBrief {
+  generatedAt: Date;
+  summary: string[];
+  operatingMoves: ValueOpsOperatingMove[];
+  clientBriefs: ValueOpsClientBrief[];
+  servicePlays: ValueOpsOperatingMove[];
+}
+
 export interface ClientAuditPack {
   company: {
     id: string;
@@ -269,6 +300,88 @@ function topClientBy(
   return clients
     .filter(predicate)
     .sort((a, b) => score(b) - score(a))[0] ?? null;
+}
+
+function formatAedBrief(value: number): string {
+  return `AED ${Math.round(value || 0).toLocaleString('en-AE')}`;
+}
+
+function briefPriority(client: ValueOpsClient): Priority {
+  const exposure =
+    client.money.overdueAr +
+    client.money.nraServiceAr +
+    Math.max(client.money.vatPayable, 0) +
+    client.workload.reviewerQueueItems * 1_500 +
+    client.workload.overdueDocuments * 750;
+
+  if (
+    client.status.daysToVatDue !== null &&
+    client.status.daysToVatDue < 0 &&
+    client.status.latestVatStatus !== 'filed' &&
+    client.status.latestVatStatus !== 'submitted'
+  ) {
+    return 'critical';
+  }
+  if (client.scores.complianceRisk >= 80 || exposure >= 100_000) return 'critical';
+  if (client.scores.complianceRisk >= 60 || exposure >= 25_000 || client.workload.reviewerQueueItems >= 8) return 'high';
+  if (client.scores.complianceRisk >= 35 || exposure >= 5_000 || client.workload.reviewerQueueItems > 0) return 'medium';
+  return 'low';
+}
+
+function clientImpactAed(client: ValueOpsClient): number {
+  return Math.round(
+    client.money.overdueAr +
+      client.money.nraServiceAr +
+      Math.max(client.money.vatPayable, 0) +
+      client.workload.reviewerQueueItems * 1_500 +
+      client.workload.missingDocuments * 500,
+  );
+}
+
+function clientBriefHeadline(client: ValueOpsClient): string {
+  if (client.money.overdueAr > 0) return `Recover ${formatAedBrief(client.money.overdueAr)} overdue from client customers`;
+  if (client.money.nraServiceAr > 0) return `Collect ${formatAedBrief(client.money.nraServiceAr)} NRA service AR`;
+  if (client.workload.reviewerQueueItems > 0) return `Clear ${client.workload.reviewerQueueItems} AI review exceptions`;
+  if (client.status.daysToVatDue !== null && client.status.daysToVatDue <= 14) return 'Finish VAT evidence before deadline';
+  if (!client.status.onboardingCompleted) return 'Complete onboarding and migration readiness';
+  return 'Prepare monthly CFO pack';
+}
+
+function clientWhyNow(client: ValueOpsClient): string {
+  const signals: string[] = [];
+  if (client.status.daysToVatDue !== null) {
+    if (client.status.daysToVatDue < 0) signals.push(`VAT is ${Math.abs(client.status.daysToVatDue)} days overdue`);
+    else if (client.status.daysToVatDue <= 14) signals.push(`VAT due in ${client.status.daysToVatDue} days`);
+  }
+  if (client.money.overdueAr > 0) signals.push(`${formatAedBrief(client.money.overdueAr)} overdue AR`);
+  if (client.money.nraServiceAr > 0) signals.push(`${formatAedBrief(client.money.nraServiceAr)} NRA service AR`);
+  if (client.workload.reviewerQueueItems > 0) signals.push(`${client.workload.reviewerQueueItems} review items`);
+  if (client.workload.missingDocuments > 0) signals.push(`${client.workload.missingDocuments} missing documents`);
+  if (!client.status.hasBankFeedData) signals.push('no bank feed evidence');
+  return signals.slice(0, 4).join(' · ') || 'ready for proactive advisory touchpoint';
+}
+
+function clientRecommendedActions(client: ValueOpsClient, reviewItems: FirmReviewItem[]): string[] {
+  const actions: string[] = [];
+  const topReview = reviewItems[0];
+  if (topReview) actions.push(topReview.suggestedAction);
+  if (client.money.overdueAr > 0) actions.push(`Send collections follow-up for ${formatAedBrief(client.money.overdueAr)} overdue AR.`);
+  if (client.money.nraServiceAr > 0) actions.push(`Escalate NRA service AR of ${formatAedBrief(client.money.nraServiceAr)} to billing owner.`);
+  if (client.workload.missingDocuments > 0) actions.push('Send a focused document request for the missing VAT and bank evidence.');
+  if (client.status.daysToVatDue !== null && client.status.daysToVatDue <= 14) actions.push('Open the audit pack and clear reviewer notes before VAT submission.');
+  if (!client.status.onboardingCompleted) actions.push('Finish onboarding, TRN capture, and migration checklist.');
+  if (actions.length === 0) actions.push('Generate the CFO pack and send a proactive monthly check-in.');
+  return [...new Set(actions)].slice(0, 4);
+}
+
+function clientHealthSignals(client: ValueOpsClient): string[] {
+  return [
+    `Audit ${client.scores.auditDefense}`,
+    `Close ${client.scores.closeReadiness}`,
+    `Compliance risk ${client.scores.complianceRisk}`,
+    `${client.workload.reviewerQueueItems} reviews`,
+    `${client.workload.missingDocuments} docs`,
+  ];
 }
 
 export async function buildFirmValueOps(
@@ -881,6 +994,141 @@ export async function buildFirmValueOps(
     opportunities,
     actions,
     clients,
+  };
+}
+
+export async function buildFirmActionBrief(
+  companyIds: string[],
+  now: Date = new Date(),
+): Promise<ValueOpsActionBrief> {
+  const [dashboard, reviewQueue] = await Promise.all([
+    buildFirmValueOps(companyIds, now),
+    buildFirmReviewQueue(companyIds, now),
+  ]);
+
+  const reviewByCompany = new Map<string, FirmReviewItem[]>();
+  for (const item of reviewQueue) {
+    const current = reviewByCompany.get(item.companyId) ?? [];
+    current.push(item);
+    reviewByCompany.set(item.companyId, current);
+  }
+
+  const clientBriefs = dashboard.clients
+    .map((client) => {
+      const reviewItems = reviewByCompany.get(client.companyId) ?? [];
+      const dueInDays = client.status.daysToVatDue;
+      const priority = briefPriority(client);
+      const commercialImpactAed = clientImpactAed(client);
+      const ownerRole =
+        client.money.nraServiceAr > 0 || client.money.overdueAr > 0
+          ? 'Client success'
+          : client.workload.reviewerQueueItems > 0
+            ? 'Reviewer'
+            : client.scores.complianceRisk >= 45
+              ? 'Tax lead'
+              : 'Account manager';
+
+      return {
+        companyId: client.companyId,
+        companyName: client.companyName,
+        priority,
+        headline: clientBriefHeadline(client),
+        whyNow: clientWhyNow(client),
+        commercialImpactAed,
+        dueInDays,
+        ownerRole,
+        recommendedActions: clientRecommendedActions(client, reviewItems),
+        healthSignals: clientHealthSignals(client),
+        href: `/firm/clients/${client.companyId}`,
+      };
+    })
+    .filter((brief) => brief.priority !== 'low' || brief.commercialImpactAed > 0)
+    .sort((a, b) => {
+      const rankDelta = priorityRank(b.priority) - priorityRank(a.priority);
+      if (rankDelta !== 0) return rankDelta;
+      return b.commercialImpactAed - a.commercialImpactAed;
+    })
+    .slice(0, 10);
+
+  const operatingMoveCandidates: ValueOpsOperatingMove[] = [
+    {
+      lane: 'cash_recovery',
+      priority: dashboard.summary.cashAtRisk >= 100_000 ? 'critical' : dashboard.summary.cashAtRisk > 0 ? 'high' : 'low',
+      title: 'Recover client cash',
+      metric: formatAedBrief(dashboard.summary.cashAtRisk),
+      detail: 'Prioritize clients with overdue AR and ready communication queues.',
+      href: '/firm/value-ops',
+    },
+    {
+      lane: 'ai_review',
+      priority: dashboard.summary.reviewerQueueItems >= 25 ? 'critical' : dashboard.summary.reviewerQueueItems > 0 ? 'high' : 'low',
+      title: 'Clear AI review exceptions',
+      metric: `${dashboard.summary.reviewerQueueItems} items`,
+      detail: 'Work the highest-confidence bank, receipt, VAT, anomaly, and document exceptions first.',
+      href: '/firm/value-ops',
+    },
+    {
+      lane: 'penalty_prevention',
+      priority: dashboard.summary.penaltyRiskClients > 0 ? 'high' : 'low',
+      title: 'Prevent filing penalties',
+      metric: `${dashboard.summary.penaltyRiskClients} clients`,
+      detail: 'Open audit packs for clients with VAT deadlines, missing evidence, or unresolved anomalies.',
+      href: '/firm/value-ops',
+    },
+    {
+      lane: 'migration_concierge',
+      priority: dashboard.summary.migrationBlockers > 0 ? 'medium' : 'low',
+      title: 'Finish onboarding blockers',
+      metric: `${dashboard.summary.migrationBlockers} clients`,
+      detail: 'Move incomplete clients through TRN, bank evidence, and opening-balance readiness.',
+      href: '/firm/clients',
+    },
+  ];
+  const operatingMoves = operatingMoveCandidates.filter((move) => move.priority !== 'low');
+
+  const servicePlayCandidates: ValueOpsOperatingMove[] = [
+    {
+      lane: 'monthly_cfo_pack',
+      priority: dashboard.summary.closeReadyClients > 0 ? 'medium' : 'low',
+      title: 'Ship CFO packs',
+      metric: `${dashboard.summary.closeReadyClients} close-ready`,
+      detail: 'Turn clean books into advisory output clients can understand and act on.',
+      href: '/firm/value-ops',
+    },
+    {
+      lane: 'nra_profitability',
+      priority: dashboard.summary.nraServiceAr > 0 ? 'high' : 'low',
+      title: 'Protect NRA revenue',
+      metric: formatAedBrief(dashboard.summary.nraServiceAr),
+      detail: 'Collect open service invoices and flag unpriced active engagements.',
+      href: '/firm/value-ops',
+    },
+    {
+      lane: 'whatsapp_cockpit',
+      priority: dashboard.summary.whatsappQueueItems > 0 ? 'medium' : 'low',
+      title: 'Send owner nudges',
+      metric: `${dashboard.summary.whatsappQueueItems} messages`,
+      detail: 'Use WhatsApp follow-ups for missing documents, collections, and approval reminders.',
+      href: '/firm/comms',
+    },
+  ];
+  const servicePlays = servicePlayCandidates.filter((move) => move.priority !== 'low');
+
+  const topClient = clientBriefs[0];
+  const summary = [
+    `${formatAedBrief(dashboard.summary.cashAtRisk + dashboard.summary.nraServiceAr)} is exposed across client AR and NRA service AR.`,
+    `${dashboard.summary.reviewerQueueItems} AI review items and ${dashboard.summary.penaltyRiskClients} penalty-risk clients need attention.`,
+    topClient
+      ? `Next best move: ${topClient.companyName} — ${topClient.headline}.`
+      : 'No urgent client move is currently above the action threshold.',
+  ];
+
+  return {
+    generatedAt: now,
+    summary,
+    operatingMoves,
+    clientBriefs,
+    servicePlays,
   };
 }
 

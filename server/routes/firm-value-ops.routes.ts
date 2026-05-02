@@ -7,6 +7,7 @@ import { requireFirmAdmin } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import {
+  buildFirmActionBrief,
   buildClientAuditPack,
   buildClientCfoPack,
   buildFirmReviewQueue,
@@ -58,6 +59,16 @@ export function registerFirmValueOpsRoutes(app: Express): void {
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const queue = await buildFirmReviewQueue(companyIds);
       res.json(queue);
+    }),
+  );
+
+  router.get(
+    '/action-brief',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      const brief = await buildFirmActionBrief(companyIds);
+      res.json(brief);
     }),
   );
 
