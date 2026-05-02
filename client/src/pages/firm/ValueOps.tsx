@@ -54,6 +54,13 @@ type ValueLane =
   | 'whatsapp_cockpit'
   | 'monthly_cfo_pack'
   | 'migration_concierge';
+type ReviewItemKind =
+  | 'bank_match'
+  | 'receipt_posting'
+  | 'anomaly'
+  | 'vat_review'
+  | 'trial_balance'
+  | 'document_request';
 
 interface ValueOpsClient {
   companyId: string;
@@ -113,6 +120,23 @@ interface ValueOpsAction {
   title: string;
   detail: string;
   impactAed: number;
+  href: string;
+}
+
+interface FirmReviewItem {
+  id: string;
+  kind: ReviewItemKind;
+  priority: Priority;
+  companyId: string;
+  companyName: string;
+  entityId: string;
+  entityType: string;
+  title: string;
+  explanation: string;
+  suggestedAction: string;
+  confidence: number;
+  amountAed: number;
+  dueDate: string | null;
   href: string;
 }
 
@@ -181,6 +205,15 @@ const laneConfig: Record<ValueLane, { label: string; icon: typeof ShieldCheck }>
   migration_concierge: { label: 'Migration concierge', icon: UploadCloud },
 };
 
+const reviewKindConfig: Record<ReviewItemKind, { label: string; icon: typeof ShieldCheck }> = {
+  bank_match: { label: 'Bank match', icon: Landmark },
+  receipt_posting: { label: 'Receipt posting', icon: FileText },
+  anomaly: { label: 'Anomaly', icon: AlertTriangle },
+  vat_review: { label: 'VAT review', icon: ClipboardCheck },
+  trial_balance: { label: 'Trial balance', icon: Gauge },
+  document_request: { label: 'Document request', icon: MessageCircle },
+};
+
 function formatAed(value: number): string {
   return new Intl.NumberFormat('en-AE', {
     style: 'currency',
@@ -193,6 +226,10 @@ function formatAed(value: number): string {
 function formatDate(value: string | null | undefined): string {
   if (!value) return '—';
   return new Intl.DateTimeFormat('en-AE', { dateStyle: 'medium' }).format(new Date(value));
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round((value || 0) * 100)}%`;
 }
 
 function priorityClass(priority: Priority): string {
@@ -260,6 +297,10 @@ export default function ValueOps() {
     queryKey: ['/api/firm/value-ops'],
   });
 
+  const reviewQueueQuery = useQuery<FirmReviewItem[]>({
+    queryKey: ['/api/firm/value-ops/review-queue'],
+  });
+
   useEffect(() => {
     const [, queryString] = location.split('?');
     const client = new URLSearchParams(queryString ?? '').get('client');
@@ -325,6 +366,7 @@ export default function ValueOps() {
       <Tabs defaultValue="board" className="space-y-4">
         <TabsList>
           <TabsTrigger value="board">Board</TabsTrigger>
+          <TabsTrigger value="review">AI review</TabsTrigger>
           <TabsTrigger value="actions">Actions</TabsTrigger>
           <TabsTrigger value="clients">Clients</TabsTrigger>
         </TabsList>
@@ -355,6 +397,70 @@ export default function ValueOps() {
               );
             })}
           </div>
+        </TabsContent>
+
+        <TabsContent value="review">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">AI Reviewer Queue</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Why it needs review</TableHead>
+                    <TableHead className="text-right">Confidence</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead>Due</TableHead>
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(reviewQueueQuery.data ?? []).map((item) => {
+                    const config = reviewKindConfig[item.kind];
+                    const Icon = config.icon;
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <Badge className={priorityClass(item.priority)}>{item.priority}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Icon className="h-4 w-4 text-muted-foreground" />
+                            <span>{config.label}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">{item.companyName}</TableCell>
+                        <TableCell>
+                          <div className="font-medium">{item.title}</div>
+                          <div className="text-xs text-muted-foreground">{item.explanation}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">{item.suggestedAction}</div>
+                        </TableCell>
+                        <TableCell className="text-right">{formatPercent(item.confidence)}</TableCell>
+                        <TableCell className="text-right">{item.amountAed > 0 ? formatAed(item.amountAed) : '—'}</TableCell>
+                        <TableCell>{formatDate(item.dueDate)}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => navigate(item.href)}>
+                            Review <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {(reviewQueueQuery.data ?? []).length === 0 && !reviewQueueQuery.isLoading && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                        No reviewer exceptions right now.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="actions">

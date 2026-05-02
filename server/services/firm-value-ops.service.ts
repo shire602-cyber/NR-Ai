@@ -172,6 +172,31 @@ export interface ClientCfoPack {
   nextActions: string[];
 }
 
+export type ReviewItemKind =
+  | 'bank_match'
+  | 'receipt_posting'
+  | 'anomaly'
+  | 'vat_review'
+  | 'trial_balance'
+  | 'document_request';
+
+export interface FirmReviewItem {
+  id: string;
+  kind: ReviewItemKind;
+  priority: Priority;
+  companyId: string;
+  companyName: string;
+  entityId: string;
+  entityType: string;
+  title: string;
+  explanation: string;
+  suggestedAction: string;
+  confidence: number;
+  amountAed: number;
+  dueDate: Date | null;
+  href: string;
+}
+
 type CompanyRow = {
   id: string;
   name: string;
@@ -212,6 +237,18 @@ function priorityFromScore(score: number, inverse = false): Priority {
   if (risk >= 80) return 'critical';
   if (risk >= 60) return 'high';
   if (risk >= 35) return 'medium';
+  return 'low';
+}
+
+function priorityRank(priority: Priority): number {
+  return { critical: 4, high: 3, medium: 2, low: 1 }[priority];
+}
+
+function priorityFromAmount(amount: number): Priority {
+  const absolute = Math.abs(amount);
+  if (absolute >= 100_000) return 'critical';
+  if (absolute >= 25_000) return 'high';
+  if (absolute >= 5_000) return 'medium';
   return 'low';
 }
 
@@ -1054,4 +1091,319 @@ export async function buildClientCfoPack(companyId: string, now: Date = new Date
     narrative,
     nextActions,
   };
+}
+
+export async function buildFirmReviewQueue(
+  companyIds: string[],
+  now: Date = new Date(),
+): Promise<FirmReviewItem[]> {
+  if (companyIds.length === 0) return [];
+
+  type CompanyNameRow = { id: string; name: string };
+  const companyRows = (await db
+    .select({ id: companies.id, name: companies.name })
+    .from(companies)
+    .where(
+      and(
+        inArray(companies.id, companyIds),
+        eq(companies.companyType, 'client'),
+        sql`${companies.deletedAt} IS NULL`,
+      ),
+    )) as CompanyNameRow[];
+  const companyName = new Map<string, string>(
+    companyRows.map((company: CompanyNameRow) => [company.id, company.name]),
+  );
+  const dueSoon = new Date(now.getTime() + 14 * 86_400_000);
+
+  type BankReviewRow = {
+    id: string;
+    companyId: string;
+    transactionDate: Date;
+    description: string;
+    amount: number;
+    matchStatus: string;
+    matchConfidence: number | null;
+  };
+  const bankRows = (await db
+    .select({
+      id: bankTransactions.id,
+      companyId: bankTransactions.companyId,
+      transactionDate: bankTransactions.transactionDate,
+      description: bankTransactions.description,
+      amount: bankTransactions.amount,
+      matchStatus: bankTransactions.matchStatus,
+      matchConfidence: bankTransactions.matchConfidence,
+    })
+    .from(bankTransactions)
+    .where(and(inArray(bankTransactions.companyId, companyIds), eq(bankTransactions.isReconciled, false)))
+    .orderBy(desc(bankTransactions.transactionDate))
+    .limit(80)) as BankReviewRow[];
+
+  type ReceiptReviewRow = {
+    id: string;
+    companyId: string;
+    merchant: string | null;
+    date: Date | null;
+    amount: number | null;
+    vatAmount: number | null;
+    classifierMethod: string | null;
+    createdAt: Date;
+  };
+  const receiptRows = (await db
+    .select({
+      id: receipts.id,
+      companyId: receipts.companyId,
+      merchant: receipts.merchant,
+      date: receipts.date,
+      amount: receipts.amount,
+      vatAmount: receipts.vatAmount,
+      classifierMethod: receipts.classifierMethod,
+      createdAt: receipts.createdAt,
+    })
+    .from(receipts)
+    .where(and(inArray(receipts.companyId, companyIds), eq(receipts.posted, false)))
+    .orderBy(desc(receipts.createdAt))
+    .limit(80)) as ReceiptReviewRow[];
+
+  type AnomalyReviewRow = {
+    id: string;
+    companyId: string;
+    severity: string;
+    title: string;
+    description: string;
+    relatedEntityType: string | null;
+    relatedEntityId: string | null;
+    aiConfidence: number | null;
+    createdAt: Date;
+  };
+  const anomalyRows = (await db
+    .select({
+      id: anomalyAlerts.id,
+      companyId: anomalyAlerts.companyId,
+      severity: anomalyAlerts.severity,
+      title: anomalyAlerts.title,
+      description: anomalyAlerts.description,
+      relatedEntityType: anomalyAlerts.relatedEntityType,
+      relatedEntityId: anomalyAlerts.relatedEntityId,
+      aiConfidence: anomalyAlerts.aiConfidence,
+      createdAt: anomalyAlerts.createdAt,
+    })
+    .from(anomalyAlerts)
+    .where(and(inArray(anomalyAlerts.companyId, companyIds), eq(anomalyAlerts.isResolved, false)))
+    .orderBy(desc(anomalyAlerts.createdAt))
+    .limit(80)) as AnomalyReviewRow[];
+
+  type VatReviewRow = {
+    id: string;
+    companyId: string;
+    status: string;
+    dueDate: Date;
+    periodStart: Date;
+    periodEnd: Date;
+    payableTax: number;
+  };
+  const vatRows = (await db
+    .select({
+      id: vatReturns.id,
+      companyId: vatReturns.companyId,
+      status: vatReturns.status,
+      dueDate: vatReturns.dueDate,
+      periodStart: vatReturns.periodStart,
+      periodEnd: vatReturns.periodEnd,
+      payableTax: vatReturns.box14PayableTax,
+    })
+    .from(vatReturns)
+    .where(
+      and(
+        inArray(vatReturns.companyId, companyIds),
+        ne(vatReturns.status, 'filed'),
+        ne(vatReturns.status, 'submitted'),
+        lte(vatReturns.dueDate, dueSoon),
+      ),
+    )
+    .orderBy(vatReturns.dueDate)
+    .limit(80)) as VatReviewRow[];
+
+  type DocumentReviewRow = {
+    id: string;
+    companyId: string;
+    documentType: string;
+    description: string | null;
+    dueDate: Date;
+    status: string;
+  };
+  const documentRows = (await db
+    .select({
+      id: documentRequirements.id,
+      companyId: documentRequirements.companyId,
+      documentType: documentRequirements.documentType,
+      description: documentRequirements.description,
+      dueDate: documentRequirements.dueDate,
+      status: documentRequirements.status,
+    })
+    .from(documentRequirements)
+    .where(
+      and(
+        inArray(documentRequirements.companyId, companyIds),
+        inArray(documentRequirements.status, ['pending', 'requested', 'overdue']),
+        lte(documentRequirements.dueDate, dueSoon),
+      ),
+    )
+    .orderBy(documentRequirements.dueDate)
+    .limit(80)) as DocumentReviewRow[];
+
+  type TrialReviewRow = {
+    companyId: string;
+    debit: string | null;
+    credit: string | null;
+    lastJournalAt: Date | null;
+  };
+  const trialRows = (await db
+    .select({
+      companyId: journalEntries.companyId,
+      debit: sum(journalLines.debit),
+      credit: sum(journalLines.credit),
+      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
+    })
+    .from(journalEntries)
+    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
+    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, 'posted')))
+    .groupBy(journalEntries.companyId)) as TrialReviewRow[];
+
+  const items: FirmReviewItem[] = [];
+
+  for (const row of bankRows) {
+    const amount = asNumber(row.amount);
+    const suggested = row.matchStatus === 'suggested';
+    const amountPriority = priorityFromAmount(amount);
+    items.push({
+      id: `bank:${row.id}`,
+      kind: 'bank_match',
+      priority: suggested ? amountPriority : amountPriority === 'critical' ? 'critical' : 'medium',
+      companyId: row.companyId,
+      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      entityId: row.id,
+      entityType: 'bank_transaction',
+      title: suggested ? 'Confirm suggested bank match' : 'Match unreconciled bank transaction',
+      explanation: `${row.description} for AED ${Math.abs(amount).toLocaleString('en-AE')} is not reconciled.`,
+      suggestedAction: suggested ? 'Confirm the suggested match or correct the counterparty before close.' : 'Match to an invoice, receipt, journal entry, or create a transfer.',
+      confidence: row.matchConfidence ?? (suggested ? 0.72 : 0.4),
+      amountAed: Math.abs(amount),
+      dueDate: null,
+      href: `/firm/clients/${row.companyId}`,
+    });
+  }
+
+  for (const row of receiptRows) {
+    const amount = asNumber(row.amount) + asNumber(row.vatAmount);
+    items.push({
+      id: `receipt:${row.id}`,
+      kind: 'receipt_posting',
+      priority: priorityFromAmount(amount),
+      companyId: row.companyId,
+      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      entityId: row.id,
+      entityType: 'receipt',
+      title: 'Review unposted receipt',
+      explanation: `${row.merchant ?? 'Receipt'} has not posted to GL or VAT evidence yet.`,
+      suggestedAction: row.classifierMethod ? 'Approve the suggested expense account or correct it before posting.' : 'Classify the receipt, confirm VAT treatment, then post.',
+      confidence: row.classifierMethod ? 0.68 : 0.35,
+      amountAed: amount,
+      dueDate: row.date,
+      href: `/firm/clients/${row.companyId}`,
+    });
+  }
+
+  for (const row of anomalyRows) {
+    const priority: Priority =
+      row.severity === 'critical' ? 'critical' : row.severity === 'high' ? 'high' : 'medium';
+    items.push({
+      id: `anomaly:${row.id}`,
+      kind: 'anomaly',
+      priority,
+      companyId: row.companyId,
+      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      entityId: row.relatedEntityId ?? row.id,
+      entityType: row.relatedEntityType ?? 'anomaly',
+      title: row.title,
+      explanation: row.description,
+      suggestedAction: 'Review the source transaction and resolve or document the exception.',
+      confidence: row.aiConfidence ?? 0.55,
+      amountAed: 0,
+      dueDate: null,
+      href: `/firm/clients/${row.companyId}`,
+    });
+  }
+
+  for (const row of vatRows) {
+    const dueIn = daysUntil(row.dueDate, now);
+    const priority: Priority = dueIn !== null && dueIn < 0 ? 'critical' : dueIn !== null && dueIn <= 7 ? 'high' : 'medium';
+    items.push({
+      id: `vat:${row.id}`,
+      kind: 'vat_review',
+      priority,
+      companyId: row.companyId,
+      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      entityId: row.id,
+      entityType: 'vat_return',
+      title: 'Review VAT return before deadline',
+      explanation: `VAT return is ${row.status}; due ${row.dueDate.toISOString().slice(0, 10)}.`,
+      suggestedAction: 'Open the audit pack, clear missing evidence, and submit or mark filed.',
+      confidence: 0.95,
+      amountAed: asNumber(row.payableTax),
+      dueDate: row.dueDate,
+      href: `/firm/value-ops?client=${row.companyId}`,
+    });
+  }
+
+  for (const row of documentRows) {
+    const overdue = row.status === 'overdue' || row.dueDate < now;
+    items.push({
+      id: `document:${row.id}`,
+      kind: 'document_request',
+      priority: overdue ? 'high' : 'medium',
+      companyId: row.companyId,
+      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      entityId: row.id,
+      entityType: 'document_requirement',
+      title: `Request ${row.documentType.replace(/_/g, ' ')}`,
+      explanation: row.description ?? `Required document is ${row.status}.`,
+      suggestedAction: 'Send a WhatsApp document request and attach the received file to the client vault.',
+      confidence: 0.9,
+      amountAed: 0,
+      dueDate: row.dueDate,
+      href: `/firm/comms`,
+    });
+  }
+
+  for (const row of trialRows) {
+    const discrepancy = Math.round(Math.abs(asNumber(row.debit) - asNumber(row.credit)) * 100) / 100;
+    if (discrepancy <= 0.01) continue;
+    items.push({
+      id: `trial:${row.companyId}`,
+      kind: 'trial_balance',
+      priority: 'critical',
+      companyId: row.companyId,
+      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      entityId: row.companyId,
+      entityType: 'trial_balance',
+      title: 'Trial balance discrepancy',
+      explanation: `Posted journals are out of balance by AED ${discrepancy.toLocaleString('en-AE')}.`,
+      suggestedAction: 'Inspect recent posted journals and reverse or correct the unbalanced entry before close.',
+      confidence: 1,
+      amountAed: discrepancy,
+      dueDate: row.lastJournalAt,
+      href: `/firm/clients/${row.companyId}`,
+    });
+  }
+
+  return items
+    .sort((a, b) => {
+      const rankDelta = priorityRank(b.priority) - priorityRank(a.priority);
+      if (rankDelta !== 0) return rankDelta;
+      const confidenceDelta = b.confidence - a.confidence;
+      if (Math.abs(confidenceDelta) > 0.01) return confidenceDelta;
+      return b.amountAed - a.amountAed;
+    })
+    .slice(0, 200);
 }

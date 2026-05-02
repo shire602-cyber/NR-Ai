@@ -9,6 +9,7 @@ import { createLogger } from '../config/logger';
 import {
   buildClientAuditPack,
   buildClientCfoPack,
+  buildFirmReviewQueue,
   buildFirmValueOps,
 } from '../services/firm-value-ops.service';
 import { resolveAccessibleClientIds } from '../services/firm-command-center.service';
@@ -47,6 +48,16 @@ export function registerFirmValueOpsRoutes(app: Express): void {
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const dashboard = await buildFirmValueOps(companyIds);
       res.json(dashboard);
+    }),
+  );
+
+  router.get(
+    '/review-queue',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
+      const queue = await buildFirmReviewQueue(companyIds);
+      res.json(queue);
     }),
   );
 
