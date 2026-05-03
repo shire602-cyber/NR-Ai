@@ -14,7 +14,7 @@ import cookieParser from 'cookie-parser';
 
 import { validateEnv, isProduction, isDevelopment } from './config/env';
 import { createLogger } from './config/logger';
-import { applySecurityMiddleware } from './middleware/security';
+import { applyRateLimitMiddleware, applySecurityMiddleware } from './middleware/security';
 import { requestId } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
 import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
@@ -68,6 +68,9 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
+// ─── Rate limiting after body parsing so auth login keys can include email ──
+applyRateLimitMiddleware(app);
+
 // ─── Cookie parser (must run before CSRF + session) ─────────
 app.use(cookieParser(env.SESSION_SECRET));
 
@@ -111,6 +114,19 @@ app.use(csrfProtection);
 // Liveness probe — process is up. Cheap; safe for orchestrators.
 app.get('/health/live', (_req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
+// Readiness probe — process is up and can reach the database. Minimal details
+// only; full internals stay behind the admin-only /health endpoint.
+app.get('/health/ready', async (_req, res) => {
+  const ping = await pingDb();
+  res.status(ping.ok ? 200 : 503).json({
+    status: ping.ok ? 'ok' : 'degraded',
+    checks: {
+      database: ping.ok ? 'ok' : 'error',
+      databaseLatencyMs: ping.latencyMs,
+    },
+  });
 });
 
 // Detailed readiness/full health — admin-only because it reports internals.

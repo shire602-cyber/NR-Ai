@@ -81,21 +81,11 @@ export function applySecurityMiddleware(app: Express): void {
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-      exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Per-Page'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-CSRF-Token', 'X-XSRF-Token'],
+      exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Per-Page', 'Retry-After', 'RateLimit-Reset'],
       maxAge: 86400, // Cache preflight for 24 hours
     })
   );
-
-  // ─── Rate Limiting (sliding window, configurable per route) ──
-  // Each limiter has its own in-memory sliding-window store, sized via
-  // env vars (RL_*). Composite key (ip+userId) prevents NAT collisions.
-  // Order matters: more specific paths must be registered before /api/.
-  app.use('/api/auth/', buildLimiter(limiterProfiles.auth));
-  app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
-  app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));
-  app.use('/api/firm/bulk/ocr', buildLimiter(limiterProfiles.ai));
-  app.use('/api/', buildLimiter(limiterProfiles.api));
 
   // ─── Request Size Limits ──────────────────────────────────
   // Hard ceiling: image-upload routes allow up to 10MB; the per-route
@@ -145,4 +135,22 @@ export function applySecurityMiddleware(app: Express): void {
   });
 
   log.info('Security middleware applied');
+}
+
+/**
+ * Rate limiting needs parsed bodies for auth login keys (`ip + email`), so it
+ * is installed after JSON parsing in index.ts while still before routes.
+ */
+export function applyRateLimitMiddleware(app: Express): void {
+  app.use('/api/auth/login', buildLimiter(limiterProfiles.authLogin));
+  app.use('/api/auth/register', buildLimiter(limiterProfiles.authRegister));
+  app.use(['/api/auth/forgot-password', '/api/auth/reset-password'], buildLimiter(limiterProfiles.authRecovery));
+  app.use(['/api/auth/refresh-token', '/api/auth/refresh', '/api/auth/logout'], buildLimiter(limiterProfiles.authSession));
+  app.use('/api/auth/', buildLimiter(limiterProfiles.authOther));
+  app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
+  app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));
+  app.use('/api/firm/bulk/ocr', buildLimiter(limiterProfiles.ai));
+  app.use('/api/', buildLimiter(limiterProfiles.api));
+
+  log.info('Rate-limit middleware applied');
 }

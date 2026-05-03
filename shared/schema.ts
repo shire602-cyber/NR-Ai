@@ -2466,7 +2466,7 @@ export const clientCommunications = pgTable("client_communications", {
   recipientEmail: text("recipient_email"),
   subject: text("subject"),
   body: text("body").notNull(),
-  status: text("status").notNull().default("sent"), // 'sent' | 'delivered' | 'read' | 'failed'
+  status: text("status").notNull().default("sent"), // 'logged' | 'sent' | 'delivered' | 'read' | 'failed'
   templateType: text("template_type"), // 'vat_reminder' | 'invoice' | 'document_request' | 'payment_confirmation' | 'custom'
   metadata: text("metadata"), // JSON string
   sentAt: timestamp("sent_at").defaultNow().notNull(),

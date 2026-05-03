@@ -1,5 +1,5 @@
 import rateLimit, { type Options } from 'express-rate-limit';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { createLogger } from '../config/logger';
 
 const log = createLogger('rate-limit');
@@ -71,18 +71,34 @@ class SlidingWindowStore {
   }
 }
 
+function requestIp(req: Request): string {
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
 const compositeKey = (req: Request): string => {
   const userId = (req as any).user?.id as string | undefined;
-  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const ip = requestIp(req);
   return userId ? `${ip}:${userId}` : ip;
 };
 
-interface RouteLimit {
+export function normalizedEmailFromRequest(req: Request): string {
+  const raw = (req.body as { email?: unknown } | undefined)?.email;
+  return typeof raw === 'string' && raw.trim() ? raw.trim().toLowerCase() : 'unknown-email';
+}
+
+export function authEmailKey(req: Request): string {
+  return `${requestIp(req)}:${normalizedEmailFromRequest(req)}`;
+}
+
+export interface RouteLimit {
   windowMs: number;
   max: number;
   message: string;
   /** Routes where the limiter must NOT apply (e.g., GET-only views can be skipped). */
   skipMethods?: Array<'GET' | 'HEAD' | 'OPTIONS'>;
+  keyGenerator?: (req: Request, res: Response) => string;
+  /** Decrement the hit after successful responses. Useful for failed-login throttles. */
+  skipSuccessfulRequests?: boolean;
 }
 
 /**
@@ -98,16 +114,26 @@ export function buildLimiter(cfg: RouteLimit) {
     max: cfg.max,
     standardHeaders: 'draft-7', // RFC RateLimit-* + X-RateLimit-* headers
     legacyHeaders: false,
-    keyGenerator: compositeKey,
+    keyGenerator: cfg.keyGenerator ?? compositeKey,
+    skipSuccessfulRequests: cfg.skipSuccessfulRequests ?? false,
     skip: (req) => {
       if (req.path === '/health' || req.path === '/health/live') return true;
       if (cfg.skipMethods?.includes(req.method as any)) return true;
       return false;
     },
     handler: (req, res, _next, options) => {
-      const retryAfter = Math.ceil((options.windowMs as number) / 1000);
+      const resetTime = (req as any).rateLimit?.resetTime as Date | undefined;
+      const retryAfter = resetTime
+        ? Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000))
+        : Math.ceil((options.windowMs as number) / 1000);
       log.warn(
-        { ip: req.ip, userId: (req as any).user?.id, path: req.path, retryAfter },
+        {
+          ip: req.ip,
+          userId: (req as any).user?.id,
+          path: req.path,
+          retryAfter,
+          resetTime: resetTime?.toISOString(),
+        },
         'Rate limit exceeded',
       );
       res.setHeader('Retry-After', String(retryAfter));
@@ -137,10 +163,33 @@ export const limiterProfiles = {
     max: envInt('RL_API_MAX', 100),
     message: 'Too many requests. Please try again later.',
   } as RouteLimit,
-  auth: {
-    windowMs: envInt('RL_AUTH_WINDOW_MS', 60_000),
-    max: envInt('RL_AUTH_MAX', 5),
-    message: 'Too many authentication attempts. Please wait 1 minute.',
+  authLogin: {
+    windowMs: envInt('RL_AUTH_LOGIN_WINDOW_MS', 60_000),
+    max: envInt('RL_AUTH_LOGIN_MAX', 8),
+    message: 'Too many login attempts for this email. Please wait before trying again.',
+    keyGenerator: authEmailKey,
+    skipSuccessfulRequests: true,
+  } as RouteLimit,
+  authRegister: {
+    windowMs: envInt('RL_AUTH_REGISTER_WINDOW_MS', 10 * 60_000),
+    max: envInt('RL_AUTH_REGISTER_MAX', 5),
+    message: 'Too many account creation attempts. Please try again later.',
+  } as RouteLimit,
+  authRecovery: {
+    windowMs: envInt('RL_AUTH_RECOVERY_WINDOW_MS', 15 * 60_000),
+    max: envInt('RL_AUTH_RECOVERY_MAX', 5),
+    message: 'Too many password recovery attempts. Please try again later.',
+    keyGenerator: authEmailKey,
+  } as RouteLimit,
+  authSession: {
+    windowMs: envInt('RL_AUTH_SESSION_WINDOW_MS', 60_000),
+    max: envInt('RL_AUTH_SESSION_MAX', 60),
+    message: 'Too many session requests. Please try again shortly.',
+  } as RouteLimit,
+  authOther: {
+    windowMs: envInt('RL_AUTH_OTHER_WINDOW_MS', 60_000),
+    max: envInt('RL_AUTH_OTHER_MAX', 30),
+    message: 'Too many authentication requests. Please try again shortly.',
   } as RouteLimit,
   ai: {
     windowMs: envInt('RL_AI_WINDOW_MS', 60_000),

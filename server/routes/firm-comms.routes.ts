@@ -23,6 +23,7 @@ import {
   sendGenericEmail,
 } from '../services/email.service';
 import { createAndEmitNotification } from '../services/socket.service';
+import { recordAudit } from '../services/audit.service';
 
 const logger = createLogger('firm-comms-routes');
 
@@ -277,8 +278,24 @@ export function registerFirmCommsRoutes(app: Express): void {
         actionUrl: '/firm/comms',
       }).catch(() => {});
 
+      await recordAudit({
+        userId,
+        companyId: validated.companyId,
+        action: 'firm_communication_email',
+        entityType: 'client_communication',
+        entityId: comm.id,
+        req,
+        extra: {
+          channel: 'email',
+          deliveryStatus: comm.status,
+          templateType: comm.templateType,
+          recipientEmail: validated.recipientEmail,
+        },
+      });
+
       res.json({
         success: result.sent,
+        deliveryStatus: comm.status,
         provider: result.provider,
         communication: comm,
         ...(result.error ? { note: result.error } : {}),
@@ -307,9 +324,13 @@ export function registerFirmCommsRoutes(app: Express): void {
           direction: 'outbound',
           recipientPhone: validated.recipientPhone,
           body: validated.body,
-          status: 'sent',
+          status: 'logged',
           templateType: validated.templateType ?? 'custom',
           sentAt: new Date(),
+          metadata: JSON.stringify({
+            deliveryMode: 'logged_only',
+            reason: 'WhatsApp Business API integration pending',
+          }),
         })
         .returning();
 
@@ -325,10 +346,26 @@ export function registerFirmCommsRoutes(app: Express): void {
         actionUrl: '/firm/comms',
       }).catch(() => {});
 
+      await recordAudit({
+        userId,
+        companyId: validated.companyId,
+        action: 'firm_communication_whatsapp_logged',
+        entityType: 'client_communication',
+        entityId: comm.id,
+        req,
+        extra: {
+          channel: 'whatsapp',
+          deliveryStatus: 'logged',
+          templateType: comm.templateType,
+          recipientPhone: validated.recipientPhone,
+        },
+      });
+
       res.json({
         success: true,
+        deliveryStatus: 'logged',
         communication: comm,
-        note: 'WhatsApp Business API integration pending — message has been logged.',
+        note: 'WhatsApp Business API integration pending — message was logged only and not delivered.',
       });
     })
   );
@@ -494,6 +531,19 @@ export function registerFirmCommsRoutes(app: Express): void {
 
         results.push({ companyId: target.companyId, companyName: target.companyName, sent, ...(note ? { note } : {}) });
       }
+
+      await recordAudit({
+        userId,
+        action: 'firm_bulk_vat_reminder',
+        entityType: 'client_communication',
+        req,
+        extra: {
+          daysAhead,
+          sent: results.filter((r) => r.sent).length,
+          failed: results.filter((r) => !r.sent).length,
+          companyIds: results.map((r) => r.companyId),
+        },
+      });
 
       res.json({
         sent: results.filter((r) => r.sent).length,

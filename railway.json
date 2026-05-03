@@ -10,7 +10,7 @@
     "sleepApplication": false,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10,
-    "healthcheckPath": "/health/live",
+    "healthcheckPath": "/health/ready",
     "healthcheckTimeout": 300,
     "preDeployCommand": "node dist/migrate.js",
     "startCommand": "node dist/index.js"

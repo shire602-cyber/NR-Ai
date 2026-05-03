@@ -49,7 +49,7 @@ import {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type CommChannel = 'email' | 'whatsapp' | 'sms';
-type CommStatus = 'sent' | 'delivered' | 'read' | 'failed';
+type CommStatus = 'logged' | 'sent' | 'delivered' | 'read' | 'failed';
 
 interface Communication {
   id: string;
@@ -161,6 +161,7 @@ function ChannelIcon({ channel }: { channel: CommChannel }) {
 
 function CommStatusBadge({ status }: { status: CommStatus }) {
   const map: Record<CommStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+    logged: { label: 'Logged only', variant: 'outline' },
     sent: { label: 'Sent', variant: 'default' },
     delivered: { label: 'Delivered', variant: 'secondary' },
     read: { label: 'Read', variant: 'outline' },
@@ -334,9 +335,11 @@ function ComposeTab() {
   const sendMutation = useMutation({
     mutationFn: (data: Record<string, string>) =>
       apiRequest('POST', channel === 'email' ? '/api/firm/comms/send-email' : '/api/firm/comms/send-whatsapp', data),
-    onSuccess: (res: { success: boolean; note?: string }) => {
+    onSuccess: (res: { success: boolean; deliveryStatus?: CommStatus; note?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['/api/firm/comms/log'] });
-      if (res.success) {
+      if (res.deliveryStatus === 'logged') {
+        toast({ title: 'Logged only', description: res.note });
+      } else if (res.success) {
         toast({ title: 'Message sent' });
       } else {
         toast({ title: 'Logged (not sent)', description: res.note, variant: 'destructive' });

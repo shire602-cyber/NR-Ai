@@ -101,6 +101,7 @@ export interface ValueOpsOpportunity {
 
 export interface ValueOpsAction {
   id: string;
+  actionKey: string;
   lane: ValueLane;
   priority: Priority;
   companyId: string;
@@ -139,6 +140,7 @@ export interface ValueOpsOperatingMove {
 }
 
 export interface ValueOpsClientBrief {
+  actionKey: string;
   companyId: string;
   companyName: string;
   priority: Priority;
@@ -213,6 +215,7 @@ export type ReviewItemKind =
 
 export interface FirmReviewItem {
   id: string;
+  actionKey: string;
   kind: ReviewItemKind;
   priority: Priority;
   companyId: string;
@@ -825,6 +828,7 @@ export async function buildFirmValueOps(
     if (client.scores.penaltyRisk >= 35) {
       actions.push({
         id: `${client.companyId}:penalty`,
+        actionKey: `value_ops:penalty_prevention:${client.companyId}`,
         lane: 'penalty_prevention',
         priority: priorityFromScore(client.scores.penaltyRisk),
         companyId: client.companyId,
@@ -838,6 +842,7 @@ export async function buildFirmValueOps(
     if (client.money.overdueAr > 0) {
       actions.push({
         id: `${client.companyId}:cash`,
+        actionKey: `value_ops:cash_recovery:${client.companyId}`,
         lane: 'cash_recovery',
         priority: client.money.overdueAr >= 100_000 ? 'critical' : client.money.overdueAr >= 25_000 ? 'high' : 'medium',
         companyId: client.companyId,
@@ -851,6 +856,7 @@ export async function buildFirmValueOps(
     if (client.scores.closeReadiness < 75) {
       actions.push({
         id: `${client.companyId}:close`,
+        actionKey: `value_ops:bank_close:${client.companyId}`,
         lane: 'bank_close',
         priority: priorityFromScore(client.scores.closeReadiness, true),
         companyId: client.companyId,
@@ -864,6 +870,7 @@ export async function buildFirmValueOps(
     if (client.scores.auditDefense < 80) {
       actions.push({
         id: `${client.companyId}:audit`,
+        actionKey: `value_ops:audit_defense:${client.companyId}`,
         lane: 'audit_defense',
         priority: priorityFromScore(client.scores.auditDefense, true),
         companyId: client.companyId,
@@ -1029,6 +1036,7 @@ export async function buildFirmActionBrief(
               : 'Account manager';
 
       return {
+        actionKey: `value_ops:client_brief:${client.companyId}`,
         companyId: client.companyId,
         companyName: client.companyName,
         priority,
@@ -1526,6 +1534,7 @@ export async function buildFirmReviewQueue(
     const amountPriority = priorityFromAmount(amount);
     items.push({
       id: `bank:${row.id}`,
+      actionKey: `review:bank_match:${row.id}`,
       kind: 'bank_match',
       priority: suggested ? amountPriority : amountPriority === 'critical' ? 'critical' : 'medium',
       companyId: row.companyId,
@@ -1546,6 +1555,7 @@ export async function buildFirmReviewQueue(
     const amount = asNumber(row.amount) + asNumber(row.vatAmount);
     items.push({
       id: `receipt:${row.id}`,
+      actionKey: `review:receipt_posting:${row.id}`,
       kind: 'receipt_posting',
       priority: priorityFromAmount(amount),
       companyId: row.companyId,
@@ -1567,6 +1577,7 @@ export async function buildFirmReviewQueue(
       row.severity === 'critical' ? 'critical' : row.severity === 'high' ? 'high' : 'medium';
     items.push({
       id: `anomaly:${row.id}`,
+      actionKey: `review:anomaly:${row.id}`,
       kind: 'anomaly',
       priority,
       companyId: row.companyId,
@@ -1588,6 +1599,7 @@ export async function buildFirmReviewQueue(
     const priority: Priority = dueIn !== null && dueIn < 0 ? 'critical' : dueIn !== null && dueIn <= 7 ? 'high' : 'medium';
     items.push({
       id: `vat:${row.id}`,
+      actionKey: `review:vat:${row.id}`,
       kind: 'vat_review',
       priority,
       companyId: row.companyId,
@@ -1608,6 +1620,7 @@ export async function buildFirmReviewQueue(
     const overdue = row.status === 'overdue' || row.dueDate < now;
     items.push({
       id: `document:${row.id}`,
+      actionKey: `review:document_request:${row.id}`,
       kind: 'document_request',
       priority: overdue ? 'high' : 'medium',
       companyId: row.companyId,
@@ -1629,6 +1642,7 @@ export async function buildFirmReviewQueue(
     if (discrepancy <= 0.01) continue;
     items.push({
       id: `trial:${row.companyId}`,
+      actionKey: `review:trial_balance:${row.companyId}`,
       kind: 'trial_balance',
       priority: 'critical',
       companyId: row.companyId,

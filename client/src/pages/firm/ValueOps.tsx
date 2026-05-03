@@ -113,6 +113,7 @@ interface ValueOpsOpportunity {
 
 interface ValueOpsAction {
   id: string;
+  actionKey: string;
   lane: ValueLane;
   priority: Priority;
   companyId: string;
@@ -125,6 +126,7 @@ interface ValueOpsAction {
 
 interface FirmReviewItem {
   id: string;
+  actionKey: string;
   kind: ReviewItemKind;
   priority: Priority;
   companyId: string;
@@ -168,6 +170,7 @@ interface ValueOpsOperatingMove {
 }
 
 interface ValueOpsClientBrief {
+  actionKey: string;
   companyId: string;
   companyName: string;
   priority: Priority;

@@ -104,6 +104,7 @@ async function baselineMigrationLedgerForExistingSchema(migrationsFolder: string
   ]).then((checks) => checks.every(Boolean));
 
   if (!hasExistingAppSchema) {
+    log.info('Migration baseline check skipped: core app schema not present');
     return;
   }
 
@@ -113,6 +114,7 @@ async function baselineMigrationLedgerForExistingSchema(migrationsFolder: string
       sql`SELECT COUNT(*) AS "count" FROM "drizzle"."__drizzle_migrations"`
     );
     if (Number(rows[0]?.count ?? 0) > 0) {
+      log.info({ count: Number(rows[0]?.count ?? 0) }, 'Migration baseline check passed: Drizzle ledger already populated');
       return;
     }
   }
@@ -145,7 +147,9 @@ async function baselineMigrationLedgerForExistingSchema(migrationsFolder: string
 export async function runMigrations(migrationsFolder: string): Promise<void> {
   log.info({ migrationsFolder, driver: _driver }, 'Running migrations');
   try {
+    log.info('Checking migration ledger baseline');
     await baselineMigrationLedgerForExistingSchema(migrationsFolder);
+    log.info({ driver: _driver }, 'Executing Drizzle migrations');
     if (_driver === 'neon') {
       const { migrate } = await import('drizzle-orm/neon-serverless/migrator');
       await migrate(db, { migrationsFolder });
@@ -154,8 +158,11 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
       await migrate(db, { migrationsFolder });
     }
     log.info('Migrations completed successfully');
-  } catch (err) {
-    log.error({ err }, 'Migration failed');
+  } catch (err: any) {
+    log.error(
+      { err, message: err?.message, code: err?.code, detail: err?.detail, query: err?.query },
+      'Migration failed',
+    );
     throw err;
   }
 }
