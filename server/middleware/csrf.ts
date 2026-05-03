@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { doubleCsrf } from 'csrf-csrf';
 import type { Request, Response, NextFunction } from 'express';
 import { getEnv, isProduction } from '../config/env';
@@ -11,11 +12,73 @@ const log = createLogger('csrf');
 const CSRF_BEARER_EXEMPT = [
   /^\/api\/auth\/login$/,
   /^\/api\/auth\/register$/,
+  /^\/api\/auth\/refresh$/,
+  /^\/api\/auth\/refresh-token$/,
+  /^\/api\/auth\/forgot-password$/,
+  /^\/api\/auth\/reset-password$/,
 ];
 
 function hasBearerAuth(req: Request): boolean {
   const auth = req.headers.authorization;
   return typeof auth === 'string' && auth.toLowerCase().startsWith('bearer ');
+}
+
+const csrfClientIdRequestKey = Symbol.for('muhasib.csrfClientId');
+
+export function csrfIdentifierCookieName(): string {
+  return isProduction() ? '__Host-x-csrf-id' : 'x-csrf-id';
+}
+
+function normalizeCookieValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 128) return undefined;
+  return trimmed;
+}
+
+function readCookieFromHeader(req: Request, name: string): string | undefined {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return undefined;
+
+  for (const part of cookieHeader.split(';')) {
+    const [rawKey, ...rawValueParts] = part.trim().split('=');
+    if (rawKey !== name) continue;
+
+    const rawValue = rawValueParts.join('=');
+    try {
+      return normalizeCookieValue(decodeURIComponent(rawValue));
+    } catch {
+      return normalizeCookieValue(rawValue);
+    }
+  }
+
+  return undefined;
+}
+
+function readCsrfIdentifierCookie(req: Request): string | undefined {
+  const name = csrfIdentifierCookieName();
+  const parsed = normalizeCookieValue((req as any).cookies?.[name]);
+  return parsed || readCookieFromHeader(req, name);
+}
+
+export function resolveCsrfIdentifier(req: Request, res?: Response): string {
+  const existingRequestId = normalizeCookieValue((req as any)[csrfClientIdRequestKey]);
+  if (existingRequestId) return existingRequestId;
+
+  const existingCookieId = readCsrfIdentifierCookie(req);
+  if (existingCookieId) {
+    (req as any)[csrfClientIdRequestKey] = existingCookieId;
+    return existingCookieId;
+  }
+
+  const generated = randomUUID();
+  (req as any)[csrfClientIdRequestKey] = generated;
+
+  if (res) {
+    res.cookie(csrfIdentifierCookieName(), generated, authCookieBaseOptions());
+  }
+
+  return generated;
 }
 
 const env = getEnv();
@@ -26,14 +89,9 @@ const {
   invalidCsrfTokenError,
 } = doubleCsrf({
   getSecret: () => env.SESSION_SECRET,
-  getSessionIdentifier: (req) => {
-    const sid = (req as any).sessionID as string | undefined;
-    return sid || req.ip || 'anonymous';
-  },
+  getSessionIdentifier: (req) => resolveCsrfIdentifier(req),
   cookieName: isProduction() ? '__Host-x-csrf' : 'x-csrf',
-  cookieOptions: {
-    ...authCookieBaseOptions(),
-  },
+  cookieOptions: authCookieBaseOptions(),
   size: 32,
   ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
   getCsrfTokenFromRequest: (req) =>
@@ -48,6 +106,7 @@ const {
 export const csrfProtection = doubleCsrfProtection;
 
 export function csrfTokenHandler(req: Request, res: Response): void {
+  resolveCsrfIdentifier(req, res);
   const token = generateCsrfToken(req, res);
   res.json({ csrfToken: token });
 }

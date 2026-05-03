@@ -200,7 +200,7 @@ export async function queueForSync(request: {
   headers: Record<string, string>;
   body?: string;
 }): Promise<void> {
-  if (!navigator.serviceWorker.controller) {
+  if (typeof navigator === 'undefined' || !navigator.serviceWorker?.controller) {
     return;
   }
 
@@ -268,7 +268,8 @@ function getSessionMarker(): string {
  * Returns the current online status.
  */
 export function isOnline(): boolean {
-  return navigator.onLine;
+  if (typeof navigator === 'undefined') return true;
+  return typeof navigator.onLine === 'boolean' ? navigator.onLine : true;
 }
 
 /**

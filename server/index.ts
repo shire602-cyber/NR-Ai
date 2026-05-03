@@ -12,8 +12,8 @@ import passport from 'passport';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 
-import { validateEnv, isProduction, isDevelopment } from './config/env';
-import { authCookieSameSite } from './config/cookies';
+import { validateEnv, isDevelopment } from './config/env';
+import { authCookieBaseOptions } from './config/cookies';
 import { createLogger } from './config/logger';
 import { applyRateLimitMiddleware, applySecurityMiddleware } from './middleware/security';
 import { requestId } from './middleware/requestId';
@@ -88,10 +88,8 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: isProduction(),
-      httpOnly: true,
+      ...authCookieBaseOptions(),
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: authCookieSameSite(),
     },
   })
 );
@@ -115,6 +113,18 @@ app.use(csrfProtection);
 // Liveness probe — process is up. Cheap; safe for orchestrators.
 app.get('/health/live', (_req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
+// Railway healthcheck endpoint. This stays DB-free so deploy readiness can
+// confirm the HTTP server is alive even while deeper dependencies recover.
+app.get('/api/version', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    version: process.env.APP_VERSION || '1.0.0',
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || null,
+    environment: env.NODE_ENV,
+    uptime: process.uptime(),
+  });
 });
 
 // Readiness probe — process is up and can reach the database. Minimal details
