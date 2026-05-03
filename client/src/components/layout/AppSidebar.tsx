@@ -313,6 +313,7 @@ export function AppSidebar() {
         await fetch(apiUrl('/api/auth/logout'), {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
+          credentials: 'include',
         });
       } catch {
         // Network failure shouldn't block local sign-out — JWT still expires.

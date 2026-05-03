@@ -42,6 +42,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       const response = await fetch(apiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(data),
       });
 

@@ -36,6 +36,16 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+async function isCsrfInvalidResponse(res: Response): Promise<boolean> {
+  if (res.status !== 403) return false;
+  try {
+    const json = await res.clone().json();
+    return json?.code === "CSRF_INVALID";
+  } catch {
+    return false;
+  }
+}
+
 /** Mutating methods are eligible for offline queueing. */
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -69,23 +79,27 @@ export async function apiRequest(
     throw new ApiError('You are offline. This change will sync when you reconnect.', 0);
   }
 
-  const res = await fetch(fullUrl, {
+  let res = await fetch(fullUrl, {
     method,
     headers,
     body,
     credentials: "include",
   });
 
-  // 403 with CSRF code → token rotated/expired; clear cache so next call refetches.
-  if (res.status === 403) {
-    try {
-      const cloned = res.clone();
-      const json = await cloned.json();
-      if (json?.code === "CSRF_INVALID") {
-        clearCsrfToken();
-      }
-    } catch {
-      /* non-JSON body is fine */
+  // A CSRF token can expire or be dropped during a deploy/cookie rotation.
+  // Refetch once and replay the mutation so onboarding and other form saves
+  // recover without making the user refresh the whole app.
+  if (await isCsrfInvalidResponse(res)) {
+    clearCsrfToken();
+    const retryHeaders = await withCsrfHeader(method, { ...headers });
+    res = await fetch(fullUrl, {
+      method,
+      headers: retryHeaders,
+      body,
+      credentials: "include",
+    });
+    if (await isCsrfInvalidResponse(res)) {
+      clearCsrfToken();
     }
   }
 

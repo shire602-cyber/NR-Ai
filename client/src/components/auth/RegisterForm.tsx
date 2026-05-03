@@ -62,6 +62,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       const response = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(payload),
       });
 

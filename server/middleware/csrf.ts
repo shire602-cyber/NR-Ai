@@ -2,6 +2,7 @@ import { doubleCsrf } from 'csrf-csrf';
 import type { Request, Response, NextFunction } from 'express';
 import { getEnv, isProduction } from '../config/env';
 import { createLogger } from '../config/logger';
+import { authCookieBaseOptions } from '../config/cookies';
 
 const log = createLogger('csrf');
 
@@ -32,12 +33,7 @@ const {
     return sid || req.ip || 'anonymous';
   },
   cookieName: isProduction() ? '__Host-x-csrf' : 'x-csrf',
-  cookieOptions: {
-    sameSite: 'strict',
-    secure: isProduction(),
-    httpOnly: true,
-    path: '/',
-  },
+  cookieOptions: authCookieBaseOptions(),
   size: 32,
   ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
   getCsrfTokenFromRequest: (req) =>
