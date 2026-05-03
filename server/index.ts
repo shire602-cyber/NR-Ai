@@ -13,6 +13,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 
 import { validateEnv, isProduction, isDevelopment } from './config/env';
+import { authCookieSameSite } from './config/cookies';
 import { createLogger } from './config/logger';
 import { applyRateLimitMiddleware, applySecurityMiddleware } from './middleware/security';
 import { requestId } from './middleware/requestId';
@@ -90,7 +91,7 @@ app.use(
       secure: isProduction(),
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax',
+      sameSite: authCookieSameSite(),
     },
   })
 );

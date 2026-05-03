@@ -48,22 +48,29 @@ export function applySecurityMiddleware(app: Express): void {
   );
 
   // ─── CORS: Cross-Origin Resource Sharing ──────────────────
-  const allowedOrigins: string[] = [];
+  const allowedOrigins = new Set<string>();
 
   if (env.FRONTEND_URL) {
-    allowedOrigins.push(env.FRONTEND_URL);
+    allowedOrigins.add(env.FRONTEND_URL);
+  }
+
+  if (env.CORS_ORIGIN) {
+    for (const origin of env.CORS_ORIGIN.split(',')) {
+      const trimmed = origin.trim();
+      if (trimmed) allowedOrigins.add(trimmed);
+    }
   }
 
   // In development, allow localhost origins
   if (!isProduction()) {
-    allowedOrigins.push(
+    [
       'http://localhost:5173',
       'http://localhost:5000',
       'http://localhost:3000',
       'http://127.0.0.1:5173',
       'http://127.0.0.1:5000',
       'http://127.0.0.1:3000'
-    );
+    ].forEach((origin) => allowedOrigins.add(origin));
   }
 
   app.use(
@@ -72,7 +79,7 @@ export function applySecurityMiddleware(app: Express): void {
         // Allow requests with no origin (mobile apps, curl, server-to-server)
         if (!origin) return callback(null, true);
 
-        if (allowedOrigins.includes(origin)) {
+        if (allowedOrigins.has(origin)) {
           return callback(null, true);
         }
 

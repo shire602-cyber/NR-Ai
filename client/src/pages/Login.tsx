@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useLocation, Link } from 'wouter';
 import { LoginForm } from '@/components/auth/LoginForm';
-import { setStoredUser, fetchCurrentUser } from '@/lib/auth';
+import { fetchCurrentUser } from '@/lib/auth';
+import { establishAuthenticatedSession } from '@/lib/authSession';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Briefcase } from 'lucide-react';
 
@@ -16,9 +17,9 @@ export default function Login() {
       .catch(() => {});
   }, [setLocation]);
 
-  const handleSuccess = (user: any) => {
-    setStoredUser(user);
-    setLocation(user?.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
+  const handleSuccess = async (user: any) => {
+    const currentUser = await establishAuthenticatedSession(user);
+    setLocation(currentUser?.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
   };
 
   return (

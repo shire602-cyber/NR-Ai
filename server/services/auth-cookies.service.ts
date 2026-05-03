@@ -1,5 +1,6 @@
 import type { CookieOptions, Request, Response } from 'express';
 import { isProduction } from '../config/env';
+import { authCookieBaseOptions } from '../config/cookies';
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const REFRESH_TOKEN_TTL_DAYS = 7;
@@ -13,12 +14,7 @@ export function refreshCookieName(): string {
 }
 
 function baseCookieOptions(): CookieOptions {
-  return {
-    httpOnly: true,
-    secure: isProduction(),
-    sameSite: 'strict',
-    path: '/',
-  };
+  return authCookieBaseOptions();
 }
 
 export function setAuthCookies(

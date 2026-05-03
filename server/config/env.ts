@@ -5,6 +5,11 @@ import { z } from 'zod';
  * Validates all required and optional env vars at startup.
  * If validation fails, the server will NOT start.
  */
+const sameSiteSchema = z.preprocess(
+  (value) => (typeof value === 'string' ? value.toLowerCase() : value),
+  z.enum(['strict', 'lax', 'none']).optional(),
+);
+
 const envSchema = z.object({
   // === Required ===
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
@@ -15,6 +20,8 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).default('5000'),
   FRONTEND_URL: z.string().url().optional(),
+  CORS_ORIGIN: z.string().optional(),
+  AUTH_COOKIE_SAMESITE: sameSiteSchema,
 
   // === AI / OpenAI ===
   OPENAI_API_KEY: z.string().optional(),

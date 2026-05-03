@@ -209,6 +209,7 @@ export function registerAuthRoutes(app: Express): void {
           name: user.name,
           isAdmin: false,
           userType: 'customer',
+          firmRole: user.firmRole ?? null,
           emailVerified: false,
         },
         company: {
@@ -251,6 +252,7 @@ export function registerAuthRoutes(app: Express): void {
           name: user.name,
           isAdmin: isAdminBoolean,
           userType: user.userType || 'customer', // Include userType in response
+          firmRole: user.firmRole ?? null,
           emailVerified: user.emailVerified === true,
         },
       });
