@@ -12,7 +12,8 @@ import passport from 'passport';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
 
-import { validateEnv, isProduction, isDevelopment } from './config/env';
+import { validateEnv, isDevelopment } from './config/env';
+import { authCookieBaseOptions } from './config/cookies';
 import { createLogger } from './config/logger';
 import { applySecurityMiddleware } from './middleware/security';
 import { requestId } from './middleware/requestId';
@@ -83,10 +84,8 @@ app.use(
     resave: false,
     saveUninitialized: false,
     cookie: {
-      secure: isProduction(),
-      httpOnly: true,
+      ...authCookieBaseOptions(),
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      sameSite: 'lax',
     },
   })
 );
