@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/api';
 import { format } from 'date-fns';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import type { Backup } from '@shared/schema';
@@ -44,7 +45,7 @@ export default function BackupRestore() {
     queryKey: ['/api/companies', selectedCompanyId, 'backups'],
     queryFn: async () => {
       if (!selectedCompanyId) return [];
-      const res = await fetch(`/api/companies/${selectedCompanyId}/backups`, {
+      const res = await fetch(apiUrl(`/api/companies/${selectedCompanyId}/backups`), {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch backups');
@@ -55,8 +56,7 @@ export default function BackupRestore() {
 
   const createBackupMutation = useMutation({
     mutationFn: async (data: { name: string; description: string }) => {
-      const res = await apiRequest('POST', `/api/companies/${selectedCompanyId}/backups`, data);
-      return res.json();
+      return apiRequest('POST', `/api/companies/${selectedCompanyId}/backups`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'backups'] });
@@ -79,9 +79,7 @@ export default function BackupRestore() {
 
   const deleteBackupMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest('DELETE', `/api/backups/${id}`);
-      if (!res.ok) throw new Error('Failed to delete backup');
-      return res.json();
+      return apiRequest('DELETE', `/api/backups/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'backups'] });
@@ -101,8 +99,7 @@ export default function BackupRestore() {
 
   const getRestorePreviewMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest('POST', `/api/backups/${id}/restore-preview`);
-      return res.json();
+      return apiRequest('POST', `/api/backups/${id}/restore-preview`);
     },
     onSuccess: (data) => {
       setRestorePreview(data);
@@ -118,8 +115,7 @@ export default function BackupRestore() {
 
   const restoreMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest('POST', `/api/backups/${id}/restore`, { confirmRestore: true });
-      return res.json();
+      return apiRequest('POST', `/api/backups/${id}/restore`, { confirmRestore: true });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'backups'] });
@@ -141,7 +137,7 @@ export default function BackupRestore() {
 
   const handleDownload = async (backup: BackupWithoutData) => {
     try {
-      const res = await fetch(`/api/backups/${backup.id}/download`, {
+      const res = await fetch(apiUrl(`/api/backups/${backup.id}/download`), {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Download failed');

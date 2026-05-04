@@ -6,8 +6,31 @@ import { insertCompanySchema, companyPreferencesSchema } from "../../shared/sche
 import { ZodError } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from '../config/logger';
+import { ensureCriticalSchema } from '../db';
 
 const log = createLogger('companies');
+
+function isCompanySchemaDriftError(err: any): boolean {
+  return err?.code === '42703' || err?.code === '42P01';
+}
+
+async function withCompanySchemaRepair<T>(
+  ctx: { route: string; id?: string; userId?: string },
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (err: any) {
+    if (!isCompanySchemaDriftError(err)) throw err;
+
+    log.error(
+      { ...ctx, pgCode: err?.code, err: err?.message },
+      'Company write hit schema drift; running critical schema guard and retrying once',
+    );
+    await ensureCriticalSchema();
+    return await operation();
+  }
+}
 
 /**
  * Translate a Postgres-driver error from a companies write into an HTTP
@@ -79,13 +102,17 @@ export function handleCompanyWriteError(
     case '42703': // undefined_column — schema/DB drift
     case '42P01': // undefined_table
       // The schema-guard in server/db.ts is meant to prevent this; if we
-      // still hit it in production we want it to land loudly in alerts so
-      // we can add the missing column there.
+      // still hit it after the one-shot repair, return a clear retryable
+      // service error instead of leaking a generic 500 to onboarding.
       log.error(
         { ...ctx, pgCode: code, err: err?.message },
         'Schema drift: companies write referenced a missing column/table',
       );
-      return false;
+      res.status(503).json({
+        message: 'Company database schema is being repaired. Please retry in a moment.',
+        code: 'COMPANY_SCHEMA_REPAIR_REQUIRED',
+      });
+      return true;
     default:
       return false;
   }
@@ -141,7 +168,10 @@ export function registerCompanyRoutes(app: Express) {
 
     let company;
     try {
-      company = await storage.createCompany(validated);
+      company = await withCompanySchemaRepair(
+        { route: 'POST /api/companies', userId },
+        () => storage.createCompany(validated),
+      );
     } catch (err: any) {
       if (handleCompanyWriteError(err, { route: 'POST /api/companies', userId }, res)) {
         return;
@@ -202,7 +232,10 @@ export function registerCompanyRoutes(app: Express) {
     }
 
     try {
-      const company = await storage.updateCompany(id, updateData);
+      const company = await withCompanySchemaRepair(
+        { route: 'PUT /api/companies/:id', id, userId },
+        () => storage.updateCompany(id, updateData),
+      );
       res.json(company);
     } catch (err: any) {
       if (handleCompanyWriteError(err, { route: 'PUT /api/companies/:id', id, userId }, res)) {
@@ -239,7 +272,10 @@ export function registerCompanyRoutes(app: Express) {
     }
 
     try {
-      const company = await storage.updateCompany(id, updateData);
+      const company = await withCompanySchemaRepair(
+        { route: 'PATCH /api/companies/:id', id, userId },
+        () => storage.updateCompany(id, updateData),
+      );
       log.info({ id: company.id }, 'Company profile updated');
       res.json(company);
     } catch (err: any) {

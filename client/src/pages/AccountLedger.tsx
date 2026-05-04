@@ -19,6 +19,7 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/format';
 import { queryClient, apiRequest } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/api';
 import { getAuthHeaders } from '@/lib/auth';
 import type { Account } from '@shared/schema';
 import jsPDF from 'jspdf';
@@ -91,7 +92,7 @@ export default function AccountLedger() {
       params.set('offset', String((currentPage - 1) * entriesPerPage));
       
       const url = `/api/accounts/${accountId}/ledger?${params.toString()}`;
-      const response = await fetch(url, {
+      const response = await fetch(apiUrl(url), {
         headers: { 
           'Content-Type': 'application/json',
           ...getAuthHeaders(),

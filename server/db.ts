@@ -409,6 +409,98 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'companies.onboarding_completed',
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "onboarding_completed" boolean NOT NULL DEFAULT false`,
     },
+    // ── 0001/production drift: complete companies profile surface ───────
+    // Drizzle UPDATE/SELECT returns every declared company column. If any
+    // historical profile column is missing, onboarding step 2 fails with a
+    // generic 500 even when the submitted fields are valid.
+    {
+      name: 'companies.company_type',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "company_type" text NOT NULL DEFAULT 'customer'`,
+    },
+    {
+      name: 'companies.legal_structure',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "legal_structure" text`,
+    },
+    {
+      name: 'companies.industry',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "industry" text`,
+    },
+    {
+      name: 'companies.registration_number',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "registration_number" text`,
+    },
+    {
+      name: 'companies.business_address',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "business_address" text`,
+    },
+    {
+      name: 'companies.contact_phone',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "contact_phone" text`,
+    },
+    {
+      name: 'companies.contact_email',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "contact_email" text`,
+    },
+    {
+      name: 'companies.website_url',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "website_url" text`,
+    },
+    {
+      name: 'companies.logo_url',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "logo_url" text`,
+    },
+    {
+      name: 'companies.trn_vat_number',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "trn_vat_number" text`,
+    },
+    {
+      name: 'companies.tax_registration_type',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "tax_registration_type" text`,
+    },
+    {
+      name: 'companies.vat_filing_frequency',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "vat_filing_frequency" text`,
+    },
+    {
+      name: 'companies.tax_registration_date',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "tax_registration_date" timestamp`,
+    },
+    {
+      name: 'companies.corporate_tax_id',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "corporate_tax_id" text`,
+    },
+    {
+      name: 'companies.emirate',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "emirate" text DEFAULT 'dubai'`,
+    },
+    {
+      name: 'companies.invoice_show_logo',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_logo" boolean NOT NULL DEFAULT true`,
+    },
+    {
+      name: 'companies.invoice_show_address',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_address" boolean NOT NULL DEFAULT true`,
+    },
+    {
+      name: 'companies.invoice_show_phone',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_phone" boolean NOT NULL DEFAULT true`,
+    },
+    {
+      name: 'companies.invoice_show_email',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_email" boolean NOT NULL DEFAULT true`,
+    },
+    {
+      name: 'companies.invoice_show_website',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_website" boolean NOT NULL DEFAULT false`,
+    },
+    {
+      name: 'companies.invoice_custom_title',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_custom_title" text`,
+    },
+    {
+      name: 'companies.invoice_footer_note',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_footer_note" text`,
+    },
     // ── 0029: drop incorrect global UNIQUE on companies.name ─────────────
     // The original schema (migration 0000) created `companies_name_unique`
     // on companies(name). In a multi-tenant SaaS, two unrelated tenants can
@@ -623,6 +715,18 @@ export async function ensureCriticalSchema(): Promise<void> {
     {
       name: 'companies.address_country',
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "address_country" text DEFAULT 'AE'`,
+    },
+    {
+      name: 'companies.vat_auto_calculate',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "vat_auto_calculate" boolean NOT NULL DEFAULT true`,
+    },
+    {
+      name: 'companies.vat_period_start_month',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "vat_period_start_month" integer NOT NULL DEFAULT 1`,
+    },
+    {
+      name: 'companies.classifier_config',
+      sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "classifier_config" jsonb NOT NULL DEFAULT '{"mode":"hybrid","accuracyThreshold":0.8,"autopilotEnabled":false}'::jsonb`,
     },
   ];
 

@@ -71,13 +71,12 @@ export async function exportToGoogleSheets(
       ),
     }));
 
-    const response = await apiRequest('POST', `/api/integrations/google-sheets/export/custom`, {
+    const result = await apiRequest('POST', `/api/integrations/google-sheets/export/custom`, {
       companyId,
       title,
       sheets: sheetsData,
     });
 
-    const result = await response.json();
     return {
       success: true,
       spreadsheetUrl: result.url,

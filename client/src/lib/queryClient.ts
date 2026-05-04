@@ -36,6 +36,22 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+async function parseResponseBody(res: Response): Promise<any> {
+  if (res.status === 204 || res.status === 205 || res.headers.get("content-length") === "0") {
+    return null;
+  }
+
+  const text = await res.text();
+  if (!text) return null;
+
+  const contentType = res.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    return JSON.parse(text);
+  }
+
+  return text;
+}
+
 async function isCsrfInvalidResponse(res: Response): Promise<boolean> {
   if (res.status !== 403) return false;
   try {
@@ -49,16 +65,12 @@ async function isCsrfInvalidResponse(res: Response): Promise<boolean> {
 /** Mutating methods are eligible for offline queueing. */
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export async function apiRequest(
-  method: string,
-  url: string,
-  data?: unknown | undefined,
-): Promise<any> {
+async function buildRequestHeaders(method: string, data?: unknown): Promise<Record<string, string>> {
   let headers: Record<string, string> = {
     ...getAuthHeaders(),
   };
 
-  if (data) {
+  if (data !== undefined) {
     headers["Content-Type"] = "application/json";
   }
 
@@ -67,9 +79,19 @@ export async function apiRequest(
     headers = await withCsrfHeader(method, headers);
   }
 
+  return headers;
+}
+
+export async function apiRequest(
+  method: string,
+  url: string,
+  data?: unknown | undefined,
+): Promise<any> {
+  let headers = await buildRequestHeaders(method, data);
+
   const fullUrl = apiUrl(url);
   const upperMethod = method.toUpperCase();
-  const body = data ? JSON.stringify(data) : undefined;
+  const body = data !== undefined ? JSON.stringify(data) : undefined;
 
   // If we're offline and this is a mutation, queue it for the service worker
   // to replay once connectivity returns. Reads are not queued — they should
@@ -89,8 +111,7 @@ export async function apiRequest(
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (refreshed) {
-      headers = data ? { "Content-Type": "application/json" } : {};
-      headers = await withCsrfHeader(method, headers);
+      headers = await buildRequestHeaders(method, data);
       res = await fetch(fullUrl, {
         method,
         headers,
@@ -117,7 +138,7 @@ export async function apiRequest(
   }
 
   await throwIfResNotOk(res);
-  return res.json();
+  return parseResponseBody(res);
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
@@ -147,7 +168,7 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    return await parseResponseBody(res);
   };
 
 // Don't retry client errors (4xx) — only retry network failures and 5xx

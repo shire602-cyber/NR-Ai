@@ -24,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { format } from 'date-fns';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiUrl } from '@/lib/api';
 import type { ActivityLog } from '@shared/schema';
 
 export default function History() {
@@ -36,7 +37,7 @@ export default function History() {
     queryKey: ['/api/companies', companyId, 'activity-logs'],
     queryFn: async () => {
       if (!companyId) return [];
-      const res = await fetch(`/api/companies/${companyId}/activity-logs?limit=200`, {
+      const res = await fetch(apiUrl(`/api/companies/${companyId}/activity-logs?limit=200`), {
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch activity logs');

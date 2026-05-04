@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { apiRequest } from '@/lib/queryClient';
+import { API_BASE_URL, apiUrl } from '@/lib/api';
 import { useCurrentUser } from './useCurrentUser';
 
 export interface AppNotification {
@@ -37,7 +38,7 @@ export function useNotifications(): UseNotificationsReturn {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications', { credentials: 'include' });
+      const res = await fetch(apiUrl('/api/notifications'), { credentials: 'include' });
       if (!res.ok) return;
       const data = await res.json();
       setNotifications(data.notifications ?? []);
@@ -52,7 +53,7 @@ export function useNotifications(): UseNotificationsReturn {
 
     fetchNotifications();
 
-    const socket = io(window.location.origin, {
+    const socket = io(API_BASE_URL || window.location.origin, {
       path: '/socket.io',
       withCredentials: true,
       transports: ['websocket', 'polling'],

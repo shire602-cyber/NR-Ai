@@ -45,4 +45,15 @@ describe('apiRequest CSRF recovery', () => {
     expect(retryMutation.credentials).toBe('include');
     expect((retryMutation.headers as Record<string, string>)['x-csrf-token']).toBe('fresh-token');
   });
+
+  it('returns null for successful empty responses', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ csrfToken: 'token' }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(apiRequest('DELETE', '/api/backups/backup-1')).resolves.toBeNull();
+  });
 });

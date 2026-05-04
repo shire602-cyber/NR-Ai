@@ -19,7 +19,7 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { apiUrl } from '@/lib/api';
 import { getAuthHeaders } from '@/lib/auth';
-import { withCsrfHeader } from '@/lib/csrf';
+import { clearCsrfToken, withCsrfHeader } from '@/lib/csrf';
 import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import {
   exportToExcel,
@@ -612,9 +612,30 @@ export default function Receipts() {
 
       let parsed: ExtractedData | null = null;
       let backendErrorMessage: string | null = null;
+      let backendErrorStatus: number | null = null;
 
-      try {
-        const response = await fetch(apiUrl('/api/ocr/process'), {
+      const normaliseOcrError = (status: number | null, message: string | null) => {
+        if (status && status >= 500) {
+          return 'OCR service is temporarily unavailable. Please try again in a moment.';
+        }
+        if (!message || /internal server error/i.test(message)) {
+          return 'OCR processing failed. Please try again.';
+        }
+        return message;
+      };
+
+      const isCsrfInvalid = async (response: Response) => {
+        if (response.status !== 403) return false;
+        try {
+          const body = await response.clone().json();
+          return body?.code === 'CSRF_INVALID';
+        } catch {
+          return false;
+        }
+      };
+
+      const callBackendOcr = async () =>
+        fetch(apiUrl('/api/ocr/process'), {
           method: 'POST',
           headers: await withCsrfHeader('POST', {
             'Content-Type': 'application/json',
@@ -623,6 +644,14 @@ export default function Receipts() {
           credentials: 'include',
           body: JSON.stringify({ imageData, companyId }),
         });
+
+      try {
+        let response = await callBackendOcr();
+
+        if (await isCsrfInvalid(response)) {
+          clearCsrfToken();
+          response = await callBackendOcr();
+        }
 
         if (response.ok) {
           const result = await response.json();
@@ -646,24 +675,40 @@ export default function Receipts() {
             return updated;
           });
         } else {
+          backendErrorStatus = response.status;
           // Capture the server-provided message so we can surface it if Tesseract
           // also fails. Without this, users see a generic "Try a clearer image"
           // even when the real cause is a misconfigured AI key on the server.
           try {
             const body = await response.json();
-            backendErrorMessage = body?.message || `Backend OCR returned ${response.status}`;
+            backendErrorMessage = normaliseOcrError(
+              response.status,
+              body?.message || `Backend OCR returned ${response.status}`,
+            );
           } catch {
-            backendErrorMessage = `Backend OCR returned ${response.status}`;
+            backendErrorMessage = normaliseOcrError(response.status, `Backend OCR returned ${response.status}`);
           }
           console.warn('[OCR] Backend returned error:', response.status, backendErrorMessage);
         }
       } catch (backendError: any) {
-        backendErrorMessage = backendError?.message || 'Network error contacting OCR service';
-        console.warn('[OCR] Backend Vision failed, falling back to Tesseract:', backendError);
+        backendErrorMessage = normaliseOcrError(null, backendError?.message || 'Network error contacting OCR service');
+        console.warn('[OCR] Backend Vision failed:', backendError);
       }
 
-      // Strategy 2: Tesseract fallback
+      // Strategy 2: local Tesseract fallback. Production CSP/worker loading can
+      // make browser Tesseract fail noisily, so only use it in development.
+      // In production we surface the backend OCR error directly.
       if (!parsed) {
+        const canUseLocalFallback =
+          import.meta.env.DEV &&
+          backendErrorStatus !== 401 &&
+          backendErrorStatus !== 403 &&
+          backendErrorStatus !== 429;
+
+        if (!canUseLocalFallback) {
+          throw new Error(backendErrorMessage || 'OCR service is temporarily unavailable. Please try again in a moment.');
+        }
+
         let tesseractText = '';
         try {
           const result = await Tesseract.recognize(receipt.file, 'eng', {

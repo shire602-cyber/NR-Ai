@@ -85,22 +85,24 @@ describe('handleCompanyWriteError', () => {
   });
 
   // Schema/DB drift — a column referenced in the schema doesn't exist in the
-  // DB. Expected to be caught by ensureCriticalSchema; if not, we want it
-  // logged as a 5xx (returning false here lets the caller re-throw to the
-  // global handler so it lands in alerts).
-  it('returns false (re-throw) on 42703 (undefined column)', () => {
+  // DB. Route handlers retry once after running ensureCriticalSchema; if that
+  // still fails, users should see a clear retryable service error, not a
+  // generic "Internal Server Error".
+  it('maps 42703 (undefined column) to retryable 503 after repair fails', () => {
     const { res, status, json } = makeRes();
     expect(
       handleCompanyWriteError(pgError('42703', { message: 'column "legal_name" does not exist' }), ctx, res),
-    ).toBe(false);
-    expect(status).not.toHaveBeenCalled();
-    expect(json).not.toHaveBeenCalled();
+    ).toBe(true);
+    expect(status).toHaveBeenCalledWith(503);
+    expect(json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: 'COMPANY_SCHEMA_REPAIR_REQUIRED' }),
+    );
   });
 
-  it('returns false on 42P01 (undefined table)', () => {
+  it('maps 42P01 (undefined table) to retryable 503 after repair fails', () => {
     const { res, status } = makeRes();
-    expect(handleCompanyWriteError(pgError('42P01'), ctx, res)).toBe(false);
-    expect(status).not.toHaveBeenCalled();
+    expect(handleCompanyWriteError(pgError('42P01'), ctx, res)).toBe(true);
+    expect(status).toHaveBeenCalledWith(503);
   });
 
   it('returns false on unknown error codes so the global handler can render them', () => {
