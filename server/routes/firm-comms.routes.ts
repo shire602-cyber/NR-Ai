@@ -338,8 +338,8 @@ export function registerFirmCommsRoutes(app: Express): void {
         userId,
         companyId: validated.companyId,
         type: 'communication',
-        title: 'WhatsApp sent to client',
-        message: `WhatsApp message sent to ${validated.recipientPhone}`,
+        title: 'WhatsApp message logged',
+        message: `WhatsApp draft logged for ${validated.recipientPhone}; no provider delivery occurred.`,
         priority: 'normal',
         relatedEntityType: 'communication',
         relatedEntityId: comm.id,
@@ -387,6 +387,7 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     '/firm/comms/templates',
     asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId } = (req as any).user;
       const validated = templateSchema.parse(req.body);
 
       if (validated.id) {
@@ -403,6 +404,20 @@ export function registerFirmCommsRoutes(app: Express): void {
           })
           .where(eq(communicationTemplates.id, validated.id))
           .returning();
+        if (!updated) return res.status(404).json({ message: 'Template not found' });
+        await recordAudit({
+          userId,
+          action: 'firm_communication_template_update',
+          entityType: 'communication_template',
+          entityId: updated.id,
+          req,
+          extra: {
+            channel: updated.channel,
+            templateType: updated.templateType,
+            language: updated.language,
+            isActive: updated.isActive,
+          },
+        });
         res.json(updated);
       } else {
         const [created] = await db
@@ -417,6 +432,19 @@ export function registerFirmCommsRoutes(app: Express): void {
             isActive: validated.isActive,
           })
           .returning();
+        await recordAudit({
+          userId,
+          action: 'firm_communication_template_create',
+          entityType: 'communication_template',
+          entityId: created.id,
+          req,
+          extra: {
+            channel: created.channel,
+            templateType: created.templateType,
+            language: created.language,
+            isActive: created.isActive,
+          },
+        });
         res.status(201).json(created);
       }
     })

@@ -15,6 +15,7 @@ if (!email || !password) {
 }
 
 const cookieJar = new Map();
+let bearerToken = '';
 
 function rememberCookies(headers) {
   const raw = typeof headers.getSetCookie === 'function'
@@ -30,6 +31,16 @@ function rememberCookies(headers) {
   }
 }
 
+async function readJson(response) {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 function cookieHeader() {
   return [...cookieJar.entries()].map(([name, value]) => `${name}=${value}`).join('; ');
 }
@@ -39,6 +50,7 @@ async function check(name, path, options = {}) {
   const headers = {
     ...(options.headers || {}),
     ...(cookieJar.size ? { Cookie: cookieHeader() } : {}),
+    ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
   };
   const response = await fetch(url, { ...options, headers });
   rememberCookies(response.headers);
@@ -52,18 +64,34 @@ async function check(name, path, options = {}) {
   return response;
 }
 
+async function checkJson(name, path, predicate, options = {}) {
+  const response = await check(name, path, options);
+  const body = await readJson(response);
+  if (predicate && !predicate(body)) {
+    throw new Error(`${name} returned an unexpected body: ${JSON.stringify(body).slice(0, 500)}`);
+  }
+  return body;
+}
+
 await check('liveness', '/health/live');
 await check('readiness', '/health/ready');
+await checkJson('version', '/api/version', (body) => body?.status === 'ok' && body?.commit);
 
-await check('login', '/api/auth/login', {
+const loginBody = await checkJson('login', '/api/auth/login', (body) => body?.user?.id, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ email, password }),
 });
+bearerToken = loginBody?.token || loginBody?.accessToken || bearerToken;
 
-await check('firm clients', '/api/firm/clients');
-await check('value ops dashboard', '/api/firm/value-ops');
-await check('value ops action brief', '/api/firm/value-ops/action-brief');
-await check('value ops review queue', '/api/firm/value-ops/review-queue');
+await checkJson('auth session', '/api/auth/me', (body) => body?.id === loginBody.user.id);
+await checkJson('firm clients', '/api/firm/clients', (body) => Array.isArray(body));
+await checkJson('firm health', '/api/firm/health', (body) => Array.isArray(body?.clients) && body?.summary);
+await checkJson('firm deadlines', '/api/firm/health/deadlines', (body) => Array.isArray(body));
+await checkJson('firm comms log', '/api/firm/comms/log', (body) => Array.isArray(body?.data));
+await checkJson('value ops dashboard', '/api/firm/value-ops', (body) => body?.summary && Array.isArray(body?.clients));
+await checkJson('value ops action brief', '/api/firm/value-ops/action-brief', (body) => Array.isArray(body?.summary) && Array.isArray(body?.clientBriefs));
+await checkJson('value ops review queue', '/api/firm/value-ops/review-queue', (body) => Array.isArray(body));
+await checkJson('command center dashboard', '/api/firm/command-center/dashboard', (body) => body?.summary && Array.isArray(body?.clients));
 
 console.log('production smoke checks passed');

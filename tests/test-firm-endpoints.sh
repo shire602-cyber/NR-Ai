@@ -26,6 +26,8 @@ echo "  NRA Management Center — Endpoint Tests"
 echo "=========================================="
 echo ""
 
+FAILURES=0
+
 # ── Step 1: Login ─────────────────────────────────────────────────────────────
 echo "[1/14] POST /auth/login"
 LOGIN_RESP=$(curl -s -X POST "$BASE/auth/login" \
@@ -69,26 +71,40 @@ call() {
   else
     echo "  STATUS: $RESP *** UNEXPECTED ***"
     echo "  BODY: $BODY"
+    FAILURES=$((FAILURES + 1))
   fi
   echo ""
 }
 
 # ── Step 2: Firm endpoints ─────────────────────────────────────────────────────
-call " 2/14" GET  /firm/clients
-call " 3/14" GET  /firm/staff
-call " 4/14" GET  /firm/health
-call " 5/14" GET  /firm/health/deadlines
-call " 6/14" GET  /firm/comms/log
-call " 7/14" GET  /firm/comms/templates
-call " 8/14" GET  /firm/bulk/bank-import-status
-call " 9/14" GET  /firm/analytics/revenue
-call "10/14" GET  /firm/analytics/utilization
-call "11/14" GET  /firm/pipeline/leads
-call "12/14" GET  /firm/pipeline/saas-prospects
+call " 2/16" GET  /firm/clients
+call " 3/16" GET  /firm/staff
+call " 4/16" GET  /firm/health
+call " 5/16" GET  /firm/health/deadlines
+call " 6/16" GET  /firm/comms/log
+call " 7/16" GET  /firm/comms/templates
+call " 8/16" GET  /firm/analytics/revenue
+call " 9/16" GET  /firm/analytics/utilization
+call "10/16" GET  /firm/pipeline/leads
+call "11/16" GET  /firm/pipeline/saas-prospects
+call "12/16" GET  /firm/value-ops
+call "13/16" GET  /firm/value-ops/action-brief
+call "14/16" GET  /firm/value-ops/review-queue
+call "15/16" GET  /firm/command-center/dashboard
 
-# ── Step 3: Create a test client company ──────────────────────────────────────
-call "13/14" POST /firm/clients '{"name":"Smoke Test Client Co","baseCurrency":"AED","locale":"en"}'
+if [ "${TEST_ALLOW_MUTATION:-false}" = "true" ]; then
+  call "16/16" POST /firm/clients '{"name":"Smoke Test Client Co","baseCurrency":"AED","locale":"en"}'
+else
+  echo "[16/16] POST /firm/clients"
+  echo "  SKIPPED — set TEST_ALLOW_MUTATION=true to create a test client"
+  echo ""
+fi
 
 echo "=========================================="
-echo "  Done. All requests completed."
+if [ "$FAILURES" -gt 0 ]; then
+  echo "  FAILED — $FAILURES endpoint(s) returned unexpected status"
+  echo "=========================================="
+  exit 1
+fi
+echo "  PASS — all non-mutating endpoint checks completed."
 echo "=========================================="

@@ -9,7 +9,7 @@
 import type { Express, Request, Response } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, eq, gte, inArray, lt, sql, sum } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, or, sql, sum } from 'drizzle-orm';
 
 import { authMiddleware } from '../middleware/auth';
 import { requireFirmAdmin, requireFirmOwner } from '../middleware/rbac';
@@ -17,6 +17,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { db } from '../db';
 import { companies, invoices, receipts } from '../../shared/schema';
+import { recordAudit } from '../services/audit.service';
 import {
   buildClientSnapshots,
   buildFirmDashboard,
@@ -27,7 +28,6 @@ import {
   generateAlertsForClient,
   listFirmAlerts,
   markAlertRead,
-  persistAlertCandidates,
   previousPeriodRange,
   rankClients,
   refreshFirmAlerts,
@@ -263,6 +263,17 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const candidates = snapshots.flatMap((s) => generateAlertsForClient(s));
 
       const { generated, created } = await refreshFirmAlerts(userId, candidates);
+      await recordAudit({
+        userId,
+        action: 'firm_alerts_refresh',
+        entityType: 'firm_alert',
+        req,
+        extra: {
+          generated,
+          created: created.length,
+          accessibleClientCount: companyIds.length,
+        },
+      });
       res.json({ generated, created: created.length, alerts: created });
     })
   );
@@ -282,6 +293,15 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       }
       const updated = await markAlertRead(userId, parsed.data.id);
       if (!updated) return res.status(404).json({ message: 'Alert not found' });
+      await recordAudit({
+        userId,
+        companyId: updated.companyId,
+        action: 'firm_alert_mark_read',
+        entityType: 'firm_alert',
+        entityId: updated.id,
+        req,
+        extra: { alertType: updated.alertType, severity: updated.severity },
+      });
       res.json(updated);
     })
   );
@@ -298,6 +318,15 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       }
       const updated = await resolveAlert(userId, parsed.data.id);
       if (!updated) return res.status(404).json({ message: 'Alert not found' });
+      await recordAudit({
+        userId,
+        companyId: updated.companyId,
+        action: 'firm_alert_resolve',
+        entityType: 'firm_alert',
+        entityId: updated.id,
+        req,
+        extra: { alertType: updated.alertType, severity: updated.severity },
+      });
       res.json(updated);
     })
   );
@@ -319,8 +348,18 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     '/staff/assign',
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
+      const actorId = (req as any).user.id;
       const { userId, companyId, role } = assignStaffSchema.parse(req.body);
       await assignStaffToCompany(userId, companyId, role);
+      await recordAudit({
+        userId: actorId,
+        companyId,
+        action: 'firm_staff_assign',
+        entityType: 'firm_staff_assignment',
+        entityId: `${userId}:${companyId}`,
+        req,
+        extra: { assignedUserId: userId, role },
+      });
       res.json({ success: true, userId, companyId, role });
     })
   );
@@ -436,6 +475,19 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         { firmId: userId, count: results.length },
         'Phase 6 batch VAT calc completed'
       );
+      await recordAudit({
+        userId,
+        action: 'firm_batch_vat_calculate',
+        entityType: 'firm_batch_action',
+        req,
+        extra: {
+          allowedCompanyIds,
+          rejectedCompanyIds,
+          resultCount: results.length,
+          periodStart,
+          periodEnd,
+        },
+      });
       res.json({
         period: { start: periodStart, end: periodEnd },
         results,
@@ -456,6 +508,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const { allowed: allowedCompanyIds, rejected: rejectedCompanyIds } = scope;
 
       const now = new Date();
+      const startOfToday = new Date(now);
+      startOfToday.setHours(0, 0, 0, 0);
       // Surface overdue invoices for chasing — actual reminder dispatch lives
       // in the existing reminders pipeline (Phase 4).
       const overdueRows = (await db
@@ -473,7 +527,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
           and(
             inArray(invoices.companyId, allowedCompanyIds),
             inArray(invoices.status, ['sent', 'partial']),
-            lt(invoices.dueDate, now)
+            lt(invoices.dueDate, now),
+            or(isNull(invoices.lastReminderSentAt), lt(invoices.lastReminderSentAt, startOfToday))
           )
         )) as Array<{
         id: string;
@@ -506,6 +561,19 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         { firmId: userId, count: overdueRows.length },
         'Phase 6 batch payment chase queued'
       );
+      await recordAudit({
+        userId,
+        action: 'firm_batch_payment_chase_queued',
+        entityType: 'firm_batch_action',
+        req,
+        extra: {
+          allowedCompanyIds,
+          rejectedCompanyIds,
+          invoiceIds: overdueRows.map((r) => r.id),
+          dedupeWindow: 'calendar_day',
+          queuedInvoiceCount: overdueRows.length,
+        },
+      });
       res.json({
         chasedInvoiceCount: overdueRows.length,
         invoices: overdueRows,
@@ -532,14 +600,36 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         alertType: 'document_missing' as const,
         severity: 'info' as const,
         message: `Document chase requested by firm`,
+        metadata: {
+          actionKey: `firm_batch:document_chase:${id}`,
+          requestedBy: userId,
+          requestedAt: new Date().toISOString(),
+        },
       }));
-      const created = await persistAlertCandidates(userId, candidates);
+      const { generated, created } = await refreshFirmAlerts(userId, candidates);
 
       logger.info(
         { firmId: userId, count: created.length },
         'Phase 6 batch document chase queued'
       );
-      res.json({ chasedClientCount: created.length, rejectedCompanyIds });
+      await recordAudit({
+        userId,
+        action: 'firm_batch_document_chase_queued',
+        entityType: 'firm_batch_action',
+        req,
+        extra: {
+          allowedCompanyIds,
+          rejectedCompanyIds,
+          generated,
+          created: created.length,
+          skippedDuplicateCount: generated - created.length,
+        },
+      });
+      res.json({
+        chasedClientCount: created.length,
+        skippedDuplicateCount: generated - created.length,
+        rejectedCompanyIds,
+      });
     })
   );
 
