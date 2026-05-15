@@ -85,9 +85,8 @@ export function validateEnv(): Env {
       .map(([key, msgs]) => `  ${key}: ${(msgs || []).join(', ')}`)
       .join('\n');
 
-    console.error('\n❌ Environment validation failed:\n');
-    console.error(errorMessages);
-    console.error('\nPlease check your .env file or environment variables.\n');
+    process.stderr.write(`\nEnvironment validation failed:\n\n${errorMessages}\n\n`);
+    process.stderr.write('Please check your .env file or environment variables.\n');
     process.exit(1);
   }
 

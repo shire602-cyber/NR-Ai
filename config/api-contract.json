@@ -1,0 +1,29 @@
+{
+  "requiredServerContracts": [
+    {
+      "name": "firm clients",
+      "file": "server/routes/firm.routes.ts",
+      "mustContain": ["'/firm/clients'"]
+    },
+    {
+      "name": "firm health",
+      "file": "server/routes/firm.routes.ts",
+      "mustContain": ["'/firm/health'", "'/firm/health/deadlines'"]
+    },
+    {
+      "name": "firm comms log",
+      "file": "server/routes/firm-comms.routes.ts",
+      "mustContain": ["'/firm/comms/log'", "'/firm/comms/log/:companyId'"]
+    },
+    {
+      "name": "firm value ops",
+      "file": "server/routes/firm-value-ops.routes.ts",
+      "mustContain": ["app.use('/api/firm/value-ops', router)", "'/'", "'/action-brief'", "'/review-queue'"]
+    },
+    {
+      "name": "firm command center dashboard",
+      "file": "server/routes/firm-command-center.routes.ts",
+      "mustContain": ["app.use('/api/firm/command-center', router)", "'/dashboard'"]
+    }
+  ]
+}
