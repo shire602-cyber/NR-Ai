@@ -4,6 +4,10 @@ import {
   validateImportedClient,
   normaliseEmirate,
   normaliseVatFiling,
+  corporateTaxWindow,
+  currentVatPeriodForCompany,
+  nextCorporateTaxFilingWindow,
+  vatCohortFromPeriodStart,
 } from '../../server/services/firm-clients.service';
 
 describe('firm-clients.service: import mapping', () => {
@@ -154,6 +158,71 @@ describe('firm-clients.service: import mapping', () => {
         websiteUrl: '',
       });
       expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('VAT cohort and filing windows', () => {
+    it('maps quarterly clients into the three FTA closing cohorts', () => {
+      expect(vatCohortFromPeriodStart(11, 'quarterly')).toMatchObject({
+        key: 'jan_apr_jul_oct',
+        label: 'Jan / Apr / Jul / Oct',
+        closeMonths: [1, 4, 7, 10],
+      });
+      expect(vatCohortFromPeriodStart(12, 'quarterly')).toMatchObject({
+        key: 'feb_may_aug_nov',
+        label: 'Feb / May / Aug / Nov',
+        closeMonths: [2, 5, 8, 11],
+      });
+      expect(vatCohortFromPeriodStart(1, 'quarterly')).toMatchObject({
+        key: 'mar_jun_sep_dec',
+        label: 'Mar / Jun / Sep / Dec',
+        closeMonths: [3, 6, 9, 12],
+      });
+    });
+
+    it('keeps monthly filers separate from the quarterly production board', () => {
+      expect(vatCohortFromPeriodStart(1, 'monthly')).toMatchObject({
+        key: 'monthly',
+        label: 'Monthly',
+        closeMonths: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      });
+    });
+
+    it('calculates the active VAT period and 28-day due date', () => {
+      const window = currentVatPeriodForCompany(new Date('2026-05-16T12:00:00Z'), 1, 'quarterly');
+      expect(window.periodStart.toISOString()).toBe('2026-04-01T00:00:00.000Z');
+      expect(window.periodEnd.toISOString()).toBe('2026-06-30T00:00:00.000Z');
+      expect(window.dueDate.toISOString()).toBe('2026-07-28T00:00:00.000Z');
+    });
+
+    it('handles VAT periods that start in the prior calendar year', () => {
+      const window = currentVatPeriodForCompany(new Date('2026-01-15T12:00:00Z'), 11, 'quarterly');
+      expect(window.periodStart.toISOString()).toBe('2025-11-01T00:00:00.000Z');
+      expect(window.periodEnd.toISOString()).toBe('2026-01-31T00:00:00.000Z');
+      expect(window.dueDate.toISOString()).toBe('2026-02-28T00:00:00.000Z');
+    });
+  });
+
+  describe('corporate tax filing windows', () => {
+    it('calculates the financial-year end and nine-month filing due date', () => {
+      const window = corporateTaxWindow(new Date('2026-05-16T12:00:00Z'), 1);
+      expect(window.periodStart.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+      expect(window.periodEnd.toISOString()).toBe('2026-12-31T00:00:00.000Z');
+      expect(window.dueDate.toISOString()).toBe('2027-09-30T00:00:00.000Z');
+    });
+
+    it('uses the previous financial year when the start month has not arrived yet', () => {
+      const window = corporateTaxWindow(new Date('2026-02-15T12:00:00Z'), 4);
+      expect(window.periodStart.toISOString()).toBe('2025-04-01T00:00:00.000Z');
+      expect(window.periodEnd.toISOString()).toBe('2026-03-31T00:00:00.000Z');
+      expect(window.dueDate.toISOString()).toBe('2026-12-31T00:00:00.000Z');
+    });
+
+    it('surfaces the latest completed tax period until its filing deadline passes', () => {
+      const window = nextCorporateTaxFilingWindow(new Date('2026-05-16T12:00:00Z'), 1);
+      expect(window.periodStart.toISOString()).toBe('2025-01-01T00:00:00.000Z');
+      expect(window.periodEnd.toISOString()).toBe('2025-12-31T00:00:00.000Z');
+      expect(window.dueDate.toISOString()).toBe('2026-09-30T00:00:00.000Z');
     });
   });
 });

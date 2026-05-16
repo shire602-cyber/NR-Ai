@@ -9,7 +9,15 @@ import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
-import { mapImportRow, validateImportedClient } from '../services/firm-clients.service';
+import {
+  currentVatPeriodForCompany,
+  mapImportRow,
+  nextCorporateTaxFilingWindow,
+  validateImportedClient,
+  vatCohortFromPeriodStart,
+  type VatCohort,
+  type VatCohortKey,
+} from '../services/firm-clients.service';
 import { parseSpreadsheetBuffer } from '../utils/spreadsheet';
 import { db } from '../db';
 import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne, lte } from 'drizzle-orm';
@@ -20,6 +28,7 @@ import {
   invoices,
   receipts,
   vatReturns,
+  corporateTaxReturns,
   bankTransactions,
   journalEntries,
   journalLines,
@@ -124,6 +133,7 @@ async function getClientStats(companyId: string) {
 type HealthStatus = 'healthy' | 'attention' | 'critical';
 type VatHealthStatus = 'on-track' | 'due-soon' | 'overdue';
 type DeadlineStatus = 'upcoming' | 'due-soon' | 'overdue';
+type BookkeeperPriority = 'on_track' | 'attention' | 'critical';
 
 function daysUntil(date: Date | string | null | undefined, now: Date): number | null {
   if (!date) return null;
@@ -193,6 +203,70 @@ function emptyHealthPayload() {
   };
 }
 
+function priorityRank(priority: BookkeeperPriority): number {
+  if (priority === 'critical') return 3;
+  if (priority === 'attention') return 2;
+  return 1;
+}
+
+function maxPriority(...priorities: BookkeeperPriority[]): BookkeeperPriority {
+  return priorities.reduce(
+    (current, next) => (priorityRank(next) > priorityRank(current) ? next : current),
+    'on_track' as BookkeeperPriority,
+  );
+}
+
+function priorityFromDueDays(
+  daysTilDue: number | null,
+  attentionWindowDays: number,
+  criticalWindowDays = 0,
+): BookkeeperPriority {
+  if (daysTilDue === null) return 'on_track';
+  if (daysTilDue < criticalWindowDays) return 'critical';
+  if (daysTilDue <= attentionWindowDays) return 'attention';
+  return 'on_track';
+}
+
+function shortIso(date: Date | string | null | undefined): string | null {
+  if (!date) return null;
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+const STANDARD_VAT_COHORTS = [
+  vatCohortFromPeriodStart(11, 'quarterly'),
+  vatCohortFromPeriodStart(12, 'quarterly'),
+  vatCohortFromPeriodStart(1, 'quarterly'),
+] as VatCohort[];
+
+function emptyBookkeeperDashboard() {
+  return {
+    generatedAt: new Date().toISOString(),
+    summary: {
+      totalClients: 0,
+      critical: 0,
+      attention: 0,
+      onTrack: 0,
+      vatDue28Days: 0,
+      corporateTaxDue90Days: 0,
+      bookkeepingBlocked: 0,
+    },
+    vatCohorts: STANDARD_VAT_COHORTS.map(cohort => ({
+      key: cohort.key,
+      label: cohort.label,
+      closeMonths: cohort.closeMonths,
+      closeMonthLabels: cohort.closeMonthLabels,
+      clientCount: 0,
+      dueSoon: 0,
+      blocked: 0,
+      ready: 0,
+      clients: [],
+    })),
+    clients: [],
+  };
+}
+
 // ─── Route registration ───────────────────────────────────────────────────────
 
 const createClientSchema = z.object({
@@ -207,6 +281,8 @@ const createClientSchema = z.object({
   websiteUrl: z.string().optional(),
   emirate: z.string().optional(),
   vatFilingFrequency: z.string().optional(),
+  vatPeriodStartMonth: z.coerce.number().int().min(1).max(12).optional(),
+  fiscalYearStartMonth: z.coerce.number().int().min(1).max(12).optional(),
   taxRegistrationType: z.string().optional(),
   corporateTaxId: z.string().optional(),
 });
@@ -335,6 +411,8 @@ export function registerFirmRoutes(app: Express): void {
         websiteUrl: validated.websiteUrl,
         emirate: validated.emirate || 'dubai',
         vatFilingFrequency: validated.vatFilingFrequency || 'quarterly',
+        vatPeriodStartMonth: validated.vatPeriodStartMonth,
+        fiscalYearStartMonth: validated.fiscalYearStartMonth,
         taxRegistrationType: validated.taxRegistrationType,
         corporateTaxId: validated.corporateTaxId,
       });
@@ -507,6 +585,521 @@ export function registerFirmRoutes(app: Express): void {
       );
 
       res.json(staffWithAssignments);
+    })
+  );
+
+  // ─── GET /api/firm/bookkeeper-dashboard ───────────────────────────────────
+  // Operational production board for NRA bookkeepers. It groups clients by
+  // their VAT close months and surfaces corporate tax, bookkeeping close, and
+  // accounting-review blockers before a staff member opens an individual file.
+  router.get(
+    '/firm/bookkeeper-dashboard',
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id: userId, firmRole } = (req as any).user;
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+
+      type BookkeeperClientRow = {
+        id: string;
+        name: string;
+        trnVatNumber: string | null;
+        vatFilingFrequency: string | null;
+        vatPeriodStartMonth: number;
+        fiscalYearStartMonth: number;
+        corporateTaxId: string | null;
+        createdAt: Date;
+      };
+
+      let clientList: BookkeeperClientRow[];
+      if (accessibleIds === null) {
+        clientList = await db
+          .select({
+            id: companies.id,
+            name: companies.name,
+            trnVatNumber: companies.trnVatNumber,
+            vatFilingFrequency: companies.vatFilingFrequency,
+            vatPeriodStartMonth: companies.vatPeriodStartMonth,
+            fiscalYearStartMonth: companies.fiscalYearStartMonth,
+            corporateTaxId: companies.corporateTaxId,
+            createdAt: companies.createdAt,
+          })
+          .from(companies)
+          .where(and(eq(companies.companyType, 'client'), sql`${companies.deletedAt} IS NULL`));
+      } else if (accessibleIds.length === 0) {
+        return res.json(emptyBookkeeperDashboard());
+      } else {
+        clientList = await db
+          .select({
+            id: companies.id,
+            name: companies.name,
+            trnVatNumber: companies.trnVatNumber,
+            vatFilingFrequency: companies.vatFilingFrequency,
+            vatPeriodStartMonth: companies.vatPeriodStartMonth,
+            fiscalYearStartMonth: companies.fiscalYearStartMonth,
+            corporateTaxId: companies.corporateTaxId,
+            createdAt: companies.createdAt,
+          })
+          .from(companies)
+          .where(
+            and(
+              eq(companies.companyType, 'client'),
+              inArray(companies.id, accessibleIds),
+              sql`${companies.deletedAt} IS NULL`,
+            ),
+          );
+      }
+
+      const clientIds = clientList.map(client => client.id);
+      if (clientIds.length === 0) return res.json(emptyBookkeeperDashboard());
+
+      const now = new Date();
+
+      const latestVatSub = db
+        .select({
+          companyId: vatReturns.companyId,
+          maxPeriodEnd: max(vatReturns.periodEnd).as('max_period_end'),
+        })
+        .from(vatReturns)
+        .where(inArray(vatReturns.companyId, clientIds))
+        .groupBy(vatReturns.companyId)
+        .as('latest_vat_for_bookkeeper');
+
+      const latestCorporateTaxSub = db
+        .select({
+          companyId: corporateTaxReturns.companyId,
+          maxPeriodEnd: max(corporateTaxReturns.taxPeriodEnd).as('max_period_end'),
+        })
+        .from(corporateTaxReturns)
+        .where(inArray(corporateTaxReturns.companyId, clientIds))
+        .groupBy(corporateTaxReturns.companyId)
+        .as('latest_ct_for_bookkeeper');
+
+      type VatRow = {
+        companyId: string;
+        periodStart: Date;
+        periodEnd: Date;
+        dueDate: Date;
+        status: string;
+        payableTax: string | null;
+        submittedAt: Date | null;
+        updatedAt: Date | null;
+      };
+      type CorporateTaxRow = {
+        companyId: string;
+        taxPeriodStart: Date;
+        taxPeriodEnd: Date;
+        status: string;
+        taxPayable: string | null;
+        filedAt: Date | null;
+      };
+      type InvoiceOpsRow = {
+        companyId: string;
+        invoiceCount: number;
+        openAr: string | null;
+        overdueCount: string | null;
+        missingCustomerTrnCount: string | null;
+        latestInvoiceDate: Date | null;
+      };
+      type ReceiptOpsRow = {
+        companyId: string;
+        receiptCount: number;
+        unpostedCount: string | null;
+        latestReceiptDate: Date | null;
+      };
+      type BankOpsRow = {
+        companyId: string;
+        bankCount: number;
+        unreconciledCount: string | null;
+        latestBankDate: Date | null;
+      };
+      type TrialBalanceOpsRow = {
+        companyId: string;
+        totalDebit: string | null;
+        totalCredit: string | null;
+        latestJournalDate: Date | null;
+      };
+      type StaffAssignmentRow = {
+        companyId: string;
+        id: string;
+        name: string;
+        email: string;
+        role: string;
+      };
+
+      const [
+        vatRows,
+        corporateTaxRows,
+        invoiceRows,
+        receiptRows,
+        bankRows,
+        trialBalanceRows,
+        staffRows,
+      ] = await Promise.all([
+        db
+          .select({
+            companyId: vatReturns.companyId,
+            periodStart: vatReturns.periodStart,
+            periodEnd: vatReturns.periodEnd,
+            dueDate: vatReturns.dueDate,
+            status: vatReturns.status,
+            payableTax: vatReturns.box14PayableTax,
+            submittedAt: vatReturns.submittedAt,
+            updatedAt: vatReturns.updatedAt,
+          })
+          .from(vatReturns)
+          .innerJoin(
+            latestVatSub,
+            and(
+              eq(vatReturns.companyId, latestVatSub.companyId),
+              eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+            ),
+          ) as Promise<VatRow[]>,
+        db
+          .select({
+            companyId: corporateTaxReturns.companyId,
+            taxPeriodStart: corporateTaxReturns.taxPeriodStart,
+            taxPeriodEnd: corporateTaxReturns.taxPeriodEnd,
+            status: corporateTaxReturns.status,
+            taxPayable: corporateTaxReturns.taxPayable,
+            filedAt: corporateTaxReturns.filedAt,
+          })
+          .from(corporateTaxReturns)
+          .innerJoin(
+            latestCorporateTaxSub,
+            and(
+              eq(corporateTaxReturns.companyId, latestCorporateTaxSub.companyId),
+              eq(corporateTaxReturns.taxPeriodEnd, latestCorporateTaxSub.maxPeriodEnd),
+            ),
+          ) as Promise<CorporateTaxRow[]>,
+        db
+          .select({
+            companyId: invoices.companyId,
+            invoiceCount: count(),
+            openAr: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') then ${invoices.total} else 0 end)`,
+            overdueCount: sql<string>`count(*) filter (where ${invoices.status} in ('sent', 'partial') and ${invoices.dueDate} < ${now})`,
+            missingCustomerTrnCount: sql<string>`count(*) filter (where ${invoices.vatAmount} > 0 and (${invoices.customerTrn} is null or ${invoices.customerTrn} = ''))`,
+            latestInvoiceDate: max(invoices.createdAt),
+          })
+          .from(invoices)
+          .where(inArray(invoices.companyId, clientIds))
+          .groupBy(invoices.companyId) as Promise<InvoiceOpsRow[]>,
+        db
+          .select({
+            companyId: receipts.companyId,
+            receiptCount: count(),
+            unpostedCount: sql<string>`count(*) filter (where ${receipts.posted} = false)`,
+            latestReceiptDate: max(receipts.createdAt),
+          })
+          .from(receipts)
+          .where(inArray(receipts.companyId, clientIds))
+          .groupBy(receipts.companyId) as Promise<ReceiptOpsRow[]>,
+        db
+          .select({
+            companyId: bankTransactions.companyId,
+            bankCount: count(),
+            unreconciledCount: sql<string>`count(*) filter (where ${bankTransactions.isReconciled} = false)`,
+            latestBankDate: max(bankTransactions.transactionDate),
+          })
+          .from(bankTransactions)
+          .where(inArray(bankTransactions.companyId, clientIds))
+          .groupBy(bankTransactions.companyId) as Promise<BankOpsRow[]>,
+        db
+          .select({
+            companyId: journalEntries.companyId,
+            totalDebit: sum(journalLines.debit),
+            totalCredit: sum(journalLines.credit),
+            latestJournalDate: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
+          })
+          .from(journalEntries)
+          .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
+          .where(and(inArray(journalEntries.companyId, clientIds), eq(journalEntries.status, 'posted')))
+          .groupBy(journalEntries.companyId) as Promise<TrialBalanceOpsRow[]>,
+        db
+          .select({
+            companyId: companyUsers.companyId,
+            id: users.id,
+            name: users.name,
+            email: users.email,
+            role: companyUsers.role,
+          })
+          .from(companyUsers)
+          .innerJoin(users, eq(users.id, companyUsers.userId))
+          .where(and(inArray(companyUsers.companyId, clientIds), eq(users.isAdmin, true))) as Promise<StaffAssignmentRow[]>,
+      ]);
+
+      const vatMap = new Map<string, VatRow>(vatRows.map(row => [row.companyId, row]));
+      const corporateTaxMap = new Map<string, CorporateTaxRow>(
+        corporateTaxRows.map(row => [row.companyId, row]),
+      );
+      const invoiceMap = new Map<string, InvoiceOpsRow>(invoiceRows.map(row => [row.companyId, row]));
+      const receiptMap = new Map<string, ReceiptOpsRow>(receiptRows.map(row => [row.companyId, row]));
+      const bankMap = new Map<string, BankOpsRow>(bankRows.map(row => [row.companyId, row]));
+      const trialBalanceMap = new Map<string, TrialBalanceOpsRow>(
+        trialBalanceRows.map(row => [row.companyId, row]),
+      );
+      const staffMap = new Map<string, StaffAssignmentRow[]>();
+      for (const staff of staffRows) {
+        const existing = staffMap.get(staff.companyId) ?? [];
+        existing.push(staff);
+        staffMap.set(staff.companyId, existing);
+      }
+
+      const clients = clientList.map(company => {
+        const vatCohort = vatCohortFromPeriodStart(
+          company.vatPeriodStartMonth,
+          company.vatFilingFrequency,
+        );
+        const plannedVat = currentVatPeriodForCompany(
+          now,
+          company.vatPeriodStartMonth,
+          company.vatFilingFrequency,
+        );
+        const latestVat = vatMap.get(company.id) ?? null;
+        const latestVatIsOpen =
+          latestVat &&
+          latestVat.status !== 'filed' &&
+          latestVat.status !== 'submitted' &&
+          new Date(latestVat.dueDate) <= plannedVat.dueDate;
+        const vatWindow = latestVatIsOpen ? latestVat : plannedVat;
+        const vatDueDate = latestVatIsOpen ? latestVat.dueDate : plannedVat.dueDate;
+        const vatDaysTilDue = daysUntil(vatDueDate, now);
+
+        const invoiceOps = invoiceMap.get(company.id);
+        const receiptOps = receiptMap.get(company.id);
+        const bankOps = bankMap.get(company.id);
+        const trialBalance = trialBalanceMap.get(company.id);
+        const assignedStaff = staffMap.get(company.id) ?? [];
+
+        const missingCustomerTrnCount = Number(invoiceOps?.missingCustomerTrnCount ?? 0);
+        const unpostedReceiptCount = Number(receiptOps?.unpostedCount ?? 0);
+        const unreconciledBankCount = Number(bankOps?.unreconciledCount ?? 0);
+        const overdueInvoiceCount = Number(invoiceOps?.overdueCount ?? 0);
+        const totalInvoices = Number(invoiceOps?.invoiceCount ?? 0);
+        const totalReceipts = Number(receiptOps?.receiptCount ?? 0);
+        const totalBankLines = Number(bankOps?.bankCount ?? 0);
+        const openAr = Number(invoiceOps?.openAr ?? 0);
+
+        const totalDebit = Number(trialBalance?.totalDebit ?? 0);
+        const totalCredit = Number(trialBalance?.totalCredit ?? 0);
+        const discrepancy = Math.round(Math.abs(totalDebit - totalCredit) * 100) / 100;
+
+        const lastActivity = mostRecentDate(
+          invoiceOps?.latestInvoiceDate,
+          receiptOps?.latestReceiptDate,
+          bankOps?.latestBankDate,
+          trialBalance?.latestJournalDate,
+          latestVat?.updatedAt,
+          company.createdAt,
+        );
+        const daysSinceActivity = daysSince(lastActivity, now);
+        const noOperatingDocs = totalInvoices === 0 && totalReceipts === 0 && totalBankLines === 0;
+
+        const vatBlockers: string[] = [];
+        if (!company.trnVatNumber) vatBlockers.push('Missing VAT TRN');
+        if (missingCustomerTrnCount > 0) vatBlockers.push(`${missingCustomerTrnCount} taxable invoices missing customer TRN`);
+        if (unpostedReceiptCount > 0) vatBlockers.push(`${unpostedReceiptCount} receipts not posted`);
+        if (unreconciledBankCount > 0) vatBlockers.push(`${unreconciledBankCount} bank lines unreconciled`);
+        if (latestVatIsOpen && latestVat.status === 'pending_review') vatBlockers.push('VAT return pending review');
+
+        const vatFiled = latestVat
+          && (latestVat.status === 'filed' || latestVat.status === 'submitted')
+          && new Date(latestVat.periodEnd) >= plannedVat.periodEnd;
+        const vatPriority = vatFiled
+          ? 'on_track'
+          : maxPriority(
+              priorityFromDueDays(vatDaysTilDue, 28, 0),
+              vatBlockers.length > 0 ? 'attention' : 'on_track',
+            );
+
+        const ctWindow = nextCorporateTaxFilingWindow(now, company.fiscalYearStartMonth);
+        const latestCorporateTax = corporateTaxMap.get(company.id) ?? null;
+        const ctFiled = latestCorporateTax
+          && (latestCorporateTax.status === 'filed' || latestCorporateTax.status === 'paid')
+          && new Date(latestCorporateTax.taxPeriodEnd) >= ctWindow.periodEnd;
+        const ctDaysTilDue = daysUntil(ctWindow.dueDate, now);
+        const ctBlockers: string[] = [];
+        if (!company.corporateTaxId) ctBlockers.push('Missing corporate tax registration');
+        if (discrepancy > 0.01) ctBlockers.push('Trial balance not balanced');
+        if (unpostedReceiptCount > 0) ctBlockers.push('Expense receipts not posted');
+        if (unreconciledBankCount > 0) ctBlockers.push('Bank reconciliation incomplete');
+        const ctPriority = ctFiled
+          ? 'on_track'
+          : maxPriority(
+              priorityFromDueDays(ctDaysTilDue, 90, 0),
+              ctBlockers.length > 0 && ctDaysTilDue !== null && ctDaysTilDue <= 180 ? 'attention' : 'on_track',
+            );
+
+        const bookkeepingBlockers: string[] = [];
+        if (noOperatingDocs) bookkeepingBlockers.push('No operating documents loaded');
+        if (unpostedReceiptCount > 0) bookkeepingBlockers.push(`${unpostedReceiptCount} unposted receipts`);
+        if (unreconciledBankCount > 0) bookkeepingBlockers.push(`${unreconciledBankCount} unreconciled bank lines`);
+        if (overdueInvoiceCount > 0) bookkeepingBlockers.push(`${overdueInvoiceCount} overdue invoices`);
+        if (daysSinceActivity !== null && daysSinceActivity > 30) bookkeepingBlockers.push('No activity in 30+ days');
+        const closeProgress = Math.max(
+          0,
+          Math.min(
+            100,
+            100
+              - Math.min(35, unreconciledBankCount * 3)
+              - Math.min(25, unpostedReceiptCount * 5)
+              - Math.min(20, missingCustomerTrnCount * 4)
+              - (noOperatingDocs ? 35 : 0)
+              - (daysSinceActivity !== null && daysSinceActivity > 30 ? 15 : 0),
+          ),
+        );
+        const bookkeepingPriority: BookkeeperPriority =
+          noOperatingDocs || unreconciledBankCount > 25 || unpostedReceiptCount > 15
+            ? 'critical'
+            : bookkeepingBlockers.length > 0
+              ? 'attention'
+              : 'on_track';
+
+        const accountingBlockers: string[] = [];
+        if (discrepancy > 0.01) accountingBlockers.push(`Trial balance off by AED ${discrepancy.toFixed(2)}`);
+        if (!trialBalance) accountingBlockers.push('No posted journals');
+        const accountingPriority: BookkeeperPriority =
+          discrepancy > 0.01 ? 'critical' : accountingBlockers.length > 0 ? 'attention' : 'on_track';
+
+        const priority = maxPriority(vatPriority, ctPriority, bookkeepingPriority, accountingPriority);
+        const nextBestAction =
+          vatPriority === 'critical' ? 'Clear VAT filing blockers'
+            : ctPriority === 'critical' ? 'Prepare corporate tax filing'
+              : bookkeepingPriority === 'critical' ? 'Load and reconcile source documents'
+                : accountingPriority === 'critical' ? 'Fix trial balance discrepancy'
+                  : vatPriority === 'attention' ? 'Prepare upcoming VAT return'
+                    : ctPriority === 'attention' ? 'Review corporate tax readiness'
+                      : bookkeepingPriority === 'attention' ? 'Finish monthly close'
+                        : accountingPriority === 'attention' ? 'Post journal activity'
+                          : 'Ready for review';
+
+        return {
+          companyId: company.id,
+          companyName: company.name,
+          trn: company.trnVatNumber,
+          assignedStaff: assignedStaff.map(staff => ({
+            id: staff.id,
+            name: staff.name,
+            email: staff.email,
+            role: staff.role,
+          })),
+          priority,
+          nextBestAction,
+          lastActivity: shortIso(lastActivity),
+          vat: {
+            cohortKey: vatCohort.key,
+            cohortLabel: vatCohort.label,
+            closeMonths: vatCohort.closeMonths,
+            periodStart: shortIso('periodStart' in vatWindow ? vatWindow.periodStart : plannedVat.periodStart),
+            periodEnd: shortIso('periodEnd' in vatWindow ? vatWindow.periodEnd : plannedVat.periodEnd),
+            dueDate: shortIso(vatDueDate),
+            daysTilDue: vatDaysTilDue,
+            status: vatFiled ? 'filed' : vatPriority,
+            payableTax: latestVat ? Number(latestVat.payableTax ?? 0) : null,
+            blockers: vatBlockers,
+          },
+          corporateTax: {
+            periodStart: shortIso(ctWindow.periodStart),
+            periodEnd: shortIso(ctWindow.periodEnd),
+            dueDate: shortIso(ctWindow.dueDate),
+            daysTilDue: ctDaysTilDue,
+            status: ctFiled ? 'filed' : ctPriority,
+            taxPayable: latestCorporateTax ? Number(latestCorporateTax.taxPayable ?? 0) : null,
+            blockers: ctBlockers,
+          },
+          bookkeeping: {
+            closeProgress,
+            status: bookkeepingPriority,
+            blockers: bookkeepingBlockers,
+            openAr,
+            overdueInvoiceCount,
+            missingCustomerTrnCount,
+            unpostedReceiptCount,
+            unreconciledBankCount,
+            daysSinceActivity,
+          },
+          accounting: {
+            status: accountingPriority,
+            trialBalanceBalanced: discrepancy <= 0.01,
+            discrepancy,
+            blockers: accountingBlockers,
+          },
+        };
+      });
+
+      const summary = clients.reduce(
+        (acc, client) => {
+          acc.totalClients += 1;
+          if (client.priority === 'critical') acc.critical += 1;
+          else if (client.priority === 'attention') acc.attention += 1;
+          else acc.onTrack += 1;
+          if (client.vat.status !== 'filed' && client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28) {
+            acc.vatDue28Days += 1;
+          }
+          if (
+            client.corporateTax.status !== 'filed'
+            && client.corporateTax.daysTilDue !== null
+            && client.corporateTax.daysTilDue <= 90
+          ) {
+            acc.corporateTaxDue90Days += 1;
+          }
+          if (client.bookkeeping.status !== 'on_track') acc.bookkeepingBlocked += 1;
+          return acc;
+        },
+        {
+          totalClients: 0,
+          critical: 0,
+          attention: 0,
+          onTrack: 0,
+          vatDue28Days: 0,
+          corporateTaxDue90Days: 0,
+          bookkeepingBlocked: 0,
+        },
+      );
+
+      const cohortMap = new Map<VatCohortKey, VatCohort>();
+      for (const cohort of STANDARD_VAT_COHORTS) cohortMap.set(cohort.key, cohort);
+      for (const client of clients) {
+        if (!cohortMap.has(client.vat.cohortKey as VatCohortKey)) {
+          cohortMap.set(client.vat.cohortKey as VatCohortKey, {
+            key: client.vat.cohortKey as VatCohortKey,
+            label: client.vat.cohortLabel,
+            closeMonths: client.vat.closeMonths,
+            closeMonthLabels: client.vat.closeMonths.map(month => new Intl.DateTimeFormat('en', { month: 'short' }).format(new Date(Date.UTC(2026, month - 1, 1)))),
+          });
+        }
+      }
+
+      const vatCohorts = Array.from(cohortMap.values()).map(cohort => {
+        const cohortClients = clients
+          .filter(client => client.vat.cohortKey === cohort.key)
+          .sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority));
+        return {
+          key: cohort.key,
+          label: cohort.label,
+          closeMonths: cohort.closeMonths,
+          closeMonthLabels: cohort.closeMonthLabels,
+          clientCount: cohortClients.length,
+          dueSoon: cohortClients.filter(client => client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28).length,
+          blocked: cohortClients.filter(client => client.vat.blockers.length > 0).length,
+          ready: cohortClients.filter(client => client.vat.blockers.length === 0 && client.vat.status !== 'critical').length,
+          clients: cohortClients.map(client => ({
+            companyId: client.companyId,
+            companyName: client.companyName,
+            priority: client.priority,
+            dueDate: client.vat.dueDate,
+            daysTilDue: client.vat.daysTilDue,
+            status: client.vat.status,
+            blockers: client.vat.blockers,
+            nextBestAction: client.nextBestAction,
+          })),
+        };
+      });
+
+      res.json({
+        generatedAt: now.toISOString(),
+        summary,
+        vatCohorts,
+        clients: clients.sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority)),
+      });
     })
   );
 

@@ -37,6 +37,184 @@ const VALID_EMIRATES = new Set([
 
 const VALID_VAT_FILING = new Set(['monthly', 'quarterly', 'annually']);
 
+export type VatCohortKey =
+  | 'jan_apr_jul_oct'
+  | 'feb_may_aug_nov'
+  | 'mar_jun_sep_dec'
+  | 'monthly'
+  | 'annual';
+
+export interface VatCohort {
+  key: VatCohortKey;
+  label: string;
+  closeMonths: number[];
+  closeMonthLabels: string[];
+}
+
+export interface TaxPeriodWindow {
+  periodStart: Date;
+  periodEnd: Date;
+  dueDate: Date;
+}
+
+const MONTH_LABELS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+const VAT_COHORTS: Array<Omit<VatCohort, 'closeMonthLabels'>> = [
+  { key: 'jan_apr_jul_oct', label: 'Jan / Apr / Jul / Oct', closeMonths: [1, 4, 7, 10] },
+  { key: 'feb_may_aug_nov', label: 'Feb / May / Aug / Nov', closeMonths: [2, 5, 8, 11] },
+  { key: 'mar_jun_sep_dec', label: 'Mar / Jun / Sep / Dec', closeMonths: [3, 6, 9, 12] },
+];
+
+function toUtcMonth(date: Date): number {
+  return date.getUTCMonth() + 1;
+}
+
+function toUtcYear(date: Date): number {
+  return date.getUTCFullYear();
+}
+
+function utcMonthStart(year: number, month: number): Date {
+  return new Date(Date.UTC(year, normaliseMonth(month) - 1, 1));
+}
+
+function addUtcMonths(date: Date, months: number): Date {
+  const targetMonthIndex = date.getUTCMonth() + months;
+  const targetYear = date.getUTCFullYear() + Math.floor(targetMonthIndex / 12);
+  const normalisedMonthIndex = ((targetMonthIndex % 12) + 12) % 12;
+  const lastDayInTargetMonth = new Date(Date.UTC(targetYear, normalisedMonthIndex + 1, 0)).getUTCDate();
+  const day = Math.min(date.getUTCDate(), lastDayInTargetMonth);
+  return new Date(Date.UTC(targetYear, normalisedMonthIndex, day));
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + days));
+}
+
+function sameMonthSet(a: number[], b: number[]): boolean {
+  const left = [...a].sort((x, y) => x - y).join(',');
+  const right = [...b].sort((x, y) => x - y).join(',');
+  return left === right;
+}
+
+export function normaliseMonth(month: number | string | null | undefined): number {
+  const parsed = Number(month);
+  if (!Number.isFinite(parsed)) return 1;
+  const whole = Math.trunc(parsed);
+  return ((((whole - 1) % 12) + 12) % 12) + 1;
+}
+
+export function monthName(month: number | string | null | undefined): string {
+  return MONTH_LABELS[normaliseMonth(month) - 1];
+}
+
+export function vatCohortFromPeriodStart(
+  periodStartMonth: number | string | null | undefined,
+  filingFrequency: string | null | undefined = 'quarterly',
+): VatCohort {
+  const frequency = (filingFrequency || 'quarterly').toLowerCase();
+  const startMonth = normaliseMonth(periodStartMonth);
+
+  if (frequency === 'monthly') {
+    const closeMonths = Array.from({ length: 12 }, (_, index) => index + 1);
+    return {
+      key: 'monthly',
+      label: 'Monthly',
+      closeMonths,
+      closeMonthLabels: closeMonths.map(monthName),
+    };
+  }
+
+  if (frequency === 'annually') {
+    const closeMonths = [normaliseMonth(startMonth + 11)];
+    return {
+      key: 'annual',
+      label: `${monthName(closeMonths[0])} annual`,
+      closeMonths,
+      closeMonthLabels: closeMonths.map(monthName),
+    };
+  }
+
+  const closeMonths = [2, 5, 8, 11].map(offset => normaliseMonth(startMonth + offset));
+  const cohort = VAT_COHORTS.find(candidate => sameMonthSet(candidate.closeMonths, closeMonths))
+    ?? VAT_COHORTS[2];
+
+  return {
+    ...cohort,
+    closeMonthLabels: cohort.closeMonths.map(monthName),
+  };
+}
+
+export function currentVatPeriodForCompany(
+  now: Date,
+  periodStartMonth: number | string | null | undefined,
+  filingFrequency: string | null | undefined = 'quarterly',
+): TaxPeriodWindow {
+  const frequency = (filingFrequency || 'quarterly').toLowerCase();
+  const currentYear = toUtcYear(now);
+  const currentMonth = toUtcMonth(now);
+
+  if (frequency === 'monthly') {
+    const periodStart = utcMonthStart(currentYear, currentMonth);
+    const periodEnd = addUtcDays(addUtcMonths(periodStart, 1), -1);
+    return { periodStart, periodEnd, dueDate: addUtcDays(periodEnd, 28) };
+  }
+
+  const periodLength = frequency === 'annually' ? 12 : 3;
+  const startMonth = normaliseMonth(periodStartMonth);
+  const distance = (currentMonth - startMonth + 12) % 12;
+  const cycleOffset = Math.floor(distance / periodLength) * periodLength;
+  const candidateStartMonth = normaliseMonth(startMonth + cycleOffset);
+  const candidateYear = candidateStartMonth > currentMonth ? currentYear - 1 : currentYear;
+  const periodStart = utcMonthStart(candidateYear, candidateStartMonth);
+  const periodEnd = addUtcDays(addUtcMonths(periodStart, periodLength), -1);
+
+  return { periodStart, periodEnd, dueDate: addUtcDays(periodEnd, 28) };
+}
+
+export function corporateTaxWindow(
+  now: Date,
+  fiscalYearStartMonth: number | string | null | undefined,
+): TaxPeriodWindow {
+  const startMonth = normaliseMonth(fiscalYearStartMonth);
+  const currentYear = toUtcYear(now);
+  const currentMonth = toUtcMonth(now);
+  const periodStartYear = currentMonth >= startMonth ? currentYear : currentYear - 1;
+  const periodStart = utcMonthStart(periodStartYear, startMonth);
+  const periodEnd = addUtcDays(addUtcMonths(periodStart, 12), -1);
+  const dueDate = addUtcMonths(periodEnd, 9);
+
+  return { periodStart, periodEnd, dueDate };
+}
+
+export function nextCorporateTaxFilingWindow(
+  now: Date,
+  fiscalYearStartMonth: number | string | null | undefined,
+): TaxPeriodWindow {
+  const activeWindow = corporateTaxWindow(now, fiscalYearStartMonth);
+  const previousPeriodEnd = addUtcDays(activeWindow.periodStart, -1);
+  const previousPeriodStart = addUtcMonths(activeWindow.periodStart, -12);
+  const previousWindow = {
+    periodStart: previousPeriodStart,
+    periodEnd: previousPeriodEnd,
+    dueDate: addUtcMonths(previousPeriodEnd, 9),
+  };
+
+  return previousWindow.dueDate >= now ? previousWindow : activeWindow;
+}
+
 /**
  * Look up the first non-empty value across a list of column-name candidates,
  * trimming whitespace. Returns '' when nothing matches.

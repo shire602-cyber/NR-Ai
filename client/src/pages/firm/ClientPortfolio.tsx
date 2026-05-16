@@ -5,6 +5,7 @@ import {
   Building2, Plus, Search, LayoutGrid, List,
   ChevronRight, Users, Calendar,
   BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
+  Calculator, CheckCircle2, Clock, FileText, TrendingUp,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,6 +51,92 @@ interface ImportResult {
   errors: { row: number; name: string; error: string }[];
 }
 
+type BookkeeperPriority = 'on_track' | 'attention' | 'critical';
+
+interface BookkeeperClient {
+  companyId: string;
+  companyName: string;
+  trn: string | null;
+  assignedStaff: { id: string; name: string; email: string; role: string }[];
+  priority: BookkeeperPriority;
+  nextBestAction: string;
+  lastActivity: string | null;
+  vat: {
+    cohortKey: string;
+    cohortLabel: string;
+    closeMonths: number[];
+    periodStart: string | null;
+    periodEnd: string | null;
+    dueDate: string | null;
+    daysTilDue: number | null;
+    status: BookkeeperPriority | 'filed';
+    payableTax: number | null;
+    blockers: string[];
+  };
+  corporateTax: {
+    periodStart: string | null;
+    periodEnd: string | null;
+    dueDate: string | null;
+    daysTilDue: number | null;
+    status: BookkeeperPriority | 'filed';
+    taxPayable: number | null;
+    blockers: string[];
+  };
+  bookkeeping: {
+    closeProgress: number;
+    status: BookkeeperPriority;
+    blockers: string[];
+    openAr: number;
+    overdueInvoiceCount: number;
+    missingCustomerTrnCount: number;
+    unpostedReceiptCount: number;
+    unreconciledBankCount: number;
+    daysSinceActivity: number | null;
+  };
+  accounting: {
+    status: BookkeeperPriority;
+    trialBalanceBalanced: boolean;
+    discrepancy: number;
+    blockers: string[];
+  };
+}
+
+interface BookkeeperVatCohort {
+  key: string;
+  label: string;
+  closeMonths: number[];
+  closeMonthLabels: string[];
+  clientCount: number;
+  dueSoon: number;
+  blocked: number;
+  ready: number;
+  clients: {
+    companyId: string;
+    companyName: string;
+    priority: BookkeeperPriority;
+    dueDate: string | null;
+    daysTilDue: number | null;
+    status: BookkeeperPriority | 'filed';
+    blockers: string[];
+    nextBestAction: string;
+  }[];
+}
+
+interface BookkeeperDashboard {
+  generatedAt: string;
+  summary: {
+    totalClients: number;
+    critical: number;
+    attention: number;
+    onTrack: number;
+    vatDue28Days: number;
+    corporateTaxDue90Days: number;
+    bookkeepingBlocked: number;
+  };
+  vatCohorts: BookkeeperVatCohort[];
+  clients: BookkeeperClient[];
+}
+
 function formatAed(amount: number) {
   return new Intl.NumberFormat('en-AE', {
     style: 'currency',
@@ -57,6 +144,266 @@ function formatAed(amount: number) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
+}
+
+function formatDateShort(date: string | null | undefined) {
+  if (!date) return '—';
+  return format(new Date(date), 'MMM d');
+}
+
+function formatDays(days: number | null | undefined) {
+  if (days === null || days === undefined) return 'No date';
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  if (days === 0) return 'Due today';
+  return `${days}d left`;
+}
+
+function priorityClass(priority: BookkeeperPriority | 'filed') {
+  if (priority === 'filed' || priority === 'on_track') return 'bg-green-100 text-green-800 border-green-200';
+  if (priority === 'critical') return 'bg-red-100 text-red-800 border-red-200';
+  return 'bg-amber-100 text-amber-800 border-amber-200';
+}
+
+function priorityLabel(priority: BookkeeperPriority | 'filed') {
+  if (priority === 'on_track') return 'On track';
+  if (priority === 'attention') return 'Attention';
+  if (priority === 'critical') return 'Critical';
+  return 'Filed';
+}
+
+function PriorityBadge({ priority }: { priority: BookkeeperPriority | 'filed' }) {
+  return <Badge className={priorityClass(priority)}>{priorityLabel(priority)}</Badge>;
+}
+
+function blockerPreview(blockers: string[]) {
+  if (blockers.length === 0) return 'No blockers';
+  if (blockers.length === 1) return blockers[0];
+  return `${blockers[0]} +${blockers.length - 1}`;
+}
+
+function BookkeeperCommandCenter({
+  dashboard,
+  onOpenBooks,
+}: {
+  dashboard?: BookkeeperDashboard;
+  onOpenBooks: (companyId: string) => void;
+}) {
+  const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
+  const ctClients = dashboard?.clients
+    .filter(client => client.corporateTax.status !== 'filed')
+    .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
+    .slice(0, 4) ?? [];
+  const closeClients = dashboard?.clients
+    .filter(client => client.bookkeeping.status !== 'on_track')
+    .slice(0, 4) ?? [];
+  const accountingClients = dashboard?.clients
+    .filter(client => client.accounting.status !== 'on_track')
+    .slice(0, 4) ?? [];
+
+  return (
+    <section className="space-y-4" data-testid="bookkeeper-command-center">
+      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">NR Bookkeeper Command Center</h2>
+          <p className="text-sm text-muted-foreground">
+            VAT cohorts, corporate tax deadlines, monthly close blockers, and accounting review across the client portfolio.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
+            <Clock className="w-3.5 h-3.5" />
+            {dashboard?.generatedAt ? `Updated ${format(new Date(dashboard.generatedAt), 'MMM d, HH:mm')}` : 'Loading'}
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Critical</p>
+              <AlertTriangle className="w-4 h-4 text-red-600" />
+            </div>
+            <p className="text-2xl font-bold mt-1">{dashboard?.summary.critical ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT due 28d</p>
+              <Calendar className="w-4 h-4 text-amber-600" />
+            </div>
+            <p className="text-2xl font-bold mt-1">{dashboard?.summary.vatDue28Days ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">CT due 90d</p>
+              <Calculator className="w-4 h-4 text-blue-600" />
+            </div>
+            <p className="text-2xl font-bold mt-1">{dashboard?.summary.corporateTaxDue90Days ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Close blocked</p>
+              <FileText className="w-4 h-4 text-orange-600" />
+            </div>
+            <p className="text-2xl font-bold mt-1">{dashboard?.summary.bookkeepingBlocked ?? 0}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-base">VAT Production Board</CardTitle>
+            <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+            {(dashboard?.vatCohorts ?? []).slice(0, 3).map(cohort => (
+              <div key={cohort.key} className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-sm">{cohort.label}</p>
+                    <p className="text-xs text-muted-foreground">{cohort.clientCount} clients</p>
+                  </div>
+                  <div className="flex gap-1">
+                    {cohort.dueSoon > 0 && <Badge className="bg-amber-100 text-amber-800 border-amber-200">{cohort.dueSoon} due</Badge>}
+                    {cohort.blocked > 0 && <Badge variant="destructive">{cohort.blocked} blocked</Badge>}
+                  </div>
+                </div>
+                <div className="space-y-2 min-h-[132px]">
+                  {cohort.clients.length === 0 && (
+                    <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-sm text-muted-foreground text-center">
+                      No clients in this cohort
+                    </div>
+                  )}
+                  {cohort.clients.slice(0, 4).map(client => (
+                    <button
+                      key={client.companyId}
+                      type="button"
+                      onClick={() => onOpenBooks(client.companyId)}
+                      className="w-full rounded-md border bg-background px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{client.companyName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDateShort(client.dueDate)} · {formatDays(client.daysTilDue)}
+                          </p>
+                        </div>
+                        <PriorityBadge priority={client.status} />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.blockers)}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-600" />
+              Priority Queue
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {priorityClients.length === 0 && <p className="text-sm text-muted-foreground">No clients yet.</p>}
+            {priorityClients.map(client => (
+              <button
+                key={client.companyId}
+                type="button"
+                onClick={() => onOpenBooks(client.companyId)}
+                className="w-full rounded-md border px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">{client.companyName}</p>
+                  <PriorityBadge priority={client.priority} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 truncate">{client.nextBestAction}</p>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-blue-600" />
+              Corporate Tax
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {ctClients.length === 0 && <p className="text-sm text-muted-foreground">No CT deadlines requiring action.</p>}
+            {ctClients.map(client => (
+              <div key={client.companyId} className="rounded-md border px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">{client.companyName}</p>
+                  <span className="text-xs text-muted-foreground">{formatDays(client.corporateTax.daysTilDue)}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.corporateTax.blockers)}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-orange-600" />
+              Bookkeeping Close
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {closeClients.length === 0 && <p className="text-sm text-muted-foreground">Monthly close is on track.</p>}
+            {closeClients.map(client => (
+              <div key={client.companyId} className="rounded-md border px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">{client.companyName}</p>
+                  <span className="text-xs font-medium">{client.bookkeeping.closeProgress}%</span>
+                </div>
+                <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-primary" style={{ width: `${client.bookkeeping.closeProgress}%` }} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.bookkeeping.blockers)}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-green-600" />
+              Accounting Review
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {accountingClients.length === 0 && <p className="text-sm text-muted-foreground">Trial balances are clean.</p>}
+            {accountingClients.map(client => (
+              <div key={client.companyId} className="rounded-md border px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium truncate">{client.companyName}</p>
+                  <PriorityBadge priority={client.accounting.status} />
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.accounting.blockers)}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    </section>
+  );
 }
 
 function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
@@ -115,6 +462,9 @@ interface AddClientFormData {
   businessAddress: string;
   emirate: string;
   vatFilingFrequency: string;
+  vatPeriodStartMonth: string;
+  fiscalYearStartMonth: string;
+  corporateTaxId: string;
 }
 
 const emptyForm: AddClientFormData = {
@@ -127,6 +477,9 @@ const emptyForm: AddClientFormData = {
   businessAddress: '',
   emirate: 'dubai',
   vatFilingFrequency: 'quarterly',
+  vatPeriodStartMonth: '1',
+  fiscalYearStartMonth: '1',
+  corporateTaxId: '',
 };
 
 type QuickFilter = 'all' | 'attention' | 'vat-due' | 'no-docs';
@@ -152,11 +505,16 @@ export default function ClientPortfolio() {
     queryKey: ['/api/firm/overview'],
   });
 
+  const { data: bookkeeperDashboard } = useQuery<BookkeeperDashboard>({
+    queryKey: ['/api/firm/bookkeeper-dashboard'],
+  });
+
   const createMutation = useMutation({
     mutationFn: (data: AddClientFormData) => apiRequest('POST', '/api/firm/clients', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
       queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
       toast({ title: 'Client created successfully' });
       setAddOpen(false);
@@ -197,6 +555,7 @@ export default function ClientPortfolio() {
       setImportResult(result);
       queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
       queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
       toast({
         title: `Imported ${result.created.length} clients`,
@@ -307,6 +666,11 @@ export default function ClientPortfolio() {
           </CardContent>
         </Card>
       </div>
+
+      <BookkeeperCommandCenter
+        dashboard={bookkeeperDashboard}
+        onOpenBooks={handleOpenBooks}
+      />
 
       {/* Quick filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -616,7 +980,7 @@ export default function ClientPortfolio() {
                 </Select>
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="vatFrequency">VAT Filing</Label>
+                <Label htmlFor="vatFrequency">VAT Frequency</Label>
                 <Select
                   value={form.vatFilingFrequency}
                   onValueChange={v => setForm(f => ({ ...f, vatFilingFrequency: v }))}
@@ -631,6 +995,49 @@ export default function ClientPortfolio() {
                 </Select>
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="vatCloseGroup">VAT Close Group</Label>
+                <Select
+                  value={form.vatPeriodStartMonth}
+                  onValueChange={v => setForm(f => ({ ...f, vatPeriodStartMonth: v }))}
+                >
+                  <SelectTrigger id="vatCloseGroup">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="11">Jan / Apr / Jul / Oct</SelectItem>
+                    <SelectItem value="12">Feb / May / Aug / Nov</SelectItem>
+                    <SelectItem value="1">Mar / Jun / Sep / Dec</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="fiscalYearStart">Financial Year Start</Label>
+                <Select
+                  value={form.fiscalYearStartMonth}
+                  onValueChange={v => setForm(f => ({ ...f, fiscalYearStartMonth: v }))}
+                >
+                  <SelectTrigger id="fiscalYearStart">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">January</SelectItem>
+                    <SelectItem value="2">February</SelectItem>
+                    <SelectItem value="3">March</SelectItem>
+                    <SelectItem value="4">April</SelectItem>
+                    <SelectItem value="5">May</SelectItem>
+                    <SelectItem value="6">June</SelectItem>
+                    <SelectItem value="7">July</SelectItem>
+                    <SelectItem value="8">August</SelectItem>
+                    <SelectItem value="9">September</SelectItem>
+                    <SelectItem value="10">October</SelectItem>
+                    <SelectItem value="11">November</SelectItem>
+                    <SelectItem value="12">December</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="grid gap-1.5">
               <Label htmlFor="industry">Industry</Label>
               <Input
@@ -638,6 +1045,15 @@ export default function ClientPortfolio() {
                 value={form.industry}
                 onChange={e => setForm(f => ({ ...f, industry: e.target.value }))}
                 placeholder="Trading, Construction, Retail..."
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="corporateTaxId">Corporate Tax Registration</Label>
+              <Input
+                id="corporateTaxId"
+                value={form.corporateTaxId}
+                onChange={e => setForm(f => ({ ...f, corporateTaxId: e.target.value }))}
+                placeholder="CT-1002345678"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
