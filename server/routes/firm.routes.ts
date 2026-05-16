@@ -134,6 +134,7 @@ type HealthStatus = 'healthy' | 'attention' | 'critical';
 type VatHealthStatus = 'on-track' | 'due-soon' | 'overdue';
 type DeadlineStatus = 'upcoming' | 'due-soon' | 'overdue';
 type BookkeeperPriority = 'on_track' | 'attention' | 'critical';
+type BookkeeperInterventionLevel = 'low' | 'medium' | 'high';
 type BookkeeperQueueItem = {
   companyId: string;
   companyName: string;
@@ -256,6 +257,112 @@ function sortBookkeeperQueue<T extends Pick<BookkeeperQueueItem, 'priority' | 'd
   });
 }
 
+function scoreDeadlinePressure(daysTilDue: number | null, overdue: number, week: number, month: number, quarter = 0): number {
+  if (daysTilDue === null) return 0;
+  if (daysTilDue <= 0) return overdue;
+  if (daysTilDue <= 7) return week;
+  if (daysTilDue <= 28) return month;
+  if (daysTilDue <= 90) return quarter;
+  return 0;
+}
+
+function dueLabel(daysTilDue: number | null): string {
+  if (daysTilDue === null) return 'no date';
+  if (daysTilDue < 0) return `${Math.abs(daysTilDue)}d overdue`;
+  if (daysTilDue === 0) return 'due today';
+  return `${daysTilDue}d left`;
+}
+
+function interventionLevel(score: number): BookkeeperInterventionLevel {
+  if (score >= 65) return 'high';
+  if (score >= 35) return 'medium';
+  return 'low';
+}
+
+function buildBookkeeperIntervention(input: {
+  priority: BookkeeperPriority;
+  nextBestAction: string;
+  assignedStaffCount: number;
+  vatDaysTilDue: number | null;
+  ctDaysTilDue: number | null;
+  vatBlockers: string[];
+  ctBlockers: string[];
+  bookkeepingBlockers: string[];
+  accountingBlockers: string[];
+  closeProgress: number;
+  openAr: number;
+  overdueInvoiceCount: number;
+  missingCustomerTrnCount: number;
+  unpostedReceiptCount: number;
+  unreconciledBankCount: number;
+  daysSinceActivity: number | null;
+  noOperatingDocs: boolean;
+  discrepancy: number;
+}) {
+  let score = input.priority === 'critical' ? 24 : input.priority === 'attention' ? 12 : 0;
+  score += scoreDeadlinePressure(input.vatDaysTilDue, 24, 18, 10);
+  score += scoreDeadlinePressure(input.ctDaysTilDue, 18, 14, 8, 4);
+  score += input.assignedStaffCount === 0 ? 12 : 0;
+  score += input.noOperatingDocs ? 18 : 0;
+  score += Math.min(16, input.overdueInvoiceCount * 4);
+  score += Math.min(14, input.unreconciledBankCount * 2);
+  score += Math.min(12, input.unpostedReceiptCount * 3);
+  score += Math.min(8, input.missingCustomerTrnCount * 2);
+  score += input.closeProgress < 50 ? 12 : input.closeProgress < 75 ? 6 : 0;
+  score += input.daysSinceActivity !== null && input.daysSinceActivity > 60 ? 12 : input.daysSinceActivity !== null && input.daysSinceActivity > 30 ? 6 : 0;
+  score += input.discrepancy > 0.01 ? 14 : 0;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  const reasons: string[] = [];
+  if (input.vatDaysTilDue !== null && input.vatDaysTilDue <= 28) reasons.push(`VAT ${dueLabel(input.vatDaysTilDue)}`);
+  if (input.ctDaysTilDue !== null && input.ctDaysTilDue <= 90) reasons.push(`CT ${dueLabel(input.ctDaysTilDue)}`);
+  if (input.assignedStaffCount === 0) reasons.push('No owner assigned');
+  if (input.noOperatingDocs) reasons.push('No source documents loaded');
+  if (input.overdueInvoiceCount > 0) reasons.push(`${input.overdueInvoiceCount} overdue invoices`);
+  if (input.unreconciledBankCount > 0) reasons.push(`${input.unreconciledBankCount} unreconciled bank lines`);
+  if (input.unpostedReceiptCount > 0) reasons.push(`${input.unpostedReceiptCount} unposted receipts`);
+  if (input.missingCustomerTrnCount > 0) reasons.push(`${input.missingCustomerTrnCount} invoice TRN gaps`);
+  if (input.daysSinceActivity !== null && input.daysSinceActivity > 30) reasons.push(`${input.daysSinceActivity}d since activity`);
+  if (input.discrepancy > 0.01) reasons.push('Trial balance variance');
+  if (reasons.length === 0) reasons.push('No active intervention signals');
+
+  const nearestDeadline = [
+    { label: 'VAT', daysTilDue: input.vatDaysTilDue },
+    { label: 'CT', daysTilDue: input.ctDaysTilDue },
+  ]
+    .filter((item): item is { label: string; daysTilDue: number } => item.daysTilDue !== null)
+    .sort((a, b) => a.daysTilDue - b.daysTilDue)[0];
+
+  const title =
+    input.assignedStaffCount === 0 && score >= 35 ? 'Owner assignment needed'
+      : input.vatDaysTilDue !== null && input.vatDaysTilDue <= 7 && input.vatBlockers.length > 0 ? 'VAT filing at risk'
+        : input.ctDaysTilDue !== null && input.ctDaysTilDue <= 30 && input.ctBlockers.length > 0 ? 'Corporate tax at risk'
+          : input.noOperatingDocs || input.closeProgress < 50 ? 'Source-document intervention'
+            : input.openAr > 0 && input.overdueInvoiceCount > 0 ? 'Payment collection drag'
+              : input.discrepancy > 0.01 ? 'Accounting review required'
+                : input.nextBestAction;
+
+  const ownerAction =
+    input.assignedStaffCount === 0 ? 'Assign an owner'
+      : input.vatDaysTilDue !== null && input.vatDaysTilDue <= 0 ? 'Escalate VAT filing'
+        : input.ctDaysTilDue !== null && input.ctDaysTilDue <= 30 ? 'Lock CT preparation plan'
+          : input.noOperatingDocs ? 'Request missing source documents'
+            : input.overdueInvoiceCount > 0 ? 'Start payment chase'
+              : input.unreconciledBankCount > 0 || input.unpostedReceiptCount > 0 ? 'Clear close blockers'
+                : input.discrepancy > 0.01 ? 'Review trial balance'
+                  : input.nextBestAction;
+
+  return {
+    score,
+    level: interventionLevel(score),
+    title,
+    reasons: reasons.slice(0, 5),
+    ownerAction,
+    deadlineLabel: nearestDeadline ? `${nearestDeadline.label} ${dueLabel(nearestDeadline.daysTilDue)}` : 'No deadline pressure',
+    exposureAed: Math.round(Math.max(0, input.openAr)),
+  };
+}
+
 const STANDARD_VAT_COHORTS = [
   vatCohortFromPeriodStart(11, 'quarterly'),
   vatCohortFromPeriodStart(12, 'quarterly'),
@@ -273,6 +380,8 @@ function emptyBookkeeperDashboard() {
       vatDue28Days: 0,
       corporateTaxDue90Days: 0,
       bookkeepingBlocked: 0,
+      interventionHigh: 0,
+      interventionMedium: 0,
     },
     vatCohorts: STANDARD_VAT_COHORTS.map(cohort => ({
       key: cohort.key,
@@ -1003,6 +1112,26 @@ export function registerFirmRoutes(app: Express): void {
                       : bookkeepingPriority === 'attention' ? 'Finish monthly close'
                         : accountingPriority === 'attention' ? 'Post journal activity'
                           : 'Ready for review';
+        const intervention = buildBookkeeperIntervention({
+          priority,
+          nextBestAction,
+          assignedStaffCount: assignedStaff.length,
+          vatDaysTilDue,
+          ctDaysTilDue,
+          vatBlockers,
+          ctBlockers,
+          bookkeepingBlockers,
+          accountingBlockers,
+          closeProgress,
+          openAr,
+          overdueInvoiceCount,
+          missingCustomerTrnCount,
+          unpostedReceiptCount,
+          unreconciledBankCount,
+          daysSinceActivity,
+          noOperatingDocs,
+          discrepancy,
+        });
 
         return {
           companyId: company.id,
@@ -1016,6 +1145,7 @@ export function registerFirmRoutes(app: Express): void {
           })),
           priority,
           nextBestAction,
+          intervention,
           lastActivity: shortIso(lastActivity),
           vat: {
             cohortKey: vatCohort.key,
@@ -1075,6 +1205,8 @@ export function registerFirmRoutes(app: Express): void {
             acc.corporateTaxDue90Days += 1;
           }
           if (client.bookkeeping.status !== 'on_track') acc.bookkeepingBlocked += 1;
+          if (client.intervention.level === 'high') acc.interventionHigh += 1;
+          if (client.intervention.level === 'medium') acc.interventionMedium += 1;
           return acc;
         },
         {
@@ -1085,6 +1217,8 @@ export function registerFirmRoutes(app: Express): void {
           vatDue28Days: 0,
           corporateTaxDue90Days: 0,
           bookkeepingBlocked: 0,
+          interventionHigh: 0,
+          interventionMedium: 0,
         },
       );
 

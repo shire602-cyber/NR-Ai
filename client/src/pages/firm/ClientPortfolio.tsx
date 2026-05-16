@@ -53,6 +53,7 @@ interface ImportResult {
 }
 
 type BookkeeperPriority = 'on_track' | 'attention' | 'critical';
+type BookkeeperInterventionLevel = 'low' | 'medium' | 'high';
 
 interface BookkeeperClient {
   companyId: string;
@@ -61,6 +62,15 @@ interface BookkeeperClient {
   assignedStaff: { id: string; name: string; email: string; role: string }[];
   priority: BookkeeperPriority;
   nextBestAction: string;
+  intervention?: {
+    score: number;
+    level: BookkeeperInterventionLevel;
+    title: string;
+    reasons: string[];
+    ownerAction: string;
+    deadlineLabel: string;
+    exposureAed: number;
+  };
   lastActivity: string | null;
   vat: {
     cohortKey: string;
@@ -160,6 +170,8 @@ interface BookkeeperDashboard {
     vatDue28Days: number;
     corporateTaxDue90Days: number;
     bookkeepingBlocked: number;
+    interventionHigh?: number;
+    interventionMedium?: number;
   };
   vatCohorts: BookkeeperVatCohort[];
   queues?: Record<BookkeeperQueueKey, BookkeeperQueueItem[]>;
@@ -210,8 +222,52 @@ function priorityLabel(priority: BookkeeperPriority | 'filed') {
   return 'Filed';
 }
 
+function priorityScore(priority: BookkeeperPriority | 'filed') {
+  if (priority === 'critical') return 3;
+  if (priority === 'attention') return 2;
+  return 1;
+}
+
 function PriorityBadge({ priority }: { priority: BookkeeperPriority | 'filed' }) {
   return <Badge className={priorityClass(priority)}>{priorityLabel(priority)}</Badge>;
+}
+
+function interventionClass(level: BookkeeperInterventionLevel) {
+  if (level === 'high') return 'bg-red-100 text-red-800 border-red-200';
+  if (level === 'medium') return 'bg-amber-100 text-amber-800 border-amber-200';
+  return 'bg-green-100 text-green-800 border-green-200';
+}
+
+function fallbackIntervention(client: BookkeeperClient): NonNullable<BookkeeperClient['intervention']> {
+  const score = Math.min(
+    100,
+    priorityScore(client.priority) * 18
+      + (client.assignedStaff.length === 0 ? 12 : 0)
+      + (client.bookkeeping.status !== 'on_track' ? 12 : 0)
+      + (client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28 ? 10 : 0)
+      + (client.corporateTax.daysTilDue !== null && client.corporateTax.daysTilDue <= 90 ? 6 : 0),
+  );
+  const level: BookkeeperInterventionLevel = score >= 65 ? 'high' : score >= 35 ? 'medium' : 'low';
+  const reasons = [
+    client.assignedStaff.length === 0 ? 'No owner assigned' : '',
+    ...client.vat.blockers,
+    ...client.corporateTax.blockers,
+    ...client.bookkeeping.blockers,
+    ...client.accounting.blockers,
+  ].filter(Boolean);
+  return {
+    score,
+    level,
+    title: client.nextBestAction,
+    reasons: (reasons.length > 0 ? reasons : ['No active intervention signals']).slice(0, 5),
+    ownerAction: client.nextBestAction,
+    deadlineLabel: primaryDeadline(client).label,
+    exposureAed: Math.round(Math.max(0, client.bookkeeping.openAr)),
+  };
+}
+
+function clientIntervention(client: BookkeeperClient) {
+  return client.intervention ?? fallbackIntervention(client);
 }
 
 function blockerPreview(blockers: string[]) {
@@ -231,6 +287,56 @@ function ownerPreview(names: string[]) {
   if (names.length === 0) return 'Unassigned';
   if (names.length === 1) return names[0];
   return `${names[0]} +${names.length - 1}`;
+}
+
+function primaryDeadline(client: BookkeeperClient) {
+  const candidates = [
+    client.vat.status !== 'filed'
+      ? {
+          label: 'VAT',
+          dueDate: client.vat.dueDate,
+          daysTilDue: client.vat.daysTilDue,
+          metric: client.vat.payableTax !== null ? formatAed(client.vat.payableTax) : client.vat.cohortLabel,
+        }
+      : null,
+    client.corporateTax.status !== 'filed'
+      ? {
+          label: 'CT',
+          dueDate: client.corporateTax.dueDate,
+          daysTilDue: client.corporateTax.daysTilDue,
+          metric: client.corporateTax.taxPayable !== null ? formatAed(client.corporateTax.taxPayable) : 'Readiness',
+        }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; dueDate: string | null; daysTilDue: number | null; metric: string }>;
+
+  candidates.sort((a, b) => (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999));
+  return candidates[0] ?? {
+    label: 'Close',
+    dueDate: client.vat.dueDate,
+    daysTilDue: client.vat.daysTilDue,
+    metric: `${client.bookkeeping.closeProgress}% close-ready`,
+  };
+}
+
+function productionItem(client: BookkeeperClient, labelOverride?: string) {
+  const deadline = primaryDeadline(client);
+  return {
+    client,
+    label: labelOverride ?? deadline.label,
+    dueDate: deadline.dueDate,
+    daysTilDue: deadline.daysTilDue,
+    metric: labelOverride === 'Close' ? `${client.bookkeeping.closeProgress}% close-ready` : deadline.metric,
+  };
+}
+
+function sortProductionItems(items: ReturnType<typeof productionItem>[]) {
+  return items.sort((a, b) => {
+    const priorityDelta =
+      (b.client.priority === 'critical' ? 3 : b.client.priority === 'attention' ? 2 : 1)
+      - (a.client.priority === 'critical' ? 3 : a.client.priority === 'attention' ? 2 : 1);
+    if (priorityDelta !== 0) return priorityDelta;
+    return (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999);
+  });
 }
 
 function OperationsBriefDialog({
@@ -384,16 +490,167 @@ function BookkeeperCommandCenter({
   onOpenBooks,
   onViewProfile,
   onOpenBrief,
+  onManageStaff,
 }: {
   dashboard?: BookkeeperDashboard;
   onOpenBooks: (companyId: string) => void;
   onViewProfile: (companyId: string) => void;
   onOpenBrief: (companyId: string) => void;
+  onManageStaff: () => void;
 }) {
   const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>('vat');
   const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
   const activeQueueItems = dashboard?.queues?.[activeQueue] ?? [];
   const workloadOwners = dashboard?.workload?.owners ?? [];
+  const productionBuckets = useMemo(() => {
+    const clients = dashboard?.clients ?? [];
+    const deadlineItems = sortProductionItems(clients.map(client => productionItem(client)));
+    return [
+      {
+        key: 'overdue',
+        title: 'Overdue / Due Now',
+        icon: AlertTriangle,
+        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue <= 0).slice(0, 5),
+      },
+      {
+        key: 'week',
+        title: 'This Week',
+        icon: Clock,
+        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue > 0 && item.daysTilDue <= 7).slice(0, 5),
+      },
+      {
+        key: 'month',
+        title: 'Next 28 Days',
+        icon: Calendar,
+        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue > 7 && item.daysTilDue <= 28).slice(0, 5),
+      },
+      {
+        key: 'blocked',
+        title: 'Close Blockers',
+        icon: TrendingUp,
+        items: sortProductionItems(
+          clients
+            .filter(client => client.bookkeeping.status !== 'on_track')
+            .map(client => productionItem(client, 'Close')),
+        ).slice(0, 5),
+      },
+      {
+        key: 'unassigned',
+        title: 'Unassigned',
+        icon: UserCheck,
+        items: deadlineItems.filter(item => item.client.assignedStaff.length === 0).slice(0, 5),
+      },
+    ];
+  }, [dashboard?.clients]);
+  const capacityPlanner = useMemo(() => {
+    const clients = dashboard?.clients ?? [];
+    const unassigned = clients
+      .filter(client => client.assignedStaff.length === 0)
+      .sort((a, b) => priorityScore(b.priority) - priorityScore(a.priority))
+      .slice(0, 5);
+    const overloaded = workloadOwners
+      .filter(owner => owner.staffId !== null && (owner.critical >= 3 || owner.clientCount >= 15 || owner.averageCloseProgress < 60))
+      .slice(0, 5);
+    const openCapacity = workloadOwners
+      .filter(owner => owner.staffId !== null && owner.clientCount < 10 && owner.critical === 0 && owner.averageCloseProgress >= 70)
+      .sort((a, b) => a.clientCount - b.clientCount || b.averageCloseProgress - a.averageCloseProgress)
+      .slice(0, 5);
+    return { unassigned, overloaded, openCapacity };
+  }, [dashboard?.clients, workloadOwners]);
+  const interventionRadar = useMemo(() => {
+    const rankedClients = [...(dashboard?.clients ?? [])].sort((a, b) => {
+      const interventionDelta = clientIntervention(b).score - clientIntervention(a).score;
+      if (interventionDelta !== 0) return interventionDelta;
+      return priorityScore(b.priority) - priorityScore(a.priority);
+    });
+    return {
+      high: rankedClients.filter(client => clientIntervention(client).level === 'high').slice(0, 4),
+      watchlist: rankedClients.filter(client => clientIntervention(client).level === 'medium').slice(0, 4),
+      exposure: rankedClients
+        .filter(client => clientIntervention(client).exposureAed > 0)
+        .sort((a, b) => clientIntervention(b).exposureAed - clientIntervention(a).exposureAed)
+        .slice(0, 4),
+    };
+  }, [dashboard?.clients]);
+  const serviceLaneForecast = useMemo(() => {
+    const clients = dashboard?.clients ?? [];
+    const makeRow = (
+      label: string,
+      rowClients: BookkeeperClient[],
+      metric: string,
+      action: string,
+      risk: BookkeeperPriority | 'filed' = 'on_track',
+    ) => ({
+      label,
+      count: rowClients.length,
+      metric,
+      action,
+      risk,
+      primaryCompanyId: rowClients[0]?.companyId,
+      sample: rowClients.slice(0, 2).map(client => client.companyName).join(', '),
+    });
+    const sortedByIntervention = (rowClients: BookkeeperClient[]) =>
+      [...rowClients].sort((a, b) => clientIntervention(b).score - clientIntervention(a).score);
+    const ctOpen = clients.filter(client => client.corporateTax.status !== 'filed');
+    const bookkeepingBlocked = sortedByIntervention(clients.filter(client => client.bookkeeping.status === 'critical'));
+    const bookkeepingAttention = sortedByIntervention(clients.filter(client => client.bookkeeping.status === 'attention'));
+    const bookkeepingReady = clients
+      .filter(client => client.bookkeeping.status === 'on_track' && client.bookkeeping.closeProgress >= 90)
+      .sort((a, b) => b.bookkeeping.closeProgress - a.bookkeeping.closeProgress);
+    const accountingVariance = sortedByIntervention(clients.filter(client => client.accounting.status === 'critical'));
+    const accountingReview = sortedByIntervention(clients.filter(client => client.accounting.status === 'attention'));
+    const accountingClean = clients.filter(client => client.accounting.status === 'on_track');
+
+    return [
+      {
+        key: 'vat',
+        title: 'VAT Cohorts',
+        icon: Calendar,
+        rows: (dashboard?.vatCohorts ?? []).slice(0, 3).map(cohort => ({
+          label: cohort.label,
+          count: cohort.clientCount,
+          metric: `${cohort.dueSoon} due · ${cohort.blocked} blocked`,
+          action: cohort.blocked > 0 ? 'Clear blockers' : cohort.dueSoon > 0 ? 'Prepare returns' : 'Monitor cohort',
+          risk: cohort.blocked > 0 ? 'critical' as const : cohort.dueSoon > 0 ? 'attention' as const : 'on_track' as const,
+          primaryCompanyId: cohort.clients[0]?.companyId,
+          sample: cohort.clients.slice(0, 2).map(client => client.companyName).join(', '),
+        })),
+      },
+      {
+        key: 'ct',
+        title: 'Corporate Tax',
+        icon: Calculator,
+        rows: [
+          makeRow('Due in 30d', sortedByIntervention(ctOpen.filter(client => (client.corporateTax.daysTilDue ?? 9999) <= 30)), 'urgent filings', 'Lock filing plan', 'critical'),
+          makeRow('Due in 90d', sortedByIntervention(ctOpen.filter(client => {
+            const days = client.corporateTax.daysTilDue ?? 9999;
+            return days > 30 && days <= 90;
+          })), 'preparation window', 'Start readiness review', 'attention'),
+          makeRow('Future / parked', sortedByIntervention(ctOpen.filter(client => (client.corporateTax.daysTilDue ?? 9999) > 90)), 'future filings', 'Monitor readiness'),
+        ],
+      },
+      {
+        key: 'bookkeeping',
+        title: 'Bookkeeping Close',
+        icon: TrendingUp,
+        rows: [
+          makeRow('Blocked', bookkeepingBlocked, 'source docs / bank gaps', 'Clear blockers', 'critical'),
+          makeRow('In progress', bookkeepingAttention, 'needs staff push', 'Finish close work', 'attention'),
+          makeRow('Review-ready', bookkeepingReady, '90%+ close-ready', 'Manager review'),
+        ],
+      },
+      {
+        key: 'accounting',
+        title: 'Accounting Review',
+        icon: CheckCircle2,
+        rows: [
+          makeRow('TB variance', accountingVariance, 'requires correction', 'Review journals', 'critical'),
+          makeRow('Needs journals', accountingReview, 'posting required', 'Post activity', 'attention'),
+          makeRow('Clean files', accountingClean, 'balanced ledgers', 'Keep cadence'),
+        ],
+      },
+    ];
+  }, [dashboard?.clients, dashboard?.vatCohorts]);
   const ctClients = dashboard?.clients
     .filter(client => client.corporateTax.status !== 'filed')
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
@@ -460,6 +717,377 @@ function BookkeeperCommandCenter({
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="w-4 h-4 text-primary" />
+              Production Planner
+            </CardTitle>
+            <Badge variant="outline">
+              {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)} visible items
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+            {productionBuckets.map(bucket => {
+              const Icon = bucket.icon;
+              return (
+                <div key={bucket.key} className="rounded-md border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      <Icon className="w-4 h-4 text-primary" />
+                      {bucket.title}
+                    </p>
+                    <Badge variant="outline">{bucket.items.length}</Badge>
+                  </div>
+                  <div className="mt-3 space-y-2 min-h-[132px]">
+                    {bucket.items.length === 0 && (
+                      <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
+                        Clear
+                      </div>
+                    )}
+                    {bucket.items.map(item => (
+                      <button
+                        key={`${bucket.key}-${item.client.companyId}`}
+                        type="button"
+                        onClick={() => onOpenBrief(item.client.companyId)}
+                        className="w-full rounded-md border bg-background px-2.5 py-2 text-left hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{item.client.companyName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.label} · {formatDays(item.daysTilDue)}
+                            </p>
+                          </div>
+                          <PriorityBadge priority={item.client.priority} />
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 truncate">{item.metric}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-primary" />
+                Staff Capacity Planner
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Balance owners before VAT, CT, and close work becomes a bottleneck.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={onManageStaff}>
+              <Users className="w-4 h-4 mr-2" />
+              Manage Staff
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Unassigned Intake</p>
+                <Badge variant={capacityPlanner.unassigned.length > 0 ? 'destructive' : 'outline'}>
+                  {capacityPlanner.unassigned.length}
+                </Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[128px]">
+                {capacityPlanner.unassigned.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
+                    No unassigned clients
+                  </div>
+                )}
+                {capacityPlanner.unassigned.map(client => (
+                  <div key={`unassigned-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{client.companyName}</p>
+                        <p className="text-xs text-muted-foreground truncate">{client.nextBestAction}</p>
+                      </div>
+                      <PriorityBadge priority={client.priority} />
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                        Brief
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={onManageStaff}>
+                        Assign
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Overloaded Owners</p>
+                <Badge variant={capacityPlanner.overloaded.length > 0 ? 'secondary' : 'outline'}>
+                  {capacityPlanner.overloaded.length}
+                </Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[128px]">
+                {capacityPlanner.overloaded.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
+                    No capacity pressure
+                  </div>
+                )}
+                {capacityPlanner.overloaded.map(owner => (
+                  <div key={`overloaded-${owner.staffId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{owner.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
+                        </p>
+                      </div>
+                      <Badge variant={owner.critical > 0 ? 'destructive' : 'secondary'}>{owner.critical} critical</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
+                      <span>{owner.vatDue28Days} VAT</span>
+                      <span>{owner.corporateTaxDue90Days} CT</span>
+                      <span>{owner.bookkeepingBlocked} close blocked</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Available Capacity</p>
+                <Badge variant="outline">{capacityPlanner.openCapacity.length}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[128px]">
+                {capacityPlanner.openCapacity.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
+                    No low-load owner found
+                  </div>
+                )}
+                {capacityPlanner.openCapacity.map(owner => (
+                  <div key={`capacity-${owner.staffId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{owner.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
+                        </p>
+                      </div>
+                      <Badge variant="outline">Can take work</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {owner.vatDue28Days} VAT due · {owner.bookkeepingBlocked} close blocked
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" />
+                Intervention Radar
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Prioritize files by deadline pressure, source-document gaps, owner gaps, and collection exposure.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Badge variant={(dashboard?.summary.interventionHigh ?? interventionRadar.high.length) > 0 ? 'destructive' : 'outline'}>
+                {dashboard?.summary.interventionHigh ?? interventionRadar.high.length} high
+              </Badge>
+              <Badge variant="secondary">
+                {dashboard?.summary.interventionMedium ?? interventionRadar.watchlist.length} watchlist
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Escalate Today</p>
+                <Badge variant={interventionRadar.high.length > 0 ? 'destructive' : 'outline'}>{interventionRadar.high.length}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[154px]">
+                {interventionRadar.high.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
+                    No high-risk interventions
+                  </div>
+                )}
+                {interventionRadar.high.map(client => {
+                  const intervention = clientIntervention(client);
+                  return (
+                    <div key={`intervention-high-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p className="text-xs text-muted-foreground truncate">{intervention.title}</p>
+                        </div>
+                        <Badge className={interventionClass(intervention.level)}>{intervention.score}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">{intervention.deadlineLabel}</p>
+                      <p className="text-xs font-medium mt-1">{intervention.ownerAction}</p>
+                      <div className="flex gap-1 mt-2">
+                        <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                          Brief
+                        </Button>
+                        <Button size="sm" onClick={() => onOpenBooks(client.companyId)}>
+                          Open
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Watchlist</p>
+                <Badge variant="secondary">{interventionRadar.watchlist.length}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[154px]">
+                {interventionRadar.watchlist.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
+                    No medium-risk watchlist
+                  </div>
+                )}
+                {interventionRadar.watchlist.map(client => {
+                  const intervention = clientIntervention(client);
+                  return (
+                    <button
+                      key={`intervention-watch-${client.companyId}`}
+                      type="button"
+                      onClick={() => onOpenBrief(client.companyId)}
+                      className="w-full rounded-md border bg-background px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p className="text-xs text-muted-foreground truncate">{intervention.ownerAction}</p>
+                        </div>
+                        <Badge className={interventionClass(intervention.level)}>{intervention.score}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2 truncate">
+                        {intervention.reasons.slice(0, 2).join(' · ')}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Collection Exposure</p>
+                <Badge variant="outline">{interventionRadar.exposure.length}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[154px]">
+                {interventionRadar.exposure.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
+                    No open exposure in radar
+                  </div>
+                )}
+                {interventionRadar.exposure.map(client => {
+                  const intervention = clientIntervention(client);
+                  return (
+                    <div key={`intervention-exposure-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p className="text-xs text-muted-foreground">{client.bookkeeping.overdueInvoiceCount} overdue invoices</p>
+                        </div>
+                        <Badge variant="outline">{formatAed(intervention.exposureAed)}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2 truncate">{intervention.ownerAction}</p>
+                      <div className="flex gap-1 mt-2">
+                        <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                          Brief
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => onViewProfile(client.companyId)}>
+                          Profile
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <LayoutGrid className="w-4 h-4 text-primary" />
+                Service Lane Forecast
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting review cadence.
+              </p>
+            </div>
+            <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            {serviceLaneForecast.map(lane => {
+              const Icon = lane.icon;
+              return (
+                <div key={lane.key} className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <Icon className="w-4 h-4 text-primary" />
+                    {lane.title}
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {lane.rows.map(row => (
+                      <button
+                        key={`${lane.key}-${row.label}`}
+                        type="button"
+                        onClick={() => row.primaryCompanyId && onOpenBrief(row.primaryCompanyId)}
+                        disabled={!row.primaryCompanyId}
+                        className="w-full rounded-md border bg-background px-3 py-2 text-left transition-colors enabled:hover:bg-muted/50 disabled:cursor-default"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{row.label}</p>
+                            <p className="text-xs text-muted-foreground truncate">{row.metric}</p>
+                          </div>
+                          <Badge className={priorityClass(row.risk)}>{row.count}</Badge>
+                        </div>
+                        <p className="text-xs font-medium mt-2 truncate">{row.action}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1 truncate">{row.sample || 'No active clients'}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] gap-3">
         <Card>
@@ -1015,6 +1643,7 @@ export default function ClientPortfolio() {
         onOpenBooks={handleOpenBooks}
         onViewProfile={handleViewProfile}
         onOpenBrief={setBriefClientId}
+        onManageStaff={() => navigate('/firm/staff')}
       />
 
       {/* Quick filters */}
