@@ -185,6 +185,11 @@ function formatDateShort(date: string | null | undefined) {
   return format(new Date(date), 'MMM d');
 }
 
+function formatPeriod(start: string | null | undefined, end: string | null | undefined) {
+  if (!start || !end) return 'No period';
+  return `${formatDateShort(start)} - ${formatDateShort(end)}`;
+}
+
 function formatDays(days: number | null | undefined) {
   if (days === null || days === undefined) return 'No date';
   if (days < 0) return `${Math.abs(days)}d overdue`;
@@ -228,14 +233,162 @@ function ownerPreview(names: string[]) {
   return `${names[0]} +${names.length - 1}`;
 }
 
+function OperationsBriefDialog({
+  client,
+  open,
+  onOpenChange,
+  onOpenBooks,
+  onViewProfile,
+}: {
+  client: BookkeeperClient | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onOpenBooks: (companyId: string) => void;
+  onViewProfile: (companyId: string) => void;
+}) {
+  const lanes = client ? [
+    {
+      key: 'vat',
+      title: 'VAT',
+      icon: Calendar,
+      status: client.vat.status,
+      due: `${formatDateShort(client.vat.dueDate)} · ${formatDays(client.vat.daysTilDue)}`,
+      period: formatPeriod(client.vat.periodStart, client.vat.periodEnd),
+      metric: client.vat.payableTax !== null ? formatAed(client.vat.payableTax) : client.vat.cohortLabel,
+      blockers: client.vat.blockers,
+    },
+    {
+      key: 'corporate-tax',
+      title: 'Corporate Tax',
+      icon: Calculator,
+      status: client.corporateTax.status,
+      due: `${formatDateShort(client.corporateTax.dueDate)} · ${formatDays(client.corporateTax.daysTilDue)}`,
+      period: formatPeriod(client.corporateTax.periodStart, client.corporateTax.periodEnd),
+      metric: client.corporateTax.taxPayable !== null ? formatAed(client.corporateTax.taxPayable) : 'Readiness',
+      blockers: client.corporateTax.blockers,
+    },
+    {
+      key: 'bookkeeping',
+      title: 'Bookkeeping',
+      icon: TrendingUp,
+      status: client.bookkeeping.status,
+      due: `${client.bookkeeping.closeProgress}% close-ready`,
+      period: client.bookkeeping.daysSinceActivity === null ? 'No activity date' : `${client.bookkeeping.daysSinceActivity}d since activity`,
+      metric: `${client.bookkeeping.unpostedReceiptCount} receipts · ${client.bookkeeping.unreconciledBankCount} bank lines`,
+      blockers: client.bookkeeping.blockers,
+    },
+    {
+      key: 'accounting',
+      title: 'Accounting',
+      icon: CheckCircle2,
+      status: client.accounting.status,
+      due: client.accounting.trialBalanceBalanced ? 'Balanced' : 'Needs review',
+      period: client.accounting.discrepancy > 0 ? formatAed(client.accounting.discrepancy) : 'No variance',
+      metric: client.accounting.trialBalanceBalanced ? 'Trial balance clean' : 'Trial balance variance',
+      blockers: client.accounting.blockers,
+    },
+  ] : [];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>{client?.companyName ?? 'Client Operations Brief'}</DialogTitle>
+          <DialogDescription>
+            {client ? `${ownerPreview(client.assignedStaff.map(staff => staff.name))} · ${client.nextBestAction}` : 'Operational status'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {client && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="rounded-md border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Priority</p>
+                <div className="mt-1"><PriorityBadge priority={client.priority} /></div>
+              </div>
+              <div className="rounded-md border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Owner</p>
+                <p className="text-sm font-medium mt-1 truncate">{ownerPreview(client.assignedStaff.map(staff => staff.name))}</p>
+              </div>
+              <div className="rounded-md border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Last activity</p>
+                <p className="text-sm font-medium mt-1">{formatDateShort(client.lastActivity)}</p>
+              </div>
+              <div className="rounded-md border bg-muted/20 p-3">
+                <p className="text-xs text-muted-foreground">Open AR</p>
+                <p className="text-sm font-medium mt-1">{formatAed(client.bookkeeping.openAr)}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {lanes.map(lane => {
+                const Icon = lane.icon;
+                return (
+                  <div key={lane.key} className="rounded-md border p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium flex items-center gap-2">
+                          <Icon className="w-4 h-4 text-primary" />
+                          {lane.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">{lane.period}</p>
+                      </div>
+                      <PriorityBadge priority={lane.status} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-3 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Timing</p>
+                        <p className="font-medium">{lane.due}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Metric</p>
+                        <p className="font-medium truncate">{lane.metric}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-1">
+                      {lane.blockers.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No blockers.</p>
+                      ) : (
+                        lane.blockers.slice(0, 4).map(blocker => (
+                          <div key={blocker} className="flex items-start gap-2 text-xs">
+                            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-amber-600 shrink-0" />
+                            <span>{blocker}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => client && onViewProfile(client.companyId)} disabled={!client}>
+            <ChevronRight className="w-4 h-4 mr-2" />
+            Profile
+          </Button>
+          <Button onClick={() => client && onOpenBooks(client.companyId)} disabled={!client}>
+            <BookOpen className="w-4 h-4 mr-2" />
+            Open Books
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function BookkeeperCommandCenter({
   dashboard,
   onOpenBooks,
   onViewProfile,
+  onOpenBrief,
 }: {
   dashboard?: BookkeeperDashboard;
   onOpenBooks: (companyId: string) => void;
   onViewProfile: (companyId: string) => void;
+  onOpenBrief: (companyId: string) => void;
 }) {
   const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>('vat');
   const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
@@ -368,6 +521,9 @@ function BookkeeperCommandCenter({
                       </div>
                     </div>
                     <div className="flex gap-1 sm:shrink-0">
+                      <Button size="sm" variant="outline" onClick={() => onOpenBrief(item.companyId)}>
+                        Brief
+                      </Button>
                       <Button size="sm" variant="outline" onClick={() => onViewProfile(item.companyId)}>
                         <ChevronRight className="w-3.5 h-3.5 mr-1" />
                         Profile
@@ -664,6 +820,7 @@ export default function ClientPortfolio() {
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [briefClientId, setBriefClientId] = useState<string | null>(null);
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
@@ -681,6 +838,10 @@ export default function ClientPortfolio() {
   const bookkeeperByClientId = useMemo(() => {
     return new Map((bookkeeperDashboard?.clients ?? []).map(client => [client.companyId, client]));
   }, [bookkeeperDashboard]);
+
+  const briefClient = useMemo(() => {
+    return briefClientId ? bookkeeperByClientId.get(briefClientId) : undefined;
+  }, [bookkeeperByClientId, briefClientId]);
 
   const createMutation = useMutation({
     mutationFn: (data: AddClientFormData) => apiRequest('POST', '/api/firm/clients', data),
@@ -853,6 +1014,7 @@ export default function ClientPortfolio() {
         dashboard={bookkeeperDashboard}
         onOpenBooks={handleOpenBooks}
         onViewProfile={handleViewProfile}
+        onOpenBrief={setBriefClientId}
       />
 
       {/* Quick filters */}
@@ -1042,10 +1204,17 @@ export default function ClientPortfolio() {
                       <TableCell>
                         <div className="flex items-center justify-between gap-2 min-w-64">
                           <p className="text-sm text-muted-foreground truncate">{ops?.nextBestAction ?? 'Open client profile'}</p>
-                          <Button size="sm" variant="outline" onClick={() => handleOpenBooks(client.id)} disabled={switchMutation.isPending}>
-                            <BookOpen className="w-3.5 h-3.5 mr-1" />
-                            Open
-                          </Button>
+                          <div className="flex gap-1">
+                            {ops && (
+                              <Button size="sm" variant="outline" onClick={() => setBriefClientId(client.id)}>
+                                Brief
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" onClick={() => handleOpenBooks(client.id)} disabled={switchMutation.isPending}>
+                              <BookOpen className="w-3.5 h-3.5 mr-1" />
+                              Open
+                            </Button>
+                          </div>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1144,6 +1313,15 @@ export default function ClientPortfolio() {
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-1">
+                    {ops && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setBriefClientId(client.id)}
+                      >
+                        Brief
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       className="flex-1"
@@ -1226,6 +1404,11 @@ export default function ClientPortfolio() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        {ops && (
+                          <Button size="sm" variant="outline" onClick={() => setBriefClientId(client.id)}>
+                            Brief
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           onClick={() => handleOpenBooks(client.id)}
@@ -1500,6 +1683,14 @@ export default function ClientPortfolio() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <OperationsBriefDialog
+        client={briefClient}
+        open={!!briefClientId}
+        onOpenChange={open => !open && setBriefClientId(null)}
+        onOpenBooks={handleOpenBooks}
+        onViewProfile={handleViewProfile}
+      />
     </div>
   );
 }
