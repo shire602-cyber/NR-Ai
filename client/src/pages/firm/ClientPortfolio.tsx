@@ -210,6 +210,12 @@ function priorityLabel(priority: BookkeeperPriority | 'filed') {
   return 'Filed';
 }
 
+function priorityScore(priority: BookkeeperPriority | 'filed') {
+  if (priority === 'critical') return 3;
+  if (priority === 'attention') return 2;
+  return 1;
+}
+
 function PriorityBadge({ priority }: { priority: BookkeeperPriority | 'filed' }) {
   return <Badge className={priorityClass(priority)}>{priorityLabel(priority)}</Badge>;
 }
@@ -434,11 +440,13 @@ function BookkeeperCommandCenter({
   onOpenBooks,
   onViewProfile,
   onOpenBrief,
+  onManageStaff,
 }: {
   dashboard?: BookkeeperDashboard;
   onOpenBooks: (companyId: string) => void;
   onViewProfile: (companyId: string) => void;
   onOpenBrief: (companyId: string) => void;
+  onManageStaff: () => void;
 }) {
   const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>('vat');
   const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
@@ -484,6 +492,21 @@ function BookkeeperCommandCenter({
       },
     ];
   }, [dashboard?.clients]);
+  const capacityPlanner = useMemo(() => {
+    const clients = dashboard?.clients ?? [];
+    const unassigned = clients
+      .filter(client => client.assignedStaff.length === 0)
+      .sort((a, b) => priorityScore(b.priority) - priorityScore(a.priority))
+      .slice(0, 5);
+    const overloaded = workloadOwners
+      .filter(owner => owner.staffId !== null && (owner.critical >= 3 || owner.clientCount >= 15 || owner.averageCloseProgress < 60))
+      .slice(0, 5);
+    const openCapacity = workloadOwners
+      .filter(owner => owner.staffId !== null && owner.clientCount < 10 && owner.critical === 0 && owner.averageCloseProgress >= 70)
+      .sort((a, b) => a.clientCount - b.clientCount || b.averageCloseProgress - a.averageCloseProgress)
+      .slice(0, 5);
+    return { unassigned, overloaded, openCapacity };
+  }, [dashboard?.clients, workloadOwners]);
   const ctClients = dashboard?.clients
     .filter(client => client.corporateTax.status !== 'filed')
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
@@ -605,6 +628,128 @@ function BookkeeperCommandCenter({
                 </div>
               );
             })}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-primary" />
+                Staff Capacity Planner
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Balance owners before VAT, CT, and close work becomes a bottleneck.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={onManageStaff}>
+              <Users className="w-4 h-4 mr-2" />
+              Manage Staff
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Unassigned Intake</p>
+                <Badge variant={capacityPlanner.unassigned.length > 0 ? 'destructive' : 'outline'}>
+                  {capacityPlanner.unassigned.length}
+                </Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[128px]">
+                {capacityPlanner.unassigned.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
+                    No unassigned clients
+                  </div>
+                )}
+                {capacityPlanner.unassigned.map(client => (
+                  <div key={`unassigned-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{client.companyName}</p>
+                        <p className="text-xs text-muted-foreground truncate">{client.nextBestAction}</p>
+                      </div>
+                      <PriorityBadge priority={client.priority} />
+                    </div>
+                    <div className="flex gap-1 mt-2">
+                      <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                        Brief
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={onManageStaff}>
+                        Assign
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Overloaded Owners</p>
+                <Badge variant={capacityPlanner.overloaded.length > 0 ? 'secondary' : 'outline'}>
+                  {capacityPlanner.overloaded.length}
+                </Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[128px]">
+                {capacityPlanner.overloaded.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
+                    No capacity pressure
+                  </div>
+                )}
+                {capacityPlanner.overloaded.map(owner => (
+                  <div key={`overloaded-${owner.staffId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{owner.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
+                        </p>
+                      </div>
+                      <Badge variant={owner.critical > 0 ? 'destructive' : 'secondary'}>{owner.critical} critical</Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
+                      <span>{owner.vatDue28Days} VAT</span>
+                      <span>{owner.corporateTaxDue90Days} CT</span>
+                      <span>{owner.bookkeepingBlocked} close blocked</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Available Capacity</p>
+                <Badge variant="outline">{capacityPlanner.openCapacity.length}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[128px]">
+                {capacityPlanner.openCapacity.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
+                    No low-load owner found
+                  </div>
+                )}
+                {capacityPlanner.openCapacity.map(owner => (
+                  <div key={`capacity-${owner.staffId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{owner.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
+                        </p>
+                      </div>
+                      <Badge variant="outline">Can take work</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {owner.vatDue28Days} VAT due · {owner.bookkeepingBlocked} close blocked
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1163,6 +1308,7 @@ export default function ClientPortfolio() {
         onOpenBooks={handleOpenBooks}
         onViewProfile={handleViewProfile}
         onOpenBrief={setBriefClientId}
+        onManageStaff={() => navigate('/firm/staff')}
       />
 
       {/* Quick filters */}
