@@ -233,6 +233,56 @@ function ownerPreview(names: string[]) {
   return `${names[0]} +${names.length - 1}`;
 }
 
+function primaryDeadline(client: BookkeeperClient) {
+  const candidates = [
+    client.vat.status !== 'filed'
+      ? {
+          label: 'VAT',
+          dueDate: client.vat.dueDate,
+          daysTilDue: client.vat.daysTilDue,
+          metric: client.vat.payableTax !== null ? formatAed(client.vat.payableTax) : client.vat.cohortLabel,
+        }
+      : null,
+    client.corporateTax.status !== 'filed'
+      ? {
+          label: 'CT',
+          dueDate: client.corporateTax.dueDate,
+          daysTilDue: client.corporateTax.daysTilDue,
+          metric: client.corporateTax.taxPayable !== null ? formatAed(client.corporateTax.taxPayable) : 'Readiness',
+        }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; dueDate: string | null; daysTilDue: number | null; metric: string }>;
+
+  candidates.sort((a, b) => (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999));
+  return candidates[0] ?? {
+    label: 'Close',
+    dueDate: client.vat.dueDate,
+    daysTilDue: client.vat.daysTilDue,
+    metric: `${client.bookkeeping.closeProgress}% close-ready`,
+  };
+}
+
+function productionItem(client: BookkeeperClient, labelOverride?: string) {
+  const deadline = primaryDeadline(client);
+  return {
+    client,
+    label: labelOverride ?? deadline.label,
+    dueDate: deadline.dueDate,
+    daysTilDue: deadline.daysTilDue,
+    metric: labelOverride === 'Close' ? `${client.bookkeeping.closeProgress}% close-ready` : deadline.metric,
+  };
+}
+
+function sortProductionItems(items: ReturnType<typeof productionItem>[]) {
+  return items.sort((a, b) => {
+    const priorityDelta =
+      (b.client.priority === 'critical' ? 3 : b.client.priority === 'attention' ? 2 : 1)
+      - (a.client.priority === 'critical' ? 3 : a.client.priority === 'attention' ? 2 : 1);
+    if (priorityDelta !== 0) return priorityDelta;
+    return (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999);
+  });
+}
+
 function OperationsBriefDialog({
   client,
   open,
@@ -394,6 +444,46 @@ function BookkeeperCommandCenter({
   const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
   const activeQueueItems = dashboard?.queues?.[activeQueue] ?? [];
   const workloadOwners = dashboard?.workload?.owners ?? [];
+  const productionBuckets = useMemo(() => {
+    const clients = dashboard?.clients ?? [];
+    const deadlineItems = sortProductionItems(clients.map(client => productionItem(client)));
+    return [
+      {
+        key: 'overdue',
+        title: 'Overdue / Due Now',
+        icon: AlertTriangle,
+        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue <= 0).slice(0, 5),
+      },
+      {
+        key: 'week',
+        title: 'This Week',
+        icon: Clock,
+        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue > 0 && item.daysTilDue <= 7).slice(0, 5),
+      },
+      {
+        key: 'month',
+        title: 'Next 28 Days',
+        icon: Calendar,
+        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue > 7 && item.daysTilDue <= 28).slice(0, 5),
+      },
+      {
+        key: 'blocked',
+        title: 'Close Blockers',
+        icon: TrendingUp,
+        items: sortProductionItems(
+          clients
+            .filter(client => client.bookkeeping.status !== 'on_track')
+            .map(client => productionItem(client, 'Close')),
+        ).slice(0, 5),
+      },
+      {
+        key: 'unassigned',
+        title: 'Unassigned',
+        icon: UserCheck,
+        items: deadlineItems.filter(item => item.client.assignedStaff.length === 0).slice(0, 5),
+      },
+    ];
+  }, [dashboard?.clients]);
   const ctClients = dashboard?.clients
     .filter(client => client.corporateTax.status !== 'filed')
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
@@ -460,6 +550,64 @@ function BookkeeperCommandCenter({
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="w-4 h-4 text-primary" />
+              Production Planner
+            </CardTitle>
+            <Badge variant="outline">
+              {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)} visible items
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+            {productionBuckets.map(bucket => {
+              const Icon = bucket.icon;
+              return (
+                <div key={bucket.key} className="rounded-md border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      <Icon className="w-4 h-4 text-primary" />
+                      {bucket.title}
+                    </p>
+                    <Badge variant="outline">{bucket.items.length}</Badge>
+                  </div>
+                  <div className="mt-3 space-y-2 min-h-[132px]">
+                    {bucket.items.length === 0 && (
+                      <div className="rounded-md border border-dashed bg-background/70 px-3 py-5 text-xs text-muted-foreground text-center">
+                        Clear
+                      </div>
+                    )}
+                    {bucket.items.map(item => (
+                      <button
+                        key={`${bucket.key}-${item.client.companyId}`}
+                        type="button"
+                        onClick={() => onOpenBrief(item.client.companyId)}
+                        className="w-full rounded-md border bg-background px-2.5 py-2 text-left hover:bg-muted/50 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{item.client.companyName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {item.label} · {formatDays(item.daysTilDue)}
+                            </p>
+                          </div>
+                          <PriorityBadge priority={item.client.priority} />
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1 truncate">{item.metric}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] gap-3">
         <Card>
