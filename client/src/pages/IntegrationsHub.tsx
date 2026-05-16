@@ -113,12 +113,20 @@ export default function IntegrationsHub() {
   // Fetch integrations
   const { data: integrations, isLoading: integrationsLoading } = useQuery<EcommerceIntegration[]>({
     queryKey: ['/api/integrations/ecommerce', companyId],
+    queryFn: () => {
+      const params = new URLSearchParams({ companyId: companyId ?? '' });
+      return apiRequest('GET', `/api/integrations/ecommerce?${params}`);
+    },
     enabled: !!companyId,
   });
 
   // Fetch recent transactions
   const { data: transactions, isLoading: transactionsLoading } = useQuery<EcommerceTransaction[]>({
     queryKey: ['/api/integrations/ecommerce/transactions', companyId],
+    queryFn: () => {
+      const params = new URLSearchParams({ companyId: companyId ?? '' });
+      return apiRequest('GET', `/api/integrations/ecommerce/transactions?${params}`);
+    },
     enabled: !!companyId,
   });
 

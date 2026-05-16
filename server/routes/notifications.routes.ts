@@ -17,6 +17,12 @@ export function registerNotificationRoutes(app: Express) {
     res.json({ notifications, unreadCount });
   }));
 
+  // Get active UAE regulatory news for the in-app news tab.
+  app.get("/api/regulatory-news", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
+    const news = await storage.getRegulatoryNews();
+    res.json(news);
+  }));
+
   // Mark notification as read
   app.patch("/api/notifications/:id/read", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;

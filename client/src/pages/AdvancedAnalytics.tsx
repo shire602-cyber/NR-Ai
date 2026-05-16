@@ -89,24 +89,47 @@ export default function AdvancedAnalytics() {
   // Fetch forecasts
   const { data: forecasts, isLoading: forecastsLoading } = useQuery<CashFlowForecast[]>({
     queryKey: ['/api/analytics/forecasts', companyId, forecastPeriod],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        companyId: companyId ?? '',
+        period: forecastPeriod,
+      });
+      return apiRequest('GET', `/api/analytics/forecasts?${params}`);
+    },
     enabled: !!companyId,
   });
 
   // Fetch budget vs actual
   const { data: budgetData, isLoading: budgetLoading } = useQuery<BudgetVsActual[]>({
     queryKey: ['/api/analytics/budget-vs-actual', companyId, budgetYear, budgetMonth],
+    queryFn: () => {
+      const params = new URLSearchParams({
+        companyId: companyId ?? '',
+        year: String(budgetYear),
+        month: String(budgetMonth),
+      });
+      return apiRequest('GET', `/api/analytics/budget-vs-actual?${params}`);
+    },
     enabled: !!companyId,
   });
 
   // Fetch KPIs
   const { data: kpis, isLoading: kpisLoading } = useQuery<FinancialKPI[]>({
     queryKey: ['/api/analytics/kpis', companyId],
+    queryFn: () => {
+      const params = new URLSearchParams({ companyId: companyId ?? '' });
+      return apiRequest('GET', `/api/analytics/kpis?${params}`);
+    },
     enabled: !!companyId,
   });
 
   // Fetch AI insights
   const { data: insights, isLoading: insightsLoading } = useQuery<AIInsight[]>({
     queryKey: ['/api/analytics/insights', companyId],
+    queryFn: () => {
+      const params = new URLSearchParams({ companyId: companyId ?? '' });
+      return apiRequest('GET', `/api/analytics/insights?${params}`);
+    },
     enabled: !!companyId,
   });
 
