@@ -6,10 +6,6 @@ const root = process.cwd();
 const asMarkdown = process.argv.includes('--markdown');
 const summaryOnly = process.argv.includes('--summary');
 
-function exists(relPath) {
-  return fs.existsSync(path.join(root, relPath));
-}
-
 function read(relPath) {
   const fullPath = path.join(root, relPath);
   return fs.existsSync(fullPath) ? fs.readFileSync(fullPath, 'utf8') : '';

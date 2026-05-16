@@ -79,6 +79,13 @@ export default tseslint.config(
   },
 
   {
+    files: ["scripts/**/*.mjs", "*.config.js", "*.config.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, fetch: "readonly" },
+    },
+  },
+
+  {
     files: ["client/public/**/*.js", "**/sw.js", "**/service-worker.js"],
     languageOptions: {
       globals: { ...globals.serviceworker, ...globals.browser },
