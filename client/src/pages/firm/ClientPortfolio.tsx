@@ -53,6 +53,7 @@ interface ImportResult {
 }
 
 type BookkeeperPriority = 'on_track' | 'attention' | 'critical';
+type BookkeeperInterventionLevel = 'low' | 'medium' | 'high';
 
 interface BookkeeperClient {
   companyId: string;
@@ -61,6 +62,15 @@ interface BookkeeperClient {
   assignedStaff: { id: string; name: string; email: string; role: string }[];
   priority: BookkeeperPriority;
   nextBestAction: string;
+  intervention?: {
+    score: number;
+    level: BookkeeperInterventionLevel;
+    title: string;
+    reasons: string[];
+    ownerAction: string;
+    deadlineLabel: string;
+    exposureAed: number;
+  };
   lastActivity: string | null;
   vat: {
     cohortKey: string;
@@ -160,6 +170,8 @@ interface BookkeeperDashboard {
     vatDue28Days: number;
     corporateTaxDue90Days: number;
     bookkeepingBlocked: number;
+    interventionHigh?: number;
+    interventionMedium?: number;
   };
   vatCohorts: BookkeeperVatCohort[];
   queues?: Record<BookkeeperQueueKey, BookkeeperQueueItem[]>;
@@ -218,6 +230,44 @@ function priorityScore(priority: BookkeeperPriority | 'filed') {
 
 function PriorityBadge({ priority }: { priority: BookkeeperPriority | 'filed' }) {
   return <Badge className={priorityClass(priority)}>{priorityLabel(priority)}</Badge>;
+}
+
+function interventionClass(level: BookkeeperInterventionLevel) {
+  if (level === 'high') return 'bg-red-100 text-red-800 border-red-200';
+  if (level === 'medium') return 'bg-amber-100 text-amber-800 border-amber-200';
+  return 'bg-green-100 text-green-800 border-green-200';
+}
+
+function fallbackIntervention(client: BookkeeperClient): NonNullable<BookkeeperClient['intervention']> {
+  const score = Math.min(
+    100,
+    priorityScore(client.priority) * 18
+      + (client.assignedStaff.length === 0 ? 12 : 0)
+      + (client.bookkeeping.status !== 'on_track' ? 12 : 0)
+      + (client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28 ? 10 : 0)
+      + (client.corporateTax.daysTilDue !== null && client.corporateTax.daysTilDue <= 90 ? 6 : 0),
+  );
+  const level: BookkeeperInterventionLevel = score >= 65 ? 'high' : score >= 35 ? 'medium' : 'low';
+  const reasons = [
+    client.assignedStaff.length === 0 ? 'No owner assigned' : '',
+    ...client.vat.blockers,
+    ...client.corporateTax.blockers,
+    ...client.bookkeeping.blockers,
+    ...client.accounting.blockers,
+  ].filter(Boolean);
+  return {
+    score,
+    level,
+    title: client.nextBestAction,
+    reasons: (reasons.length > 0 ? reasons : ['No active intervention signals']).slice(0, 5),
+    ownerAction: client.nextBestAction,
+    deadlineLabel: primaryDeadline(client).label,
+    exposureAed: Math.round(Math.max(0, client.bookkeeping.openAr)),
+  };
+}
+
+function clientIntervention(client: BookkeeperClient) {
+  return client.intervention ?? fallbackIntervention(client);
 }
 
 function blockerPreview(blockers: string[]) {
@@ -507,6 +557,21 @@ function BookkeeperCommandCenter({
       .slice(0, 5);
     return { unassigned, overloaded, openCapacity };
   }, [dashboard?.clients, workloadOwners]);
+  const interventionRadar = useMemo(() => {
+    const rankedClients = [...(dashboard?.clients ?? [])].sort((a, b) => {
+      const interventionDelta = clientIntervention(b).score - clientIntervention(a).score;
+      if (interventionDelta !== 0) return interventionDelta;
+      return priorityScore(b.priority) - priorityScore(a.priority);
+    });
+    return {
+      high: rankedClients.filter(client => clientIntervention(client).level === 'high').slice(0, 4),
+      watchlist: rankedClients.filter(client => clientIntervention(client).level === 'medium').slice(0, 4),
+      exposure: rankedClients
+        .filter(client => clientIntervention(client).exposureAed > 0)
+        .sort((a, b) => clientIntervention(b).exposureAed - clientIntervention(a).exposureAed)
+        .slice(0, 4),
+    };
+  }, [dashboard?.clients]);
   const ctClients = dashboard?.clients
     .filter(client => client.corporateTax.status !== 'filed')
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
@@ -748,6 +813,144 @@ function BookkeeperCommandCenter({
                     </p>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" />
+                Intervention Radar
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Prioritize files by deadline pressure, source-document gaps, owner gaps, and collection exposure.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Badge variant={(dashboard?.summary.interventionHigh ?? interventionRadar.high.length) > 0 ? 'destructive' : 'outline'}>
+                {dashboard?.summary.interventionHigh ?? interventionRadar.high.length} high
+              </Badge>
+              <Badge variant="secondary">
+                {dashboard?.summary.interventionMedium ?? interventionRadar.watchlist.length} watchlist
+              </Badge>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Escalate Today</p>
+                <Badge variant={interventionRadar.high.length > 0 ? 'destructive' : 'outline'}>{interventionRadar.high.length}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[154px]">
+                {interventionRadar.high.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
+                    No high-risk interventions
+                  </div>
+                )}
+                {interventionRadar.high.map(client => {
+                  const intervention = clientIntervention(client);
+                  return (
+                    <div key={`intervention-high-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p className="text-xs text-muted-foreground truncate">{intervention.title}</p>
+                        </div>
+                        <Badge className={interventionClass(intervention.level)}>{intervention.score}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">{intervention.deadlineLabel}</p>
+                      <p className="text-xs font-medium mt-1">{intervention.ownerAction}</p>
+                      <div className="flex gap-1 mt-2">
+                        <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                          Brief
+                        </Button>
+                        <Button size="sm" onClick={() => onOpenBooks(client.companyId)}>
+                          Open
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Watchlist</p>
+                <Badge variant="secondary">{interventionRadar.watchlist.length}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[154px]">
+                {interventionRadar.watchlist.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
+                    No medium-risk watchlist
+                  </div>
+                )}
+                {interventionRadar.watchlist.map(client => {
+                  const intervention = clientIntervention(client);
+                  return (
+                    <button
+                      key={`intervention-watch-${client.companyId}`}
+                      type="button"
+                      onClick={() => onOpenBrief(client.companyId)}
+                      className="w-full rounded-md border bg-background px-3 py-2 text-left hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p className="text-xs text-muted-foreground truncate">{intervention.ownerAction}</p>
+                        </div>
+                        <Badge className={interventionClass(intervention.level)}>{intervention.score}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2 truncate">
+                        {intervention.reasons.slice(0, 2).join(' · ')}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-muted/20 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">Collection Exposure</p>
+                <Badge variant="outline">{interventionRadar.exposure.length}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 min-h-[154px]">
+                {interventionRadar.exposure.length === 0 && (
+                  <div className="rounded-md border border-dashed bg-background/70 px-3 py-6 text-xs text-muted-foreground text-center">
+                    No open exposure in radar
+                  </div>
+                )}
+                {interventionRadar.exposure.map(client => {
+                  const intervention = clientIntervention(client);
+                  return (
+                    <div key={`intervention-exposure-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{client.companyName}</p>
+                          <p className="text-xs text-muted-foreground">{client.bookkeeping.overdueInvoiceCount} overdue invoices</p>
+                        </div>
+                        <Badge variant="outline">{formatAed(intervention.exposureAed)}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2 truncate">{intervention.ownerAction}</p>
+                      <div className="flex gap-1 mt-2">
+                        <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                          Brief
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => onViewProfile(client.companyId)}>
+                          Profile
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
