@@ -572,6 +572,85 @@ function BookkeeperCommandCenter({
         .slice(0, 4),
     };
   }, [dashboard?.clients]);
+  const serviceLaneForecast = useMemo(() => {
+    const clients = dashboard?.clients ?? [];
+    const makeRow = (
+      label: string,
+      rowClients: BookkeeperClient[],
+      metric: string,
+      action: string,
+      risk: BookkeeperPriority | 'filed' = 'on_track',
+    ) => ({
+      label,
+      count: rowClients.length,
+      metric,
+      action,
+      risk,
+      primaryCompanyId: rowClients[0]?.companyId,
+      sample: rowClients.slice(0, 2).map(client => client.companyName).join(', '),
+    });
+    const sortedByIntervention = (rowClients: BookkeeperClient[]) =>
+      [...rowClients].sort((a, b) => clientIntervention(b).score - clientIntervention(a).score);
+    const ctOpen = clients.filter(client => client.corporateTax.status !== 'filed');
+    const bookkeepingBlocked = sortedByIntervention(clients.filter(client => client.bookkeeping.status === 'critical'));
+    const bookkeepingAttention = sortedByIntervention(clients.filter(client => client.bookkeeping.status === 'attention'));
+    const bookkeepingReady = clients
+      .filter(client => client.bookkeeping.status === 'on_track' && client.bookkeeping.closeProgress >= 90)
+      .sort((a, b) => b.bookkeeping.closeProgress - a.bookkeeping.closeProgress);
+    const accountingVariance = sortedByIntervention(clients.filter(client => client.accounting.status === 'critical'));
+    const accountingReview = sortedByIntervention(clients.filter(client => client.accounting.status === 'attention'));
+    const accountingClean = clients.filter(client => client.accounting.status === 'on_track');
+
+    return [
+      {
+        key: 'vat',
+        title: 'VAT Cohorts',
+        icon: Calendar,
+        rows: (dashboard?.vatCohorts ?? []).slice(0, 3).map(cohort => ({
+          label: cohort.label,
+          count: cohort.clientCount,
+          metric: `${cohort.dueSoon} due · ${cohort.blocked} blocked`,
+          action: cohort.blocked > 0 ? 'Clear blockers' : cohort.dueSoon > 0 ? 'Prepare returns' : 'Monitor cohort',
+          risk: cohort.blocked > 0 ? 'critical' as const : cohort.dueSoon > 0 ? 'attention' as const : 'on_track' as const,
+          primaryCompanyId: cohort.clients[0]?.companyId,
+          sample: cohort.clients.slice(0, 2).map(client => client.companyName).join(', '),
+        })),
+      },
+      {
+        key: 'ct',
+        title: 'Corporate Tax',
+        icon: Calculator,
+        rows: [
+          makeRow('Due in 30d', sortedByIntervention(ctOpen.filter(client => (client.corporateTax.daysTilDue ?? 9999) <= 30)), 'urgent filings', 'Lock filing plan', 'critical'),
+          makeRow('Due in 90d', sortedByIntervention(ctOpen.filter(client => {
+            const days = client.corporateTax.daysTilDue ?? 9999;
+            return days > 30 && days <= 90;
+          })), 'preparation window', 'Start readiness review', 'attention'),
+          makeRow('Future / parked', sortedByIntervention(ctOpen.filter(client => (client.corporateTax.daysTilDue ?? 9999) > 90)), 'future filings', 'Monitor readiness'),
+        ],
+      },
+      {
+        key: 'bookkeeping',
+        title: 'Bookkeeping Close',
+        icon: TrendingUp,
+        rows: [
+          makeRow('Blocked', bookkeepingBlocked, 'source docs / bank gaps', 'Clear blockers', 'critical'),
+          makeRow('In progress', bookkeepingAttention, 'needs staff push', 'Finish close work', 'attention'),
+          makeRow('Review-ready', bookkeepingReady, '90%+ close-ready', 'Manager review'),
+        ],
+      },
+      {
+        key: 'accounting',
+        title: 'Accounting Review',
+        icon: CheckCircle2,
+        rows: [
+          makeRow('TB variance', accountingVariance, 'requires correction', 'Review journals', 'critical'),
+          makeRow('Needs journals', accountingReview, 'posting required', 'Post activity', 'attention'),
+          makeRow('Clean files', accountingClean, 'balanced ledgers', 'Keep cadence'),
+        ],
+      },
+    ];
+  }, [dashboard?.clients, dashboard?.vatCohorts]);
   const ctClients = dashboard?.clients
     .filter(client => client.corporateTax.status !== 'filed')
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
@@ -953,6 +1032,59 @@ function BookkeeperCommandCenter({
                 })}
               </div>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <LayoutGrid className="w-4 h-4 text-primary" />
+                Service Lane Forecast
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting review cadence.
+              </p>
+            </div>
+            <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            {serviceLaneForecast.map(lane => {
+              const Icon = lane.icon;
+              return (
+                <div key={lane.key} className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    <Icon className="w-4 h-4 text-primary" />
+                    {lane.title}
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {lane.rows.map(row => (
+                      <button
+                        key={`${lane.key}-${row.label}`}
+                        type="button"
+                        onClick={() => row.primaryCompanyId && onOpenBrief(row.primaryCompanyId)}
+                        disabled={!row.primaryCompanyId}
+                        className="w-full rounded-md border bg-background px-3 py-2 text-left transition-colors enabled:hover:bg-muted/50 disabled:cursor-default"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium truncate">{row.label}</p>
+                            <p className="text-xs text-muted-foreground truncate">{row.metric}</p>
+                          </div>
+                          <Badge className={priorityClass(row.risk)}>{row.count}</Badge>
+                        </div>
+                        <p className="text-xs font-medium mt-2 truncate">{row.action}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1 truncate">{row.sample || 'No active clients'}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </CardContent>
       </Card>
