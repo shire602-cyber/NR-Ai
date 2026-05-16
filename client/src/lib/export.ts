@@ -1,4 +1,3 @@
-import ExcelJS from 'exceljs';
 import { apiRequest } from './queryClient';
 import { apiUrl } from './api';
 import { getAuthHeaders } from './auth';
@@ -29,6 +28,7 @@ export interface ExportData {
 }
 
 export async function exportToExcel(data: ExportData[], filename: string) {
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
 
   data.forEach((sheet) => {

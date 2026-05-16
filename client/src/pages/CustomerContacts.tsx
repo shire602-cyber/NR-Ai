@@ -36,7 +36,7 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import type { CustomerContact } from '@shared/schema';
-import ExcelJS from 'exceljs';
+import type ExcelJS from 'exceljs';
 import { exportToExcel } from '@/lib/export';
 import { SiWhatsapp } from 'react-icons/si';
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
@@ -53,6 +53,7 @@ interface ImportResult {
 }
 
 async function parseXlsxRows(buffer: ArrayBuffer): Promise<Record<string, any>[]> {
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const worksheet = workbook.worksheets[0];
