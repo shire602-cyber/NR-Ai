@@ -3,6 +3,8 @@ import {
   mapImportRow,
   validateImportedClient,
   normaliseEmirate,
+  normaliseFiscalYearStartMonth,
+  normaliseVatCloseGroup,
   normaliseVatFiling,
   corporateTaxWindow,
   currentVatPeriodForCompany,
@@ -61,6 +63,9 @@ describe('firm-clients.service: import mapping', () => {
         'Address': 'Dubai',
         'Industry': 'Construction',
         'Website': 'https://acme.ae',
+        'VAT Close Group': 'Jan / Apr / Jul / Oct',
+        'Financial Year Start': 'April',
+        'Corporate Tax ID': 'CT-1002345678',
       });
       if ('error' in result) throw new Error('expected mapped row');
       expect(result).toMatchObject({
@@ -71,6 +76,9 @@ describe('firm-clients.service: import mapping', () => {
         businessAddress: 'Dubai',
         industry: 'Construction',
         websiteUrl: 'https://acme.ae',
+        vatPeriodStartMonth: 11,
+        fiscalYearStartMonth: 4,
+        corporateTaxId: 'CT-1002345678',
       });
     });
   });
@@ -107,6 +115,27 @@ describe('firm-clients.service: import mapping', () => {
     });
   });
 
+  describe('bulk-import tax month normalisers', () => {
+    it('maps the three VAT close groups to the stored VAT period start month', () => {
+      expect(normaliseVatCloseGroup('Jan / Apr / Jul / Oct')).toBe(11);
+      expect(normaliseVatCloseGroup('Feb, May, Aug, Nov')).toBe(12);
+      expect(normaliseVatCloseGroup('Mar Jun Sep Dec')).toBe(1);
+    });
+
+    it('maps a single close month to its VAT close group', () => {
+      expect(normaliseVatCloseGroup('January')).toBe(11);
+      expect(normaliseVatCloseGroup('May')).toBe(12);
+      expect(normaliseVatCloseGroup('September')).toBe(1);
+    });
+
+    it('parses financial year start month names and numbers', () => {
+      expect(normaliseFiscalYearStartMonth('April')).toBe(4);
+      expect(normaliseFiscalYearStartMonth('Sep')).toBe(9);
+      expect(normaliseFiscalYearStartMonth('12')).toBe(12);
+      expect(normaliseFiscalYearStartMonth('Not a month')).toBeUndefined();
+    });
+  });
+
   describe('validateImportedClient', () => {
     it('accepts a valid mapped row', () => {
       const result = validateImportedClient({
@@ -119,6 +148,9 @@ describe('firm-clients.service: import mapping', () => {
         businessAddress: '',
         emirate: '',
         vatFilingFrequency: '',
+        vatPeriodStartMonth: undefined,
+        fiscalYearStartMonth: undefined,
+        corporateTaxId: '',
         registrationNumber: '',
         websiteUrl: '',
       });
@@ -137,6 +169,9 @@ describe('firm-clients.service: import mapping', () => {
         businessAddress: '',
         emirate: '',
         vatFilingFrequency: '',
+        vatPeriodStartMonth: undefined,
+        fiscalYearStartMonth: undefined,
+        corporateTaxId: '',
         registrationNumber: '',
         websiteUrl: '',
       });
@@ -154,6 +189,9 @@ describe('firm-clients.service: import mapping', () => {
         businessAddress: '',
         emirate: '',
         vatFilingFrequency: '',
+        vatPeriodStartMonth: undefined,
+        fiscalYearStartMonth: undefined,
+        corporateTaxId: '',
         registrationNumber: '',
         websiteUrl: '',
       });

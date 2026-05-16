@@ -19,6 +19,9 @@ export const importedClientSchema = z.object({
   businessAddress: z.string().optional().or(z.literal('')),
   emirate: z.string().optional().or(z.literal('')),
   vatFilingFrequency: z.string().optional().or(z.literal('')),
+  vatPeriodStartMonth: z.number().int().min(1).max(12).optional(),
+  fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
+  corporateTaxId: z.string().optional().or(z.literal('')),
   registrationNumber: z.string().optional().or(z.literal('')),
   websiteUrl: z.string().optional().or(z.literal('')),
 });
@@ -78,6 +81,33 @@ const VAT_COHORTS: Array<Omit<VatCohort, 'closeMonthLabels'>> = [
   { key: 'mar_jun_sep_dec', label: 'Mar / Jun / Sep / Dec', closeMonths: [3, 6, 9, 12] },
 ];
 
+const MONTH_NAME_ALIASES = new Map<string, number>([
+  ['jan', 1],
+  ['january', 1],
+  ['feb', 2],
+  ['february', 2],
+  ['mar', 3],
+  ['march', 3],
+  ['apr', 4],
+  ['april', 4],
+  ['may', 5],
+  ['jun', 6],
+  ['june', 6],
+  ['jul', 7],
+  ['july', 7],
+  ['aug', 8],
+  ['august', 8],
+  ['sep', 9],
+  ['sept', 9],
+  ['september', 9],
+  ['oct', 10],
+  ['october', 10],
+  ['nov', 11],
+  ['november', 11],
+  ['dec', 12],
+  ['december', 12],
+]);
+
 function toUtcMonth(date: Date): number {
   return date.getUTCMonth() + 1;
 }
@@ -114,6 +144,18 @@ export function normaliseMonth(month: number | string | null | undefined): numbe
   if (!Number.isFinite(parsed)) return 1;
   const whole = Math.trunc(parsed);
   return ((((whole - 1) % 12) + 12) % 12) + 1;
+}
+
+export function parseMonthInput(raw: string | number | null | undefined): number | undefined {
+  if (raw == null) return undefined;
+  const value = String(raw).trim();
+  if (!value) return undefined;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric >= 1 && numeric <= 12) return Math.trunc(numeric);
+  const compact = value.toLowerCase().replace(/[^a-z]/g, '');
+  if (!compact) return undefined;
+  if (MONTH_NAME_ALIASES.has(compact)) return MONTH_NAME_ALIASES.get(compact);
+  return MONTH_NAME_ALIASES.get(compact.slice(0, 3));
 }
 
 export function monthName(month: number | string | null | undefined): string {
@@ -245,6 +287,42 @@ export function normaliseVatFiling(raw: string): string {
   return VALID_VAT_FILING.has(slug) ? slug : '';
 }
 
+export function normaliseFiscalYearStartMonth(raw: string): number | undefined {
+  return parseMonthInput(raw);
+}
+
+export function normaliseVatCloseGroup(raw: string): number | undefined {
+  const value = raw.trim();
+  if (!value) return undefined;
+
+  const directPeriodStart = parseMonthInput(value);
+  const compact = value.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (
+    compact.includes('jan') && compact.includes('apr')
+    && compact.includes('jul') && compact.includes('oct')
+  ) {
+    return 11;
+  }
+  if (
+    compact.includes('feb') && compact.includes('may')
+    && compact.includes('aug') && compact.includes('nov')
+  ) {
+    return 12;
+  }
+  if (
+    compact.includes('mar') && compact.includes('jun')
+    && compact.includes('sep') && compact.includes('dec')
+  ) {
+    return 1;
+  }
+
+  if (!directPeriodStart) return undefined;
+  if ([1, 4, 7, 10].includes(directPeriodStart)) return 11;
+  if ([2, 5, 8, 11].includes(directPeriodStart)) return 12;
+  return 1;
+}
+
 /**
  * Map a free-form CSV/Excel row into our import shape. Returns an `error`
  * object instead of throwing when essential fields (the company name) are
@@ -269,6 +347,15 @@ export function mapImportRow(
     businessAddress: pick(row, 'businessAddress', 'address', 'Address', 'Business Address', 'business_address'),
     emirate: normaliseEmirate(pick(row, 'emirate', 'Emirate')),
     vatFilingFrequency: normaliseVatFiling(pick(row, 'vatFilingFrequency', 'VAT Filing', 'VAT Frequency')),
+    vatPeriodStartMonth: normaliseFiscalYearStartMonth(
+      pick(row, 'vatPeriodStartMonth', 'VAT Period Start Month', 'VAT Start Month', 'VAT Cycle Start'),
+    ) ?? normaliseVatCloseGroup(
+      pick(row, 'vatCloseGroup', 'VAT Close Group', 'VAT Closing Group', 'VAT Closing Months', 'VAT Cohort', 'VAT Group'),
+    ),
+    fiscalYearStartMonth: normaliseFiscalYearStartMonth(
+      pick(row, 'fiscalYearStartMonth', 'Financial Year Start', 'Fiscal Year Start', 'FY Start', 'FY Start Month'),
+    ),
+    corporateTaxId: pick(row, 'corporateTaxId', 'Corporate Tax ID', 'Corporate Tax Registration', 'CT ID', 'CT Registration'),
     registrationNumber: pick(row, 'registrationNumber', 'Registration Number', 'registration_number'),
     websiteUrl: pick(row, 'websiteUrl', 'website', 'Website', 'URL', 'Web'),
   };

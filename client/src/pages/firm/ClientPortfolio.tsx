@@ -1110,7 +1110,7 @@ export default function ClientPortfolio() {
             <DialogDescription>
               Upload a CSV or Excel file. Each row becomes a new client company with a UAE chart of
               accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate,
-              VAT filing.
+              VAT filing, VAT close group, financial year start, corporate tax ID.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">

@@ -1604,6 +1604,9 @@ export function registerFirmRoutes(app: Express): void {
             businessAddress: validated.value.businessAddress || undefined,
             emirate: validated.value.emirate || 'dubai',
             vatFilingFrequency: validated.value.vatFilingFrequency || 'quarterly',
+            vatPeriodStartMonth: validated.value.vatPeriodStartMonth,
+            fiscalYearStartMonth: validated.value.fiscalYearStartMonth,
+            corporateTaxId: validated.value.corporateTaxId || undefined,
             registrationNumber: validated.value.registrationNumber || undefined,
             websiteUrl: validated.value.websiteUrl || undefined,
           });
