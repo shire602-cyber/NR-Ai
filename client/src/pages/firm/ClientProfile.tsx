@@ -67,6 +67,36 @@ function formatAed(amount: number) {
   }).format(amount);
 }
 
+const MONTH_OPTIONS = [
+  { value: '1', label: 'January' },
+  { value: '2', label: 'February' },
+  { value: '3', label: 'March' },
+  { value: '4', label: 'April' },
+  { value: '5', label: 'May' },
+  { value: '6', label: 'June' },
+  { value: '7', label: 'July' },
+  { value: '8', label: 'August' },
+  { value: '9', label: 'September' },
+  { value: '10', label: 'October' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'December' },
+];
+
+const VAT_CLOSE_GROUPS = [
+  { value: '11', label: 'Jan / Apr / Jul / Oct' },
+  { value: '12', label: 'Feb / May / Aug / Nov' },
+  { value: '1', label: 'Mar / Jun / Sep / Dec' },
+];
+
+function monthLabel(month: number | string | null | undefined) {
+  return MONTH_OPTIONS.find(option => option.value === String(month || 1))?.label ?? 'January';
+}
+
+function vatCloseGroupLabel(periodStartMonth: number | string | null | undefined) {
+  return VAT_CLOSE_GROUPS.find(option => option.value === String(periodStartMonth || 1))?.label
+    ?? 'Mar / Jun / Sep / Dec';
+}
+
 function EditableField({
   label,
   value,
@@ -138,6 +168,7 @@ export default function ClientProfile() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
       queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
       toast({ title: 'Client updated successfully' });
       setEditing(false);
       setEditData({});
@@ -157,6 +188,7 @@ export default function ClientProfile() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
       queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
       toast({ title: vars.action === 'assign' ? 'Staff assigned' : 'Staff unassigned' });
       setAssignOpen(false);
       setSelectedStaff('');
@@ -386,8 +418,56 @@ export default function ClientProfile() {
                   </p>
                 )}
               </div>
+              <div className="grid gap-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT Close Group</p>
+                {editing ? (
+                  <Select
+                    value={String(current.vatPeriodStartMonth || 1)}
+                    onValueChange={v => setEditData(d => ({ ...d, vatPeriodStartMonth: Number(v) }))}
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {VAT_CLOSE_GROUPS.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm font-medium">
+                    {vatCloseGroupLabel(company.vatPeriodStartMonth)}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Financial Year Start</p>
+                {editing ? (
+                  <Select
+                    value={String(current.fiscalYearStartMonth || 1)}
+                    onValueChange={v => setEditData(d => ({ ...d, fiscalYearStartMonth: Number(v) }))}
+                  >
+                    <SelectTrigger className="h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTH_OPTIONS.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm font-medium">
+                    {monthLabel(company.fiscalYearStartMonth)}
+                  </p>
+                )}
+              </div>
               <EditableField label="Tax Registration Type" {...field('taxRegistrationType')} />
-              <EditableField label="Corporate Tax ID" {...field('corporateTaxId')} />
+              <EditableField label="Corporate Tax Registration" {...field('corporateTaxId')} />
             </CardContent>
           </Card>
         </div>
