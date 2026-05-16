@@ -1,0 +1,69 @@
+{
+  "environments": ["local", "staging", "production-readonly"],
+  "roles": ["public", "customer", "firm_owner", "firm_admin", "firm_staff", "client_portal", "admin"],
+  "workstreams": [
+    {
+      "area": "Baseline",
+      "items": [
+        ["Repo health", "developer", "local", "static", "Both repos are clean, current, and on the intended branch"],
+        ["Quality gates", "developer", "local", "automated", "check, tests, build, production dependency audit, route registration, API contract checks pass"],
+        ["Deployment readiness", "developer", "staging", "smoke", "version, live health, ready health, migration logs, and service boot are healthy"]
+      ]
+    },
+    {
+      "area": "Auth And Access",
+      "items": [
+        ["Registration", "public", "local/staging", "manual/e2e", "New customer can register without CSRF or route failures"],
+        ["Login and session", "customer", "local/staging", "manual/e2e", "Valid login lands in app, refresh preserves session, logout clears session"],
+        ["Password recovery", "public", "local/staging", "manual/e2e", "Forgot/reset flows return safe messages and valid error states"],
+        ["Rate limits", "public", "local/staging", "automated/manual", "429 responses expose accurate cooldown and do not lock unrelated users"],
+        ["RBAC boundaries", "all authenticated roles", "local/staging", "automated/manual", "Roles cannot access admin, firm, portal, or client data outside their scope"]
+      ]
+    },
+    {
+      "area": "Onboarding And Company",
+      "items": [
+        ["Company setup", "customer", "local/staging", "manual/e2e", "Company details save, validation is clear, retry works, no CSRF loop"],
+        ["Profile settings", "customer", "local/staging", "manual/e2e", "Company profile, preferences, UAE fields, TRN, and contact data persist"],
+        ["Tenant switching", "customer/firm", "local/staging", "manual/e2e", "Active company and firm client context cannot bleed across users"]
+      ]
+    },
+    {
+      "area": "Core Accounting",
+      "items": [
+        ["Dashboard and reports", "customer", "local/staging", "manual/e2e", "Dashboards load with empty and populated data without shape errors"],
+        ["Invoices and receipts", "customer", "local/staging", "manual/e2e", "Create/read/update flows, exports, QR, totals, VAT, and errors behave correctly"],
+        ["OCR and documents", "customer", "local/staging", "manual/e2e", "OCR succeeds or fails gracefully, fallback errors are clear, uploads are validated"],
+        ["Journal and ledger", "customer", "local/staging", "manual/e2e", "Journal entries balance, period locks work, ledger views agree with postings"],
+        ["VAT and tax", "customer", "local/staging", "manual/e2e", "VAT filing/autopilot/corporate tax workflows validate dates, amounts, and statuses"]
+      ]
+    },
+    {
+      "area": "Firm And NRA",
+      "items": [
+        ["Firm clients", "firm_owner/firm_admin", "local/staging", "manual/e2e", "Client list, import, profile, staff assignment, and workspace switch are tenant-safe"],
+        ["Firm health", "firm_owner/firm_admin/firm_staff", "local/staging", "contract/manual", "Health API returns clients and summary shape expected by UI"],
+        ["Value Ops", "firm_owner/firm_admin", "local/staging", "contract/manual", "Dashboard, action brief, review queue, and action dedupe behave correctly"],
+        ["Command center", "firm_owner/firm_admin", "local/staging", "contract/manual", "Dashboard and batch actions validate access, audit log, and dedupe"],
+        ["Firm comms", "firm_owner/firm_admin", "local/staging", "manual/e2e", "WhatsApp remains logged-only unless provider delivery exists"]
+      ]
+    },
+    {
+      "area": "Portal And Admin",
+      "items": [
+        ["Client portal", "client_portal", "local/staging", "manual/e2e", "Portal dashboard, invoices, documents, statements, messages are read-scoped"],
+        ["Admin", "admin", "local/staging", "manual/e2e", "Admin dashboard, documents, user actions, health routes, and audit logs are admin-only"],
+        ["Notifications", "customer/admin", "local/staging", "manual/e2e", "Notifications, reminders, push/email preferences, and failures are explicit"]
+      ]
+    },
+    {
+      "area": "Security Reliability Observability",
+      "items": [
+        ["Secrets and migrations", "developer", "local/staging", "static", "No new seed credentials, bcrypt literals, or user backdoors are introduced"],
+        ["Dependency security", "developer", "local/staging", "static", "Production dependency audit passes and dev-only advisories are tracked"],
+        ["Observability", "developer", "local/staging", "static/manual", "Structured logs, request IDs, client errors, and audit logs exist for sensitive flows"],
+        ["Performance", "developer", "local/staging", "static/manual", "Bundle size, slow routes, bulk limits, and timeout paths are recorded"]
+      ]
+    }
+  ]
+}
