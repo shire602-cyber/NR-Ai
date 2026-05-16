@@ -134,6 +134,17 @@ type HealthStatus = 'healthy' | 'attention' | 'critical';
 type VatHealthStatus = 'on-track' | 'due-soon' | 'overdue';
 type DeadlineStatus = 'upcoming' | 'due-soon' | 'overdue';
 type BookkeeperPriority = 'on_track' | 'attention' | 'critical';
+type BookkeeperQueueItem = {
+  companyId: string;
+  companyName: string;
+  priority: BookkeeperPriority;
+  ownerNames: string[];
+  dueDate: string | null;
+  daysTilDue: number | null;
+  metric: string;
+  action: string;
+  blockers: string[];
+};
 
 function daysUntil(date: Date | string | null | undefined, now: Date): number | null {
   if (!date) return null;
@@ -234,6 +245,17 @@ function shortIso(date: Date | string | null | undefined): string | null {
   return d.toISOString();
 }
 
+function sortBookkeeperQueue<T extends Pick<BookkeeperQueueItem, 'priority' | 'daysTilDue' | 'companyName'>>(items: T[]): T[] {
+  return items.sort((a, b) => {
+    const priorityDelta = priorityRank(b.priority) - priorityRank(a.priority);
+    if (priorityDelta !== 0) return priorityDelta;
+    const aDue = a.daysTilDue ?? 99999;
+    const bDue = b.daysTilDue ?? 99999;
+    if (aDue !== bDue) return aDue - bDue;
+    return a.companyName.localeCompare(b.companyName);
+  });
+}
+
 const STANDARD_VAT_COHORTS = [
   vatCohortFromPeriodStart(11, 'quarterly'),
   vatCohortFromPeriodStart(12, 'quarterly'),
@@ -263,6 +285,17 @@ function emptyBookkeeperDashboard() {
       ready: 0,
       clients: [],
     })),
+    queues: {
+      vat: [],
+      corporateTax: [],
+      bookkeeping: [],
+      accounting: [],
+    },
+    workload: {
+      owners: [],
+      unassignedClients: 0,
+      overloadedStaff: 0,
+    },
     clients: [],
   };
 }
@@ -1094,11 +1127,148 @@ export function registerFirmRoutes(app: Express): void {
         };
       });
 
+      const ownerNames = (client: (typeof clients)[number]) =>
+        client.assignedStaff.length > 0 ? client.assignedStaff.map(staff => staff.name) : ['Unassigned'];
+
+      const queues = {
+        vat: sortBookkeeperQueue(
+          clients
+            .filter(client => client.vat.status !== 'filed' && client.vat.status !== 'on_track')
+            .map(client => ({
+              companyId: client.companyId,
+              companyName: client.companyName,
+              priority: client.vat.status as BookkeeperPriority,
+              ownerNames: ownerNames(client),
+              dueDate: client.vat.dueDate,
+              daysTilDue: client.vat.daysTilDue,
+              metric: client.vat.payableTax !== null ? `AED ${Math.round(client.vat.payableTax).toLocaleString('en-AE')} payable` : client.vat.cohortLabel,
+              action: client.vat.blockers[0] ?? 'Prepare upcoming VAT return',
+              blockers: client.vat.blockers,
+            })),
+        ).slice(0, 12),
+        corporateTax: sortBookkeeperQueue(
+          clients
+            .filter(client => client.corporateTax.status !== 'filed' && client.corporateTax.status !== 'on_track')
+            .map(client => ({
+              companyId: client.companyId,
+              companyName: client.companyName,
+              priority: client.corporateTax.status as BookkeeperPriority,
+              ownerNames: ownerNames(client),
+              dueDate: client.corporateTax.dueDate,
+              daysTilDue: client.corporateTax.daysTilDue,
+              metric: client.corporateTax.taxPayable !== null ? `AED ${Math.round(client.corporateTax.taxPayable).toLocaleString('en-AE')} payable` : 'CT readiness',
+              action: client.corporateTax.blockers[0] ?? 'Review corporate tax readiness',
+              blockers: client.corporateTax.blockers,
+            })),
+        ).slice(0, 12),
+        bookkeeping: sortBookkeeperQueue(
+          clients
+            .filter(client => client.bookkeeping.status !== 'on_track')
+            .map(client => ({
+              companyId: client.companyId,
+              companyName: client.companyName,
+              priority: client.bookkeeping.status,
+              ownerNames: ownerNames(client),
+              dueDate: client.vat.dueDate,
+              daysTilDue: client.vat.daysTilDue,
+              metric: `${client.bookkeeping.closeProgress}% close-ready`,
+              action: client.bookkeeping.blockers[0] ?? 'Finish monthly close',
+              blockers: client.bookkeeping.blockers,
+            })),
+        ).slice(0, 12),
+        accounting: sortBookkeeperQueue(
+          clients
+            .filter(client => client.accounting.status !== 'on_track')
+            .map(client => ({
+              companyId: client.companyId,
+              companyName: client.companyName,
+              priority: client.accounting.status,
+              ownerNames: ownerNames(client),
+              dueDate: null,
+              daysTilDue: null,
+              metric: client.accounting.discrepancy > 0 ? `AED ${client.accounting.discrepancy.toLocaleString('en-AE')} variance` : 'Review required',
+              action: client.accounting.blockers[0] ?? 'Post journal activity',
+              blockers: client.accounting.blockers,
+            })),
+        ).slice(0, 12),
+      };
+
+      const workloadMap = new Map<string, {
+        staffId: string | null;
+        name: string;
+        email: string | null;
+        clientCount: number;
+        critical: number;
+        attention: number;
+        vatDue28Days: number;
+        corporateTaxDue90Days: number;
+        bookkeepingBlocked: number;
+        closeProgressTotal: number;
+      }>();
+
+      for (const client of clients) {
+        const owners = client.assignedStaff.length > 0
+          ? client.assignedStaff
+          : [{ id: null, name: 'Unassigned', email: null, role: 'unassigned' }];
+
+        for (const owner of owners) {
+          const key = owner.id ?? 'unassigned';
+          const entry = workloadMap.get(key) ?? {
+            staffId: owner.id,
+            name: owner.name,
+            email: owner.email,
+            clientCount: 0,
+            critical: 0,
+            attention: 0,
+            vatDue28Days: 0,
+            corporateTaxDue90Days: 0,
+            bookkeepingBlocked: 0,
+            closeProgressTotal: 0,
+          };
+
+          entry.clientCount += 1;
+          if (client.priority === 'critical') entry.critical += 1;
+          if (client.priority === 'attention') entry.attention += 1;
+          if (client.vat.status !== 'filed' && client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28) {
+            entry.vatDue28Days += 1;
+          }
+          if (
+            client.corporateTax.status !== 'filed'
+            && client.corporateTax.daysTilDue !== null
+            && client.corporateTax.daysTilDue <= 90
+          ) {
+            entry.corporateTaxDue90Days += 1;
+          }
+          if (client.bookkeeping.status !== 'on_track') entry.bookkeepingBlocked += 1;
+          entry.closeProgressTotal += client.bookkeeping.closeProgress;
+          workloadMap.set(key, entry);
+        }
+      }
+
+      const workloadOwners = Array.from(workloadMap.values())
+        .map(({ closeProgressTotal, ...owner }) => ({
+          ...owner,
+          averageCloseProgress: owner.clientCount > 0 ? Math.round(closeProgressTotal / owner.clientCount) : 0,
+        }))
+        .sort((a, b) => {
+          const riskDelta = (b.critical + b.attention) - (a.critical + a.attention);
+          if (riskDelta !== 0) return riskDelta;
+          return b.clientCount - a.clientCount;
+        });
+
+      const sortedClients = clients.sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority));
+
       res.json({
         generatedAt: now.toISOString(),
         summary,
         vatCohorts,
-        clients: clients.sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority)),
+        queues,
+        workload: {
+          owners: workloadOwners,
+          unassignedClients: workloadOwners.find(owner => owner.staffId === null)?.clientCount ?? 0,
+          overloadedStaff: workloadOwners.filter(owner => owner.staffId !== null && (owner.critical >= 3 || owner.clientCount >= 15)).length,
+        },
+        clients: sortedClients,
       });
     })
   );

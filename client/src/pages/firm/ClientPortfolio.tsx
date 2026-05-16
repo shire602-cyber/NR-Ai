@@ -6,6 +6,7 @@ import {
   ChevronRight, Users, Calendar,
   BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
   Calculator, CheckCircle2, Clock, FileText, TrendingUp,
+  UserCheck, Target,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -122,6 +123,33 @@ interface BookkeeperVatCohort {
   }[];
 }
 
+type BookkeeperQueueKey = 'vat' | 'corporateTax' | 'bookkeeping' | 'accounting';
+
+interface BookkeeperQueueItem {
+  companyId: string;
+  companyName: string;
+  priority: BookkeeperPriority;
+  ownerNames: string[];
+  dueDate: string | null;
+  daysTilDue: number | null;
+  metric: string;
+  action: string;
+  blockers: string[];
+}
+
+interface BookkeeperWorkloadOwner {
+  staffId: string | null;
+  name: string;
+  email: string | null;
+  clientCount: number;
+  critical: number;
+  attention: number;
+  vatDue28Days: number;
+  corporateTaxDue90Days: number;
+  bookkeepingBlocked: number;
+  averageCloseProgress: number;
+}
+
 interface BookkeeperDashboard {
   generatedAt: string;
   summary: {
@@ -134,6 +162,12 @@ interface BookkeeperDashboard {
     bookkeepingBlocked: number;
   };
   vatCohorts: BookkeeperVatCohort[];
+  queues?: Record<BookkeeperQueueKey, BookkeeperQueueItem[]>;
+  workload?: {
+    owners: BookkeeperWorkloadOwner[];
+    unassignedClients: number;
+    overloadedStaff: number;
+  };
   clients: BookkeeperClient[];
 }
 
@@ -181,14 +215,32 @@ function blockerPreview(blockers: string[]) {
   return `${blockers[0]} +${blockers.length - 1}`;
 }
 
+const queueConfig: Record<BookkeeperQueueKey, { label: string; icon: typeof Calendar }> = {
+  vat: { label: 'VAT', icon: Calendar },
+  corporateTax: { label: 'Corporate Tax', icon: Calculator },
+  bookkeeping: { label: 'Bookkeeping', icon: TrendingUp },
+  accounting: { label: 'Accounting', icon: CheckCircle2 },
+};
+
+function ownerPreview(names: string[]) {
+  if (names.length === 0) return 'Unassigned';
+  if (names.length === 1) return names[0];
+  return `${names[0]} +${names.length - 1}`;
+}
+
 function BookkeeperCommandCenter({
   dashboard,
   onOpenBooks,
+  onViewProfile,
 }: {
   dashboard?: BookkeeperDashboard;
   onOpenBooks: (companyId: string) => void;
+  onViewProfile: (companyId: string) => void;
 }) {
+  const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>('vat');
   const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
+  const activeQueueItems = dashboard?.queues?.[activeQueue] ?? [];
+  const workloadOwners = dashboard?.workload?.owners ?? [];
   const ctClients = dashboard?.clients
     .filter(client => client.corporateTax.status !== 'filed')
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
@@ -252,6 +304,123 @@ function BookkeeperCommandCenter({
               <FileText className="w-4 h-4 text-orange-600" />
             </div>
             <p className="text-2xl font-bold mt-1">{dashboard?.summary.bookkeepingBlocked ?? 0}</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)] gap-3">
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" />
+                Action Queues
+              </CardTitle>
+              <Badge variant="outline">{activeQueueItems.length} active</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(queueConfig) as BookkeeperQueueKey[]).map(key => {
+                const Icon = queueConfig[key].icon;
+                const count = dashboard?.queues?.[key]?.length ?? 0;
+                return (
+                  <Button
+                    key={key}
+                    type="button"
+                    size="sm"
+                    variant={activeQueue === key ? 'secondary' : 'outline'}
+                    onClick={() => setActiveQueue(key)}
+                    className="gap-1.5"
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {queueConfig[key].label}
+                    <span className="text-xs text-muted-foreground">{count}</span>
+                  </Button>
+                );
+              })}
+            </div>
+
+            <div className="space-y-2">
+              {activeQueueItems.length === 0 && (
+                <div className="rounded-md border border-dashed bg-muted/20 px-3 py-6 text-center">
+                  <p className="text-sm font-medium">No active queue items</p>
+                  <p className="text-xs text-muted-foreground mt-1">This lane is clear for now.</p>
+                </div>
+              )}
+              {activeQueueItems.slice(0, 6).map(item => (
+                <div key={`${activeQueue}-${item.companyId}`} className="rounded-md border px-3 py-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-sm truncate">{item.companyName}</p>
+                        <PriorityBadge priority={item.priority} />
+                        <span className="text-xs text-muted-foreground">{item.metric}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{item.action}</p>
+                      <div className="flex flex-wrap items-center gap-2 mt-2 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <UserCheck className="w-3.5 h-3.5" />
+                          {ownerPreview(item.ownerNames)}
+                        </span>
+                        <span>{formatDateShort(item.dueDate)} · {formatDays(item.daysTilDue)}</span>
+                        {item.blockers.length > 1 && <span>{item.blockers.length} blockers</span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 sm:shrink-0">
+                      <Button size="sm" variant="outline" onClick={() => onViewProfile(item.companyId)}>
+                        <ChevronRight className="w-3.5 h-3.5 mr-1" />
+                        Profile
+                      </Button>
+                      <Button size="sm" onClick={() => onOpenBooks(item.companyId)}>
+                        <BookOpen className="w-3.5 h-3.5 mr-1" />
+                        Open
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Users className="w-4 h-4 text-primary" />
+                Workload Ownership
+              </CardTitle>
+              {(dashboard?.workload?.unassignedClients ?? 0) > 0 && (
+                <Badge variant="destructive">{dashboard?.workload?.unassignedClients} unassigned</Badge>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {workloadOwners.length === 0 && <p className="text-sm text-muted-foreground">No staff workload yet.</p>}
+            {workloadOwners.slice(0, 6).map(owner => (
+              <div key={owner.staffId ?? 'unassigned'} className="rounded-md border px-3 py-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">{owner.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
+                    </p>
+                  </div>
+                  <Badge variant={owner.critical > 0 ? 'destructive' : owner.attention > 0 ? 'secondary' : 'outline'}>
+                    {owner.critical > 0 ? `${owner.critical} critical` : `${owner.attention} attention`}
+                  </Badge>
+                </div>
+                <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-primary" style={{ width: `${owner.averageCloseProgress}%` }} />
+                </div>
+                <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
+                  <span>{owner.vatDue28Days} VAT due</span>
+                  <span>{owner.corporateTaxDue90Days} CT due</span>
+                  <span>{owner.bookkeepingBlocked} close blocked</span>
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>
@@ -670,6 +839,7 @@ export default function ClientPortfolio() {
       <BookkeeperCommandCenter
         dashboard={bookkeeperDashboard}
         onOpenBooks={handleOpenBooks}
+        onViewProfile={handleViewProfile}
       />
 
       {/* Quick filters */}
