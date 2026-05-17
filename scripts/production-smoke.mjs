@@ -86,6 +86,7 @@ bearerToken = loginBody?.token || loginBody?.accessToken || bearerToken;
 
 await checkJson('auth session', '/api/auth/me', (body) => body?.id === loginBody.user.id);
 await checkJson('firm clients', '/api/firm/clients', (body) => Array.isArray(body));
+await checkJson('firm bookkeeper dashboard', '/api/firm/bookkeeper-dashboard', (body) => body?.summary && Array.isArray(body?.vatCohorts) && Array.isArray(body?.clients));
 await checkJson('firm health', '/api/firm/health', (body) => Array.isArray(body?.clients) && body?.summary);
 await checkJson('firm deadlines', '/api/firm/health/deadlines', (body) => Array.isArray(body));
 await checkJson('firm comms log', '/api/firm/comms/log', (body) => Array.isArray(body?.data));

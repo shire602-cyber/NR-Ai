@@ -499,12 +499,12 @@ function BookkeeperCommandCenter({
   onManageStaff: () => void;
 }) {
   const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>('vat');
-  const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
+  const dashboardClients = useMemo(() => dashboard?.clients ?? [], [dashboard?.clients]);
+  const workloadOwners = useMemo(() => dashboard?.workload?.owners ?? [], [dashboard?.workload?.owners]);
+  const priorityClients = dashboardClients.slice(0, 5);
   const activeQueueItems = dashboard?.queues?.[activeQueue] ?? [];
-  const workloadOwners = dashboard?.workload?.owners ?? [];
   const productionBuckets = useMemo(() => {
-    const clients = dashboard?.clients ?? [];
-    const deadlineItems = sortProductionItems(clients.map(client => productionItem(client)));
+    const deadlineItems = sortProductionItems(dashboardClients.map(client => productionItem(client)));
     return [
       {
         key: 'overdue',
@@ -529,7 +529,7 @@ function BookkeeperCommandCenter({
         title: 'Close Blockers',
         icon: TrendingUp,
         items: sortProductionItems(
-          clients
+          dashboardClients
             .filter(client => client.bookkeeping.status !== 'on_track')
             .map(client => productionItem(client, 'Close')),
         ).slice(0, 5),
@@ -541,10 +541,9 @@ function BookkeeperCommandCenter({
         items: deadlineItems.filter(item => item.client.assignedStaff.length === 0).slice(0, 5),
       },
     ];
-  }, [dashboard?.clients]);
+  }, [dashboardClients]);
   const capacityPlanner = useMemo(() => {
-    const clients = dashboard?.clients ?? [];
-    const unassigned = clients
+    const unassigned = dashboardClients
       .filter(client => client.assignedStaff.length === 0)
       .sort((a, b) => priorityScore(b.priority) - priorityScore(a.priority))
       .slice(0, 5);
@@ -556,9 +555,9 @@ function BookkeeperCommandCenter({
       .sort((a, b) => a.clientCount - b.clientCount || b.averageCloseProgress - a.averageCloseProgress)
       .slice(0, 5);
     return { unassigned, overloaded, openCapacity };
-  }, [dashboard?.clients, workloadOwners]);
+  }, [dashboardClients, workloadOwners]);
   const interventionRadar = useMemo(() => {
-    const rankedClients = [...(dashboard?.clients ?? [])].sort((a, b) => {
+    const rankedClients = [...dashboardClients].sort((a, b) => {
       const interventionDelta = clientIntervention(b).score - clientIntervention(a).score;
       if (interventionDelta !== 0) return interventionDelta;
       return priorityScore(b.priority) - priorityScore(a.priority);
@@ -571,9 +570,9 @@ function BookkeeperCommandCenter({
         .sort((a, b) => clientIntervention(b).exposureAed - clientIntervention(a).exposureAed)
         .slice(0, 4),
     };
-  }, [dashboard?.clients]);
+  }, [dashboardClients]);
   const serviceLaneForecast = useMemo(() => {
-    const clients = dashboard?.clients ?? [];
+    const clients = dashboardClients;
     const makeRow = (
       label: string,
       rowClients: BookkeeperClient[],
@@ -650,17 +649,17 @@ function BookkeeperCommandCenter({
         ],
       },
     ];
-  }, [dashboard?.clients, dashboard?.vatCohorts]);
-  const ctClients = dashboard?.clients
+  }, [dashboardClients, dashboard?.vatCohorts]);
+  const ctClients = dashboardClients
     .filter(client => client.corporateTax.status !== 'filed')
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
-    .slice(0, 4) ?? [];
-  const closeClients = dashboard?.clients
+    .slice(0, 4);
+  const closeClients = dashboardClients
     .filter(client => client.bookkeeping.status !== 'on_track')
-    .slice(0, 4) ?? [];
-  const accountingClients = dashboard?.clients
+    .slice(0, 4);
+  const accountingClients = dashboardClients
     .filter(client => client.accounting.status !== 'on_track')
-    .slice(0, 4) ?? [];
+    .slice(0, 4);
 
   return (
     <section className="space-y-4" data-testid="bookkeeper-command-center">
