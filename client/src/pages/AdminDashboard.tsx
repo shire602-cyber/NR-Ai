@@ -12,7 +12,8 @@ import {
   Activity,
   HeartPulse,
   CalendarClock,
-  UserCog
+  UserCog,
+  ArrowRight,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +22,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Link } from 'wouter';
 import { format } from 'date-fns';
 import type { ActivityLog } from '@shared/schema';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface ClientHealth {
   companyId: string;
@@ -50,6 +52,7 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
+  const { data: currentUser } = useCurrentUser();
   const { data: stats, isLoading } = useQuery<AdminStats>({
     queryKey: ['/api/admin/stats'],
   });
@@ -69,6 +72,8 @@ export default function AdminDashboard() {
   const { data: adminUsers = [] } = useQuery<any[]>({
     queryKey: ['/api/admin/users'],
   });
+  const hasFirmOpsAccess =
+    currentUser?.firmRole === 'firm_owner' || currentUser?.firmRole === 'firm_admin';
 
   if (isLoading) {
     return (
@@ -100,6 +105,39 @@ export default function AdminDashboard() {
           </Link>
         </div>
       </div>
+
+      <Card className="border-primary/20 bg-primary/5">
+        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+          <div>
+            <CardTitle className="text-lg">Client Operations Cockpit</CardTitle>
+            <CardDescription>
+              VAT close cohorts, corporate tax lanes, bookkeeping close blockers, staff capacity, and client action queues live in the NRA client area.
+            </CardDescription>
+          </div>
+          <Badge variant={hasFirmOpsAccess ? 'default' : 'outline'}>
+            {hasFirmOpsAccess ? 'Available' : 'Firm role required'}
+          </Badge>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            {hasFirmOpsAccess
+              ? 'Open Client Operations to review VAT, corporate tax, accounting, and bookkeeping categorisations across managed clients.'
+              : 'This account is an admin account, but it does not have firm_owner or firm_admin access, so the cockpit is hidden by design.'}
+          </p>
+          {hasFirmOpsAccess ? (
+            <Link href="/firm/clients">
+              <Button data-testid="button-open-client-operations">
+                Open Client Operations
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          ) : (
+            <Button variant="outline" disabled data-testid="button-client-operations-locked">
+              Assign firm role to unlock
+            </Button>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
