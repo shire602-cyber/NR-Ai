@@ -153,6 +153,7 @@ export function applyRateLimitMiddleware(app: Express): void {
   app.use('/api/auth/register', buildLimiter(limiterProfiles.authRegister));
   app.use(['/api/auth/forgot-password', '/api/auth/reset-password'], buildLimiter(limiterProfiles.authRecovery));
   app.use(['/api/auth/refresh-token', '/api/auth/refresh', '/api/auth/logout'], buildLimiter(limiterProfiles.authSession));
+  app.use('/api/auth/oauth/', buildLimiter(limiterProfiles.authOAuth));
   app.use('/api/auth/', buildLimiter(limiterProfiles.authOther));
   app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
   app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));

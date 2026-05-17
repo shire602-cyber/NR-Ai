@@ -5,17 +5,29 @@ import { fetchCurrentUser } from '@/lib/auth';
 import { establishAuthenticatedSession } from '@/lib/authSession';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Briefcase } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export default function Login() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('oauth_error') === '1') {
+      toast({
+        title: 'Login failed',
+        description: 'We could not complete social login. Please try again.',
+        variant: 'destructive',
+      });
+      window.history.replaceState({}, '', '/login');
+    }
+
     fetchCurrentUser()
       .then((user) => {
         if (user) setLocation(user.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
       })
       .catch(() => {});
-  }, [setLocation]);
+  }, [setLocation, toast]);
 
   const handleSuccess = async (user: any) => {
     const currentUser = await establishAuthenticatedSession(user);

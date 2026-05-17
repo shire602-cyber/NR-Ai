@@ -658,6 +658,55 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'refresh_sessions.expires_at index',
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_refresh_sessions_expires_at" ON "refresh_sessions" ("expires_at")`,
     },
+    // ── 0053: social login identity + one-time OAuth state ───────────────
+    {
+      name: 'auth_identities table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "auth_identities" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "provider" text NOT NULL,
+        "issuer" text NOT NULL,
+        "provider_subject" text NOT NULL,
+        "provider_email" text NOT NULL,
+        "provider_email_verified" boolean NOT NULL DEFAULT false,
+        "profile" jsonb,
+        "linked_at" timestamp DEFAULT now() NOT NULL,
+        "last_login_at" timestamp,
+        CONSTRAINT "auth_identities_provider_subject_unique" UNIQUE ("provider", "issuer", "provider_subject")
+      )`,
+    },
+    {
+      name: 'auth_identities.user_provider index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_auth_identities_user_provider" ON "auth_identities" ("user_id", "provider")`,
+    },
+    {
+      name: 'auth_identities.provider_email index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_auth_identities_provider_email" ON "auth_identities" ("provider_email")`,
+    },
+    {
+      name: 'oauth_login_states table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "oauth_login_states" (
+        "state_hash" text PRIMARY KEY,
+        "provider" text NOT NULL,
+        "encrypted_code_verifier" text NOT NULL,
+        "encrypted_nonce" text NOT NULL,
+        "nonce_hash" text NOT NULL,
+        "next_path" text NOT NULL DEFAULT '/dashboard',
+        "expires_at" timestamp NOT NULL,
+        "consumed_at" timestamp,
+        "ip_address" text,
+        "user_agent" text,
+        "created_at" timestamp DEFAULT now() NOT NULL
+      )`,
+    },
+    {
+      name: 'oauth_login_states.provider index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_oauth_login_states_provider" ON "oauth_login_states" ("provider")`,
+    },
+    {
+      name: 'oauth_login_states.expires_at index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_oauth_login_states_expires_at" ON "oauth_login_states" ("expires_at")`,
+    },
     // ── 0033: companies.exempt_supply_ratio (partial-exemption VAT) ──────
     // Schema-required column. If migration 0033 was tracked-but-not-run,
     // any SELECT/UPDATE...RETURNING on companies fails with 42703 because

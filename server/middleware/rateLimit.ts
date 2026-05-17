@@ -186,6 +186,11 @@ export const limiterProfiles = {
     max: envInt('RL_AUTH_SESSION_MAX', 60),
     message: 'Too many session requests. Please try again shortly.',
   } as RouteLimit,
+  authOAuth: {
+    windowMs: envInt('RL_AUTH_OAUTH_WINDOW_MS', 5 * 60_000),
+    max: envInt('RL_AUTH_OAUTH_MAX', 30),
+    message: 'Too many social login attempts. Please try again shortly.',
+  } as RouteLimit,
   authOther: {
     windowMs: envInt('RL_AUTH_OTHER_WINDOW_MS', 60_000),
     max: envInt('RL_AUTH_OTHER_MAX', 30),

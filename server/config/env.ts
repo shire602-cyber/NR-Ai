@@ -22,6 +22,13 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url().optional(),
   CORS_ORIGIN: z.string().optional(),
   AUTH_COOKIE_SAMESITE: sameSiteSchema,
+  AUTH_PUBLIC_URL: z.string().url().optional(),
+
+  // === Social login / OpenID Connect ===
+  OAUTH_GOOGLE_CLIENT_ID: z.string().optional(),
+  OAUTH_GOOGLE_CLIENT_SECRET: z.string().optional(),
+  OAUTH_MICROSOFT_CLIENT_ID: z.string().optional(),
+  OAUTH_MICROSOFT_CLIENT_SECRET: z.string().optional(),
 
   // === AI / OpenAI ===
   OPENAI_API_KEY: z.string().optional(),

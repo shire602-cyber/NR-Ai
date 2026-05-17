@@ -40,6 +40,21 @@ import {
 import { db } from '../db';
 import { users } from '../../shared/schema';
 import { eq } from 'drizzle-orm';
+import {
+  consumeOAuthState,
+  createOAuthAuthorizationUrl,
+  exchangeOAuthCallback,
+  getAuthIdentity,
+  getOAuthProviderInfo,
+  getUserByNormalizedOAuthEmail,
+  isOAuthProviderId,
+  linkAuthIdentity,
+  markOAuthLogin,
+  oauthCallbackFailureUrl,
+  oauthCallbackSuccessUrl,
+  oauthRedirectUri,
+  type OAuthIdentityProfile,
+} from '../services/oauth.service';
 
 const log = createLogger('auth');
 
@@ -85,6 +100,110 @@ async function issueAuthCookies(user: { id: string; email: string; isAdmin?: boo
 function publicUser(user: any) {
   const { passwordHash: _passwordHash, password: _password, ...safeUser } = user;
   return safeUser;
+}
+
+async function createOAuthCustomer(profile: OAuthIdentityProfile) {
+  const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+  const user = await storage.createUser({
+    name: profile.name,
+    email: profile.email,
+    userType: 'customer',
+    isAdmin: false,
+    passwordHash,
+    emailVerified: true,
+    avatarUrl: profile.picture,
+  } as any);
+
+  const timestamp = Date.now().toString(36);
+  const company = await storage.createCompany({
+    name: `${profile.name}'s Company (${timestamp})`,
+    baseCurrency: 'AED',
+    locale: 'en',
+    companyType: 'customer',
+  });
+
+  await storage.createCompanyUser({
+    companyId: company.id,
+    userId: user.id,
+    role: 'owner',
+  });
+
+  await seedChartOfAccounts(company.id);
+
+  const now = new Date();
+  const periodEnd = new Date(now);
+  periodEnd.setFullYear(periodEnd.getFullYear() + 100);
+  await storage.createSubscription({
+    companyId: company.id,
+    planId: 'free',
+    planName: 'Free',
+    status: 'active',
+    currentPeriodStart: now,
+    currentPeriodEnd: periodEnd,
+    maxUsers: 1,
+    maxInvoices: 20,
+    maxReceipts: 20,
+    aiCreditsRemaining: 10,
+  } as any);
+
+  return user;
+}
+
+async function resolveOAuthUser(profile: OAuthIdentityProfile): Promise<{ user: any; mode: 'existing_identity' | 'linked_existing' | 'created_customer' }> {
+  const identity = await getAuthIdentity(profile);
+  if (identity) {
+    const user = await storage.getUser(identity.userId);
+    if (!user) throw new Error('OAuth identity is linked to a missing user');
+    await markOAuthLogin(user.id, profile);
+    return { user: await storage.getUser(user.id) ?? user, mode: 'existing_identity' };
+  }
+
+  const existingUser = await getUserByNormalizedOAuthEmail(profile.email);
+  if (existingUser) {
+    await linkAuthIdentity(existingUser.id, profile);
+    await markOAuthLogin(existingUser.id, profile);
+    return { user: await storage.getUser(existingUser.id) ?? existingUser, mode: 'linked_existing' };
+  }
+
+  const createdUser = await createOAuthCustomer(profile);
+  await linkAuthIdentity(createdUser.id, profile);
+  await markOAuthLogin(createdUser.id, profile);
+  return { user: await storage.getUser(createdUser.id) ?? createdUser, mode: 'created_customer' };
+}
+
+function callbackUrlFromRequest(req: Request, provider: 'google' | 'microsoft'): URL {
+  const url = new URL(oauthRedirectUri(req, provider));
+  for (const [key, value] of Object.entries(req.query)) {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (typeof entry === 'string') url.searchParams.append(key, entry);
+      }
+    } else if (typeof value === 'string') {
+      url.searchParams.set(key, value);
+    }
+  }
+  return url;
+}
+
+async function auditOAuthLogin(req: Request, userId: string, profile: OAuthIdentityProfile, mode: string): Promise<void> {
+  try {
+    await storage.createAuditLog({
+      userId,
+      action: 'login',
+      resourceType: 'user',
+      resourceId: userId,
+      details: JSON.stringify({
+        method: 'oauth',
+        provider: profile.provider,
+        mode,
+        email: profile.email,
+      }),
+      ipAddress: req.ip ?? null,
+      userAgent: req.get('user-agent') ?? null,
+    });
+  } catch (err) {
+    log.warn({ err, userId, provider: profile.provider }, 'Failed to write OAuth audit log');
+  }
 }
 
 // Stronger password validation: 8+ characters
@@ -257,6 +376,58 @@ export function registerAuthRoutes(app: Express): void {
         },
       });
     })
+  );
+
+  router.get(
+    '/auth/oauth/providers',
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json({ providers: getOAuthProviderInfo() });
+    }),
+  );
+
+  router.get(
+    '/auth/oauth/:provider/start',
+    asyncHandler(async (req: Request, res: Response) => {
+      const provider = req.params.provider;
+      if (!isOAuthProviderId(provider)) {
+        return res.status(404).json({ message: 'Unknown OAuth provider' });
+      }
+
+      try {
+        const redirectTo = await createOAuthAuthorizationUrl(provider, req, req.query.next);
+        log.info({ provider, ip: req.ip }, 'OAuth login started');
+        return res.redirect(redirectTo.toString());
+      } catch (err) {
+        log.warn({ err, provider, ip: req.ip }, 'OAuth login start failed');
+        return res.redirect(oauthCallbackFailureUrl());
+      }
+    }),
+  );
+
+  router.get(
+    '/auth/oauth/:provider/callback',
+    asyncHandler(async (req: Request, res: Response) => {
+      const provider = req.params.provider;
+      if (!isOAuthProviderId(provider)) {
+        return res.redirect(oauthCallbackFailureUrl());
+      }
+
+      try {
+        const state = await consumeOAuthState(provider, req.query.state);
+        const profile = await exchangeOAuthCallback(provider, callbackUrlFromRequest(req, provider), state);
+        const { user, mode } = await resolveOAuthUser(profile);
+
+        await issueAuthCookies(user, req, res);
+        await auditOAuthLogin(req, user.id, profile, mode);
+        log.info({ provider, userId: user.id, mode }, 'OAuth login completed');
+
+        return res.redirect(oauthCallbackSuccessUrl(state.nextPath));
+      } catch (err) {
+        log.warn({ err, provider, ip: req.ip }, 'OAuth login callback failed');
+        clearAuthCookies(res);
+        return res.redirect(oauthCallbackFailureUrl());
+      }
+    }),
   );
 
   // Refresh token handler (shared by both /auth/refresh-token and /auth/refresh)

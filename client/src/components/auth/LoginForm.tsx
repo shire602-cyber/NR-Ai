@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
 import { apiUrl } from '@/lib/api';
 import { LogIn } from 'lucide-react';
+import { OAuthButtons } from './OAuthButtons';
 
 const loginSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -169,6 +170,9 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
             )}
           </form>
         </Form>
+        <div className="mt-4">
+          <OAuthButtons />
+        </div>
       </CardContent>
       <CardFooter className="flex flex-col space-y-4">
         <div className="text-sm text-muted-foreground text-center">
