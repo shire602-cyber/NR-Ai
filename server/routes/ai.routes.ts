@@ -1,5 +1,4 @@
 import type { Request, Response } from "express";
-import { Router } from "express";
 import type { Express } from "express";
 import OpenAI from "openai";
 import { z } from "zod";
@@ -602,8 +601,6 @@ Respond with a JSON object:
 
         const invoices = await storage.getInvoicesByCompanyId(companyId);
         const receipts = await storage.getReceiptsByCompanyId(companyId);
-        const entries = await storage.getJournalEntriesByCompanyId(companyId);
-
         // Prepare transaction data for analysis
         const transactionData = {
           invoices: invoices.map((i) => ({
@@ -788,7 +785,7 @@ Respond with JSON:
       try {
         const { id } = req.params;
         const { note } = req.body;
-        const userId = (req as any).user?.id;
+        const userId = (req as any).user.id;
 
         // Get alert to verify company access
         const alert = await storage.getAnomalyAlertById(id);
@@ -832,8 +829,6 @@ Respond with JSON:
         const bankTransactions = await storage.getUnreconciledBankTransactions(companyId);
         const invoices = await storage.getInvoicesByCompanyId(companyId);
         const receipts = await storage.getReceiptsByCompanyId(companyId);
-        const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
-
         if (bankTransactions.length === 0) {
           return res.json({ matches: [], message: "No unreconciled transactions" });
         }
@@ -939,7 +934,7 @@ ${JSON.stringify(ledgerData, null, 2)}`,
     asyncHandler(async (req: Request, res: Response) => {
       try {
         const { id } = req.params;
-        const userId = (req as any).user?.id;
+        const { id: userId, firmRole } = (req as any).user;
         // Support both matchId (frontend) and matchedId (legacy) parameter names
         const matchId = req.body.matchId || req.body.matchedId;
         const { matchType } = req.body;
@@ -948,8 +943,9 @@ ${JSON.stringify(ledgerData, null, 2)}`,
           return res.status(400).json({ message: "matchId and matchType are required" });
         }
 
-        // Find the transaction within the user's accessible companies (tenant-scoped).
-        const userCompanies = await storage.getCompaniesByUserId(userId);
+        // Find the transaction within the user's accessible companies (tenant-scoped),
+        // including firm-scoped client access.
+        const userCompanies = await storage.getAccessibleCompanies(userId, firmRole);
         let txn: Awaited<ReturnType<typeof storage.getBankTransactionById>> | undefined;
         for (const c of userCompanies) {
           txn = await storage.getBankTransactionById(id, c.id);
@@ -1085,8 +1081,6 @@ ${JSON.stringify(ledgerData, null, 2)}`,
 
         const invoices = await storage.getInvoicesByCompanyId(companyId);
         const receipts = await storage.getReceiptsByCompanyId(companyId);
-        const entries = await storage.getJournalEntriesByCompanyId(companyId);
-
         // Calculate historical patterns
         const now = new Date();
         const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
@@ -1471,7 +1465,7 @@ Respond with JSON:
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       try {
-        const { companyId, message, locale = "en", context = {} } = req.body;
+        const { companyId, message, locale = "en" } = req.body;
         const userId = (req as any).user.id;
 
         if (!companyId || !message) {
@@ -1483,17 +1477,16 @@ Respond with JSON:
         if (!company) {
           return res.status(404).json({ message: "Company not found" });
         }
-        const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-        if (!companyUsers.some((cu) => cu.userId === userId)) {
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+        if (!hasAccess) {
           return res.status(403).json({ message: "Access denied" });
         }
 
         // Gather comprehensive financial context — parallel + single line fetch.
-        const [accounts, invoices, receipts, entries, allLines] = await Promise.all([
+        const [accounts, invoices, receipts, allLines] = await Promise.all([
           storage.getAccountsByCompanyId(companyId),
           storage.getInvoicesByCompanyId(companyId),
           storage.getReceiptsByCompanyId(companyId),
-          storage.getJournalEntriesByCompanyId(companyId),
           storage.getJournalLinesByCompanyId(companyId),
         ]);
         const accountById = new Map(accounts.map((a) => [a.id, a]));
@@ -2013,9 +2006,9 @@ ${askGuidanceBlock}`;
           return res.status(400).json({ message: "Company ID is required" });
         }
 
-        // Verify company access
-        const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-        if (!companyUsers.some((cu) => cu.userId === userId)) {
+        // Verify company access, including firm-scoped access.
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+        if (!hasAccess) {
           return res.status(403).json({ message: "Access denied" });
         }
 
@@ -2070,9 +2063,9 @@ ${askGuidanceBlock}`;
           return res.status(400).json({ message: "Company ID is required" });
         }
 
-        // Verify company access
-        const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-        if (!companyUsers.some((cu) => cu.userId === userId)) {
+        // Verify company access, including firm-scoped access.
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+        if (!hasAccess) {
           return res.status(403).json({ message: "Access denied" });
         }
 
@@ -2132,9 +2125,9 @@ ${askGuidanceBlock}`;
           return res.status(400).json({ message: "Company ID is required" });
         }
 
-        // Verify company access
-        const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-        if (!companyUsers.some((cu) => cu.userId === userId)) {
+        // Verify company access, including firm-scoped access.
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+        if (!hasAccess) {
           return res.status(403).json({ message: "Access denied" });
         }
 
@@ -2200,9 +2193,9 @@ ${askGuidanceBlock}`;
           return res.status(400).json({ message: "Company ID is required" });
         }
 
-        // Verify company access
-        const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-        if (!companyUsers.some((cu) => cu.userId === userId)) {
+        // Verify company access, including firm-scoped access.
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+        if (!hasAccess) {
           return res.status(403).json({ message: "Access denied" });
         }
 
@@ -2260,7 +2253,7 @@ ${askGuidanceBlock}`;
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       try {
-        const { companyId, context, fieldType, currentValue } = req.body;
+        const { companyId, context, fieldType } = req.body;
         const userId = (req as any).user.id;
 
         if (!companyId || !context || !fieldType) {
@@ -2269,9 +2262,9 @@ ${askGuidanceBlock}`;
             .json({ message: "Company ID, context, and fieldType are required" });
         }
 
-        // Verify company access
-        const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-        if (!companyUsers.some((cu) => cu.userId === userId)) {
+        // Verify company access, including firm-scoped access.
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+        if (!hasAccess) {
           return res.status(403).json({ message: "Access denied" });
         }
 

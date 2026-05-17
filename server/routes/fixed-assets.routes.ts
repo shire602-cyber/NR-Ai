@@ -917,7 +917,7 @@ export function registerFixedAssetRoutes(app: Express) {
       // acquisition, fully-depreciated, non-depreciable) are NOT failures and
       // do not roll back the rest.
       const client = await pool.connect();
-      let results: any[] = [];
+      const results: any[] = [];
       try {
         await client.query("BEGIN");
 

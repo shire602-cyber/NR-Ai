@@ -35,11 +35,17 @@ export function registerCorporateTaxRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
       const { id } = req.params;
 
       const taxReturn = await storage.getCorporateTaxReturn(id);
       if (!taxReturn) {
         return res.status(404).json({ message: "Corporate tax return not found" });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, taxReturn.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       res.json(taxReturn);
@@ -81,11 +87,17 @@ export function registerCorporateTaxRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
       const { id } = req.params;
 
       const existing = await storage.getCorporateTaxReturn(id);
       if (!existing) {
         return res.status(404).json({ message: "Corporate tax return not found" });
+      }
+
+      const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const taxReturn = await storage.updateCorporateTaxReturn(id, req.body);

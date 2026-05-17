@@ -523,9 +523,9 @@ export interface IStorage {
   getNotificationsByUserId(userId: string): Promise<Notification[]>;
   getUnreadNotificationCount(userId: string): Promise<number>;
   createNotification(notification: InsertNotification): Promise<Notification>;
-  markNotificationAsRead(id: string): Promise<Notification>;
+  markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined>;
   markAllNotificationsAsRead(userId: string): Promise<void>;
-  dismissNotification(id: string): Promise<Notification>;
+  dismissNotification(id: string, userId: string): Promise<Notification | undefined>;
 
   // Regulatory News
   getRegulatoryNews(): Promise<RegulatoryNews[]>;
@@ -533,6 +533,7 @@ export interface IStorage {
 
   // Reminder Settings
   getReminderSettingsByCompanyId(companyId: string): Promise<ReminderSetting[]>;
+  getReminderSetting(id: string): Promise<ReminderSetting | undefined>;
   createReminderSetting(setting: InsertReminderSetting): Promise<ReminderSetting>;
   updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting>;
 
@@ -872,11 +873,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUser(insertUser: InsertUser & { passwordHash?: string }): Promise<User> {
+    const { password: _password, ...userValues } = insertUser as any;
     const [user] = await db
       .insert(users)
       .values({
-        ...insertUser,
-        passwordHash: (insertUser as any).passwordHash || "",
+        ...userValues,
+        passwordHash: userValues.passwordHash || "",
       })
       .returning();
     return user;
@@ -2413,11 +2415,11 @@ export class DatabaseStorage implements IStorage {
     return notification;
   }
 
-  async markNotificationAsRead(id: string): Promise<Notification> {
+  async markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined> {
     const [notification] = await db
       .update(notifications)
       .set({ isRead: true, readAt: new Date() })
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
       .returning();
     return notification;
   }
@@ -2429,11 +2431,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(notifications.userId, userId));
   }
 
-  async dismissNotification(id: string): Promise<Notification> {
+  async dismissNotification(id: string, userId: string): Promise<Notification | undefined> {
     const [notification] = await db
       .update(notifications)
       .set({ isDismissed: true })
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
       .returning();
     return notification;
   }
@@ -2458,6 +2460,11 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(reminderSettings)
       .where(eq(reminderSettings.companyId, companyId));
+  }
+
+  async getReminderSetting(id: string): Promise<ReminderSetting | undefined> {
+    const [setting] = await db.select().from(reminderSettings).where(eq(reminderSettings.id, id));
+    return setting;
   }
 
   async createReminderSetting(insertSetting: InsertReminderSetting): Promise<ReminderSetting> {

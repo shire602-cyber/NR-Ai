@@ -353,27 +353,28 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
 function Router() {
   const [location, setLocation] = useLocation();
   const { data: user, isLoading: userLoading } = useCurrentUser();
+  const pathname = location.split("?")[0] || "/";
 
   // Redirect authenticated users from landing to their home (portal or main dashboard)
   useEffect(() => {
-    if (location === "/" && user) {
+    if (pathname === "/" && user) {
       setLocation(user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard");
     }
-  }, [location, user, setLocation]);
+  }, [pathname, user, setLocation]);
 
   // Guard: authenticated users at root - wait for redirect
-  if (location === "/" && userLoading) {
+  if (pathname === "/" && userLoading) {
     return null;
   }
 
-  if (location === "/" && user) {
+  if (pathname === "/" && user) {
     return null;
   }
 
   // Landing page (public only).
   // `initial={false}` skips the entry fade so the page is visible immediately;
   // a stalled or throttled animation must never leave the root at opacity:0.
-  if (location === "/" && !user) {
+  if (pathname === "/" && !user) {
     return (
       <AnimatePresence mode="wait">
         <motion.div
@@ -392,7 +393,7 @@ function Router() {
   }
 
   // Client Portal routes — authenticated, portal layout
-  if (location.startsWith("/client-portal")) {
+  if (pathname.startsWith("/client-portal")) {
     return (
       <PortalRoute>
         <PortalLayout>
@@ -412,7 +413,7 @@ function Router() {
   }
 
   // Full-page protected route: onboarding wizard (no sidebar)
-  if (location === "/onboarding") {
+  if (pathname === "/onboarding") {
     return (
       <ProtectedRoute>
         <Suspense fallback={<PageLoader variant="form" />}>
@@ -424,17 +425,17 @@ function Router() {
 
   // Public routes (no sidebar)
   if (
-    location === "/login" ||
-    location === "/register" ||
-    location === "/forgot-password" ||
-    location === "/reset-password" ||
-    location === "/services" ||
-    location === "/pricing" ||
-    location === "/privacy" ||
-    location === "/terms" ||
-    location === "/cookies" ||
-    location.startsWith("/view/invoice/") ||
-    location.startsWith("/portal/")
+    pathname === "/login" ||
+    pathname === "/register" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
+    pathname === "/services" ||
+    pathname === "/pricing" ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
+    pathname === "/cookies" ||
+    pathname.startsWith("/view/invoice/") ||
+    pathname.startsWith("/portal/")
   ) {
     return (
       <AnimatePresence mode="wait">
@@ -605,7 +606,7 @@ export default function App() {
   useEffect(() => {
     // Initialize locale settings
     setLocale(locale);
-  }, []);
+  }, [locale, setLocale]);
 
   return (
     <ErrorBoundary>

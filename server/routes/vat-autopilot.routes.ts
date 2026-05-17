@@ -28,6 +28,10 @@ function userId(req: Request): string | undefined {
   return (req as any).user?.id;
 }
 
+function firmRole(req: Request): string | null | undefined {
+  return (req as any).user?.firmRole;
+}
+
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
 const isoDate = z
@@ -251,11 +255,9 @@ export function registerVATAutopilotRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const uid = userId(req);
       if (!uid) return res.status(401).json({ message: "Unauthenticated" });
-      // Resolve every company the caller has direct membership in. Firm staff
-      // see all assigned clients via the same companyUsers join; ordinary users
-      // see only their own companies. Either way the SQL is server-side
-      // filtered to the caller — no client-supplied company list is trusted.
-      const companies = await storage.getCompaniesByUserId(uid);
+      // Resolve every company the caller can access. Ordinary users see only
+      // direct memberships; firm owners/admins also see their client scope.
+      const companies = await storage.getAccessibleCompanies(uid, firmRole(req));
       const accessibleIds = companies.map((c) => c.id);
       if (accessibleIds.length === 0) return res.json([]);
       const dueDates = await listDueDates(accessibleIds);

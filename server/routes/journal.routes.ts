@@ -1,9 +1,8 @@
 import type { Express, Request, Response } from "express";
-import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
-import { insertJournalEntrySchema, type JournalEntry } from "../../shared/schema";
+import type { JournalEntry } from "../../shared/schema";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
@@ -11,13 +10,14 @@ import { assertRetentionExpired } from "../services/retention.service";
 
 const log = createLogger("journal");
 
-// Walk the user's companies to find the entry. Storage queries are
+// Walk the user's accessible companies to find the entry. Storage queries are
 // tenant-scoped, so a hit also proves the user has access.
 async function findJournalEntryForUser(
   userId: string,
-  entryId: string
+  entryId: string,
+  firmRole?: string | null
 ): Promise<JournalEntry | undefined> {
-  const userCompanies = await storage.getCompaniesByUserId(userId);
+  const userCompanies = await storage.getAccessibleCompanies(userId, firmRole);
   for (const c of userCompanies) {
     const entry = await storage.getJournalEntry(entryId, c.id);
     if (entry) return entry;
@@ -184,10 +184,10 @@ export function registerJournalRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
       // Tenant-scoped lookup also enforces access.
-      const entry = await findJournalEntryForUser(userId, id);
+      const entry = await findJournalEntryForUser(userId, id, firmRole);
       if (!entry) {
         return res.status(404).json({ message: "Journal entry not found" });
       }
@@ -209,11 +209,11 @@ export function registerJournalRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
       const { lines, date, description, memo, notes, status: requestedStatus } = req.body;
 
       // Tenant-scoped lookup also enforces access.
-      const entry = await findJournalEntryForUser(userId, id);
+      const entry = await findJournalEntryForUser(userId, id, firmRole);
       if (!entry) {
         return res.status(404).json({ message: "Journal entry not found" });
       }
@@ -337,9 +337,9 @@ export function registerJournalRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const entry = await findJournalEntryForUser(userId, id);
+      const entry = await findJournalEntryForUser(userId, id, firmRole);
       if (!entry) {
         return res.status(404).json({ message: "Journal entry not found" });
       }
@@ -400,10 +400,10 @@ export function registerJournalRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
       const { reason } = req.body;
 
-      const entry = await findJournalEntryForUser(userId, id);
+      const entry = await findJournalEntryForUser(userId, id, firmRole);
       if (!entry) {
         return res.status(404).json({ message: "Journal entry not found" });
       }
@@ -503,10 +503,10 @@ export function registerJournalRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
       // Tenant-scoped lookup also enforces access.
-      const entry = await findJournalEntryForUser(userId, id);
+      const entry = await findJournalEntryForUser(userId, id, firmRole);
       if (!entry) {
         return res.status(404).json({ message: "Journal entry not found" });
       }

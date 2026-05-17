@@ -1,10 +1,10 @@
-import { Router, type Express, type Request, type Response } from "express";
+import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
-import { insertInvoiceSchema, type Account, type Receipt } from "../../shared/schema";
+import type { Account, Receipt } from "../../shared/schema";
 import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from "../services/fileStorage";
 import { createAndEmitNotification } from "../services/socket.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
@@ -16,15 +16,19 @@ import {
   buildExportFilename,
   receiptToExportRow,
 } from "../services/excel-export.service";
-// @ts-ignore
+// @ts-expect-error pdfkit does not ship complete ESM typings for this import shape.
 import PDFDocument from "pdfkit";
 
 const log = createLogger("receipts");
 
-// Walk the user's companies and return the first match — storage.getReceipt is
-// tenant-scoped, so a hit here also proves the user has access.
-async function findReceiptForUser(userId: string, receiptId: string): Promise<Receipt | undefined> {
-  const userCompanies = await storage.getCompaniesByUserId(userId);
+// Walk the user's accessible companies and return the first match —
+// storage.getReceipt is tenant-scoped, so a hit here also proves access.
+async function findReceiptForUser(
+  userId: string,
+  receiptId: string,
+  firmRole?: string | null
+): Promise<Receipt | undefined> {
+  const userCompanies = await storage.getAccessibleCompanies(userId, firmRole);
   for (const c of userCompanies) {
     const receipt = await storage.getReceipt(receiptId, c.id);
     if (receipt) return receipt;
@@ -267,14 +271,14 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
       // Convert empty category string to null (UUID field cannot accept empty strings)
       if (req.body.category === "") {
         req.body.category = null;
       }
 
-      const before = await findReceiptForUser(userId, id);
+      const before = await findReceiptForUser(userId, id, firmRole);
       if (!before) {
         return res.status(404).json({ message: "Receipt not found" });
       }
@@ -305,10 +309,10 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
       // Remove image file before deleting DB row (best-effort; don't block on failure)
-      const existing = await findReceiptForUser(userId, id);
+      const existing = await findReceiptForUser(userId, id, firmRole);
       if (!existing) {
         return res.status(404).json({ message: "Receipt not found" });
       }
@@ -350,7 +354,7 @@ export function registerReceiptRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
       const { accountId, paymentAccountId } = req.body;
 
       // Validate required fields
@@ -361,7 +365,7 @@ export function registerReceiptRoutes(app: Express) {
       }
 
       // Get receipt — findReceiptForUser also enforces tenant access.
-      const receipt = await findReceiptForUser(userId, id);
+      const receipt = await findReceiptForUser(userId, id, firmRole);
       if (!receipt) {
         return res.status(404).json({ message: "Receipt not found" });
       }
@@ -450,7 +454,7 @@ export function registerReceiptRoutes(app: Express) {
         } else {
           entryDate = parsed;
         }
-      } catch (e) {
+      } catch (_e) {
         entryDate = new Date();
       }
 

@@ -1,11 +1,11 @@
-import { Router, type Express, type Request, type Response } from "express";
+import type { Express, Request, Response } from "express";
 import crypto from "crypto";
 import Decimal from "decimal.js";
 import { storage } from "../storage";
 import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { insertInvoiceSchema, type Invoice } from "../../shared/schema";
+import type { Invoice } from "../../shared/schema";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import { generateEInvoiceXML } from "../services/einvoice.service";
 import {
@@ -29,10 +29,14 @@ import { assertRetentionExpired } from "../services/retention.service";
 
 const log = createLogger("invoices");
 
-// Walk the user's companies to find the invoice. Storage queries are
-// tenant-scoped, so a hit also proves the user has access.
-async function findInvoiceForUser(userId: string, invoiceId: string): Promise<Invoice | undefined> {
-  const userCompanies = await storage.getCompaniesByUserId(userId);
+// Walk the user's accessible companies to find the invoice. Storage queries
+// are tenant-scoped, so a hit also proves the user has access.
+async function findInvoiceForUser(
+  userId: string,
+  invoiceId: string,
+  firmRole?: string | null
+): Promise<Invoice | undefined> {
+  const userCompanies = await storage.getAccessibleCompanies(userId, firmRole);
   for (const c of userCompanies) {
     const invoice = await storage.getInvoice(invoiceId, c.id);
     if (invoice) return invoice;
@@ -77,9 +81,9 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
 
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
@@ -216,7 +220,7 @@ export function registerInvoiceRoutes(app: Express) {
       // and insert the invoice in a single transaction — otherwise a failed
       // insert after a successful allocation burns the number permanently and
       // the next allocation produces a gap (FTA Article 78 violation).
-      const { allocatedNumber, invoice } = await db.transaction(async (tx: typeof db) => {
+      const { invoice } = await db.transaction(async (tx: typeof db) => {
         const number = await allocateInvoiceNumber(companyId, "invoice", invoiceDate, tx);
 
         log.info(
@@ -372,10 +376,10 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
       // Tenant-scoped lookup also enforces access.
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -413,10 +417,10 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
       const { lines, date, ...invoiceData } = req.body;
 
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -516,9 +520,9 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -567,7 +571,7 @@ export function registerInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const { status, paymentAccountId } = req.body;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
       if (!status || !isValidStatus(status)) {
         return res.status(400).json({
@@ -576,7 +580,7 @@ export function registerInvoiceRoutes(app: Express) {
         });
       }
 
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -790,9 +794,9 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -830,9 +834,9 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -860,9 +864,9 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -889,9 +893,9 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const invoice = await findInvoiceForUser(userId, id);
+      const invoice = await findInvoiceForUser(userId, id, firmRole);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }

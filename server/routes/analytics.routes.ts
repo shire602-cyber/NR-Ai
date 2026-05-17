@@ -15,15 +15,15 @@ export function registerAnalyticsRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user?.id;
-      const { companyId, period } = req.query;
+      const { companyId } = req.query;
 
       if (!companyId) {
         return res.status(400).json({ message: "Company ID required" });
       }
 
-      // Verify user access to company
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      // Verify user access to company, including firm-scoped access.
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied to this company" });
       }
 
@@ -45,16 +45,15 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(400).json({ message: "Company ID required" });
       }
 
-      // Verify access
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      // Verify access, including firm-scoped access.
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
       // Get historical data
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
 
       // Calculate monthly trends
       const monthlyData: { [key: string]: { inflow: number; outflow: number } } = {};
@@ -125,9 +124,9 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(400).json({ message: "Company ID required" });
       }
 
-      // Verify access
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      // Verify access, including firm-scoped access.
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -183,8 +182,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(400).json({ message: "Company ID required" });
       }
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -206,8 +205,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(400).json({ message: "Company ID required" });
       }
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -287,8 +286,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(400).json({ message: "Company ID required" });
       }
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -309,8 +308,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(400).json({ message: "Company ID required" });
       }
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -331,9 +330,9 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(400).json({ message: "Company ID and platform required" });
       }
 
-      // Verify access
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      // Verify access, including firm-scoped access.
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -365,8 +364,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(404).json({ message: "Integration not found" });
       }
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, integration.companyId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -402,8 +401,8 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(404).json({ message: "Integration not found" });
       }
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, integration.companyId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -460,8 +459,6 @@ export function registerAnalyticsRoutes(app: Express) {
     "/api/analytics/dashboard",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { startDate, endDate } = req.query;
-
       // Get all events (in production, filter by date range)
       const events = await storage.getAnalyticsEvents();
       const metrics = await storage.getFeatureUsageMetrics();
@@ -526,8 +523,8 @@ export function registerAnalyticsRoutes(app: Express) {
       const userId = (req as any).user?.id;
       const { companyId } = req.params;
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -663,8 +660,8 @@ export function registerAnalyticsRoutes(app: Express) {
       const { companyId } = req.params;
       const monthCount = Math.min(Math.max(parseInt(req.query.months as string) || 12, 1), 36);
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -723,8 +720,8 @@ export function registerAnalyticsRoutes(app: Express) {
       const { companyId } = req.params;
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -763,8 +760,8 @@ export function registerAnalyticsRoutes(app: Express) {
       const { companyId } = req.params;
       const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
 
-      const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-      if (!companyUsers.some((cu) => cu.userId === userId)) {
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 

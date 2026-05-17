@@ -50,7 +50,7 @@ export function registerOCRRoutes(app: Express) {
     "/api/ocr/process",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const { id: userId, firmRole } = (req as any).user ?? {};
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
       }
@@ -73,7 +73,7 @@ export function registerOCRRoutes(app: Express) {
         // Backwards-compat fallback for older clients: only safe when the user
         // has exactly one company. For multi-company users we require an
         // explicit companyId so we never silently pick the wrong tenant.
-        const companies = await storage.getCompaniesByUserId(userId);
+        const companies = await storage.getAccessibleCompanies(userId, firmRole);
         if (companies.length === 0) {
           return res.status(404).json({ message: "No company found" });
         }

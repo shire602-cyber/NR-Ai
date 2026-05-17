@@ -3,6 +3,15 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { recordAudit } from "../services/audit.service";
+import type { CompanyUser } from "../../shared/schema";
+
+async function getScopedTeamMember(
+  companyId: string,
+  memberId: string
+): Promise<CompanyUser | undefined> {
+  const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
+  return companyUsers.find((member) => member.id === memberId);
+}
 
 export function registerTeamRoutes(app: Express) {
   // =====================================
@@ -83,6 +92,11 @@ export function registerTeamRoutes(app: Express) {
         return res.status(403).json({ message: "Only company owners can update roles" });
       }
 
+      const member = await getScopedTeamMember(companyId, memberId);
+      if (!member) {
+        return res.status(404).json({ message: "Team member not found" });
+      }
+
       const companyUser = await storage.updateCompanyUser(memberId, { role });
 
       await recordAudit({
@@ -111,6 +125,11 @@ export function registerTeamRoutes(app: Express) {
       const userRole = await storage.getUserRole(companyId, userId);
       if (!userRole || userRole.role !== "owner") {
         return res.status(403).json({ message: "Only company owners can remove team members" });
+      }
+
+      const member = await getScopedTeamMember(companyId, memberId);
+      if (!member) {
+        return res.status(404).json({ message: "Team member not found" });
       }
 
       await storage.deleteCompanyUser(memberId);

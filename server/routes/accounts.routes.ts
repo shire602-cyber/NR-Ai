@@ -5,11 +5,14 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { insertAccountSchema, type Account } from "../../shared/schema";
 import { recordAudit } from "../services/audit.service";
 
-// Walk the user's companies and return the first match. Storage queries are
-// already tenant-scoped, so this also enforces the access check — if no
-// company owns the row, the user has no business seeing it.
-async function findAccountForUser(userId: string, accountId: string): Promise<Account | undefined> {
-  const userCompanies = await storage.getCompaniesByUserId(userId);
+// Walk the user's accessible companies and return the first match. Storage
+// queries are already tenant-scoped, so this also enforces the access check.
+async function findAccountForUser(
+  userId: string,
+  accountId: string,
+  firmRole?: string | null
+): Promise<Account | undefined> {
+  const userCompanies = await storage.getAccessibleCompanies(userId, firmRole);
   for (const c of userCompanies) {
     const account = await storage.getAccount(accountId, c.id);
     if (account) return account;
@@ -83,10 +86,10 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
       // Find which of the user's companies owns this account.
-      const account = await findAccountForUser(userId, id);
+      const account = await findAccountForUser(userId, id, firmRole);
       if (!account) {
         return res.status(404).json({ message: "Account not found" });
       }
@@ -135,9 +138,9 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const account = await findAccountForUser(userId, id);
+      const account = await findAccountForUser(userId, id, firmRole);
       if (!account) {
         return res.status(404).json({ message: "Account not found" });
       }
@@ -173,9 +176,9 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const account = await findAccountForUser(userId, id);
+      const account = await findAccountForUser(userId, id, firmRole);
       if (!account) {
         return res.status(404).json({ message: "Account not found" });
       }
@@ -195,9 +198,9 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const account = await findAccountForUser(userId, id);
+      const account = await findAccountForUser(userId, id, firmRole);
       if (!account) {
         return res.status(404).json({ message: "Account not found" });
       }
@@ -261,9 +264,9 @@ export function registerAccountRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const { id: userId, firmRole } = (req as any).user;
 
-      const account = await findAccountForUser(userId, id);
+      const account = await findAccountForUser(userId, id, firmRole);
       if (!account) {
         return res.status(404).json({ message: "Account not found" });
       }

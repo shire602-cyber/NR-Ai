@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
-import { eq, and, gte, lte, inArray, type SQL } from "drizzle-orm";
+import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import {
   journalEntries,
   journalLines,
@@ -133,7 +133,7 @@ export function registerReportRoutes(app: Express) {
       }
 
       const cashFlowData: any[] = [];
-      let currentDate = new Date(startDate);
+      const currentDate = new Date(startDate);
 
       while (currentDate <= now) {
         let periodEnd: Date;

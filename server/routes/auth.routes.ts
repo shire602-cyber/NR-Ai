@@ -461,7 +461,6 @@ export function registerAuthRoutes(app: Express): void {
       const user = await storage.createUser({
         email: invitation.email,
         name,
-        password,
         isAdmin: invitation.role === "staff" || invitation.userType === "admin",
         userType: invitation.userType || "client",
         passwordHash,
