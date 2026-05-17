@@ -1,10 +1,10 @@
 import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
-import { authMiddleware } from "../middleware/auth";
-import { asyncHandler } from "../middleware/errorHandler";
 import { UAE_VAT_RATE } from "../constants";
 import { pool } from "../db";
+import { authMiddleware } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { storage } from "../storage";
 
 export function registerVATRoutes(app: Express) {
   // =====================================
@@ -155,7 +155,7 @@ export function registerVATRoutes(app: Express) {
         );
         reverseChargeAmount += Number(billRes.rows[0]?.amount || 0);
         reverseChargeVatGross += Number(billRes.rows[0]?.vat || 0);
-      } catch (err) {
+      } catch (_err) {
         // Bill-pay schema may not be installed in dev — fail open, log via parent.
       }
 

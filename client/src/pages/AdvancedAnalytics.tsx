@@ -1,10 +1,7 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -12,49 +9,47 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Progress } from "@/components/ui/progress";
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  ComposedChart,
-} from "recharts";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  TrendingUp,
-  TrendingDown,
+  Activity,
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   Brain,
-  Wallet,
-  Calendar,
-  Target,
-  AlertTriangle,
-  ArrowUp,
-  ArrowDown,
-  Minus,
-  Sparkles,
-  RefreshCw,
-  Loader2,
   ChevronRight,
   DollarSign,
+  Loader2,
+  Minus,
   PiggyBank,
-  Activity,
+  RefreshCw,
+  Sparkles,
+  Target,
+  TrendingUp,
+  Wallet,
   Zap,
 } from "lucide-react";
+import { useState } from "react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 interface CashFlowForecast {
   id: string;
@@ -98,7 +93,7 @@ interface AIInsight {
 }
 
 export default function AdvancedAnalytics() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const isRTL = locale === "ar";
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -107,7 +102,7 @@ export default function AdvancedAnalytics() {
   const [budgetMonth, setBudgetMonth] = useState(new Date().getMonth() + 1);
 
   // Fetch forecasts
-  const { data: forecasts, isLoading: forecastsLoading } = useQuery<CashFlowForecast[]>({
+  const { data: _forecasts, isLoading: _forecastsLoading } = useQuery<CashFlowForecast[]>({
     queryKey: ["/api/analytics/forecasts", companyId, forecastPeriod],
     queryFn: () => {
       const params = new URLSearchParams({
@@ -120,7 +115,7 @@ export default function AdvancedAnalytics() {
   });
 
   // Fetch budget vs actual
-  const { data: budgetData, isLoading: budgetLoading } = useQuery<BudgetVsActual[]>({
+  const { data: _budgetData, isLoading: _budgetLoading } = useQuery<BudgetVsActual[]>({
     queryKey: ["/api/analytics/budget-vs-actual", companyId, budgetYear, budgetMonth],
     queryFn: () => {
       const params = new URLSearchParams({
@@ -134,7 +129,7 @@ export default function AdvancedAnalytics() {
   });
 
   // Fetch KPIs
-  const { data: kpis, isLoading: kpisLoading } = useQuery<FinancialKPI[]>({
+  const { data: _kpis, isLoading: _kpisLoading } = useQuery<FinancialKPI[]>({
     queryKey: ["/api/analytics/kpis", companyId],
     queryFn: () => {
       const params = new URLSearchParams({ companyId: companyId ?? "" });
@@ -144,7 +139,7 @@ export default function AdvancedAnalytics() {
   });
 
   // Fetch AI insights
-  const { data: insights, isLoading: insightsLoading } = useQuery<AIInsight[]>({
+  const { data: _insights, isLoading: _insightsLoading } = useQuery<AIInsight[]>({
     queryKey: ["/api/analytics/insights", companyId],
     queryFn: () => {
       const params = new URLSearchParams({ companyId: companyId ?? "" });

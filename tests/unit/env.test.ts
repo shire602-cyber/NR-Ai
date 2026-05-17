@@ -3,6 +3,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 describe("Environment Validation", () => {
   const originalEnv = process.env;
 
+  function silenceStderr() {
+    return vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+  }
+
   beforeEach(() => {
     vi.resetModules();
     process.env = { ...originalEnv };
@@ -35,10 +39,12 @@ describe("Environment Validation", () => {
     const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit called");
     });
+    const mockStderr = silenceStderr();
 
     const { validateEnv } = await import("../../server/config/env");
 
     expect(() => validateEnv()).toThrow("process.exit called");
+    mockStderr.mockRestore();
     mockExit.mockRestore();
   });
 
@@ -50,10 +56,12 @@ describe("Environment Validation", () => {
     const mockExit = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit called");
     });
+    const mockStderr = silenceStderr();
 
     const { validateEnv } = await import("../../server/config/env");
 
     expect(() => validateEnv()).toThrow("process.exit called");
+    mockStderr.mockRestore();
     mockExit.mockRestore();
   });
 

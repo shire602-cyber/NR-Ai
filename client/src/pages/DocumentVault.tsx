@@ -1,12 +1,16 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, differenceInDays, parseISO } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -14,14 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -30,28 +27,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useTranslation } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { differenceInDays, format, parseISO } from "date-fns";
 import {
-  Upload,
-  FileText,
-  Download,
-  Trash2,
-  Search,
   AlertTriangle,
-  Clock,
-  CheckCircle2,
-  FolderOpen,
   Calendar,
+  CheckCircle2,
+  Clock,
+  Download,
+  Eye,
+  FileText,
+  Filter,
+  FolderOpen,
   Loader2,
   Plus,
-  Eye,
-  Filter,
+  Search,
+  Trash2,
 } from "lucide-react";
+import { useState } from "react";
 
 interface Document {
   id: string;
@@ -91,7 +89,7 @@ const DOCUMENT_CATEGORIES = [
 ];
 
 export default function DocumentVault() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");

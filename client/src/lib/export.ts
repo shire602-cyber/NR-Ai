@@ -1,7 +1,7 @@
-import { apiRequest } from "./queryClient";
 import { apiUrl } from "./api";
 import { getAuthHeaders } from "./auth";
 import { withCsrfHeader } from "./csrf";
+import { apiRequest } from "./queryClient";
 
 // Shape of one row in the OCR-format Excel export. Matches the server-side
 // schema in `server/services/excel-export.service.ts` so the request body and
@@ -32,7 +32,6 @@ export async function exportToExcel(data: ExportData[], filename: string) {
   const workbook = new ExcelJS.Workbook();
 
   data.forEach((sheet) => {
-    const headers = sheet.columns.map((col) => col.header);
     const rows = sheet.rows.map((row) => sheet.columns.map((col) => row[col.key] ?? ""));
 
     const sheetName = (sheet.sheetName || "Sheet1").substring(0, 31);
@@ -228,7 +227,7 @@ export function formatCurrencyForExport(
   return `${currency} ${amount.toFixed(2)}`;
 }
 
-export function prepareInvoicesForExport(invoices: any[], locale: string = "en"): ExportData {
+export function prepareInvoicesForExport(invoices: any[], _locale: string = "en"): ExportData {
   return {
     sheetName: "Invoices",
     columns: [
@@ -254,7 +253,7 @@ export function prepareInvoicesForExport(invoices: any[], locale: string = "en")
   };
 }
 
-export function prepareReceiptsForExport(receipts: any[], locale: string = "en"): ExportData {
+export function prepareReceiptsForExport(receipts: any[], _locale: string = "en"): ExportData {
   return {
     sheetName: "Expenses",
     columns: [

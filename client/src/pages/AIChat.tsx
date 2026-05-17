@@ -1,11 +1,8 @@
-import { useState, useRef, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -13,30 +10,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest } from "@/lib/queryClient";
-import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
+import { getAuthHeaders } from "@/lib/auth";
 import { withCsrfHeader } from "@/lib/csrf";
-import {
-  Send,
-  Bot,
-  User,
-  Loader2,
-  Settings,
-  History,
-  Sparkles,
-  ChevronDown,
-  X,
-  Clock,
-  Zap,
-} from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Bot, Clock, History, Loader2, Send, Settings, Sparkles, User, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 interface Message {
   id: string;

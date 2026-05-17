@@ -1,6 +1,5 @@
 import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, sql, sum } from "drizzle-orm";
 
-import { db } from "../db";
 import {
   anomalyAlerts,
   bankTransactions,
@@ -19,6 +18,7 @@ import {
   taxReturnArchive,
   vatReturns,
 } from "../../shared/schema";
+import { db } from "../db";
 
 type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
@@ -734,7 +734,6 @@ export async function buildFirmValueOps(
     const anomalyCount = asNumber(anomaly?.open);
     const criticalAnomalies = asNumber(anomaly?.critical);
     const overdueTasks = asNumber(comp?.overdueTasks) + asNumber(cal?.overdue);
-    const upcomingCompliance = asNumber(cal?.upcoming);
     const daysToVatDue = daysUntil(vat?.dueDate, now);
     const vatOpen = vat ? vat.status !== "filed" && vat.status !== "submitted" : true;
     const vatOverdue = vatOpen && daysToVatDue !== null && daysToVatDue < 0;

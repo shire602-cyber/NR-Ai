@@ -3,15 +3,23 @@
 const baseUrl = (process.env.SMOKE_BASE_URL || process.argv[2] || '').replace(/\/$/, '');
 const email = process.env.SMOKE_EMAIL;
 const password = process.env.SMOKE_PASSWORD;
+const isCi = process.env.CI === 'true';
+
+function skipOrFail(message) {
+  if (isCi) {
+    console.error(message);
+    process.exit(1);
+  }
+  console.warn(`skipped: ${message}`);
+  process.exit(0);
+}
 
 if (!baseUrl) {
-  console.error('SMOKE_BASE_URL or first argument is required');
-  process.exit(1);
+  skipOrFail('SMOKE_BASE_URL or first argument is required');
 }
 
 if (!email || !password) {
-  console.error('SMOKE_EMAIL and SMOKE_PASSWORD are required for protected-route smoke checks');
-  process.exit(1);
+  skipOrFail('SMOKE_EMAIL and SMOKE_PASSWORD are required for protected-route smoke checks');
 }
 
 const cookieJar = new Map();

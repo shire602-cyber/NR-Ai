@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Request, Response, NextFunction } from "express";
-import { AppError, globalErrorHandler, asyncHandler } from "../../server/middleware/errorHandler";
+import type { NextFunction, Request, Response } from "express";
+import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
+import { AppError, asyncHandler, globalErrorHandler } from "../../server/middleware/errorHandler";
 
 // Mock logger
 vi.mock("../../server/config/logger", () => ({

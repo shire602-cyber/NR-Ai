@@ -391,7 +391,7 @@ export default function PaymentChasing() {
   });
 
   // ── Derived ────────────────────────────────────────────────────────────
-  const overdue = overdueQuery.data?.rows ?? [];
+  const overdue = useMemo(() => overdueQuery.data?.rows ?? [], [overdueQuery.data?.rows]);
   const buckets: Record<AgingBucket, number> = overdueQuery.data?.buckets ?? {
     "1-7": 0,
     "8-30": 0,

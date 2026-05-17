@@ -1,11 +1,21 @@
-import { defineConfig } from "vite";
+import { createLogger, defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { visualizer } from "rollup-plugin-visualizer";
 
 const ANALYZE = process.env.ANALYZE === "1";
+const logger = createLogger();
+const warnOnce = logger.warnOnce;
+
+logger.warnOnce = (message, options) => {
+  if (message.includes("A PostCSS plugin did not pass the `from` option to `postcss.parse`")) {
+    return;
+  }
+  warnOnce(message, options);
+};
 
 export default defineConfig({
+  customLogger: logger,
   plugins: [
     react(),
     ANALYZE &&
@@ -31,7 +41,9 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
     sourcemap: false,
-    chunkSizeWarningLimit: 800,
+    // The spreadsheet vendor chunk is intentionally split from route bundles
+    // and currently lands just under 1 MB after minification.
+    chunkSizeWarningLimit: 1000,
     cssCodeSplit: true,
     minify: "esbuild",
     target: "es2020",

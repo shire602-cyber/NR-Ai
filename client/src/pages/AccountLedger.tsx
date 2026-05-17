@@ -1,21 +1,7 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useRoute, useLocation, Link } from "wouter";
-import { format } from "date-fns";
-import { motion } from "framer-motion";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -24,33 +10,44 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
-import { useTranslation } from "@/lib/i18n";
-import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/format";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
+import { formatCurrency } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Account } from "@shared/schema";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { motion } from "framer-motion";
 import jsPDF from "jspdf";
 import {
   ArrowLeft,
-  Search,
-  Download,
-  FileText,
-  FileSpreadsheet,
-  RotateCcw,
   BookOpen,
-  Calendar,
-  Filter,
   ChevronLeft,
   ChevronRight,
+  FileSpreadsheet,
+  FileText,
+  Filter,
   RefreshCw,
+  RotateCcw,
+  Search,
 } from "lucide-react";
+import { useState } from "react";
+import { Link, useLocation, useRoute } from "wouter";
 
 interface LedgerEntry {
   id: string;
@@ -79,12 +76,12 @@ interface LedgerResponse {
 }
 
 export default function AccountLedger() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const [match, params] = useRoute("/accounts/:id/ledger");
+  const [, params] = useRoute("/accounts/:id/ledger");
   const accountId = params?.id;
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { companyId: _selectedCompanyId } = useDefaultCompany();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
@@ -270,7 +267,7 @@ export default function AccountLedger() {
         title: locale === "ar" ? "تم التصدير" : "Export complete",
         description: locale === "ar" ? "تم تحميل ملف PDF" : "PDF file downloaded",
       });
-    } catch (error) {
+    } catch (_error) {
       toast({
         title: locale === "ar" ? "فشل التصدير" : "Export failed",
         description: "Could not generate PDF",

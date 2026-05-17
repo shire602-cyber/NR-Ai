@@ -1,20 +1,19 @@
+import { sql } from "drizzle-orm";
 import {
-  pgTable,
-  text,
-  varchar,
-  integer,
-  real,
   boolean,
-  timestamp,
-  uuid,
-  unique,
-  index,
   customType,
+  index,
+  integer,
   jsonb,
+  pgTable,
+  real,
+  text,
+  timestamp,
+  unique,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { sql } from "drizzle-orm";
 
 // Monetary amount stored as NUMERIC(15,2) in Postgres for exact decimal arithmetic.
 // fromDriver rounds to 2 decimals so JS-side floating-point drift cannot accumulate

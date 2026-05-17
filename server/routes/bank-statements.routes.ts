@@ -121,7 +121,7 @@ function parseDate(raw: string): Date | null {
   }
 
   // Try DD-MM-YYYY or DD-MMM-YYYY
-  const parts = cleaned.split(/[-\/\s]/);
+  const parts = cleaned.split(/[-/\s]/);
   if (parts.length >= 3) {
     const months: Record<string, number> = {
       jan: 0,

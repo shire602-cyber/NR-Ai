@@ -1,28 +1,15 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation } from "wouter";
-import {
-  Users,
-  ChevronDown,
-  ChevronRight,
-  Building2,
-  UserPlus,
-  UserMinus,
-  CheckSquare,
-  Square,
-  Shield,
-  Search,
-  Mail,
-  ExternalLink,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Company } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronRight, ExternalLink, Mail, Search, Shield, Users } from "lucide-react";
+import { useState } from "react";
+import { useLocation } from "wouter";
 
 interface StaffMember {
   id: string;

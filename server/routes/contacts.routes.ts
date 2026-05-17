@@ -1,9 +1,8 @@
 import type { Express, Request, Response } from "express";
-import { z } from "zod";
+import { createLogger } from "../config/logger";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
-import { createLogger } from "../config/logger";
 
 const log = createLogger("contacts");
 

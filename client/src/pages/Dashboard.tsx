@@ -1,45 +1,41 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge, StatusBadge } from "@/components/ui/badge";
-import { useTranslation } from "@/lib/i18n";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useTranslation } from "@/lib/i18n";
+import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import {
-  TrendingUp,
-  TrendingDown,
-  AlertCircle,
+  ArrowRight,
+  ArrowUpRight,
+  BarChart3,
+  BookOpen,
+  CheckCircle2,
+  Clock,
+  Coins,
   FileText,
   Plus,
   Receipt,
-  BookOpen,
   Sparkles,
-  ArrowRight,
-  Clock,
-  CheckCircle2,
-  BarChart3,
-  ArrowUpRight,
-  Wallet,
-  Coins,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
+import { useMemo } from "react";
 import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
+  Area,
+  AreaChart,
   Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
 } from "recharts";
 import { Link } from "wouter";
-import { motion } from "framer-motion";
 import ClientDashboard from "./ClientDashboard";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

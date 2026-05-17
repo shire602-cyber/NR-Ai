@@ -1,20 +1,17 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, parseISO, startOfQuarter, endOfQuarter } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -24,26 +21,28 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
+import VAT201Form from "@/components/VAT201Form";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
-import VAT201Form from "@/components/VAT201Form";
+import { useTranslation } from "@/lib/i18n";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { endOfQuarter, format, parseISO, startOfQuarter } from "date-fns";
+import jsPDF from "jspdf";
 import {
-  FileText,
-  Download,
-  CheckCircle2,
-  Clock,
   AlertTriangle,
   Calculator,
-  Send,
-  FileCheck,
-  Loader2,
-  Eye,
+  CheckCircle2,
+  Clock,
+  Download,
   Edit3,
+  Eye,
+  FileText,
+  Loader2,
+  Send,
 } from "lucide-react";
-import jsPDF from "jspdf";
+import { useMemo, useState } from "react";
 
 interface VATReturn {
   id: string;
@@ -164,7 +163,7 @@ const DEFAULT_VAT_DATA = {
 };
 
 export default function VATFiling() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);

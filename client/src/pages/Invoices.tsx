@@ -1,31 +1,5 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm, useFieldArray } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  FormDescription,
-} from "@/components/ui/form";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +11,46 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -45,60 +59,45 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
+import { WhatsAppComposer } from "@/components/WhatsAppComposer";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatCurrency, formatDate } from "@/lib/format";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
-import { EmptyState } from "@/components/ui/empty-state";
-import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from "@/lib/export";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n";
+import { downloadInvoicePDF } from "@/lib/pdf-invoice";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
+import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from "@/lib/whatsapp-templates";
+import { zodResolver } from "@hookform/resolvers/zod";
+import type { CustomerContact, Invoice, InvoicePayment } from "@shared/schema";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { endOfDay, format, isWithinInterval, parseISO, startOfDay } from "date-fns";
 import {
-  Plus,
-  FileText,
-  FileCode,
+  AlertCircle,
   CalendarIcon,
-  Trash2,
+  DollarSign,
   Download,
   Edit,
-  Palette,
-  Save,
-  Info,
-  XCircle,
-  AlertCircle,
+  FileCode,
   FileSpreadsheet,
-  Send,
-  DollarSign,
+  FileText,
+  Info,
+  Palette,
+  Plus,
   RefreshCw,
   RotateCcw,
+  Save,
+  Trash2,
+  XCircle,
 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useFieldArray, useForm } from "react-hook-form";
 import { SiGooglesheets, SiWhatsapp } from "react-icons/si";
-import type { Invoice, Company, CustomerContact, InvoicePayment } from "@shared/schema";
-import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from "@/lib/whatsapp-templates";
-import { WhatsAppComposer } from "@/components/WhatsAppComposer";
-import { cn } from "@/lib/utils";
-import { downloadInvoicePDF } from "@/lib/pdf-invoice";
+import { z } from "zod";
 
 const invoiceLineSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -552,7 +551,7 @@ export default function Invoices() {
 
       // Proceed with save directly - similar check removed for better UX
       await performInvoiceSave(invoiceData, editingInvoice);
-    } catch (error) {
+    } catch (_error) {
       // Error is handled by mutation callbacks
     }
   };

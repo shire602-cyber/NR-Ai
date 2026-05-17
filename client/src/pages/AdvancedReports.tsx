@@ -1,24 +1,6 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-  format,
-  parseISO,
-  subMonths,
-  startOfMonth,
-  endOfMonth,
-  subQuarters,
-  startOfQuarter,
-  endOfQuarter,
-  subYears,
-  startOfYear,
-  endOfYear,
-  differenceInDays,
-} from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -26,7 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -35,44 +18,40 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Separator } from "@/components/ui/separator";
-import { useTranslation } from "@/lib/i18n";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n";
+import { useQuery } from "@tanstack/react-query";
 import {
-  BarChart,
+  endOfMonth,
+  endOfQuarter,
+  endOfYear,
+  format,
+  startOfMonth,
+  startOfQuarter,
+  startOfYear,
+  subMonths,
+  subQuarters,
+  subYears,
+} from "date-fns";
+import jsPDF from "jspdf";
+import { ArrowDown, ArrowRightLeft, ArrowUp, Clock, Download, TrendingUp } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Area,
+  AreaChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  AreaChart,
-  Area,
 } from "recharts";
-import {
-  Download,
-  TrendingUp,
-  TrendingDown,
-  Calendar,
-  Clock,
-  AlertTriangle,
-  ArrowUp,
-  ArrowDown,
-  DollarSign,
-  Users,
-  FileText,
-  RefreshCw,
-  ArrowRightLeft,
-} from "lucide-react";
-import jsPDF from "jspdf";
 
 interface CashFlowData {
   period: string;
@@ -106,14 +85,12 @@ interface PeriodComparison {
   changePercent: number;
 }
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
-
 export default function AdvancedReports() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [selectedPeriod, setSelectedPeriod] = useState("quarter");
-  const [comparisonPeriod, setComparisonPeriod] = useState("previous");
+  const [_comparisonPeriod, _setComparisonPeriod] = useState("previous");
   const [activeTab, setActiveTab] = useState("cashflow");
 
   const periodDates = useMemo(() => {

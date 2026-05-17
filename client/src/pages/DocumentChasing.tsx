@@ -198,14 +198,13 @@ export default function DocumentChasing() {
       toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
-  const requirements = requirementsQuery.data ?? [];
   const queue = queueQuery.data ?? [];
   const events = eventsQuery.data ?? [];
 
-  const missingDocs = useMemo(
-    () => requirements.filter((r) => r.status !== "received" && r.status !== "waived"),
-    [requirements]
-  );
+  const missingDocs = useMemo(() => {
+    const requirements = requirementsQuery.data ?? [];
+    return requirements.filter((r) => r.status !== "received" && r.status !== "waived");
+  }, [requirementsQuery.data]);
 
   const stats = useMemo(() => {
     const overdue = missingDocs.filter(

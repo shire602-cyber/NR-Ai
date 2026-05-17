@@ -1,10 +1,8 @@
-import type { Request, Response } from "express";
+import type { Express, Request, Response } from "express";
 import { Router } from "express";
-import type { Express } from "express";
 import { z } from "zod";
 
-import { db } from "../db";
-import { eq, and, desc, inArray, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   clientCommunications,
   communicationTemplates,
@@ -12,18 +10,14 @@ import {
   invoices,
   vatReturns,
 } from "../../shared/schema";
-import { authMiddleware } from "../middleware/auth";
-import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
-import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
-import {
-  sendEmail,
-  renderTemplate,
-  hasSmtpConfig,
-  sendGenericEmail,
-} from "../services/email.service";
-import { createAndEmitNotification } from "../services/socket.service";
+import { db } from "../db";
+import { authMiddleware } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { getAccessibleCompanyIds, requireFirmRole } from "../middleware/rbac";
 import { recordAudit } from "../services/audit.service";
+import { renderTemplate, sendEmail } from "../services/email.service";
+import { createAndEmitNotification } from "../services/socket.service";
 
 const logger = createLogger("firm-comms-routes");
 

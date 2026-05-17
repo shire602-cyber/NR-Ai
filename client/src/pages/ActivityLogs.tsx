@@ -1,27 +1,7 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import {
-  Activity,
-  Search,
-  Filter,
-  User,
-  Building2,
-  FileText,
-  Receipt,
-  Settings,
-  Mail,
-  Trash2,
-  Edit,
-  Plus,
-  Eye,
-  LogIn,
-  LogOut,
-  Download,
-} from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
@@ -38,8 +18,27 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import type { ActivityLog, Company, User as UserType } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import type { ActivityLog, User as UserType, Company } from "@shared/schema";
+import {
+  Activity,
+  Building2,
+  Download,
+  Edit,
+  Eye,
+  FileText,
+  LogIn,
+  LogOut,
+  Mail,
+  Plus,
+  Receipt,
+  Search,
+  Settings,
+  Trash2,
+  User,
+} from "lucide-react";
+import { useState } from "react";
 
 export default function ActivityLogs() {
   const [searchTerm, setSearchTerm] = useState("");

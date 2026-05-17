@@ -330,14 +330,12 @@ export default function FirmCommandCenter() {
 
   // ─── Derived data ──────────────────────────────────────────────────
   const summary = dashboardQuery.data?.summary;
-  const allClients = healthQuery.data ?? [];
-  const filteredClients = useMemo(
-    () =>
-      allClients.filter((c) =>
-        search ? c.companyName.toLowerCase().includes(search.toLowerCase()) : true
-      ),
-    [allClients, search]
-  );
+  const filteredClients = useMemo(() => {
+    const allClients = healthQuery.data ?? [];
+    return allClients.filter((c) =>
+      search ? c.companyName.toLowerCase().includes(search.toLowerCase()) : true
+    );
+  }, [healthQuery.data, search]);
 
   const allSelected =
     filteredClients.length > 0 && filteredClients.every((c) => selectedClients.has(c.companyId));

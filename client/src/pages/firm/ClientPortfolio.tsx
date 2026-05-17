@@ -587,7 +587,10 @@ function BookkeeperCommandCenter({
   const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>("vat");
   const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
   const activeQueueItems = dashboard?.queues?.[activeQueue] ?? [];
-  const workloadOwners = dashboard?.workload?.owners ?? [];
+  const workloadOwners = useMemo(
+    () => dashboard?.workload?.owners ?? [],
+    [dashboard?.workload?.owners]
+  );
   const productionBuckets = useMemo(() => {
     const clients = dashboard?.clients ?? [];
     const deadlineItems = sortProductionItems(clients.map((client) => productionItem(client)));

@@ -1,15 +1,20 @@
-import { useState, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, parseISO } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { Progress } from "@/components/ui/progress";
 import {
   Select,
   SelectContent,
@@ -17,14 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -33,38 +33,37 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
-import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { format, parseISO } from "date-fns";
+import {
+  AlertTriangle,
+  ArrowRightLeft,
+  BarChart3,
+  BookOpen,
+  Building2,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  FileSpreadsheet,
+  FileText,
+  Link2,
+  Loader2,
+  Receipt,
+  Search,
+  Sparkles,
+  Unlink,
+  Upload,
+  XCircle,
+} from "lucide-react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import { useMemo, useState } from "react";
 import Tesseract from "tesseract.js";
-import {
-  Upload,
-  FileText,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Link2,
-  Unlink,
-  Search,
-  RefreshCw,
-  Building2,
-  ArrowRightLeft,
-  Sparkles,
-  FileSpreadsheet,
-  BookOpen,
-  Receipt,
-  Check,
-  AlertTriangle,
-  BarChart3,
-  ChevronRight,
-} from "lucide-react";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
@@ -185,7 +184,7 @@ function formatDate(dateStr: string) {
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function BankReconciliation() {
-  const { t, locale } = useTranslation();
+  const { t, locale: _locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 

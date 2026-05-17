@@ -1,26 +1,15 @@
-import { useState, useRef, useCallback } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import {
-  Upload,
-  FileText,
-  ReceiptIcon,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  AlertCircle,
-  Play,
-  RefreshCw,
-  Building2,
-  ChevronDown,
-  Loader2,
-  CheckSquare,
-  Square,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -29,17 +18,25 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import type { Company } from "@shared/schema";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Building2,
+  CheckCircle2,
+  CheckSquare,
+  FileText,
+  Loader2,
+  Play,
+  ReceiptIcon,
+  RefreshCw,
+  Square,
+  Upload,
+  XCircle,
+} from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,15 +87,6 @@ interface PeriodCloseStatus {
   };
   issues: string[];
   readyToClose: boolean;
-}
-
-interface BankImportStatus {
-  companyId: string;
-  companyName: string;
-  lastImportDate: string | null;
-  unreconciledCount: number;
-  totalTransactions: number;
-  matchRate: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -383,7 +371,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
 
 // ─── Tab 2: VAT Filing Queue ──────────────────────────────────────────────────
 
-function VatQueueTab({ clients }: { clients: ClientWithStats[] }) {
+function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
   const { toast } = useToast();
   const [queue, setQueue] = useState<VatQueueEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);

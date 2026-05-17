@@ -1,4 +1,4 @@
-// @ts-ignore - pdfkit has no type declarations
+// @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";

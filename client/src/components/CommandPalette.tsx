@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { useLocation } from "wouter";
 import {
   CommandDialog,
   CommandEmpty,
@@ -10,25 +8,26 @@ import {
   CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
-import {
-  Home,
-  FileText,
-  Receipt,
-  BookMarked,
-  Users,
-  BarChart3,
-  Wallet,
-  CreditCard,
-  Briefcase,
-  ShoppingBag,
-  Building2,
-  FileSpreadsheet,
-  Settings,
-  Plus,
-  Search,
-  Sparkles,
-} from "lucide-react";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import {
+  BarChart3,
+  BookMarked,
+  Briefcase,
+  Building2,
+  CreditCard,
+  FileSpreadsheet,
+  FileText,
+  Home,
+  Plus,
+  Receipt,
+  Settings,
+  ShoppingBag,
+  Sparkles,
+  Users,
+  Wallet,
+} from "lucide-react";
+import { useState } from "react";
+import { useLocation } from "wouter";
 
 interface PaletteItem {
   id: string;

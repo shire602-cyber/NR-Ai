@@ -9,4 +9,4 @@ process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/muhasib_test";
 process.env.SESSION_SECRET = "test-session-secret-at-least-32-characters-long";
 process.env.JWT_SECRET = "test-jwt-secret-at-least-32-characters-long-unique";
 process.env.PORT = "5001";
-process.env.LOG_LEVEL = "error"; // Suppress logs during tests
+process.env.LOG_LEVEL = "fatal"; // Suppress non-fatal logs during tests

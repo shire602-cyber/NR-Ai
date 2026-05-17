@@ -5,10 +5,19 @@ import pg from 'pg';
 const { Client } = pg;
 
 const BACKDOOR_EMAILS = ['nra.test.owner@testmail.com', 'test_firm_owner@nra.ae'];
+const isCi = process.env.CI === 'true';
+
+function skipOrFail(message) {
+  if (isCi) {
+    console.error(message);
+    process.exit(1);
+  }
+  console.warn(`skipped: ${message}`);
+  process.exit(0);
+}
 
 if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL is required.');
-  process.exit(1);
+  skipOrFail('DATABASE_URL is required.');
 }
 
 const client = new Client({

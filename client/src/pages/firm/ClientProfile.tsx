@@ -1,41 +1,16 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { useParams, useLocation } from "wouter";
-import {
-  ArrowLeft,
-  Building2,
-  Phone,
-  Mail,
-  Globe,
-  MapPin,
-  FileText,
-  Receipt,
-  Users,
-  Calendar,
-  Edit,
-  Save,
-  X,
-  BookOpen,
-  ExternalLink,
-  Shield,
-  CheckCircle2,
-  AlertCircle,
-  Clock,
-  UserPlus,
-  UserMinus,
-} from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -43,12 +18,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { format } from "date-fns";
 import type { Company } from "@shared/schema";
-import { useActiveCompany } from "@/components/ActiveCompanyProvider";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import {
+  AlertCircle,
+  ArrowLeft,
+  BookOpen,
+  Building2,
+  Edit,
+  ExternalLink,
+  FileText,
+  Save,
+  UserMinus,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
+import { useState } from "react";
+import { useLocation, useParams } from "wouter";
 
 interface AssignedStaff {
   id: string;

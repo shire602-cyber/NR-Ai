@@ -1,48 +1,45 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
-import { EmptyState } from "@/components/ui/empty-state";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  Bot,
-  Send,
-  TrendingUp,
   AlertTriangle,
-  DollarSign,
-  FileText,
-  Loader2,
-  Brain,
-  BarChart3,
-  Zap,
-  Target,
-  ArrowUp,
   ArrowDown,
+  ArrowUp,
+  BarChart3,
+  Bot,
+  Brain,
+  DollarSign,
   Eye,
+  Loader2,
   PieChart,
+  Send,
+  Target,
+  TrendingUp,
+  Zap,
 } from "lucide-react";
+import { useState } from "react";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 interface Message {
   role: "user" | "assistant";
@@ -84,7 +81,7 @@ interface KPI {
 }
 
 export default function AICFO() {
-  const { t } = useTranslation();
+  const { t: _t } = useTranslation();
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);

@@ -1,51 +1,3 @@
-import { useState, useCallback } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import {
-  Upload,
-  FileSpreadsheet,
-  Download,
-  Plus,
-  Search,
-  Loader2,
-  Mail,
-  Phone,
-  Building2,
-  MapPin,
-  Edit,
-  Trash2,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Link2,
-  Copy,
-  ExternalLink,
-  MessageCircle,
-} from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { VirtualTable, type VirtualTableColumn } from "@/components/VirtualTable";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,17 +8,64 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import type { CustomerContact } from "@shared/schema";
-import type ExcelJS from "exceljs";
-import { exportToExcel } from "@/lib/export";
-import { SiWhatsapp } from "react-icons/si";
-import { WhatsAppComposer } from "@/components/WhatsAppComposer";
-import { pickWhatsAppNumber } from "@/lib/whatsapp-templates";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { VirtualTable } from "@/components/VirtualTable";
+import { WhatsAppComposer } from "@/components/WhatsAppComposer";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { exportToExcel } from "@/lib/export";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { pickWhatsAppNumber } from "@/lib/whatsapp-templates";
+import type { CustomerContact } from "@shared/schema";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type ExcelJS from "exceljs";
+import {
+  AlertCircle,
+  Building2,
+  CheckCircle2,
+  Copy,
+  Download,
+  Edit,
+  ExternalLink,
+  FileSpreadsheet,
+  Link2,
+  Loader2,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Phone,
+  Plus,
+  Search,
+  Trash2,
+  Upload,
+} from "lucide-react";
+import { useCallback, useState } from "react";
+import { SiWhatsapp } from "react-icons/si";
 
 interface ImportResult {
   message: string;
@@ -158,7 +157,7 @@ function rowToObject(headers: string[], values: any[]): Record<string, any> {
 
 export default function CustomerContacts() {
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
 
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("list");

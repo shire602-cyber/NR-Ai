@@ -1,9 +1,6 @@
-import { useParams, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -13,17 +10,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useTranslation } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n";
+import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
 import {
   ArrowLeft,
   BookMarked,
   CheckCircle2,
-  XCircle,
   Clock,
   FileText,
   RotateCcw,
+  XCircle,
 } from "lucide-react";
+import { Link, useParams } from "wouter";
 
 interface JournalLine {
   id: string;
@@ -56,7 +56,7 @@ interface JournalEntry {
 
 export default function JournalEntryDetail() {
   const { id } = useParams<{ id: string }>();
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
 
   const {
     data: entry,

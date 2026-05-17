@@ -1,44 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import {
-  LayoutDashboard,
-  TrendingUp,
-  ShoppingCart,
-  BookMarked,
-  BarChart3,
-  Banknote,
-  Settings,
-  Briefcase,
-  Shield,
-  ChevronDown,
-  Languages,
-  LogOut,
-  FolderArchive,
-  FileStack,
-  CalendarDays,
-  ListTodo,
-  Newspaper,
-  Building2,
-  UserPlus,
-  FileUp,
-  History,
-  Database,
-  CreditCard,
-  Landmark,
-  PieChart,
-  ClipboardList,
-  ShieldAlert,
-  Zap,
-  Brain,
-  CalendarCheck,
-  LineChart,
-  Kanban,
-  Users,
-  Activity,
-  Wallet,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { useLocation } from "wouter";
-import { motion, AnimatePresence } from "framer-motion";
+import { CompanySwitcher } from "@/components/CompanySwitcher";
+import { useRTL } from "@/components/RTLProvider";
 import {
   Sidebar,
   SidebarContent,
@@ -51,14 +12,37 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
-import { useTranslation, useI18n } from "@/lib/i18n";
-import { useRTL } from "@/components/RTLProvider";
-import { removeToken } from "@/lib/auth";
-import { apiRequest } from "@/lib/queryClient";
-import { useQueryClient } from "@tanstack/react-query";
-import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { removeToken } from "@/lib/auth";
+import { useI18n, useTranslation } from "@/lib/i18n";
+import { apiRequest } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
+import type { LucideIcon } from "lucide-react";
+import {
+  Banknote,
+  BarChart3,
+  BookMarked,
+  Briefcase,
+  CalendarDays,
+  ChevronDown,
+  ClipboardList,
+  FileStack,
+  FolderArchive,
+  Languages,
+  LayoutDashboard,
+  ListTodo,
+  LogOut,
+  Newspaper,
+  Settings,
+  Shield,
+  ShoppingCart,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -261,7 +245,7 @@ export function AppSidebar() {
         /* ignore */
       }
     }
-  }, [location, allGroups]);
+  }, [location, allGroups, expandedGroup]);
 
   const toggleGroup = (key: string) => {
     setExpandedGroup((prev) => {

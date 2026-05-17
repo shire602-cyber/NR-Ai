@@ -1,13 +1,13 @@
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
+import { createLogger } from "../config/logger";
+import { pool } from "../db";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
-import { storage } from "../storage";
-import { pool } from "../db";
-import { createLogger } from "../config/logger";
-import { assertRetentionExpired } from "../services/retention.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import { assertRetentionExpired } from "../services/retention.service";
+import { storage } from "../storage";
 
 const log = createLogger("bill-pay");
 
@@ -564,7 +564,6 @@ export function registerBillPayRoutes(app: Express) {
         newStatus = "partial";
       }
 
-      const paidAt = newStatus === "paid" ? "NOW()" : "paid_at";
       await pool.query(
         `UPDATE vendor_bills
        SET amount_paid = $1, status = $2, paid_at = ${newStatus === "paid" ? "NOW()" : "paid_at"}

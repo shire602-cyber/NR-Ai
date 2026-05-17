@@ -1,18 +1,15 @@
-import type { Request, Response } from "express";
-import { Router } from "express";
-import type { Express } from "express";
-import bcrypt from "bcryptjs";
-import { z } from "zod";
 import crypto from "crypto";
+import type { Express, Request, Response } from "express";
+import { Router } from "express";
 
-import { storage } from "../storage";
-import { authMiddleware, adminMiddleware } from "../middleware/auth";
-import { asyncHandler } from "../middleware/errorHandler";
-import { createLogger } from "../config/logger";
-import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
-import { db } from "../db";
-import { eq, and, desc, gte, lte, like } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { activityLogs } from "../../shared/schema";
+import { createLogger } from "../config/logger";
+import { db } from "../db";
+import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { adminMiddleware, authMiddleware } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { storage } from "../storage";
 import { buildXlsxBufferFromRows, parseSpreadsheetBuffer } from "../utils/spreadsheet";
 
 const logger = createLogger("admin-routes");
@@ -404,7 +401,7 @@ export function registerAdminRoutes(app: Express): void {
       const users = await storage.getAllUsers();
 
       // Return users without password hashes
-      const safeUsers = users.map(({ passwordHash, ...user }) => user);
+      const safeUsers = users.map(({ passwordHash: _passwordHash, ...user }) => user);
       res.json(safeUsers);
     })
   );
@@ -433,7 +430,7 @@ export function registerAdminRoutes(app: Express): void {
         metadata: JSON.stringify({ changes: Object.keys(updates) }),
       });
 
-      const { passwordHash, ...safeUser } = user;
+      const { passwordHash: _passwordHash, ...safeUser } = user;
       res.json(safeUser);
     })
   );
@@ -675,7 +672,7 @@ export function registerAdminRoutes(app: Express): void {
   router.post(
     "/admin/import/clients",
     asyncHandler(async (req: Request, res: Response) => {
-      const { data, createInvitations, sendEmails } = req.body;
+      const { data, createInvitations, sendEmails: _sendEmails } = req.body;
 
       if (!data || !Array.isArray(data)) {
         return res
@@ -744,7 +741,7 @@ export function registerAdminRoutes(app: Express): void {
               const expiresAt = new Date();
               expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
-              const invitation = await storage.createInvitation({
+              await storage.createInvitation({
                 email: row.email.trim(),
                 companyId: company.id,
                 role: "client",

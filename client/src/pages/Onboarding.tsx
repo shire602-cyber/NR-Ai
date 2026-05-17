@@ -1,15 +1,9 @@
-import { useMemo, useState, useEffect } from "react";
-import { useLocation, Link } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest, ApiError } from "@/lib/queryClient";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { motion, AnimatePresence } from "framer-motion";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -18,26 +12,32 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { z } from "zod";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
+import type { Company } from "@shared/schema";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Sparkles,
-  Building2,
-  BookOpen,
-  Landmark,
-  FileText,
-  CheckCircle2,
   AlertCircle,
-  ArrowRight,
   ArrowLeft,
+  ArrowRight,
+  BarChart3,
+  BookOpen,
+  Briefcase,
+  Building2,
+  CheckCircle2,
+  ChevronRight,
+  FileText,
+  Landmark,
   LayoutDashboard,
   Receipt,
-  BarChart3,
-  Users,
-  Briefcase,
-  ChevronRight,
   RefreshCw,
+  Sparkles,
+  Users,
 } from "lucide-react";
-import type { Company } from "@shared/schema";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { z } from "zod";
 
 const UAE_BANKS = [
   "Emirates NBD",
@@ -143,10 +143,10 @@ function CustomerOnboarding() {
         setCurrentStep(saved as Step);
       }
     }
-  }, [company?.id]);
+  }, [company]);
 
   useEffect(() => {
-    if (company) {
+    if (company?.id) {
       localStorage.setItem(STORAGE_KEY(company.id), currentStep);
     }
   }, [currentStep, company?.id]);

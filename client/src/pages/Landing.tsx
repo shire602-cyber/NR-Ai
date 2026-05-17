@@ -1,68 +1,62 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Link } from "wouter";
 import {
-  Sparkles,
-  Zap,
-  Shield,
-  BarChart3,
-  Receipt,
-  FileText,
-  CheckCircle2,
-  ArrowRight,
-  Globe,
-  Brain,
-  Clock,
-  Star,
-  Building2,
-  Check,
-  Briefcase,
-  TrendingUp,
-  ChevronRight,
-  Lock,
-  Bot,
-  Award,
-  Menu,
-  Rocket,
-  Target,
-  X,
-  Scan,
-  FileCheck,
-  PieChart,
-  MessageSquare,
-  Users,
-  CreditCard,
-  Play,
-  Quote,
-  Layers,
-  CircleCheck,
-  Crown,
-  Gem,
-  Timer,
-  Wallet,
-  ArrowUpRight,
-} from "lucide-react";
-import { useState, useEffect } from "react";
-import { useI18n } from "@/lib/i18n";
-import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import {
+  Floating,
+  hoverLift,
+  hoverScale,
   ScrollReveal,
   StaggerContainer,
   StaggerItem,
-  Floating,
-  hoverScale,
-  hoverLift,
 } from "@/lib/animations";
+import { useI18n } from "@/lib/i18n";
+import { motion } from "framer-motion";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Award,
+  BarChart3,
+  Bot,
+  Briefcase,
+  Building2,
+  Check,
+  CheckCircle2,
+  CircleCheck,
+  CreditCard,
+  Crown,
+  FileCheck,
+  FileText,
+  Gem,
+  Globe,
+  Layers,
+  Lock,
+  Menu,
+  MessageSquare,
+  PieChart,
+  Play,
+  Quote,
+  Rocket,
+  Scan,
+  Shield,
+  Sparkles,
+  Star,
+  Target,
+  Timer,
+  TrendingUp,
+  Users,
+  Wallet,
+  X,
+  Zap,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
 
 export default function Landing() {
   const { locale, setLocale } = useI18n();
-  const [mounted, setMounted] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeTestimonial, setActiveTestimonial] = useState(0);
 
   useEffect(() => {
-    setMounted(true);
     const interval = setInterval(() => {
       setActiveTestimonial((prev) => (prev + 1) % 3);
     }, 5000);

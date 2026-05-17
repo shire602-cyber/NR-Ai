@@ -26,7 +26,7 @@ export function RequireUserType({ allowedTypes, children, redirectTo = "/dashboa
       });
       setLocation(redirectTo);
     }
-  }, [isLoading, isAllowed, setLocation, redirectTo]);
+  }, [isLoading, isAllowed, setLocation, redirectTo, toast]);
 
   if (isLoading || !isAllowed) return null;
   return <>{children}</>;

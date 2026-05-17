@@ -1,56 +1,13 @@
-import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import {
-  Settings,
-  Users,
-  DollarSign,
-  Shield,
-  Activity,
-  Database,
-  Bell,
-  Plug,
-  Save,
-  Plus,
-  Trash2,
-  Edit2,
-  ToggleLeft,
-  ToggleRight,
-  RefreshCw,
-  Search,
-  Download,
-  BarChart3,
-  TrendingUp,
-  AlertTriangle,
-  CheckCircle,
-  XCircle,
-  Clock,
-  FileText,
-  Building2,
-  CreditCard,
-  Loader2,
-} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -60,6 +17,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -68,11 +37,37 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { AdminSetting, SubscriptionPlan, User, Company, AuditLog } from "@shared/schema";
+import type { AdminSetting, AuditLog, Company, SubscriptionPlan, User } from "@shared/schema";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+  Activity,
+  AlertTriangle,
+  BarChart3,
+  Bell,
+  Building2,
+  CheckCircle,
+  CreditCard,
+  Database,
+  DollarSign,
+  Download,
+  Edit2,
+  FileText,
+  Loader2,
+  Plug,
+  Plus,
+  RefreshCw,
+  Save,
+  Search,
+  Settings,
+  Shield,
+  Trash2,
+  Users,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 export default function Admin() {
   const { toast } = useToast();
@@ -80,7 +75,7 @@ export default function Admin() {
   const [searchTerm, setSearchTerm] = useState("");
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [newPlanDialogOpen, setNewPlanDialogOpen] = useState(false);
-  const [editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
+  const [_editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
@@ -184,7 +179,7 @@ export default function Admin() {
   });
 
   // Mutations
-  const updateSettingMutation = useMutation({
+  const _updateSettingMutation = useMutation({
     mutationFn: async (setting: { key: string; value: string }) => {
       return apiRequest("PUT", "/api/admin/settings", setting);
     },
@@ -319,7 +314,7 @@ export default function Admin() {
   );
 
   // Group settings by category
-  const settingsByCategory = settings.reduce(
+  const _settingsByCategory = settings.reduce(
     (acc, setting) => {
       if (!acc[setting.category]) {
         acc[setting.category] = [];

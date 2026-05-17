@@ -15,8 +15,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { pool } from "../db";
 import { UAE_VAT_RATE } from "../constants";
+import { pool } from "../db";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -230,13 +230,11 @@ export function listRecentPeriods(
   referenceDate: Date = new Date()
 ): VatPeriod[] {
   const periods: VatPeriod[] = [];
-  const stepMonths = frequency === "monthly" ? 1 : QUARTER_LENGTH_MONTHS;
   let cursor = referenceDate;
   for (let i = 0; i < count; i++) {
     const period = detectPeriod(frequency, periodStartMonth, cursor);
     periods.push(period);
-    // Step `cursor` back by stepMonths so the next iteration falls inside the
-    // previous period — using the start - 1 day avoids edge cases at boundaries.
+    // Step `cursor` to the day before this period so the next iteration falls inside the previous period.
     cursor = new Date(period.start.getTime() - 24 * 60 * 60 * 1000);
   }
   return periods;

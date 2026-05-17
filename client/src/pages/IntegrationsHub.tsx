@@ -1,17 +1,13 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
-  CardFooter,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -19,39 +15,36 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
+import { useTranslation } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  Link2,
-  Plug,
-  RefreshCw,
-  Check,
-  X,
   AlertTriangle,
-  ExternalLink,
-  Settings,
+  Check,
   ChevronRight,
-  Loader2,
-  CreditCard,
-  ShoppingBag,
-  Users,
-  Zap,
   Clock,
-  ArrowRight,
-  Shield,
+  CreditCard,
   Database,
   FileText,
+  Link2,
+  Loader2,
+  Plug,
+  RefreshCw,
+  Settings,
+  Shield,
+  Zap,
 } from "lucide-react";
-import { SiStripe, SiShopify, SiSalesforce } from "react-icons/si";
+import { useState } from "react";
+import { SiSalesforce, SiShopify, SiStripe } from "react-icons/si";
 
 interface EcommerceIntegration {
   id: string;
@@ -117,7 +110,7 @@ const PLATFORMS = [
 ];
 
 export default function IntegrationsHub() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const isRTL = locale === "ar";
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -126,7 +119,7 @@ export default function IntegrationsHub() {
   const [configForm, setConfigForm] = useState<IntegrationConfig>({ platform: "" });
 
   // Fetch integrations
-  const { data: integrations, isLoading: integrationsLoading } = useQuery<EcommerceIntegration[]>({
+  const { data: integrations, isLoading: _integrationsLoading } = useQuery<EcommerceIntegration[]>({
     queryKey: ["/api/integrations/ecommerce", companyId],
     queryFn: () => {
       const params = new URLSearchParams({ companyId: companyId ?? "" });
@@ -136,14 +129,16 @@ export default function IntegrationsHub() {
   });
 
   // Fetch recent transactions
-  const { data: transactions, isLoading: transactionsLoading } = useQuery<EcommerceTransaction[]>({
-    queryKey: ["/api/integrations/ecommerce/transactions", companyId],
-    queryFn: () => {
-      const params = new URLSearchParams({ companyId: companyId ?? "" });
-      return apiRequest("GET", `/api/integrations/ecommerce/transactions?${params}`);
-    },
-    enabled: !!companyId,
-  });
+  const { data: _transactions, isLoading: _transactionsLoading } = useQuery<EcommerceTransaction[]>(
+    {
+      queryKey: ["/api/integrations/ecommerce/transactions", companyId],
+      queryFn: () => {
+        const params = new URLSearchParams({ companyId: companyId ?? "" });
+        return apiRequest("GET", `/api/integrations/ecommerce/transactions?${params}`);
+      },
+      enabled: !!companyId,
+    }
+  );
 
   // Connect integration mutation
   const connectMutation = useMutation({
@@ -195,7 +190,7 @@ export default function IntegrationsHub() {
   });
 
   // Toggle integration mutation
-  const toggleMutation = useMutation({
+  const _toggleMutation = useMutation({
     mutationFn: async ({
       integrationId,
       isActive,
