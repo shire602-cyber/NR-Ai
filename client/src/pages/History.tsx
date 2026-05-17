@@ -1,7 +1,7 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { 
-  History as HistoryIcon, 
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  History as HistoryIcon,
   Search,
   User,
   Building2,
@@ -13,79 +13,106 @@ import {
   Plus,
   Eye,
   Database,
-  RefreshCw
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { format } from 'date-fns';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiUrl } from '@/lib/api';
-import type { ActivityLog } from '@shared/schema';
+  RefreshCw,
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { format } from "date-fns";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiUrl } from "@/lib/api";
+import type { ActivityLog } from "@shared/schema";
 
 export default function History() {
   const { companyId } = useDefaultCompany();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [actionFilter, setActionFilter] = useState<string>('all');
-  const [entityFilter, setEntityFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [actionFilter, setActionFilter] = useState<string>("all");
+  const [entityFilter, setEntityFilter] = useState<string>("all");
 
   const { data: logs = [], isLoading } = useQuery<ActivityLog[]>({
-    queryKey: ['/api/companies', companyId, 'activity-logs'],
+    queryKey: ["/api/companies", companyId, "activity-logs"],
     queryFn: async () => {
       if (!companyId) return [];
       const res = await fetch(apiUrl(`/api/companies/${companyId}/activity-logs?limit=200`), {
-        credentials: 'include',
+        credentials: "include",
       });
-      if (!res.ok) throw new Error('Failed to fetch activity logs');
+      if (!res.ok) throw new Error("Failed to fetch activity logs");
       return res.json();
     },
     enabled: !!companyId,
   });
 
-  const filteredLogs = logs.filter(log => {
+  const filteredLogs = logs.filter((log) => {
     const matchesSearch = log.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesAction = actionFilter === 'all' || log.action === actionFilter;
-    const matchesEntity = entityFilter === 'all' || log.entityType === entityFilter;
+    const matchesAction = actionFilter === "all" || log.action === actionFilter;
+    const matchesEntity = entityFilter === "all" || log.entityType === entityFilter;
     return matchesSearch && matchesAction && matchesEntity;
   });
 
   const getActionIcon = (action: string) => {
     switch (action) {
-      case 'create': return <Plus className="h-4 w-4 text-green-500" />;
-      case 'update': return <Edit className="h-4 w-4 text-blue-500" />;
-      case 'delete': return <Trash2 className="h-4 w-4 text-red-500" />;
-      case 'view': return <Eye className="h-4 w-4 text-gray-500" />;
-      default: return <HistoryIcon className="h-4 w-4" />;
+      case "create":
+        return <Plus className="h-4 w-4 text-green-500" />;
+      case "update":
+        return <Edit className="h-4 w-4 text-blue-500" />;
+      case "delete":
+        return <Trash2 className="h-4 w-4 text-red-500" />;
+      case "view":
+        return <Eye className="h-4 w-4 text-gray-500" />;
+      default:
+        return <HistoryIcon className="h-4 w-4" />;
     }
   };
 
   const getEntityIcon = (entityType: string) => {
     switch (entityType) {
-      case 'user': return <User className="h-4 w-4" />;
-      case 'company': return <Building2 className="h-4 w-4" />;
-      case 'document': return <FileText className="h-4 w-4" />;
-      case 'invoice': return <Receipt className="h-4 w-4" />;
-      case 'journal_entry': return <FileText className="h-4 w-4" />;
-      case 'account': return <Building2 className="h-4 w-4" />;
-      case 'receipt': return <Receipt className="h-4 w-4" />;
-      case 'backup': return <Database className="h-4 w-4" />;
-      default: return <Settings className="h-4 w-4" />;
+      case "user":
+        return <User className="h-4 w-4" />;
+      case "company":
+        return <Building2 className="h-4 w-4" />;
+      case "document":
+        return <FileText className="h-4 w-4" />;
+      case "invoice":
+        return <Receipt className="h-4 w-4" />;
+      case "journal_entry":
+        return <FileText className="h-4 w-4" />;
+      case "account":
+        return <Building2 className="h-4 w-4" />;
+      case "receipt":
+        return <Receipt className="h-4 w-4" />;
+      case "backup":
+        return <Database className="h-4 w-4" />;
+      default:
+        return <Settings className="h-4 w-4" />;
     }
   };
 
   const getActionBadge = (action: string) => {
     switch (action) {
-      case 'create':
+      case "create":
         return <Badge className="bg-green-500/10 text-green-600 border-green-500/20">Create</Badge>;
-      case 'update':
+      case "update":
         return <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">Update</Badge>;
-      case 'delete':
+      case "delete":
         return <Badge variant="destructive">Delete</Badge>;
-      case 'view':
+      case "view":
         return <Badge variant="secondary">View</Badge>;
       default:
         return <Badge variant="outline">{action}</Badge>;
@@ -112,7 +139,9 @@ export default function History() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-history-title">Activity History</h1>
+          <h1 className="text-3xl font-bold" data-testid="text-history-title">
+            Activity History
+          </h1>
           <p className="text-muted-foreground">Track all changes made to your financial records</p>
         </div>
       </div>
@@ -158,9 +187,7 @@ export default function History() {
                   <SelectItem value="backup">Backups</SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">
-                {filteredLogs.length} entries
-              </Badge>
+              <Badge variant="secondary">{filteredLogs.length} entries</Badge>
             </div>
           </div>
         </CardHeader>
@@ -171,7 +198,8 @@ export default function History() {
                 <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium mb-2">No Activity Yet</h3>
                 <p className="text-muted-foreground">
-                  Activity will appear here as you create invoices, journal entries, and other records.
+                  Activity will appear here as you create invoices, journal entries, and other
+                  records.
                 </p>
               </div>
             ) : (
@@ -200,9 +228,9 @@ export default function History() {
                             {(() => {
                               try {
                                 const parsed = JSON.parse(log.metadata);
-                                return parsed.changes?.join(', ') || '';
+                                return parsed.changes?.join(", ") || "";
                               } catch {
-                                return '';
+                                return "";
                               }
                             })()}
                           </p>
@@ -212,16 +240,22 @@ export default function History() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {getEntityIcon(log.entityType)}
-                          <span className="capitalize">{log.entityType.replace('_', ' ')}</span>
+                          <span className="capitalize">{log.entityType.replace("_", " ")}</span>
                         </div>
                       </TableCell>
                       <TableCell>
                         {log.createdAt ? (
                           <div>
-                            <p className="text-sm">{format(new Date(log.createdAt), 'MMM d, yyyy')}</p>
-                            <p className="text-xs text-muted-foreground">{format(new Date(log.createdAt), 'h:mm a')}</p>
+                            <p className="text-sm">
+                              {format(new Date(log.createdAt), "MMM d, yyyy")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(log.createdAt), "h:mm a")}
+                            </p>
                           </div>
-                        ) : '-'}
+                        ) : (
+                          "-"
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

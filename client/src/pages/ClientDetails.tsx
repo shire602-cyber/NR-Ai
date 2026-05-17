@@ -1,28 +1,35 @@
-import { useQuery } from '@tanstack/react-query';
-import { useParams, Link } from 'wouter';
-import { format, parseISO } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { 
-  Building2, 
-  ArrowLeft, 
-  FileText, 
-  Calendar, 
-  Users, 
-  Receipt, 
-  Mail, 
-  Phone, 
-  Globe, 
+import { useQuery } from "@tanstack/react-query";
+import { useParams, Link } from "wouter";
+import { format, parseISO } from "date-fns";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Building2,
+  ArrowLeft,
+  FileText,
+  Calendar,
+  Users,
+  Receipt,
+  Mail,
+  Phone,
+  Globe,
   MapPin,
   Edit,
   Clock,
   CheckCircle2,
-  AlertTriangle
-} from 'lucide-react';
+  AlertTriangle,
+} from "lucide-react";
 
 interface Company {
   id: string;
@@ -84,7 +91,9 @@ export default function ClientDetails() {
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-24" />)}
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
         </div>
         <Skeleton className="h-96" />
       </div>
@@ -107,10 +116,14 @@ export default function ClientDetails() {
   }
 
   const { company, documents = [], complianceTasks = [], users = [] } = data;
-  
-  const expiredDocs = documents.filter(d => d.expiryDate && new Date(d.expiryDate) < new Date()).length;
-  const pendingTasks = complianceTasks.filter(t => t.status !== 'completed').length;
-  const overdueTasks = complianceTasks.filter(t => t.status !== 'completed' && new Date(t.dueDate) < new Date()).length;
+
+  const expiredDocs = documents.filter(
+    (d) => d.expiryDate && new Date(d.expiryDate) < new Date()
+  ).length;
+  const pendingTasks = complianceTasks.filter((t) => t.status !== "completed").length;
+  const overdueTasks = complianceTasks.filter(
+    (t) => t.status !== "completed" && new Date(t.dueDate) < new Date()
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -122,7 +135,9 @@ export default function ClientDetails() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold" data-testid="text-client-name">{company.name}</h1>
+            <h1 className="text-2xl font-bold" data-testid="text-client-name">
+              {company.name}
+            </h1>
             <div className="flex items-center gap-2 text-muted-foreground">
               {company.industry && <Badge variant="outline">{company.industry}</Badge>}
               {company.legalStructure && <span>{company.legalStructure}</span>}
@@ -153,9 +168,7 @@ export default function ClientDetails() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{documents.length}</div>
-            {expiredDocs > 0 && (
-              <p className="text-xs text-red-500">{expiredDocs} expired</p>
-            )}
+            {expiredDocs > 0 && <p className="text-xs text-red-500">{expiredDocs} expired</p>}
           </CardContent>
         </Card>
 
@@ -166,9 +179,7 @@ export default function ClientDetails() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{complianceTasks.length}</div>
-            {overdueTasks > 0 && (
-              <p className="text-xs text-red-500">{overdueTasks} overdue</p>
-            )}
+            {overdueTasks > 0 && <p className="text-xs text-red-500">{overdueTasks} overdue</p>}
           </CardContent>
         </Card>
 
@@ -188,7 +199,7 @@ export default function ClientDetails() {
             <Receipt className="w-4 h-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-lg font-medium">{company.trnVatNumber || '-'}</div>
+            <div className="text-lg font-medium">{company.trnVatNumber || "-"}</div>
           </CardContent>
         </Card>
       </div>
@@ -214,7 +225,12 @@ export default function ClientDetails() {
             {company.websiteUrl && (
               <div className="flex items-center gap-2">
                 <Globe className="w-4 h-4 text-muted-foreground" />
-                <a href={company.websiteUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                <a
+                  href={company.websiteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
                   {company.websiteUrl}
                 </a>
               </div>
@@ -233,7 +249,7 @@ export default function ClientDetails() {
             )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground pt-2 border-t">
               <Clock className="w-3 h-3" />
-              Created {format(parseISO(company.createdAt), 'MMM d, yyyy')}
+              Created {format(parseISO(company.createdAt), "MMM d, yyyy")}
             </div>
           </CardContent>
         </Card>
@@ -249,7 +265,7 @@ export default function ClientDetails() {
                 <TabsTrigger value="documents">Documents</TabsTrigger>
                 <TabsTrigger value="users">Users</TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="tasks">
                 {complianceTasks.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
@@ -258,22 +274,27 @@ export default function ClientDetails() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {complianceTasks.slice(0, 5).map(task => (
-                      <div key={task.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    {complianceTasks.slice(0, 5).map((task) => (
+                      <div
+                        key={task.id}
+                        className="flex items-center justify-between p-3 border rounded-lg"
+                      >
                         <div className="flex items-center gap-2">
-                          {task.status === 'completed' ? (
+                          {task.status === "completed" ? (
                             <CheckCircle2 className="w-4 h-4 text-green-500" />
                           ) : new Date(task.dueDate) < new Date() ? (
                             <AlertTriangle className="w-4 h-4 text-red-500" />
                           ) : (
                             <Clock className="w-4 h-4 text-blue-500" />
                           )}
-                          <span className={task.status === 'completed' ? 'line-through opacity-60' : ''}>
+                          <span
+                            className={task.status === "completed" ? "line-through opacity-60" : ""}
+                          >
                             {task.title}
                           </span>
                         </div>
-                        <Badge variant={task.status === 'completed' ? 'secondary' : 'outline'}>
-                          {format(parseISO(task.dueDate), 'MMM d')}
+                        <Badge variant={task.status === "completed" ? "secondary" : "outline"}>
+                          {format(parseISO(task.dueDate), "MMM d")}
                         </Badge>
                       </div>
                     ))}
@@ -287,7 +308,7 @@ export default function ClientDetails() {
                   </div>
                 )}
               </TabsContent>
-              
+
               <TabsContent value="documents">
                 {documents.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
@@ -296,16 +317,25 @@ export default function ClientDetails() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {documents.slice(0, 5).map(doc => (
-                      <div key={doc.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    {documents.slice(0, 5).map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="flex items-center justify-between p-3 border rounded-lg"
+                      >
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-muted-foreground" />
                           <span>{doc.name}</span>
-                          <Badge variant="outline" className="text-xs">{doc.category}</Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {doc.category}
+                          </Badge>
                         </div>
                         {doc.expiryDate && (
-                          <Badge variant={new Date(doc.expiryDate) < new Date() ? 'destructive' : 'secondary'}>
-                            {format(parseISO(doc.expiryDate), 'MMM d')}
+                          <Badge
+                            variant={
+                              new Date(doc.expiryDate) < new Date() ? "destructive" : "secondary"
+                            }
+                          >
+                            {format(parseISO(doc.expiryDate), "MMM d")}
                           </Badge>
                         )}
                       </div>
@@ -320,7 +350,7 @@ export default function ClientDetails() {
                   </div>
                 )}
               </TabsContent>
-              
+
               <TabsContent value="users">
                 {users.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
@@ -329,8 +359,11 @@ export default function ClientDetails() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {users.map(u => (
-                      <div key={u.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    {users.map((u) => (
+                      <div
+                        key={u.id}
+                        className="flex items-center justify-between p-3 border rounded-lg"
+                      >
                         <div>
                           <div className="font-medium">{u.user.name}</div>
                           <div className="text-sm text-muted-foreground">{u.user.email}</div>

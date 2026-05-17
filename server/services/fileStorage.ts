@@ -1,12 +1,12 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, '../..');
+const projectRoot = path.resolve(__dirname, "../..");
 
 // All uploaded receipt images land under <projectRoot>/uploads/receipts/
-const receiptsDir = path.join(projectRoot, 'uploads', 'receipts');
+const receiptsDir = path.join(projectRoot, "uploads", "receipts");
 
 async function ensureDir(): Promise<void> {
   await fs.mkdir(receiptsDir, { recursive: true });
@@ -19,9 +19,9 @@ async function ensureDir(): Promise<void> {
  */
 export async function saveReceiptImage(base64Data: string, filename: string): Promise<string> {
   await ensureDir();
-  const raw = base64Data.replace(/^data:image\/\w+;base64,/, '');
-  const buffer = Buffer.from(raw, 'base64');
-  const safeName = filename.replace(/[^a-z0-9_\-\.]/gi, '_');
+  const raw = base64Data.replace(/^data:image\/\w+;base64,/, "");
+  const buffer = Buffer.from(raw, "base64");
+  const safeName = filename.replace(/[^a-z0-9_\-\.]/gi, "_");
   const absPath = path.join(receiptsDir, safeName);
   await fs.writeFile(absPath, buffer);
   return `receipts/${safeName}`;
@@ -35,7 +35,7 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
  */
 export async function deleteReceiptImage(imagePath: string): Promise<void> {
   try {
-    const uploadsRoot = path.join(projectRoot, 'uploads');
+    const uploadsRoot = path.join(projectRoot, "uploads");
     const absPath = path.resolve(uploadsRoot, imagePath);
     if (!absPath.startsWith(uploadsRoot + path.sep)) return;
     await fs.unlink(absPath);
@@ -55,10 +55,10 @@ export async function deleteReceiptImage(imagePath: string): Promise<void> {
  * res.sendFile() leak arbitrary server-readable files.
  */
 export function resolveImagePath(imagePath: string): string {
-  const uploadsRoot = path.join(projectRoot, 'uploads');
+  const uploadsRoot = path.join(projectRoot, "uploads");
   const resolved = path.resolve(uploadsRoot, imagePath);
   if (resolved !== uploadsRoot && !resolved.startsWith(uploadsRoot + path.sep)) {
-    throw new Error('Invalid image path');
+    throw new Error("Invalid image path");
   }
   return resolved;
 }

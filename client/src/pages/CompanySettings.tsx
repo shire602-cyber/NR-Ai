@@ -1,17 +1,17 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Form,
   FormControl,
@@ -20,64 +20,74 @@ import {
   FormLabel,
   FormMessage,
   FormDescription,
-} from '@/components/ui/form';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { companyPreferencesSchema, type Company, type CompanyPreferences } from '@shared/schema';
-import { Building2, Globe, MapPin, FileText, Save, Upload } from 'lucide-react';
+} from "@/components/ui/form";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { companyPreferencesSchema, type Company, type CompanyPreferences } from "@shared/schema";
+import { Building2, Globe, MapPin, FileText, Save, Upload } from "lucide-react";
 
 const CURRENCY_OPTIONS = [
-  { value: 'AED', label: 'AED — UAE Dirham' },
-  { value: 'USD', label: 'USD — US Dollar' },
-  { value: 'EUR', label: 'EUR — Euro' },
-  { value: 'GBP', label: 'GBP — British Pound' },
-  { value: 'SAR', label: 'SAR — Saudi Riyal' },
-  { value: 'QAR', label: 'QAR — Qatari Riyal' },
-  { value: 'KWD', label: 'KWD — Kuwaiti Dinar' },
-  { value: 'BHD', label: 'BHD — Bahraini Dinar' },
-  { value: 'OMR', label: 'OMR — Omani Rial' },
-  { value: 'INR', label: 'INR — Indian Rupee' },
+  { value: "AED", label: "AED — UAE Dirham" },
+  { value: "USD", label: "USD — US Dollar" },
+  { value: "EUR", label: "EUR — Euro" },
+  { value: "GBP", label: "GBP — British Pound" },
+  { value: "SAR", label: "SAR — Saudi Riyal" },
+  { value: "QAR", label: "QAR — Qatari Riyal" },
+  { value: "KWD", label: "KWD — Kuwaiti Dinar" },
+  { value: "BHD", label: "BHD — Bahraini Dinar" },
+  { value: "OMR", label: "OMR — Omani Rial" },
+  { value: "INR", label: "INR — Indian Rupee" },
 ];
 
 const MONTH_OPTIONS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 const VAT_RATE_OPTIONS = [
-  { value: '0', label: '0% — Zero-rated / Out of scope' },
-  { value: '0.05', label: '5% — UAE Standard rate' },
-  { value: '0.15', label: '15% — KSA Standard rate' },
+  { value: "0", label: "0% — Zero-rated / Out of scope" },
+  { value: "0.05", label: "5% — UAE Standard rate" },
+  { value: "0.15", label: "15% — KSA Standard rate" },
 ];
 
 const EMIRATE_OPTIONS = [
-  { value: 'abu_dhabi', label: 'Abu Dhabi' },
-  { value: 'dubai', label: 'Dubai' },
-  { value: 'sharjah', label: 'Sharjah' },
-  { value: 'ajman', label: 'Ajman' },
-  { value: 'umm_al_quwain', label: 'Umm Al Quwain' },
-  { value: 'ras_al_khaimah', label: 'Ras Al Khaimah' },
-  { value: 'fujairah', label: 'Fujairah' },
+  { value: "abu_dhabi", label: "Abu Dhabi" },
+  { value: "dubai", label: "Dubai" },
+  { value: "sharjah", label: "Sharjah" },
+  { value: "ajman", label: "Ajman" },
+  { value: "umm_al_quwain", label: "Umm Al Quwain" },
+  { value: "ras_al_khaimah", label: "Ras Al Khaimah" },
+  { value: "fujairah", label: "Fujairah" },
 ];
 
 const COUNTRY_OPTIONS = [
-  { value: 'AE', label: 'United Arab Emirates' },
-  { value: 'SA', label: 'Saudi Arabia' },
-  { value: 'QA', label: 'Qatar' },
-  { value: 'KW', label: 'Kuwait' },
-  { value: 'BH', label: 'Bahrain' },
-  { value: 'OM', label: 'Oman' },
-  { value: 'GB', label: 'United Kingdom' },
-  { value: 'US', label: 'United States' },
-  { value: 'IN', label: 'India' },
+  { value: "AE", label: "United Arab Emirates" },
+  { value: "SA", label: "Saudi Arabia" },
+  { value: "QA", label: "Qatar" },
+  { value: "KW", label: "Kuwait" },
+  { value: "BH", label: "Bahrain" },
+  { value: "OM", label: "Oman" },
+  { value: "GB", label: "United Kingdom" },
+  { value: "US", label: "United States" },
+  { value: "IN", label: "India" },
 ];
 
 const DATE_FORMAT_OPTIONS = [
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY (e.g. 27/04/2026)' },
-  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY (e.g. 04/27/2026)' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD (e.g. 2026-04-27)' },
+  { value: "DD/MM/YYYY", label: "DD/MM/YYYY (e.g. 27/04/2026)" },
+  { value: "MM/DD/YYYY", label: "MM/DD/YYYY (e.g. 04/27/2026)" },
+  { value: "YYYY-MM-DD", label: "YYYY-MM-DD (e.g. 2026-04-27)" },
 ];
 
 type FormValues = CompanyPreferences;
@@ -88,71 +98,71 @@ export default function CompanySettings() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   const { data: company, isLoading } = useQuery<Company>({
-    queryKey: ['/api/companies', companyId],
+    queryKey: ["/api/companies", companyId],
     enabled: !!companyId,
   });
 
   const form = useForm<FormValues>({
     resolver: zodResolver(companyPreferencesSchema),
     defaultValues: {
-      name: '',
-      legalName: '',
-      trnVatNumber: '',
-      baseCurrency: 'AED',
+      name: "",
+      legalName: "",
+      trnVatNumber: "",
+      baseCurrency: "AED",
       fiscalYearStartMonth: 1,
       defaultVatRate: 0.05,
-      addressStreet: '',
-      addressCity: '',
-      emirate: 'dubai',
-      addressCountry: 'AE',
-      contactPhone: '',
-      contactEmail: '',
-      industry: '',
-      logoUrl: '',
-      dateFormat: 'DD/MM/YYYY',
-      locale: 'en',
+      addressStreet: "",
+      addressCity: "",
+      emirate: "dubai",
+      addressCountry: "AE",
+      contactPhone: "",
+      contactEmail: "",
+      industry: "",
+      logoUrl: "",
+      dateFormat: "DD/MM/YYYY",
+      locale: "en",
     },
   });
 
   useEffect(() => {
     if (!company) return;
     form.reset({
-      name: company.name ?? '',
-      legalName: company.legalName ?? '',
-      trnVatNumber: company.trnVatNumber ?? '',
-      baseCurrency: (company.baseCurrency ?? 'AED') as FormValues['baseCurrency'],
+      name: company.name ?? "",
+      legalName: company.legalName ?? "",
+      trnVatNumber: company.trnVatNumber ?? "",
+      baseCurrency: (company.baseCurrency ?? "AED") as FormValues["baseCurrency"],
       fiscalYearStartMonth: company.fiscalYearStartMonth ?? 1,
       defaultVatRate: company.defaultVatRate ?? 0.05,
-      addressStreet: company.addressStreet ?? '',
-      addressCity: company.addressCity ?? '',
-      emirate: (company.emirate as FormValues['emirate']) ?? 'dubai',
-      addressCountry: company.addressCountry ?? 'AE',
-      contactPhone: company.contactPhone ?? '',
-      contactEmail: company.contactEmail ?? '',
-      industry: company.industry ?? '',
-      logoUrl: company.logoUrl ?? '',
-      dateFormat: (company.dateFormat as FormValues['dateFormat']) ?? 'DD/MM/YYYY',
-      locale: (company.locale as FormValues['locale']) ?? 'en',
+      addressStreet: company.addressStreet ?? "",
+      addressCity: company.addressCity ?? "",
+      emirate: (company.emirate as FormValues["emirate"]) ?? "dubai",
+      addressCountry: company.addressCountry ?? "AE",
+      contactPhone: company.contactPhone ?? "",
+      contactEmail: company.contactEmail ?? "",
+      industry: company.industry ?? "",
+      logoUrl: company.logoUrl ?? "",
+      dateFormat: (company.dateFormat as FormValues["dateFormat"]) ?? "DD/MM/YYYY",
+      locale: (company.locale as FormValues["locale"]) ?? "en",
     });
     if (company.logoUrl) setLogoPreview(company.logoUrl);
   }, [company, form]);
 
   const updateMutation = useMutation({
     mutationFn: (data: FormValues) =>
-      apiRequest('PATCH', `/api/companies/${companyId}/preferences`, data),
+      apiRequest("PATCH", `/api/companies/${companyId}/preferences`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: 'Preferences saved',
-        description: 'Your company preferences have been updated.',
+        title: "Preferences saved",
+        description: "Your company preferences have been updated.",
       });
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Failed to save preferences',
-        description: error?.message || 'Please try again.',
+        variant: "destructive",
+        title: "Failed to save preferences",
+        description: error?.message || "Please try again.",
       });
     },
   });
@@ -164,9 +174,9 @@ export default function CompanySettings() {
     if (!file) return;
     if (file.size > 1024 * 1024) {
       toast({
-        variant: 'destructive',
-        title: 'Image too large',
-        description: 'Please choose an image under 1 MB.',
+        variant: "destructive",
+        title: "Image too large",
+        description: "Please choose an image under 1 MB.",
       });
       return;
     }
@@ -174,7 +184,7 @@ export default function CompanySettings() {
     reader.onloadend = () => {
       const result = reader.result as string;
       setLogoPreview(result);
-      form.setValue('logoUrl', result, { shouldDirty: true });
+      form.setValue("logoUrl", result, { shouldDirty: true });
     };
     reader.readAsDataURL(file);
   };
@@ -208,7 +218,8 @@ export default function CompanySettings() {
       <div>
         <h1 className="text-3xl font-semibold mb-2">Company Settings</h1>
         <p className="text-muted-foreground">
-          Manage company-wide preferences: identity, currency, fiscal year, VAT, address, and locale.
+          Manage company-wide preferences: identity, currency, fiscal year, VAT, address, and
+          locale.
         </p>
       </div>
 
@@ -221,7 +232,9 @@ export default function CompanySettings() {
                 <Building2 className="w-5 h-5 text-primary" />
                 <div>
                   <CardTitle>Company Identity</CardTitle>
-                  <CardDescription>Names, registration, and logo shown on invoices.</CardDescription>
+                  <CardDescription>
+                    Names, registration, and logo shown on invoices.
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -236,7 +249,7 @@ export default function CompanySettings() {
                       <FormControl>
                         <Input
                           {...field}
-                          value={field.value ?? ''}
+                          value={field.value ?? ""}
                           placeholder="Acme Trading"
                           data-testid="input-company-name"
                         />
@@ -255,7 +268,7 @@ export default function CompanySettings() {
                       <FormControl>
                         <Input
                           {...field}
-                          value={field.value ?? ''}
+                          value={field.value ?? ""}
                           placeholder="Acme Trading L.L.C"
                           data-testid="input-legal-name"
                         />
@@ -275,7 +288,7 @@ export default function CompanySettings() {
                       <FormControl>
                         <Input
                           {...field}
-                          value={field.value ?? ''}
+                          value={field.value ?? ""}
                           placeholder="100123456789012"
                           inputMode="numeric"
                           maxLength={15}
@@ -298,7 +311,7 @@ export default function CompanySettings() {
                       <FormControl>
                         <Input
                           {...field}
-                          value={field.value ?? ''}
+                          value={field.value ?? ""}
                           placeholder="Retail, Construction, Software…"
                           data-testid="input-industry"
                         />
@@ -314,7 +327,11 @@ export default function CompanySettings() {
                 <div className="flex items-center gap-4">
                   {logoPreview && (
                     <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0 bg-muted">
-                      <img src={logoPreview} alt="Logo preview" className="w-full h-full object-contain" />
+                      <img
+                        src={logoPreview}
+                        alt="Logo preview"
+                        className="w-full h-full object-contain"
+                      />
                     </div>
                   )}
                   <div className="flex-1">
@@ -347,7 +364,9 @@ export default function CompanySettings() {
                 <Globe className="w-5 h-5 text-primary" />
                 <div>
                   <CardTitle>Localization & Finance</CardTitle>
-                  <CardDescription>Currency, fiscal year, VAT, language, and date format.</CardDescription>
+                  <CardDescription>
+                    Currency, fiscal year, VAT, language, and date format.
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -359,15 +378,17 @@ export default function CompanySettings() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Preferred Currency *</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? 'AED'}>
+                      <Select onValueChange={field.onChange} value={field.value ?? "AED"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-base-currency">
                             <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {CURRENCY_OPTIONS.map(c => (
-                            <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                          {CURRENCY_OPTIONS.map((c) => (
+                            <SelectItem key={c.value} value={c.value}>
+                              {c.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -393,7 +414,9 @@ export default function CompanySettings() {
                         </FormControl>
                         <SelectContent>
                           {MONTH_OPTIONS.map((label, idx) => (
-                            <SelectItem key={idx + 1} value={String(idx + 1)}>{label}</SelectItem>
+                            <SelectItem key={idx + 1} value={String(idx + 1)}>
+                              {label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -418,8 +441,10 @@ export default function CompanySettings() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {VAT_RATE_OPTIONS.map(r => (
-                            <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                          {VAT_RATE_OPTIONS.map((r) => (
+                            <SelectItem key={r.value} value={r.value}>
+                              {r.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -435,15 +460,17 @@ export default function CompanySettings() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Date Format</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? 'DD/MM/YYYY'}>
+                      <Select onValueChange={field.onChange} value={field.value ?? "DD/MM/YYYY"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-date-format">
                             <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {DATE_FORMAT_OPTIONS.map(d => (
-                            <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                          {DATE_FORMAT_OPTIONS.map((d) => (
+                            <SelectItem key={d.value} value={d.value}>
+                              {d.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -458,7 +485,7 @@ export default function CompanySettings() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Language</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? 'en'}>
+                      <Select onValueChange={field.onChange} value={field.value ?? "en"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-locale">
                             <SelectValue />
@@ -499,7 +526,7 @@ export default function CompanySettings() {
                     <FormControl>
                       <Input
                         {...field}
-                        value={field.value ?? ''}
+                        value={field.value ?? ""}
                         placeholder="Office 101, Building 7, Sheikh Zayed Rd"
                         data-testid="input-address-street"
                       />
@@ -519,7 +546,7 @@ export default function CompanySettings() {
                       <FormControl>
                         <Input
                           {...field}
-                          value={field.value ?? ''}
+                          value={field.value ?? ""}
                           placeholder="Dubai"
                           data-testid="input-address-city"
                         />
@@ -535,15 +562,17 @@ export default function CompanySettings() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Emirate / Region</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? 'dubai'}>
+                      <Select onValueChange={field.onChange} value={field.value ?? "dubai"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-emirate">
                             <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {EMIRATE_OPTIONS.map(e => (
-                            <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>
+                          {EMIRATE_OPTIONS.map((e) => (
+                            <SelectItem key={e.value} value={e.value}>
+                              {e.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -558,15 +587,17 @@ export default function CompanySettings() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Country</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? 'AE'}>
+                      <Select onValueChange={field.onChange} value={field.value ?? "AE"}>
                         <FormControl>
                           <SelectTrigger data-testid="select-address-country">
                             <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {COUNTRY_OPTIONS.map(c => (
-                            <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                          {COUNTRY_OPTIONS.map((c) => (
+                            <SelectItem key={c.value} value={c.value}>
+                              {c.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -586,7 +617,7 @@ export default function CompanySettings() {
                       <FormControl>
                         <Input
                           {...field}
-                          value={field.value ?? ''}
+                          value={field.value ?? ""}
                           type="tel"
                           placeholder="+971 4 123 4567"
                           data-testid="input-contact-phone"
@@ -606,7 +637,7 @@ export default function CompanySettings() {
                       <FormControl>
                         <Input
                           {...field}
-                          value={field.value ?? ''}
+                          value={field.value ?? ""}
                           type="email"
                           placeholder="hello@acme.ae"
                           data-testid="input-contact-email"
@@ -637,7 +668,7 @@ export default function CompanySettings() {
               data-testid="button-save-company-settings"
             >
               {updateMutation.isPending ? (
-                'Saving…'
+                "Saving…"
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />
@@ -652,7 +683,11 @@ export default function CompanySettings() {
               <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />
               <div>
                 Need to update tax registration type, filing frequency, or other compliance fields?
-                Visit the <a href="/company-profile" className="text-primary underline">Company Profile</a> page.
+                Visit the{" "}
+                <a href="/company-profile" className="text-primary underline">
+                  Company Profile
+                </a>{" "}
+                page.
               </div>
             </CardContent>
           </Card>

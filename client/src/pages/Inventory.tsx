@@ -1,23 +1,15 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { format } from 'date-fns';
-import {
-  Package,
-  Plus,
-  Edit,
-  Trash2,
-  PackagePlus,
-  AlertTriangle,
-  ArrowDownUp,
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { format } from "date-fns";
+import { Package, Plus, Edit, Trash2, PackagePlus, AlertTriangle, ArrowDownUp } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -25,22 +17,31 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Form,
   FormControl,
@@ -48,34 +49,34 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency } from '@/lib/format';
-import type { Product, InventoryMovement } from '@shared/schema';
+} from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency } from "@/lib/format";
+import type { Product, InventoryMovement } from "@shared/schema";
 
 // ─── Schemas ──────────────────────────────────────────────
 
 const productFormSchema = z.object({
-  name: z.string().min(1, 'Product name is required'),
+  name: z.string().min(1, "Product name is required"),
   nameAr: z.string().optional().nullable(),
   sku: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
-  unitPrice: z.coerce.number().min(0, 'Unit price must be >= 0'),
-  costPrice: z.coerce.number().min(0, 'Cost price must be >= 0').optional().nullable(),
-  vatRate: z.coerce.number().min(0).max(1, 'VAT rate must be between 0 and 1'),
-  unit: z.string().min(1, 'Unit is required'),
+  unitPrice: z.coerce.number().min(0, "Unit price must be >= 0"),
+  costPrice: z.coerce.number().min(0, "Cost price must be >= 0").optional().nullable(),
+  vatRate: z.coerce.number().min(0).max(1, "VAT rate must be between 0 and 1"),
+  unit: z.string().min(1, "Unit is required"),
   lowStockThreshold: z.coerce.number().int().min(0).optional().nullable(),
 });
 
 type ProductFormData = z.infer<typeof productFormSchema>;
 
 const movementFormSchema = z.object({
-  type: z.enum(['purchase', 'adjustment', 'return']),
-  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1'),
+  type: z.enum(["purchase", "adjustment", "return"]),
+  quantity: z.coerce.number().int().min(1, "Quantity must be at least 1"),
   unitCost: z.coerce.number().min(0).optional().nullable(),
   notes: z.string().optional().nullable(),
 });
@@ -93,7 +94,7 @@ export default function Inventory() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [addStockDialogOpen, setAddStockDialogOpen] = useState(false);
   const [stockProduct, setStockProduct] = useState<Product | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [productToDelete, setProductToDelete] = useState<string | null>(null);
 
   // ─── Queries ──────────────────────────────────────────
@@ -103,24 +104,26 @@ export default function Inventory() {
     enabled: !!companyId,
   });
 
-  const { data: movementsList = [], isLoading: isLoadingMovements } = useQuery<InventoryMovement[]>({
-    queryKey: [`/api/companies/${companyId}/inventory-movements`],
-    enabled: !!companyId,
-  });
+  const { data: movementsList = [], isLoading: isLoadingMovements } = useQuery<InventoryMovement[]>(
+    {
+      queryKey: [`/api/companies/${companyId}/inventory-movements`],
+      enabled: !!companyId,
+    }
+  );
 
   // ─── Forms ────────────────────────────────────────────
 
   const productForm = useForm<ProductFormData>({
     resolver: zodResolver(productFormSchema),
     defaultValues: {
-      name: '',
-      nameAr: '',
-      sku: '',
-      description: '',
+      name: "",
+      nameAr: "",
+      sku: "",
+      description: "",
       unitPrice: 0,
       costPrice: 0,
       vatRate: 0.05,
-      unit: 'pcs',
+      unit: "pcs",
       lowStockThreshold: 10,
     },
   });
@@ -128,10 +131,10 @@ export default function Inventory() {
   const movementForm = useForm<MovementFormData>({
     resolver: zodResolver(movementFormSchema),
     defaultValues: {
-      type: 'purchase',
+      type: "purchase",
       quantity: 1,
       unitCost: 0,
-      notes: '',
+      notes: "",
     },
   });
 
@@ -139,57 +142,62 @@ export default function Inventory() {
 
   const createProductMutation = useMutation({
     mutationFn: (data: ProductFormData) =>
-      apiRequest('POST', `/api/companies/${companyId}/products`, data),
+      apiRequest("POST", `/api/companies/${companyId}/products`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
-      toast({ title: 'Product Created', description: 'The product has been added successfully.' });
+      toast({ title: "Product Created", description: "The product has been added successfully." });
       setProductDialogOpen(false);
       productForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const updateProductMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<ProductFormData> }) =>
-      apiRequest('PATCH', `/api/products/${id}`, data),
+      apiRequest("PATCH", `/api/products/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
-      toast({ title: 'Product Updated', description: 'The product has been updated successfully.' });
+      toast({
+        title: "Product Updated",
+        description: "The product has been updated successfully.",
+      });
       setProductDialogOpen(false);
       setEditingProduct(null);
       productForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const deleteProductMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('DELETE', `/api/products/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/products/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
-      toast({ title: 'Product Deleted', description: 'The product has been deleted.' });
+      toast({ title: "Product Deleted", description: "The product has been deleted." });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const addMovementMutation = useMutation({
     mutationFn: ({ productId, data }: { productId: string; data: MovementFormData }) =>
-      apiRequest('POST', `/api/products/${productId}/movements`, data),
+      apiRequest("POST", `/api/products/${productId}/movements`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/inventory-movements`] });
-      toast({ title: 'Stock Updated', description: 'Inventory movement recorded successfully.' });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/inventory-movements`],
+      });
+      toast({ title: "Stock Updated", description: "Inventory movement recorded successfully." });
       setAddStockDialogOpen(false);
       setStockProduct(null);
       movementForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
@@ -198,14 +206,14 @@ export default function Inventory() {
   const handleOpenCreateDialog = () => {
     setEditingProduct(null);
     productForm.reset({
-      name: '',
-      nameAr: '',
-      sku: '',
-      description: '',
+      name: "",
+      nameAr: "",
+      sku: "",
+      description: "",
       unitPrice: 0,
       costPrice: 0,
       vatRate: 0.05,
-      unit: 'pcs',
+      unit: "pcs",
       lowStockThreshold: 10,
     });
     setProductDialogOpen(true);
@@ -215,9 +223,9 @@ export default function Inventory() {
     setEditingProduct(product);
     productForm.reset({
       name: product.name,
-      nameAr: product.nameAr || '',
-      sku: product.sku || '',
-      description: product.description || '',
+      nameAr: product.nameAr || "",
+      sku: product.sku || "",
+      description: product.description || "",
       unitPrice: product.unitPrice,
       costPrice: product.costPrice || 0,
       vatRate: product.vatRate,
@@ -230,10 +238,10 @@ export default function Inventory() {
   const handleOpenAddStockDialog = (product: Product) => {
     setStockProduct(product);
     movementForm.reset({
-      type: 'purchase',
+      type: "purchase",
       quantity: 1,
       unitCost: product.costPrice || 0,
-      notes: '',
+      notes: "",
     });
     setAddStockDialogOpen(true);
   };
@@ -255,13 +263,13 @@ export default function Inventory() {
 
   const getMovementTypeBadge = (type: string) => {
     switch (type) {
-      case 'purchase':
+      case "purchase":
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Purchase</Badge>;
-      case 'sale':
+      case "sale":
         return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Sale</Badge>;
-      case 'adjustment':
+      case "adjustment":
         return <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Adjustment</Badge>;
-      case 'return':
+      case "return":
         return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Return</Badge>;
       default:
         return <Badge variant="secondary">{type}</Badge>;
@@ -269,11 +277,11 @@ export default function Inventory() {
   };
 
   const getProductName = (productId: string): string => {
-    const product = productsList.find(p => p.id === productId);
-    return product?.name || 'Unknown Product';
+    const product = productsList.find((p) => p.id === productId);
+    return product?.name || "Unknown Product";
   };
 
-  const filteredProducts = productsList.filter(product => {
+  const filteredProducts = productsList.filter((product) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -288,7 +296,7 @@ export default function Inventory() {
   if (isLoadingCompany) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || 'Loading...'}</div>
+        <div className="text-muted-foreground">{t.loading || "Loading..."}</div>
       </div>
     );
   }
@@ -309,7 +317,7 @@ export default function Inventory() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
             <Package className="w-8 h-8" />
-            {(t as any).inventory || 'Inventory'}
+            {(t as any).inventory || "Inventory"}
           </h1>
           <p className="text-muted-foreground mt-1">
             Manage your products and track inventory movements
@@ -337,7 +345,7 @@ export default function Inventory() {
                 <div>
                   <CardTitle>Products</CardTitle>
                   <CardDescription>
-                    {productsList.length} product{productsList.length !== 1 ? 's' : ''} in inventory
+                    {productsList.length} product{productsList.length !== 1 ? "s" : ""} in inventory
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
@@ -356,10 +364,14 @@ export default function Inventory() {
             </CardHeader>
             <CardContent>
               {isLoadingProducts ? (
-                <div className="text-center py-8 text-muted-foreground">{t.loading || 'Loading...'}</div>
+                <div className="text-center py-8 text-muted-foreground">
+                  {t.loading || "Loading..."}
+                </div>
               ) : filteredProducts.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {searchQuery ? 'No products match your search.' : 'No products yet. Add your first product to get started.'}
+                  {searchQuery
+                    ? "No products match your search."
+                    : "No products yet. Add your first product to get started."}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -373,7 +385,7 @@ export default function Inventory() {
                         <TableHead className="text-right">Stock</TableHead>
                         <TableHead>Unit</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead className="text-right">{t.actions || 'Actions'}</TableHead>
+                        <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -385,18 +397,29 @@ export default function Inventory() {
                               <div>
                                 {product.name}
                                 {product.nameAr && (
-                                  <div className="text-xs text-muted-foreground">{product.nameAr}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {product.nameAr}
+                                  </div>
                                 )}
                               </div>
                             </TableCell>
-                            <TableCell className="text-muted-foreground">{product.sku || '-'}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(product.unitPrice, 'AED', locale)}</TableCell>
-                            <TableCell className="text-right">{formatCurrency(product.costPrice || 0, 'AED', locale)}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {product.sku || "-"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(product.unitPrice, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(product.costPrice || 0, "AED", locale)}
+                            </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-2">
                                 {product.currentStock}
                                 {isLowStock && (
-                                  <Badge variant="destructive" className="text-xs flex items-center gap-1">
+                                  <Badge
+                                    variant="destructive"
+                                    className="text-xs flex items-center gap-1"
+                                  >
                                     <AlertTriangle className="w-3 h-3" />
                                     Low
                                   </Badge>
@@ -406,9 +429,11 @@ export default function Inventory() {
                             <TableCell>{product.unit}</TableCell>
                             <TableCell>
                               {product.isActive ? (
-                                <Badge variant="secondary" className="bg-green-100 text-green-800">Active</Badge>
+                                <Badge variant="secondary" className="bg-green-100 text-green-800">
+                                  Active
+                                </Badge>
                               ) : (
-                                <Badge variant="secondary">{t.inactive || 'Inactive'}</Badge>
+                                <Badge variant="secondary">{t.inactive || "Inactive"}</Badge>
                               )}
                             </TableCell>
                             <TableCell className="text-right">
@@ -456,13 +481,13 @@ export default function Inventory() {
           <Card>
             <CardHeader>
               <CardTitle>Inventory Movements</CardTitle>
-              <CardDescription>
-                History of all inventory changes across products
-              </CardDescription>
+              <CardDescription>History of all inventory changes across products</CardDescription>
             </CardHeader>
             <CardContent>
               {isLoadingMovements ? (
-                <div className="text-center py-8 text-muted-foreground">{t.loading || 'Loading...'}</div>
+                <div className="text-center py-8 text-muted-foreground">
+                  {t.loading || "Loading..."}
+                </div>
               ) : movementsList.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   No inventory movements yet. Add stock to a product to get started.
@@ -472,12 +497,12 @@ export default function Inventory() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>{t.date || 'Date'}</TableHead>
+                        <TableHead>{t.date || "Date"}</TableHead>
                         <TableHead>Product</TableHead>
-                        <TableHead>{t.type || 'Type'}</TableHead>
-                        <TableHead className="text-right">{t.quantity || 'Quantity'}</TableHead>
+                        <TableHead>{t.type || "Type"}</TableHead>
+                        <TableHead className="text-right">{t.quantity || "Quantity"}</TableHead>
                         <TableHead className="text-right">Unit Cost</TableHead>
-                        <TableHead>{t.reference || 'Reference'}</TableHead>
+                        <TableHead>{t.reference || "Reference"}</TableHead>
                         <TableHead>Notes</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -486,20 +511,27 @@ export default function Inventory() {
                         <TableRow key={movement.id}>
                           <TableCell className="whitespace-nowrap">
                             {movement.createdAt
-                              ? format(new Date(movement.createdAt), 'MMM dd, yyyy HH:mm')
-                              : '-'}
+                              ? format(new Date(movement.createdAt), "MMM dd, yyyy HH:mm")
+                              : "-"}
                           </TableCell>
-                          <TableCell className="font-medium">{getProductName(movement.productId)}</TableCell>
+                          <TableCell className="font-medium">
+                            {getProductName(movement.productId)}
+                          </TableCell>
                           <TableCell>{getMovementTypeBadge(movement.type)}</TableCell>
                           <TableCell className="text-right font-mono">
-                            {movement.type === 'sale' ? '-' : '+'}{Math.abs(movement.quantity)}
+                            {movement.type === "sale" ? "-" : "+"}
+                            {Math.abs(movement.quantity)}
                           </TableCell>
                           <TableCell className="text-right">
-                            {movement.unitCost != null ? formatCurrency(movement.unitCost, 'AED', locale) : '-'}
+                            {movement.unitCost != null
+                              ? formatCurrency(movement.unitCost, "AED", locale)
+                              : "-"}
                           </TableCell>
-                          <TableCell className="text-muted-foreground">{movement.reference || '-'}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {movement.reference || "-"}
+                          </TableCell>
                           <TableCell className="text-muted-foreground max-w-[200px] truncate">
-                            {movement.notes || '-'}
+                            {movement.notes || "-"}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -516,9 +548,9 @@ export default function Inventory() {
       <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? 'Edit Product' : 'Add Product'}</DialogTitle>
+            <DialogTitle>{editingProduct ? "Edit Product" : "Add Product"}</DialogTitle>
             <DialogDescription>
-              {editingProduct ? 'Update product details.' : 'Add a new product to your inventory.'}
+              {editingProduct ? "Update product details." : "Add a new product to your inventory."}
             </DialogDescription>
           </DialogHeader>
 
@@ -545,7 +577,12 @@ export default function Inventory() {
                   <FormItem>
                     <FormLabel>Name (Arabic)</FormLabel>
                     <FormControl>
-                      <Input placeholder="اسم المنتج" dir="rtl" {...field} value={field.value || ''} />
+                      <Input
+                        placeholder="اسم المنتج"
+                        dir="rtl"
+                        {...field}
+                        value={field.value || ""}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -560,7 +597,7 @@ export default function Inventory() {
                     <FormItem>
                       <FormLabel>SKU</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., PROD-001" {...field} value={field.value || ''} />
+                        <Input placeholder="e.g., PROD-001" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -598,9 +635,13 @@ export default function Inventory() {
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.description || 'Description'}</FormLabel>
+                    <FormLabel>{t.description || "Description"}</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Product description (optional)" {...field} value={field.value || ''} />
+                      <Textarea
+                        placeholder="Product description (optional)"
+                        {...field}
+                        value={field.value || ""}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -613,7 +654,7 @@ export default function Inventory() {
                   name="unitPrice"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t.unitPrice || 'Unit Price'} *</FormLabel>
+                      <FormLabel>{t.unitPrice || "Unit Price"} *</FormLabel>
                       <FormControl>
                         <Input type="number" step="0.01" min="0" {...field} />
                       </FormControl>
@@ -692,17 +733,17 @@ export default function Inventory() {
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button type="button" variant="outline" onClick={() => setProductDialogOpen(false)}>
-                  {t.cancel || 'Cancel'}
+                  {t.cancel || "Cancel"}
                 </Button>
                 <Button
                   type="submit"
                   disabled={createProductMutation.isPending || updateProductMutation.isPending}
                 >
-                  {(createProductMutation.isPending || updateProductMutation.isPending)
-                    ? (t.loading || 'Loading...')
+                  {createProductMutation.isPending || updateProductMutation.isPending
+                    ? t.loading || "Loading..."
                     : editingProduct
-                      ? (t.save || 'Save')
-                      : 'Add Product'}
+                      ? t.save || "Save"
+                      : "Add Product"}
                 </Button>
               </div>
             </form>
@@ -716,7 +757,9 @@ export default function Inventory() {
           <DialogHeader>
             <DialogTitle>Add Stock</DialogTitle>
             <DialogDescription>
-              {stockProduct ? `Record inventory movement for "${stockProduct.name}"` : 'Record inventory movement'}
+              {stockProduct
+                ? `Record inventory movement for "${stockProduct.name}"`
+                : "Record inventory movement"}
             </DialogDescription>
           </DialogHeader>
 
@@ -727,7 +770,7 @@ export default function Inventory() {
                 name="type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.type || 'Type'} *</FormLabel>
+                    <FormLabel>{t.type || "Type"} *</FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
@@ -750,7 +793,7 @@ export default function Inventory() {
                 name="quantity"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t.quantity || 'Quantity'} *</FormLabel>
+                    <FormLabel>{t.quantity || "Quantity"} *</FormLabel>
                     <FormControl>
                       <Input type="number" min="1" step="1" {...field} />
                     </FormControl>
@@ -771,7 +814,7 @@ export default function Inventory() {
                         step="0.01"
                         min="0"
                         {...field}
-                        value={field.value ?? ''}
+                        value={field.value ?? ""}
                       />
                     </FormControl>
                     <FormMessage />
@@ -786,7 +829,7 @@ export default function Inventory() {
                   <FormItem>
                     <FormLabel>Notes</FormLabel>
                     <FormControl>
-                      <Textarea placeholder="Optional notes" {...field} value={field.value || ''} />
+                      <Textarea placeholder="Optional notes" {...field} value={field.value || ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -794,11 +837,15 @@ export default function Inventory() {
               />
 
               <div className="flex justify-end gap-2 pt-4">
-                <Button type="button" variant="outline" onClick={() => setAddStockDialogOpen(false)}>
-                  {t.cancel || 'Cancel'}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAddStockDialogOpen(false)}
+                >
+                  {t.cancel || "Cancel"}
                 </Button>
                 <Button type="submit" disabled={addMovementMutation.isPending}>
-                  {addMovementMutation.isPending ? (t.loading || 'Loading...') : 'Record Movement'}
+                  {addMovementMutation.isPending ? t.loading || "Loading..." : "Record Movement"}
                 </Button>
               </div>
             </form>
@@ -806,12 +853,18 @@ export default function Inventory() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!productToDelete} onOpenChange={(open) => { if (!open) setProductToDelete(null); }}>
+      <AlertDialog
+        open={!!productToDelete}
+        onOpenChange={(open) => {
+          if (!open) setProductToDelete(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Product?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this product from inventory. This action cannot be undone.
+              This will permanently delete this product from inventory. This action cannot be
+              undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

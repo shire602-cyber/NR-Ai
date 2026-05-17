@@ -1,8 +1,12 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { 
-  Building2, 
-  Plus, 
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Activity,
+  ArrowRight,
+  BarChart3,
+  Building2,
+  Briefcase,
+  Plus,
   Search,
   MoreHorizontal,
   Edit,
@@ -13,29 +17,59 @@ import {
   Receipt,
   Calendar,
   Mail,
+  MessageSquare,
   Phone,
   Globe,
   MapPin,
   Filter,
   Download,
-  Upload
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Link } from 'wouter';
-import { format } from 'date-fns';
-import type { Company } from '@shared/schema';
+  Upload,
+  Zap,
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Link } from "wouter";
+import { format } from "date-fns";
+import type { Company } from "@shared/schema";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 interface ClientWithStats extends Company {
   userCount: number;
@@ -43,104 +77,171 @@ interface ClientWithStats extends Company {
   invoiceCount: number;
 }
 
+const firmWorkspaceLinks = [
+  {
+    title: "Client Portfolio",
+    description: "Operational board, VAT/CT status, owner actions",
+    href: "/firm/clients",
+    icon: Building2,
+  },
+  {
+    title: "Command Center",
+    description: "Client health, alerts, and batch actions",
+    href: "/firm/command-center",
+    icon: Briefcase,
+  },
+  {
+    title: "Value Ops",
+    description: "Audit packs, CFO packs, revenue recovery",
+    href: "/firm/value-ops",
+    icon: Zap,
+  },
+  {
+    title: "Bulk Operations",
+    description: "Batch OCR, VAT queues, invoicing, close checks",
+    href: "/firm/bulk",
+    icon: Upload,
+  },
+  {
+    title: "Health Dashboard",
+    description: "Compliance deadlines and client risk status",
+    href: "/firm/health",
+    icon: Activity,
+  },
+  {
+    title: "Communications",
+    description: "Client outreach, templates, communication log",
+    href: "/firm/comms",
+    icon: MessageSquare,
+  },
+  {
+    title: "Firm Analytics",
+    description: "Revenue, utilization, and portfolio trends",
+    href: "/firm/analytics",
+    icon: BarChart3,
+  },
+  {
+    title: "Lead Pipeline",
+    description: "Prospects and conversion opportunities",
+    href: "/firm/pipeline",
+    icon: Users,
+  },
+];
+
 export default function ClientManagement() {
   const { toast } = useToast();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [industryFilter, setIndustryFilter] = useState<string>('all');
+  const { data: currentUser } = useCurrentUser();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [industryFilter, setIndustryFilter] = useState<string>("all");
   const [addClientOpen, setAddClientOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientWithStats | null>(null);
-  
+
   // Form state for new client - all fields
   const [formData, setFormData] = useState({
-    name: '',
-    industry: '',
-    legalStructure: '',
-    registrationNumber: '',
-    trnVatNumber: '',
-    taxRegistrationType: '',
-    vatFilingFrequency: '',
-    contactEmail: '',
-    contactPhone: '',
-    websiteUrl: '',
-    businessAddress: '',
+    name: "",
+    industry: "",
+    legalStructure: "",
+    registrationNumber: "",
+    trnVatNumber: "",
+    taxRegistrationType: "",
+    vatFilingFrequency: "",
+    contactEmail: "",
+    contactPhone: "",
+    websiteUrl: "",
+    businessAddress: "",
   });
-  
+
   const resetForm = () => {
     setFormData({
-      name: '',
-      industry: '',
-      legalStructure: '',
-      registrationNumber: '',
-      trnVatNumber: '',
-      taxRegistrationType: '',
-      vatFilingFrequency: '',
-      contactEmail: '',
-      contactPhone: '',
-      websiteUrl: '',
-      businessAddress: '',
+      name: "",
+      industry: "",
+      legalStructure: "",
+      registrationNumber: "",
+      trnVatNumber: "",
+      taxRegistrationType: "",
+      vatFilingFrequency: "",
+      contactEmail: "",
+      contactPhone: "",
+      websiteUrl: "",
+      businessAddress: "",
     });
   };
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
-    queryKey: ['/api/admin/clients'],
+    queryKey: ["/api/admin/clients"],
   });
 
   const createClientMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('POST', '/api/admin/clients', data);
+      return apiRequest("POST", "/api/admin/clients", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/clients'] });
-      toast({ title: 'Client created successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
+      toast({ title: "Client created successfully" });
       setAddClientOpen(false);
       resetForm();
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create client', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to create client",
+        description: error?.message,
+      });
     },
   });
 
   const updateClientMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      return apiRequest('PATCH', `/api/admin/clients/${id}`, data);
+      return apiRequest("PATCH", `/api/admin/clients/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/clients'] });
-      toast({ title: 'Client updated successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
+      toast({ title: "Client updated successfully" });
       setEditingClient(null);
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to update client', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to update client",
+        description: error?.message,
+      });
     },
   });
 
   const deleteClientMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('DELETE', `/api/admin/clients/${id}`);
+      return apiRequest("DELETE", `/api/admin/clients/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/clients'] });
-      toast({ title: 'Client deleted successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
+      toast({ title: "Client deleted successfully" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to delete client', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to delete client",
+        description: error?.message,
+      });
     },
   });
 
-  const filteredClients = clients.filter(client => {
-    const matchesSearch = client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filteredClients = clients.filter((client) => {
+    const matchesSearch =
+      client.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       client.contactEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       client.trnVatNumber?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesIndustry = industryFilter === 'all' || client.industry === industryFilter;
+    const matchesIndustry = industryFilter === "all" || client.industry === industryFilter;
     return matchesSearch && matchesIndustry;
   });
 
-  const industries = Array.from(new Set(clients.map(c => c.industry).filter(Boolean)));
+  const industries = Array.from(new Set(clients.map((c) => c.industry).filter(Boolean)));
+  const hasFirmWorkspace =
+    currentUser?.firmRole === "firm_owner" || currentUser?.firmRole === "firm_admin";
 
   const handleCreateClient = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.name.trim()) {
-      toast({ variant: 'destructive', title: 'Company name is required' });
+      toast({ variant: "destructive", title: "Company name is required" });
       return;
     }
     const data = {
@@ -164,15 +265,15 @@ export default function ClientManagement() {
     if (!editingClient) return;
     const formData = new FormData(e.currentTarget);
     const data = {
-      name: formData.get('name'),
-      industry: formData.get('industry') || null,
-      legalStructure: formData.get('legalStructure') || null,
-      registrationNumber: formData.get('registrationNumber') || null,
-      businessAddress: formData.get('businessAddress') || null,
-      contactEmail: formData.get('contactEmail') || null,
-      contactPhone: formData.get('contactPhone') || null,
-      websiteUrl: formData.get('websiteUrl') || null,
-      trnVatNumber: formData.get('trnVatNumber') || null,
+      name: formData.get("name"),
+      industry: formData.get("industry") || null,
+      legalStructure: formData.get("legalStructure") || null,
+      registrationNumber: formData.get("registrationNumber") || null,
+      businessAddress: formData.get("businessAddress") || null,
+      contactEmail: formData.get("contactEmail") || null,
+      contactPhone: formData.get("contactPhone") || null,
+      websiteUrl: formData.get("websiteUrl") || null,
+      trnVatNumber: formData.get("trnVatNumber") || null,
     };
     updateClientMutation.mutate({ id: editingClient.id, data });
   };
@@ -189,7 +290,9 @@ export default function ClientManagement() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-clients-title">Client Management</h1>
+          <h1 className="text-3xl font-bold" data-testid="text-clients-title">
+            Client Management
+          </h1>
           <p className="text-muted-foreground">Manage all your accounting firm's clients</p>
         </div>
         <div className="flex items-center gap-2">
@@ -199,160 +302,251 @@ export default function ClientManagement() {
               Import from Excel
             </Button>
           </Link>
-          <Dialog open={addClientOpen} onOpenChange={(open) => { setAddClientOpen(open); if (!open) resetForm(); }}>
+          <Dialog
+            open={addClientOpen}
+            onOpenChange={(open) => {
+              setAddClientOpen(open);
+              if (!open) resetForm();
+            }}
+          >
             <DialogTrigger asChild>
               <Button data-testid="button-add-client">
                 <Plus className="w-4 h-4 mr-2" />
                 Add Client
               </Button>
             </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Add New Client</DialogTitle>
-              <DialogDescription>Create a new client company for your accounting services</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleCreateClient} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Company Name *</Label>
-                  <Input 
-                    id="name" 
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    required 
-                    data-testid="input-client-name" 
-                  />
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add New Client</DialogTitle>
+                <DialogDescription>
+                  Create a new client company for your accounting services
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleCreateClient} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Company Name *</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                      required
+                      data-testid="input-client-name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="industry">Industry</Label>
+                    <Select
+                      value={formData.industry}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, industry: value }))
+                      }
+                    >
+                      <SelectTrigger data-testid="select-industry">
+                        <SelectValue placeholder="Select industry" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="retail">Retail</SelectItem>
+                        <SelectItem value="services">Services</SelectItem>
+                        <SelectItem value="manufacturing">Manufacturing</SelectItem>
+                        <SelectItem value="technology">Technology</SelectItem>
+                        <SelectItem value="construction">Construction</SelectItem>
+                        <SelectItem value="hospitality">Hospitality</SelectItem>
+                        <SelectItem value="healthcare">Healthcare</SelectItem>
+                        <SelectItem value="real_estate">Real Estate</SelectItem>
+                        <SelectItem value="trading">Trading</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="legalStructure">Legal Structure</Label>
+                    <Select
+                      value={formData.legalStructure}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, legalStructure: value }))
+                      }
+                    >
+                      <SelectTrigger data-testid="select-legal-structure">
+                        <SelectValue placeholder="Select structure" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="llc">LLC</SelectItem>
+                        <SelectItem value="sole_proprietorship">Sole Proprietorship</SelectItem>
+                        <SelectItem value="partnership">Partnership</SelectItem>
+                        <SelectItem value="corporation">Corporation</SelectItem>
+                        <SelectItem value="free_zone">Free Zone Company</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="registrationNumber">Registration Number</Label>
+                    <Input
+                      id="registrationNumber"
+                      value={formData.registrationNumber}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, registrationNumber: e.target.value }))
+                      }
+                      data-testid="input-registration"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="trnVatNumber">TRN / VAT Number</Label>
+                    <Input
+                      id="trnVatNumber"
+                      value={formData.trnVatNumber}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, trnVatNumber: e.target.value }))
+                      }
+                      data-testid="input-trn"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="taxRegistrationType">Tax Registration Type</Label>
+                    <Select
+                      value={formData.taxRegistrationType}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, taxRegistrationType: value }))
+                      }
+                    >
+                      <SelectTrigger data-testid="select-tax-type">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="standard">Standard</SelectItem>
+                        <SelectItem value="flat_rate">Flat Rate</SelectItem>
+                        <SelectItem value="non_registered">Non-registered</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="vatFilingFrequency">VAT Filing Frequency</Label>
+                    <Select
+                      value={formData.vatFilingFrequency}
+                      onValueChange={(value) =>
+                        setFormData((prev) => ({ ...prev, vatFilingFrequency: value }))
+                      }
+                    >
+                      <SelectTrigger data-testid="select-vat-frequency">
+                        <SelectValue placeholder="Select frequency" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monthly">Monthly</SelectItem>
+                        <SelectItem value="quarterly">Quarterly</SelectItem>
+                        <SelectItem value="annually">Annually</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contactEmail">Contact Email</Label>
+                    <Input
+                      id="contactEmail"
+                      type="email"
+                      value={formData.contactEmail}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, contactEmail: e.target.value }))
+                      }
+                      data-testid="input-email"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="contactPhone">Contact Phone</Label>
+                    <Input
+                      id="contactPhone"
+                      value={formData.contactPhone}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, contactPhone: e.target.value }))
+                      }
+                      data-testid="input-phone"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="websiteUrl">Website</Label>
+                    <Input
+                      id="websiteUrl"
+                      value={formData.websiteUrl}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, websiteUrl: e.target.value }))
+                      }
+                      data-testid="input-website"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label htmlFor="businessAddress">Business Address</Label>
+                    <Textarea
+                      id="businessAddress"
+                      value={formData.businessAddress}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, businessAddress: e.target.value }))
+                      }
+                      data-testid="input-address"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="industry">Industry</Label>
-                  <Select value={formData.industry} onValueChange={(value) => setFormData(prev => ({ ...prev, industry: value }))}>
-                    <SelectTrigger data-testid="select-industry">
-                      <SelectValue placeholder="Select industry" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="retail">Retail</SelectItem>
-                      <SelectItem value="services">Services</SelectItem>
-                      <SelectItem value="manufacturing">Manufacturing</SelectItem>
-                      <SelectItem value="technology">Technology</SelectItem>
-                      <SelectItem value="construction">Construction</SelectItem>
-                      <SelectItem value="hospitality">Hospitality</SelectItem>
-                      <SelectItem value="healthcare">Healthcare</SelectItem>
-                      <SelectItem value="real_estate">Real Estate</SelectItem>
-                      <SelectItem value="trading">Trading</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="legalStructure">Legal Structure</Label>
-                  <Select value={formData.legalStructure} onValueChange={(value) => setFormData(prev => ({ ...prev, legalStructure: value }))}>
-                    <SelectTrigger data-testid="select-legal-structure">
-                      <SelectValue placeholder="Select structure" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="llc">LLC</SelectItem>
-                      <SelectItem value="sole_proprietorship">Sole Proprietorship</SelectItem>
-                      <SelectItem value="partnership">Partnership</SelectItem>
-                      <SelectItem value="corporation">Corporation</SelectItem>
-                      <SelectItem value="free_zone">Free Zone Company</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="registrationNumber">Registration Number</Label>
-                  <Input 
-                    id="registrationNumber" 
-                    value={formData.registrationNumber}
-                    onChange={(e) => setFormData(prev => ({ ...prev, registrationNumber: e.target.value }))}
-                    data-testid="input-registration" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="trnVatNumber">TRN / VAT Number</Label>
-                  <Input 
-                    id="trnVatNumber" 
-                    value={formData.trnVatNumber}
-                    onChange={(e) => setFormData(prev => ({ ...prev, trnVatNumber: e.target.value }))}
-                    data-testid="input-trn" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="taxRegistrationType">Tax Registration Type</Label>
-                  <Select value={formData.taxRegistrationType} onValueChange={(value) => setFormData(prev => ({ ...prev, taxRegistrationType: value }))}>
-                    <SelectTrigger data-testid="select-tax-type">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="flat_rate">Flat Rate</SelectItem>
-                      <SelectItem value="non_registered">Non-registered</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="vatFilingFrequency">VAT Filing Frequency</Label>
-                  <Select value={formData.vatFilingFrequency} onValueChange={(value) => setFormData(prev => ({ ...prev, vatFilingFrequency: value }))}>
-                    <SelectTrigger data-testid="select-vat-frequency">
-                      <SelectValue placeholder="Select frequency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="monthly">Monthly</SelectItem>
-                      <SelectItem value="quarterly">Quarterly</SelectItem>
-                      <SelectItem value="annually">Annually</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="contactEmail">Contact Email</Label>
-                  <Input 
-                    id="contactEmail" 
-                    type="email" 
-                    value={formData.contactEmail}
-                    onChange={(e) => setFormData(prev => ({ ...prev, contactEmail: e.target.value }))}
-                    data-testid="input-email" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="contactPhone">Contact Phone</Label>
-                  <Input 
-                    id="contactPhone" 
-                    value={formData.contactPhone}
-                    onChange={(e) => setFormData(prev => ({ ...prev, contactPhone: e.target.value }))}
-                    data-testid="input-phone" 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="websiteUrl">Website</Label>
-                  <Input 
-                    id="websiteUrl" 
-                    value={formData.websiteUrl}
-                    onChange={(e) => setFormData(prev => ({ ...prev, websiteUrl: e.target.value }))}
-                    data-testid="input-website" 
-                  />
-                </div>
-                <div className="col-span-2 space-y-2">
-                  <Label htmlFor="businessAddress">Business Address</Label>
-                  <Textarea 
-                    id="businessAddress" 
-                    value={formData.businessAddress}
-                    onChange={(e) => setFormData(prev => ({ ...prev, businessAddress: e.target.value }))}
-                    data-testid="input-address" 
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setAddClientOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createClientMutation.isPending} data-testid="button-submit-client">
-                  {createClientMutation.isPending ? 'Creating...' : 'Create Client'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setAddClientOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={createClientMutation.isPending}
+                    data-testid="button-submit-client"
+                  >
+                    {createClientMutation.isPending ? "Creating..." : "Create Client"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
           </Dialog>
         </div>
       </div>
+
+      {hasFirmWorkspace && (
+        <section
+          className="rounded-lg border border-primary/15 bg-primary/5 p-4"
+          data-testid="firm-workspace-links"
+        >
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-base font-semibold">Firm client workspace</h2>
+              <p className="text-sm text-muted-foreground">
+                Portfolio operations, compliance gates, communications, and batch work.
+              </p>
+            </div>
+            <Link href="/firm/clients">
+              <Button variant="outline" size="sm" className="mt-2 sm:mt-0">
+                Open Portfolio
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {firmWorkspaceLinks.map((feature) => {
+              const Icon = feature.icon;
+              return (
+                <Link key={feature.href} href={feature.href}>
+                  <a className="group flex min-h-[104px] rounded-md border border-border bg-background p-3 transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <div className="flex w-full items-start gap-3">
+                      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-sm">{feature.title}</span>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                        </span>
+                        <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                          {feature.description}
+                        </span>
+                      </span>
+                    </div>
+                  </a>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <Card>
         <CardHeader>
@@ -375,8 +569,10 @@ export default function ClientManagement() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Industries</SelectItem>
-                  {industries.map(industry => (
-                    <SelectItem key={industry} value={industry!}>{industry}</SelectItem>
+                  {industries.map((industry) => (
+                    <SelectItem key={industry} value={industry!}>
+                      {industry}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -450,7 +646,11 @@ export default function ClientManagement() {
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" data-testid={`button-actions-${client.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid={`button-actions-${client.id}`}
+                          >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -461,7 +661,10 @@ export default function ClientManagement() {
                               View Details
                             </DropdownMenuItem>
                           </Link>
-                          <DropdownMenuItem onClick={() => setEditingClient(client)} data-testid={`menu-edit-${client.id}`}>
+                          <DropdownMenuItem
+                            onClick={() => setEditingClient(client)}
+                            data-testid={`menu-edit-${client.id}`}
+                          >
                             <Edit className="w-4 h-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
@@ -479,10 +682,14 @@ export default function ClientManagement() {
                             </DropdownMenuItem>
                           </Link>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             className="text-destructive"
                             onClick={() => {
-                              if (confirm('Are you sure you want to delete this client? This action cannot be undone.')) {
+                              if (
+                                confirm(
+                                  "Are you sure you want to delete this client? This action cannot be undone."
+                                )
+                              ) {
                                 deleteClientMutation.mutate(client.id);
                               }
                             }}
@@ -499,9 +706,9 @@ export default function ClientManagement() {
                 {filteredClients.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                      {searchTerm || industryFilter !== 'all' 
-                        ? 'No clients match your filters' 
-                        : 'No clients yet. Add your first client to get started.'}
+                      {searchTerm || industryFilter !== "all"
+                        ? "No clients match your filters"
+                        : "No clients yet. Add your first client to get started."}
                     </TableCell>
                   </TableRow>
                 )}
@@ -522,17 +729,17 @@ export default function ClientManagement() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-name">Company Name *</Label>
-                  <Input 
-                    id="edit-name" 
-                    name="name" 
-                    defaultValue={editingClient.name} 
-                    required 
-                    data-testid="input-edit-name" 
+                  <Input
+                    id="edit-name"
+                    name="name"
+                    defaultValue={editingClient.name}
+                    required
+                    data-testid="input-edit-name"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-industry">Industry</Label>
-                  <Select name="industry" defaultValue={editingClient.industry || ''}>
+                  <Select name="industry" defaultValue={editingClient.industry || ""}>
                     <SelectTrigger data-testid="select-edit-industry">
                       <SelectValue placeholder="Select industry" />
                     </SelectTrigger>
@@ -552,57 +759,57 @@ export default function ClientManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-trnVatNumber">TRN / VAT Number</Label>
-                  <Input 
-                    id="edit-trnVatNumber" 
-                    name="trnVatNumber" 
-                    defaultValue={editingClient.trnVatNumber || ''} 
-                    data-testid="input-edit-trn" 
+                  <Input
+                    id="edit-trnVatNumber"
+                    name="trnVatNumber"
+                    defaultValue={editingClient.trnVatNumber || ""}
+                    data-testid="input-edit-trn"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-registrationNumber">Registration Number</Label>
-                  <Input 
-                    id="edit-registrationNumber" 
-                    name="registrationNumber" 
-                    defaultValue={editingClient.registrationNumber || ''} 
-                    data-testid="input-edit-registration" 
+                  <Input
+                    id="edit-registrationNumber"
+                    name="registrationNumber"
+                    defaultValue={editingClient.registrationNumber || ""}
+                    data-testid="input-edit-registration"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-contactEmail">Contact Email</Label>
-                  <Input 
-                    id="edit-contactEmail" 
-                    name="contactEmail" 
-                    type="email" 
-                    defaultValue={editingClient.contactEmail || ''} 
-                    data-testid="input-edit-email" 
+                  <Input
+                    id="edit-contactEmail"
+                    name="contactEmail"
+                    type="email"
+                    defaultValue={editingClient.contactEmail || ""}
+                    data-testid="input-edit-email"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-contactPhone">Contact Phone</Label>
-                  <Input 
-                    id="edit-contactPhone" 
-                    name="contactPhone" 
-                    defaultValue={editingClient.contactPhone || ''} 
-                    data-testid="input-edit-phone" 
+                  <Input
+                    id="edit-contactPhone"
+                    name="contactPhone"
+                    defaultValue={editingClient.contactPhone || ""}
+                    data-testid="input-edit-phone"
                   />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-websiteUrl">Website</Label>
-                  <Input 
-                    id="edit-websiteUrl" 
-                    name="websiteUrl" 
-                    defaultValue={editingClient.websiteUrl || ''} 
-                    data-testid="input-edit-website" 
+                  <Input
+                    id="edit-websiteUrl"
+                    name="websiteUrl"
+                    defaultValue={editingClient.websiteUrl || ""}
+                    data-testid="input-edit-website"
                   />
                 </div>
                 <div className="col-span-2 space-y-2">
                   <Label htmlFor="edit-businessAddress">Business Address</Label>
-                  <Textarea 
-                    id="edit-businessAddress" 
-                    name="businessAddress" 
-                    defaultValue={editingClient.businessAddress || ''} 
-                    data-testid="input-edit-address" 
+                  <Textarea
+                    id="edit-businessAddress"
+                    name="businessAddress"
+                    defaultValue={editingClient.businessAddress || ""}
+                    data-testid="input-edit-address"
                   />
                 </div>
               </div>
@@ -610,8 +817,12 @@ export default function ClientManagement() {
                 <Button type="button" variant="outline" onClick={() => setEditingClient(null)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={updateClientMutation.isPending} data-testid="button-update-client">
-                  {updateClientMutation.isPending ? 'Updating...' : 'Update Client'}
+                <Button
+                  type="submit"
+                  disabled={updateClientMutation.isPending}
+                  data-testid="button-update-client"
+                >
+                  {updateClientMutation.isPending ? "Updating..." : "Update Client"}
                 </Button>
               </DialogFooter>
             </form>

@@ -1,17 +1,17 @@
 // Muhasib.ai Service Worker
 // Provides offline support, caching strategies, and background sync
 
-const CACHE_NAME = 'muhasib-v1';
-const STATIC_CACHE = 'muhasib-static-v1';
+const CACHE_NAME = "muhasib-v1";
+const STATIC_CACHE = "muhasib-static-v1";
 let currentSessionMarker = null;
 
 // Static assets to pre-cache on install
 const PRECACHE_ASSETS = [
-  '/offline.html',
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png',
-  '/favicon.png',
+  "/offline.html",
+  "/manifest.json",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/favicon.png",
 ];
 
 // Patterns for static assets (cache-first)
@@ -31,7 +31,7 @@ const STATIC_PATTERNS = [
 ];
 
 // ─── Install ────────────────────────────────────────────────────────────────
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => {
       return cache.addAll(PRECACHE_ASSETS);
@@ -42,18 +42,14 @@ self.addEventListener('install', (event) => {
 });
 
 // ─── Activate ───────────────────────────────────────────────────────────────
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
           .filter((name) => {
             // Remove old caches that don't match current version
-            return (
-              name.startsWith('muhasib-') &&
-              name !== CACHE_NAME &&
-              name !== STATIC_CACHE
-            );
+            return name.startsWith("muhasib-") && name !== CACHE_NAME && name !== STATIC_CACHE;
           })
           .map((name) => caches.delete(name))
       );
@@ -64,7 +60,7 @@ self.addEventListener('activate', (event) => {
 });
 
 // ─── Fetch ──────────────────────────────────────────────────────────────────
-self.addEventListener('fetch', (event) => {
+self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
@@ -74,12 +70,12 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Skip non-GET requests (let them pass through, handle with background sync)
-  if (request.method !== 'GET') {
+  if (request.method !== "GET") {
     return;
   }
 
   // API requests: network-first strategy
-  if (url.pathname.startsWith('/api/')) {
+  if (url.pathname.startsWith("/api/")) {
     event.respondWith(handleApiRequest(request));
     return;
   }
@@ -91,7 +87,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Navigation requests: network-first with offline fallback
-  if (request.mode === 'navigate') {
+  if (request.mode === "navigate") {
     event.respondWith(handleNavigationRequest(request));
     return;
   }
@@ -137,7 +133,7 @@ async function handleStaticRequest(request) {
     return response;
   } catch {
     // Return a basic 404 for missing static assets
-    return new Response('Not found', { status: 404 });
+    return new Response("Not found", { status: 404 });
   }
 }
 
@@ -151,10 +147,10 @@ async function handleApiRequest(request) {
   } catch {
     // Return a proper error response
     return new Response(
-      JSON.stringify({ error: 'You are offline. Please check your connection.' }),
+      JSON.stringify({ error: "You are offline. Please check your connection." }),
       {
         status: 503,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { "Content-Type": "application/json" },
       }
     );
   }
@@ -168,11 +164,11 @@ async function handleNavigationRequest(request) {
     const response = await fetch(request);
     return response;
   } catch {
-    const offlinePage = await caches.match('/offline.html');
+    const offlinePage = await caches.match("/offline.html");
     if (offlinePage) {
       return offlinePage;
     }
-    return new Response('Offline', { status: 503 });
+    return new Response("Offline", { status: 503 });
   }
 }
 
@@ -193,7 +189,7 @@ async function networkFirst(request, cacheName) {
     if (cachedResponse) {
       return cachedResponse;
     }
-    return new Response('Offline', { status: 503 });
+    return new Response("Offline", { status: 503 });
   }
 }
 
@@ -206,8 +202,8 @@ function isStaticAsset(pathname) {
 // ─── Background Sync ────────────────────────────────────────────────────────
 // Queue failed POST/PUT/DELETE requests for retry when back online
 
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'muhasib-sync') {
+self.addEventListener("sync", (event) => {
+  if (event.tag === "muhasib-sync") {
     event.waitUntil(replayFailedRequests());
   }
 });
@@ -215,51 +211,51 @@ self.addEventListener('sync', (event) => {
 async function replayFailedRequests() {
   try {
     const db = await openSyncDB();
-    const tx = db.transaction('requests', 'readonly');
-    const store = tx.objectStore('requests');
+    const tx = db.transaction("requests", "readonly");
+    const store = tx.objectStore("requests");
     const requests = await getAllFromStore(store);
 
     for (const entry of requests) {
       if (!entry.sessionMarker || entry.sessionMarker !== currentSessionMarker) {
-        const deleteTx = db.transaction('requests', 'readwrite');
-        deleteTx.objectStore('requests').delete(entry.id);
+        const deleteTx = db.transaction("requests", "readwrite");
+        deleteTx.objectStore("requests").delete(entry.id);
         continue;
       }
 
       try {
         const csrfToken = await getFreshCsrfToken();
         const headers = {
-          ...(entry.contentType ? { 'Content-Type': entry.contentType } : {}),
-          ...(csrfToken ? { 'x-csrf-token': csrfToken } : {}),
+          ...(entry.contentType ? { "Content-Type": entry.contentType } : {}),
+          ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
         };
 
         const response = await fetch(entry.url, {
           method: entry.method,
-          credentials: 'include',
+          credentials: "include",
           headers,
           body: entry.body,
         });
 
         if (response.ok) {
           // Remove successful request from queue
-          const deleteTx = db.transaction('requests', 'readwrite');
-          deleteTx.objectStore('requests').delete(entry.id);
+          const deleteTx = db.transaction("requests", "readwrite");
+          deleteTx.objectStore("requests").delete(entry.id);
         }
       } catch {
         // Still offline, will retry on next sync
-        console.warn('[SW] Background sync retry failed for:', entry.url);
+        console.warn("[SW] Background sync retry failed for:", entry.url);
       }
     }
   } catch (error) {
-    console.error('[SW] Background sync error:', error);
+    console.error("[SW] Background sync error:", error);
   }
 }
 
 async function getFreshCsrfToken() {
   try {
-    const response = await fetch('/api/csrf-token', {
-      method: 'GET',
-      credentials: 'include',
+    const response = await fetch("/api/csrf-token", {
+      method: "GET",
+      credentials: "include",
     });
     if (!response.ok) return null;
     const json = await response.json();
@@ -273,11 +269,11 @@ async function getFreshCsrfToken() {
 
 function openSyncDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('muhasib-sync', 1);
+    const request = indexedDB.open("muhasib-sync", 1);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains('requests')) {
-        db.createObjectStore('requests', { keyPath: 'id', autoIncrement: true });
+      if (!db.objectStoreNames.contains("requests")) {
+        db.createObjectStore("requests", { keyPath: "id", autoIncrement: true });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -295,27 +291,27 @@ function getAllFromStore(store) {
 
 // ─── Message handling ───────────────────────────────────────────────────────
 
-self.addEventListener('message', (event) => {
+self.addEventListener("message", (event) => {
   const { type } = event.data || {};
 
   switch (type) {
-    case 'SKIP_WAITING':
+    case "SKIP_WAITING":
       self.skipWaiting();
       break;
 
-    case 'QUEUE_REQUEST':
+    case "QUEUE_REQUEST":
       // Queue a failed request for background sync
       queueFailedRequest(event.data.request);
       break;
 
-    case 'SET_SESSION_MARKER':
+    case "SET_SESSION_MARKER":
       currentSessionMarker = event.data.sessionMarker || null;
       break;
 
-    case 'CLEAR_CACHE':
+    case "CLEAR_CACHE":
       caches.keys().then((names) => {
         names.forEach((name) => {
-          if (name.startsWith('muhasib-')) {
+          if (name.startsWith("muhasib-")) {
             caches.delete(name);
           }
         });
@@ -328,11 +324,11 @@ self.addEventListener('message', (event) => {
 async function queueFailedRequest(requestData) {
   try {
     const db = await openSyncDB();
-    const tx = db.transaction('requests', 'readwrite');
-    tx.objectStore('requests').add({
+    const tx = db.transaction("requests", "readwrite");
+    tx.objectStore("requests").add({
       url: requestData.url,
       method: requestData.method,
-      contentType: requestData.contentType || 'application/json',
+      contentType: requestData.contentType || "application/json",
       body: requestData.body,
       sessionMarker: requestData.sessionMarker || null,
       timestamp: Date.now(),
@@ -340,19 +336,19 @@ async function queueFailedRequest(requestData) {
 
     // Register for background sync
     if (self.registration.sync) {
-      await self.registration.sync.register('muhasib-sync');
+      await self.registration.sync.register("muhasib-sync");
     }
   } catch (error) {
-    console.error('[SW] Failed to queue request:', error);
+    console.error("[SW] Failed to queue request:", error);
   }
 }
 
 async function clearQueuedRequests() {
   try {
     const db = await openSyncDB();
-    const tx = db.transaction('requests', 'readwrite');
-    tx.objectStore('requests').clear();
+    const tx = db.transaction("requests", "readwrite");
+    tx.objectStore("requests").clear();
   } catch (error) {
-    console.error('[SW] Failed to clear queued requests:', error);
+    console.error("[SW] Failed to clear queued requests:", error);
   }
 }

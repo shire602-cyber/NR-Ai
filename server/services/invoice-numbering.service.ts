@@ -1,15 +1,15 @@
-import { sql } from 'drizzle-orm';
-import { db } from '../db';
+import { sql } from "drizzle-orm";
+import { db } from "../db";
 
-export type InvoiceDocType = 'invoice' | 'credit_note';
+export type InvoiceDocType = "invoice" | "credit_note";
 
 const PREFIX: Record<InvoiceDocType, string> = {
-  invoice: 'INV',
-  credit_note: 'CN',
+  invoice: "INV",
+  credit_note: "CN",
 };
 
 export function formatInvoiceNumber(docType: InvoiceDocType, year: number, n: number): string {
-  return `${PREFIX[docType]}-${year}-${String(n).padStart(5, '0')}`;
+  return `${PREFIX[docType]}-${year}-${String(n).padStart(5, "0")}`;
 }
 
 // Drizzle executor type — accepts the global db handle or any nested tx so that
@@ -31,7 +31,7 @@ export async function allocateInvoiceNumber(
   companyId: string,
   docType: InvoiceDocType,
   date: Date = new Date(),
-  executor: Executor = db,
+  executor: Executor = db
 ): Promise<string> {
   const year = date.getUTCFullYear();
   const result: any = await executor.execute(sql`
@@ -52,7 +52,7 @@ export async function peekNextInvoiceNumber(
   companyId: string,
   docType: InvoiceDocType,
   date: Date = new Date(),
-  executor: Executor = db,
+  executor: Executor = db
 ): Promise<string> {
   const year = date.getUTCFullYear();
   const result: any = await executor.execute(sql`

@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
-import { LegalLayout } from '@/components/LegalLayout';
+import { useEffect } from "react";
+import { LegalLayout } from "@/components/LegalLayout";
 
 export default function CookiePolicy() {
   useEffect(() => {
-    document.title = 'Cookie Policy | Muhasib.ai';
+    document.title = "Cookie Policy | Muhasib.ai";
   }, []);
 
   return (
@@ -60,8 +60,11 @@ export default function CookiePolicy() {
       <p>
         Most browsers allow you to refuse or delete cookies via their settings. Note that disabling
         strictly necessary cookies will prevent you from signing in or using core features of the
-        Service. For instructions specific to your browser, visit{' '}
-        <a href="https://www.aboutcookies.org" target="_blank" rel="noopener noreferrer">aboutcookies.org</a>.
+        Service. For instructions specific to your browser, visit{" "}
+        <a href="https://www.aboutcookies.org" target="_blank" rel="noopener noreferrer">
+          aboutcookies.org
+        </a>
+        .
       </p>
 
       <h2>5. Changes to This Policy</h2>
@@ -72,7 +75,7 @@ export default function CookiePolicy() {
 
       <h2>6. Contact</h2>
       <p>
-        If you have questions about how we use cookies, contact{' '}
+        If you have questions about how we use cookies, contact{" "}
         <a href="mailto:privacy@muhasib.ai">privacy@muhasib.ai</a>.
       </p>
     </LegalLayout>

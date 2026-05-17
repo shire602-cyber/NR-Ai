@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useState, useCallback } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Upload,
   FileSpreadsheet,
@@ -20,29 +20,53 @@ import {
   Copy,
   ExternalLink,
   MessageCircle,
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { VirtualTable, type VirtualTableColumn } from '@/components/VirtualTable';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import type { CustomerContact } from '@shared/schema';
-import type ExcelJS from 'exceljs';
-import { exportToExcel } from '@/lib/export';
-import { SiWhatsapp } from 'react-icons/si';
-import { WhatsAppComposer } from '@/components/WhatsAppComposer';
-import { pickWhatsAppNumber } from '@/lib/whatsapp-templates';
-import { EmptyState } from '@/components/ui/empty-state';
-import { TableSkeleton } from '@/components/ui/loading-skeletons';
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { VirtualTable, type VirtualTableColumn } from "@/components/VirtualTable";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import type { CustomerContact } from "@shared/schema";
+import type ExcelJS from "exceljs";
+import { exportToExcel } from "@/lib/export";
+import { SiWhatsapp } from "react-icons/si";
+import { WhatsAppComposer } from "@/components/WhatsAppComposer";
+import { pickWhatsAppNumber } from "@/lib/whatsapp-templates";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
 
 interface ImportResult {
   message: string;
@@ -53,19 +77,19 @@ interface ImportResult {
 }
 
 async function parseXlsxRows(buffer: ArrayBuffer): Promise<Record<string, any>[]> {
-  const { default: ExcelJS } = await import('exceljs');
+  const { default: ExcelJS } = await import("exceljs");
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const worksheet = workbook.worksheets[0];
   if (!worksheet) return [];
   const headers = rowValues(worksheet.getRow(1)).map((value, index) =>
-    value ? String(value) : `Column ${index + 1}`,
+    value ? String(value) : `Column ${index + 1}`
   );
   const rows: Record<string, any>[] = [];
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
     const values = rowValues(row);
-    if (values.every((value) => value === '')) return;
+    if (values.every((value) => value === "")) return;
     rows.push(rowToObject(headers, values));
   });
   return rows;
@@ -74,7 +98,7 @@ async function parseXlsxRows(buffer: ArrayBuffer): Promise<Record<string, any>[]
 function parseCsvRows(input: string): Record<string, any>[] {
   const table: string[][] = [];
   let row: string[] = [];
-  let cell = '';
+  let cell = "";
   let inQuotes = false;
 
   for (let i = 0; i < input.length; i++) {
@@ -89,24 +113,24 @@ function parseCsvRows(input: string): Record<string, any>[] {
       inQuotes = !inQuotes;
       continue;
     }
-    if (char === ',' && !inQuotes) {
+    if (char === "," && !inQuotes) {
       row.push(cell);
-      cell = '';
+      cell = "";
       continue;
     }
-    if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && next === '\n') i++;
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") i++;
       row.push(cell);
-      if (row.some((value) => value !== '')) table.push(row);
+      if (row.some((value) => value !== "")) table.push(row);
       row = [];
-      cell = '';
+      cell = "";
       continue;
     }
     cell += char;
   }
 
   row.push(cell);
-  if (row.some((value) => value !== '')) table.push(row);
+  if (row.some((value) => value !== "")) table.push(row);
   const headers = table[0] ?? [];
   return table.slice(1).map((values) => rowToObject(headers, values));
 }
@@ -114,11 +138,11 @@ function parseCsvRows(input: string): Record<string, any>[] {
 function rowValues(row: ExcelJS.Row): any[] {
   const values = Array.isArray(row.values) ? row.values.slice(1) : [];
   return values.map((value: any) => {
-    if (value == null) return '';
+    if (value == null) return "";
     if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'object') {
-      if ('text' in value) return value.text ?? '';
-      if ('result' in value) return value.result ?? '';
+    if (typeof value === "object") {
+      if ("text" in value) return value.text ?? "";
+      if ("result" in value) return value.result ?? "";
     }
     return value;
   });
@@ -127,7 +151,7 @@ function rowValues(row: ExcelJS.Row): any[] {
 function rowToObject(headers: string[], values: any[]): Record<string, any> {
   const row: Record<string, any> = {};
   headers.forEach((header, index) => {
-    row[header] = values[index] ?? '';
+    row[header] = values[index] ?? "";
   });
   return row;
 }
@@ -135,115 +159,147 @@ function rowToObject(headers: string[], values: any[]): Record<string, any> {
 export default function CustomerContacts() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
-  
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState('list');
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("list");
   const [file, setFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<any[] | null>(null);
   const [importResults, setImportResults] = useState<ImportResult | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [editContact, setEditContact] = useState<CustomerContact | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [portalLinkDialog, setPortalLinkDialog] = useState<{ open: boolean; url: string; contactName: string }>({ open: false, url: '', contactName: '' });
+  const [portalLinkDialog, setPortalLinkDialog] = useState<{
+    open: boolean;
+    url: string;
+    contactName: string;
+  }>({ open: false, url: "", contactName: "" });
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
   const [composerContact, setComposerContact] = useState<CustomerContact | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
-  const [clearAllConfirmation, setClearAllConfirmation] = useState('');
+  const [clearAllConfirmation, setClearAllConfirmation] = useState("");
 
   const { data: contacts = [], isLoading } = useQuery<CustomerContact[]>({
-    queryKey: ['/api/companies', companyId, 'customer-contacts'],
+    queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId,
   });
 
   const importMutation = useMutation({
     mutationFn: async (data: any[]) => {
-      return apiRequest('POST', `/api/companies/${companyId}/customer-contacts/import`, {
-        contacts: data 
+      return apiRequest("POST", `/api/companies/${companyId}/customer-contacts/import`, {
+        contacts: data,
       });
     },
     onSuccess: (result: ImportResult) => {
       setImportResults(result);
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts'] });
-      toast({ 
-        title: 'Import completed!', 
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "customer-contacts"],
+      });
+      toast({
+        title: "Import completed!",
         description: result.message,
       });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Import failed', description: error?.message });
+      toast({ variant: "destructive", title: "Import failed", description: error?.message });
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      return apiRequest('POST', `/api/companies/${companyId}/customer-contacts`, data);
+      return apiRequest("POST", `/api/companies/${companyId}/customer-contacts`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts'] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "customer-contacts"],
+      });
       setShowAddDialog(false);
-      toast({ title: 'Contact created successfully' });
+      toast({ title: "Contact created successfully" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create contact', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to create contact",
+        description: error?.message,
+      });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      return apiRequest('PUT', `/api/companies/${companyId}/customer-contacts/${id}`, data);
+      return apiRequest("PUT", `/api/companies/${companyId}/customer-contacts/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts'] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "customer-contacts"],
+      });
       setEditContact(null);
-      toast({ title: 'Contact updated successfully' });
+      toast({ title: "Contact updated successfully" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to update contact', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to update contact",
+        description: error?.message,
+      });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('DELETE', `/api/companies/${companyId}/customer-contacts/${id}`);
+      return apiRequest("DELETE", `/api/companies/${companyId}/customer-contacts/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts'] });
-      toast({ title: 'Contact deleted successfully' });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "customer-contacts"],
+      });
+      toast({ title: "Contact deleted successfully" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to delete contact', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to delete contact",
+        description: error?.message,
+      });
     },
   });
 
   const { data: clearPreview } = useQuery<{ contactCount: number; linkedInvoiceCount: number }>({
-    queryKey: ['/api/companies', companyId, 'customer-contacts/clear-preview'],
+    queryKey: ["/api/companies", companyId, "customer-contacts/clear-preview"],
     enabled: !!companyId && showClearAllDialog,
   });
 
   const clearAllMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('DELETE', `/api/companies/${companyId}/customer-contacts/clear-all`, {
-        confirm: 'DELETE ALL',
+      return await apiRequest("DELETE", `/api/companies/${companyId}/customer-contacts/clear-all`, {
+        confirm: "DELETE ALL",
       });
     },
     onSuccess: (result: { deletedCount: number; message: string }) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'customer-contacts/clear-preview'] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "customer-contacts"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "customer-contacts/clear-preview"],
+      });
       setShowClearAllDialog(false);
-      setClearAllConfirmation('');
+      setClearAllConfirmation("");
       toast({
-        title: 'All contacts cleared',
+        title: "All contacts cleared",
         description: result.message,
       });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to clear contacts', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to clear contacts",
+        description: error?.message,
+      });
     },
   });
 
   const portalLinkMutation = useMutation({
     mutationFn: async ({ contactId, contactName }: { contactId: string; contactName: string }) => {
-      const result = await apiRequest('POST', '/api/portal/generate-access', { contactId });
+      const result = await apiRequest("POST", "/api/portal/generate-access", { contactId });
       return { ...result, contactName };
     },
     onSuccess: (result: any) => {
@@ -251,56 +307,71 @@ export default function CustomerContacts() {
       setPortalLinkDialog({ open: true, url: fullUrl, contactName: result.contactName });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to generate portal link', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to generate portal link",
+        description: error?.message,
+      });
     },
   });
 
-  const handleFileSelect = useCallback((selectedFile: File) => {
-    if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid file type',
-        description: 'Please upload an Excel file (.xlsx) or CSV file'
-      });
-      return;
-    }
-
-    setFile(selectedFile);
-    setPreviewData(null);
-    setImportResults(null);
-
-    (async () => {
-      try {
-        const jsonData = selectedFile.name.match(/\.csv$/i)
-          ? parseCsvRows(await selectedFile.text())
-          : await parseXlsxRows(await selectedFile.arrayBuffer());
-        
-        const mappedData = jsonData.map((row: any) => ({
-          name: row['Name'] || row['name'] || row['Company Name'] || row['company_name'] || '',
-          email: row['Email'] || row['email'] || row['E-mail'] || '',
-          phone: row['Phone'] || row['phone'] || row['Phone Number'] || row['Mobile'] || '',
-          trnNumber: row['TRN'] || row['trn'] || row['TRN Number'] || row['Tax Registration Number'] || '',
-          address: row['Address'] || row['address'] || '',
-          city: row['City'] || row['city'] || '',
-          country: row['Country'] || row['country'] || 'UAE',
-        }));
-        
-        setPreviewData(mappedData);
-        toast({ title: `Found ${mappedData.length} contacts in ${selectedFile.name}` });
-      } catch (err: any) {
-        toast({ variant: 'destructive', title: 'Failed to parse file', description: err?.message });
+  const handleFileSelect = useCallback(
+    (selectedFile: File) => {
+      if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
+        toast({
+          variant: "destructive",
+          title: "Invalid file type",
+          description: "Please upload an Excel file (.xlsx) or CSV file",
+        });
+        return;
       }
-    })();
-  }, [toast]);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) {
-      handleFileSelect(droppedFile);
-    }
-  }, [handleFileSelect]);
+      setFile(selectedFile);
+      setPreviewData(null);
+      setImportResults(null);
+
+      (async () => {
+        try {
+          const jsonData = selectedFile.name.match(/\.csv$/i)
+            ? parseCsvRows(await selectedFile.text())
+            : await parseXlsxRows(await selectedFile.arrayBuffer());
+
+          const mappedData = jsonData.map((row: any) => ({
+            name: row["Name"] || row["name"] || row["Company Name"] || row["company_name"] || "",
+            email: row["Email"] || row["email"] || row["E-mail"] || "",
+            phone: row["Phone"] || row["phone"] || row["Phone Number"] || row["Mobile"] || "",
+            trnNumber:
+              row["TRN"] || row["trn"] || row["TRN Number"] || row["Tax Registration Number"] || "",
+            address: row["Address"] || row["address"] || "",
+            city: row["City"] || row["city"] || "",
+            country: row["Country"] || row["country"] || "UAE",
+          }));
+
+          setPreviewData(mappedData);
+          toast({ title: `Found ${mappedData.length} contacts in ${selectedFile.name}` });
+        } catch (err: any) {
+          toast({
+            variant: "destructive",
+            title: "Failed to parse file",
+            description: err?.message,
+          });
+        }
+      })();
+    },
+    [toast]
+  );
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile) {
+        handleFileSelect(droppedFile);
+      }
+    },
+    [handleFileSelect]
+  );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -327,45 +398,55 @@ export default function CustomerContacts() {
   const downloadTemplate = () => {
     const template = [
       {
-        'Name': 'Example Company LLC',
-        'Email': 'contact@example.com',
-        'Phone': '+971-50-123-4567',
-        'TRN': '100123456700003',
-        'Address': '123 Business Bay',
-        'City': 'Dubai',
-        'Country': 'UAE'
-      }
+        Name: "Example Company LLC",
+        Email: "contact@example.com",
+        Phone: "+971-50-123-4567",
+        TRN: "100123456700003",
+        Address: "123 Business Bay",
+        City: "Dubai",
+        Country: "UAE",
+      },
     ];
-    
-    void exportToExcel([{
-      sheetName: 'Contacts',
-      columns: Object.keys(template[0]).map((key) => ({ header: key, key, width: 22 })),
-      rows: template,
-    }], 'contact_import_template').then(() => {
-      toast({ title: 'Template downloaded' });
+
+    void exportToExcel(
+      [
+        {
+          sheetName: "Contacts",
+          columns: Object.keys(template[0]).map((key) => ({ header: key, key, width: 22 })),
+          rows: template,
+        },
+      ],
+      "contact_import_template"
+    ).then(() => {
+      toast({ title: "Template downloaded" });
     });
   };
 
-  const filteredContacts = contacts.filter(contact => 
-    contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    contact.phone?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredContacts = contacts.filter(
+    (contact) =>
+      contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.phone?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const ContactForm = ({ contact, onSubmit, onCancel }: { 
-    contact?: CustomerContact | null; 
-    onSubmit: (data: any) => void; 
+  const ContactForm = ({
+    contact,
+    onSubmit,
+    onCancel,
+  }: {
+    contact?: CustomerContact | null;
+    onSubmit: (data: any) => void;
     onCancel: () => void;
   }) => {
     const [formData, setFormData] = useState({
-      name: contact?.name || '',
-      email: contact?.email || '',
-      phone: contact?.phone || '',
-      whatsappNumber: contact?.whatsappNumber || '',
-      trnNumber: contact?.trnNumber || '',
-      address: contact?.address || '',
-      city: contact?.city || '',
-      country: contact?.country || 'UAE',
+      name: contact?.name || "",
+      email: contact?.email || "",
+      phone: contact?.phone || "",
+      whatsappNumber: contact?.whatsappNumber || "",
+      trnNumber: contact?.trnNumber || "",
+      address: contact?.address || "",
+      city: contact?.city || "",
+      country: contact?.country || "UAE",
     });
 
     return (
@@ -373,7 +454,7 @@ export default function CustomerContacts() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>Name *</Label>
-            <Input 
+            <Input
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               placeholder="Company or contact name"
@@ -382,7 +463,7 @@ export default function CustomerContacts() {
           </div>
           <div className="space-y-2">
             <Label>Email *</Label>
-            <Input 
+            <Input
               type="email"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -428,7 +509,7 @@ export default function CustomerContacts() {
         </div>
         <div className="space-y-2">
           <Label>Address</Label>
-          <Input 
+          <Input
             value={formData.address}
             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
             placeholder="Street address"
@@ -438,7 +519,7 @@ export default function CustomerContacts() {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label>City</Label>
-            <Input 
+            <Input
               value={formData.city}
               onChange={(e) => setFormData({ ...formData, city: e.target.value })}
               placeholder="Dubai"
@@ -447,7 +528,7 @@ export default function CustomerContacts() {
           </div>
           <div className="space-y-2">
             <Label>Country</Label>
-            <Input 
+            <Input
               value={formData.country}
               onChange={(e) => setFormData({ ...formData, country: e.target.value })}
               placeholder="UAE"
@@ -459,12 +540,12 @@ export default function CustomerContacts() {
           <Button variant="outline" onClick={onCancel} data-testid="button-cancel-contact">
             Cancel
           </Button>
-          <Button 
+          <Button
             onClick={() => onSubmit(formData)}
             disabled={!formData.name || !formData.email}
             data-testid="button-save-contact"
           >
-            {contact ? 'Update' : 'Create'} Contact
+            {contact ? "Update" : "Create"} Contact
           </Button>
         </DialogFooter>
       </div>
@@ -475,18 +556,26 @@ export default function CustomerContacts() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-contacts-title">Customer Contacts</h1>
-          <p className="text-muted-foreground">Manage your customers and business contacts for invoicing</p>
+          <h1 className="text-3xl font-bold" data-testid="text-contacts-title">
+            Customer Contacts
+          </h1>
+          <p className="text-muted-foreground">
+            Manage your customers and business contacts for invoicing
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={downloadTemplate} data-testid="button-download-template">
+          <Button
+            variant="outline"
+            onClick={downloadTemplate}
+            data-testid="button-download-template"
+          >
             <Download className="w-4 h-4 mr-2" />
             Download Template
           </Button>
           <Button
             variant="destructive"
             onClick={() => {
-              setClearAllConfirmation('');
+              setClearAllConfirmation("");
               setShowClearAllDialog(true);
             }}
             disabled={contacts.length === 0}
@@ -507,7 +596,7 @@ export default function CustomerContacts() {
                 <DialogTitle>Add New Contact</DialogTitle>
                 <DialogDescription>Add a new customer or business contact</DialogDescription>
               </DialogHeader>
-              <ContactForm 
+              <ContactForm
                 onSubmit={(data) => createMutation.mutate(data)}
                 onCancel={() => setShowAddDialog(false)}
               />
@@ -532,7 +621,7 @@ export default function CustomerContacts() {
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input 
+              <Input
                 placeholder="Search contacts..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -551,25 +640,25 @@ export default function CustomerContacts() {
               ) : filteredContacts.length === 0 ? (
                 <EmptyState
                   icon={Building2}
-                  title={searchTerm ? 'No matching contacts' : 'No contacts yet'}
+                  title={searchTerm ? "No matching contacts" : "No contacts yet"}
                   description={
                     searchTerm
-                      ? 'Try a different search term or clear the search.'
-                      : 'Add your first contact, or import a list from an Excel/CSV file.'
+                      ? "Try a different search term or clear the search."
+                      : "Add your first contact, or import a list from an Excel/CSV file."
                   }
                   action={
                     searchTerm
                       ? undefined
                       : {
-                          label: 'Add contact',
+                          label: "Add contact",
                           onClick: () => setShowAddDialog(true),
-                          testId: 'button-add-first-contact',
+                          testId: "button-add-first-contact",
                         }
                   }
                   secondaryAction={
                     searchTerm
-                      ? { label: 'Clear search', onClick: () => setSearchTerm('') }
-                      : { label: 'Import from Excel', onClick: () => setActiveTab('import') }
+                      ? { label: "Clear search", onClick: () => setSearchTerm("") }
+                      : { label: "Import from Excel", onClick: () => setActiveTab("import") }
                   }
                 />
               ) : (
@@ -581,8 +670,8 @@ export default function CustomerContacts() {
                   rowTestId={(contact) => `row-contact-${contact.id}`}
                   columns={[
                     {
-                      key: 'name',
-                      header: 'Name',
+                      key: "name",
+                      header: "Name",
                       cell: (contact) => (
                         <div className="flex items-center gap-2">
                           <Building2 className="w-4 h-4 text-muted-foreground" />
@@ -591,8 +680,8 @@ export default function CustomerContacts() {
                       ),
                     },
                     {
-                      key: 'email',
-                      header: 'Email',
+                      key: "email",
+                      header: "Email",
                       cell: (contact) => (
                         <div className="flex items-center gap-2 truncate">
                           <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -601,8 +690,8 @@ export default function CustomerContacts() {
                       ),
                     },
                     {
-                      key: 'phone',
-                      header: 'Phone',
+                      key: "phone",
+                      header: "Phone",
                       cell: (contact) =>
                         contact.phone ? (
                           <div className="flex items-center gap-2">
@@ -612,8 +701,8 @@ export default function CustomerContacts() {
                         ) : null,
                     },
                     {
-                      key: 'trn',
-                      header: 'TRN',
+                      key: "trn",
+                      header: "TRN",
                       cell: (contact) =>
                         contact.trnNumber ? (
                           <Badge variant="outline">{contact.trnNumber}</Badge>
@@ -622,20 +711,20 @@ export default function CustomerContacts() {
                         ),
                     },
                     {
-                      key: 'location',
-                      header: 'Location',
+                      key: "location",
+                      header: "Location",
                       cell: (contact) =>
-                        (contact.city || contact.country) ? (
+                        contact.city || contact.country ? (
                           <div className="flex items-center gap-2">
                             <MapPin className="w-4 h-4 text-muted-foreground" />
-                            {[contact.city, contact.country].filter(Boolean).join(', ')}
+                            {[contact.city, contact.country].filter(Boolean).join(", ")}
                           </div>
                         ) : null,
                     },
                     {
-                      key: 'actions',
-                      header: 'Actions',
-                      width: '170px',
+                      key: "actions",
+                      header: "Actions",
+                      width: "170px",
                       cell: (contact) => (
                         <div className="flex items-center gap-1">
                           {pickWhatsAppNumber(contact) && (
@@ -654,7 +743,12 @@ export default function CustomerContacts() {
                             size="icon"
                             variant="ghost"
                             title="Generate Portal Link"
-                            onClick={() => portalLinkMutation.mutate({ contactId: contact.id, contactName: contact.name })}
+                            onClick={() =>
+                              portalLinkMutation.mutate({
+                                contactId: contact.id,
+                                contactName: contact.name,
+                              })
+                            }
                             disabled={portalLinkMutation.isPending}
                             data-testid={`button-portal-link-${contact.id}`}
                           >
@@ -696,16 +790,16 @@ export default function CustomerContacts() {
                     Upload Excel File
                   </CardTitle>
                   <CardDescription>
-                    Upload an Excel file (.xlsx) or CSV containing your customer contacts.
-                    We'll automatically map common column names like "Name", "Email", "Phone", "TRN", etc.
+                    Upload an Excel file (.xlsx) or CSV containing your customer contacts. We'll
+                    automatically map common column names like "Name", "Email", "Phone", "TRN", etc.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div
                     className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                      isDragOver 
-                        ? 'border-primary bg-primary/5' 
-                        : 'border-muted-foreground/25 hover:border-primary/50'
+                      isDragOver
+                        ? "border-primary bg-primary/5"
+                        : "border-muted-foreground/25 hover:border-primary/50"
                     }`}
                     onDrop={handleDrop}
                     onDragOver={handleDragOver}
@@ -731,7 +825,9 @@ export default function CustomerContacts() {
                           type="file"
                           accept=".xlsx,.csv"
                           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                          onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
+                          onChange={(e) =>
+                            e.target.files?.[0] && handleFileSelect(e.target.files[0])
+                          }
                           data-testid="input-file-upload"
                         />
                       </div>
@@ -745,7 +841,8 @@ export default function CustomerContacts() {
                   <CardHeader>
                     <CardTitle>Preview ({previewData.length} contacts)</CardTitle>
                     <CardDescription>
-                      Review the data before importing. Contacts with matching emails will be updated.
+                      Review the data before importing. Contacts with matching emails will be
+                      updated.
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -763,15 +860,15 @@ export default function CustomerContacts() {
                         <TableBody>
                           {previewData.slice(0, 20).map((row, idx) => (
                             <TableRow key={idx}>
-                              <TableCell className={!row.name ? 'text-destructive' : ''}>
-                                {row.name || 'Missing'}
+                              <TableCell className={!row.name ? "text-destructive" : ""}>
+                                {row.name || "Missing"}
                               </TableCell>
-                              <TableCell className={!row.email ? 'text-destructive' : ''}>
-                                {row.email || 'Missing'}
+                              <TableCell className={!row.email ? "text-destructive" : ""}>
+                                {row.email || "Missing"}
                               </TableCell>
-                              <TableCell>{row.phone || '-'}</TableCell>
-                              <TableCell>{row.trnNumber || '-'}</TableCell>
-                              <TableCell>{row.city || '-'}</TableCell>
+                              <TableCell>{row.phone || "-"}</TableCell>
+                              <TableCell>{row.trnNumber || "-"}</TableCell>
+                              <TableCell>{row.city || "-"}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -784,11 +881,15 @@ export default function CustomerContacts() {
                     </ScrollArea>
 
                     <div className="flex justify-end gap-2 mt-4">
-                      <Button variant="outline" onClick={resetImport} data-testid="button-cancel-import">
+                      <Button
+                        variant="outline"
+                        onClick={resetImport}
+                        data-testid="button-cancel-import"
+                      >
                         Cancel
                       </Button>
-                      <Button 
-                        onClick={handleImport} 
+                      <Button
+                        onClick={handleImport}
                         disabled={importMutation.isPending}
                         data-testid="button-confirm-import"
                       >
@@ -842,7 +943,9 @@ export default function CustomerContacts() {
                     <ScrollArea className="h-[100px]">
                       <ul className="text-sm space-y-1">
                         {importResults.errors.map((err, idx) => (
-                          <li key={idx} className="text-muted-foreground">{err}</li>
+                          <li key={idx} className="text-muted-foreground">
+                            {err}
+                          </li>
                         ))}
                       </ul>
                     </ScrollArea>
@@ -850,10 +953,14 @@ export default function CustomerContacts() {
                 )}
 
                 <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => {
-                    resetImport();
-                    setActiveTab('list');
-                  }} data-testid="button-view-contacts">
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      resetImport();
+                      setActiveTab("list");
+                    }}
+                    data-testid="button-view-contacts"
+                  >
                     View Contacts
                   </Button>
                   <Button onClick={resetImport} data-testid="button-import-more">
@@ -883,7 +990,12 @@ export default function CustomerContacts() {
       </Dialog>
 
       {/* Portal Link Dialog */}
-      <Dialog open={portalLinkDialog.open} onOpenChange={(open) => !open && setPortalLinkDialog({ open: false, url: '', contactName: '' })}>
+      <Dialog
+        open={portalLinkDialog.open}
+        onOpenChange={(open) =>
+          !open && setPortalLinkDialog({ open: false, url: "", contactName: "" })
+        }
+      >
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -891,7 +1003,8 @@ export default function CustomerContacts() {
               Client Portal Link
             </DialogTitle>
             <DialogDescription>
-              Share this link with {portalLinkDialog.contactName} to give them access to view their invoices and download PDFs.
+              Share this link with {portalLinkDialog.contactName} to give them access to view their
+              invoices and download PDFs.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -907,7 +1020,7 @@ export default function CustomerContacts() {
                 size="icon"
                 onClick={() => {
                   navigator.clipboard.writeText(portalLinkDialog.url);
-                  toast({ title: 'Link copied to clipboard' });
+                  toast({ title: "Link copied to clipboard" });
                 }}
                 data-testid="button-copy-portal-link"
               >
@@ -918,7 +1031,7 @@ export default function CustomerContacts() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => window.open(portalLinkDialog.url, '_blank')}
+                onClick={() => window.open(portalLinkDialog.url, "_blank")}
                 data-testid="button-open-portal"
               >
                 <ExternalLink className="w-4 h-4 mr-2" />
@@ -928,8 +1041,10 @@ export default function CustomerContacts() {
                 variant="outline"
                 className="flex-1"
                 onClick={() => {
-                  const message = encodeURIComponent(`Here is your client portal link to view invoices and statements:\n${portalLinkDialog.url}`);
-                  window.open(`https://wa.me/?text=${message}`, '_blank');
+                  const message = encodeURIComponent(
+                    `Here is your client portal link to view invoices and statements:\n${portalLinkDialog.url}`
+                  );
+                  window.open(`https://wa.me/?text=${message}`, "_blank");
                 }}
                 data-testid="button-send-whatsapp"
               >
@@ -938,7 +1053,8 @@ export default function CustomerContacts() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              This link is valid for 1 year. The client can view invoices and download PDFs without needing to log in.
+              This link is valid for 1 year. The client can view invoices and download PDFs without
+              needing to log in.
             </p>
           </div>
         </DialogContent>
@@ -946,12 +1062,18 @@ export default function CustomerContacts() {
 
       <WhatsAppComposer
         open={!!composerContact}
-        onOpenChange={(open) => { if (!open) setComposerContact(null); }}
-        recipient={composerContact ? {
-          name: composerContact.name,
-          phone: composerContact.phone,
-          whatsappNumber: composerContact.whatsappNumber,
-        } : null}
+        onOpenChange={(open) => {
+          if (!open) setComposerContact(null);
+        }}
+        recipient={
+          composerContact
+            ? {
+                name: composerContact.name,
+                phone: composerContact.phone,
+                whatsappNumber: composerContact.whatsappNumber,
+              }
+            : null
+        }
         defaultTemplateId="general_reminder"
       />
 
@@ -960,7 +1082,7 @@ export default function CustomerContacts() {
         onOpenChange={(open) => {
           if (!open) {
             setShowClearAllDialog(false);
-            setClearAllConfirmation('');
+            setClearAllConfirmation("");
           }
         }}
       >
@@ -973,22 +1095,23 @@ export default function CustomerContacts() {
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
                 <p>
-                  This will permanently delete{' '}
+                  This will permanently delete{" "}
                   <strong>
                     {clearPreview?.contactCount ?? contacts.length} contact
-                    {(clearPreview?.contactCount ?? contacts.length) === 1 ? '' : 's'}
-                  </strong>{' '}
+                    {(clearPreview?.contactCount ?? contacts.length) === 1 ? "" : "s"}
+                  </strong>{" "}
                   for this company. This action cannot be undone.
                 </p>
                 {clearPreview && clearPreview.linkedInvoiceCount > 0 && (
                   <div className="rounded-md border border-destructive/50 bg-destructive/5 p-3">
                     <p className="font-medium text-destructive">
                       {clearPreview.linkedInvoiceCount} invoice
-                      {clearPreview.linkedInvoiceCount === 1 ? ' is' : 's are'} linked to these contacts.
+                      {clearPreview.linkedInvoiceCount === 1 ? " is" : "s are"} linked to these
+                      contacts.
                     </p>
                     <p className="text-muted-foreground mt-1">
-                      Invoices will be kept, but their customer link will be cleared. You may need to relink
-                      them after re-importing your client list.
+                      Invoices will be kept, but their customer link will be cleared. You may need
+                      to relink them after re-importing your client list.
                     </p>
                   </div>
                 )}
@@ -1015,7 +1138,7 @@ export default function CustomerContacts() {
                 e.preventDefault();
                 clearAllMutation.mutate();
               }}
-              disabled={clearAllConfirmation !== 'DELETE ALL' || clearAllMutation.isPending}
+              disabled={clearAllConfirmation !== "DELETE ALL" || clearAllMutation.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               data-testid="button-confirm-clear-all"
             >
@@ -1025,19 +1148,25 @@ export default function CustomerContacts() {
                   Deleting...
                 </>
               ) : (
-                'Delete all contacts'
+                "Delete all contacts"
               )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={!!contactToDelete} onOpenChange={(open) => { if (!open) setContactToDelete(null); }}>
+      <AlertDialog
+        open={!!contactToDelete}
+        onOpenChange={(open) => {
+          if (!open) setContactToDelete(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Contact?</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <strong>{contactToDelete?.name}</strong>? This action cannot be undone.
+              Are you sure you want to delete <strong>{contactToDelete?.name}</strong>? This action
+              cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

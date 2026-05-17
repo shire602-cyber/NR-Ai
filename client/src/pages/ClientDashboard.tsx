@@ -1,12 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Link } from 'wouter';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatDate } from '@/lib/format';
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "wouter";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatDate } from "@/lib/format";
 import {
   FileText,
   Upload,
@@ -16,58 +16,58 @@ import {
   ArrowRight,
   BarChart3,
   FileArchive,
-} from 'lucide-react';
-import { SiWhatsapp } from 'react-icons/si';
-import { formatPhoneForWhatsApp } from '@/lib/whatsapp-templates';
+} from "lucide-react";
+import { SiWhatsapp } from "react-icons/si";
+import { formatPhoneForWhatsApp } from "@/lib/whatsapp-templates";
 
 export default function ClientDashboard() {
   const { data: user } = useCurrentUser();
-  const userName = user?.name || user?.email || 'Client';
+  const userName = user?.name || user?.email || "Client";
   const { company, companyId } = useDefaultCompany();
-  const contactPhone = company?.contactPhone?.trim() || '';
-  const contactPhoneFormatted = contactPhone ? formatPhoneForWhatsApp(contactPhone) : '';
+  const contactPhone = company?.contactPhone?.trim() || "";
+  const contactPhoneFormatted = contactPhone ? formatPhoneForWhatsApp(contactPhone) : "";
   const contactPhoneAvailable = contactPhoneFormatted.length >= 8;
 
   // Fetch documents count
   const { data: documents = [], isLoading: docsLoading } = useQuery<any[]>({
-    queryKey: ['/api/companies', companyId, 'documents'],
+    queryKey: ["/api/companies", companyId, "documents"],
     enabled: !!companyId,
   });
 
   // Fetch compliance tasks
   const { data: complianceTasks = [], isLoading: complianceLoading } = useQuery<any[]>({
-    queryKey: ['/api/companies', companyId, 'compliance-tasks'],
+    queryKey: ["/api/companies", companyId, "compliance-tasks"],
     enabled: !!companyId,
   });
 
   // Fetch tasks
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<any[]>({
-    queryKey: ['/api/companies', companyId, 'compliance-tasks'],
+    queryKey: ["/api/companies", companyId, "compliance-tasks"],
     enabled: !!companyId,
   });
 
   // Fetch activity logs
   const { data: activityLogs = [], isLoading: activityLoading } = useQuery<any[]>({
-    queryKey: ['/api/companies', companyId, 'journal'],
+    queryKey: ["/api/companies", companyId, "journal"],
     enabled: !!companyId,
   });
 
   // Compute derived data
   const pendingTasks = tasks.filter(
-    (t: any) => t.status !== 'completed' && t.status !== 'cancelled'
+    (t: any) => t.status !== "completed" && t.status !== "cancelled"
   );
 
   const now = new Date();
   const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const recentActivityItems = activityLogs.filter((item: any) => {
-    const date = item.createdAt ? new Date(item.createdAt) : (item.date ? new Date(item.date) : null);
+    const date = item.createdAt ? new Date(item.createdAt) : item.date ? new Date(item.date) : null;
     return date && date >= oneWeekAgo;
   });
 
   // Find next compliance deadline
   const upcomingDeadlines = complianceTasks
     .filter((task: any) => {
-      if (task.status === 'completed' || task.status === 'cancelled') return false;
+      if (task.status === "completed" || task.status === "cancelled") return false;
       const dueDate = task.dueDate ? new Date(task.dueDate) : null;
       return dueDate && dueDate >= now;
     })
@@ -80,12 +80,13 @@ export default function ClientDashboard() {
 
   // Compliance status badge color
   const getComplianceBadge = () => {
-    if (!nextDeadline) return { color: 'bg-green-100 text-green-700 border-green-200', label: 'All Clear' };
+    if (!nextDeadline)
+      return { color: "bg-green-100 text-green-700 border-green-200", label: "All Clear" };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 7)
-      return { color: 'bg-red-100 text-red-700 border-red-200', label: 'Urgent' };
+      return { color: "bg-red-100 text-red-700 border-red-200", label: "Urgent" };
     if (daysUntilDeadline !== null && daysUntilDeadline <= 30)
-      return { color: 'bg-yellow-100 text-yellow-700 border-yellow-200', label: 'Upcoming' };
-    return { color: 'bg-green-100 text-green-700 border-green-200', label: 'On Track' };
+      return { color: "bg-yellow-100 text-yellow-700 border-yellow-200", label: "Upcoming" };
+    return { color: "bg-green-100 text-green-700 border-green-200", label: "On Track" };
   };
 
   const complianceBadge = getComplianceBadge();
@@ -93,7 +94,7 @@ export default function ClientDashboard() {
   // Recent updates feed data
   const recentUpdates = activityLogs.slice(0, 5).map((item: any) => ({
     id: item.id,
-    description: item.description || item.memo || 'Activity logged',
+    description: item.description || item.memo || "Activity logged",
     date: item.createdAt || item.date,
   }));
 
@@ -116,7 +117,9 @@ export default function ClientDashboard() {
         {/* My Documents */}
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">My Documents</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              My Documents
+            </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
               <Upload className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </div>
@@ -139,7 +142,9 @@ export default function ClientDashboard() {
         {/* Compliance Status */}
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Compliance Status</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Compliance Status
+            </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
               <ShieldCheck className="w-4 h-4 text-green-600 dark:text-green-400" />
             </div>
@@ -150,10 +155,10 @@ export default function ClientDashboard() {
             ) : nextDeadline ? (
               <>
                 <div className="text-sm font-semibold">
-                  {nextDeadline.title || 'Upcoming deadline'}
+                  {nextDeadline.title || "Upcoming deadline"}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  due in {daysUntilDeadline} day{daysUntilDeadline !== 1 ? 's' : ''}
+                  due in {daysUntilDeadline} day{daysUntilDeadline !== 1 ? "s" : ""}
                 </p>
               </>
             ) : (
@@ -168,7 +173,9 @@ export default function ClientDashboard() {
         {/* Pending Tasks */}
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Pending Tasks</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Pending Tasks
+            </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-amber-100 dark:bg-amber-900/20 flex items-center justify-center">
               <ListTodo className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             </div>
@@ -191,7 +198,9 @@ export default function ClientDashboard() {
         {/* Recent Activity */}
         <Card className="hover:shadow-md transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Recent Activity</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Recent Activity
+            </CardTitle>
             <div className="w-9 h-9 rounded-lg bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">
               <Activity className="w-4 h-4 text-purple-600 dark:text-purple-400" />
             </div>
@@ -297,7 +306,7 @@ export default function ClientDashboard() {
                     <p className="text-sm font-medium truncate">{update.description}</p>
                     {update.date && (
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(update.date, 'en')}
+                        {formatDate(update.date, "en")}
                       </p>
                     )}
                   </div>

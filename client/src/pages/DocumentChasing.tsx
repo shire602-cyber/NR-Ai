@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { format, parseISO, differenceInDays } from 'date-fns';
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { format, parseISO, differenceInDays } from "date-fns";
 import {
   AlertTriangle,
   CalendarDays,
@@ -9,27 +9,27 @@ import {
   Plus,
   Send,
   Sparkles,
-} from 'lucide-react';
-import { SiWhatsapp } from 'react-icons/si';
+} from "lucide-react";
+import { SiWhatsapp } from "react-icons/si";
 
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,9 +48,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Checkbox } from '@/components/ui/checkbox';
-import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from '@shared/schema';
+} from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from "@shared/schema";
 
 // ── Types echoed from server response shape ───────────────────────────
 interface Requirement {
@@ -68,7 +68,7 @@ interface Requirement {
 
 interface ChaseQueueItem {
   requirement: Requirement;
-  nextLevel: 'friendly' | 'follow_up' | 'urgent' | 'final';
+  nextLevel: "friendly" | "follow_up" | "urgent" | "final";
   message: string;
   whatsappLink: string | null;
   daysOverdue: number;
@@ -91,21 +91,21 @@ interface Effectiveness {
 }
 
 function humanize(s: string) {
-  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function levelBadgeColor(level: string) {
   switch (level) {
-    case 'friendly':
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300';
-    case 'follow_up':
-      return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300';
-    case 'urgent':
-      return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300';
-    case 'final':
-      return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300';
+    case "friendly":
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
+    case "follow_up":
+      return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-300";
+    case "urgent":
+      return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300";
+    case "final":
+      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
     default:
-      return 'bg-gray-100 text-gray-800';
+      return "bg-gray-100 text-gray-800";
   }
 }
 
@@ -117,61 +117,85 @@ export default function DocumentChasing() {
   const [previewItem, setPreviewItem] = useState<ChaseQueueItem | null>(null);
 
   const requirementsQuery = useQuery<Requirement[]>({
-    queryKey: ['/api/companies', companyId, 'document-requirements'],
+    queryKey: ["/api/companies", companyId, "document-requirements"],
     enabled: !!companyId,
   });
 
   const queueQuery = useQuery<ChaseQueueItem[]>({
-    queryKey: ['/api/companies', companyId, 'document-chases', 'queue'],
+    queryKey: ["/api/companies", companyId, "document-chases", "queue"],
     enabled: !!companyId,
   });
 
   const eventsQuery = useQuery<ComplianceEvent[]>({
-    queryKey: ['/api/companies', companyId, 'compliance-calendar'],
+    queryKey: ["/api/companies", companyId, "compliance-calendar"],
     enabled: !!companyId,
   });
 
   const effectivenessQuery = useQuery<Effectiveness>({
-    queryKey: ['/api/companies', companyId, 'document-chases', 'effectiveness'],
+    queryKey: ["/api/companies", companyId, "document-chases", "effectiveness"],
     enabled: !!companyId,
   });
 
   const sendChaseMutation = useMutation({
     mutationFn: (input: { requirementId: string; overrideMessage?: string; channel?: string }) =>
-      apiRequest('POST', `/api/companies/${companyId}/document-chases/send/${input.requirementId}`, {
-        overrideMessage: input.overrideMessage,
-        channel: input.channel ?? 'whatsapp',
-      }),
+      apiRequest(
+        "POST",
+        `/api/companies/${companyId}/document-chases/send/${input.requirementId}`,
+        {
+          overrideMessage: input.overrideMessage,
+          channel: input.channel ?? "whatsapp",
+        }
+      ),
     onSuccess: (data: { whatsappLink?: string | null }) => {
-      toast({ title: 'Chase recorded', description: 'Marked as sent.' });
-      if (data?.whatsappLink) window.open(data.whatsappLink, '_blank', 'noopener,noreferrer');
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'queue'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'effectiveness'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-requirements'] });
+      toast({ title: "Chase recorded", description: "Marked as sent." });
+      if (data?.whatsappLink) window.open(data.whatsappLink, "_blank", "noopener,noreferrer");
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "document-chases", "effectiveness"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "document-requirements"],
+      });
       setPreviewItem(null);
     },
-    onError: (e: Error) => toast({ title: 'Failed', description: e.message ?? 'Send failed', variant: 'destructive' }),
+    onError: (e: Error) =>
+      toast({ title: "Failed", description: e.message ?? "Send failed", variant: "destructive" }),
   });
 
   const bulkSendMutation = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/companies/${companyId}/document-chases/bulk-send`, {}),
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/document-chases/bulk-send`, {}),
     onSuccess: (data: { sentCount: number }) => {
-      toast({ title: 'Bulk chase complete', description: `Sent ${data.sentCount} reminders.` });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'queue'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'effectiveness'] });
+      toast({ title: "Bulk chase complete", description: `Sent ${data.sentCount} reminders.` });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "document-chases", "effectiveness"],
+      });
     },
-    onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) =>
+      toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
   const markReceivedMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest('PATCH', `/api/companies/${companyId}/document-requirements/${id}`, { status: 'received' }),
+      apiRequest("PATCH", `/api/companies/${companyId}/document-requirements/${id}`, {
+        status: "received",
+      }),
     onSuccess: () => {
-      toast({ title: 'Marked received' });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-requirements'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'document-chases', 'queue'] });
+      toast({ title: "Marked received" });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "document-requirements"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "document-chases", "queue"],
+      });
     },
-    onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) =>
+      toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
   const requirements = requirementsQuery.data ?? [];
@@ -179,12 +203,14 @@ export default function DocumentChasing() {
   const events = eventsQuery.data ?? [];
 
   const missingDocs = useMemo(
-    () => requirements.filter((r) => r.status !== 'received' && r.status !== 'waived'),
-    [requirements],
+    () => requirements.filter((r) => r.status !== "received" && r.status !== "waived"),
+    [requirements]
   );
 
   const stats = useMemo(() => {
-    const overdue = missingDocs.filter((r) => differenceInDays(new Date(), parseISO(r.dueDate)) > 0).length;
+    const overdue = missingDocs.filter(
+      (r) => differenceInDays(new Date(), parseISO(r.dueDate)) > 0
+    ).length;
     const dueSoon = missingDocs.filter((r) => {
       const d = differenceInDays(parseISO(r.dueDate), new Date());
       return d >= 0 && d <= 14;
@@ -219,7 +245,7 @@ export default function DocumentChasing() {
       >
         <div className="font-medium mb-1">Failed to load document chasing data.</div>
         <div className="text-muted-foreground">
-          {err instanceof Error ? err.message : 'An unexpected error occurred.'}
+          {err instanceof Error ? err.message : "An unexpected error occurred."}
         </div>
         <Button
           variant="outline"
@@ -242,7 +268,8 @@ export default function DocumentChasing() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Document Chasing Autopilot</h1>
           <p className="text-muted-foreground mt-1">
-            Track missing UAE compliance documents, escalate chase reminders, and keep deadlines visible.
+            Track missing UAE compliance documents, escalate chase reminders, and keep deadlines
+            visible.
           </p>
         </div>
         <div className="flex gap-2">
@@ -259,11 +286,13 @@ export default function DocumentChasing() {
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Send {queue.length} chase reminder{queue.length === 1 ? '' : 's'}?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  Send {queue.length} chase reminder{queue.length === 1 ? "" : "s"}?
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will record a chase event for every queued requirement and may
-                  trigger outbound WhatsApp/email messages depending on your channel
-                  configuration. This action can&apos;t be undone.
+                  This will record a chase event for every queued requirement and may trigger
+                  outbound WhatsApp/email messages depending on your channel configuration. This
+                  action can&apos;t be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -288,20 +317,20 @@ export default function DocumentChasing() {
           title="Overdue"
           value={stats.overdue}
           icon={<AlertTriangle className="w-5 h-5 text-red-500" />}
-          tone={stats.overdue > 0 ? 'danger' : 'normal'}
+          tone={stats.overdue > 0 ? "danger" : "normal"}
         />
         <StatCard
           title="Due in 14 days"
           value={stats.dueSoon}
           icon={<CalendarDays className="w-5 h-5 text-amber-500" />}
-          tone={stats.dueSoon > 0 ? 'warning' : 'normal'}
+          tone={stats.dueSoon > 0 ? "warning" : "normal"}
         />
         <StatCard
           title="Response Rate"
           value={
             effectivenessQuery.data
               ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
-              : '—'
+              : "—"
           }
           icon={<Sparkles className="w-5 h-5 text-green-500" />}
         />
@@ -349,12 +378,12 @@ export default function DocumentChasing() {
                         <div className="flex-1 min-w-0">
                           <div className="font-medium">{humanize(r.documentType)}</div>
                           {r.description && (
-                            <div className="text-sm text-muted-foreground line-clamp-1">{r.description}</div>
+                            <div className="text-sm text-muted-foreground line-clamp-1">
+                              {r.description}
+                            </div>
                           )}
                         </div>
-                        <div className="text-sm text-muted-foreground">
-                          Due {format(due, 'PP')}
-                        </div>
+                        <div className="text-sm text-muted-foreground">Due {format(due, "PP")}</div>
                         {isOverdue ? (
                           <Badge variant="destructive">{daysFromDue}d overdue</Badge>
                         ) : (
@@ -404,11 +433,13 @@ export default function DocumentChasing() {
                       <div className="flex-1 min-w-0">
                         <div className="font-medium">{humanize(item.requirement.documentType)}</div>
                         <div className="text-sm text-muted-foreground">
-                          Due {format(parseISO(item.requirement.dueDate), 'PP')} ·{' '}
-                          {item.daysOverdue > 0 ? `${item.daysOverdue}d overdue` : 'due now'}
+                          Due {format(parseISO(item.requirement.dueDate), "PP")} ·{" "}
+                          {item.daysOverdue > 0 ? `${item.daysOverdue}d overdue` : "due now"}
                         </div>
                       </div>
-                      <Badge className={levelBadgeColor(item.nextLevel)}>{humanize(item.nextLevel)}</Badge>
+                      <Badge className={levelBadgeColor(item.nextLevel)}>
+                        {humanize(item.nextLevel)}
+                      </Badge>
                       <Button
                         variant="outline"
                         size="sm"
@@ -420,7 +451,10 @@ export default function DocumentChasing() {
                       <Button
                         size="sm"
                         onClick={() =>
-                          sendChaseMutation.mutate({ requirementId: item.requirement.id, channel: 'whatsapp' })
+                          sendChaseMutation.mutate({
+                            requirementId: item.requirement.id,
+                            channel: "whatsapp",
+                          })
                         }
                         disabled={sendChaseMutation.isPending}
                         data-testid="btn-send-chase"
@@ -441,7 +475,9 @@ export default function DocumentChasing() {
             <CardHeader className="flex flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle>Compliance Calendar</CardTitle>
-                <CardDescription>UAE deadlines (trade licence, visas, FTA filings, ESR).</CardDescription>
+                <CardDescription>
+                  UAE deadlines (trade licence, visas, FTA filings, ESR).
+                </CardDescription>
               </div>
               <Button onClick={() => setShowAddEvent(true)} data-testid="btn-add-event">
                 <Plus className="w-4 h-4 mr-2" /> Add deadline
@@ -460,12 +496,18 @@ export default function DocumentChasing() {
                     const ed = parseISO(e.eventDate);
                     const dUntil = differenceInDays(ed, new Date());
                     return (
-                      <div key={e.id} className="py-3 flex items-center gap-4 flex-wrap" data-testid="row-event">
+                      <div
+                        key={e.id}
+                        className="py-3 flex items-center gap-4 flex-wrap"
+                        data-testid="row-event"
+                      >
                         <div className="flex-1 min-w-0">
                           <div className="font-medium">{humanize(e.eventType)}</div>
-                          <div className="text-sm text-muted-foreground line-clamp-1">{e.description}</div>
+                          <div className="text-sm text-muted-foreground line-clamp-1">
+                            {e.description}
+                          </div>
                         </div>
-                        <div className="text-sm text-muted-foreground">{format(ed, 'PP')}</div>
+                        <div className="text-sm text-muted-foreground">{format(ed, "PP")}</div>
                         {dUntil < 0 ? (
                           <Badge variant="destructive">{Math.abs(dUntil)}d overdue</Badge>
                         ) : dUntil <= 30 ? (
@@ -495,13 +537,16 @@ export default function DocumentChasing() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <Metric label="Total chased" value={effectivenessQuery.data?.totalChased ?? 0} />
-                  <Metric label="Total received" value={effectivenessQuery.data?.totalReceived ?? 0} />
+                  <Metric
+                    label="Total received"
+                    value={effectivenessQuery.data?.totalReceived ?? 0}
+                  />
                   <Metric
                     label="Response rate"
                     value={
                       effectivenessQuery.data
                         ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
-                        : '—'
+                        : "—"
                     }
                   />
                   <Metric
@@ -509,7 +554,7 @@ export default function DocumentChasing() {
                     value={
                       effectivenessQuery.data?.avgDaysToUpload != null
                         ? `${effectivenessQuery.data.avgDaysToUpload.toFixed(1)} days`
-                        : '—'
+                        : "—"
                     }
                   />
                 </div>
@@ -565,14 +610,14 @@ function StatCard(props: {
   title: string;
   value: number | string;
   icon: React.ReactNode;
-  tone?: 'normal' | 'warning' | 'danger';
+  tone?: "normal" | "warning" | "danger";
 }) {
   const ringClass =
-    props.tone === 'danger'
-      ? 'border-red-200 dark:border-red-900'
-      : props.tone === 'warning'
-      ? 'border-amber-200 dark:border-amber-900'
-      : '';
+    props.tone === "danger"
+      ? "border-red-200 dark:border-red-900"
+      : props.tone === "warning"
+        ? "border-amber-200 dark:border-amber-900"
+        : "";
   return (
     <Card className={ringClass}>
       <CardContent className="pt-6">
@@ -607,10 +652,12 @@ function PreviewBody(props: {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Badge className={levelBadgeColor(props.item.nextLevel)}>{humanize(props.item.nextLevel)}</Badge>
+        <Badge className={levelBadgeColor(props.item.nextLevel)}>
+          {humanize(props.item.nextLevel)}
+        </Badge>
         <span className="text-sm text-muted-foreground">
-          {humanize(props.item.requirement.documentType)} · due{' '}
-          {format(parseISO(props.item.requirement.dueDate), 'PP')}
+          {humanize(props.item.requirement.documentType)} · due{" "}
+          {format(parseISO(props.item.requirement.dueDate), "PP")}
         </span>
       </div>
       <Label>Message</Label>
@@ -630,16 +677,16 @@ function PreviewBody(props: {
 function AddRequirementDialog(props: { open: boolean; onClose: () => void; companyId: string }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
-    documentType: 'trade_license',
-    description: '',
-    dueDate: format(new Date(), 'yyyy-MM-dd'),
+    documentType: "trade_license",
+    description: "",
+    dueDate: format(new Date(), "yyyy-MM-dd"),
     isRecurring: false,
     recurringIntervalDays: 365,
   });
 
   const mutation = useMutation({
     mutationFn: (data: typeof form) =>
-      apiRequest('POST', `/api/companies/${props.companyId}/document-requirements`, {
+      apiRequest("POST", `/api/companies/${props.companyId}/document-requirements`, {
         documentType: data.documentType,
         description: data.description || null,
         dueDate: data.dueDate,
@@ -647,12 +694,17 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
         recurringIntervalDays: data.isRecurring ? data.recurringIntervalDays : null,
       }),
     onSuccess: () => {
-      toast({ title: 'Requirement added' });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', props.companyId, 'document-requirements'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', props.companyId, 'document-chases', 'queue'] });
+      toast({ title: "Requirement added" });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", props.companyId, "document-requirements"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", props.companyId, "document-chases", "queue"],
+      });
       props.onClose();
     },
-    onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) =>
+      toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
   return (
@@ -665,7 +717,10 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
         <div className="space-y-4">
           <div>
             <Label htmlFor="docType">Document type</Label>
-            <Select value={form.documentType} onValueChange={(v) => setForm((f) => ({ ...f, documentType: v }))}>
+            <Select
+              value={form.documentType}
+              onValueChange={(v) => setForm((f) => ({ ...f, documentType: v }))}
+            >
               <SelectTrigger id="docType" data-testid="select-doctype">
                 <SelectValue />
               </SelectTrigger>
@@ -704,7 +759,9 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
                 setForm((f) => ({ ...f, isRecurring: checked === true }))
               }
             />
-            <Label htmlFor="isRecurring" className="cursor-pointer">Recurring</Label>
+            <Label htmlFor="isRecurring" className="cursor-pointer">
+              Recurring
+            </Label>
             {form.isRecurring && (
               <>
                 <Input
@@ -741,28 +798,35 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
   );
 }
 
-function AddComplianceEventDialog(props: { open: boolean; onClose: () => void; companyId: string }) {
+function AddComplianceEventDialog(props: {
+  open: boolean;
+  onClose: () => void;
+  companyId: string;
+}) {
   const { toast } = useToast();
   const [form, setForm] = useState({
-    eventType: 'trade_license_renewal',
-    description: '',
-    eventDate: format(new Date(), 'yyyy-MM-dd'),
+    eventType: "trade_license_renewal",
+    description: "",
+    eventDate: format(new Date(), "yyyy-MM-dd"),
   });
 
   const mutation = useMutation({
     mutationFn: (data: typeof form) =>
-      apiRequest('POST', `/api/companies/${props.companyId}/compliance-calendar`, {
+      apiRequest("POST", `/api/companies/${props.companyId}/compliance-calendar`, {
         eventType: data.eventType,
         description: data.description,
         eventDate: data.eventDate,
         reminderDays: [30, 14, 7, 0],
       }),
     onSuccess: () => {
-      toast({ title: 'Deadline added' });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', props.companyId, 'compliance-calendar'] });
+      toast({ title: "Deadline added" });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", props.companyId, "compliance-calendar"],
+      });
       props.onClose();
     },
-    onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) =>
+      toast({ title: "Failed", description: e.message, variant: "destructive" }),
   });
 
   return (
@@ -775,7 +839,10 @@ function AddComplianceEventDialog(props: { open: boolean; onClose: () => void; c
         <div className="space-y-4">
           <div>
             <Label htmlFor="eventType">Event type</Label>
-            <Select value={form.eventType} onValueChange={(v) => setForm((f) => ({ ...f, eventType: v }))}>
+            <Select
+              value={form.eventType}
+              onValueChange={(v) => setForm((f) => ({ ...f, eventType: v }))}
+            >
               <SelectTrigger id="eventType">
                 <SelectValue />
               </SelectTrigger>

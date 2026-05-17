@@ -6,9 +6,12 @@ import { isOnline, queueForSync } from "./pwa";
 
 /** Error that carries the HTTP status code — used to decide retry behaviour. */
 export class ApiError extends Error {
-  constructor(message: string, public readonly status: number) {
+  constructor(
+    message: string,
+    public readonly status: number
+  ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
   }
 }
 
@@ -16,14 +19,14 @@ async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorMessage = res.statusText;
     try {
-      const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
         const json = await res.json();
         errorMessage = json.message || json.error || JSON.stringify(json);
       } else {
         const text = await res.text();
         // If it's HTML, just use the status
-        if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+        if (text.includes("<!DOCTYPE") || text.includes("<html")) {
           errorMessage = `${res.status}: ${res.statusText}`;
         } else {
           errorMessage = text.substring(0, 200);
@@ -63,9 +66,12 @@ async function isCsrfInvalidResponse(res: Response): Promise<boolean> {
 }
 
 /** Mutating methods are eligible for offline queueing. */
-const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-async function buildRequestHeaders(method: string, data?: unknown): Promise<Record<string, string>> {
+async function buildRequestHeaders(
+  method: string,
+  data?: unknown
+): Promise<Record<string, string>> {
   let headers: Record<string, string> = {
     ...getAuthHeaders(),
   };
@@ -85,7 +91,7 @@ async function buildRequestHeaders(method: string, data?: unknown): Promise<Reco
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined,
+  data?: unknown | undefined
 ): Promise<any> {
   let headers = await buildRequestHeaders(method, data);
 
@@ -98,7 +104,7 @@ export async function apiRequest(
   // surface a clear error so the UI can render its offline state.
   if (!isOnline() && MUTATING_METHODS.has(upperMethod)) {
     await queueForSync({ url: fullUrl, method: upperMethod, headers, body });
-    throw new ApiError('You are offline. This change will sync when you reconnect.', 0);
+    throw new ApiError("You are offline. This change will sync when you reconnect.", 0);
   }
 
   let res = await fetch(fullUrl, {
@@ -142,9 +148,7 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
+export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const url = apiUrl(queryKey.join("/") as string);

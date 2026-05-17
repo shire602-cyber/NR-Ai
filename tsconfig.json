@@ -1,6 +1,14 @@
 {
   "include": ["client/src/**/*", "shared/**/*", "server/**/*"],
-  "exclude": ["node_modules", "build", "dist", "**/*.test.ts", "**/Temp/**", "**/bugbot-*/**", "**/.cursor/**"],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "**/*.test.ts",
+    "**/Temp/**",
+    "**/bugbot-*/**",
+    "**/.cursor/**"
+  ],
   "compilerOptions": {
     "incremental": false,
     "noEmit": true,

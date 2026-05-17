@@ -8,9 +8,9 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        lg: ".625rem",   /* 10px */
-        md: ".4375rem",  /* 7px  */
-        sm: ".25rem",    /* 4px  */
+        lg: ".625rem" /* 10px */,
+        md: ".4375rem" /* 7px  */,
+        sm: ".25rem" /* 4px  */,
         xl: ".875rem",
         "2xl": "1.125rem",
       },

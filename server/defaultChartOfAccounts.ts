@@ -581,7 +581,9 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
   },
 ];
 
-export function createDefaultAccountsForCompany(companyId: string): Omit<InsertAccount, "id" | "createdAt">[] {
+export function createDefaultAccountsForCompany(
+  companyId: string
+): Omit<InsertAccount, "id" | "createdAt">[] {
   return defaultChartOfAccounts.map((account) => ({
     companyId,
     code: account.code,

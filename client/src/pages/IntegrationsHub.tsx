@@ -1,26 +1,41 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency } from '@/lib/format';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { 
-  Link2, 
-  Plug, 
-  RefreshCw, 
-  Check, 
-  X, 
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatCurrency } from "@/lib/format";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  Link2,
+  Plug,
+  RefreshCw,
+  Check,
+  X,
   AlertTriangle,
   ExternalLink,
   Settings,
@@ -34,9 +49,9 @@ import {
   ArrowRight,
   Shield,
   Database,
-  FileText
-} from 'lucide-react';
-import { SiStripe, SiShopify, SiSalesforce } from 'react-icons/si';
+  FileText,
+} from "lucide-react";
+import { SiStripe, SiShopify, SiSalesforce } from "react-icons/si";
 
 interface EcommerceIntegration {
   id: string;
@@ -70,62 +85,62 @@ interface IntegrationConfig {
 
 const PLATFORMS = [
   {
-    id: 'stripe',
-    name: 'Stripe',
-    description: 'Accept payments and automatically import transactions',
+    id: "stripe",
+    name: "Stripe",
+    description: "Accept payments and automatically import transactions",
     icon: SiStripe,
-    color: 'text-[#635BFF]',
-    bgColor: 'bg-[#635BFF]/10',
-    features: ['Payment processing', 'Automatic reconciliation', 'Refund tracking', 'Invoice sync'],
-    status: 'available',
+    color: "text-[#635BFF]",
+    bgColor: "bg-[#635BFF]/10",
+    features: ["Payment processing", "Automatic reconciliation", "Refund tracking", "Invoice sync"],
+    status: "available",
   },
   {
-    id: 'shopify',
-    name: 'Shopify',
-    description: 'Sync orders, products, and customer data from your store',
+    id: "shopify",
+    name: "Shopify",
+    description: "Sync orders, products, and customer data from your store",
     icon: SiShopify,
-    color: 'text-[#95BF47]',
-    bgColor: 'bg-[#95BF47]/10',
-    features: ['Order import', 'Product catalog sync', 'Customer data', 'Inventory tracking'],
-    status: 'available',
+    color: "text-[#95BF47]",
+    bgColor: "bg-[#95BF47]/10",
+    features: ["Order import", "Product catalog sync", "Customer data", "Inventory tracking"],
+    status: "available",
   },
   {
-    id: 'salesforce',
-    name: 'Salesforce',
-    description: 'Connect your CRM for customer and sales data synchronization',
+    id: "salesforce",
+    name: "Salesforce",
+    description: "Connect your CRM for customer and sales data synchronization",
     icon: SiSalesforce,
-    color: 'text-[#00A1E0]',
-    bgColor: 'bg-[#00A1E0]/10',
-    features: ['Contact sync', 'Opportunity tracking', 'Invoice generation', 'Sales reports'],
-    status: 'coming_soon',
+    color: "text-[#00A1E0]",
+    bgColor: "bg-[#00A1E0]/10",
+    features: ["Contact sync", "Opportunity tracking", "Invoice generation", "Sales reports"],
+    status: "coming_soon",
   },
 ];
 
 export default function IntegrationsHub() {
   const { t, locale } = useTranslation();
-  const isRTL = locale === 'ar';
+  const isRTL = locale === "ar";
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
-  const [selectedPlatform, setSelectedPlatform] = useState<typeof PLATFORMS[0] | null>(null);
-  const [configForm, setConfigForm] = useState<IntegrationConfig>({ platform: '' });
+  const [selectedPlatform, setSelectedPlatform] = useState<(typeof PLATFORMS)[0] | null>(null);
+  const [configForm, setConfigForm] = useState<IntegrationConfig>({ platform: "" });
 
   // Fetch integrations
   const { data: integrations, isLoading: integrationsLoading } = useQuery<EcommerceIntegration[]>({
-    queryKey: ['/api/integrations/ecommerce', companyId],
+    queryKey: ["/api/integrations/ecommerce", companyId],
     queryFn: () => {
-      const params = new URLSearchParams({ companyId: companyId ?? '' });
-      return apiRequest('GET', `/api/integrations/ecommerce?${params}`);
+      const params = new URLSearchParams({ companyId: companyId ?? "" });
+      return apiRequest("GET", `/api/integrations/ecommerce?${params}`);
     },
     enabled: !!companyId,
   });
 
   // Fetch recent transactions
   const { data: transactions, isLoading: transactionsLoading } = useQuery<EcommerceTransaction[]>({
-    queryKey: ['/api/integrations/ecommerce/transactions', companyId],
+    queryKey: ["/api/integrations/ecommerce/transactions", companyId],
     queryFn: () => {
-      const params = new URLSearchParams({ companyId: companyId ?? '' });
-      return apiRequest('GET', `/api/integrations/ecommerce/transactions?${params}`);
+      const params = new URLSearchParams({ companyId: companyId ?? "" });
+      return apiRequest("GET", `/api/integrations/ecommerce/transactions?${params}`);
     },
     enabled: !!companyId,
   });
@@ -133,59 +148,82 @@ export default function IntegrationsHub() {
   // Connect integration mutation
   const connectMutation = useMutation({
     mutationFn: async (config: IntegrationConfig) => {
-      return await apiRequest('POST', '/api/integrations/ecommerce/connect', {
+      return await apiRequest("POST", "/api/integrations/ecommerce/connect", {
         companyId,
         ...config,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/ecommerce', companyId] });
-      toast({ title: 'Connected', description: `${selectedPlatform?.name} integration connected successfully` });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/ecommerce", companyId] });
+      toast({
+        title: "Connected",
+        description: `${selectedPlatform?.name} integration connected successfully`,
+      });
       setConnectDialogOpen(false);
-      setConfigForm({ platform: '' });
+      setConfigForm({ platform: "" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to connect integration' });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.message || "Failed to connect integration",
+      });
     },
   });
 
   // Sync mutation
   const syncMutation = useMutation({
     mutationFn: async (integrationId: string) => {
-      return await apiRequest('POST', `/api/integrations/ecommerce/${integrationId}/sync`, {
+      return await apiRequest("POST", `/api/integrations/ecommerce/${integrationId}/sync`, {
         companyId,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/ecommerce', companyId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/ecommerce/transactions', companyId] });
-      toast({ title: 'Sync Started', description: 'Data synchronization is in progress' });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/ecommerce", companyId] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/integrations/ecommerce/transactions", companyId],
+      });
+      toast({ title: "Sync Started", description: "Data synchronization is in progress" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Sync Failed', description: error?.message || 'Failed to sync data' });
+      toast({
+        variant: "destructive",
+        title: "Sync Failed",
+        description: error?.message || "Failed to sync data",
+      });
     },
   });
 
   // Toggle integration mutation
   const toggleMutation = useMutation({
-    mutationFn: async ({ integrationId, isActive }: { integrationId: string; isActive: boolean }) => {
-      return await apiRequest('PATCH', `/api/integrations/ecommerce/${integrationId}/toggle`, {
+    mutationFn: async ({
+      integrationId,
+      isActive,
+    }: {
+      integrationId: string;
+      isActive: boolean;
+    }) => {
+      return await apiRequest("PATCH", `/api/integrations/ecommerce/${integrationId}/toggle`, {
         isActive,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/ecommerce', companyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/ecommerce", companyId] });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to update integration' });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.message || "Failed to update integration",
+      });
     },
   });
 
   const getIntegration = (platform: string) => {
-    return integrations?.find(i => i.platform === platform);
+    return integrations?.find((i) => i.platform === platform);
   };
 
-  const handleConnect = (platform: typeof PLATFORMS[0]) => {
+  const handleConnect = (platform: (typeof PLATFORMS)[0]) => {
     setSelectedPlatform(platform);
     setConfigForm({ platform: platform.id });
     setConnectDialogOpen(true);
@@ -193,42 +231,98 @@ export default function IntegrationsHub() {
 
   const handleSubmitConnect = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!selectedPlatform) return;
-    
+
     // Validate required fields
-    if (selectedPlatform.id === 'stripe' && !configForm.apiKey) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Please enter your Stripe Secret Key' });
+    if (selectedPlatform.id === "stripe" && !configForm.apiKey) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter your Stripe Secret Key",
+      });
       return;
     }
-    
-    if (selectedPlatform.id === 'shopify' && (!configForm.shopDomain || !configForm.accessToken)) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Please enter both Shop Domain and Access Token' });
+
+    if (selectedPlatform.id === "shopify" && (!configForm.shopDomain || !configForm.accessToken)) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Please enter both Shop Domain and Access Token",
+      });
       return;
     }
-    
+
     connectMutation.mutate(configForm);
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-AE', {
-      day: 'numeric',
-      month: 'short',
-      hour: '2-digit',
-      minute: '2-digit',
+    return new Date(dateString).toLocaleDateString("en-AE", {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
   // Sample transactions for demo
   const sampleTransactions: EcommerceTransaction[] = [
-    { id: '1', platform: 'stripe', externalId: 'ch_1234', transactionType: 'payment', amount: 2500, currency: 'AED', customerName: 'Ahmed Hassan', customerEmail: 'ahmed@email.com', status: 'succeeded', transactionDate: '2024-11-28T10:30:00Z', isReconciled: true },
-    { id: '2', platform: 'stripe', externalId: 'ch_1235', transactionType: 'payment', amount: 1850, currency: 'AED', customerName: 'Sara Ali', customerEmail: 'sara@email.com', status: 'succeeded', transactionDate: '2024-11-27T14:15:00Z', isReconciled: false },
-    { id: '3', platform: 'shopify', externalId: 'ord_5678', transactionType: 'order', amount: 3200, currency: 'AED', customerName: 'Mohammed Khan', customerEmail: 'mkhan@email.com', status: 'succeeded', transactionDate: '2024-11-27T09:45:00Z', isReconciled: true },
-    { id: '4', platform: 'stripe', externalId: 'ch_1236', transactionType: 'refund', amount: -450, currency: 'AED', customerName: 'Fatima Omar', customerEmail: 'fatima@email.com', status: 'succeeded', transactionDate: '2024-11-26T16:20:00Z', isReconciled: true },
+    {
+      id: "1",
+      platform: "stripe",
+      externalId: "ch_1234",
+      transactionType: "payment",
+      amount: 2500,
+      currency: "AED",
+      customerName: "Ahmed Hassan",
+      customerEmail: "ahmed@email.com",
+      status: "succeeded",
+      transactionDate: "2024-11-28T10:30:00Z",
+      isReconciled: true,
+    },
+    {
+      id: "2",
+      platform: "stripe",
+      externalId: "ch_1235",
+      transactionType: "payment",
+      amount: 1850,
+      currency: "AED",
+      customerName: "Sara Ali",
+      customerEmail: "sara@email.com",
+      status: "succeeded",
+      transactionDate: "2024-11-27T14:15:00Z",
+      isReconciled: false,
+    },
+    {
+      id: "3",
+      platform: "shopify",
+      externalId: "ord_5678",
+      transactionType: "order",
+      amount: 3200,
+      currency: "AED",
+      customerName: "Mohammed Khan",
+      customerEmail: "mkhan@email.com",
+      status: "succeeded",
+      transactionDate: "2024-11-27T09:45:00Z",
+      isReconciled: true,
+    },
+    {
+      id: "4",
+      platform: "stripe",
+      externalId: "ch_1236",
+      transactionType: "refund",
+      amount: -450,
+      currency: "AED",
+      customerName: "Fatima Omar",
+      customerEmail: "fatima@email.com",
+      status: "succeeded",
+      transactionDate: "2024-11-26T16:20:00Z",
+      isReconciled: true,
+    },
   ];
 
   return (
-    <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="space-y-6" dir={isRTL ? "rtl" : "ltr"}>
       {/* Header */}
       <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-purple-600/10 via-pink-600/5 to-transparent border border-purple-600/20 p-8">
         <div className="relative z-10">
@@ -237,7 +331,9 @@ export default function IntegrationsHub() {
               <Plug className="w-6 h-6 text-purple-600" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold" data-testid="text-integrations-title">CRM & E-Commerce Integrations</h1>
+              <h1 className="text-3xl font-bold" data-testid="text-integrations-title">
+                CRM & E-Commerce Integrations
+              </h1>
               <p className="text-muted-foreground mt-1">
                 Connect your business tools for automatic data synchronization
               </p>
@@ -296,7 +392,7 @@ export default function IntegrationsHub() {
                 <CreditCard className="w-4 h-4 text-purple-600 dark:text-purple-400" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono">{formatCurrency(45850, 'AED')}</div>
+                <div className="text-2xl font-bold font-mono">{formatCurrency(45850, "AED")}</div>
                 <p className="text-xs text-muted-foreground mt-1">This month</p>
               </CardContent>
             </Card>
@@ -319,16 +415,19 @@ export default function IntegrationsHub() {
               const integration = getIntegration(platform.id);
               const Icon = platform.icon;
               const isConnected = integration?.isActive;
-              const isComingSoon = platform.status === 'coming_soon';
+              const isComingSoon = platform.status === "coming_soon";
 
               return (
-                <Card key={platform.id} className={`hover-elevate relative overflow-hidden ${isComingSoon ? 'opacity-60' : ''}`}>
+                <Card
+                  key={platform.id}
+                  className={`hover-elevate relative overflow-hidden ${isComingSoon ? "opacity-60" : ""}`}
+                >
                   {isComingSoon && (
                     <div className="absolute top-3 right-3">
                       <Badge variant="secondary">Coming Soon</Badge>
                     </div>
                   )}
-                  
+
                   <CardHeader>
                     <div className="flex items-start gap-4">
                       <div className={`p-3 rounded-lg ${platform.bgColor}`}>
@@ -338,7 +437,10 @@ export default function IntegrationsHub() {
                         <CardTitle className="text-lg flex items-center gap-2">
                           {platform.name}
                           {isConnected && (
-                            <Badge variant="secondary" className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                            <Badge
+                              variant="secondary"
+                              className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                            >
                               <Check className="w-3 h-3 mr-1" />
                               Connected
                             </Badge>
@@ -365,10 +467,12 @@ export default function IntegrationsHub() {
                           <div className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">Last synced:</span>
                             <span className="font-medium">
-                              {integration.lastSyncAt ? formatDate(integration.lastSyncAt) : 'Never'}
+                              {integration.lastSyncAt
+                                ? formatDate(integration.lastSyncAt)
+                                : "Never"}
                             </span>
                           </div>
-                          {integration.syncStatus === 'failed' && integration.syncError && (
+                          {integration.syncStatus === "failed" && integration.syncError && (
                             <div className="flex items-center gap-2 mt-2 text-sm text-red-600 dark:text-red-400">
                               <AlertTriangle className="w-4 h-4" />
                               {integration.syncError}
@@ -384,9 +488,9 @@ export default function IntegrationsHub() {
                       <>
                         {isConnected ? (
                           <>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
+                            <Button
+                              variant="outline"
+                              size="sm"
                               className="flex-1"
                               onClick={() => syncMutation.mutate(integration!.id)}
                               disabled={syncMutation.isPending}
@@ -399,8 +503,8 @@ export default function IntegrationsHub() {
                               )}
                               Sync Now
                             </Button>
-                            <Button 
-                              variant="ghost" 
+                            <Button
+                              variant="ghost"
                               size="icon"
                               data-testid={`button-settings-${platform.id}`}
                             >
@@ -408,7 +512,7 @@ export default function IntegrationsHub() {
                             </Button>
                           </>
                         ) : (
-                          <Button 
+                          <Button
                             className="w-full gap-2"
                             onClick={() => handleConnect(platform)}
                             data-testid={`button-connect-${platform.id}`}
@@ -446,7 +550,9 @@ export default function IntegrationsHub() {
                   </div>
                   <div>
                     <p className="font-medium">Save Time</p>
-                    <p className="text-sm text-muted-foreground">Automatic transaction import eliminates manual data entry</p>
+                    <p className="text-sm text-muted-foreground">
+                      Automatic transaction import eliminates manual data entry
+                    </p>
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -455,7 +561,9 @@ export default function IntegrationsHub() {
                   </div>
                   <div>
                     <p className="font-medium">Reduce Errors</p>
-                    <p className="text-sm text-muted-foreground">AI-powered matching ensures accurate reconciliation</p>
+                    <p className="text-sm text-muted-foreground">
+                      AI-powered matching ensures accurate reconciliation
+                    </p>
                   </div>
                 </div>
                 <div className="flex gap-3">
@@ -464,7 +572,9 @@ export default function IntegrationsHub() {
                   </div>
                   <div>
                     <p className="font-medium">Real-time Data</p>
-                    <p className="text-sm text-muted-foreground">Always have up-to-date financial information</p>
+                    <p className="text-sm text-muted-foreground">
+                      Always have up-to-date financial information
+                    </p>
                   </div>
                 </div>
               </div>
@@ -489,19 +599,26 @@ export default function IntegrationsHub() {
               <ScrollArea className="h-[500px]">
                 <div className="divide-y">
                   {sampleTransactions.map((txn) => {
-                    const platform = PLATFORMS.find(p => p.id === txn.platform);
+                    const platform = PLATFORMS.find((p) => p.id === txn.platform);
                     const Icon = platform?.icon || CreditCard;
-                    const isRefund = txn.transactionType === 'refund';
+                    const isRefund = txn.transactionType === "refund";
 
                     return (
-                      <div key={txn.id} className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                      <div
+                        key={txn.id}
+                        className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
+                      >
                         <div className="flex items-center gap-4">
-                          <div className={`p-2 rounded-lg ${platform?.bgColor || 'bg-muted'}`}>
-                            <Icon className={`w-5 h-5 ${platform?.color || 'text-muted-foreground'}`} />
+                          <div className={`p-2 rounded-lg ${platform?.bgColor || "bg-muted"}`}>
+                            <Icon
+                              className={`w-5 h-5 ${platform?.color || "text-muted-foreground"}`}
+                            />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <p className="font-medium">{txn.customerName || 'Unknown Customer'}</p>
+                              <p className="font-medium">
+                                {txn.customerName || "Unknown Customer"}
+                              </p>
                               <Badge variant="outline" className="text-xs">
                                 {txn.transactionType}
                               </Badge>
@@ -513,17 +630,26 @@ export default function IntegrationsHub() {
                         </div>
                         <div className="flex items-center gap-4">
                           <div className="text-right">
-                            <p className={`font-mono font-bold ${isRefund ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                              {isRefund ? '' : '+'}{formatCurrency(txn.amount, txn.currency)}
+                            <p
+                              className={`font-mono font-bold ${isRefund ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}
+                            >
+                              {isRefund ? "" : "+"}
+                              {formatCurrency(txn.amount, txn.currency)}
                             </p>
                             <div className="flex items-center gap-1 justify-end">
                               {txn.isReconciled ? (
-                                <Badge variant="secondary" className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs">
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs"
+                                >
                                   <Check className="w-3 h-3 mr-1" />
                                   Reconciled
                                 </Badge>
                               ) : (
-                                <Badge variant="secondary" className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs">
+                                <Badge
+                                  variant="secondary"
+                                  className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs"
+                                >
                                   <Clock className="w-3 h-3 mr-1" />
                                   Pending
                                 </Badge>
@@ -579,7 +705,9 @@ export default function IntegrationsHub() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Sync Settings</CardTitle>
-              <CardDescription>Configure how data is synchronized from connected platforms</CardDescription>
+              <CardDescription>
+                Configure how data is synchronized from connected platforms
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex items-center justify-between">
@@ -593,7 +721,9 @@ export default function IntegrationsHub() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Auto-Reconciliation</p>
-                  <p className="text-sm text-muted-foreground">Automatically match transactions with invoices</p>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically match transactions with invoices
+                  </p>
                 </div>
                 <Switch defaultChecked data-testid="switch-auto-reconcile" />
               </div>
@@ -601,7 +731,9 @@ export default function IntegrationsHub() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Create Journal Entries</p>
-                  <p className="text-sm text-muted-foreground">Automatically create journal entries for matched transactions</p>
+                  <p className="text-sm text-muted-foreground">
+                    Automatically create journal entries for matched transactions
+                  </p>
                 </div>
                 <Switch data-testid="switch-auto-journal" />
               </div>
@@ -609,7 +741,9 @@ export default function IntegrationsHub() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium">Import Refunds</p>
-                  <p className="text-sm text-muted-foreground">Include refunds in transaction imports</p>
+                  <p className="text-sm text-muted-foreground">
+                    Include refunds in transaction imports
+                  </p>
                 </div>
                 <Switch defaultChecked data-testid="switch-import-refunds" />
               </div>
@@ -662,20 +796,21 @@ export default function IntegrationsHub() {
               )}
             </DialogTitle>
             <DialogDescription>
-              Enter your API credentials to connect {selectedPlatform?.name} with your bookkeeping system.
+              Enter your API credentials to connect {selectedPlatform?.name} with your bookkeeping
+              system.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleSubmitConnect}>
             <div className="space-y-4 py-4">
-              {selectedPlatform?.id === 'stripe' && (
+              {selectedPlatform?.id === "stripe" && (
                 <div className="space-y-2">
                   <Label htmlFor="apiKey">Stripe Secret Key</Label>
                   <Input
                     id="apiKey"
                     type="password"
                     placeholder="sk_live_..."
-                    value={configForm.apiKey || ''}
+                    value={configForm.apiKey || ""}
                     onChange={(e) => setConfigForm({ ...configForm, apiKey: e.target.value })}
                     data-testid="input-api-key"
                   />
@@ -685,14 +820,14 @@ export default function IntegrationsHub() {
                 </div>
               )}
 
-              {selectedPlatform?.id === 'shopify' && (
+              {selectedPlatform?.id === "shopify" && (
                 <>
                   <div className="space-y-2">
                     <Label htmlFor="shopDomain">Shop Domain</Label>
                     <Input
                       id="shopDomain"
                       placeholder="mystore.myshopify.com"
-                      value={configForm.shopDomain || ''}
+                      value={configForm.shopDomain || ""}
                       onChange={(e) => setConfigForm({ ...configForm, shopDomain: e.target.value })}
                       data-testid="input-shop-domain"
                     />
@@ -703,8 +838,10 @@ export default function IntegrationsHub() {
                       id="accessToken"
                       type="password"
                       placeholder="shpat_..."
-                      value={configForm.accessToken || ''}
-                      onChange={(e) => setConfigForm({ ...configForm, accessToken: e.target.value })}
+                      value={configForm.accessToken || ""}
+                      onChange={(e) =>
+                        setConfigForm({ ...configForm, accessToken: e.target.value })
+                      }
                       data-testid="input-access-token"
                     />
                   </div>

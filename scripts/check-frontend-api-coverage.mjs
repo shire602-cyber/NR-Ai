@@ -84,7 +84,8 @@ for (const file of clientFiles) {
   const lines = read(file).split('\n');
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    if (line.includes('invalidateQueries')) continue;
+    const recentContext = lines.slice(Math.max(0, index - 3), index + 1).join('\n');
+    if (recentContext.includes('invalidateQueries')) continue;
 
     const queryKeyMatch = line.match(/queryKey:\s*\[([^\]]+)\]/);
     if (queryKeyMatch) {

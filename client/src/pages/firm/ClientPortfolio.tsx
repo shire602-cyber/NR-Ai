@@ -1,26 +1,61 @@
-import { useMemo, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useMemo, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
-  Building2, Plus, Search, LayoutGrid, List,
-  ChevronRight, Users, Calendar,
-  BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
-  Calculator, CheckCircle2, Clock, FileText, TrendingUp,
-  UserCheck, Target,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { format } from 'date-fns';
-import type { Company } from '@shared/schema';
-import { useActiveCompany } from '@/components/ActiveCompanyProvider';
+  Building2,
+  Plus,
+  Search,
+  LayoutGrid,
+  List,
+  ChevronRight,
+  Users,
+  Calendar,
+  BookOpen,
+  Upload,
+  AlertTriangle,
+  Receipt,
+  FolderOpen,
+  Calculator,
+  CheckCircle2,
+  Clock,
+  FileText,
+  TrendingUp,
+  UserCheck,
+  Target,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { format } from "date-fns";
+import type { Company } from "@shared/schema";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 interface ClientStats {
   invoiceCount: number;
@@ -52,8 +87,8 @@ interface ImportResult {
   errors: { row: number; name: string; error: string }[];
 }
 
-type BookkeeperPriority = 'on_track' | 'attention' | 'critical';
-type BookkeeperInterventionLevel = 'low' | 'medium' | 'high';
+type BookkeeperPriority = "on_track" | "attention" | "critical";
+type BookkeeperInterventionLevel = "low" | "medium" | "high";
 
 interface BookkeeperClient {
   companyId: string;
@@ -80,7 +115,7 @@ interface BookkeeperClient {
     periodEnd: string | null;
     dueDate: string | null;
     daysTilDue: number | null;
-    status: BookkeeperPriority | 'filed';
+    status: BookkeeperPriority | "filed";
     payableTax: number | null;
     blockers: string[];
   };
@@ -89,7 +124,7 @@ interface BookkeeperClient {
     periodEnd: string | null;
     dueDate: string | null;
     daysTilDue: number | null;
-    status: BookkeeperPriority | 'filed';
+    status: BookkeeperPriority | "filed";
     taxPayable: number | null;
     blockers: string[];
   };
@@ -127,13 +162,13 @@ interface BookkeeperVatCohort {
     priority: BookkeeperPriority;
     dueDate: string | null;
     daysTilDue: number | null;
-    status: BookkeeperPriority | 'filed';
+    status: BookkeeperPriority | "filed";
     blockers: string[];
     nextBestAction: string;
   }[];
 }
 
-type BookkeeperQueueKey = 'vat' | 'corporateTax' | 'bookkeeping' | 'accounting';
+type BookkeeperQueueKey = "vat" | "corporateTax" | "bookkeeping" | "accounting";
 
 interface BookkeeperQueueItem {
   companyId: string;
@@ -184,74 +219,83 @@ interface BookkeeperDashboard {
 }
 
 function formatAed(amount: number) {
-  return new Intl.NumberFormat('en-AE', {
-    style: 'currency',
-    currency: 'AED',
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
+    currency: "AED",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
 }
 
 function formatDateShort(date: string | null | undefined) {
-  if (!date) return '—';
-  return format(new Date(date), 'MMM d');
+  if (!date) return "—";
+  return format(new Date(date), "MMM d");
 }
 
 function formatPeriod(start: string | null | undefined, end: string | null | undefined) {
-  if (!start || !end) return 'No period';
+  if (!start || !end) return "No period";
   return `${formatDateShort(start)} - ${formatDateShort(end)}`;
 }
 
 function formatDays(days: number | null | undefined) {
-  if (days === null || days === undefined) return 'No date';
+  if (days === null || days === undefined) return "No date";
   if (days < 0) return `${Math.abs(days)}d overdue`;
-  if (days === 0) return 'Due today';
+  if (days === 0) return "Due today";
   return `${days}d left`;
 }
 
-function priorityClass(priority: BookkeeperPriority | 'filed') {
-  if (priority === 'filed' || priority === 'on_track') return 'bg-green-100 text-green-800 border-green-200';
-  if (priority === 'critical') return 'bg-red-100 text-red-800 border-red-200';
-  return 'bg-amber-100 text-amber-800 border-amber-200';
+function priorityClass(priority: BookkeeperPriority | "filed") {
+  if (priority === "filed" || priority === "on_track")
+    return "bg-green-100 text-green-800 border-green-200";
+  if (priority === "critical") return "bg-red-100 text-red-800 border-red-200";
+  return "bg-amber-100 text-amber-800 border-amber-200";
 }
 
-function priorityLabel(priority: BookkeeperPriority | 'filed') {
-  if (priority === 'on_track') return 'On track';
-  if (priority === 'attention') return 'Attention';
-  if (priority === 'critical') return 'Critical';
-  return 'Filed';
+function priorityLabel(priority: BookkeeperPriority | "filed") {
+  if (priority === "on_track") return "On track";
+  if (priority === "attention") return "Attention";
+  if (priority === "critical") return "Critical";
+  return "Filed";
 }
 
-function priorityScore(priority: BookkeeperPriority | 'filed') {
-  if (priority === 'critical') return 3;
-  if (priority === 'attention') return 2;
+function priorityScore(priority: BookkeeperPriority | "filed") {
+  if (priority === "critical") return 3;
+  if (priority === "attention") return 2;
   return 1;
 }
 
-function PriorityBadge({ priority }: { priority: BookkeeperPriority | 'filed' }) {
+function PriorityBadge({ priority }: { priority: BookkeeperPriority | "filed" }) {
   return <Badge className={priorityClass(priority)}>{priorityLabel(priority)}</Badge>;
 }
 
 function interventionClass(level: BookkeeperInterventionLevel) {
-  if (level === 'high') return 'bg-red-100 text-red-800 border-red-200';
-  if (level === 'medium') return 'bg-amber-100 text-amber-800 border-amber-200';
-  return 'bg-green-100 text-green-800 border-green-200';
+  if (level === "high") return "bg-red-100 text-red-800 border-red-200";
+  if (level === "medium") return "bg-amber-100 text-amber-800 border-amber-200";
+  return "bg-green-100 text-green-800 border-green-200";
 }
 
-function fallbackIntervention(client: BookkeeperClient): NonNullable<BookkeeperClient['intervention']> {
+function fallbackIntervention(
+  client: BookkeeperClient
+): NonNullable<BookkeeperClient["intervention"]> {
+  const vatOpen = client.vat.status !== "filed";
+  const corporateTaxOpen = client.corporateTax.status !== "filed";
   const score = Math.min(
     100,
-    priorityScore(client.priority) * 18
-      + (client.assignedStaff.length === 0 ? 12 : 0)
-      + (client.bookkeeping.status !== 'on_track' ? 12 : 0)
-      + (client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28 ? 10 : 0)
-      + (client.corporateTax.daysTilDue !== null && client.corporateTax.daysTilDue <= 90 ? 6 : 0),
+    priorityScore(client.priority) * 18 +
+      (client.assignedStaff.length === 0 ? 12 : 0) +
+      (client.bookkeeping.status !== "on_track" ? 12 : 0) +
+      (vatOpen && client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28 ? 10 : 0) +
+      (corporateTaxOpen &&
+      client.corporateTax.daysTilDue !== null &&
+      client.corporateTax.daysTilDue <= 90
+        ? 6
+        : 0)
   );
-  const level: BookkeeperInterventionLevel = score >= 65 ? 'high' : score >= 35 ? 'medium' : 'low';
+  const level: BookkeeperInterventionLevel = score >= 65 ? "high" : score >= 35 ? "medium" : "low";
   const reasons = [
-    client.assignedStaff.length === 0 ? 'No owner assigned' : '',
-    ...client.vat.blockers,
-    ...client.corporateTax.blockers,
+    client.assignedStaff.length === 0 ? "No owner assigned" : "",
+    ...(vatOpen ? client.vat.blockers : []),
+    ...(corporateTaxOpen ? client.corporateTax.blockers : []),
     ...client.bookkeeping.blockers,
     ...client.accounting.blockers,
   ].filter(Boolean);
@@ -259,7 +303,7 @@ function fallbackIntervention(client: BookkeeperClient): NonNullable<BookkeeperC
     score,
     level,
     title: client.nextBestAction,
-    reasons: (reasons.length > 0 ? reasons : ['No active intervention signals']).slice(0, 5),
+    reasons: (reasons.length > 0 ? reasons : ["No active intervention signals"]).slice(0, 5),
     ownerAction: client.nextBestAction,
     deadlineLabel: primaryDeadline(client).label,
     exposureAed: Math.round(Math.max(0, client.bookkeeping.openAr)),
@@ -271,51 +315,64 @@ function clientIntervention(client: BookkeeperClient) {
 }
 
 function blockerPreview(blockers: string[]) {
-  if (blockers.length === 0) return 'No blockers';
+  if (blockers.length === 0) return "No blockers";
   if (blockers.length === 1) return blockers[0];
   return `${blockers[0]} +${blockers.length - 1}`;
 }
 
 const queueConfig: Record<BookkeeperQueueKey, { label: string; icon: typeof Calendar }> = {
-  vat: { label: 'VAT', icon: Calendar },
-  corporateTax: { label: 'Corporate Tax', icon: Calculator },
-  bookkeeping: { label: 'Bookkeeping', icon: TrendingUp },
-  accounting: { label: 'Accounting', icon: CheckCircle2 },
+  vat: { label: "VAT", icon: Calendar },
+  corporateTax: { label: "Corporate Tax", icon: Calculator },
+  bookkeeping: { label: "Bookkeeping", icon: TrendingUp },
+  accounting: { label: "Accounting", icon: CheckCircle2 },
 };
 
 function ownerPreview(names: string[]) {
-  if (names.length === 0) return 'Unassigned';
+  if (names.length === 0) return "Unassigned";
   if (names.length === 1) return names[0];
   return `${names[0]} +${names.length - 1}`;
 }
 
 function primaryDeadline(client: BookkeeperClient) {
   const candidates = [
-    client.vat.status !== 'filed'
+    client.vat.status !== "filed"
       ? {
-          label: 'VAT',
+          label: "VAT",
           dueDate: client.vat.dueDate,
           daysTilDue: client.vat.daysTilDue,
-          metric: client.vat.payableTax !== null ? formatAed(client.vat.payableTax) : client.vat.cohortLabel,
+          metric:
+            client.vat.payableTax !== null
+              ? formatAed(client.vat.payableTax)
+              : client.vat.cohortLabel,
         }
       : null,
-    client.corporateTax.status !== 'filed'
+    client.corporateTax.status !== "filed"
       ? {
-          label: 'CT',
+          label: "CT",
           dueDate: client.corporateTax.dueDate,
           daysTilDue: client.corporateTax.daysTilDue,
-          metric: client.corporateTax.taxPayable !== null ? formatAed(client.corporateTax.taxPayable) : 'Readiness',
+          metric:
+            client.corporateTax.taxPayable !== null
+              ? formatAed(client.corporateTax.taxPayable)
+              : "Readiness",
         }
       : null,
-  ].filter(Boolean) as Array<{ label: string; dueDate: string | null; daysTilDue: number | null; metric: string }>;
+  ].filter(Boolean) as Array<{
+    label: string;
+    dueDate: string | null;
+    daysTilDue: number | null;
+    metric: string;
+  }>;
 
   candidates.sort((a, b) => (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999));
-  return candidates[0] ?? {
-    label: 'Close',
-    dueDate: client.vat.dueDate,
-    daysTilDue: client.vat.daysTilDue,
-    metric: `${client.bookkeeping.closeProgress}% close-ready`,
-  };
+  return (
+    candidates[0] ?? {
+      label: "Close",
+      dueDate: client.vat.dueDate,
+      daysTilDue: client.vat.daysTilDue,
+      metric: `${client.bookkeeping.closeProgress}% close-ready`,
+    }
+  );
 }
 
 function productionItem(client: BookkeeperClient, labelOverride?: string) {
@@ -325,15 +382,18 @@ function productionItem(client: BookkeeperClient, labelOverride?: string) {
     label: labelOverride ?? deadline.label,
     dueDate: deadline.dueDate,
     daysTilDue: deadline.daysTilDue,
-    metric: labelOverride === 'Close' ? `${client.bookkeeping.closeProgress}% close-ready` : deadline.metric,
+    metric:
+      labelOverride === "Close"
+        ? `${client.bookkeeping.closeProgress}% close-ready`
+        : deadline.metric,
   };
 }
 
 function sortProductionItems(items: ReturnType<typeof productionItem>[]) {
   return items.sort((a, b) => {
     const priorityDelta =
-      (b.client.priority === 'critical' ? 3 : b.client.priority === 'attention' ? 2 : 1)
-      - (a.client.priority === 'critical' ? 3 : a.client.priority === 'attention' ? 2 : 1);
+      (b.client.priority === "critical" ? 3 : b.client.priority === "attention" ? 2 : 1) -
+      (a.client.priority === "critical" ? 3 : a.client.priority === "attention" ? 2 : 1);
     if (priorityDelta !== 0) return priorityDelta;
     return (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999);
   });
@@ -352,56 +412,74 @@ function OperationsBriefDialog({
   onOpenBooks: (companyId: string) => void;
   onViewProfile: (companyId: string) => void;
 }) {
-  const lanes = client ? [
-    {
-      key: 'vat',
-      title: 'VAT',
-      icon: Calendar,
-      status: client.vat.status,
-      due: `${formatDateShort(client.vat.dueDate)} · ${formatDays(client.vat.daysTilDue)}`,
-      period: formatPeriod(client.vat.periodStart, client.vat.periodEnd),
-      metric: client.vat.payableTax !== null ? formatAed(client.vat.payableTax) : client.vat.cohortLabel,
-      blockers: client.vat.blockers,
-    },
-    {
-      key: 'corporate-tax',
-      title: 'Corporate Tax',
-      icon: Calculator,
-      status: client.corporateTax.status,
-      due: `${formatDateShort(client.corporateTax.dueDate)} · ${formatDays(client.corporateTax.daysTilDue)}`,
-      period: formatPeriod(client.corporateTax.periodStart, client.corporateTax.periodEnd),
-      metric: client.corporateTax.taxPayable !== null ? formatAed(client.corporateTax.taxPayable) : 'Readiness',
-      blockers: client.corporateTax.blockers,
-    },
-    {
-      key: 'bookkeeping',
-      title: 'Bookkeeping',
-      icon: TrendingUp,
-      status: client.bookkeeping.status,
-      due: `${client.bookkeeping.closeProgress}% close-ready`,
-      period: client.bookkeeping.daysSinceActivity === null ? 'No activity date' : `${client.bookkeeping.daysSinceActivity}d since activity`,
-      metric: `${client.bookkeeping.unpostedReceiptCount} receipts · ${client.bookkeeping.unreconciledBankCount} bank lines`,
-      blockers: client.bookkeeping.blockers,
-    },
-    {
-      key: 'accounting',
-      title: 'Accounting',
-      icon: CheckCircle2,
-      status: client.accounting.status,
-      due: client.accounting.trialBalanceBalanced ? 'Balanced' : 'Needs review',
-      period: client.accounting.discrepancy > 0 ? formatAed(client.accounting.discrepancy) : 'No variance',
-      metric: client.accounting.trialBalanceBalanced ? 'Trial balance clean' : 'Trial balance variance',
-      blockers: client.accounting.blockers,
-    },
-  ] : [];
+  const lanes = client
+    ? [
+        {
+          key: "vat",
+          title: "VAT",
+          icon: Calendar,
+          status: client.vat.status,
+          due: `${formatDateShort(client.vat.dueDate)} · ${formatDays(client.vat.daysTilDue)}`,
+          period: formatPeriod(client.vat.periodStart, client.vat.periodEnd),
+          metric:
+            client.vat.payableTax !== null
+              ? formatAed(client.vat.payableTax)
+              : client.vat.cohortLabel,
+          blockers: client.vat.blockers,
+        },
+        {
+          key: "corporate-tax",
+          title: "Corporate Tax",
+          icon: Calculator,
+          status: client.corporateTax.status,
+          due: `${formatDateShort(client.corporateTax.dueDate)} · ${formatDays(client.corporateTax.daysTilDue)}`,
+          period: formatPeriod(client.corporateTax.periodStart, client.corporateTax.periodEnd),
+          metric:
+            client.corporateTax.taxPayable !== null
+              ? formatAed(client.corporateTax.taxPayable)
+              : "Readiness",
+          blockers: client.corporateTax.blockers,
+        },
+        {
+          key: "bookkeeping",
+          title: "Bookkeeping",
+          icon: TrendingUp,
+          status: client.bookkeeping.status,
+          due: `${client.bookkeeping.closeProgress}% close-ready`,
+          period:
+            client.bookkeeping.daysSinceActivity === null
+              ? "No activity date"
+              : `${client.bookkeeping.daysSinceActivity}d since activity`,
+          metric: `${client.bookkeeping.unpostedReceiptCount} receipts · ${client.bookkeeping.unreconciledBankCount} bank lines`,
+          blockers: client.bookkeeping.blockers,
+        },
+        {
+          key: "accounting",
+          title: "Accounting",
+          icon: CheckCircle2,
+          status: client.accounting.status,
+          due: client.accounting.trialBalanceBalanced ? "Balanced" : "Needs review",
+          period:
+            client.accounting.discrepancy > 0
+              ? formatAed(client.accounting.discrepancy)
+              : "No variance",
+          metric: client.accounting.trialBalanceBalanced
+            ? "Trial balance clean"
+            : "Trial balance variance",
+          blockers: client.accounting.blockers,
+        },
+      ]
+    : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{client?.companyName ?? 'Client Operations Brief'}</DialogTitle>
+          <DialogTitle>{client?.companyName ?? "Client Operations Brief"}</DialogTitle>
           <DialogDescription>
-            {client ? `${ownerPreview(client.assignedStaff.map(staff => staff.name))} · ${client.nextBestAction}` : 'Operational status'}
+            {client
+              ? `${ownerPreview(client.assignedStaff.map((staff) => staff.name))} · ${client.nextBestAction}`
+              : "Operational status"}
           </DialogDescription>
         </DialogHeader>
 
@@ -410,11 +488,15 @@ function OperationsBriefDialog({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <div className="rounded-md border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Priority</p>
-                <div className="mt-1"><PriorityBadge priority={client.priority} /></div>
+                <div className="mt-1">
+                  <PriorityBadge priority={client.priority} />
+                </div>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Owner</p>
-                <p className="text-sm font-medium mt-1 truncate">{ownerPreview(client.assignedStaff.map(staff => staff.name))}</p>
+                <p className="text-sm font-medium mt-1 truncate">
+                  {ownerPreview(client.assignedStaff.map((staff) => staff.name))}
+                </p>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Last activity</p>
@@ -427,7 +509,7 @@ function OperationsBriefDialog({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {lanes.map(lane => {
+              {lanes.map((lane) => {
                 const Icon = lane.icon;
                 return (
                   <div key={lane.key} className="rounded-md border p-3">
@@ -455,7 +537,7 @@ function OperationsBriefDialog({
                       {lane.blockers.length === 0 ? (
                         <p className="text-xs text-muted-foreground">No blockers.</p>
                       ) : (
-                        lane.blockers.slice(0, 4).map(blocker => (
+                        lane.blockers.slice(0, 4).map((blocker) => (
                           <div key={blocker} className="flex items-start gap-2 text-xs">
                             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-amber-600 shrink-0" />
                             <span>{blocker}</span>
@@ -471,7 +553,11 @@ function OperationsBriefDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => client && onViewProfile(client.companyId)} disabled={!client}>
+          <Button
+            variant="outline"
+            onClick={() => client && onViewProfile(client.companyId)}
+            disabled={!client}
+          >
             <ChevronRight className="w-4 h-4 mr-2" />
             Profile
           </Button>
@@ -498,62 +584,82 @@ function BookkeeperCommandCenter({
   onOpenBrief: (companyId: string) => void;
   onManageStaff: () => void;
 }) {
-  const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>('vat');
+  const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>("vat");
   const priorityClients = dashboard?.clients.slice(0, 5) ?? [];
   const activeQueueItems = dashboard?.queues?.[activeQueue] ?? [];
   const workloadOwners = dashboard?.workload?.owners ?? [];
   const productionBuckets = useMemo(() => {
     const clients = dashboard?.clients ?? [];
-    const deadlineItems = sortProductionItems(clients.map(client => productionItem(client)));
+    const deadlineItems = sortProductionItems(clients.map((client) => productionItem(client)));
     return [
       {
-        key: 'overdue',
-        title: 'Overdue / Due Now',
+        key: "overdue",
+        title: "Overdue / Due Now",
         icon: AlertTriangle,
-        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue <= 0).slice(0, 5),
+        items: deadlineItems
+          .filter((item) => item.daysTilDue !== null && item.daysTilDue <= 0)
+          .slice(0, 5),
       },
       {
-        key: 'week',
-        title: 'This Week',
+        key: "week",
+        title: "This Week",
         icon: Clock,
-        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue > 0 && item.daysTilDue <= 7).slice(0, 5),
+        items: deadlineItems
+          .filter((item) => item.daysTilDue !== null && item.daysTilDue > 0 && item.daysTilDue <= 7)
+          .slice(0, 5),
       },
       {
-        key: 'month',
-        title: 'Next 28 Days',
+        key: "month",
+        title: "Next 28 Days",
         icon: Calendar,
-        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue > 7 && item.daysTilDue <= 28).slice(0, 5),
+        items: deadlineItems
+          .filter(
+            (item) => item.daysTilDue !== null && item.daysTilDue > 7 && item.daysTilDue <= 28
+          )
+          .slice(0, 5),
       },
       {
-        key: 'blocked',
-        title: 'Close Blockers',
+        key: "blocked",
+        title: "Close Blockers",
         icon: TrendingUp,
         items: sortProductionItems(
           clients
-            .filter(client => client.bookkeeping.status !== 'on_track')
-            .map(client => productionItem(client, 'Close')),
+            .filter((client) => client.bookkeeping.status !== "on_track")
+            .map((client) => productionItem(client, "Close"))
         ).slice(0, 5),
       },
       {
-        key: 'unassigned',
-        title: 'Unassigned',
+        key: "unassigned",
+        title: "Unassigned",
         icon: UserCheck,
-        items: deadlineItems.filter(item => item.client.assignedStaff.length === 0).slice(0, 5),
+        items: deadlineItems.filter((item) => item.client.assignedStaff.length === 0).slice(0, 5),
       },
     ];
   }, [dashboard?.clients]);
   const capacityPlanner = useMemo(() => {
     const clients = dashboard?.clients ?? [];
     const unassigned = clients
-      .filter(client => client.assignedStaff.length === 0)
+      .filter((client) => client.assignedStaff.length === 0)
       .sort((a, b) => priorityScore(b.priority) - priorityScore(a.priority))
       .slice(0, 5);
     const overloaded = workloadOwners
-      .filter(owner => owner.staffId !== null && (owner.critical >= 3 || owner.clientCount >= 15 || owner.averageCloseProgress < 60))
+      .filter(
+        (owner) =>
+          owner.staffId !== null &&
+          (owner.critical >= 3 || owner.clientCount >= 15 || owner.averageCloseProgress < 60)
+      )
       .slice(0, 5);
     const openCapacity = workloadOwners
-      .filter(owner => owner.staffId !== null && owner.clientCount < 10 && owner.critical === 0 && owner.averageCloseProgress >= 70)
-      .sort((a, b) => a.clientCount - b.clientCount || b.averageCloseProgress - a.averageCloseProgress)
+      .filter(
+        (owner) =>
+          owner.staffId !== null &&
+          owner.clientCount < 10 &&
+          owner.critical === 0 &&
+          owner.averageCloseProgress >= 70
+      )
+      .sort(
+        (a, b) => a.clientCount - b.clientCount || b.averageCloseProgress - a.averageCloseProgress
+      )
       .slice(0, 5);
     return { unassigned, overloaded, openCapacity };
   }, [dashboard?.clients, workloadOwners]);
@@ -564,10 +670,14 @@ function BookkeeperCommandCenter({
       return priorityScore(b.priority) - priorityScore(a.priority);
     });
     return {
-      high: rankedClients.filter(client => clientIntervention(client).level === 'high').slice(0, 4),
-      watchlist: rankedClients.filter(client => clientIntervention(client).level === 'medium').slice(0, 4),
+      high: rankedClients
+        .filter((client) => clientIntervention(client).level === "high")
+        .slice(0, 4),
+      watchlist: rankedClients
+        .filter((client) => clientIntervention(client).level === "medium")
+        .slice(0, 4),
       exposure: rankedClients
-        .filter(client => clientIntervention(client).exposureAed > 0)
+        .filter((client) => clientIntervention(client).exposureAed > 0)
         .sort((a, b) => clientIntervention(b).exposureAed - clientIntervention(a).exposureAed)
         .slice(0, 4),
     };
@@ -579,7 +689,7 @@ function BookkeeperCommandCenter({
       rowClients: BookkeeperClient[],
       metric: string,
       action: string,
-      risk: BookkeeperPriority | 'filed' = 'on_track',
+      risk: BookkeeperPriority | "filed" = "on_track"
     ) => ({
       label,
       count: rowClients.length,
@@ -587,80 +697,155 @@ function BookkeeperCommandCenter({
       action,
       risk,
       primaryCompanyId: rowClients[0]?.companyId,
-      sample: rowClients.slice(0, 2).map(client => client.companyName).join(', '),
+      sample: rowClients
+        .slice(0, 2)
+        .map((client) => client.companyName)
+        .join(", "),
     });
     const sortedByIntervention = (rowClients: BookkeeperClient[]) =>
       [...rowClients].sort((a, b) => clientIntervention(b).score - clientIntervention(a).score);
-    const ctOpen = clients.filter(client => client.corporateTax.status !== 'filed');
-    const bookkeepingBlocked = sortedByIntervention(clients.filter(client => client.bookkeeping.status === 'critical'));
-    const bookkeepingAttention = sortedByIntervention(clients.filter(client => client.bookkeeping.status === 'attention'));
+    const ctOpen = clients.filter((client) => client.corporateTax.status !== "filed");
+    const bookkeepingBlocked = sortedByIntervention(
+      clients.filter((client) => client.bookkeeping.status === "critical")
+    );
+    const bookkeepingAttention = sortedByIntervention(
+      clients.filter((client) => client.bookkeeping.status === "attention")
+    );
     const bookkeepingReady = clients
-      .filter(client => client.bookkeeping.status === 'on_track' && client.bookkeeping.closeProgress >= 90)
+      .filter(
+        (client) =>
+          client.bookkeeping.status === "on_track" && client.bookkeeping.closeProgress >= 90
+      )
       .sort((a, b) => b.bookkeeping.closeProgress - a.bookkeeping.closeProgress);
-    const accountingVariance = sortedByIntervention(clients.filter(client => client.accounting.status === 'critical'));
-    const accountingReview = sortedByIntervention(clients.filter(client => client.accounting.status === 'attention'));
-    const accountingClean = clients.filter(client => client.accounting.status === 'on_track');
+    const accountingVariance = sortedByIntervention(
+      clients.filter((client) => client.accounting.status === "critical")
+    );
+    const accountingReview = sortedByIntervention(
+      clients.filter((client) => client.accounting.status === "attention")
+    );
+    const accountingClean = clients.filter((client) => client.accounting.status === "on_track");
 
     return [
       {
-        key: 'vat',
-        title: 'VAT Cohorts',
+        key: "vat",
+        title: "VAT Cohorts",
         icon: Calendar,
-        rows: (dashboard?.vatCohorts ?? []).slice(0, 3).map(cohort => ({
+        rows: (dashboard?.vatCohorts ?? []).slice(0, 3).map((cohort) => ({
           label: cohort.label,
           count: cohort.clientCount,
           metric: `${cohort.dueSoon} due · ${cohort.blocked} blocked`,
-          action: cohort.blocked > 0 ? 'Clear blockers' : cohort.dueSoon > 0 ? 'Prepare returns' : 'Monitor cohort',
-          risk: cohort.blocked > 0 ? 'critical' as const : cohort.dueSoon > 0 ? 'attention' as const : 'on_track' as const,
+          action:
+            cohort.blocked > 0
+              ? "Clear blockers"
+              : cohort.dueSoon > 0
+                ? "Prepare returns"
+                : "Monitor cohort",
+          risk:
+            cohort.blocked > 0
+              ? ("critical" as const)
+              : cohort.dueSoon > 0
+                ? ("attention" as const)
+                : ("on_track" as const),
           primaryCompanyId: cohort.clients[0]?.companyId,
-          sample: cohort.clients.slice(0, 2).map(client => client.companyName).join(', '),
+          sample: cohort.clients
+            .slice(0, 2)
+            .map((client) => client.companyName)
+            .join(", "),
         })),
       },
       {
-        key: 'ct',
-        title: 'Corporate Tax',
+        key: "ct",
+        title: "Corporate Tax",
         icon: Calculator,
         rows: [
-          makeRow('Due in 30d', sortedByIntervention(ctOpen.filter(client => (client.corporateTax.daysTilDue ?? 9999) <= 30)), 'urgent filings', 'Lock filing plan', 'critical'),
-          makeRow('Due in 90d', sortedByIntervention(ctOpen.filter(client => {
-            const days = client.corporateTax.daysTilDue ?? 9999;
-            return days > 30 && days <= 90;
-          })), 'preparation window', 'Start readiness review', 'attention'),
-          makeRow('Future / parked', sortedByIntervention(ctOpen.filter(client => (client.corporateTax.daysTilDue ?? 9999) > 90)), 'future filings', 'Monitor readiness'),
+          makeRow(
+            "Due in 30d",
+            sortedByIntervention(
+              ctOpen.filter((client) => (client.corporateTax.daysTilDue ?? 9999) <= 30)
+            ),
+            "urgent filings",
+            "Lock filing plan",
+            "critical"
+          ),
+          makeRow(
+            "Due in 90d",
+            sortedByIntervention(
+              ctOpen.filter((client) => {
+                const days = client.corporateTax.daysTilDue ?? 9999;
+                return days > 30 && days <= 90;
+              })
+            ),
+            "preparation window",
+            "Start readiness review",
+            "attention"
+          ),
+          makeRow(
+            "Future / parked",
+            sortedByIntervention(
+              ctOpen.filter((client) => (client.corporateTax.daysTilDue ?? 9999) > 90)
+            ),
+            "future filings",
+            "Monitor readiness"
+          ),
         ],
       },
       {
-        key: 'bookkeeping',
-        title: 'Bookkeeping Close',
+        key: "bookkeeping",
+        title: "Bookkeeping Close",
         icon: TrendingUp,
         rows: [
-          makeRow('Blocked', bookkeepingBlocked, 'source docs / bank gaps', 'Clear blockers', 'critical'),
-          makeRow('In progress', bookkeepingAttention, 'needs staff push', 'Finish close work', 'attention'),
-          makeRow('Review-ready', bookkeepingReady, '90%+ close-ready', 'Manager review'),
+          makeRow(
+            "Blocked",
+            bookkeepingBlocked,
+            "source docs / bank gaps",
+            "Clear blockers",
+            "critical"
+          ),
+          makeRow(
+            "In progress",
+            bookkeepingAttention,
+            "needs staff push",
+            "Finish close work",
+            "attention"
+          ),
+          makeRow("Review-ready", bookkeepingReady, "90%+ close-ready", "Manager review"),
         ],
       },
       {
-        key: 'accounting',
-        title: 'Accounting Review',
+        key: "accounting",
+        title: "Accounting Review",
         icon: CheckCircle2,
         rows: [
-          makeRow('TB variance', accountingVariance, 'requires correction', 'Review journals', 'critical'),
-          makeRow('Needs journals', accountingReview, 'posting required', 'Post activity', 'attention'),
-          makeRow('Clean files', accountingClean, 'balanced ledgers', 'Keep cadence'),
+          makeRow(
+            "TB variance",
+            accountingVariance,
+            "requires correction",
+            "Review journals",
+            "critical"
+          ),
+          makeRow(
+            "Needs journals",
+            accountingReview,
+            "posting required",
+            "Post activity",
+            "attention"
+          ),
+          makeRow("Clean files", accountingClean, "balanced ledgers", "Keep cadence"),
         ],
       },
     ];
   }, [dashboard?.clients, dashboard?.vatCohorts]);
-  const ctClients = dashboard?.clients
-    .filter(client => client.corporateTax.status !== 'filed')
-    .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
-    .slice(0, 4) ?? [];
-  const closeClients = dashboard?.clients
-    .filter(client => client.bookkeeping.status !== 'on_track')
-    .slice(0, 4) ?? [];
-  const accountingClients = dashboard?.clients
-    .filter(client => client.accounting.status !== 'on_track')
-    .slice(0, 4) ?? [];
+  const ctClients =
+    dashboard?.clients
+      .filter((client) => client.corporateTax.status !== "filed")
+      .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
+      .slice(0, 4) ?? [];
+  const closeClients =
+    dashboard?.clients.filter((client) => client.bookkeeping.status !== "on_track").slice(0, 4) ??
+    [];
+  const accountingClients =
+    dashboard?.clients.filter((client) => client.accounting.status !== "on_track").slice(0, 4) ??
+    [];
 
   return (
     <section className="space-y-4" data-testid="bookkeeper-command-center">
@@ -668,13 +853,16 @@ function BookkeeperCommandCenter({
         <div>
           <h2 className="text-lg font-semibold tracking-tight">NR Bookkeeper Command Center</h2>
           <p className="text-sm text-muted-foreground">
-            VAT cohorts, corporate tax deadlines, monthly close blockers, and accounting review across the client portfolio.
+            VAT cohorts, corporate tax deadlines, monthly close blockers, and accounting review
+            across the client portfolio.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
             <Clock className="w-3.5 h-3.5" />
-            {dashboard?.generatedAt ? `Updated ${format(new Date(dashboard.generatedAt), 'MMM d, HH:mm')}` : 'Loading'}
+            {dashboard?.generatedAt
+              ? `Updated ${format(new Date(dashboard.generatedAt), "MMM d, HH:mm")}`
+              : "Loading"}
           </span>
         </div>
       </div>
@@ -704,7 +892,9 @@ function BookkeeperCommandCenter({
               <p className="text-xs text-muted-foreground uppercase tracking-wide">CT due 90d</p>
               <Calculator className="w-4 h-4 text-blue-600" />
             </div>
-            <p className="text-2xl font-bold mt-1">{dashboard?.summary.corporateTaxDue90Days ?? 0}</p>
+            <p className="text-2xl font-bold mt-1">
+              {dashboard?.summary.corporateTaxDue90Days ?? 0}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -726,13 +916,14 @@ function BookkeeperCommandCenter({
               Production Planner
             </CardTitle>
             <Badge variant="outline">
-              {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)} visible items
+              {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)} visible
+              items
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-            {productionBuckets.map(bucket => {
+            {productionBuckets.map((bucket) => {
               const Icon = bucket.icon;
               return (
                 <div key={bucket.key} className="rounded-md border bg-muted/20 p-3">
@@ -749,7 +940,7 @@ function BookkeeperCommandCenter({
                         Clear
                       </div>
                     )}
-                    {bucket.items.map(item => (
+                    {bucket.items.map((item) => (
                       <button
                         key={`${bucket.key}-${item.client.companyId}`}
                         type="button"
@@ -758,7 +949,9 @@ function BookkeeperCommandCenter({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{item.client.companyName}</p>
+                            <p className="text-sm font-medium truncate">
+                              {item.client.companyName}
+                            </p>
                             <p className="text-xs text-muted-foreground">
                               {item.label} · {formatDays(item.daysTilDue)}
                             </p>
@@ -799,7 +992,7 @@ function BookkeeperCommandCenter({
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Unassigned Intake</p>
-                <Badge variant={capacityPlanner.unassigned.length > 0 ? 'destructive' : 'outline'}>
+                <Badge variant={capacityPlanner.unassigned.length > 0 ? "destructive" : "outline"}>
                   {capacityPlanner.unassigned.length}
                 </Badge>
               </div>
@@ -809,17 +1002,26 @@ function BookkeeperCommandCenter({
                     No unassigned clients
                   </div>
                 )}
-                {capacityPlanner.unassigned.map(client => (
-                  <div key={`unassigned-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                {capacityPlanner.unassigned.map((client) => (
+                  <div
+                    key={`unassigned-${client.companyId}`}
+                    className="rounded-md border bg-background px-3 py-2"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{client.companyName}</p>
-                        <p className="text-xs text-muted-foreground truncate">{client.nextBestAction}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {client.nextBestAction}
+                        </p>
                       </div>
                       <PriorityBadge priority={client.priority} />
                     </div>
                     <div className="flex gap-1 mt-2">
-                      <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onOpenBrief(client.companyId)}
+                      >
                         Brief
                       </Button>
                       <Button size="sm" variant="outline" onClick={onManageStaff}>
@@ -834,7 +1036,7 @@ function BookkeeperCommandCenter({
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Overloaded Owners</p>
-                <Badge variant={capacityPlanner.overloaded.length > 0 ? 'secondary' : 'outline'}>
+                <Badge variant={capacityPlanner.overloaded.length > 0 ? "secondary" : "outline"}>
                   {capacityPlanner.overloaded.length}
                 </Badge>
               </div>
@@ -844,8 +1046,11 @@ function BookkeeperCommandCenter({
                     No capacity pressure
                   </div>
                 )}
-                {capacityPlanner.overloaded.map(owner => (
-                  <div key={`overloaded-${owner.staffId}`} className="rounded-md border bg-background px-3 py-2">
+                {capacityPlanner.overloaded.map((owner) => (
+                  <div
+                    key={`overloaded-${owner.staffId}`}
+                    className="rounded-md border bg-background px-3 py-2"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{owner.name}</p>
@@ -853,7 +1058,9 @@ function BookkeeperCommandCenter({
                           {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
                         </p>
                       </div>
-                      <Badge variant={owner.critical > 0 ? 'destructive' : 'secondary'}>{owner.critical} critical</Badge>
+                      <Badge variant={owner.critical > 0 ? "destructive" : "secondary"}>
+                        {owner.critical} critical
+                      </Badge>
                     </div>
                     <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
                       <span>{owner.vatDue28Days} VAT</span>
@@ -876,8 +1083,11 @@ function BookkeeperCommandCenter({
                     No low-load owner found
                   </div>
                 )}
-                {capacityPlanner.openCapacity.map(owner => (
-                  <div key={`capacity-${owner.staffId}`} className="rounded-md border bg-background px-3 py-2">
+                {capacityPlanner.openCapacity.map((owner) => (
+                  <div
+                    key={`capacity-${owner.staffId}`}
+                    className="rounded-md border bg-background px-3 py-2"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{owner.name}</p>
@@ -907,15 +1117,23 @@ function BookkeeperCommandCenter({
                 Intervention Radar
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Prioritize files by deadline pressure, source-document gaps, owner gaps, and collection exposure.
+                Prioritize files by deadline pressure, source-document gaps, owner gaps, and
+                collection exposure.
               </p>
             </div>
             <div className="flex gap-2">
-              <Badge variant={(dashboard?.summary.interventionHigh ?? interventionRadar.high.length) > 0 ? 'destructive' : 'outline'}>
+              <Badge
+                variant={
+                  (dashboard?.summary.interventionHigh ?? interventionRadar.high.length) > 0
+                    ? "destructive"
+                    : "outline"
+                }
+              >
                 {dashboard?.summary.interventionHigh ?? interventionRadar.high.length} high
               </Badge>
               <Badge variant="secondary">
-                {dashboard?.summary.interventionMedium ?? interventionRadar.watchlist.length} watchlist
+                {dashboard?.summary.interventionMedium ?? interventionRadar.watchlist.length}{" "}
+                watchlist
               </Badge>
             </div>
           </div>
@@ -925,7 +1143,9 @@ function BookkeeperCommandCenter({
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Escalate Today</p>
-                <Badge variant={interventionRadar.high.length > 0 ? 'destructive' : 'outline'}>{interventionRadar.high.length}</Badge>
+                <Badge variant={interventionRadar.high.length > 0 ? "destructive" : "outline"}>
+                  {interventionRadar.high.length}
+                </Badge>
               </div>
               <div className="mt-3 space-y-2 min-h-[154px]">
                 {interventionRadar.high.length === 0 && (
@@ -933,21 +1153,34 @@ function BookkeeperCommandCenter({
                     No high-risk interventions
                   </div>
                 )}
-                {interventionRadar.high.map(client => {
+                {interventionRadar.high.map((client) => {
                   const intervention = clientIntervention(client);
                   return (
-                    <div key={`intervention-high-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div
+                      key={`intervention-high-${client.companyId}`}
+                      className="rounded-md border bg-background px-3 py-2"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{intervention.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {intervention.title}
+                          </p>
                         </div>
-                        <Badge className={interventionClass(intervention.level)}>{intervention.score}</Badge>
+                        <Badge className={interventionClass(intervention.level)}>
+                          {intervention.score}
+                        </Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">{intervention.deadlineLabel}</p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {intervention.deadlineLabel}
+                      </p>
                       <p className="text-xs font-medium mt-1">{intervention.ownerAction}</p>
                       <div className="flex gap-1 mt-2">
-                        <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onOpenBrief(client.companyId)}
+                        >
                           Brief
                         </Button>
                         <Button size="sm" onClick={() => onOpenBooks(client.companyId)}>
@@ -971,7 +1204,7 @@ function BookkeeperCommandCenter({
                     No medium-risk watchlist
                   </div>
                 )}
-                {interventionRadar.watchlist.map(client => {
+                {interventionRadar.watchlist.map((client) => {
                   const intervention = clientIntervention(client);
                   return (
                     <button
@@ -983,12 +1216,16 @@ function BookkeeperCommandCenter({
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{intervention.ownerAction}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {intervention.ownerAction}
+                          </p>
                         </div>
-                        <Badge className={interventionClass(intervention.level)}>{intervention.score}</Badge>
+                        <Badge className={interventionClass(intervention.level)}>
+                          {intervention.score}
+                        </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-2 truncate">
-                        {intervention.reasons.slice(0, 2).join(' · ')}
+                        {intervention.reasons.slice(0, 2).join(" · ")}
                       </p>
                     </button>
                   );
@@ -1007,23 +1244,38 @@ function BookkeeperCommandCenter({
                     No open exposure in radar
                   </div>
                 )}
-                {interventionRadar.exposure.map(client => {
+                {interventionRadar.exposure.map((client) => {
                   const intervention = clientIntervention(client);
                   return (
-                    <div key={`intervention-exposure-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div
+                      key={`intervention-exposure-${client.companyId}`}
+                      className="rounded-md border bg-background px-3 py-2"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
-                          <p className="text-xs text-muted-foreground">{client.bookkeeping.overdueInvoiceCount} overdue invoices</p>
+                          <p className="text-xs text-muted-foreground">
+                            {client.bookkeeping.overdueInvoiceCount} overdue invoices
+                          </p>
                         </div>
                         <Badge variant="outline">{formatAed(intervention.exposureAed)}</Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2 truncate">{intervention.ownerAction}</p>
+                      <p className="text-xs text-muted-foreground mt-2 truncate">
+                        {intervention.ownerAction}
+                      </p>
                       <div className="flex gap-1 mt-2">
-                        <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onOpenBrief(client.companyId)}
+                        >
                           Brief
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => onViewProfile(client.companyId)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onViewProfile(client.companyId)}
+                        >
                           Profile
                         </Button>
                       </div>
@@ -1045,7 +1297,8 @@ function BookkeeperCommandCenter({
                 Service Lane Forecast
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting review cadence.
+                One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting
+                review cadence.
               </p>
             </div>
             <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
@@ -1053,7 +1306,7 @@ function BookkeeperCommandCenter({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-            {serviceLaneForecast.map(lane => {
+            {serviceLaneForecast.map((lane) => {
               const Icon = lane.icon;
               return (
                 <div key={lane.key} className="rounded-md border bg-muted/20 p-3">
@@ -1062,7 +1315,7 @@ function BookkeeperCommandCenter({
                     {lane.title}
                   </p>
                   <div className="mt-3 space-y-2">
-                    {lane.rows.map(row => (
+                    {lane.rows.map((row) => (
                       <button
                         key={`${lane.key}-${row.label}`}
                         type="button"
@@ -1078,7 +1331,9 @@ function BookkeeperCommandCenter({
                           <Badge className={priorityClass(row.risk)}>{row.count}</Badge>
                         </div>
                         <p className="text-xs font-medium mt-2 truncate">{row.action}</p>
-                        <p className="text-[11px] text-muted-foreground mt-1 truncate">{row.sample || 'No active clients'}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1 truncate">
+                          {row.sample || "No active clients"}
+                        </p>
                       </button>
                     ))}
                   </div>
@@ -1102,7 +1357,7 @@ function BookkeeperCommandCenter({
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-2">
-              {(Object.keys(queueConfig) as BookkeeperQueueKey[]).map(key => {
+              {(Object.keys(queueConfig) as BookkeeperQueueKey[]).map((key) => {
                 const Icon = queueConfig[key].icon;
                 const count = dashboard?.queues?.[key]?.length ?? 0;
                 return (
@@ -1110,7 +1365,7 @@ function BookkeeperCommandCenter({
                     key={key}
                     type="button"
                     size="sm"
-                    variant={activeQueue === key ? 'secondary' : 'outline'}
+                    variant={activeQueue === key ? "secondary" : "outline"}
                     onClick={() => setActiveQueue(key)}
                     className="gap-1.5"
                   >
@@ -1129,8 +1384,11 @@ function BookkeeperCommandCenter({
                   <p className="text-xs text-muted-foreground mt-1">This lane is clear for now.</p>
                 </div>
               )}
-              {activeQueueItems.slice(0, 6).map(item => (
-                <div key={`${activeQueue}-${item.companyId}`} className="rounded-md border px-3 py-2.5">
+              {activeQueueItems.slice(0, 6).map((item) => (
+                <div
+                  key={`${activeQueue}-${item.companyId}`}
+                  className="rounded-md border px-3 py-2.5"
+                >
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1144,15 +1402,25 @@ function BookkeeperCommandCenter({
                           <UserCheck className="w-3.5 h-3.5" />
                           {ownerPreview(item.ownerNames)}
                         </span>
-                        <span>{formatDateShort(item.dueDate)} · {formatDays(item.daysTilDue)}</span>
+                        <span>
+                          {formatDateShort(item.dueDate)} · {formatDays(item.daysTilDue)}
+                        </span>
                         {item.blockers.length > 1 && <span>{item.blockers.length} blockers</span>}
                       </div>
                     </div>
                     <div className="flex gap-1 sm:shrink-0">
-                      <Button size="sm" variant="outline" onClick={() => onOpenBrief(item.companyId)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onOpenBrief(item.companyId)}
+                      >
                         Brief
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => onViewProfile(item.companyId)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onViewProfile(item.companyId)}
+                      >
                         <ChevronRight className="w-3.5 h-3.5 mr-1" />
                         Profile
                       </Button>
@@ -1176,14 +1444,18 @@ function BookkeeperCommandCenter({
                 Workload Ownership
               </CardTitle>
               {(dashboard?.workload?.unassignedClients ?? 0) > 0 && (
-                <Badge variant="destructive">{dashboard?.workload?.unassignedClients} unassigned</Badge>
+                <Badge variant="destructive">
+                  {dashboard?.workload?.unassignedClients} unassigned
+                </Badge>
               )}
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            {workloadOwners.length === 0 && <p className="text-sm text-muted-foreground">No staff workload yet.</p>}
-            {workloadOwners.slice(0, 6).map(owner => (
-              <div key={owner.staffId ?? 'unassigned'} className="rounded-md border px-3 py-2">
+            {workloadOwners.length === 0 && (
+              <p className="text-sm text-muted-foreground">No staff workload yet.</p>
+            )}
+            {workloadOwners.slice(0, 6).map((owner) => (
+              <div key={owner.staffId ?? "unassigned"} className="rounded-md border px-3 py-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{owner.name}</p>
@@ -1191,12 +1463,25 @@ function BookkeeperCommandCenter({
                       {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
                     </p>
                   </div>
-                  <Badge variant={owner.critical > 0 ? 'destructive' : owner.attention > 0 ? 'secondary' : 'outline'}>
-                    {owner.critical > 0 ? `${owner.critical} critical` : `${owner.attention} attention`}
+                  <Badge
+                    variant={
+                      owner.critical > 0
+                        ? "destructive"
+                        : owner.attention > 0
+                          ? "secondary"
+                          : "outline"
+                    }
+                  >
+                    {owner.critical > 0
+                      ? `${owner.critical} critical`
+                      : `${owner.attention} attention`}
                   </Badge>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${owner.averageCloseProgress}%` }} />
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${owner.averageCloseProgress}%` }}
+                  />
                 </div>
                 <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
                   <span>{owner.vatDue28Days} VAT due</span>
@@ -1218,7 +1503,7 @@ function BookkeeperCommandCenter({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-            {(dashboard?.vatCohorts ?? []).slice(0, 3).map(cohort => (
+            {(dashboard?.vatCohorts ?? []).slice(0, 3).map((cohort) => (
               <div key={cohort.key} className="rounded-lg border bg-muted/20 p-3 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1226,8 +1511,14 @@ function BookkeeperCommandCenter({
                     <p className="text-xs text-muted-foreground">{cohort.clientCount} clients</p>
                   </div>
                   <div className="flex gap-1">
-                    {cohort.dueSoon > 0 && <Badge className="bg-amber-100 text-amber-800 border-amber-200">{cohort.dueSoon} due</Badge>}
-                    {cohort.blocked > 0 && <Badge variant="destructive">{cohort.blocked} blocked</Badge>}
+                    {cohort.dueSoon > 0 && (
+                      <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+                        {cohort.dueSoon} due
+                      </Badge>
+                    )}
+                    {cohort.blocked > 0 && (
+                      <Badge variant="destructive">{cohort.blocked} blocked</Badge>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2 min-h-[132px]">
@@ -1236,7 +1527,7 @@ function BookkeeperCommandCenter({
                       No clients in this cohort
                     </div>
                   )}
-                  {cohort.clients.slice(0, 4).map(client => (
+                  {cohort.clients.slice(0, 4).map((client) => (
                     <button
                       key={client.companyId}
                       type="button"
@@ -1252,7 +1543,9 @@ function BookkeeperCommandCenter({
                         </div>
                         <PriorityBadge priority={client.status} />
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.blockers)}</p>
+                      <p className="text-xs text-muted-foreground mt-1 truncate">
+                        {blockerPreview(client.blockers)}
+                      </p>
                     </button>
                   ))}
                 </div>
@@ -1271,8 +1564,10 @@ function BookkeeperCommandCenter({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {priorityClients.length === 0 && <p className="text-sm text-muted-foreground">No clients yet.</p>}
-            {priorityClients.map(client => (
+            {priorityClients.length === 0 && (
+              <p className="text-sm text-muted-foreground">No clients yet.</p>
+            )}
+            {priorityClients.map((client) => (
               <button
                 key={client.companyId}
                 type="button"
@@ -1283,7 +1578,9 @@ function BookkeeperCommandCenter({
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
                   <PriorityBadge priority={client.priority} />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">{client.nextBestAction}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {client.nextBestAction}
+                </p>
               </button>
             ))}
           </CardContent>
@@ -1297,14 +1594,20 @@ function BookkeeperCommandCenter({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {ctClients.length === 0 && <p className="text-sm text-muted-foreground">No CT deadlines requiring action.</p>}
-            {ctClients.map(client => (
+            {ctClients.length === 0 && (
+              <p className="text-sm text-muted-foreground">No CT deadlines requiring action.</p>
+            )}
+            {ctClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
-                  <span className="text-xs text-muted-foreground">{formatDays(client.corporateTax.daysTilDue)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDays(client.corporateTax.daysTilDue)}
+                  </span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.corporateTax.blockers)}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {blockerPreview(client.corporateTax.blockers)}
+                </p>
               </div>
             ))}
           </CardContent>
@@ -1318,17 +1621,24 @@ function BookkeeperCommandCenter({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {closeClients.length === 0 && <p className="text-sm text-muted-foreground">Monthly close is on track.</p>}
-            {closeClients.map(client => (
+            {closeClients.length === 0 && (
+              <p className="text-sm text-muted-foreground">Monthly close is on track.</p>
+            )}
+            {closeClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
                   <span className="text-xs font-medium">{client.bookkeeping.closeProgress}%</span>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${client.bookkeeping.closeProgress}%` }} />
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${client.bookkeeping.closeProgress}%` }}
+                  />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.bookkeeping.blockers)}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {blockerPreview(client.bookkeeping.blockers)}
+                </p>
               </div>
             ))}
           </CardContent>
@@ -1342,14 +1652,18 @@ function BookkeeperCommandCenter({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {accountingClients.length === 0 && <p className="text-sm text-muted-foreground">Trial balances are clean.</p>}
-            {accountingClients.map(client => (
+            {accountingClients.length === 0 && (
+              <p className="text-sm text-muted-foreground">Trial balances are clean.</p>
+            )}
+            {accountingClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
                   <PriorityBadge priority={client.accounting.status} />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.accounting.blockers)}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {blockerPreview(client.accounting.blockers)}
+                </p>
               </div>
             ))}
           </CardContent>
@@ -1359,28 +1673,34 @@ function BookkeeperCommandCenter({
   );
 }
 
-function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
+function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatStatus"] }) {
   if (!vatStatus) return <Badge variant="outline">No VAT</Badge>;
   const due = new Date(vatStatus.dueDate);
   const now = new Date();
   const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (vatStatus.status === 'filed' || vatStatus.status === 'submitted') {
+  if (vatStatus.status === "filed" || vatStatus.status === "submitted") {
     return <Badge className="bg-green-100 text-green-800 border-green-200">Filed</Badge>;
   }
   if (daysUntilDue < 0) {
     return <Badge variant="destructive">Overdue</Badge>;
   }
   if (daysUntilDue <= 14) {
-    return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Due {format(due, 'MMM d')}</Badge>;
+    return (
+      <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+        Due {format(due, "MMM d")}
+      </Badge>
+    );
   }
-  return <Badge variant="outline">Due {format(due, 'MMM d')}</Badge>;
+  return <Badge variant="outline">Due {format(due, "MMM d")}</Badge>;
 }
 
 function StatusBadge({ active }: { active: boolean }) {
-  return active
-    ? <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>
-    : <Badge variant="secondary">Inactive</Badge>;
+  return active ? (
+    <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>
+  ) : (
+    <Badge variant="secondary">Inactive</Badge>
+  );
 }
 
 function clientNeedsAttention(c: ClientWithStats): boolean {
@@ -1389,7 +1709,7 @@ function clientNeedsAttention(c: ClientWithStats): boolean {
   // The list endpoint doesn't expose per-invoice due dates, so outstandingAr>0
   // is used as the AR proxy (slightly broader than server's overdue-only count).
   if (c.outstandingAr > 0) return true;
-  if (c.vatStatus && c.vatStatus.status !== 'filed' && c.vatStatus.status !== 'submitted') {
+  if (c.vatStatus && c.vatStatus.status !== "filed" && c.vatStatus.status !== "submitted") {
     const due = new Date(c.vatStatus.dueDate);
     if (due < new Date()) return true;
   }
@@ -1398,7 +1718,7 @@ function clientNeedsAttention(c: ClientWithStats): boolean {
 
 function vatDueSoon(c: ClientWithStats): boolean {
   if (!c.vatStatus) return false;
-  if (c.vatStatus.status === 'filed' || c.vatStatus.status === 'submitted') return false;
+  if (c.vatStatus.status === "filed" || c.vatStatus.status === "submitted") return false;
   const due = new Date(c.vatStatus.dueDate);
   const now = new Date();
   const days = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
@@ -1421,29 +1741,36 @@ interface AddClientFormData {
 }
 
 const emptyForm: AddClientFormData = {
-  name: '',
-  trnVatNumber: '',
-  industry: '',
-  legalStructure: '',
-  contactEmail: '',
-  contactPhone: '',
-  businessAddress: '',
-  emirate: 'dubai',
-  vatFilingFrequency: 'quarterly',
-  vatPeriodStartMonth: '1',
-  fiscalYearStartMonth: '1',
-  corporateTaxId: '',
+  name: "",
+  trnVatNumber: "",
+  industry: "",
+  legalStructure: "",
+  contactEmail: "",
+  contactPhone: "",
+  businessAddress: "",
+  emirate: "dubai",
+  vatFilingFrequency: "quarterly",
+  vatPeriodStartMonth: "1",
+  fiscalYearStartMonth: "1",
+  corporateTaxId: "",
 };
 
-type QuickFilter = 'all' | 'critical' | 'attention' | 'vat-due' | 'close-blocked' | 'unassigned' | 'no-docs';
+type QuickFilter =
+  | "all"
+  | "critical"
+  | "attention"
+  | "vat-due"
+  | "close-blocked"
+  | "unassigned"
+  | "no-docs";
 
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { setActiveClientCompany } = useActiveCompany();
-  const [view, setView] = useState<'card' | 'table'>('card');
-  const [search, setSearch] = useState('');
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+  const [view, setView] = useState<"card" | "table">("card");
+  const [search, setSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -1452,19 +1779,21 @@ export default function ClientPortfolio() {
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
-    queryKey: ['/api/firm/clients'],
+    queryKey: ["/api/firm/clients"],
   });
 
   const { data: overview } = useQuery<FirmOverview>({
-    queryKey: ['/api/firm/overview'],
+    queryKey: ["/api/firm/overview"],
   });
 
   const { data: bookkeeperDashboard } = useQuery<BookkeeperDashboard>({
-    queryKey: ['/api/firm/bookkeeper-dashboard'],
+    queryKey: ["/api/firm/bookkeeper-dashboard"],
   });
 
   const bookkeeperByClientId = useMemo(() => {
-    return new Map((bookkeeperDashboard?.clients ?? []).map(client => [client.companyId, client]));
+    return new Map(
+      (bookkeeperDashboard?.clients ?? []).map((client) => [client.companyId, client])
+    );
   }, [bookkeeperDashboard]);
 
   const briefClient = useMemo(() => {
@@ -1472,31 +1801,35 @@ export default function ClientPortfolio() {
   }, [bookkeeperByClientId, briefClientId]);
 
   const createMutation = useMutation({
-    mutationFn: (data: AddClientFormData) => apiRequest('POST', '/api/firm/clients', data),
+    mutationFn: (data: AddClientFormData) => apiRequest("POST", "/api/firm/clients", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
-      toast({ title: 'Client created successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      toast({ title: "Client created successfully" });
       setAddOpen(false);
       setForm(emptyForm);
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create client', description: e?.message });
+      toast({ variant: "destructive", title: "Failed to create client", description: e?.message });
     },
   });
 
   const switchMutation = useMutation({
-    mutationFn: (companyId: string) => apiRequest('POST', `/api/firm/clients/${companyId}/switch`),
+    mutationFn: (companyId: string) => apiRequest("POST", `/api/firm/clients/${companyId}/switch`),
     onSuccess: (_, companyId) => {
       setActiveClientCompany(companyId);
       // Force a refetch of /api/companies so the active company is in cache.
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
-      navigate('/dashboard');
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      navigate("/dashboard");
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Could not open client books', description: e?.message });
+      toast({
+        variant: "destructive",
+        title: "Could not open client books",
+        description: e?.message,
+      });
     },
   });
 
@@ -1505,55 +1838,58 @@ export default function ClientPortfolio() {
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       // Build base64 in chunks to avoid call-stack overflow on bigger files.
-      let binary = '';
+      let binary = "";
       const chunk = 0x8000;
       for (let i = 0; i < bytes.length; i += chunk) {
         binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
       }
       const fileData = btoa(binary);
-      return apiRequest('POST', '/api/firm/clients/import', { fileData }) as Promise<ImportResult>;
+      return apiRequest("POST", "/api/firm/clients/import", { fileData }) as Promise<ImportResult>;
     },
-    onSuccess: result => {
+    onSuccess: (result) => {
       setImportResult(result);
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
         title: `Imported ${result.created.length} clients`,
-        description: result.errors.length > 0 ? `${result.errors.length} errors — see details.` : undefined,
+        description:
+          result.errors.length > 0 ? `${result.errors.length} errors — see details.` : undefined,
       });
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Import failed', description: e?.message });
+      toast({ variant: "destructive", title: "Import failed", description: e?.message });
     },
   });
 
   const filtered = useMemo(() => {
-    return clients.filter(c => {
+    return clients.filter((c) => {
       const ops = bookkeeperByClientId.get(c.id);
       const matchesSearch =
         !search ||
         c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.trnVatNumber || '').toLowerCase().includes(search.toLowerCase());
+        (c.trnVatNumber || "").toLowerCase().includes(search.toLowerCase());
       if (!matchesSearch) return false;
 
       switch (quickFilter) {
-        case 'critical':
-          return ops?.priority === 'critical';
-        case 'attention':
-          return ops ? ops.priority === 'attention' || ops.priority === 'critical' : clientNeedsAttention(c);
-        case 'vat-due':
+        case "critical":
+          return ops?.priority === "critical";
+        case "attention":
           return ops
-            ? ops.vat.status !== 'filed' && ops.vat.daysTilDue !== null && ops.vat.daysTilDue <= 28
+            ? ops.priority === "attention" || ops.priority === "critical"
+            : clientNeedsAttention(c);
+        case "vat-due":
+          return ops
+            ? ops.vat.status !== "filed" && ops.vat.daysTilDue !== null && ops.vat.daysTilDue <= 28
             : vatDueSoon(c);
-        case 'close-blocked':
-          return ops ? ops.bookkeeping.status !== 'on_track' : false;
-        case 'unassigned':
+        case "close-blocked":
+          return ops ? ops.bookkeeping.status !== "on_track" : false;
+        case "unassigned":
           return ops ? ops.assignedStaff.length === 0 : c.assignedStaff.length === 0;
-        case 'no-docs':
+        case "no-docs":
           return c.invoiceCount === 0 && !c.lastReceiptDate;
-        case 'all':
+        case "all":
         default:
           return true;
       }
@@ -1583,11 +1919,18 @@ export default function ClientPortfolio() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Portfolio</h1>
           <p className="text-muted-foreground mt-1">
-            {clients.length} client{clients.length !== 1 ? 's' : ''} managed by NRA
+            {clients.length} client{clients.length !== 1 ? "s" : ""} managed by NRA
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => { setImportResult(null); setImportFile(null); setImportOpen(true); }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setImportResult(null);
+              setImportFile(null);
+              setImportOpen(true);
+            }}
+          >
             <Upload className="w-4 h-4 mr-2" />
             Import Clients
           </Button>
@@ -1630,7 +1973,9 @@ export default function ClientPortfolio() {
         <Card data-testid="card-attention">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Needs Attention</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                Needs Attention
+              </p>
               <AlertTriangle className="w-4 h-4 text-orange-600" />
             </div>
             <p className="text-2xl font-bold mt-1">{overview?.needsAttention ?? 0}</p>
@@ -1643,22 +1988,22 @@ export default function ClientPortfolio() {
         onOpenBooks={handleOpenBooks}
         onViewProfile={handleViewProfile}
         onOpenBrief={setBriefClientId}
-        onManageStaff={() => navigate('/firm/staff')}
+        onManageStaff={() => navigate("/firm/staff")}
       />
 
       {/* Quick filters */}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          variant={quickFilter === 'all' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('all')}
+          variant={quickFilter === "all" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("all")}
         >
           All ({clients.length})
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'critical' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('critical')}
+          variant={quickFilter === "critical" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("critical")}
           data-testid="filter-critical"
         >
           <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
@@ -1666,17 +2011,20 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'attention' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('attention')}
+          variant={quickFilter === "attention" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("attention")}
           data-testid="filter-attention"
         >
           <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-          Needs Attention ({(bookkeeperDashboard?.summary.critical ?? 0) + (bookkeeperDashboard?.summary.attention ?? 0)})
+          Needs Attention (
+          {(bookkeeperDashboard?.summary.critical ?? 0) +
+            (bookkeeperDashboard?.summary.attention ?? 0)}
+          )
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'vat-due' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('vat-due')}
+          variant={quickFilter === "vat-due" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("vat-due")}
           data-testid="filter-vat-due"
         >
           <Calendar className="w-3.5 h-3.5 mr-1.5" />
@@ -1684,8 +2032,8 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'close-blocked' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('close-blocked')}
+          variant={quickFilter === "close-blocked" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("close-blocked")}
           data-testid="filter-close-blocked"
         >
           <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
@@ -1693,8 +2041,8 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'unassigned' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('unassigned')}
+          variant={quickFilter === "unassigned" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("unassigned")}
           data-testid="filter-unassigned"
         >
           <UserCheck className="w-3.5 h-3.5 mr-1.5" />
@@ -1702,8 +2050,8 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'no-docs' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('no-docs')}
+          variant={quickFilter === "no-docs" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("no-docs")}
           data-testid="filter-no-docs"
         >
           <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
@@ -1718,25 +2066,25 @@ export default function ClientPortfolio() {
           <Input
             placeholder="Search by name or TRN..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
             data-testid="input-client-search"
           />
         </div>
         <div className="flex border rounded-md ml-auto">
           <Button
-            variant={view === 'card' ? 'secondary' : 'ghost'}
+            variant={view === "card" ? "secondary" : "ghost"}
             size="sm"
             className="rounded-r-none"
-            onClick={() => setView('card')}
+            onClick={() => setView("card")}
           >
             <LayoutGrid className="w-4 h-4" />
           </Button>
           <Button
-            variant={view === 'table' ? 'secondary' : 'ghost'}
+            variant={view === "table" ? "secondary" : "ghost"}
             size="sm"
             className="rounded-l-none"
-            onClick={() => setView('table')}
+            onClick={() => setView("table")}
           >
             <List className="w-4 h-4" />
           </Button>
@@ -1748,12 +2096,12 @@ export default function ClientPortfolio() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
           <h3 className="font-semibold text-lg">
-            {clients.length === 0 ? 'No clients yet' : 'No clients match your filters'}
+            {clients.length === 0 ? "No clients yet" : "No clients match your filters"}
           </h3>
           <p className="text-muted-foreground mt-1 mb-4">
             {clients.length === 0
-              ? 'Add your first client company to get started.'
-              : 'Try adjusting your search or quick filter.'}
+              ? "Add your first client company to get started."
+              : "Try adjusting your search or quick filter."}
           </p>
           {clients.length === 0 && (
             <Button onClick={() => setAddOpen(true)}>
@@ -1789,7 +2137,7 @@ export default function ClientPortfolio() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.slice(0, 12).map(client => {
+                {filtered.slice(0, 12).map((client) => {
                   const ops = bookkeeperByClientId.get(client.id);
                   return (
                     <TableRow key={`matrix-${client.id}`} className="hover:bg-muted/50">
@@ -1801,45 +2149,79 @@ export default function ClientPortfolio() {
                         >
                           {client.name}
                         </button>
-                        <p className="text-xs text-muted-foreground">{client.trnVatNumber || 'No TRN'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {client.trnVatNumber || "No TRN"}
+                        </p>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {ops ? ownerPreview(ops.assignedStaff.map(staff => staff.name)) : ownerPreview(client.assignedStaff.map(staff => staff.name))}
+                        {ops
+                          ? ownerPreview(ops.assignedStaff.map((staff) => staff.name))
+                          : ownerPreview(client.assignedStaff.map((staff) => staff.name))}
                       </TableCell>
-                      <TableCell>{ops ? <PriorityBadge priority={ops.priority} /> : <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />}</TableCell>
+                      <TableCell>
+                        {ops ? (
+                          <PriorityBadge priority={ops.priority} />
+                        ) : (
+                          <StatusBadge
+                            active={client.invoiceCount > 0 || !!client.lastReceiptDate}
+                          />
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm">
                         {ops ? (
-                          <span>{formatDateShort(ops.vat.dueDate)} · {formatDays(ops.vat.daysTilDue)}</span>
+                          <span>
+                            {formatDateShort(ops.vat.dueDate)} · {formatDays(ops.vat.daysTilDue)}
+                          </span>
                         ) : (
                           <VatStatusBadge vatStatus={client.vatStatus} />
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {ops ? `${formatDateShort(ops.corporateTax.dueDate)} · ${formatDays(ops.corporateTax.daysTilDue)}` : '—'}
+                        {ops
+                          ? `${formatDateShort(ops.corporateTax.dueDate)} · ${formatDays(ops.corporateTax.daysTilDue)}`
+                          : "—"}
                       </TableCell>
                       <TableCell>
                         {ops ? (
                           <div className="min-w-28">
                             <div className="flex items-center justify-between text-xs">
                               <span>{ops.bookkeeping.closeProgress}%</span>
-                              <span className="text-muted-foreground">{priorityLabel(ops.bookkeeping.status)}</span>
+                              <span className="text-muted-foreground">
+                                {priorityLabel(ops.bookkeeping.status)}
+                              </span>
                             </div>
                             <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                              <div className="h-full bg-primary" style={{ width: `${ops.bookkeeping.closeProgress}%` }} />
+                              <div
+                                className="h-full bg-primary"
+                                style={{ width: `${ops.bookkeeping.closeProgress}%` }}
+                              />
                             </div>
                           </div>
-                        ) : '—'}
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-between gap-2 min-w-64">
-                          <p className="text-sm text-muted-foreground truncate">{ops?.nextBestAction ?? 'Open client profile'}</p>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {ops?.nextBestAction ?? "Open client profile"}
+                          </p>
                           <div className="flex gap-1">
                             {ops && (
-                              <Button size="sm" variant="outline" onClick={() => setBriefClientId(client.id)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setBriefClientId(client.id)}
+                              >
                                 Brief
                               </Button>
                             )}
-                            <Button size="sm" variant="outline" onClick={() => handleOpenBooks(client.id)} disabled={switchMutation.isPending}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenBooks(client.id)}
+                              disabled={switchMutation.isPending}
+                            >
                               <BookOpen className="w-3.5 h-3.5 mr-1" />
                               Open
                             </Button>
@@ -1853,7 +2235,8 @@ export default function ClientPortfolio() {
             </Table>
             {filtered.length > 12 && (
               <p className="text-xs text-muted-foreground mt-3">
-                Showing the first 12 clients for the selected filter. Use search or table view for the full list.
+                Showing the first 12 clients for the selected filter. Use search or table view for
+                the full list.
               </p>
             )}
           </CardContent>
@@ -1861,21 +2244,29 @@ export default function ClientPortfolio() {
       )}
 
       {/* Card view */}
-      {view === 'card' && filtered.length > 0 && (
+      {view === "card" && filtered.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(client => {
+          {filtered.map((client) => {
             const ops = bookkeeperByClientId.get(client.id);
             return (
-              <Card key={client.id} className="hover:shadow-md transition-shadow" data-testid={`client-card-${client.id}`}>
+              <Card
+                key={client.id}
+                className="hover:shadow-md transition-shadow"
+                data-testid={`client-card-${client.id}`}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-base truncate">{client.name}</CardTitle>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : 'No TRN registered'}
+                        {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : "No TRN registered"}
                       </p>
                     </div>
-                    {ops ? <PriorityBadge priority={ops.priority} /> : <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />}
+                    {ops ? (
+                      <PriorityBadge priority={ops.priority} />
+                    ) : (
+                      <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -1886,10 +2277,15 @@ export default function ClientPortfolio() {
                           <p className="text-xs text-muted-foreground">Next action</p>
                           <p className="text-sm font-medium truncate">{ops.nextBestAction}</p>
                         </div>
-                        <span className="text-xs font-medium shrink-0">{ops.bookkeeping.closeProgress}% close</span>
+                        <span className="text-xs font-medium shrink-0">
+                          {ops.bookkeeping.closeProgress}% close
+                        </span>
                       </div>
                       <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: `${ops.bookkeeping.closeProgress}%` }} />
+                        <div
+                          className="h-full bg-primary"
+                          style={{ width: `${ops.bookkeeping.closeProgress}%` }}
+                        />
                       </div>
                     </div>
                   )}
@@ -1898,7 +2294,9 @@ export default function ClientPortfolio() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-muted/40 rounded-md p-2">
                       <p className="text-xs text-muted-foreground">Outstanding AR</p>
-                      <p className="font-semibold text-sm mt-0.5">{formatAed(client.outstandingAr)}</p>
+                      <p className="font-semibold text-sm mt-0.5">
+                        {formatAed(client.outstandingAr)}
+                      </p>
                     </div>
                     <div className="bg-muted/40 rounded-md p-2">
                       <p className="text-xs text-muted-foreground">Invoices</p>
@@ -1912,7 +2310,11 @@ export default function ClientPortfolio() {
                       <Calendar className="w-3.5 h-3.5" />
                       VAT Status
                     </span>
-                    {ops ? <PriorityBadge priority={ops.vat.status} /> : <VatStatusBadge vatStatus={client.vatStatus} />}
+                    {ops ? (
+                      <PriorityBadge priority={ops.vat.status} />
+                    ) : (
+                      <VatStatusBadge vatStatus={client.vatStatus} />
+                    )}
                   </div>
 
                   {ops && (
@@ -1927,8 +2329,8 @@ export default function ClientPortfolio() {
                     <span>Last receipt</span>
                     <span>
                       {client.lastReceiptDate
-                        ? format(new Date(client.lastReceiptDate), 'MMM d, yyyy')
-                        : 'Never'}
+                        ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
+                        : "Never"}
                     </span>
                   </div>
 
@@ -1936,7 +2338,9 @@ export default function ClientPortfolio() {
                   {(ops?.assignedStaff.length ?? client.assignedStaff.length) > 0 && (
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Users className="w-3.5 h-3.5" />
-                      {ops ? ops.assignedStaff.map(s => s.name).join(', ') : client.assignedStaff.map(s => s.name).join(', ')}
+                      {ops
+                        ? ops.assignedStaff.map((s) => s.name).join(", ")
+                        : client.assignedStaff.map((s) => s.name).join(", ")}
                     </div>
                   )}
 
@@ -1977,7 +2381,7 @@ export default function ClientPortfolio() {
       )}
 
       {/* Table view */}
-      {view === 'table' && filtered.length > 0 && (
+      {view === "table" && filtered.length > 0 && (
         <div className="border rounded-lg overflow-hidden overflow-x-auto">
           <Table>
             <TableHeader>
@@ -1993,7 +2397,7 @@ export default function ClientPortfolio() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(client => {
+              {filtered.map((client) => {
                 const ops = bookkeeperByClientId.get(client.id);
                 return (
                   <TableRow key={client.id} className="hover:bg-muted/50">
@@ -2004,37 +2408,47 @@ export default function ClientPortfolio() {
                           {ops && <PriorityBadge priority={ops.priority} />}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {ops?.nextBestAction ?? client.industry ?? 'Open profile for details'}
+                          {ops?.nextBestAction ?? client.industry ?? "Open profile for details"}
                         </p>
                       </div>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {client.trnVatNumber || '—'}
+                      {client.trnVatNumber || "—"}
                     </TableCell>
                     <TableCell className="font-medium">{formatAed(client.outstandingAr)}</TableCell>
                     <TableCell>{client.invoiceCount}</TableCell>
                     <TableCell>
-                      {ops ? <PriorityBadge priority={ops.vat.status} /> : <VatStatusBadge vatStatus={client.vatStatus} />}
+                      {ops ? (
+                        <PriorityBadge priority={ops.vat.status} />
+                      ) : (
+                        <VatStatusBadge vatStatus={client.vatStatus} />
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {ops
                         ? `${ops.bookkeeping.closeProgress}% close`
                         : client.lastReceiptDate
-                          ? format(new Date(client.lastReceiptDate), 'MMM d, yyyy')
-                          : '—'}
+                          ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
+                          : "—"}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Users className="w-3.5 h-3.5 text-muted-foreground" />
                         <span className="text-sm">
-                          {ops ? ownerPreview(ops.assignedStaff.map(staff => staff.name)) : client.assignedStaff.length}
+                          {ops
+                            ? ownerPreview(ops.assignedStaff.map((staff) => staff.name))
+                            : client.assignedStaff.length}
                         </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         {ops && (
-                          <Button size="sm" variant="outline" onClick={() => setBriefClientId(client.id)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setBriefClientId(client.id)}
+                          >
                             Brief
                           </Button>
                         )}
@@ -2046,7 +2460,11 @@ export default function ClientPortfolio() {
                           <BookOpen className="w-3.5 h-3.5 mr-1" />
                           Open
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleViewProfile(client.id)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewProfile(client.id)}
+                        >
                           <ChevronRight className="w-4 h-4" />
                         </Button>
                       </div>
@@ -2074,7 +2492,7 @@ export default function ClientPortfolio() {
               <Input
                 id="name"
                 value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="Al Majid Trading LLC"
               />
             </div>
@@ -2084,13 +2502,16 @@ export default function ClientPortfolio() {
                 <Input
                   id="trn"
                   value={form.trnVatNumber}
-                  onChange={e => setForm(f => ({ ...f, trnVatNumber: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, trnVatNumber: e.target.value }))}
                   placeholder="100234567890003"
                 />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="emirate">Emirate</Label>
-                <Select value={form.emirate} onValueChange={v => setForm(f => ({ ...f, emirate: v }))}>
+                <Select
+                  value={form.emirate}
+                  onValueChange={(v) => setForm((f) => ({ ...f, emirate: v }))}
+                >
                   <SelectTrigger id="emirate">
                     <SelectValue />
                   </SelectTrigger>
@@ -2111,7 +2532,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="legalStructure">Legal Structure</Label>
                 <Select
                   value={form.legalStructure}
-                  onValueChange={v => setForm(f => ({ ...f, legalStructure: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, legalStructure: v }))}
                 >
                   <SelectTrigger id="legalStructure">
                     <SelectValue placeholder="Select..." />
@@ -2129,7 +2550,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="vatFrequency">VAT Frequency</Label>
                 <Select
                   value={form.vatFilingFrequency}
-                  onValueChange={v => setForm(f => ({ ...f, vatFilingFrequency: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, vatFilingFrequency: v }))}
                 >
                   <SelectTrigger id="vatFrequency">
                     <SelectValue />
@@ -2146,7 +2567,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="vatCloseGroup">VAT Close Group</Label>
                 <Select
                   value={form.vatPeriodStartMonth}
-                  onValueChange={v => setForm(f => ({ ...f, vatPeriodStartMonth: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, vatPeriodStartMonth: v }))}
                 >
                   <SelectTrigger id="vatCloseGroup">
                     <SelectValue />
@@ -2162,7 +2583,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="fiscalYearStart">Financial Year Start</Label>
                 <Select
                   value={form.fiscalYearStartMonth}
-                  onValueChange={v => setForm(f => ({ ...f, fiscalYearStartMonth: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, fiscalYearStartMonth: v }))}
                 >
                   <SelectTrigger id="fiscalYearStart">
                     <SelectValue />
@@ -2189,7 +2610,7 @@ export default function ClientPortfolio() {
               <Input
                 id="industry"
                 value={form.industry}
-                onChange={e => setForm(f => ({ ...f, industry: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, industry: e.target.value }))}
                 placeholder="Trading, Construction, Retail..."
               />
             </div>
@@ -2198,7 +2619,7 @@ export default function ClientPortfolio() {
               <Input
                 id="corporateTaxId"
                 value={form.corporateTaxId}
-                onChange={e => setForm(f => ({ ...f, corporateTaxId: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, corporateTaxId: e.target.value }))}
                 placeholder="CT-1002345678"
               />
             </div>
@@ -2209,7 +2630,7 @@ export default function ClientPortfolio() {
                   id="contactEmail"
                   type="email"
                   value={form.contactEmail}
-                  onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, contactEmail: e.target.value }))}
                   placeholder="info@company.ae"
                 />
               </div>
@@ -2218,7 +2639,7 @@ export default function ClientPortfolio() {
                 <Input
                   id="contactPhone"
                   value={form.contactPhone}
-                  onChange={e => setForm(f => ({ ...f, contactPhone: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, contactPhone: e.target.value }))}
                   placeholder="+971 4 123 4567"
                 />
               </div>
@@ -2228,7 +2649,7 @@ export default function ClientPortfolio() {
               <Input
                 id="businessAddress"
                 value={form.businessAddress}
-                onChange={e => setForm(f => ({ ...f, businessAddress: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, businessAddress: e.target.value }))}
                 placeholder="Office 301, Business Bay, Dubai"
               />
             </div>
@@ -2242,7 +2663,7 @@ export default function ClientPortfolio() {
               disabled={!form.name.trim() || createMutation.isPending}
               data-testid="button-create-client"
             >
-              {createMutation.isPending ? 'Creating...' : 'Create Client'}
+              {createMutation.isPending ? "Creating..." : "Create Client"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2255,8 +2676,8 @@ export default function ClientPortfolio() {
             <DialogTitle>Import Clients</DialogTitle>
             <DialogDescription>
               Upload a CSV or Excel file. Each row becomes a new client company with a UAE chart of
-              accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate,
-              VAT filing, VAT close group, financial year start, corporate tax ID.
+              accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate, VAT
+              filing, VAT close group, financial year start, corporate tax ID.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -2266,7 +2687,7 @@ export default function ClientPortfolio() {
                 id="import-file"
                 type="file"
                 accept=".csv,.xlsx"
-                onChange={e => {
+                onChange={(e) => {
                   setImportFile(e.target.files?.[0] ?? null);
                   setImportResult(null);
                 }}
@@ -2281,7 +2702,7 @@ export default function ClientPortfolio() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="font-medium">Errors</span>
-                  <span className={importResult.errors.length > 0 ? 'text-red-700' : ''}>
+                  <span className={importResult.errors.length > 0 ? "text-red-700" : ""}>
                     {importResult.errors.length}
                   </span>
                 </div>
@@ -2289,7 +2710,8 @@ export default function ClientPortfolio() {
                   <div className="max-h-40 overflow-auto text-xs text-muted-foreground space-y-1">
                     {importResult.errors.slice(0, 20).map((e, i) => (
                       <div key={i}>
-                        Row {e.row}{e.name ? ` (${e.name})` : ''}: {e.error}
+                        Row {e.row}
+                        {e.name ? ` (${e.name})` : ""}: {e.error}
                       </div>
                     ))}
                   </div>
@@ -2307,7 +2729,7 @@ export default function ClientPortfolio() {
               data-testid="button-import-clients"
             >
               <Upload className="w-4 h-4 mr-2" />
-              {importMutation.isPending ? 'Importing...' : 'Import'}
+              {importMutation.isPending ? "Importing..." : "Import"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2316,7 +2738,7 @@ export default function ClientPortfolio() {
       <OperationsBriefDialog
         client={briefClient}
         open={!!briefClientId}
-        onOpenChange={open => !open && setBriefClientId(null)}
+        onOpenChange={(open) => !open && setBriefClientId(null)}
         onOpenBooks={handleOpenBooks}
         onViewProfile={handleViewProfile}
       />

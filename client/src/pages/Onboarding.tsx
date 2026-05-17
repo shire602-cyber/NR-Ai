@@ -1,18 +1,24 @@
-import { useMemo, useState, useEffect } from 'react';
-import { useLocation, Link } from 'wouter';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest, ApiError } from '@/lib/queryClient';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useToast } from '@/hooks/use-toast';
-import { z } from 'zod';
+import { useMemo, useState, useEffect } from "react";
+import { useLocation, Link } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest, ApiError } from "@/lib/queryClient";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { z } from "zod";
 import {
   Sparkles,
   Building2,
@@ -30,43 +36,43 @@ import {
   Briefcase,
   ChevronRight,
   RefreshCw,
-} from 'lucide-react';
-import type { Company } from '@shared/schema';
+} from "lucide-react";
+import type { Company } from "@shared/schema";
 
 const UAE_BANKS = [
-  'Emirates NBD',
-  'First Abu Dhabi Bank (FAB)',
-  'Abu Dhabi Commercial Bank (ADCB)',
-  'Dubai Islamic Bank',
-  'Mashreq Bank',
-  'RAKBANK',
-  'Commercial Bank of Dubai',
-  'Sharjah Islamic Bank',
-  'United Arab Bank',
-  'Other',
+  "Emirates NBD",
+  "First Abu Dhabi Bank (FAB)",
+  "Abu Dhabi Commercial Bank (ADCB)",
+  "Dubai Islamic Bank",
+  "Mashreq Bank",
+  "RAKBANK",
+  "Commercial Bank of Dubai",
+  "Sharjah Islamic Bank",
+  "United Arab Bank",
+  "Other",
 ];
 
 const UAE_EMIRATES = [
-  { value: 'abu_dhabi', label: 'Abu Dhabi' },
-  { value: 'dubai', label: 'Dubai' },
-  { value: 'sharjah', label: 'Sharjah' },
-  { value: 'ajman', label: 'Ajman' },
-  { value: 'umm_al_quwain', label: 'Umm Al Quwain' },
-  { value: 'ras_al_khaimah', label: 'Ras Al Khaimah' },
-  { value: 'fujairah', label: 'Fujairah' },
+  { value: "abu_dhabi", label: "Abu Dhabi" },
+  { value: "dubai", label: "Dubai" },
+  { value: "sharjah", label: "Sharjah" },
+  { value: "ajman", label: "Ajman" },
+  { value: "umm_al_quwain", label: "Umm Al Quwain" },
+  { value: "ras_al_khaimah", label: "Ras Al Khaimah" },
+  { value: "fujairah", label: "Fujairah" },
 ];
 
-type Step = 'welcome' | 'company' | 'accounts' | 'bank' | 'first-doc' | 'complete';
+type Step = "welcome" | "company" | "accounts" | "bank" | "first-doc" | "complete";
 
-const STEPS: Step[] = ['welcome', 'company', 'accounts', 'bank', 'first-doc', 'complete'];
+const STEPS: Step[] = ["welcome", "company", "accounts", "bank", "first-doc", "complete"];
 
 const STEP_LABELS: Record<Step, string> = {
-  welcome: 'Welcome',
-  company: 'Company Details',
-  accounts: 'Chart of Accounts',
-  bank: 'Bank Account',
-  'first-doc': 'First Document',
-  complete: 'Complete',
+  welcome: "Welcome",
+  company: "Company Details",
+  accounts: "Chart of Accounts",
+  bank: "Bank Account",
+  "first-doc": "First Document",
+  complete: "Complete",
 };
 
 function stepIndex(step: Step): number {
@@ -80,11 +86,11 @@ export default function Onboarding() {
   if (isLoading) return null;
   const role = {
     firmRole: user?.firmRole ?? null,
-    userType: user?.userType ?? 'customer',
+    userType: user?.userType ?? "customer",
   };
   // Firm owners and firm admins manage clients, not their own books — they
   // get a different onboarding tailored around staff and client setup.
-  if (role.firmRole === 'firm_owner' || role.firmRole === 'firm_admin') {
+  if (role.firmRole === "firm_owner" || role.firmRole === "firm_admin") {
     return <FirmOnboarding firmRole={role.firmRole} />;
   }
   return <CustomerOnboarding />;
@@ -95,41 +101,41 @@ function CustomerOnboarding() {
   const { toast } = useToast();
 
   const { data: companies, isLoading: companiesLoading } = useQuery<Company[]>({
-    queryKey: ['/api/companies'],
+    queryKey: ["/api/companies"],
   });
   const company = companies?.[0];
 
-  const [currentStep, setCurrentStep] = useState<Step>('welcome');
+  const [currentStep, setCurrentStep] = useState<Step>("welcome");
   const [direction, setDirection] = useState<1 | -1>(1);
 
   const [companyForm, setCompanyForm] = useState({
-    name: '',
-    trnVatNumber: '',
-    registrationNumber: '',
-    businessAddress: '',
-    contactPhone: '',
-    contactEmail: '',
-    emirate: 'dubai',
+    name: "",
+    trnVatNumber: "",
+    registrationNumber: "",
+    businessAddress: "",
+    contactPhone: "",
+    contactEmail: "",
+    emirate: "dubai",
   });
 
   const [bankForm, setBankForm] = useState({
-    nameEn: '',
-    bankName: '',
-    accountNumber: '',
-    iban: '',
-    currency: 'AED',
+    nameEn: "",
+    bankName: "",
+    accountNumber: "",
+    iban: "",
+    currency: "AED",
   });
 
   useEffect(() => {
     if (company) {
       setCompanyForm({
-        name: company.name ?? '',
-        trnVatNumber: company.trnVatNumber ?? '',
-        registrationNumber: company.registrationNumber ?? '',
-        businessAddress: company.businessAddress ?? '',
-        contactPhone: company.contactPhone ?? '',
-        contactEmail: company.contactEmail ?? '',
-        emirate: company.emirate ?? 'dubai',
+        name: company.name ?? "",
+        trnVatNumber: company.trnVatNumber ?? "",
+        registrationNumber: company.registrationNumber ?? "",
+        businessAddress: company.businessAddress ?? "",
+        contactPhone: company.contactPhone ?? "",
+        contactEmail: company.contactEmail ?? "",
+        emirate: company.emirate ?? "dubai",
       });
 
       const saved = localStorage.getItem(STORAGE_KEY(company.id));
@@ -147,12 +153,12 @@ function CustomerOnboarding() {
 
   const { data: accountsData } = useQuery<{ id: string; nameEn: string; type: string }[]>({
     queryKey: [`/api/companies/${company?.id}/accounts`],
-    enabled: !!company?.id && currentStep === 'accounts',
+    enabled: !!company?.id && currentStep === "accounts",
   });
 
   const { data: bankAccounts } = useQuery<{ id: string; nameEn: string; bankName: string }[]>({
     queryKey: [`/api/companies/${company?.id}/bank-accounts`],
-    enabled: !!company?.id && currentStep === 'bank',
+    enabled: !!company?.id && currentStep === "bank",
   });
 
   // Field-level validation errors surfaced from either the local Zod schema
@@ -165,9 +171,9 @@ function CustomerOnboarding() {
 
   const saveCompanyMutation = useMutation({
     mutationFn: (data: Partial<typeof companyForm>) =>
-      apiRequest('PATCH', `/api/companies/${company!.id}`, data),
+      apiRequest("PATCH", `/api/companies/${company!.id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       setCompanyFieldErrors({});
       setCompanySaveError(null);
     },
@@ -180,55 +186,54 @@ function CustomerOnboarding() {
 
   const createCompanyMutation = useMutation({
     mutationFn: async (data: typeof companyForm): Promise<Company> => {
-      return apiRequest('POST', '/api/companies', {
+      return apiRequest("POST", "/api/companies", {
         ...data,
-        baseCurrency: 'AED',
-        locale: 'en',
-        companyType: 'customer',
+        baseCurrency: "AED",
+        locale: "en",
+        companyType: "customer",
       });
     },
     onSuccess: (newCompany) => {
-      queryClient.setQueryData<Company[]>(['/api/companies'], (old) =>
-        old ? [...old, newCompany] : [newCompany],
+      queryClient.setQueryData<Company[]>(["/api/companies"], (old) =>
+        old ? [...old, newCompany] : [newCompany]
       );
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
     },
     onError: (err: any) => {
       toast({
-        title: 'Failed to create company',
-        description: err?.message ?? 'Please try again',
-        variant: 'destructive',
+        title: "Failed to create company",
+        description: err?.message ?? "Please try again",
+        variant: "destructive",
       });
     },
   });
 
   const createBankMutation = useMutation({
     mutationFn: (data: typeof bankForm) =>
-      apiRequest('POST', `/api/companies/${company!.id}/bank-accounts`, data),
+      apiRequest("POST", `/api/companies/${company!.id}/bank-accounts`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${company!.id}/bank-accounts`] });
     },
     onError: (err: Error) => {
       toast({
-        title: 'Failed to create bank account',
+        title: "Failed to create bank account",
         description: err.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
 
   const completeMutation = useMutation({
-    mutationFn: () =>
-      apiRequest('POST', `/api/companies/${company!.id}/onboarding/complete`, {}),
+    mutationFn: () => apiRequest("POST", `/api/companies/${company!.id}/onboarding/complete`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       if (company) localStorage.removeItem(STORAGE_KEY(company.id));
     },
     onError: (err: Error) => {
       toast({
-        title: 'Failed to complete onboarding',
+        title: "Failed to complete onboarding",
         description: err.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
@@ -253,23 +258,17 @@ function CustomerOnboarding() {
     // shapes the server will obviously reject. Empty TRN is allowed (this
     // step is partially optional), but if supplied it must be 15 digits.
     const localSchema = z.object({
-      name: z.string().trim().min(1, 'Company name is required').max(200),
+      name: z.string().trim().min(1, "Company name is required").max(200),
       trnVatNumber: z
         .string()
         .trim()
         .optional()
-        .refine(
-          (v) => !v || /^[0-9]{15}$/.test(v),
-          'UAE TRN must be exactly 15 digits',
-        ),
+        .refine((v) => !v || /^[0-9]{15}$/.test(v), "UAE TRN must be exactly 15 digits"),
       contactEmail: z
         .string()
         .trim()
         .optional()
-        .refine(
-          (v) => !v || z.string().email().safeParse(v).success,
-          'Enter a valid email',
-        ),
+        .refine((v) => !v || z.string().email().safeParse(v).success, "Enter a valid email"),
     });
 
     const parsed = localSchema.safeParse(companyForm);
@@ -304,31 +303,31 @@ function CustomerOnboarding() {
       const apiErr = err as ApiError;
       const status = apiErr?.status;
       const message =
-        apiErr?.message || 'We could not save your company details. Please try again.';
+        apiErr?.message || "We could not save your company details. Please try again.";
 
       if (status && status >= 400 && status < 500) {
         // Heuristic: route the message back to the most likely field.
         const lower = message.toLowerCase();
-        if (lower.includes('trn')) {
+        if (lower.includes("trn")) {
           setCompanyFieldErrors({ trnVatNumber: message });
-        } else if (lower.includes('email')) {
+        } else if (lower.includes("email")) {
           setCompanyFieldErrors({ contactEmail: message });
-        } else if (lower.includes('name') || lower.includes('already')) {
+        } else if (lower.includes("name") || lower.includes("already")) {
           setCompanyFieldErrors({ name: message });
         } else {
           setCompanySaveError(message);
         }
         toast({
-          title: 'Please check your details',
+          title: "Please check your details",
           description: message,
-          variant: 'destructive',
+          variant: "destructive",
         });
       } else {
         setCompanySaveError(message);
         toast({
-          title: 'Could not save company details',
+          title: "Could not save company details",
           description: message,
-          variant: 'destructive',
+          variant: "destructive",
         });
       }
     }
@@ -343,7 +342,7 @@ function CustomerOnboarding() {
 
   async function handleComplete() {
     await completeMutation.mutateAsync();
-    goTo('complete', 1);
+    goTo("complete", 1);
   }
 
   if (companiesLoading) {
@@ -354,7 +353,7 @@ function CustomerOnboarding() {
     );
   }
 
-  const progressPercent = ((stepIndex(currentStep)) / (STEPS.length - 1)) * 100;
+  const progressPercent = (stepIndex(currentStep) / (STEPS.length - 1)) * 100;
 
   const variants = {
     enter: (dir: number) => ({ opacity: 0, x: dir > 0 ? 48 : -48 }),
@@ -379,7 +378,7 @@ function CustomerOnboarding() {
           <span className="font-bold text-lg">Muhasib.ai</span>
         </Link>
 
-        {currentStep !== 'welcome' && currentStep !== 'complete' && (
+        {currentStep !== "welcome" && currentStep !== "complete" && (
           <Button
             variant="ghost"
             size="sm"
@@ -387,9 +386,11 @@ function CustomerOnboarding() {
               // Mark onboarding complete so the user is not bounced back here
               // by ProtectedLayout's redirect on every navigation.
               if (company) {
-                try { await completeMutation.mutateAsync(); } catch {}
+                try {
+                  await completeMutation.mutateAsync();
+                } catch {}
               }
-              setLocation('/dashboard');
+              setLocation("/dashboard");
             }}
             disabled={completeMutation.isPending}
             className="text-muted-foreground text-sm"
@@ -400,15 +401,13 @@ function CustomerOnboarding() {
       </header>
 
       {/* Progress bar */}
-      {currentStep !== 'complete' && (
+      {currentStep !== "complete" && (
         <div className="px-6 pt-6 max-w-2xl mx-auto w-full">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-muted-foreground">
               Step {stepIndex(currentStep) + 1} of {STEPS.length}
             </span>
-            <span className="text-sm text-muted-foreground">
-              {STEP_LABELS[currentStep]}
-            </span>
+            <span className="text-sm text-muted-foreground">{STEP_LABELS[currentStep]}</span>
           </div>
           <Progress value={progressPercent} className="h-1.5" />
           <div className="flex justify-between mt-2">
@@ -416,9 +415,7 @@ function CustomerOnboarding() {
               <div
                 key={s}
                 className={`w-2 h-2 rounded-full transition-colors ${
-                  stepIndex(s) <= stepIndex(currentStep)
-                    ? 'bg-primary'
-                    : 'bg-muted'
+                  stepIndex(s) <= stepIndex(currentStep) ? "bg-primary" : "bg-muted"
                 }`}
               />
             ))}
@@ -437,12 +434,12 @@ function CustomerOnboarding() {
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ duration: 0.25, ease: 'easeOut' }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
             >
-              {currentStep === 'welcome' && (
+              {currentStep === "welcome" && (
                 <WelcomeStep companyName={company?.name} onNext={goNext} />
               )}
-              {currentStep === 'company' && (
+              {currentStep === "company" && (
                 <CompanyStep
                   form={companyForm}
                   fieldErrors={companyFieldErrors}
@@ -467,14 +464,14 @@ function CustomerOnboarding() {
                   saving={saveCompanyMutation.isPending || createCompanyMutation.isPending}
                 />
               )}
-              {currentStep === 'accounts' && (
+              {currentStep === "accounts" && (
                 <AccountsStep
                   accountCount={accountsData?.length ?? 0}
                   onNext={goNext}
                   onBack={goBack}
                 />
               )}
-              {currentStep === 'bank' && (
+              {currentStep === "bank" && (
                 <BankStep
                   form={bankForm}
                   existingAccounts={bankAccounts ?? []}
@@ -484,15 +481,15 @@ function CustomerOnboarding() {
                   saving={createBankMutation.isPending}
                 />
               )}
-              {currentStep === 'first-doc' && (
+              {currentStep === "first-doc" && (
                 <FirstDocStep
                   onComplete={handleComplete}
                   onBack={goBack}
                   completing={completeMutation.isPending}
                 />
               )}
-              {currentStep === 'complete' && (
-                <CompleteStep onGoToDashboard={() => setLocation('/dashboard')} />
+              {currentStep === "complete" && (
+                <CompleteStep onGoToDashboard={() => setLocation("/dashboard")} />
               )}
             </motion.div>
           </AnimatePresence>
@@ -521,16 +518,20 @@ function WelcomeStep({ companyName, onNext }: { companyName?: string; onNext: ()
           {companyName ? `Hello, ${companyName}!` : "Let's get you set up"}
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          UAE-compliant accounting, VAT filing, and AI-powered insights — all in one place.
-          This quick setup takes about 3 minutes.
+          UAE-compliant accounting, VAT filing, and AI-powered insights — all in one place. This
+          quick setup takes about 3 minutes.
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
         {[
-          { icon: Building2, title: 'Company Profile', desc: 'Add your TRN and business details' },
-          { icon: BookOpen, title: 'Chart of Accounts', desc: 'UAE-standard accounts pre-configured' },
-          { icon: Landmark, title: 'Bank Account', desc: 'Connect for easy reconciliation' },
+          { icon: Building2, title: "Company Profile", desc: "Add your TRN and business details" },
+          {
+            icon: BookOpen,
+            title: "Chart of Accounts",
+            desc: "UAE-standard accounts pre-configured",
+          },
+          { icon: Landmark, title: "Bank Account", desc: "Connect for easy reconciliation" },
         ].map(({ icon: Icon, title, desc }) => (
           <Card key={title} className="border border-border/50">
             <CardContent className="p-4 space-y-2">
@@ -609,8 +610,8 @@ function CompanyStep({
               data-testid="onboarding-company-retry"
               className="gap-2"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${saving ? 'animate-spin' : ''}`} />
-              {saving ? 'Retrying…' : 'Try again'}
+              <RefreshCw className={`w-3.5 h-3.5 ${saving ? "animate-spin" : ""}`} />
+              {saving ? "Retrying…" : "Try again"}
             </Button>
           </div>
         </div>
@@ -641,7 +642,9 @@ function CompanyStep({
               </SelectTrigger>
               <SelectContent>
                 {UAE_EMIRATES.map((e) => (
-                  <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>
+                  <SelectItem key={e.value} value={e.value}>
+                    {e.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -722,16 +725,10 @@ function CompanyStep({
         </div>
       </div>
 
-      <StepNav
-        onBack={onBack}
-        onNext={onNext}
-        nextLabel="Save & Continue"
-        loading={saving}
-      />
+      <StepNav onBack={onBack} onNext={onNext} nextLabel="Save & Continue" loading={saving} />
     </div>
   );
 }
-
 
 // ─── Step: Chart of Accounts ────────────────────────────────────────────────
 
@@ -745,12 +742,12 @@ function AccountsStep({
   onBack: () => void;
 }) {
   const categories = [
-    { label: 'Assets', description: 'Cash, receivables, inventory, fixed assets' },
-    { label: 'Liabilities', description: 'Payables, VAT payable, loans' },
-    { label: 'Equity', description: "Owner's capital and retained earnings" },
-    { label: 'Revenue', description: 'Sales, service income' },
-    { label: 'Expenses', description: 'COGS, operating expenses, payroll' },
-    { label: 'VAT Accounts', description: 'Input VAT 5%, Output VAT 5%, VAT control' },
+    { label: "Assets", description: "Cash, receivables, inventory, fixed assets" },
+    { label: "Liabilities", description: "Payables, VAT payable, loans" },
+    { label: "Equity", description: "Owner's capital and retained earnings" },
+    { label: "Revenue", description: "Sales, service income" },
+    { label: "Expenses", description: "COGS, operating expenses, payroll" },
+    { label: "VAT Accounts", description: "Input VAT 5%, Output VAT 5%, VAT control" },
   ];
 
   return (
@@ -766,7 +763,7 @@ function AccountsStep({
           <CheckCircle2 className="w-5 h-5 text-green-600 shrink-0" />
           <div>
             <p className="text-sm font-medium text-green-800 dark:text-green-200">
-              {accountCount > 0 ? `${accountCount} accounts configured` : 'UAE preset applied'}
+              {accountCount > 0 ? `${accountCount} accounts configured` : "UAE preset applied"}
             </p>
             <p className="text-xs text-green-600 dark:text-green-400">
               All standard categories with VAT input/output accounts are included.
@@ -791,7 +788,7 @@ function AccountsStep({
       </div>
 
       <p className="text-xs text-muted-foreground text-center">
-        You can customise accounts anytime from{' '}
+        You can customise accounts anytime from{" "}
         <Link href="/chart-of-accounts" className="underline text-primary">
           Chart of Accounts
         </Link>
@@ -879,7 +876,9 @@ function BankStep({
               </SelectTrigger>
               <SelectContent>
                 {UAE_BANKS.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
+                  <SelectItem key={b} value={b}>
+                    {b}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -933,7 +932,7 @@ function BankStep({
           className="flex-1 gap-2"
           data-testid="onboarding-save-bank"
         >
-          {saving ? 'Saving…' : 'Save & Continue'}
+          {saving ? "Saving…" : "Save & Continue"}
           <ArrowRight className="w-4 h-4" />
         </Button>
       </div>
@@ -957,17 +956,17 @@ function FirstDocStep({
   const options = [
     {
       icon: FileText,
-      title: 'Create an Invoice',
-      description: 'Issue a VAT-compliant tax invoice to your first customer.',
-      action: '/invoices',
-      testId: 'onboarding-goto-invoice',
+      title: "Create an Invoice",
+      description: "Issue a VAT-compliant tax invoice to your first customer.",
+      action: "/invoices",
+      testId: "onboarding-goto-invoice",
     },
     {
       icon: Receipt,
-      title: 'Upload a Receipt',
-      description: 'Let AI extract and categorise an expense from a photo or PDF.',
-      action: '/receipts',
-      testId: 'onboarding-goto-receipt',
+      title: "Upload a Receipt",
+      description: "Let AI extract and categorise an expense from a photo or PDF.",
+      action: "/receipts",
+      testId: "onboarding-goto-receipt",
     },
   ];
 
@@ -1017,7 +1016,7 @@ function FirstDocStep({
           className="flex-1 text-muted-foreground"
           data-testid="onboarding-skip-doc"
         >
-          {completing ? 'Finishing…' : "I'll do this later"}
+          {completing ? "Finishing…" : "I'll do this later"}
         </Button>
       </div>
     </div>
@@ -1028,12 +1027,12 @@ function FirstDocStep({
 
 function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   const features = [
-    { icon: LayoutDashboard, label: 'Dashboard', href: '/dashboard' },
-    { icon: FileText, label: 'Invoices', href: '/invoices' },
-    { icon: Receipt, label: 'Receipts', href: '/receipts' },
-    { icon: BarChart3, label: 'Reports', href: '/reports' },
-    { icon: BookOpen, label: 'Chart of Accounts', href: '/chart-of-accounts' },
-    { icon: Users, label: 'Contacts', href: '/contacts' },
+    { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
+    { icon: FileText, label: "Invoices", href: "/invoices" },
+    { icon: Receipt, label: "Receipts", href: "/receipts" },
+    { icon: BarChart3, label: "Reports", href: "/reports" },
+    { icon: BookOpen, label: "Chart of Accounts", href: "/chart-of-accounts" },
+    { icon: Users, label: "Contacts", href: "/contacts" },
   ];
 
   return (
@@ -1041,7 +1040,7 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
       <motion.div
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
-        transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+        transition={{ type: "spring", stiffness: 200, damping: 15 }}
         className="flex justify-center"
       >
         <div className="w-24 h-24 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
@@ -1069,7 +1068,12 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
         ))}
       </div>
 
-      <Button size="lg" onClick={onGoToDashboard} className="gap-2 px-8" data-testid="onboarding-go-dashboard">
+      <Button
+        size="lg"
+        onClick={onGoToDashboard}
+        className="gap-2 px-8"
+        data-testid="onboarding-go-dashboard"
+      >
         Go to Dashboard
         <ArrowRight className="w-4 h-4" />
       </Button>
@@ -1104,7 +1108,7 @@ function StepHeader({
 function StepNav({
   onBack,
   onNext,
-  nextLabel = 'Continue',
+  nextLabel = "Continue",
   loading = false,
 }: {
   onBack: () => void;
@@ -1124,7 +1128,7 @@ function StepNav({
         className="flex-1 gap-2"
         data-testid="onboarding-next"
       >
-        {loading ? 'Saving…' : nextLabel}
+        {loading ? "Saving…" : nextLabel}
         {!loading && <ArrowRight className="w-4 h-4" />}
       </Button>
     </div>
@@ -1137,40 +1141,39 @@ function StepNav({
 // land here after first login and we point them at the firm management
 // surface area instead.
 
-type FirmStep = 'welcome' | 'team' | 'clients' | 'complete';
-const FIRM_STEPS: FirmStep[] = ['welcome', 'team', 'clients', 'complete'];
+type FirmStep = "welcome" | "team" | "clients" | "complete";
+const FIRM_STEPS: FirmStep[] = ["welcome", "team", "clients", "complete"];
 const FIRM_STEP_LABELS: Record<FirmStep, string> = {
-  welcome: 'Welcome',
-  team: 'Invite your team',
-  clients: 'Add your first client',
-  complete: 'Ready to go',
+  welcome: "Welcome",
+  team: "Invite your team",
+  clients: "Add your first client",
+  complete: "Ready to go",
 };
 
-function FirmOnboarding({ firmRole }: { firmRole: 'firm_owner' | 'firm_admin' }) {
+function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_admin" }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [step, setStep] = useState<FirmStep>('welcome');
+  const [step, setStep] = useState<FirmStep>("welcome");
   const [direction, setDirection] = useState<1 | -1>(1);
 
   // The auto-created company is still present (registration always seeds one),
   // but the firm flow doesn't ask the user to fill it out — we mark onboarding
   // complete on the company so ProtectedLayout stops redirecting back here.
   const { data: companies, isLoading: companiesLoading } = useQuery<Company[]>({
-    queryKey: ['/api/companies'],
+    queryKey: ["/api/companies"],
   });
   const company = companies?.[0];
 
   const completeMutation = useMutation({
-    mutationFn: () =>
-      apiRequest('POST', `/api/companies/${company!.id}/onboarding/complete`, {}),
+    mutationFn: () => apiRequest("POST", `/api/companies/${company!.id}/onboarding/complete`, {}),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
     },
     onError: (err: Error) => {
       toast({
-        title: 'Could not finish setup',
+        title: "Could not finish setup",
         description: err.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
@@ -1193,7 +1196,7 @@ function FirmOnboarding({ firmRole }: { firmRole: 'firm_owner' | 'firm_admin' })
   async function handleComplete(redirectTo?: string) {
     if (!company) return;
     await completeMutation.mutateAsync();
-    setLocation(redirectTo ?? '/firm/clients');
+    setLocation(redirectTo ?? "/firm/clients");
   }
 
   if (companiesLoading) {
@@ -1227,11 +1230,11 @@ function FirmOnboarding({ firmRole }: { firmRole: 'firm_owner' | 'firm_admin' })
           </div>
           <span className="font-bold text-lg">Muhasib.ai</span>
         </Link>
-        {step !== 'welcome' && step !== 'complete' && (
+        {step !== "welcome" && step !== "complete" && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => void handleComplete('/firm/clients')}
+            onClick={() => void handleComplete("/firm/clients")}
             className="text-muted-foreground text-sm"
             data-testid="firm-onboarding-skip"
           >
@@ -1240,7 +1243,7 @@ function FirmOnboarding({ firmRole }: { firmRole: 'firm_owner' | 'firm_admin' })
         )}
       </header>
 
-      {step !== 'complete' && (
+      {step !== "complete" && (
         <div className="px-6 pt-6 max-w-2xl mx-auto w-full">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm font-medium text-muted-foreground">
@@ -1262,29 +1265,27 @@ function FirmOnboarding({ firmRole }: { firmRole: 'firm_owner' | 'firm_admin' })
               initial="enter"
               animate="center"
               exit="exit"
-              transition={{ duration: 0.25, ease: 'easeOut' }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
             >
-              {step === 'welcome' && (
-                <FirmWelcomeStep firmRole={firmRole} onNext={goNext} />
-              )}
-              {step === 'team' && (
+              {step === "welcome" && <FirmWelcomeStep firmRole={firmRole} onNext={goNext} />}
+              {step === "team" && (
                 <FirmTeamStep
                   onNext={goNext}
                   onBack={goBack}
                   onGoTo={(p) => setLocation(p)}
-                  canManageStaff={firmRole === 'firm_owner'}
+                  canManageStaff={firmRole === "firm_owner"}
                 />
               )}
-              {step === 'clients' && (
+              {step === "clients" && (
                 <FirmClientsStep
-                  onComplete={() => void handleComplete('/firm/clients')}
+                  onComplete={() => void handleComplete("/firm/clients")}
                   onBack={goBack}
                   onGoTo={(p) => setLocation(p)}
                   completing={completeMutation.isPending}
                 />
               )}
-              {step === 'complete' && (
-                <FirmCompleteStep onGoToFirm={() => setLocation('/firm/clients')} />
+              {step === "complete" && (
+                <FirmCompleteStep onGoToFirm={() => setLocation("/firm/clients")} />
               )}
             </motion.div>
           </AnimatePresence>
@@ -1298,7 +1299,7 @@ function FirmWelcomeStep({
   firmRole,
   onNext,
 }: {
-  firmRole: 'firm_owner' | 'firm_admin';
+  firmRole: "firm_owner" | "firm_admin";
   onNext: () => void;
 }) {
   return (
@@ -1310,21 +1311,21 @@ function FirmWelcomeStep({
       </div>
       <div className="space-y-3">
         <Badge variant="secondary" className="px-3 py-1">
-          {firmRole === 'firm_owner' ? 'Firm Owner' : 'Firm Admin'}
+          {firmRole === "firm_owner" ? "Firm Owner" : "Firm Admin"}
         </Badge>
         <h1 className="text-3xl font-bold tracking-tight">Welcome to your firm workspace</h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          {firmRole === 'firm_owner'
-            ? 'Invite your team, onboard your clients, and manage their books from one place.'
-            : 'Onboard your assigned clients and start managing their books.'}
+          {firmRole === "firm_owner"
+            ? "Invite your team, onboard your clients, and manage their books from one place."
+            : "Onboard your assigned clients and start managing their books."}
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
         {[
-          { icon: Users, title: 'Team', desc: 'Invite staff with the right permissions' },
-          { icon: Building2, title: 'Clients', desc: 'Onboard companies you manage' },
-          { icon: BarChart3, title: 'Analytics', desc: 'Firm-wide health and KPIs' },
+          { icon: Users, title: "Team", desc: "Invite staff with the right permissions" },
+          { icon: Building2, title: "Clients", desc: "Onboard companies you manage" },
+          { icon: BarChart3, title: "Analytics", desc: "Firm-wide health and KPIs" },
         ].map(({ icon: Icon, title, desc }) => (
           <Card key={title} className="border border-border/50">
             <CardContent className="p-4 space-y-2">
@@ -1364,8 +1365,8 @@ function FirmTeamStep({
         title="Invite your team"
         description={
           canManageStaff
-            ? 'Add your accountants and assign them to client portfolios.'
-            : 'Your firm owner manages staff. You can move on to onboarding clients.'
+            ? "Add your accountants and assign them to client portfolios."
+            : "Your firm owner manages staff. You can move on to onboarding clients."
         }
       />
 
@@ -1373,12 +1374,12 @@ function FirmTeamStep({
         <Card className="border border-border/50">
           <CardContent className="p-5 space-y-3">
             <p className="text-sm">
-              Open Staff Management in a new tab to send invites — your team gets an email
-              link to set their password and join.
+              Open Staff Management in a new tab to send invites — your team gets an email link to
+              set their password and join.
             </p>
             <Button
               variant="outline"
-              onClick={() => onGoTo('/firm/staff')}
+              onClick={() => onGoTo("/firm/staff")}
               className="gap-2"
               data-testid="firm-onboarding-staff"
             >
@@ -1424,7 +1425,7 @@ function FirmClientsStep({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <button
           type="button"
-          onClick={() => onGoTo('/firm/clients')}
+          onClick={() => onGoTo("/firm/clients")}
           disabled={completing}
           className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           data-testid="firm-onboarding-add-client"
@@ -1442,7 +1443,7 @@ function FirmClientsStep({
         </button>
         <button
           type="button"
-          onClick={() => onGoTo('/firm/bulk')}
+          onClick={() => onGoTo("/firm/bulk")}
           disabled={completing}
           className="text-left p-5 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all group"
           data-testid="firm-onboarding-bulk"
@@ -1472,7 +1473,7 @@ function FirmClientsStep({
           className="flex-1 text-muted-foreground"
           data-testid="firm-onboarding-finish"
         >
-          {completing ? 'Finishing…' : "I'll add clients later"}
+          {completing ? "Finishing…" : "I'll add clients later"}
         </Button>
       </div>
     </div>
@@ -1485,7 +1486,7 @@ function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
       <motion.div
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
-        transition={{ type: 'spring', stiffness: 200, damping: 15 }}
+        transition={{ type: "spring", stiffness: 200, damping: 15 }}
         className="flex justify-center"
       >
         <div className="w-24 h-24 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
@@ -1498,7 +1499,12 @@ function FirmCompleteStep({ onGoToFirm }: { onGoToFirm: () => void }) {
           Jump straight into the client portfolio to start managing books.
         </p>
       </div>
-      <Button size="lg" onClick={onGoToFirm} className="gap-2 px-8" data-testid="firm-onboarding-go">
+      <Button
+        size="lg"
+        onClick={onGoToFirm}
+        className="gap-2 px-8"
+        data-testid="firm-onboarding-go"
+      >
         Go to clients
         <ArrowRight className="w-4 h-4" />
       </Button>

@@ -1,5 +1,5 @@
-import { storage } from '../storage';
-import type { JournalEntry, JournalLine, Account, Invoice, Receipt } from '../../shared/schema';
+import { storage } from "../storage";
+import type { JournalEntry, JournalLine, Account, Invoice, Receipt } from "../../shared/schema";
 
 interface WeeklyProjection {
   week: number;
@@ -55,14 +55,14 @@ export async function generateCashFlowForecast(
 
   for (const account of accounts) {
     accountMap.set(account.id, account);
-    if (account.type === 'income') incomeAccountIds.add(account.id);
-    if (account.type === 'expense') expenseAccountIds.add(account.id);
-    if (account.type === 'asset') assetAccountIds.add(account.id);
+    if (account.type === "income") incomeAccountIds.add(account.id);
+    if (account.type === "expense") expenseAccountIds.add(account.id);
+    if (account.type === "asset") assetAccountIds.add(account.id);
   }
 
   // Filter posted journal entries from last 6 months
   const recentEntries = journalEntries.filter(
-    (e) => e.status === 'posted' && new Date(e.date) >= sixMonthsAgo
+    (e) => e.status === "posted" && new Date(e.date) >= sixMonthsAgo
   );
 
   // Get all journal lines for recent entries
@@ -88,13 +88,13 @@ export async function generateCashFlowForecast(
     const account = accountMap.get(line.accountId);
     if (!account) continue;
 
-    if (account.type === 'income') {
-      totalHistoricalInflows += (line.credit || 0);
-    } else if (account.type === 'expense') {
-      totalHistoricalOutflows += (line.debit || 0);
+    if (account.type === "income") {
+      totalHistoricalInflows += line.credit || 0;
+    } else if (account.type === "expense") {
+      totalHistoricalOutflows += line.debit || 0;
     }
 
-    if (account.type === 'income' || account.type === 'expense') {
+    if (account.type === "income" || account.type === "expense") {
       if (!earliestActivity || line.entryDate < earliestActivity) {
         earliestActivity = line.entryDate;
       }
@@ -105,10 +105,12 @@ export async function generateCashFlowForecast(
   // week to avoid division by zero / wild extrapolation in the first days
   // of activity. Capped at the lookback window so a long-running but
   // recently-quiet company isn't penalised.
-  const spanStart = earliestActivity && earliestActivity > sixMonthsAgo ? earliestActivity : sixMonthsAgo;
-  const weeksInHistory = Math.max(1, Math.ceil(
-    (now.getTime() - spanStart.getTime()) / (7 * 24 * 60 * 60 * 1000)
-  ));
+  const spanStart =
+    earliestActivity && earliestActivity > sixMonthsAgo ? earliestActivity : sixMonthsAgo;
+  const weeksInHistory = Math.max(
+    1,
+    Math.ceil((now.getTime() - spanStart.getTime()) / (7 * 24 * 60 * 60 * 1000))
+  );
 
   const avgWeeklyInflow = totalHistoricalInflows / weeksInHistory;
   const avgWeeklyOutflow = totalHistoricalOutflows / weeksInHistory;
@@ -124,11 +126,13 @@ export async function generateCashFlowForecast(
   if (bankTransactions.length === 0) {
     for (const line of allLines) {
       const account = accountMap.get(line.accountId);
-      if (account && account.type === 'asset' && (
-        account.code.startsWith('10') || // Cash accounts typically 1000-series
-        account.nameEn.toLowerCase().includes('cash') ||
-        account.nameEn.toLowerCase().includes('bank')
-      )) {
+      if (
+        account &&
+        account.type === "asset" &&
+        (account.code.startsWith("10") || // Cash accounts typically 1000-series
+          account.nameEn.toLowerCase().includes("cash") ||
+          account.nameEn.toLowerCase().includes("bank"))
+      ) {
         currentBalance += (line.debit || 0) - (line.credit || 0);
       }
     }
@@ -136,29 +140,22 @@ export async function generateCashFlowForecast(
 
   // Outstanding invoices (receivables) - unpaid invoices
   const outstandingInvoices = invoices.filter(
-    (inv) => inv.status === 'sent' || inv.status === 'draft'
+    (inv) => inv.status === "sent" || inv.status === "draft"
   );
 
   // Outstanding receipts (payables) - unposted receipts
-  const outstandingReceipts = receipts.filter(
-    (r) => !r.posted && r.amount && r.amount > 0
-  );
+  const outstandingReceipts = receipts.filter((r) => !r.posted && r.amount && r.amount > 0);
 
   // Calculate total receivables and payables
-  const totalReceivables = outstandingInvoices.reduce(
-    (sum, inv) => sum + (inv.total || 0), 0
-  );
+  const totalReceivables = outstandingInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
   // receipts.amount is the net subtotal (excludes VAT); cash outflow when
   // the receipt is paid is amount + vatAmount.
   const totalPayables = outstandingReceipts.reduce(
-    (sum, r) => sum + (r.amount || 0) + (r.vatAmount || 0), 0
+    (sum, r) => sum + (r.amount || 0) + (r.vatAmount || 0),
+    0
   );
-  const overdueInvoices = outstandingInvoices.filter(
-    (inv) => new Date(inv.date) < now
-  );
-  const overdueAmount = overdueInvoices.reduce(
-    (sum, inv) => sum + (inv.total || 0), 0
-  );
+  const overdueInvoices = outstandingInvoices.filter((inv) => new Date(inv.date) < now);
+  const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
 
   // Generate weekly projections
   const totalWeeks = Math.ceil(days / 7);
@@ -179,12 +176,12 @@ export async function generateCashFlowForecast(
   const upperBalanceCap = Math.max(
     Math.abs(currentBalance) * 3,
     Math.abs(currentBalance) + horizonInflowBudget,
-    10000,
+    10000
   );
   const lowerBalanceFloor = -Math.max(
     Math.abs(currentBalance) * 3,
     Math.abs(currentBalance) + horizonOutflowBudget,
-    10000,
+    10000
   );
   let clampedAny = false;
 
@@ -222,8 +219,8 @@ export async function generateCashFlowForecast(
 
     projections.push({
       week: w,
-      weekStart: weekStart.toISOString().split('T')[0],
-      weekEnd: weekEnd.toISOString().split('T')[0],
+      weekStart: weekStart.toISOString().split("T")[0],
+      weekEnd: weekEnd.toISOString().split("T")[0],
       expectedInflows: Math.round(weekInflow * 100) / 100,
       expectedOutflows: Math.round(weekOutflow * 100) / 100,
       projectedBalance: Math.round(runningBalance * 100) / 100,
@@ -271,7 +268,10 @@ export async function generateCashFlowForecast(
   }
 
   // Positive trend
-  if (projections.length > 0 && projections[projections.length - 1].projectedBalance > currentBalance) {
+  if (
+    projections.length > 0 &&
+    projections[projections.length - 1].projectedBalance > currentBalance
+  ) {
     insights.push(
       `Positive outlook: Cash position is projected to improve by AED ${(projections[projections.length - 1].projectedBalance - currentBalance).toLocaleString()} over the forecast period.`
     );
@@ -280,13 +280,13 @@ export async function generateCashFlowForecast(
   // Low activity warning
   if (avgWeeklyInflow === 0 && avgWeeklyOutflow === 0) {
     insights.push(
-      'No recent transaction activity found. Forecast is based on outstanding invoices and receipts only.'
+      "No recent transaction activity found. Forecast is based on outstanding invoices and receipts only."
     );
   }
 
   if (clampedAny) {
     insights.push(
-      'Forecast extrapolated beyond a sanity bound and was clamped — recent activity may include an outlier transaction skewing the weekly average.'
+      "Forecast extrapolated beyond a sanity bound and was clamped — recent activity may include an outlier transaction skewing the weekly average."
     );
   }
 
@@ -314,13 +314,23 @@ export async function getCashFlowHistory(
   }
 
   // Filter posted entries only
-  const postedEntries = journalEntries.filter((e) => e.status === 'posted');
+  const postedEntries = journalEntries.filter((e) => e.status === "posted");
 
   // Build month buckets
   const history: MonthlyCashHistory[] = [];
   const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
 
   for (let i = months - 1; i >= 0; i--) {
@@ -342,10 +352,10 @@ export async function getCashFlowHistory(
         const account = accountMap.get(line.accountId);
         if (!account) continue;
 
-        if (account.type === 'income') {
-          totalInflows += (line.credit || 0);
-        } else if (account.type === 'expense') {
-          totalOutflows += (line.debit || 0);
+        if (account.type === "income") {
+          totalInflows += line.credit || 0;
+        } else if (account.type === "expense") {
+          totalOutflows += line.debit || 0;
         }
       }
     }

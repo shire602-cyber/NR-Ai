@@ -1,4 +1,4 @@
-import QRCode from 'qrcode';
+import QRCode from "qrcode";
 
 // ZATCA / UAE FTA Phase 2 e-invoicing QR payload tags.
 // The QR code is a base64-encoded sequence of TLV records — one per field —
@@ -22,7 +22,7 @@ export interface EInvoiceQrFields {
 }
 
 function tlv(tag: number, value: string): Buffer {
-  const bytes = Buffer.from(value, 'utf-8');
+  const bytes = Buffer.from(value, "utf-8");
   if (bytes.length > 255) {
     throw new Error(`TLV value for tag ${tag} exceeds 255 bytes (got ${bytes.length})`);
   }
@@ -39,9 +39,9 @@ function formatAmount(n: number): string {
 
 // Build the base64-encoded TLV payload that goes into the QR code.
 export function buildEInvoiceQrPayload(fields: EInvoiceQrFields): string {
-  if (!fields.sellerName) throw new Error('sellerName is required for QR payload');
+  if (!fields.sellerName) throw new Error("sellerName is required for QR payload");
   if (!fields.vatRegistrationNumber) {
-    throw new Error('vatRegistrationNumber (TRN) is required for QR payload');
+    throw new Error("vatRegistrationNumber (TRN) is required for QR payload");
   }
 
   const blob = Buffer.concat([
@@ -52,22 +52,22 @@ export function buildEInvoiceQrPayload(fields: EInvoiceQrFields): string {
     tlv(EINVOICE_QR_TAGS.VAT_AMOUNT, formatAmount(fields.vatAmount)),
   ]);
 
-  return blob.toString('base64');
+  return blob.toString("base64");
 }
 
 // Decode a TLV payload back into a record of tag → value. Used in tests and
 // for verifying QRs scanned from issued PDFs.
 export function decodeEInvoiceQrPayload(base64: string): Record<number, string> {
-  const buf = Buffer.from(base64, 'base64');
+  const buf = Buffer.from(base64, "base64");
   const out: Record<number, string> = {};
   let i = 0;
   while (i < buf.length) {
     const tag = buf[i];
     const len = buf[i + 1];
     if (i + 2 + len > buf.length) {
-      throw new Error('truncated TLV payload');
+      throw new Error("truncated TLV payload");
     }
-    out[tag] = buf.slice(i + 2, i + 2 + len).toString('utf-8');
+    out[tag] = buf.slice(i + 2, i + 2 + len).toString("utf-8");
     i += 2 + len;
   }
   return out;
@@ -78,12 +78,12 @@ export function decodeEInvoiceQrPayload(base64: string): Record<number, string> 
 // handles the surrounding whitespace.
 export async function renderEInvoiceQrPng(
   fields: EInvoiceQrFields,
-  options: { width?: number } = {},
+  options: { width?: number } = {}
 ): Promise<Buffer> {
   const payload = buildEInvoiceQrPayload(fields);
   return QRCode.toBuffer(payload, {
-    errorCorrectionLevel: 'M',
-    type: 'png',
+    errorCorrectionLevel: "M",
+    type: "png",
     margin: 0,
     width: options.width ?? 240,
   });

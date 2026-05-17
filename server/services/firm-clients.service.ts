@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Firm-managed-client domain helpers.
@@ -11,41 +11,41 @@ import { z } from 'zod';
 
 export const importedClientSchema = z.object({
   name: z.string().min(1),
-  trnVatNumber: z.string().optional().or(z.literal('')),
-  industry: z.string().optional().or(z.literal('')),
-  legalStructure: z.string().optional().or(z.literal('')),
-  contactEmail: z.string().email().optional().or(z.literal('')),
-  contactPhone: z.string().optional().or(z.literal('')),
-  businessAddress: z.string().optional().or(z.literal('')),
-  emirate: z.string().optional().or(z.literal('')),
-  vatFilingFrequency: z.string().optional().or(z.literal('')),
+  trnVatNumber: z.string().optional().or(z.literal("")),
+  industry: z.string().optional().or(z.literal("")),
+  legalStructure: z.string().optional().or(z.literal("")),
+  contactEmail: z.string().email().optional().or(z.literal("")),
+  contactPhone: z.string().optional().or(z.literal("")),
+  businessAddress: z.string().optional().or(z.literal("")),
+  emirate: z.string().optional().or(z.literal("")),
+  vatFilingFrequency: z.string().optional().or(z.literal("")),
   vatPeriodStartMonth: z.number().int().min(1).max(12).optional(),
   fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
-  corporateTaxId: z.string().optional().or(z.literal('')),
-  registrationNumber: z.string().optional().or(z.literal('')),
-  websiteUrl: z.string().optional().or(z.literal('')),
+  corporateTaxId: z.string().optional().or(z.literal("")),
+  registrationNumber: z.string().optional().or(z.literal("")),
+  websiteUrl: z.string().optional().or(z.literal("")),
 });
 
 export type ImportedClient = z.infer<typeof importedClientSchema>;
 
 const VALID_EMIRATES = new Set([
-  'abu_dhabi',
-  'dubai',
-  'sharjah',
-  'ajman',
-  'umm_al_quwain',
-  'ras_al_khaimah',
-  'fujairah',
+  "abu_dhabi",
+  "dubai",
+  "sharjah",
+  "ajman",
+  "umm_al_quwain",
+  "ras_al_khaimah",
+  "fujairah",
 ]);
 
-const VALID_VAT_FILING = new Set(['monthly', 'quarterly', 'annually']);
+const VALID_VAT_FILING = new Set(["monthly", "quarterly", "annually"]);
 
 export type VatCohortKey =
-  | 'jan_apr_jul_oct'
-  | 'feb_may_aug_nov'
-  | 'mar_jun_sep_dec'
-  | 'monthly'
-  | 'annual';
+  | "jan_apr_jul_oct"
+  | "feb_may_aug_nov"
+  | "mar_jun_sep_dec"
+  | "monthly"
+  | "annual";
 
 export interface VatCohort {
   key: VatCohortKey;
@@ -60,52 +60,90 @@ export interface TaxPeriodWindow {
   dueDate: Date;
 }
 
+export type BookkeeperInterventionPriority = "on_track" | "attention" | "critical";
+export type BookkeeperInterventionLevel = "low" | "medium" | "high";
+
+export interface BookkeeperTaxInterventionInput {
+  filed: boolean;
+  daysTilDue: number | null;
+  blockers: string[];
+}
+
+export interface BookkeeperInterventionInput {
+  priority: BookkeeperInterventionPriority;
+  nextBestAction: string;
+  assignedStaffCount: number;
+  vat: BookkeeperTaxInterventionInput;
+  corporateTax: BookkeeperTaxInterventionInput;
+  bookkeepingBlockers: string[];
+  accountingBlockers: string[];
+  closeProgress: number;
+  openAr: number;
+  overdueInvoiceCount: number;
+  missingCustomerTrnCount: number;
+  unpostedReceiptCount: number;
+  unreconciledBankCount: number;
+  daysSinceActivity: number | null;
+  noOperatingDocs: boolean;
+  discrepancy: number;
+}
+
+export interface BookkeeperIntervention {
+  score: number;
+  level: BookkeeperInterventionLevel;
+  title: string;
+  reasons: string[];
+  ownerAction: string;
+  deadlineLabel: string;
+  exposureAed: number;
+}
+
 const MONTH_LABELS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
 ];
 
-const VAT_COHORTS: Array<Omit<VatCohort, 'closeMonthLabels'>> = [
-  { key: 'jan_apr_jul_oct', label: 'Jan / Apr / Jul / Oct', closeMonths: [1, 4, 7, 10] },
-  { key: 'feb_may_aug_nov', label: 'Feb / May / Aug / Nov', closeMonths: [2, 5, 8, 11] },
-  { key: 'mar_jun_sep_dec', label: 'Mar / Jun / Sep / Dec', closeMonths: [3, 6, 9, 12] },
+const VAT_COHORTS: Array<Omit<VatCohort, "closeMonthLabels">> = [
+  { key: "jan_apr_jul_oct", label: "Jan / Apr / Jul / Oct", closeMonths: [1, 4, 7, 10] },
+  { key: "feb_may_aug_nov", label: "Feb / May / Aug / Nov", closeMonths: [2, 5, 8, 11] },
+  { key: "mar_jun_sep_dec", label: "Mar / Jun / Sep / Dec", closeMonths: [3, 6, 9, 12] },
 ];
 
 const MONTH_NAME_ALIASES = new Map<string, number>([
-  ['jan', 1],
-  ['january', 1],
-  ['feb', 2],
-  ['february', 2],
-  ['mar', 3],
-  ['march', 3],
-  ['apr', 4],
-  ['april', 4],
-  ['may', 5],
-  ['jun', 6],
-  ['june', 6],
-  ['jul', 7],
-  ['july', 7],
-  ['aug', 8],
-  ['august', 8],
-  ['sep', 9],
-  ['sept', 9],
-  ['september', 9],
-  ['oct', 10],
-  ['october', 10],
-  ['nov', 11],
-  ['november', 11],
-  ['dec', 12],
-  ['december', 12],
+  ["jan", 1],
+  ["january", 1],
+  ["feb", 2],
+  ["february", 2],
+  ["mar", 3],
+  ["march", 3],
+  ["apr", 4],
+  ["april", 4],
+  ["may", 5],
+  ["jun", 6],
+  ["june", 6],
+  ["jul", 7],
+  ["july", 7],
+  ["aug", 8],
+  ["august", 8],
+  ["sep", 9],
+  ["sept", 9],
+  ["september", 9],
+  ["oct", 10],
+  ["october", 10],
+  ["nov", 11],
+  ["november", 11],
+  ["dec", 12],
+  ["december", 12],
 ]);
 
 function toUtcMonth(date: Date): number {
@@ -124,7 +162,9 @@ function addUtcMonths(date: Date, months: number): Date {
   const targetMonthIndex = date.getUTCMonth() + months;
   const targetYear = date.getUTCFullYear() + Math.floor(targetMonthIndex / 12);
   const normalisedMonthIndex = ((targetMonthIndex % 12) + 12) % 12;
-  const lastDayInTargetMonth = new Date(Date.UTC(targetYear, normalisedMonthIndex + 1, 0)).getUTCDate();
+  const lastDayInTargetMonth = new Date(
+    Date.UTC(targetYear, normalisedMonthIndex + 1, 0)
+  ).getUTCDate();
   const day = Math.min(date.getUTCDate(), lastDayInTargetMonth);
   return new Date(Date.UTC(targetYear, normalisedMonthIndex, day));
 }
@@ -134,9 +174,133 @@ function addUtcDays(date: Date, days: number): Date {
 }
 
 function sameMonthSet(a: number[], b: number[]): boolean {
-  const left = [...a].sort((x, y) => x - y).join(',');
-  const right = [...b].sort((x, y) => x - y).join(',');
+  const left = [...a].sort((x, y) => x - y).join(",");
+  const right = [...b].sort((x, y) => x - y).join(",");
   return left === right;
+}
+
+function scoreDeadlinePressure(
+  daysTilDue: number | null,
+  overdue: number,
+  week: number,
+  month: number,
+  quarter = 0
+): number {
+  if (daysTilDue === null) return 0;
+  if (daysTilDue <= 0) return overdue;
+  if (daysTilDue <= 7) return week;
+  if (daysTilDue <= 28) return month;
+  if (daysTilDue <= 90) return quarter;
+  return 0;
+}
+
+function dueLabel(daysTilDue: number | null): string {
+  if (daysTilDue === null) return "no date";
+  if (daysTilDue < 0) return `${Math.abs(daysTilDue)}d overdue`;
+  if (daysTilDue === 0) return "due today";
+  return `${daysTilDue}d left`;
+}
+
+function interventionLevel(score: number): BookkeeperInterventionLevel {
+  if (score >= 65) return "high";
+  if (score >= 35) return "medium";
+  return "low";
+}
+
+export function buildBookkeeperIntervention(
+  input: BookkeeperInterventionInput
+): BookkeeperIntervention {
+  const vatDaysTilDue = input.vat.filed ? null : input.vat.daysTilDue;
+  const ctDaysTilDue = input.corporateTax.filed ? null : input.corporateTax.daysTilDue;
+  const vatBlockers = input.vat.filed ? [] : input.vat.blockers;
+  const ctBlockers = input.corporateTax.filed ? [] : input.corporateTax.blockers;
+
+  let score = input.priority === "critical" ? 24 : input.priority === "attention" ? 12 : 0;
+  score += scoreDeadlinePressure(vatDaysTilDue, 24, 18, 10);
+  score += scoreDeadlinePressure(ctDaysTilDue, 18, 14, 8, 4);
+  score += input.assignedStaffCount === 0 ? 12 : 0;
+  score += input.noOperatingDocs ? 18 : 0;
+  score += Math.min(16, input.overdueInvoiceCount * 4);
+  score += Math.min(14, input.unreconciledBankCount * 2);
+  score += Math.min(12, input.unpostedReceiptCount * 3);
+  score += Math.min(8, input.missingCustomerTrnCount * 2);
+  score += input.closeProgress < 50 ? 12 : input.closeProgress < 75 ? 6 : 0;
+  score +=
+    input.daysSinceActivity !== null && input.daysSinceActivity > 60
+      ? 12
+      : input.daysSinceActivity !== null && input.daysSinceActivity > 30
+        ? 6
+        : 0;
+  score += input.discrepancy > 0.01 ? 14 : 0;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  const reasons: string[] = [];
+  if (vatDaysTilDue !== null && vatDaysTilDue <= 28) reasons.push(`VAT ${dueLabel(vatDaysTilDue)}`);
+  if (ctDaysTilDue !== null && ctDaysTilDue <= 90) reasons.push(`CT ${dueLabel(ctDaysTilDue)}`);
+  if (input.assignedStaffCount === 0) reasons.push("No owner assigned");
+  if (input.noOperatingDocs) reasons.push("No source documents loaded");
+  if (input.overdueInvoiceCount > 0) reasons.push(`${input.overdueInvoiceCount} overdue invoices`);
+  if (input.unreconciledBankCount > 0)
+    reasons.push(`${input.unreconciledBankCount} unreconciled bank lines`);
+  if (input.unpostedReceiptCount > 0)
+    reasons.push(`${input.unpostedReceiptCount} unposted receipts`);
+  if (input.missingCustomerTrnCount > 0)
+    reasons.push(`${input.missingCustomerTrnCount} invoice TRN gaps`);
+  if (input.daysSinceActivity !== null && input.daysSinceActivity > 30)
+    reasons.push(`${input.daysSinceActivity}d since activity`);
+  if (input.discrepancy > 0.01) reasons.push("Trial balance variance");
+  if (reasons.length === 0) reasons.push("No active intervention signals");
+
+  const nearestDeadline = [
+    { label: "VAT", daysTilDue: vatDaysTilDue },
+    { label: "CT", daysTilDue: ctDaysTilDue },
+  ]
+    .filter((item): item is { label: string; daysTilDue: number } => item.daysTilDue !== null)
+    .sort((a, b) => a.daysTilDue - b.daysTilDue)[0];
+
+  const title =
+    input.assignedStaffCount === 0 && score >= 35
+      ? "Owner assignment needed"
+      : vatDaysTilDue !== null && vatDaysTilDue <= 7 && vatBlockers.length > 0
+        ? "VAT filing at risk"
+        : ctDaysTilDue !== null && ctDaysTilDue <= 30 && ctBlockers.length > 0
+          ? "Corporate tax at risk"
+          : input.noOperatingDocs || input.closeProgress < 50
+            ? "Source-document intervention"
+            : input.openAr > 0 && input.overdueInvoiceCount > 0
+              ? "Payment collection drag"
+              : input.discrepancy > 0.01
+                ? "Accounting review required"
+                : input.nextBestAction;
+
+  const ownerAction =
+    input.assignedStaffCount === 0
+      ? "Assign an owner"
+      : vatDaysTilDue !== null && vatDaysTilDue <= 0
+        ? "Escalate VAT filing"
+        : ctDaysTilDue !== null && ctDaysTilDue <= 30
+          ? "Lock CT preparation plan"
+          : input.noOperatingDocs
+            ? "Request missing source documents"
+            : input.overdueInvoiceCount > 0
+              ? "Start payment chase"
+              : input.unreconciledBankCount > 0 || input.unpostedReceiptCount > 0
+                ? "Clear close blockers"
+                : input.discrepancy > 0.01
+                  ? "Review trial balance"
+                  : input.nextBestAction;
+
+  return {
+    score,
+    level: interventionLevel(score),
+    title,
+    reasons: reasons.slice(0, 5),
+    ownerAction,
+    deadlineLabel: nearestDeadline
+      ? `${nearestDeadline.label} ${dueLabel(nearestDeadline.daysTilDue)}`
+      : "No deadline pressure",
+    exposureAed: Math.round(Math.max(0, input.openAr)),
+  };
 }
 
 export function normaliseMonth(month: number | string | null | undefined): number {
@@ -152,7 +316,7 @@ export function parseMonthInput(raw: string | number | null | undefined): number
   if (!value) return undefined;
   const numeric = Number(value);
   if (Number.isFinite(numeric) && numeric >= 1 && numeric <= 12) return Math.trunc(numeric);
-  const compact = value.toLowerCase().replace(/[^a-z]/g, '');
+  const compact = value.toLowerCase().replace(/[^a-z]/g, "");
   if (!compact) return undefined;
   if (MONTH_NAME_ALIASES.has(compact)) return MONTH_NAME_ALIASES.get(compact);
   return MONTH_NAME_ALIASES.get(compact.slice(0, 3));
@@ -164,34 +328,35 @@ export function monthName(month: number | string | null | undefined): string {
 
 export function vatCohortFromPeriodStart(
   periodStartMonth: number | string | null | undefined,
-  filingFrequency: string | null | undefined = 'quarterly',
+  filingFrequency: string | null | undefined = "quarterly"
 ): VatCohort {
-  const frequency = (filingFrequency || 'quarterly').toLowerCase();
+  const frequency = (filingFrequency || "quarterly").toLowerCase();
   const startMonth = normaliseMonth(periodStartMonth);
 
-  if (frequency === 'monthly') {
+  if (frequency === "monthly") {
     const closeMonths = Array.from({ length: 12 }, (_, index) => index + 1);
     return {
-      key: 'monthly',
-      label: 'Monthly',
+      key: "monthly",
+      label: "Monthly",
       closeMonths,
       closeMonthLabels: closeMonths.map(monthName),
     };
   }
 
-  if (frequency === 'annually') {
+  if (frequency === "annually") {
     const closeMonths = [normaliseMonth(startMonth + 11)];
     return {
-      key: 'annual',
+      key: "annual",
       label: `${monthName(closeMonths[0])} annual`,
       closeMonths,
       closeMonthLabels: closeMonths.map(monthName),
     };
   }
 
-  const closeMonths = [2, 5, 8, 11].map(offset => normaliseMonth(startMonth + offset));
-  const cohort = VAT_COHORTS.find(candidate => sameMonthSet(candidate.closeMonths, closeMonths))
-    ?? VAT_COHORTS[2];
+  const closeMonths = [2, 5, 8, 11].map((offset) => normaliseMonth(startMonth + offset));
+  const cohort =
+    VAT_COHORTS.find((candidate) => sameMonthSet(candidate.closeMonths, closeMonths)) ??
+    VAT_COHORTS[2];
 
   return {
     ...cohort,
@@ -202,19 +367,19 @@ export function vatCohortFromPeriodStart(
 export function currentVatPeriodForCompany(
   now: Date,
   periodStartMonth: number | string | null | undefined,
-  filingFrequency: string | null | undefined = 'quarterly',
+  filingFrequency: string | null | undefined = "quarterly"
 ): TaxPeriodWindow {
-  const frequency = (filingFrequency || 'quarterly').toLowerCase();
+  const frequency = (filingFrequency || "quarterly").toLowerCase();
   const currentYear = toUtcYear(now);
   const currentMonth = toUtcMonth(now);
 
-  if (frequency === 'monthly') {
+  if (frequency === "monthly") {
     const periodStart = utcMonthStart(currentYear, currentMonth);
     const periodEnd = addUtcDays(addUtcMonths(periodStart, 1), -1);
     return { periodStart, periodEnd, dueDate: addUtcDays(periodEnd, 28) };
   }
 
-  const periodLength = frequency === 'annually' ? 12 : 3;
+  const periodLength = frequency === "annually" ? 12 : 3;
   const startMonth = normaliseMonth(periodStartMonth);
   const distance = (currentMonth - startMonth + 12) % 12;
   const cycleOffset = Math.floor(distance / periodLength) * periodLength;
@@ -228,7 +393,7 @@ export function currentVatPeriodForCompany(
 
 export function corporateTaxWindow(
   now: Date,
-  fiscalYearStartMonth: number | string | null | undefined,
+  fiscalYearStartMonth: number | string | null | undefined
 ): TaxPeriodWindow {
   const startMonth = normaliseMonth(fiscalYearStartMonth);
   const currentYear = toUtcYear(now);
@@ -243,7 +408,7 @@ export function corporateTaxWindow(
 
 export function nextCorporateTaxFilingWindow(
   now: Date,
-  fiscalYearStartMonth: number | string | null | undefined,
+  fiscalYearStartMonth: number | string | null | undefined
 ): TaxPeriodWindow {
   const activeWindow = corporateTaxWindow(now, fiscalYearStartMonth);
   const previousPeriodEnd = addUtcDays(activeWindow.periodStart, -1);
@@ -264,9 +429,9 @@ export function nextCorporateTaxFilingWindow(
 function pick(row: Record<string, unknown>, ...keys: string[]): string {
   for (const k of keys) {
     const v = row[k];
-    if (v != null && String(v).trim() !== '') return String(v).trim();
+    if (v != null && String(v).trim() !== "") return String(v).trim();
   }
-  return '';
+  return "";
 }
 
 /**
@@ -274,8 +439,8 @@ function pick(row: Record<string, unknown>, ...keys: string[]): string {
  * Unknown values fall back to empty so callers can default to 'dubai'.
  */
 export function normaliseEmirate(raw: string): string {
-  const slug = raw.toLowerCase().trim().replace(/\s+/g, '_');
-  return VALID_EMIRATES.has(slug) ? slug : '';
+  const slug = raw.toLowerCase().trim().replace(/\s+/g, "_");
+  return VALID_EMIRATES.has(slug) ? slug : "";
 }
 
 /**
@@ -284,7 +449,7 @@ export function normaliseEmirate(raw: string): string {
  */
 export function normaliseVatFiling(raw: string): string {
   const slug = raw.toLowerCase().trim();
-  return VALID_VAT_FILING.has(slug) ? slug : '';
+  return VALID_VAT_FILING.has(slug) ? slug : "";
 }
 
 export function normaliseFiscalYearStartMonth(raw: string): number | undefined {
@@ -296,23 +461,29 @@ export function normaliseVatCloseGroup(raw: string): number | undefined {
   if (!value) return undefined;
 
   const directPeriodStart = parseMonthInput(value);
-  const compact = value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const compact = value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
   if (
-    compact.includes('jan') && compact.includes('apr')
-    && compact.includes('jul') && compact.includes('oct')
+    compact.includes("jan") &&
+    compact.includes("apr") &&
+    compact.includes("jul") &&
+    compact.includes("oct")
   ) {
     return 11;
   }
   if (
-    compact.includes('feb') && compact.includes('may')
-    && compact.includes('aug') && compact.includes('nov')
+    compact.includes("feb") &&
+    compact.includes("may") &&
+    compact.includes("aug") &&
+    compact.includes("nov")
   ) {
     return 12;
   }
   if (
-    compact.includes('mar') && compact.includes('jun')
-    && compact.includes('sep') && compact.includes('dec')
+    compact.includes("mar") &&
+    compact.includes("jun") &&
+    compact.includes("sep") &&
+    compact.includes("dec")
   ) {
     return 1;
   }
@@ -328,36 +499,107 @@ export function normaliseVatCloseGroup(raw: string): number | undefined {
  * object instead of throwing when essential fields (the company name) are
  * missing — the caller aggregates these into per-row error reports.
  */
-export function mapImportRow(
-  row: Record<string, unknown>,
-): ImportedClient | { error: string } {
+export function mapImportRow(row: Record<string, unknown>): ImportedClient | { error: string } {
   const name = pick(
     row,
-    'name', 'Name', 'Company Name', 'company_name', 'Client Name', 'client', 'Business Name',
+    "name",
+    "Name",
+    "Company Name",
+    "company_name",
+    "Client Name",
+    "client",
+    "Business Name"
   );
-  if (!name) return { error: 'Company name is required' };
+  if (!name) return { error: "Company name is required" };
 
   return {
     name,
-    trnVatNumber: pick(row, 'trnVatNumber', 'trn', 'TRN', 'VAT Number', 'Tax Registration Number'),
-    industry: pick(row, 'industry', 'Industry', 'Sector', 'Business Type'),
-    legalStructure: pick(row, 'legalStructure', 'Legal Structure', 'legal_structure', 'Business Structure'),
-    contactEmail: pick(row, 'contactEmail', 'email', 'Email', 'Contact Email', 'contact_email', 'E-mail'),
-    contactPhone: pick(row, 'contactPhone', 'phone', 'Phone', 'Contact Phone', 'contact_phone', 'Tel', 'Telephone'),
-    businessAddress: pick(row, 'businessAddress', 'address', 'Address', 'Business Address', 'business_address'),
-    emirate: normaliseEmirate(pick(row, 'emirate', 'Emirate')),
-    vatFilingFrequency: normaliseVatFiling(pick(row, 'vatFilingFrequency', 'VAT Filing', 'VAT Frequency')),
-    vatPeriodStartMonth: normaliseFiscalYearStartMonth(
-      pick(row, 'vatPeriodStartMonth', 'VAT Period Start Month', 'VAT Start Month', 'VAT Cycle Start'),
-    ) ?? normaliseVatCloseGroup(
-      pick(row, 'vatCloseGroup', 'VAT Close Group', 'VAT Closing Group', 'VAT Closing Months', 'VAT Cohort', 'VAT Group'),
+    trnVatNumber: pick(row, "trnVatNumber", "trn", "TRN", "VAT Number", "Tax Registration Number"),
+    industry: pick(row, "industry", "Industry", "Sector", "Business Type"),
+    legalStructure: pick(
+      row,
+      "legalStructure",
+      "Legal Structure",
+      "legal_structure",
+      "Business Structure"
     ),
+    contactEmail: pick(
+      row,
+      "contactEmail",
+      "email",
+      "Email",
+      "Contact Email",
+      "contact_email",
+      "E-mail"
+    ),
+    contactPhone: pick(
+      row,
+      "contactPhone",
+      "phone",
+      "Phone",
+      "Contact Phone",
+      "contact_phone",
+      "Tel",
+      "Telephone"
+    ),
+    businessAddress: pick(
+      row,
+      "businessAddress",
+      "address",
+      "Address",
+      "Business Address",
+      "business_address"
+    ),
+    emirate: normaliseEmirate(pick(row, "emirate", "Emirate")),
+    vatFilingFrequency: normaliseVatFiling(
+      pick(row, "vatFilingFrequency", "VAT Filing", "VAT Frequency")
+    ),
+    vatPeriodStartMonth:
+      normaliseFiscalYearStartMonth(
+        pick(
+          row,
+          "vatPeriodStartMonth",
+          "VAT Period Start Month",
+          "VAT Start Month",
+          "VAT Cycle Start"
+        )
+      ) ??
+      normaliseVatCloseGroup(
+        pick(
+          row,
+          "vatCloseGroup",
+          "VAT Close Group",
+          "VAT Closing Group",
+          "VAT Closing Months",
+          "VAT Cohort",
+          "VAT Group"
+        )
+      ),
     fiscalYearStartMonth: normaliseFiscalYearStartMonth(
-      pick(row, 'fiscalYearStartMonth', 'Financial Year Start', 'Fiscal Year Start', 'FY Start', 'FY Start Month'),
+      pick(
+        row,
+        "fiscalYearStartMonth",
+        "Financial Year Start",
+        "Fiscal Year Start",
+        "FY Start",
+        "FY Start Month"
+      )
     ),
-    corporateTaxId: pick(row, 'corporateTaxId', 'Corporate Tax ID', 'Corporate Tax Registration', 'CT ID', 'CT Registration'),
-    registrationNumber: pick(row, 'registrationNumber', 'Registration Number', 'registration_number'),
-    websiteUrl: pick(row, 'websiteUrl', 'website', 'Website', 'URL', 'Web'),
+    corporateTaxId: pick(
+      row,
+      "corporateTaxId",
+      "Corporate Tax ID",
+      "Corporate Tax Registration",
+      "CT ID",
+      "CT Registration"
+    ),
+    registrationNumber: pick(
+      row,
+      "registrationNumber",
+      "Registration Number",
+      "registration_number"
+    ),
+    websiteUrl: pick(row, "websiteUrl", "website", "Website", "URL", "Web"),
   };
 }
 
@@ -366,11 +608,11 @@ export function mapImportRow(
  * error message on failure (e.g. "invalid email").
  */
 export function validateImportedClient(
-  mapped: ImportedClient,
+  mapped: ImportedClient
 ): { ok: true; value: ImportedClient } | { ok: false; error: string } {
   const result = importedClientSchema.safeParse(mapped);
   if (!result.success) {
-    return { ok: false, error: result.error.errors[0]?.message ?? 'Invalid row' };
+    return { ok: false, error: result.error.errors[0]?.message ?? "Invalid row" };
   }
   return { ok: true, value: result.data };
 }

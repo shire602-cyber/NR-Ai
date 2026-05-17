@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Link, useLocation } from 'wouter';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useEffect, useMemo, useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Link, useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Form,
   FormControl,
@@ -13,7 +13,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
+} from "@/components/ui/form";
 import {
   Card,
   CardContent,
@@ -21,28 +21,28 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { apiUrl } from '@/lib/api';
-import { withCsrfHeader } from '@/lib/csrf';
-import { ArrowLeft, Briefcase, CheckCircle2, KeyRound } from 'lucide-react';
+} from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { apiUrl } from "@/lib/api";
+import { withCsrfHeader } from "@/lib/csrf";
+import { ArrowLeft, Briefcase, CheckCircle2, KeyRound } from "lucide-react";
 
 const resetSchema = z
   .object({
-    password: z.string().min(8, 'Password must be at least 8 characters'),
-    confirmPassword: z.string().min(1, 'Please confirm your password'),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    confirmPassword: z.string().min(1, "Please confirm your password"),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    path: ['confirmPassword'],
-    message: 'Passwords do not match',
+    path: ["confirmPassword"],
+    message: "Passwords do not match",
   });
 
 type ResetFormData = z.infer<typeof resetSchema>;
 
 function getTokenFromUrl(): string {
-  if (typeof window === 'undefined') return '';
+  if (typeof window === "undefined") return "";
   const params = new URLSearchParams(window.location.search);
-  return params.get('token') ?? '';
+  return params.get("token") ?? "";
 }
 
 export default function ResetPassword() {
@@ -54,15 +54,15 @@ export default function ResetPassword() {
 
   const form = useForm<ResetFormData>({
     resolver: zodResolver(resetSchema),
-    defaultValues: { password: '', confirmPassword: '' },
+    defaultValues: { password: "", confirmPassword: "" },
   });
 
   useEffect(() => {
     if (!token) {
       toast({
-        variant: 'destructive',
-        title: 'Invalid reset link',
-        description: 'This link is missing its token. Request a new one.',
+        variant: "destructive",
+        title: "Invalid reset link",
+        description: "This link is missing its token. Request a new one.",
       });
     }
   }, [token, toast]);
@@ -71,28 +71,28 @@ export default function ResetPassword() {
     if (!token) return;
     setIsLoading(true);
     try {
-      const res = await fetch(apiUrl('/api/auth/reset-password'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: await withCsrfHeader('POST', { 'Content-Type': 'application/json' }),
+      const res = await fetch(apiUrl("/api/auth/reset-password"), {
+        method: "POST",
+        credentials: "include",
+        headers: await withCsrfHeader("POST", { "Content-Type": "application/json" }),
         body: JSON.stringify({ token, password: data.password }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || 'Could not reset password');
+        throw new Error(err?.message || "Could not reset password");
       }
       setDone(true);
       toast({
-        title: 'Password reset',
-        description: 'You can now sign in with your new password.',
+        title: "Password reset",
+        description: "You can now sign in with your new password.",
       });
       // Redirect to login after a brief moment so the user sees confirmation.
-      setTimeout(() => setLocation('/login'), 1500);
+      setTimeout(() => setLocation("/login"), 1500);
     } catch (error: any) {
       toast({
-        variant: 'destructive',
-        title: 'Reset failed',
-        description: error?.message || 'Please try again or request a new link.',
+        variant: "destructive",
+        title: "Reset failed",
+        description: error?.message || "Please try again or request a new link.",
       });
     } finally {
       setIsLoading(false);
@@ -103,7 +103,10 @@ export default function ResetPassword() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/10 rounded-full blur-[128px] animate-pulse" style={{ animationDelay: '1s' }} />
+        <div
+          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/10 rounded-full blur-[128px] animate-pulse"
+          style={{ animationDelay: "1s" }}
+        />
       </div>
 
       <div className="absolute top-8 left-8">
@@ -127,18 +130,14 @@ export default function ResetPassword() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-semibold">Set a new password</CardTitle>
-          <CardDescription>
-            Choose a password of at least 8 characters.
-          </CardDescription>
+          <CardDescription>Choose a password of at least 8 characters.</CardDescription>
         </CardHeader>
         <CardContent>
           {done ? (
             <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900">
               <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
               <div className="text-sm">
-                <p className="font-medium text-green-800 dark:text-green-200">
-                  Password reset
-                </p>
+                <p className="font-medium text-green-800 dark:text-green-200">Password reset</p>
                 <p className="text-green-700 dark:text-green-300/80 mt-0.5">
                   Redirecting you to sign in…
                 </p>
@@ -163,9 +162,7 @@ export default function ResetPassword() {
                           data-testid="input-password"
                         />
                       </FormControl>
-                      <FormDescription>
-                        Use at least 8 characters.
-                      </FormDescription>
+                      <FormDescription>Use at least 8 characters.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -197,7 +194,7 @@ export default function ResetPassword() {
                   data-testid="button-reset-password"
                 >
                   <KeyRound className="w-4 h-4 mr-2" />
-                  {isLoading ? 'Resetting…' : 'Reset password'}
+                  {isLoading ? "Resetting…" : "Reset password"}
                 </Button>
               </form>
             </Form>
@@ -205,7 +202,7 @@ export default function ResetPassword() {
         </CardContent>
         <CardFooter className="flex flex-col space-y-2">
           <div className="text-sm text-muted-foreground text-center">
-            Need a new link?{' '}
+            Need a new link?{" "}
             <Link href="/forgot-password" className="text-primary hover:underline font-medium">
               Start over
             </Link>

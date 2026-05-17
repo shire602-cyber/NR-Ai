@@ -1,66 +1,128 @@
-import type { 
-  User, InsertUser,
-  Company, InsertCompany,
-  CompanyUser, InsertCompanyUser,
-  Account, InsertAccount,
-  JournalEntry, InsertJournalEntry,
-  JournalLine, InsertJournalLine,
-  Invoice, InsertInvoice,
-  InvoiceLine, InsertInvoiceLine,
-  Receipt, InsertReceipt,
-  CustomerContact, InsertCustomerContact,
-  Waitlist, InsertWaitlist,
-  IntegrationSync, InsertIntegrationSync,
-  WhatsappConfig, InsertWhatsappConfig,
-  WhatsappMessage, InsertWhatsappMessage,
-  AnomalyAlert, InsertAnomalyAlert,
-  BankTransaction, InsertBankTransaction,
-  CashFlowForecast, InsertCashFlowForecast,
-  TransactionClassification, InsertTransactionClassification,
-  Budget, InsertBudget,
-  EcommerceIntegration, InsertEcommerceIntegration,
-  EcommerceTransaction, InsertEcommerceTransaction,
-  FinancialKpi, InsertFinancialKpi,
-  Notification, InsertNotification,
-  RegulatoryNews, InsertRegulatoryNews,
-  ReminderSetting, InsertReminderSetting,
-  ReminderLog, InsertReminderLog,
-  UserOnboarding, InsertUserOnboarding,
-  HelpTip, InsertHelpTip,
-  ReferralCode, InsertReferralCode,
-  Referral, InsertReferral,
-  UserFeedback, InsertUserFeedback,
-  AnalyticsEvent, InsertAnalyticsEvent,
-  FeatureUsageMetric, InsertFeatureUsageMetric,
-  AdminSetting, InsertAdminSetting,
-  SubscriptionPlan, InsertSubscriptionPlan,
-  UserSubscription, InsertUserSubscription,
-  AuditLog, InsertAuditLog,
-  VatReturn, InsertVatReturn,
-  Document, InsertDocument,
-  TaxReturnArchive, InsertTaxReturnArchive,
-  ComplianceTask, InsertComplianceTask,
-  Message, InsertMessage,
-  NewsItem, InsertNewsItem,
-  Invitation, InsertInvitation,
-  ActivityLog, InsertActivityLog,
-  ClientNote, InsertClientNote,
-  Engagement, InsertEngagement,
-  ServiceInvoice, InsertServiceInvoice,
-  ServiceInvoiceLine, InsertServiceInvoiceLine,
-  FtaEmail, InsertFtaEmail,
-  Subscription, InsertSubscription,
-  Backup, InsertBackup,
-  AiConversation, InsertAiConversation,
-  RecurringInvoice, InsertRecurringInvoice,
-  CorporateTaxReturn, InsertCorporateTaxReturn,
-  Product, InsertProduct,
-  InventoryMovement, InsertInventoryMovement,
-  BankAccount, InsertBankAccount,
-  InvoicePayment, InsertInvoicePayment,
-  PaymentChase, InsertPaymentChase,
-  ChaseTemplate, InsertChaseTemplate,
-  ChaseConfig, InsertChaseConfig
+import type {
+  User,
+  InsertUser,
+  Company,
+  InsertCompany,
+  CompanyUser,
+  InsertCompanyUser,
+  Account,
+  InsertAccount,
+  JournalEntry,
+  InsertJournalEntry,
+  JournalLine,
+  InsertJournalLine,
+  Invoice,
+  InsertInvoice,
+  InvoiceLine,
+  InsertInvoiceLine,
+  Receipt,
+  InsertReceipt,
+  CustomerContact,
+  InsertCustomerContact,
+  Waitlist,
+  InsertWaitlist,
+  IntegrationSync,
+  InsertIntegrationSync,
+  WhatsappConfig,
+  InsertWhatsappConfig,
+  WhatsappMessage,
+  InsertWhatsappMessage,
+  AnomalyAlert,
+  InsertAnomalyAlert,
+  BankTransaction,
+  InsertBankTransaction,
+  CashFlowForecast,
+  InsertCashFlowForecast,
+  TransactionClassification,
+  InsertTransactionClassification,
+  Budget,
+  InsertBudget,
+  EcommerceIntegration,
+  InsertEcommerceIntegration,
+  EcommerceTransaction,
+  InsertEcommerceTransaction,
+  FinancialKpi,
+  InsertFinancialKpi,
+  Notification,
+  InsertNotification,
+  RegulatoryNews,
+  InsertRegulatoryNews,
+  ReminderSetting,
+  InsertReminderSetting,
+  ReminderLog,
+  InsertReminderLog,
+  UserOnboarding,
+  InsertUserOnboarding,
+  HelpTip,
+  InsertHelpTip,
+  ReferralCode,
+  InsertReferralCode,
+  Referral,
+  InsertReferral,
+  UserFeedback,
+  InsertUserFeedback,
+  AnalyticsEvent,
+  InsertAnalyticsEvent,
+  FeatureUsageMetric,
+  InsertFeatureUsageMetric,
+  AdminSetting,
+  InsertAdminSetting,
+  SubscriptionPlan,
+  InsertSubscriptionPlan,
+  UserSubscription,
+  InsertUserSubscription,
+  AuditLog,
+  InsertAuditLog,
+  VatReturn,
+  InsertVatReturn,
+  Document,
+  InsertDocument,
+  TaxReturnArchive,
+  InsertTaxReturnArchive,
+  ComplianceTask,
+  InsertComplianceTask,
+  Message,
+  InsertMessage,
+  NewsItem,
+  InsertNewsItem,
+  Invitation,
+  InsertInvitation,
+  ActivityLog,
+  InsertActivityLog,
+  ClientNote,
+  InsertClientNote,
+  Engagement,
+  InsertEngagement,
+  ServiceInvoice,
+  InsertServiceInvoice,
+  ServiceInvoiceLine,
+  InsertServiceInvoiceLine,
+  FtaEmail,
+  InsertFtaEmail,
+  Subscription,
+  InsertSubscription,
+  Backup,
+  InsertBackup,
+  AiConversation,
+  InsertAiConversation,
+  RecurringInvoice,
+  InsertRecurringInvoice,
+  CorporateTaxReturn,
+  InsertCorporateTaxReturn,
+  Product,
+  InsertProduct,
+  InventoryMovement,
+  InsertInventoryMovement,
+  BankAccount,
+  InsertBankAccount,
+  InvoicePayment,
+  InsertInvoicePayment,
+  PaymentChase,
+  InsertPaymentChase,
+  ChaseTemplate,
+  InsertChaseTemplate,
+  ChaseConfig,
+  InsertChaseConfig,
 } from "@shared/schema";
 import {
   passwordResetTokens,
@@ -126,12 +188,16 @@ import {
   invoicePayments,
   paymentChases,
   chaseTemplates,
-  chaseConfigs
+  chaseConfigs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, lt, lte, gt, gte, isNull, isNotNull, or, sql, inArray } from "drizzle-orm";
 import Decimal from "decimal.js";
-import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
+import {
+  statusFromPayments,
+  isTerminal,
+  type InvoiceStatus,
+} from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
@@ -171,18 +237,24 @@ export interface IStorage {
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
 
   // Password reset tokens
-  createPasswordResetToken(input: { userId: string; tokenHash: string; expiresAt: Date }): Promise<void>;
-  findValidPasswordResetToken(tokenHash: string): Promise<{ id: string; userId: string } | undefined>;
+  createPasswordResetToken(input: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+  }): Promise<void>;
+  findValidPasswordResetToken(
+    tokenHash: string
+  ): Promise<{ id: string; userId: string } | undefined>;
   markPasswordResetTokenUsed(id: string): Promise<void>;
   deletePasswordResetTokensForUser(userId: string): Promise<void>;
-  
+
   // Companies
   getCompany(id: string): Promise<Company | undefined>;
   getCompanyByName(name: string): Promise<Company | undefined>;
   getCompaniesByUserId(userId: string): Promise<Company[]>;
   createCompany(company: InsertCompany): Promise<Company>;
   updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company>;
-  
+
   // Company Users
   createCompanyUser(companyUser: InsertCompanyUser): Promise<CompanyUser>;
   getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined>;
@@ -198,7 +270,7 @@ export interface IStorage {
    * plus firm-accessible client companies if firmRole is supplied.
    */
   getAccessibleCompanies(userId: string, firmRole?: string | null): Promise<Company[]>;
-  
+
   // Accounts
   getAccount(id: string, companyId: string): Promise<Account | undefined>;
   getAccountsByCompanyId(companyId: string): Promise<Account[]>;
@@ -206,21 +278,29 @@ export interface IStorage {
   updateAccount(id: string, companyId: string, data: Partial<Account>): Promise<Account>;
   deleteAccount(id: string, companyId: string): Promise<void>;
   accountHasTransactions(accountId: string): Promise<boolean>;
-  
+
   // Account Ledger & Balance
-  getAccountsWithBalances(companyId: string, dateRange?: { start: Date; end: Date }): Promise<{
-    account: Account;
-    balance: number;
-    debitTotal: number;
-    creditTotal: number;
-  }[]>;
-  getAccountLedger(accountId: string, options?: { 
-    dateStart?: Date; 
-    dateEnd?: Date; 
-    search?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<{
+  getAccountsWithBalances(
+    companyId: string,
+    dateRange?: { start: Date; end: Date }
+  ): Promise<
+    {
+      account: Account;
+      balance: number;
+      debitTotal: number;
+      creditTotal: number;
+    }[]
+  >;
+  getAccountLedger(
+    accountId: string,
+    options?: {
+      dateStart?: Date;
+      dateEnd?: Date;
+      search?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ): Promise<{
     entries: {
       id: string;
       date: Date;
@@ -256,19 +336,31 @@ export interface IStorage {
     closingBalance: number;
     totalCount: number;
   }>;
-  
+
   // Journal Entries
   getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined>;
   getJournalEntriesByCompanyId(companyId: string): Promise<JournalEntry[]>;
   getPostedJournalEntriesWithLines(
-    companyId: string,
+    companyId: string
   ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>>;
-  createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
-  updateJournalEntry(id: string, companyId: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
-  updateJournalEntryWithLines(id: string, companyId: string, data: Partial<JournalEntry>, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
+  createJournalEntry(
+    entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
+    lines: Array<Omit<InsertJournalLine, "entryId">>
+  ): Promise<JournalEntry>;
+  updateJournalEntry(
+    id: string,
+    companyId: string,
+    data: Partial<JournalEntry>
+  ): Promise<JournalEntry>;
+  updateJournalEntryWithLines(
+    id: string,
+    companyId: string,
+    data: Partial<JournalEntry>,
+    lines: Array<Omit<InsertJournalLine, "entryId">>
+  ): Promise<JournalEntry>;
   deleteJournalEntry(id: string, companyId: string): Promise<void>;
   generateEntryNumber(companyId: string, date: Date): Promise<string>;
-  
+
   // Journal Lines
   createJournalLine(line: InsertJournalLine): Promise<JournalLine>;
   getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]>;
@@ -278,12 +370,15 @@ export interface IStorage {
   // Invoices
   getInvoice(id: string, companyId: string): Promise<Invoice | undefined>;
   getInvoicesByCompanyId(companyId: string): Promise<Invoice[]>;
-  getInvoicesSummaryByCompanyId(companyId: string, opts?: { limit?: number; offset?: number }): Promise<Omit<Invoice, 'einvoiceXml' | 'einvoiceHash'>[]>;
+  getInvoicesSummaryByCompanyId(
+    companyId: string,
+    opts?: { limit?: number; offset?: number }
+  ): Promise<Omit<Invoice, "einvoiceXml" | "einvoiceHash">[]>;
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
   updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice>;
   updateInvoiceStatus(id: string, companyId: string, status: string): Promise<Invoice>;
   deleteInvoice(id: string, companyId: string): Promise<void>;
-  
+
   // Invoice Share Token
   getInvoiceByShareToken(token: string): Promise<Invoice | undefined>;
   setInvoiceShareToken(id: string, token: string, expiresAt: Date): Promise<void>;
@@ -293,14 +388,14 @@ export interface IStorage {
   getInvoiceLinesByInvoiceId(invoiceId: string): Promise<InvoiceLine[]>;
   getInvoiceLinesByInvoiceIds(invoiceIds: string[]): Promise<InvoiceLine[]>;
   deleteInvoiceLinesByInvoiceId(invoiceId: string): Promise<void>;
-  
+
   // Receipts
   getReceipt(id: string, companyId: string): Promise<Receipt | undefined>;
   createReceipt(receipt: InsertReceipt): Promise<Receipt>;
   getReceiptsByCompanyId(companyId: string): Promise<Receipt[]>;
   updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt>;
   deleteReceipt(id: string, companyId: string): Promise<void>;
-  
+
   // Customer Contacts
   getCustomerContact(id: string): Promise<CustomerContact | undefined>;
   getCustomerContactsByCompanyId(companyId: string): Promise<CustomerContact[]>;
@@ -319,7 +414,7 @@ export interface IStorage {
   // Waitlist
   createWaitlistEntry(entry: InsertWaitlist): Promise<Waitlist>;
   getWaitlistByEmail(email: string): Promise<Waitlist | undefined>;
-  
+
   // Integration Syncs
   createIntegrationSync(sync: InsertIntegrationSync): Promise<IntegrationSync>;
   getIntegrationSyncsByCompanyId(companyId: string): Promise<IntegrationSync[]>;
@@ -357,13 +452,17 @@ export interface IStorage {
   getBankTransactionById(id: string, companyId: string): Promise<BankTransaction | undefined>;
   getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]>;
   getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]>;
-  updateBankTransaction(id: string, companyId: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction>;
+  updateBankTransaction(
+    id: string,
+    companyId: string,
+    data: Partial<InsertBankTransaction>
+  ): Promise<BankTransaction>;
   reconcileBankTransaction(
     id: string,
     companyId: string,
     matchedId: string,
-    matchType: 'journal' | 'receipt' | 'invoice',
-    createdBy?: string,
+    matchType: "journal" | "receipt" | "invoice",
+    createdBy?: string
   ): Promise<BankTransaction>;
 
   // Cash Flow Forecasts
@@ -372,10 +471,16 @@ export interface IStorage {
   deleteCashFlowForecastsByCompanyId(companyId: string): Promise<void>;
 
   // Transaction Classifications
-  createTransactionClassification(classification: InsertTransactionClassification): Promise<TransactionClassification>;
+  createTransactionClassification(
+    classification: InsertTransactionClassification
+  ): Promise<TransactionClassification>;
   getTransactionClassification(id: string): Promise<TransactionClassification | undefined>;
   getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]>;
-  updateTransactionClassification(id: string, companyId: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification>;
+  updateTransactionClassification(
+    id: string,
+    companyId: string,
+    data: Partial<InsertTransactionClassification>
+  ): Promise<TransactionClassification>;
 
   // Journal Lines (for analytics)
   getJournalLinesByCompanyId(companyId: string): Promise<JournalLine[]>;
@@ -388,22 +493,32 @@ export interface IStorage {
   // E-Commerce Integrations
   getEcommerceIntegrations(companyId: string): Promise<EcommerceIntegration[]>;
   getEcommerceIntegrationById(id: string): Promise<EcommerceIntegration | undefined>;
-  createEcommerceIntegration(integration: InsertEcommerceIntegration): Promise<EcommerceIntegration>;
-  updateEcommerceIntegration(id: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration>;
+  createEcommerceIntegration(
+    integration: InsertEcommerceIntegration
+  ): Promise<EcommerceIntegration>;
+  updateEcommerceIntegration(
+    id: string,
+    data: Partial<InsertEcommerceIntegration>
+  ): Promise<EcommerceIntegration>;
   deleteEcommerceIntegration(id: string): Promise<void>;
 
   // E-Commerce Transactions
   getEcommerceTransactions(companyId: string): Promise<EcommerceTransaction[]>;
-  createEcommerceTransaction(transaction: InsertEcommerceTransaction): Promise<EcommerceTransaction>;
-  updateEcommerceTransaction(id: string, data: Partial<InsertEcommerceTransaction>): Promise<EcommerceTransaction>;
+  createEcommerceTransaction(
+    transaction: InsertEcommerceTransaction
+  ): Promise<EcommerceTransaction>;
+  updateEcommerceTransaction(
+    id: string,
+    data: Partial<InsertEcommerceTransaction>
+  ): Promise<EcommerceTransaction>;
 
   // Financial KPIs
   getFinancialKpis(companyId: string): Promise<FinancialKpi[]>;
   createFinancialKpi(kpi: InsertFinancialKpi): Promise<FinancialKpi>;
-  
+
   // Cash Flow Forecasts (alias for consistency)
   getCashFlowForecasts(companyId: string): Promise<CashFlowForecast[]>;
-  
+
   // Notifications
   getNotificationsByUserId(userId: string): Promise<Notification[]>;
   getUnreadNotificationCount(userId: string): Promise<number>;
@@ -411,51 +526,59 @@ export interface IStorage {
   markNotificationAsRead(id: string): Promise<Notification>;
   markAllNotificationsAsRead(userId: string): Promise<void>;
   dismissNotification(id: string): Promise<Notification>;
-  
+
   // Regulatory News
   getRegulatoryNews(): Promise<RegulatoryNews[]>;
   createRegulatoryNews(news: InsertRegulatoryNews): Promise<RegulatoryNews>;
-  
+
   // Reminder Settings
   getReminderSettingsByCompanyId(companyId: string): Promise<ReminderSetting[]>;
   createReminderSetting(setting: InsertReminderSetting): Promise<ReminderSetting>;
   updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting>;
-  
+
   // Reminder Logs
   getReminderLogsByCompanyId(companyId: string): Promise<ReminderLog[]>;
   createReminderLog(log: InsertReminderLog): Promise<ReminderLog>;
   updateReminderLog(id: string, data: Partial<InsertReminderLog>): Promise<ReminderLog>;
-  
+
   // User Onboarding
   getUserOnboarding(userId: string): Promise<UserOnboarding | undefined>;
   createUserOnboarding(onboarding: InsertUserOnboarding): Promise<UserOnboarding>;
-  updateUserOnboarding(userId: string, data: Partial<InsertUserOnboarding>): Promise<UserOnboarding>;
-  
+  updateUserOnboarding(
+    userId: string,
+    data: Partial<InsertUserOnboarding>
+  ): Promise<UserOnboarding>;
+
   // Help Tips
   getHelpTipsByPage(pageContext: string): Promise<HelpTip[]>;
   getAllHelpTips(): Promise<HelpTip[]>;
   createHelpTip(tip: InsertHelpTip): Promise<HelpTip>;
-  
+
   // Referral Codes
   getReferralCodeByUserId(userId: string): Promise<ReferralCode | undefined>;
   getReferralCodeByCode(code: string): Promise<ReferralCode | undefined>;
   createReferralCode(code: InsertReferralCode): Promise<ReferralCode>;
   updateReferralCode(id: string, data: Partial<InsertReferralCode>): Promise<ReferralCode>;
-  
+
   // Referrals
   getReferralsByReferrerId(referrerId: string): Promise<Referral[]>;
   createReferral(referral: InsertReferral): Promise<Referral>;
   updateReferral(id: string, data: Partial<InsertReferral>): Promise<Referral>;
-  
+
   // User Feedback
   createUserFeedback(feedback: InsertUserFeedback): Promise<UserFeedback>;
   getUserFeedback(userId?: string): Promise<UserFeedback[]>;
   updateUserFeedback(id: string, data: Partial<InsertUserFeedback>): Promise<UserFeedback>;
-  
+
   // Analytics Events
   createAnalyticsEvent(event: InsertAnalyticsEvent): Promise<AnalyticsEvent>;
-  getAnalyticsEvents(filters?: { userId?: string; eventType?: string; startDate?: Date; endDate?: Date }): Promise<AnalyticsEvent[]>;
-  
+  getAnalyticsEvents(filters?: {
+    userId?: string;
+    eventType?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<AnalyticsEvent[]>;
+
   // Feature Usage Metrics
   getFeatureUsageMetrics(featureName?: string): Promise<FeatureUsageMetric[]>;
   createFeatureUsageMetric(metric: InsertFeatureUsageMetric): Promise<FeatureUsageMetric>;
@@ -470,13 +593,19 @@ export interface IStorage {
   getSubscriptionPlans(): Promise<SubscriptionPlan[]>;
   getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined>;
   createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan>;
-  updateSubscriptionPlan(id: string, data: Partial<InsertSubscriptionPlan>): Promise<SubscriptionPlan>;
+  updateSubscriptionPlan(
+    id: string,
+    data: Partial<InsertSubscriptionPlan>
+  ): Promise<SubscriptionPlan>;
   deleteSubscriptionPlan(id: string): Promise<void>;
 
   // User Subscriptions
   getUserSubscription(userId: string): Promise<UserSubscription | undefined>;
   createUserSubscription(subscription: InsertUserSubscription): Promise<UserSubscription>;
-  updateUserSubscription(id: string, data: Partial<InsertUserSubscription>): Promise<UserSubscription>;
+  updateUserSubscription(
+    id: string,
+    data: Partial<InsertUserSubscription>
+  ): Promise<UserSubscription>;
 
   // Audit Logs
   getAuditLogs(limit?: number): Promise<AuditLog[]>;
@@ -493,7 +622,10 @@ export interface IStorage {
   getCorporateTaxReturnsByCompanyId(companyId: string): Promise<CorporateTaxReturn[]>;
   getCorporateTaxReturn(id: string): Promise<CorporateTaxReturn | undefined>;
   createCorporateTaxReturn(data: InsertCorporateTaxReturn): Promise<CorporateTaxReturn>;
-  updateCorporateTaxReturn(id: string, data: Partial<CorporateTaxReturn>): Promise<CorporateTaxReturn>;
+  updateCorporateTaxReturn(
+    id: string,
+    data: Partial<CorporateTaxReturn>
+  ): Promise<CorporateTaxReturn>;
 
   // Team Management
   updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser>;
@@ -603,7 +735,7 @@ export interface IStorage {
   createBackup(backup: InsertBackup): Promise<Backup>;
   updateBackup(id: string, data: Partial<InsertBackup>): Promise<Backup>;
   deleteBackup(id: string): Promise<void>;
-  
+
   // AI Conversations
   createAiConversation(conversation: InsertAiConversation): Promise<AiConversation>;
   getAiConversationsByUserId(userId: string, limit?: number): Promise<AiConversation[]>;
@@ -624,7 +756,7 @@ export interface IStorage {
   // can't starve later due templates.
   fetchAndLockNextDueRecurringInvoice(
     tx: typeof db,
-    excludeIds?: string[],
+    excludeIds?: string[]
   ): Promise<RecurringInvoice | undefined>;
   createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice>;
   updateRecurringInvoice(id: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice>;
@@ -673,7 +805,7 @@ export interface IStorage {
   getJournalEntriesBySource(
     companyId: string,
     source: string,
-    sourceId: string,
+    sourceId: string
   ): Promise<JournalEntry[]>;
 
   // Products / Inventory
@@ -690,7 +822,10 @@ export interface IStorage {
 
   // Payment Chasing (Phase 4)
   createPaymentChase(data: InsertPaymentChase): Promise<PaymentChase>;
-  getPaymentChasesByCompanyId(companyId: string, opts?: { invoiceId?: string; sinceDays?: number }): Promise<PaymentChase[]>;
+  getPaymentChasesByCompanyId(
+    companyId: string,
+    opts?: { invoiceId?: string; sinceDays?: number }
+  ): Promise<PaymentChase[]>;
   getPaymentChasesByInvoiceId(invoiceId: string): Promise<PaymentChase[]>;
   /**
    * Atomically set chase_level/last_chased_at iff the invoice has not been
@@ -702,14 +837,22 @@ export interface IStorage {
     invoiceId: string,
     level: number,
     now: Date,
-    minSecondsBetween: number,
+    minSecondsBetween: number
   ): Promise<boolean>;
   setInvoiceDoNotChase(invoiceId: string, value: boolean): Promise<void>;
 
   getChaseTemplatesForCompany(companyId: string): Promise<ChaseTemplate[]>;
-  getChaseTemplate(level: number, language: string, companyId: string | null): Promise<ChaseTemplate | undefined>;
+  getChaseTemplate(
+    level: number,
+    language: string,
+    companyId: string | null
+  ): Promise<ChaseTemplate | undefined>;
   createChaseTemplate(data: InsertChaseTemplate): Promise<ChaseTemplate>;
-  updateChaseTemplate(id: string, companyId: string, data: Partial<InsertChaseTemplate>): Promise<ChaseTemplate | undefined>;
+  updateChaseTemplate(
+    id: string,
+    companyId: string,
+    data: Partial<InsertChaseTemplate>
+  ): Promise<ChaseTemplate | undefined>;
   deleteChaseTemplate(id: string, companyId: string): Promise<boolean>;
 
   getChaseConfig(companyId: string): Promise<ChaseConfig | undefined>;
@@ -733,7 +876,7 @@ export class DatabaseStorage implements IStorage {
       .insert(users)
       .values({
         ...insertUser,
-        passwordHash: (insertUser as any).passwordHash || '',
+        passwordHash: (insertUser as any).passwordHash || "",
       })
       .returning();
     return user;
@@ -744,7 +887,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Password reset tokens
-  async createPasswordResetToken(input: { userId: string; tokenHash: string; expiresAt: Date }): Promise<void> {
+  async createPasswordResetToken(input: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+  }): Promise<void> {
     await db.insert(passwordResetTokens).values({
       userId: input.userId,
       tokenHash: input.tokenHash,
@@ -752,7 +899,9 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async findValidPasswordResetToken(tokenHash: string): Promise<{ id: string; userId: string } | undefined> {
+  async findValidPasswordResetToken(
+    tokenHash: string
+  ): Promise<{ id: string; userId: string } | undefined> {
     const [row] = await db
       .select({ id: passwordResetTokens.id, userId: passwordResetTokens.userId })
       .from(passwordResetTokens)
@@ -760,8 +909,8 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(passwordResetTokens.tokenHash, tokenHash),
           isNull(passwordResetTokens.usedAt),
-          gt(passwordResetTokens.expiresAt, new Date()),
-        ),
+          gt(passwordResetTokens.expiresAt, new Date())
+        )
       );
     return row || undefined;
   }
@@ -779,12 +928,18 @@ export class DatabaseStorage implements IStorage {
 
   // Companies
   async getCompany(id: string): Promise<Company | undefined> {
-    const [company] = await db.select().from(companies).where(and(eq(companies.id, id), isNull(companies.deletedAt)));
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.id, id), isNull(companies.deletedAt)));
     return company || undefined;
   }
 
   async getCompanyByName(name: string): Promise<Company | undefined> {
-    const [company] = await db.select().from(companies).where(and(eq(companies.name, name), isNull(companies.deletedAt)));
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.name, name), isNull(companies.deletedAt)));
     return company || undefined;
   }
 
@@ -799,28 +954,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createCompany(insertCompany: InsertCompany): Promise<Company> {
-    const [company] = await db
-      .insert(companies)
-      .values(insertCompany)
-      .returning();
+    const [company] = await db.insert(companies).values(insertCompany).returning();
     return company;
   }
 
   async updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company> {
-    const [company] = await db
-      .update(companies)
-      .set(data)
-      .where(eq(companies.id, id))
-      .returning();
+    const [company] = await db.update(companies).set(data).where(eq(companies.id, id)).returning();
     return company;
   }
 
   // Company Users
   async createCompanyUser(insertCompanyUser: InsertCompanyUser): Promise<CompanyUser> {
-    const [companyUser] = await db
-      .insert(companyUsers)
-      .values(insertCompanyUser)
-      .returning();
+    const [companyUser] = await db.insert(companyUsers).values(insertCompanyUser).returning();
     return companyUser;
   }
 
@@ -828,19 +973,14 @@ export class DatabaseStorage implements IStorage {
     const [companyUser] = await db
       .select()
       .from(companyUsers)
-      .where(
-        and(
-          eq(companyUsers.companyId, companyId),
-          eq(companyUsers.userId, userId)
-        )
-      );
+      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, userId)));
     return companyUser || undefined;
   }
 
   async hasCompanyAccess(
     userId: string,
     companyId: string,
-    firmRole?: string | null,
+    firmRole?: string | null
   ): Promise<boolean> {
     // Direct company_users membership.
     if (await this.getUserRole(companyId, userId)) return true;
@@ -857,48 +997,40 @@ export class DatabaseStorage implements IStorage {
       role = u?.firmRole ?? null;
     }
 
-    if (role !== 'firm_owner' && role !== 'firm_admin') return false;
+    if (role !== "firm_owner" && role !== "firm_admin") return false;
 
     const company = await this.getCompany(companyId);
-    if (!company || company.companyType !== 'client') return false;
+    if (!company || company.companyType !== "client") return false;
 
-    if (role === 'firm_owner') return true;
+    if (role === "firm_owner") return true;
 
     // firm_admin: must have an explicit assignment.
     const [assignment] = await db
       .select({ id: firmStaffAssignments.id })
       .from(firmStaffAssignments)
       .where(
-        and(
-          eq(firmStaffAssignments.userId, userId),
-          eq(firmStaffAssignments.companyId, companyId),
-        ),
+        and(eq(firmStaffAssignments.userId, userId), eq(firmStaffAssignments.companyId, companyId))
       )
       .limit(1);
     return !!assignment;
   }
 
-  async getAccessibleCompanies(
-    userId: string,
-    firmRole?: string | null,
-  ): Promise<Company[]> {
+  async getAccessibleCompanies(userId: string, firmRole?: string | null): Promise<Company[]> {
     const direct = await this.getCompaniesByUserId(userId);
 
-    if (firmRole !== 'firm_owner' && firmRole !== 'firm_admin') {
+    if (firmRole !== "firm_owner" && firmRole !== "firm_admin") {
       return direct;
     }
 
     // Add firm-accessible client companies (not already in direct list).
-    const directIds = new Set(direct.map(c => c.id));
+    const directIds = new Set(direct.map((c) => c.id));
 
     let firmCompanies: Company[];
-    if (firmRole === 'firm_owner') {
+    if (firmRole === "firm_owner") {
       firmCompanies = await db
         .select()
         .from(companies)
-        .where(
-          and(eq(companies.companyType, 'client'), isNull(companies.deletedAt)),
-        );
+        .where(and(eq(companies.companyType, "client"), isNull(companies.deletedAt)));
     } else {
       // firm_admin: only assigned companies.
       const assignedIds = await db
@@ -916,9 +1048,9 @@ export class DatabaseStorage implements IStorage {
           .where(
             and(
               inArray(companies.id, ids),
-              eq(companies.companyType, 'client'),
-              isNull(companies.deletedAt),
-            ),
+              eq(companies.companyType, "client"),
+              isNull(companies.deletedAt)
+            )
           );
       }
     }
@@ -948,10 +1080,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAccount(insertAccount: InsertAccount): Promise<Account> {
-    const [account] = await db
-      .insert(accounts)
-      .values(insertAccount)
-      .returning();
+    const [account] = await db.insert(accounts).values(insertAccount).returning();
     return account;
   }
 
@@ -962,15 +1091,13 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)))
       .returning();
     if (!account) {
-      throw new Error('Account not found');
+      throw new Error("Account not found");
     }
     return account;
   }
 
   async deleteAccount(id: string, companyId: string): Promise<void> {
-    await db
-      .delete(accounts)
-      .where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)));
+    await db.delete(accounts).where(and(eq(accounts.id, id), eq(accounts.companyId, companyId)));
   }
 
   async archiveAccount(id: string): Promise<Account> {
@@ -980,7 +1107,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(accounts.id, id), eq(accounts.isSystemAccount, false)))
       .returning();
     if (!account) {
-      throw new Error('Account not found or is a system account');
+      throw new Error("Account not found or is a system account");
     }
     return account;
   }
@@ -1002,7 +1129,7 @@ export class DatabaseStorage implements IStorage {
 
   async createBulkAccounts(accountsData: InsertAccount[]): Promise<Account[]> {
     if (accountsData.length === 0) return [];
-    
+
     const expectedCount = accountsData.length;
     const createdAccounts = await db.transaction(async (tx: any) => {
       const inserted = await tx
@@ -1010,14 +1137,16 @@ export class DatabaseStorage implements IStorage {
         .values(accountsData)
         .onConflictDoNothing()
         .returning();
-      
+
       if (inserted.length < expectedCount) {
-        throw new Error(`PARTIAL_INSERT: Only ${inserted.length}/${expectedCount} accounts were created. Some accounts already exist.`);
+        throw new Error(
+          `PARTIAL_INSERT: Only ${inserted.length}/${expectedCount} accounts were created. Some accounts already exist.`
+        );
       }
-      
+
       return inserted;
     });
-    
+
     return createdAccounts;
   }
 
@@ -1041,64 +1170,69 @@ export class DatabaseStorage implements IStorage {
 
   async getAccountsWithBalances(companyId: string, dateRange?: { start: Date; end: Date }) {
     const accountsList = await db.select().from(accounts).where(eq(accounts.companyId, companyId));
-    
-    const results = await Promise.all(accountsList.map(async (account: any) => {
-      let lines = await db
-        .select({
-          debit: journalLines.debit,
-          credit: journalLines.credit,
-          date: journalEntries.date,
-          status: journalEntries.status
-        })
-        .from(journalLines)
-        .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-        .where(eq(journalLines.accountId, account.id));
-      
-      if (dateRange) {
-        lines = lines.filter((line: any) => {
-          const lineDate = new Date(line.date);
-          return lineDate >= dateRange.start && lineDate <= dateRange.end;
-        });
-      }
-      
-      const postedLines = lines.filter((l: any) => l.status === 'posted');
 
-      const debitTotal = postedLines.reduce((sum: any, l: any) => sum + (l.debit || 0), 0);
-      const creditTotal = postedLines.reduce((sum: any, l: any) => sum + (l.credit || 0), 0);
-      
-      let balance = 0;
-      if (['asset', 'expense'].includes(account.type)) {
-        balance = debitTotal - creditTotal;
-      } else {
-        balance = creditTotal - debitTotal;
-      }
-      
-      return {
-        account,
-        balance,
-        debitTotal,
-        creditTotal
-      };
-    }));
-    
+    const results = await Promise.all(
+      accountsList.map(async (account: any) => {
+        let lines = await db
+          .select({
+            debit: journalLines.debit,
+            credit: journalLines.credit,
+            date: journalEntries.date,
+            status: journalEntries.status,
+          })
+          .from(journalLines)
+          .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+          .where(eq(journalLines.accountId, account.id));
+
+        if (dateRange) {
+          lines = lines.filter((line: any) => {
+            const lineDate = new Date(line.date);
+            return lineDate >= dateRange.start && lineDate <= dateRange.end;
+          });
+        }
+
+        const postedLines = lines.filter((l: any) => l.status === "posted");
+
+        const debitTotal = postedLines.reduce((sum: any, l: any) => sum + (l.debit || 0), 0);
+        const creditTotal = postedLines.reduce((sum: any, l: any) => sum + (l.credit || 0), 0);
+
+        let balance = 0;
+        if (["asset", "expense"].includes(account.type)) {
+          balance = debitTotal - creditTotal;
+        } else {
+          balance = creditTotal - debitTotal;
+        }
+
+        return {
+          account,
+          balance,
+          debitTotal,
+          creditTotal,
+        };
+      })
+    );
+
     return results;
   }
 
-  async getAccountLedger(accountId: string, options?: {
-    dateStart?: Date;
-    dateEnd?: Date;
-    search?: string;
-    limit?: number;
-    offset?: number;
-  }) {
+  async getAccountLedger(
+    accountId: string,
+    options?: {
+      dateStart?: Date;
+      dateEnd?: Date;
+      search?: string;
+      limit?: number;
+      offset?: number;
+    }
+  ) {
     // Existence check; tenant scoping is the caller's responsibility (the
     // accounts.routes ledger handler resolves the account against the user's
     // companies before invoking this).
     const [account] = await db.select().from(accounts).where(eq(accounts.id, accountId));
     if (!account) {
-      throw new Error('Account not found');
+      throw new Error("Account not found");
     }
-    
+
     const allLines = await db
       .select({
         lineId: journalLines.id,
@@ -1110,13 +1244,13 @@ export class DatabaseStorage implements IStorage {
         date: journalEntries.date,
         memo: journalEntries.memo,
         source: journalEntries.source,
-        status: journalEntries.status
+        status: journalEntries.status,
       })
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
       .where(eq(journalLines.accountId, accountId));
-    
-    const postedLines = allLines.filter((l: any) => l.status === 'posted');
+
+    const postedLines = allLines.filter((l: any) => l.status === "posted");
     postedLines.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     let openingBalance = 0;
@@ -1124,14 +1258,14 @@ export class DatabaseStorage implements IStorage {
       const priorLines = postedLines.filter((l: any) => new Date(l.date) < options.dateStart!);
       const priorDebit = priorLines.reduce((sum: any, l: any) => sum + (l.debit || 0), 0);
       const priorCredit = priorLines.reduce((sum: any, l: any) => sum + (l.credit || 0), 0);
-      
-      if (['asset', 'expense'].includes(account.type)) {
+
+      if (["asset", "expense"].includes(account.type)) {
         openingBalance = priorDebit - priorCredit;
       } else {
         openingBalance = priorCredit - priorDebit;
       }
     }
-    
+
     let filteredLines = postedLines;
     if (options?.dateStart) {
       filteredLines = filteredLines.filter((l: any) => new Date(l.date) >= options.dateStart!);
@@ -1142,35 +1276,36 @@ export class DatabaseStorage implements IStorage {
 
     if (options?.search) {
       const searchLower = options.search.toLowerCase();
-      filteredLines = filteredLines.filter((l: any) =>
-        l.entryNumber?.toLowerCase().includes(searchLower) ||
-        l.memo?.toLowerCase().includes(searchLower) ||
-        l.lineDescription?.toLowerCase().includes(searchLower)
+      filteredLines = filteredLines.filter(
+        (l: any) =>
+          l.entryNumber?.toLowerCase().includes(searchLower) ||
+          l.memo?.toLowerCase().includes(searchLower) ||
+          l.lineDescription?.toLowerCase().includes(searchLower)
       );
     }
-    
+
     let runningBalance = openingBalance;
     let totalDebit = 0;
     let totalCredit = 0;
-    
+
     const allEntries = filteredLines.map((line: any) => {
       const debit = line.debit || 0;
       const credit = line.credit || 0;
-      
+
       totalDebit += debit;
       totalCredit += credit;
-      
-      if (['asset', 'expense'].includes(account.type)) {
+
+      if (["asset", "expense"].includes(account.type)) {
         runningBalance += debit - credit;
       } else {
         runningBalance += credit - debit;
       }
-      
+
       return {
         id: line.lineId,
         date: line.date,
         entryNumber: line.entryNumber,
-        description: line.lineDescription || line.memo || '',
+        description: line.lineDescription || line.memo || "",
         debit,
         credit,
         runningBalance,
@@ -1178,19 +1313,21 @@ export class DatabaseStorage implements IStorage {
         journalLineId: line.lineId,
         memo: line.memo,
         source: line.source,
-        status: line.status
+        status: line.status,
       };
     });
-    
+
     const totalCount = allEntries.length;
-    const paginatedEntries = options?.limit 
+    const paginatedEntries = options?.limit
       ? allEntries.slice(options.offset || 0, (options.offset || 0) + options.limit)
       : allEntries;
-    
-    const closingBalance = openingBalance + ((['asset', 'expense'].includes(account.type)) 
-      ? totalDebit - totalCredit 
-      : totalCredit - totalDebit);
-    
+
+    const closingBalance =
+      openingBalance +
+      (["asset", "expense"].includes(account.type)
+        ? totalDebit - totalCredit
+        : totalCredit - totalDebit);
+
     return {
       entries: paginatedEntries,
       allEntries,
@@ -1199,7 +1336,7 @@ export class DatabaseStorage implements IStorage {
       totalDebit,
       totalCredit,
       closingBalance,
-      totalCount
+      totalCount,
     };
   }
 
@@ -1221,7 +1358,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPostedJournalEntriesWithLines(
-    companyId: string,
+    companyId: string
   ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>> {
     // Single JOIN replaces an N+1 (one query per entry to fetch lines).
     const rows = await db
@@ -1231,10 +1368,7 @@ export class DatabaseStorage implements IStorage {
       })
       .from(journalEntries)
       .leftJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-      .where(and(
-        eq(journalEntries.companyId, companyId),
-        eq(journalEntries.status, 'posted'),
-      ));
+      .where(and(eq(journalEntries.companyId, companyId), eq(journalEntries.status, "posted")));
 
     const byId = new Map<string, { entry: JournalEntry; lines: JournalLine[] }>();
     for (const row of rows) {
@@ -1251,10 +1385,10 @@ export class DatabaseStorage implements IStorage {
 
   async createJournalEntry(
     insertEntry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
-    lines: Array<Omit<InsertJournalLine, 'entryId'>>
+    lines: Array<Omit<InsertJournalLine, "entryId">>
   ): Promise<JournalEntry> {
     if (!Array.isArray(lines) || lines.length === 0) {
-      throw new Error('Journal entry must have at least one line');
+      throw new Error("Journal entry must have at least one line");
     }
     assertBalanced(lines);
 
@@ -1267,14 +1401,18 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async updateJournalEntry(id: string, companyId: string, data: Partial<JournalEntry>): Promise<JournalEntry> {
+  async updateJournalEntry(
+    id: string,
+    companyId: string,
+    data: Partial<JournalEntry>
+  ): Promise<JournalEntry> {
     const [entry] = await db
       .update(journalEntries)
       .set(data)
       .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
       .returning();
     if (!entry) {
-      throw new Error('Journal entry not found');
+      throw new Error("Journal entry not found");
     }
     return entry;
   }
@@ -1283,10 +1421,10 @@ export class DatabaseStorage implements IStorage {
     id: string,
     companyId: string,
     data: Partial<JournalEntry>,
-    lines: Array<Omit<InsertJournalLine, 'entryId'>>
+    lines: Array<Omit<InsertJournalLine, "entryId">>
   ): Promise<JournalEntry> {
     if (!Array.isArray(lines) || lines.length === 0) {
-      throw new Error('Journal entry must have at least one line');
+      throw new Error("Journal entry must have at least one line");
     }
     assertBalanced(lines);
 
@@ -1297,7 +1435,7 @@ export class DatabaseStorage implements IStorage {
         .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
         .returning();
       if (!entry) {
-        throw new Error('Journal entry not found');
+        throw new Error("Journal entry not found");
       }
       await tx.delete(journalLines).where(eq(journalLines.entryId, id));
       for (const line of lines) {
@@ -1314,9 +1452,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async generateEntryNumber(companyId: string, date: Date): Promise<string> {
-    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
     const prefix = `JE-${dateStr}`;
-    const likePattern = prefix + '-%';
+    const likePattern = prefix + "-%";
     // Trim 'JE-' (3) + 'YYYYMMDD' (8) + '-' (1) → 12, so the counter starts at
     // SUBSTRING position 13 (1-based) per Postgres semantics.
     const counterStart = prefix.length + 2;
@@ -1347,7 +1485,7 @@ export class DatabaseStorage implements IStorage {
       const rows = (result.rows ?? result) as Array<{ max_seq: number | string | null }>;
       const maxSeq = Number(rows[0]?.max_seq ?? 0);
       const nextNumber = maxSeq + 1;
-      return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+      return `${prefix}-${String(nextNumber).padStart(3, "0")}`;
     } finally {
       await db.execute(sql`SELECT pg_advisory_unlock(${lockKey1}, ${lockKey2})`).catch(() => {});
     }
@@ -1355,10 +1493,7 @@ export class DatabaseStorage implements IStorage {
 
   // Journal Lines
   async createJournalLine(insertLine: InsertJournalLine): Promise<JournalLine> {
-    const [line] = await db
-      .insert(journalLines)
-      .values(insertLine)
-      .returning();
+    const [line] = await db.insert(journalLines).values(insertLine).returning();
     return line;
   }
 
@@ -1397,8 +1532,8 @@ export class DatabaseStorage implements IStorage {
   // the JSON payload by 100x for a tenant with hundreds of submitted invoices.
   async getInvoicesSummaryByCompanyId(
     companyId: string,
-    opts: { limit?: number; offset?: number } = {},
-  ): Promise<Omit<Invoice, 'einvoiceXml' | 'einvoiceHash'>[]> {
+    opts: { limit?: number; offset?: number } = {}
+  ): Promise<Omit<Invoice, "einvoiceXml" | "einvoiceHash">[]> {
     const limit = opts.limit ?? DEFAULT_LIST_LIMIT;
     const offset = opts.offset ?? 0;
     return await db
@@ -1441,21 +1576,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createInvoice(insertInvoice: InsertInvoice): Promise<Invoice> {
-    const [invoice] = await db
-      .insert(invoices)
-      .values(insertInvoice)
-      .returning();
+    const [invoice] = await db.insert(invoices).values(insertInvoice).returning();
     return invoice;
   }
 
-  async updateInvoice(id: string, companyId: string, data: Partial<InsertInvoice>): Promise<Invoice> {
+  async updateInvoice(
+    id: string,
+    companyId: string,
+    data: Partial<InsertInvoice>
+  ): Promise<Invoice> {
     const [invoice] = await db
       .update(invoices)
       .set(data)
       .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)))
       .returning();
     if (!invoice) {
-      throw new Error('Invoice not found');
+      throw new Error("Invoice not found");
     }
     return invoice;
   }
@@ -1468,16 +1604,14 @@ export class DatabaseStorage implements IStorage {
       .returning();
 
     if (!invoice) {
-      throw new Error('Invoice not found');
+      throw new Error("Invoice not found");
     }
 
     return invoice;
   }
 
   async deleteInvoice(id: string, companyId: string): Promise<void> {
-    await db
-      .delete(invoices)
-      .where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)));
+    await db.delete(invoices).where(and(eq(invoices.id, id), eq(invoices.companyId, companyId)));
   }
 
   async getInvoiceByShareToken(token: string): Promise<Invoice | undefined> {
@@ -1494,10 +1628,7 @@ export class DatabaseStorage implements IStorage {
 
   // Invoice Lines
   async createInvoiceLine(insertLine: InsertInvoiceLine): Promise<InvoiceLine> {
-    const [line] = await db
-      .insert(invoiceLines)
-      .values(insertLine)
-      .returning();
+    const [line] = await db.insert(invoiceLines).values(insertLine).returning();
     return line;
   }
 
@@ -1524,10 +1655,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReceipt(insertReceipt: InsertReceipt): Promise<Receipt> {
-    const [receipt] = await db
-      .insert(receipts)
-      .values(insertReceipt)
-      .returning();
+    const [receipt] = await db.insert(receipts).values(insertReceipt).returning();
     return receipt;
   }
 
@@ -1539,22 +1667,24 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(receipts.createdAt));
   }
 
-  async updateReceipt(id: string, companyId: string, data: Partial<InsertReceipt>): Promise<Receipt> {
+  async updateReceipt(
+    id: string,
+    companyId: string,
+    data: Partial<InsertReceipt>
+  ): Promise<Receipt> {
     const [receipt] = await db
       .update(receipts)
       .set(data)
       .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)))
       .returning();
     if (!receipt) {
-      throw new Error('Receipt not found');
+      throw new Error("Receipt not found");
     }
     return receipt;
   }
 
   async deleteReceipt(id: string, companyId: string): Promise<void> {
-    await db
-      .delete(receipts)
-      .where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
+    await db.delete(receipts).where(and(eq(receipts.id, id), eq(receipts.companyId, companyId)));
   }
 
   // Customer Contacts
@@ -1564,19 +1694,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCustomerContactsByCompanyId(companyId: string): Promise<CustomerContact[]> {
-    return await db.select().from(customerContacts)
+    return await db
+      .select()
+      .from(customerContacts)
       .where(and(eq(customerContacts.companyId, companyId), eq(customerContacts.isActive, true)))
       .orderBy(desc(customerContacts.createdAt));
   }
 
-  async getCustomerContactByEmail(companyId: string, email: string): Promise<CustomerContact | undefined> {
-    const [contact] = await db.select().from(customerContacts)
+  async getCustomerContactByEmail(
+    companyId: string,
+    email: string
+  ): Promise<CustomerContact | undefined> {
+    const [contact] = await db
+      .select()
+      .from(customerContacts)
       .where(and(eq(customerContacts.companyId, companyId), eq(customerContacts.email, email)));
     return contact;
   }
 
-  async getCustomerContactByTrn(companyId: string, trn: string): Promise<CustomerContact | undefined> {
-    const [contact] = await db.select().from(customerContacts)
+  async getCustomerContactByTrn(
+    companyId: string,
+    trn: string
+  ): Promise<CustomerContact | undefined> {
+    const [contact] = await db
+      .select()
+      .from(customerContacts)
       .where(and(eq(customerContacts.companyId, companyId), eq(customerContacts.trnNumber, trn)));
     return contact;
   }
@@ -1586,18 +1728,24 @@ export class DatabaseStorage implements IStorage {
     return contact;
   }
 
-  async createBulkCustomerContacts(contactsData: InsertCustomerContact[]): Promise<CustomerContact[]> {
+  async createBulkCustomerContacts(
+    contactsData: InsertCustomerContact[]
+  ): Promise<CustomerContact[]> {
     if (contactsData.length === 0) return [];
     const created = await db.insert(customerContacts).values(contactsData).returning();
     return created;
   }
 
-  async updateCustomerContact(id: string, data: Partial<InsertCustomerContact>): Promise<CustomerContact> {
-    const [contact] = await db.update(customerContacts)
+  async updateCustomerContact(
+    id: string,
+    data: Partial<InsertCustomerContact>
+  ): Promise<CustomerContact> {
+    const [contact] = await db
+      .update(customerContacts)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(customerContacts.id, id))
       .returning();
-    if (!contact) throw new Error('Customer contact not found');
+    if (!contact) throw new Error("Customer contact not found");
     return contact;
   }
 
@@ -1630,26 +1778,30 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCustomerContactByPortalToken(token: string): Promise<CustomerContact | undefined> {
-    const [contact] = await db.select().from(customerContacts)
+    const [contact] = await db
+      .select()
+      .from(customerContacts)
       .where(eq(customerContacts.portalAccessToken, token));
     return contact || undefined;
   }
 
-  async setPortalAccessToken(contactId: string, token: string, expiresAt: Date): Promise<CustomerContact> {
-    const [contact] = await db.update(customerContacts)
+  async setPortalAccessToken(
+    contactId: string,
+    token: string,
+    expiresAt: Date
+  ): Promise<CustomerContact> {
+    const [contact] = await db
+      .update(customerContacts)
       .set({ portalAccessToken: token, portalAccessExpiresAt: expiresAt, updatedAt: new Date() })
       .where(eq(customerContacts.id, contactId))
       .returning();
-    if (!contact) throw new Error('Customer contact not found');
+    if (!contact) throw new Error("Customer contact not found");
     return contact;
   }
 
   // Waitlist
   async createWaitlistEntry(insertEntry: InsertWaitlist): Promise<Waitlist> {
-    const [entry] = await db
-      .insert(waitlist)
-      .values(insertEntry)
-      .returning();
+    const [entry] = await db.insert(waitlist).values(insertEntry).returning();
     return entry;
   }
 
@@ -1660,10 +1812,7 @@ export class DatabaseStorage implements IStorage {
 
   // Integration Syncs
   async createIntegrationSync(insertSync: InsertIntegrationSync): Promise<IntegrationSync> {
-    const [sync] = await db
-      .insert(integrationSyncs)
-      .values(insertSync)
-      .returning();
+    const [sync] = await db.insert(integrationSyncs).values(insertSync).returning();
     return sync;
   }
 
@@ -1675,14 +1824,19 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(integrationSyncs.syncedAt));
   }
 
-  async getIntegrationSyncsByType(companyId: string, integrationType: string): Promise<IntegrationSync[]> {
+  async getIntegrationSyncsByType(
+    companyId: string,
+    integrationType: string
+  ): Promise<IntegrationSync[]> {
     return await db
       .select()
       .from(integrationSyncs)
-      .where(and(
-        eq(integrationSyncs.companyId, companyId),
-        eq(integrationSyncs.integrationType, integrationType)
-      ))
+      .where(
+        and(
+          eq(integrationSyncs.companyId, companyId),
+          eq(integrationSyncs.integrationType, integrationType)
+        )
+      )
       .orderBy(desc(integrationSyncs.syncedAt));
   }
 
@@ -1695,7 +1849,9 @@ export class DatabaseStorage implements IStorage {
     return config || undefined;
   }
 
-  async getWhatsappConfigByPhoneNumberId(phoneNumberId: string): Promise<WhatsappConfig | undefined> {
+  async getWhatsappConfigByPhoneNumberId(
+    phoneNumberId: string
+  ): Promise<WhatsappConfig | undefined> {
     const [config] = await db
       .select()
       .from(whatsappConfigs)
@@ -1704,31 +1860,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createWhatsappConfig(insertConfig: InsertWhatsappConfig): Promise<WhatsappConfig> {
-    const [config] = await db
-      .insert(whatsappConfigs)
-      .values(insertConfig)
-      .returning();
+    const [config] = await db.insert(whatsappConfigs).values(insertConfig).returning();
     return config;
   }
 
-  async updateWhatsappConfig(id: string, data: Partial<InsertWhatsappConfig>): Promise<WhatsappConfig> {
+  async updateWhatsappConfig(
+    id: string,
+    data: Partial<InsertWhatsappConfig>
+  ): Promise<WhatsappConfig> {
     const [config] = await db
       .update(whatsappConfigs)
       .set(data)
       .where(eq(whatsappConfigs.id, id))
       .returning();
     if (!config) {
-      throw new Error('WhatsApp configuration not found');
+      throw new Error("WhatsApp configuration not found");
     }
     return config;
   }
 
   // WhatsApp Messages
   async createWhatsappMessage(insertMessage: InsertWhatsappMessage): Promise<WhatsappMessage> {
-    const [message] = await db
-      .insert(whatsappMessages)
-      .values(insertMessage)
-      .returning();
+    const [message] = await db.insert(whatsappMessages).values(insertMessage).returning();
     return message;
   }
 
@@ -1741,39 +1894,33 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWhatsappMessage(id: string): Promise<WhatsappMessage | undefined> {
-    const [message] = await db
-      .select()
-      .from(whatsappMessages)
-      .where(eq(whatsappMessages.id, id));
+    const [message] = await db.select().from(whatsappMessages).where(eq(whatsappMessages.id, id));
     return message || undefined;
   }
 
-  async updateWhatsappMessage(id: string, data: Partial<InsertWhatsappMessage>): Promise<WhatsappMessage> {
+  async updateWhatsappMessage(
+    id: string,
+    data: Partial<InsertWhatsappMessage>
+  ): Promise<WhatsappMessage> {
     const [message] = await db
       .update(whatsappMessages)
       .set(data)
       .where(eq(whatsappMessages.id, id))
       .returning();
     if (!message) {
-      throw new Error('WhatsApp message not found');
+      throw new Error("WhatsApp message not found");
     }
     return message;
   }
 
   // AI Anomaly Alerts
   async createAnomalyAlert(insertAlert: InsertAnomalyAlert): Promise<AnomalyAlert> {
-    const [alert] = await db
-      .insert(anomalyAlerts)
-      .values(insertAlert)
-      .returning();
+    const [alert] = await db.insert(anomalyAlerts).values(insertAlert).returning();
     return alert;
   }
 
   async getAnomalyAlertById(id: string): Promise<AnomalyAlert | undefined> {
-    const [alert] = await db
-      .select()
-      .from(anomalyAlerts)
-      .where(eq(anomalyAlerts.id, id));
+    const [alert] = await db.select().from(anomalyAlerts).where(eq(anomalyAlerts.id, id));
     return alert;
   }
 
@@ -1789,10 +1936,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(anomalyAlerts)
-      .where(and(
-        eq(anomalyAlerts.companyId, companyId),
-        eq(anomalyAlerts.isResolved, false)
-      ))
+      .where(and(eq(anomalyAlerts.companyId, companyId), eq(anomalyAlerts.isResolved, false)))
       .orderBy(desc(anomalyAlerts.createdAt));
   }
 
@@ -1803,7 +1947,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(anomalyAlerts.id, id))
       .returning();
     if (!alert) {
-      throw new Error('Anomaly alert not found');
+      throw new Error("Anomaly alert not found");
     }
     return alert;
   }
@@ -1820,7 +1964,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(anomalyAlerts.id, id))
       .returning();
     if (!alert) {
-      throw new Error('Anomaly alert not found');
+      throw new Error("Anomaly alert not found");
     }
     return alert;
   }
@@ -1850,25 +1994,27 @@ export class DatabaseStorage implements IStorage {
       .set(data)
       .where(eq(bankAccounts.id, id))
       .returning();
-    if (!result) throw new Error('Bank account not found');
+    if (!result) throw new Error("Bank account not found");
     return result;
   }
 
   // Bank Transactions
   async createBankTransaction(insertTransaction: InsertBankTransaction): Promise<BankTransaction> {
-    const [transaction] = await db
-      .insert(bankTransactions)
-      .values(insertTransaction)
-      .returning();
+    const [transaction] = await db.insert(bankTransactions).values(insertTransaction).returning();
     return transaction;
   }
 
-  async bulkCreateBankTransactions(transactions: InsertBankTransaction[]): Promise<BankTransaction[]> {
+  async bulkCreateBankTransactions(
+    transactions: InsertBankTransaction[]
+  ): Promise<BankTransaction[]> {
     if (transactions.length === 0) return [];
     return await db.insert(bankTransactions).values(transactions).returning();
   }
 
-  async getBankTransactionById(id: string, companyId: string): Promise<BankTransaction | undefined> {
+  async getBankTransactionById(
+    id: string,
+    companyId: string
+  ): Promise<BankTransaction | undefined> {
     const [transaction] = await db
       .select()
       .from(bankTransactions)
@@ -1888,21 +2034,24 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(bankTransactions)
-      .where(and(
-        eq(bankTransactions.companyId, companyId),
-        eq(bankTransactions.isReconciled, false)
-      ))
+      .where(
+        and(eq(bankTransactions.companyId, companyId), eq(bankTransactions.isReconciled, false))
+      )
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
-  async updateBankTransaction(id: string, companyId: string, data: Partial<InsertBankTransaction>): Promise<BankTransaction> {
+  async updateBankTransaction(
+    id: string,
+    companyId: string,
+    data: Partial<InsertBankTransaction>
+  ): Promise<BankTransaction> {
     const [transaction] = await db
       .update(bankTransactions)
       .set(data)
       .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)))
       .returning();
     if (!transaction) {
-      throw new Error('Bank transaction not found');
+      throw new Error("Bank transaction not found");
     }
     return transaction;
   }
@@ -1911,21 +2060,21 @@ export class DatabaseStorage implements IStorage {
     id: string,
     companyId: string,
     matchedId: string,
-    matchType: 'journal' | 'receipt' | 'invoice',
-    createdBy?: string,
+    matchType: "journal" | "receipt" | "invoice",
+    createdBy?: string
   ): Promise<BankTransaction> {
     // Load the bank txn so we have amount/date/bankAccountId for JE posting.
     const existing = await this.getBankTransactionById(id, companyId);
     if (!existing) {
-      throw new Error('Bank transaction not found');
+      throw new Error("Bank transaction not found");
     }
 
     const updateData: any = {
       isReconciled: true,
     };
-    if (matchType === 'journal') {
+    if (matchType === "journal") {
       updateData.matchedJournalEntryId = matchedId;
-    } else if (matchType === 'receipt') {
+    } else if (matchType === "receipt") {
       updateData.matchedReceiptId = matchedId;
     } else {
       updateData.matchedInvoiceId = matchedId;
@@ -1940,15 +2089,15 @@ export class DatabaseStorage implements IStorage {
     // bank-reconciliation JE here.
     if (
       createdBy &&
-      matchType !== 'journal' &&
+      matchType !== "journal" &&
       !existing.matchedJournalEntryId &&
       existing.bankAccountId
     ) {
-      const sourceTag = matchType === 'invoice' ? 'payment' : 'receipt';
+      const sourceTag = matchType === "invoice" ? "payment" : "receipt";
       const sourceEntries = await this.getJournalEntriesBySource(
         existing.companyId,
         sourceTag,
-        matchedId,
+        matchedId
       );
       const linkedExisting = sourceEntries[0];
 
@@ -1956,12 +2105,8 @@ export class DatabaseStorage implements IStorage {
         updateData.matchedJournalEntryId = linkedExisting.id;
       } else {
         const accounts = await this.getAccountsByCompanyId(existing.companyId);
-        const arAccount = accounts.find(
-          (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount,
-        );
-        const apAccount = accounts.find(
-          (a) => a.code === ACCOUNT_CODES.AP && a.isSystemAccount,
-        );
+        const arAccount = accounts.find((a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
+        const apAccount = accounts.find((a) => a.code === ACCOUNT_CODES.AP && a.isSystemAccount);
         const isInflow = Number(existing.amount) > 0;
         // Inflow: customer paid → Dr Bank, Cr A/R (link to invoice).
         // Outflow: paid vendor / expense → Dr A/P, Cr Bank (link to receipt).
@@ -1969,9 +2114,10 @@ export class DatabaseStorage implements IStorage {
 
         if (contraAccount) {
           const absAmount = Math.abs(Number(existing.amount));
-          const txnDate = existing.transactionDate instanceof Date
-            ? existing.transactionDate
-            : new Date(existing.transactionDate);
+          const txnDate =
+            existing.transactionDate instanceof Date
+              ? existing.transactionDate
+              : new Date(existing.transactionDate);
           const entryNumber = await this.generateEntryNumber(existing.companyId, txnDate);
 
           const newEntry = await this.createJournalEntry(
@@ -1980,8 +2126,8 @@ export class DatabaseStorage implements IStorage {
               entryNumber,
               date: txnDate,
               memo: `Bank reconciliation: ${existing.description}`.slice(0, 500),
-              status: 'posted',
-              source: 'bank_reconciliation',
+              status: "posted",
+              source: "bank_reconciliation",
               sourceId: existing.id,
               createdBy,
               postedBy: createdBy,
@@ -2000,7 +2146,7 @@ export class DatabaseStorage implements IStorage {
                 credit: isInflow ? absAmount : 0,
                 description: existing.description,
               },
-            ],
+            ]
           );
           updateData.matchedJournalEntryId = newEntry.id;
         }
@@ -2013,17 +2159,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(bankTransactions.id, id))
       .returning();
     if (!transaction) {
-      throw new Error('Bank transaction not found');
+      throw new Error("Bank transaction not found");
     }
     return transaction;
   }
 
   // Cash Flow Forecasts
   async createCashFlowForecast(insertForecast: InsertCashFlowForecast): Promise<CashFlowForecast> {
-    const [forecast] = await db
-      .insert(cashFlowForecasts)
-      .values(insertForecast)
-      .returning();
+    const [forecast] = await db.insert(cashFlowForecasts).values(insertForecast).returning();
     return forecast;
   }
 
@@ -2040,7 +2183,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Transaction Classifications
-  async createTransactionClassification(insertClassification: InsertTransactionClassification): Promise<TransactionClassification> {
+  async createTransactionClassification(
+    insertClassification: InsertTransactionClassification
+  ): Promise<TransactionClassification> {
     const [classification] = await db
       .insert(transactionClassifications)
       .values(insertClassification)
@@ -2057,7 +2202,9 @@ export class DatabaseStorage implements IStorage {
     return classification || undefined;
   }
 
-  async getTransactionClassificationsByCompanyId(companyId: string): Promise<TransactionClassification[]> {
+  async getTransactionClassificationsByCompanyId(
+    companyId: string
+  ): Promise<TransactionClassification[]> {
     return await db
       .select()
       .from(transactionClassifications)
@@ -2065,7 +2212,11 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(transactionClassifications.createdAt));
   }
 
-  async updateTransactionClassification(id: string, companyId: string, data: Partial<InsertTransactionClassification>): Promise<TransactionClassification> {
+  async updateTransactionClassification(
+    id: string,
+    companyId: string,
+    data: Partial<InsertTransactionClassification>
+  ): Promise<TransactionClassification> {
     // Scoping by company_id is defense-in-depth: the route layer already
     // verifies tenant access, but a regression there must not silently mutate
     // another tenant's row. The UPDATE returns no rows when the id/company
@@ -2073,13 +2224,15 @@ export class DatabaseStorage implements IStorage {
     const [classification] = await db
       .update(transactionClassifications)
       .set(data)
-      .where(and(
-        eq(transactionClassifications.id, id),
-        eq(transactionClassifications.companyId, companyId),
-      ))
+      .where(
+        and(
+          eq(transactionClassifications.id, id),
+          eq(transactionClassifications.companyId, companyId)
+        )
+      )
       .returning();
     if (!classification) {
-      throw new Error('Transaction classification not found');
+      throw new Error("Transaction classification not found");
     }
     return classification;
   }
@@ -2104,18 +2257,13 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(budgets)
-      .where(and(
-        eq(budgets.companyId, companyId),
-        eq(budgets.year, year),
-        eq(budgets.month, month)
-      ));
+      .where(
+        and(eq(budgets.companyId, companyId), eq(budgets.year, year), eq(budgets.month, month))
+      );
   }
 
   async createBudget(insertBudget: InsertBudget): Promise<Budget> {
-    const [budget] = await db
-      .insert(budgets)
-      .values(insertBudget)
-      .returning();
+    const [budget] = await db.insert(budgets).values(insertBudget).returning();
     return budget;
   }
 
@@ -2126,7 +2274,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(budgets.id, id), eq(budgets.companyId, companyId)))
       .returning();
     if (!budget) {
-      throw new Error('Budget not found');
+      throw new Error("Budget not found");
     }
     return budget;
   }
@@ -2148,7 +2296,9 @@ export class DatabaseStorage implements IStorage {
     return integration || undefined;
   }
 
-  async createEcommerceIntegration(insertIntegration: InsertEcommerceIntegration): Promise<EcommerceIntegration> {
+  async createEcommerceIntegration(
+    insertIntegration: InsertEcommerceIntegration
+  ): Promise<EcommerceIntegration> {
     const [integration] = await db
       .insert(ecommerceIntegrations)
       .values(insertIntegration)
@@ -2156,14 +2306,17 @@ export class DatabaseStorage implements IStorage {
     return integration;
   }
 
-  async updateEcommerceIntegration(id: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration> {
+  async updateEcommerceIntegration(
+    id: string,
+    data: Partial<InsertEcommerceIntegration>
+  ): Promise<EcommerceIntegration> {
     const [integration] = await db
       .update(ecommerceIntegrations)
       .set(data)
       .where(eq(ecommerceIntegrations.id, id))
       .returning();
     if (!integration) {
-      throw new Error('E-commerce integration not found');
+      throw new Error("E-commerce integration not found");
     }
     return integration;
   }
@@ -2179,13 +2332,18 @@ export class DatabaseStorage implements IStorage {
         ecommerceTransactions: ecommerceTransactions,
       })
       .from(ecommerceTransactions)
-      .innerJoin(ecommerceIntegrations, eq(ecommerceTransactions.integrationId, ecommerceIntegrations.id))
+      .innerJoin(
+        ecommerceIntegrations,
+        eq(ecommerceTransactions.integrationId, ecommerceIntegrations.id)
+      )
       .where(eq(ecommerceIntegrations.companyId, companyId));
-    
+
     return results.map((r: any) => r.ecommerceTransactions);
   }
 
-  async createEcommerceTransaction(insertTransaction: InsertEcommerceTransaction): Promise<EcommerceTransaction> {
+  async createEcommerceTransaction(
+    insertTransaction: InsertEcommerceTransaction
+  ): Promise<EcommerceTransaction> {
     const [transaction] = await db
       .insert(ecommerceTransactions)
       .values(insertTransaction)
@@ -2193,14 +2351,17 @@ export class DatabaseStorage implements IStorage {
     return transaction;
   }
 
-  async updateEcommerceTransaction(id: string, data: Partial<InsertEcommerceTransaction>): Promise<EcommerceTransaction> {
+  async updateEcommerceTransaction(
+    id: string,
+    data: Partial<InsertEcommerceTransaction>
+  ): Promise<EcommerceTransaction> {
     const [transaction] = await db
       .update(ecommerceTransactions)
       .set(data)
       .where(eq(ecommerceTransactions.id, id))
       .returning();
     if (!transaction) {
-      throw new Error('E-commerce transaction not found');
+      throw new Error("E-commerce transaction not found");
     }
     return transaction;
   }
@@ -2215,10 +2376,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createFinancialKpi(insertKpi: InsertFinancialKpi): Promise<FinancialKpi> {
-    const [kpi] = await db
-      .insert(financialKpis)
-      .values(insertKpi)
-      .returning();
+    const [kpi] = await db.insert(financialKpis).values(insertKpi).returning();
     return kpi;
   }
 
@@ -2232,10 +2390,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(notifications)
-      .where(and(
-        eq(notifications.userId, userId),
-        eq(notifications.isDismissed, false)
-      ))
+      .where(and(eq(notifications.userId, userId), eq(notifications.isDismissed, false)))
       .orderBy(desc(notifications.createdAt));
   }
 
@@ -2243,19 +2398,18 @@ export class DatabaseStorage implements IStorage {
     const result = await db
       .select()
       .from(notifications)
-      .where(and(
-        eq(notifications.userId, userId),
-        eq(notifications.isRead, false),
-        eq(notifications.isDismissed, false)
-      ));
+      .where(
+        and(
+          eq(notifications.userId, userId),
+          eq(notifications.isRead, false),
+          eq(notifications.isDismissed, false)
+        )
+      );
     return result.length;
   }
 
   async createNotification(insertNotification: InsertNotification): Promise<Notification> {
-    const [notification] = await db
-      .insert(notifications)
-      .values(insertNotification)
-      .returning();
+    const [notification] = await db.insert(notifications).values(insertNotification).returning();
     return notification;
   }
 
@@ -2294,10 +2448,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createRegulatoryNews(insertNews: InsertRegulatoryNews): Promise<RegulatoryNews> {
-    const [news] = await db
-      .insert(regulatoryNews)
-      .values(insertNews)
-      .returning();
+    const [news] = await db.insert(regulatoryNews).values(insertNews).returning();
     return news;
   }
 
@@ -2310,14 +2461,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReminderSetting(insertSetting: InsertReminderSetting): Promise<ReminderSetting> {
-    const [setting] = await db
-      .insert(reminderSettings)
-      .values(insertSetting)
-      .returning();
+    const [setting] = await db.insert(reminderSettings).values(insertSetting).returning();
     return setting;
   }
 
-  async updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting> {
+  async updateReminderSetting(
+    id: string,
+    data: Partial<InsertReminderSetting>
+  ): Promise<ReminderSetting> {
     const [setting] = await db
       .update(reminderSettings)
       .set({ ...data, updatedAt: new Date() })
@@ -2336,10 +2487,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReminderLog(insertLog: InsertReminderLog): Promise<ReminderLog> {
-    const [log] = await db
-      .insert(reminderLogs)
-      .values(insertLog)
-      .returning();
+    const [log] = await db.insert(reminderLogs).values(insertLog).returning();
     return log;
   }
 
@@ -2362,14 +2510,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createUserOnboarding(insertOnboarding: InsertUserOnboarding): Promise<UserOnboarding> {
-    const [onboarding] = await db
-      .insert(userOnboarding)
-      .values(insertOnboarding)
-      .returning();
+    const [onboarding] = await db.insert(userOnboarding).values(insertOnboarding).returning();
     return onboarding;
   }
 
-  async updateUserOnboarding(userId: string, data: Partial<InsertUserOnboarding>): Promise<UserOnboarding> {
+  async updateUserOnboarding(
+    userId: string,
+    data: Partial<InsertUserOnboarding>
+  ): Promise<UserOnboarding> {
     const [onboarding] = await db
       .update(userOnboarding)
       .set({ ...data, updatedAt: new Date() })
@@ -2383,10 +2531,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(helpTips)
-      .where(and(
-        eq(helpTips.pageContext, pageContext),
-        eq(helpTips.isActive, true)
-      ))
+      .where(and(eq(helpTips.pageContext, pageContext), eq(helpTips.isActive, true)))
       .orderBy(helpTips.order);
   }
 
@@ -2399,19 +2544,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createHelpTip(insertTip: InsertHelpTip): Promise<HelpTip> {
-    const [tip] = await db
-      .insert(helpTips)
-      .values(insertTip)
-      .returning();
+    const [tip] = await db.insert(helpTips).values(insertTip).returning();
     return tip;
   }
 
   // Referral Codes
   async getReferralCodeByUserId(userId: string): Promise<ReferralCode | undefined> {
-    const [code] = await db
-      .select()
-      .from(referralCodes)
-      .where(eq(referralCodes.userId, userId));
+    const [code] = await db.select().from(referralCodes).where(eq(referralCodes.userId, userId));
     return code;
   }
 
@@ -2424,10 +2563,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReferralCode(insertCode: InsertReferralCode): Promise<ReferralCode> {
-    const [code] = await db
-      .insert(referralCodes)
-      .values(insertCode)
-      .returning();
+    const [code] = await db.insert(referralCodes).values(insertCode).returning();
     return code;
   }
 
@@ -2450,28 +2586,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReferral(insertReferral: InsertReferral): Promise<Referral> {
-    const [referral] = await db
-      .insert(referrals)
-      .values(insertReferral)
-      .returning();
+    const [referral] = await db.insert(referrals).values(insertReferral).returning();
     return referral;
   }
 
   async updateReferral(id: string, data: Partial<InsertReferral>): Promise<Referral> {
-    const [referral] = await db
-      .update(referrals)
-      .set(data)
-      .where(eq(referrals.id, id))
-      .returning();
+    const [referral] = await db.update(referrals).set(data).where(eq(referrals.id, id)).returning();
     return referral;
   }
 
   // User Feedback
   async createUserFeedback(insertFeedback: InsertUserFeedback): Promise<UserFeedback> {
-    const [feedback] = await db
-      .insert(userFeedback)
-      .values(insertFeedback)
-      .returning();
+    const [feedback] = await db.insert(userFeedback).values(insertFeedback).returning();
     return feedback;
   }
 
@@ -2483,10 +2609,7 @@ export class DatabaseStorage implements IStorage {
         .where(eq(userFeedback.userId, userId))
         .orderBy(desc(userFeedback.createdAt));
     }
-    return await db
-      .select()
-      .from(userFeedback)
-      .orderBy(desc(userFeedback.createdAt));
+    return await db.select().from(userFeedback).orderBy(desc(userFeedback.createdAt));
   }
 
   async updateUserFeedback(id: string, data: Partial<InsertUserFeedback>): Promise<UserFeedback> {
@@ -2500,23 +2623,25 @@ export class DatabaseStorage implements IStorage {
 
   // Analytics Events
   async createAnalyticsEvent(insertEvent: InsertAnalyticsEvent): Promise<AnalyticsEvent> {
-    const [event] = await db
-      .insert(analyticsEvents)
-      .values(insertEvent)
-      .returning();
+    const [event] = await db.insert(analyticsEvents).values(insertEvent).returning();
     return event;
   }
 
-  async getAnalyticsEvents(filters?: { userId?: string; eventType?: string; startDate?: Date; endDate?: Date }): Promise<AnalyticsEvent[]> {
+  async getAnalyticsEvents(filters?: {
+    userId?: string;
+    eventType?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<AnalyticsEvent[]> {
     let query = db.select().from(analyticsEvents);
-    
+
     if (filters?.userId) {
       query = query.where(eq(analyticsEvents.userId, filters.userId)) as typeof query;
     }
     if (filters?.eventType) {
       query = query.where(eq(analyticsEvents.eventType, filters.eventType)) as typeof query;
     }
-    
+
     return await query.orderBy(desc(analyticsEvents.createdAt));
   }
 
@@ -2535,11 +2660,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(featureUsageMetrics.calculatedAt));
   }
 
-  async createFeatureUsageMetric(insertMetric: InsertFeatureUsageMetric): Promise<FeatureUsageMetric> {
-    const [metric] = await db
-      .insert(featureUsageMetrics)
-      .values(insertMetric)
-      .returning();
+  async createFeatureUsageMetric(
+    insertMetric: InsertFeatureUsageMetric
+  ): Promise<FeatureUsageMetric> {
+    const [metric] = await db.insert(featureUsageMetrics).values(insertMetric).returning();
     return metric;
   }
 
@@ -2554,10 +2678,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createAdminSetting(insertSetting: InsertAdminSetting): Promise<AdminSetting> {
-    const [setting] = await db
-      .insert(adminSettings)
-      .values(insertSetting)
-      .returning();
+    const [setting] = await db.insert(adminSettings).values(insertSetting).returning();
     return setting;
   }
 
@@ -2581,14 +2702,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createSubscriptionPlan(insertPlan: InsertSubscriptionPlan): Promise<SubscriptionPlan> {
-    const [plan] = await db
-      .insert(subscriptionPlans)
-      .values(insertPlan)
-      .returning();
+    const [plan] = await db.insert(subscriptionPlans).values(insertPlan).returning();
     return plan;
   }
 
-  async updateSubscriptionPlan(id: string, data: Partial<InsertSubscriptionPlan>): Promise<SubscriptionPlan> {
+  async updateSubscriptionPlan(
+    id: string,
+    data: Partial<InsertSubscriptionPlan>
+  ): Promise<SubscriptionPlan> {
     const [plan] = await db
       .update(subscriptionPlans)
       .set(data)
@@ -2610,7 +2731,9 @@ export class DatabaseStorage implements IStorage {
     return subscription || undefined;
   }
 
-  async createUserSubscription(insertSubscription: InsertUserSubscription): Promise<UserSubscription> {
+  async createUserSubscription(
+    insertSubscription: InsertUserSubscription
+  ): Promise<UserSubscription> {
     const [subscription] = await db
       .insert(userSubscriptions)
       .values(insertSubscription)
@@ -2618,7 +2741,10 @@ export class DatabaseStorage implements IStorage {
     return subscription;
   }
 
-  async updateUserSubscription(id: string, data: Partial<InsertUserSubscription>): Promise<UserSubscription> {
+  async updateUserSubscription(
+    id: string,
+    data: Partial<InsertUserSubscription>
+  ): Promise<UserSubscription> {
     const [subscription] = await db
       .update(userSubscriptions)
       .set(data)
@@ -2629,18 +2755,11 @@ export class DatabaseStorage implements IStorage {
 
   // Audit Logs
   async getAuditLogs(limit: number = 100): Promise<AuditLog[]> {
-    return await db
-      .select()
-      .from(auditLogs)
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(limit);
+    return await db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
   }
 
   async createAuditLog(insertLog: InsertAuditLog): Promise<AuditLog> {
-    const [log] = await db
-      .insert(auditLogs)
-      .values(insertLog)
-      .returning();
+    const [log] = await db.insert(auditLogs).values(insertLog).returning();
     return log;
   }
 
@@ -2650,7 +2769,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllCompanies(): Promise<Company[]> {
-    return await db.select().from(companies).where(isNull(companies.deletedAt)).orderBy(desc(companies.createdAt));
+    return await db
+      .select()
+      .from(companies)
+      .where(isNull(companies.deletedAt))
+      .orderBy(desc(companies.createdAt));
   }
 
   // VAT Returns
@@ -2668,10 +2791,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createVatReturn(insertVatReturn: InsertVatReturn): Promise<VatReturn> {
-    const [vatReturn] = await db
-      .insert(vatReturns)
-      .values(insertVatReturn)
-      .returning();
+    const [vatReturn] = await db.insert(vatReturns).values(insertVatReturn).returning();
     return vatReturn;
   }
 
@@ -2698,19 +2818,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCorporateTaxReturn(id: string): Promise<CorporateTaxReturn | undefined> {
-    const [taxReturn] = await db.select().from(corporateTaxReturns).where(eq(corporateTaxReturns.id, id));
+    const [taxReturn] = await db
+      .select()
+      .from(corporateTaxReturns)
+      .where(eq(corporateTaxReturns.id, id));
     return taxReturn || undefined;
   }
 
   async createCorporateTaxReturn(data: InsertCorporateTaxReturn): Promise<CorporateTaxReturn> {
-    const [taxReturn] = await db
-      .insert(corporateTaxReturns)
-      .values(data)
-      .returning();
+    const [taxReturn] = await db.insert(corporateTaxReturns).values(data).returning();
     return taxReturn;
   }
 
-  async updateCorporateTaxReturn(id: string, data: Partial<CorporateTaxReturn>): Promise<CorporateTaxReturn> {
+  async updateCorporateTaxReturn(
+    id: string,
+    data: Partial<CorporateTaxReturn>
+  ): Promise<CorporateTaxReturn> {
     const [taxReturn] = await db
       .update(corporateTaxReturns)
       .set(data)
@@ -2739,10 +2862,10 @@ export class DatabaseStorage implements IStorage {
       .from(companyUsers)
       .innerJoin(users, eq(companyUsers.userId, users.id))
       .where(eq(companyUsers.companyId, companyId));
-    
+
     return results.map((r: any) => ({
       ...r.company_users,
-      user: r.users
+      user: r.users,
     }));
   }
 
@@ -2761,10 +2884,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createDocument(insertDocument: InsertDocument): Promise<Document> {
-    const [document] = await db
-      .insert(documents)
-      .values(insertDocument)
-      .returning();
+    const [document] = await db.insert(documents).values(insertDocument).returning();
     return document;
   }
 
@@ -2796,10 +2916,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createTaxReturnArchive(insertTaxReturn: InsertTaxReturnArchive): Promise<TaxReturnArchive> {
-    const [taxReturn] = await db
-      .insert(taxReturnArchive)
-      .values(insertTaxReturn)
-      .returning();
+    const [taxReturn] = await db.insert(taxReturnArchive).values(insertTaxReturn).returning();
     return taxReturn;
   }
 
@@ -2818,14 +2935,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createComplianceTask(insertTask: InsertComplianceTask): Promise<ComplianceTask> {
-    const [task] = await db
-      .insert(complianceTasks)
-      .values(insertTask)
-      .returning();
+    const [task] = await db.insert(complianceTasks).values(insertTask).returning();
     return task;
   }
 
-  async updateComplianceTask(id: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask> {
+  async updateComplianceTask(
+    id: string,
+    data: Partial<InsertComplianceTask>
+  ): Promise<ComplianceTask> {
     const [task] = await db
       .update(complianceTasks)
       .set({ ...data, updatedAt: new Date() })
@@ -2853,10 +2970,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMessage(insertMessage: InsertMessage): Promise<Message> {
-    const [message] = await db
-      .insert(messages)
-      .values(insertMessage)
-      .returning();
+    const [message] = await db.insert(messages).values(insertMessage).returning();
     return message;
   }
 
@@ -2879,19 +2993,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createNewsItem(insertNews: InsertNewsItem): Promise<NewsItem> {
-    const [news] = await db
-      .insert(newsItems)
-      .values(insertNews)
-      .returning();
+    const [news] = await db.insert(newsItems).values(insertNews).returning();
     return news;
   }
 
   // Invitations (Admin)
   async getInvitations(): Promise<Invitation[]> {
-    return await db
-      .select()
-      .from(invitations)
-      .orderBy(desc(invitations.createdAt));
+    return await db.select().from(invitations).orderBy(desc(invitations.createdAt));
   }
 
   async getInvitationsByCompany(companyId: string): Promise<Invitation[]> {
@@ -2903,26 +3011,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getInvitationByToken(token: string): Promise<Invitation | undefined> {
-    const [invitation] = await db
-      .select()
-      .from(invitations)
-      .where(eq(invitations.token, token));
+    const [invitation] = await db.select().from(invitations).where(eq(invitations.token, token));
     return invitation || undefined;
   }
 
   async getInvitationByEmail(email: string): Promise<Invitation | undefined> {
-    const [invitation] = await db
-      .select()
-      .from(invitations)
-      .where(eq(invitations.email, email));
+    const [invitation] = await db.select().from(invitations).where(eq(invitations.email, email));
     return invitation || undefined;
   }
 
   async createInvitation(insertInvitation: InsertInvitation): Promise<Invitation> {
-    const [invitation] = await db
-      .insert(invitations)
-      .values(insertInvitation)
-      .returning();
+    const [invitation] = await db.insert(invitations).values(insertInvitation).returning();
     return invitation;
   }
 
@@ -2941,11 +3040,7 @@ export class DatabaseStorage implements IStorage {
 
   // Activity Logs (Admin)
   async getActivityLogs(limit: number = 100): Promise<ActivityLog[]> {
-    return await db
-      .select()
-      .from(activityLogs)
-      .orderBy(desc(activityLogs.createdAt))
-      .limit(limit);
+    return await db.select().from(activityLogs).orderBy(desc(activityLogs.createdAt)).limit(limit);
   }
 
   async getActivityLogsByCompany(companyId: string, limit: number = 100): Promise<ActivityLog[]> {
@@ -2967,10 +3062,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createActivityLog(insertLog: InsertActivityLog): Promise<ActivityLog> {
-    const [log] = await db
-      .insert(activityLogs)
-      .values(insertLog)
-      .returning();
+    const [log] = await db.insert(activityLogs).values(insertLog).returning();
     return log;
   }
 
@@ -2984,10 +3076,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createClientNote(insertNote: InsertClientNote): Promise<ClientNote> {
-    const [note] = await db
-      .insert(clientNotes)
-      .values(insertNote)
-      .returning();
+    const [note] = await db.insert(clientNotes).values(insertNote).returning();
     return note;
   }
 
@@ -3005,12 +3094,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Admin User Management
-  async updateUser(id: string, data: { name?: string; email?: string; isAdmin?: boolean }): Promise<User> {
-    const [user] = await db
-      .update(users)
-      .set(data)
-      .where(eq(users.id, id))
-      .returning();
+  async updateUser(
+    id: string,
+    data: { name?: string; email?: string; isAdmin?: boolean }
+  ): Promise<User> {
+    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
     return user;
   }
 
@@ -3020,15 +3108,15 @@ export class DatabaseStorage implements IStorage {
 
   // Admin Company Management
   async deleteCompany(id: string): Promise<void> {
-    await db.update(companies).set({ deletedAt: new Date(), isActive: false }).where(eq(companies.id, id));
+    await db
+      .update(companies)
+      .set({ deletedAt: new Date(), isActive: false })
+      .where(eq(companies.id, id));
   }
 
   // Client Engagements
   async getEngagements(): Promise<Engagement[]> {
-    return await db
-      .select()
-      .from(engagements)
-      .orderBy(desc(engagements.createdAt));
+    return await db.select().from(engagements).orderBy(desc(engagements.createdAt));
   }
 
   async getEngagementsByCompany(companyId: string): Promise<Engagement[]> {
@@ -3040,18 +3128,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEngagement(id: string): Promise<Engagement | undefined> {
-    const [engagement] = await db
-      .select()
-      .from(engagements)
-      .where(eq(engagements.id, id));
+    const [engagement] = await db.select().from(engagements).where(eq(engagements.id, id));
     return engagement || undefined;
   }
 
   async createEngagement(insertEngagement: InsertEngagement): Promise<Engagement> {
-    const [engagement] = await db
-      .insert(engagements)
-      .values(insertEngagement)
-      .returning();
+    const [engagement] = await db.insert(engagements).values(insertEngagement).returning();
     return engagement;
   }
 
@@ -3077,29 +3159,23 @@ export class DatabaseStorage implements IStorage {
         .where(eq(serviceInvoices.companyId, companyId))
         .orderBy(desc(serviceInvoices.createdAt));
     }
-    return await db
-      .select()
-      .from(serviceInvoices)
-      .orderBy(desc(serviceInvoices.createdAt));
+    return await db.select().from(serviceInvoices).orderBy(desc(serviceInvoices.createdAt));
   }
 
   async getServiceInvoice(id: string): Promise<ServiceInvoice | undefined> {
-    const [invoice] = await db
-      .select()
-      .from(serviceInvoices)
-      .where(eq(serviceInvoices.id, id));
+    const [invoice] = await db.select().from(serviceInvoices).where(eq(serviceInvoices.id, id));
     return invoice || undefined;
   }
 
   async createServiceInvoice(insertInvoice: InsertServiceInvoice): Promise<ServiceInvoice> {
-    const [invoice] = await db
-      .insert(serviceInvoices)
-      .values(insertInvoice)
-      .returning();
+    const [invoice] = await db.insert(serviceInvoices).values(insertInvoice).returning();
     return invoice;
   }
 
-  async updateServiceInvoice(id: string, data: Partial<InsertServiceInvoice>): Promise<ServiceInvoice> {
+  async updateServiceInvoice(
+    id: string,
+    data: Partial<InsertServiceInvoice>
+  ): Promise<ServiceInvoice> {
     const [invoice] = await db
       .update(serviceInvoices)
       .set({ ...data, updatedAt: new Date() })
@@ -3120,16 +3196,17 @@ export class DatabaseStorage implements IStorage {
       .where(eq(serviceInvoiceLines.serviceInvoiceId, serviceInvoiceId));
   }
 
-  async createServiceInvoiceLine(insertLine: InsertServiceInvoiceLine): Promise<ServiceInvoiceLine> {
-    const [line] = await db
-      .insert(serviceInvoiceLines)
-      .values(insertLine)
-      .returning();
+  async createServiceInvoiceLine(
+    insertLine: InsertServiceInvoiceLine
+  ): Promise<ServiceInvoiceLine> {
+    const [line] = await db.insert(serviceInvoiceLines).values(insertLine).returning();
     return line;
   }
 
   async deleteServiceInvoiceLines(serviceInvoiceId: string): Promise<void> {
-    await db.delete(serviceInvoiceLines).where(eq(serviceInvoiceLines.serviceInvoiceId, serviceInvoiceId));
+    await db
+      .delete(serviceInvoiceLines)
+      .where(eq(serviceInvoiceLines.serviceInvoiceId, serviceInvoiceId));
   }
 
   // FTA Emails
@@ -3142,19 +3219,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createFtaEmail(insertEmail: InsertFtaEmail): Promise<FtaEmail> {
-    const [email] = await db
-      .insert(ftaEmails)
-      .values(insertEmail)
-      .returning();
+    const [email] = await db.insert(ftaEmails).values(insertEmail).returning();
     return email;
   }
 
   async updateFtaEmail(id: string, data: Partial<InsertFtaEmail>): Promise<FtaEmail> {
-    const [email] = await db
-      .update(ftaEmails)
-      .set(data)
-      .where(eq(ftaEmails.id, id))
-      .returning();
+    const [email] = await db.update(ftaEmails).set(data).where(eq(ftaEmails.id, id)).returning();
     return email;
   }
 
@@ -3168,10 +3238,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createSubscription(insertSubscription: InsertSubscription): Promise<Subscription> {
-    const [subscription] = await db
-      .insert(subscriptions)
-      .values(insertSubscription)
-      .returning();
+    const [subscription] = await db.insert(subscriptions).values(insertSubscription).returning();
     return subscription;
   }
 
@@ -3186,11 +3253,7 @@ export class DatabaseStorage implements IStorage {
 
   // User type management
   async updateUserType(id: string, userType: string): Promise<User> {
-    const [user] = await db
-      .update(users)
-      .set({ userType })
-      .where(eq(users.id, id))
-      .returning();
+    const [user] = await db.update(users).set({ userType }).where(eq(users.id, id)).returning();
     return user;
   }
 
@@ -3206,7 +3269,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(companies)
-      .where(and(eq(companies.companyType, 'client'), isNull(companies.deletedAt)))
+      .where(and(eq(companies.companyType, "client"), isNull(companies.deletedAt)))
       .orderBy(desc(companies.createdAt));
   }
 
@@ -3214,7 +3277,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(companies)
-      .where(and(eq(companies.companyType, 'customer'), isNull(companies.deletedAt)))
+      .where(and(eq(companies.companyType, "customer"), isNull(companies.deletedAt)))
       .orderBy(desc(companies.createdAt));
   }
 
@@ -3233,19 +3296,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBackup(insertBackup: InsertBackup): Promise<Backup> {
-    const [backup] = await db
-      .insert(backups)
-      .values(insertBackup)
-      .returning();
+    const [backup] = await db.insert(backups).values(insertBackup).returning();
     return backup;
   }
 
   async updateBackup(id: string, data: Partial<InsertBackup>): Promise<Backup> {
-    const [backup] = await db
-      .update(backups)
-      .set(data)
-      .where(eq(backups.id, id))
-      .returning();
+    const [backup] = await db.update(backups).set(data).where(eq(backups.id, id)).returning();
     return backup;
   }
 
@@ -3255,10 +3311,7 @@ export class DatabaseStorage implements IStorage {
 
   // AI Conversations
   async createAiConversation(conversation: InsertAiConversation): Promise<AiConversation> {
-    const [result] = await db
-      .insert(aiConversations)
-      .values(conversation)
-      .returning();
+    const [result] = await db.insert(aiConversations).values(conversation).returning();
     return result;
   }
 
@@ -3271,7 +3324,10 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  async getAiConversationsByCompanyId(companyId: string, limit: number = 50): Promise<AiConversation[]> {
+  async getAiConversationsByCompanyId(
+    companyId: string,
+    limit: number = 50
+  ): Promise<AiConversation[]> {
     return await db
       .select()
       .from(aiConversations)
@@ -3311,16 +3367,13 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(recurringInvoices)
       .where(
-        and(
-          eq(recurringInvoices.isActive, true),
-          lte(recurringInvoices.nextRunDate, new Date())
-        )
+        and(eq(recurringInvoices.isActive, true), lte(recurringInvoices.nextRunDate, new Date()))
       );
   }
 
   async fetchAndLockNextDueRecurringInvoice(
     tx: typeof db,
-    excludeIds: string[] = [],
+    excludeIds: string[] = []
   ): Promise<RecurringInvoice | undefined> {
     // Pessimistic row lock with SKIP LOCKED — concurrent cron runners see
     // the row as "unavailable" rather than the same row twice. Eliminates
@@ -3331,8 +3384,9 @@ export class DatabaseStorage implements IStorage {
     // cron tick. Without this, a period-locked or errored template stays
     // "earliest due" and the scheduler would re-fetch it on every loop
     // iteration, starving later due templates.
-    const result: any = excludeIds.length === 0
-      ? await tx.execute(sql`
+    const result: any =
+      excludeIds.length === 0
+        ? await tx.execute(sql`
           SELECT * FROM recurring_invoices
           WHERE is_active = true
             AND next_run_date <= now()
@@ -3340,7 +3394,7 @@ export class DatabaseStorage implements IStorage {
           LIMIT 1
           FOR UPDATE SKIP LOCKED
         `)
-      : await tx.execute(sql`
+        : await tx.execute(sql`
           SELECT * FROM recurring_invoices
           WHERE is_active = true
             AND next_run_date <= now()
@@ -3354,21 +3408,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createRecurringInvoice(data: InsertRecurringInvoice): Promise<RecurringInvoice> {
-    const [item] = await db
-      .insert(recurringInvoices)
-      .values(data)
-      .returning();
+    const [item] = await db.insert(recurringInvoices).values(data).returning();
     return item;
   }
 
-  async updateRecurringInvoice(id: string, data: Partial<RecurringInvoice>): Promise<RecurringInvoice> {
+  async updateRecurringInvoice(
+    id: string,
+    data: Partial<RecurringInvoice>
+  ): Promise<RecurringInvoice> {
     const [item] = await db
       .update(recurringInvoices)
       .set(data)
       .where(eq(recurringInvoices.id, id))
       .returning();
     if (!item) {
-      throw new Error('Recurring invoice not found');
+      throw new Error("Recurring invoice not found");
     }
     return item;
   }
@@ -3402,7 +3456,7 @@ export class DatabaseStorage implements IStorage {
   async getJournalEntriesBySource(
     companyId: string,
     source: string,
-    sourceId: string,
+    sourceId: string
   ): Promise<JournalEntry[]> {
     return await db
       .select()
@@ -3411,8 +3465,8 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(journalEntries.companyId, companyId),
           eq(journalEntries.source, source),
-          eq(journalEntries.sourceId, sourceId),
-        ),
+          eq(journalEntries.sourceId, sourceId)
+        )
       );
   }
 
@@ -3451,28 +3505,25 @@ export class DatabaseStorage implements IStorage {
       }>;
       const lockedInvoice = lockedRows[0];
       if (!lockedInvoice) {
-        const e: any = new Error('Invoice not found');
-        e.code = 'INVOICE_NOT_FOUND';
+        const e: any = new Error("Invoice not found");
+        e.code = "INVOICE_NOT_FOUND";
         throw e;
       }
       if (lockedInvoice.company_id !== input.companyId) {
-        const e: any = new Error('Invoice does not belong to company');
-        e.code = 'INVOICE_COMPANY_MISMATCH';
+        const e: any = new Error("Invoice does not belong to company");
+        e.code = "INVOICE_COMPANY_MISMATCH";
         throw e;
       }
       if (isTerminal(lockedInvoice.status)) {
         const e: any = new Error(`Cannot record payment on ${lockedInvoice.status} invoice`);
-        e.code = 'INVOICE_TERMINAL';
+        e.code = "INVOICE_TERMINAL";
         throw e;
       }
-      if (
-        input.paymentAccountCurrency &&
-        input.paymentAccountCurrency !== lockedInvoice.currency
-      ) {
+      if (input.paymentAccountCurrency && input.paymentAccountCurrency !== lockedInvoice.currency) {
         const e: any = new Error(
-          `Payment account currency (${input.paymentAccountCurrency}) does not match invoice currency (${lockedInvoice.currency})`,
+          `Payment account currency (${input.paymentAccountCurrency}) does not match invoice currency (${lockedInvoice.currency})`
         );
-        e.code = 'CURRENCY_MISMATCH';
+        e.code = "CURRENCY_MISMATCH";
         throw e;
       }
 
@@ -3492,18 +3543,18 @@ export class DatabaseStorage implements IStorage {
       const remainingD = totalD.minus(previouslyPaidD);
 
       // 0.005 fils tolerance for legitimate 2dp rounding.
-      if (amountD.greaterThan(remainingD.plus('0.005'))) {
+      if (amountD.greaterThan(remainingD.plus("0.005"))) {
         const e: any = new Error(
-          `Payment ${amountD.toFixed(2)} exceeds remaining balance ${remainingD.toFixed(2)}`,
+          `Payment ${amountD.toFixed(2)} exceeds remaining balance ${remainingD.toFixed(2)}`
         );
-        e.code = 'OVERPAYMENT';
+        e.code = "OVERPAYMENT";
         throw e;
       }
 
       // Generate JE number — uses session advisory lock so concurrent calls
       // serialise. The session is the same as this transaction's connection,
       // so the lock will be released at commit.
-      const dateStr = input.date.toISOString().slice(0, 10).replace(/-/g, '');
+      const dateStr = input.date.toISOString().slice(0, 10).replace(/-/g, "");
       const prefix = `JE-${dateStr}`;
       const lockKey1 = hashStringToInt(input.companyId);
       const lockKey2 = hashStringToInt(prefix);
@@ -3516,11 +3567,11 @@ export class DatabaseStorage implements IStorage {
         ) AS max_seq
         FROM journal_entries
         WHERE company_id = ${input.companyId}
-          AND entry_number LIKE ${prefix + '-%'}
+          AND entry_number LIKE ${prefix + "-%"}
       `);
       const numRows = (numResult.rows ?? numResult) as Array<{ max_seq: number | string | null }>;
       const nextNumber = Number(numRows[0]?.max_seq ?? 0) + 1;
-      const entryNumber = `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+      const entryNumber = `${prefix}-${String(nextNumber).padStart(3, "0")}`;
 
       // Insert journal entry + balanced lines.
       const [entry] = await tx
@@ -3530,8 +3581,8 @@ export class DatabaseStorage implements IStorage {
           date: input.date,
           memo: `Payment received for Invoice ${input.invoiceId} - ${input.method}`,
           entryNumber,
-          status: 'posted',
-          source: 'payment',
+          status: "posted",
+          source: "payment",
           sourceId: input.invoiceId,
           createdBy: input.createdBy,
           postedBy: input.createdBy,
@@ -3575,7 +3626,7 @@ export class DatabaseStorage implements IStorage {
       const newStatus = statusFromPayments(
         lockedInvoice.status as InvoiceStatus,
         Number(lockedInvoice.total),
-        newTotalPaid,
+        newTotalPaid
       );
       const [updatedInvoice] = await tx
         .update(invoices)
@@ -3588,14 +3639,11 @@ export class DatabaseStorage implements IStorage {
       // dashboard work — without it, conversionRate is permanently 0.
       // Done inside the same txn so a payment write can't leave chase
       // analytics inconsistent with invoice state.
-      if (newStatus === 'paid') {
+      if (newStatus === "paid") {
         await tx
           .update(paymentChases)
           .set({ paidAt: input.date })
-          .where(and(
-            eq(paymentChases.invoiceId, input.invoiceId),
-            isNull(paymentChases.paidAt),
-          ));
+          .where(and(eq(paymentChases.invoiceId, input.invoiceId), isNull(paymentChases.paidAt)));
       }
 
       return {
@@ -3612,8 +3660,8 @@ export class DatabaseStorage implements IStorage {
       // Read invoice for company scope
       const [inv] = await tx.select().from(invoices).where(eq(invoices.id, id));
       if (!inv) {
-        const e: any = new Error('Invoice not found');
-        e.code = 'INVOICE_NOT_FOUND';
+        const e: any = new Error("Invoice not found");
+        e.code = "INVOICE_NOT_FOUND";
         throw e;
       }
 
@@ -3621,20 +3669,15 @@ export class DatabaseStorage implements IStorage {
       const associatedEntries = await tx
         .select()
         .from(journalEntries)
-        .where(
-          and(
-            eq(journalEntries.companyId, inv.companyId),
-            eq(journalEntries.sourceId, id),
-          ),
-        );
+        .where(and(eq(journalEntries.companyId, inv.companyId), eq(journalEntries.sourceId, id)));
 
       // Refuse if any are posted — caller must void instead.
-      const posted = associatedEntries.filter((e: any) => e.status === 'posted');
+      const posted = associatedEntries.filter((e: any) => e.status === "posted");
       if (posted.length > 0) {
         const err: any = new Error(
-          'Cannot delete invoice with posted journal entries. Void the invoice instead.',
+          "Cannot delete invoice with posted journal entries. Void the invoice instead."
         );
-        err.code = 'INVOICE_HAS_POSTED_JE';
+        err.code = "INVOICE_HAS_POSTED_JE";
         throw err;
       }
 
@@ -3660,12 +3703,7 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(invoices)
-      .where(
-        and(
-          eq(invoices.isRecurring, true),
-          lte(invoices.nextRecurringDate, new Date())
-        )
-      );
+      .where(and(eq(invoices.isRecurring, true), lte(invoices.nextRecurringDate, new Date())));
   }
 
   // Products / Inventory
@@ -3683,21 +3721,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProduct(data: InsertProduct): Promise<Product> {
-    const [product] = await db
-      .insert(products)
-      .values(data)
-      .returning();
+    const [product] = await db.insert(products).values(data).returning();
     return product;
   }
 
   async updateProduct(id: string, data: Partial<Product>): Promise<Product> {
-    const [product] = await db
-      .update(products)
-      .set(data)
-      .where(eq(products.id, id))
-      .returning();
+    const [product] = await db.update(products).set(data).where(eq(products.id, id)).returning();
     if (!product) {
-      throw new Error('Product not found');
+      throw new Error("Product not found");
     }
     return product;
   }
@@ -3724,10 +3755,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createInventoryMovement(data: InsertInventoryMovement): Promise<InventoryMovement> {
-    const [movement] = await db
-      .insert(inventoryMovements)
-      .values(data)
-      .returning();
+    const [movement] = await db.insert(inventoryMovements).values(data).returning();
     return movement;
   }
 
@@ -3740,7 +3768,7 @@ export class DatabaseStorage implements IStorage {
 
   async getPaymentChasesByCompanyId(
     companyId: string,
-    opts: { invoiceId?: string; sinceDays?: number } = {},
+    opts: { invoiceId?: string; sinceDays?: number } = {}
   ): Promise<PaymentChase[]> {
     const conds = [eq(paymentChases.companyId, companyId)];
     if (opts.invoiceId) conds.push(eq(paymentChases.invoiceId, opts.invoiceId));
@@ -3767,16 +3795,18 @@ export class DatabaseStorage implements IStorage {
     invoiceId: string,
     level: number,
     now: Date,
-    minSecondsBetween: number,
+    minSecondsBetween: number
   ): Promise<boolean> {
     const cutoff = new Date(now.getTime() - Math.max(0, minSecondsBetween) * 1000);
     const claimed = await db
       .update(invoices)
       .set({ chaseLevel: level, lastChasedAt: now })
-      .where(and(
-        eq(invoices.id, invoiceId),
-        or(isNull(invoices.lastChasedAt), lt(invoices.lastChasedAt, cutoff)),
-      ))
+      .where(
+        and(
+          eq(invoices.id, invoiceId),
+          or(isNull(invoices.lastChasedAt), lt(invoices.lastChasedAt, cutoff))
+        )
+      )
       .returning({ id: invoices.id });
     return claimed.length > 0;
   }
@@ -3796,29 +3826,33 @@ export class DatabaseStorage implements IStorage {
   async getChaseTemplate(
     level: number,
     language: string,
-    companyId: string | null,
+    companyId: string | null
   ): Promise<ChaseTemplate | undefined> {
     // Prefer company override, fall back to system default.
     if (companyId) {
       const [override] = await db
         .select()
         .from(chaseTemplates)
-        .where(and(
-          eq(chaseTemplates.companyId, companyId),
-          eq(chaseTemplates.level, level),
-          eq(chaseTemplates.language, language),
-        ))
+        .where(
+          and(
+            eq(chaseTemplates.companyId, companyId),
+            eq(chaseTemplates.level, level),
+            eq(chaseTemplates.language, language)
+          )
+        )
         .limit(1);
       if (override) return override;
     }
     const [system] = await db
       .select()
       .from(chaseTemplates)
-      .where(and(
-        isNull(chaseTemplates.companyId),
-        eq(chaseTemplates.level, level),
-        eq(chaseTemplates.language, language),
-      ))
+      .where(
+        and(
+          isNull(chaseTemplates.companyId),
+          eq(chaseTemplates.level, level),
+          eq(chaseTemplates.language, language)
+        )
+      )
       .limit(1);
     return system || undefined;
   }
@@ -3831,7 +3865,7 @@ export class DatabaseStorage implements IStorage {
   async updateChaseTemplate(
     id: string,
     companyId: string,
-    data: Partial<InsertChaseTemplate>,
+    data: Partial<InsertChaseTemplate>
   ): Promise<ChaseTemplate | undefined> {
     // Scoped by companyId to prevent cross-tenant edits and keep system
     // defaults (company_id IS NULL) immutable from the customer-facing API.
@@ -3860,7 +3894,10 @@ export class DatabaseStorage implements IStorage {
     return row || undefined;
   }
 
-  async upsertChaseConfig(companyId: string, data: Partial<InsertChaseConfig>): Promise<ChaseConfig> {
+  async upsertChaseConfig(
+    companyId: string,
+    data: Partial<InsertChaseConfig>
+  ): Promise<ChaseConfig> {
     const existing = await this.getChaseConfig(companyId);
     if (existing) {
       const [row] = await db

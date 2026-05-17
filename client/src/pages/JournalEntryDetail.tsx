@@ -1,14 +1,29 @@
-import { useParams, Link } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useTranslation } from '@/lib/i18n';
-import { formatCurrency } from '@/lib/format';
-import { ArrowLeft, BookMarked, CheckCircle2, XCircle, Clock, FileText, RotateCcw } from 'lucide-react';
+import { useParams, Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useTranslation } from "@/lib/i18n";
+import { formatCurrency } from "@/lib/format";
+import {
+  ArrowLeft,
+  BookMarked,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  FileText,
+  RotateCcw,
+} from "lucide-react";
 
 interface JournalLine {
   id: string;
@@ -31,7 +46,7 @@ interface JournalEntry {
   entryNumber: string;
   date: string;
   memo: string | null;
-  status: 'draft' | 'posted' | 'reversed';
+  status: "draft" | "posted" | "reversed";
   sourceType: string | null;
   sourceId: string | null;
   reversedEntryId: string | null;
@@ -43,28 +58,32 @@ export default function JournalEntryDetail() {
   const { id } = useParams<{ id: string }>();
   const { t, locale } = useTranslation();
 
-  const { data: entry, isLoading, error } = useQuery<JournalEntry>({
+  const {
+    data: entry,
+    isLoading,
+    error,
+  } = useQuery<JournalEntry>({
     queryKey: [`/api/journal/${id}`],
     enabled: !!id,
   });
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'posted':
+      case "posted":
         return (
           <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
             <CheckCircle2 className="w-3 h-3 mr-1" />
             Posted
           </Badge>
         );
-      case 'draft':
+      case "draft":
         return (
           <Badge variant="secondary">
             <Clock className="w-3 h-3 mr-1" />
             Draft
           </Badge>
         );
-      case 'reversed':
+      case "reversed":
         return (
           <Badge variant="destructive">
             <RotateCcw className="w-3 h-3 mr-1" />
@@ -78,15 +97,15 @@ export default function JournalEntryDetail() {
 
   const getSourceTypeBadge = (sourceType: string | null) => {
     if (!sourceType) return null;
-    
+
     const sourceLabels: Record<string, string> = {
-      'invoice': 'Invoice',
-      'receipt': 'Receipt/Expense',
-      'manual': 'Manual Entry',
-      'payment': 'Payment',
-      'adjustment': 'Adjustment',
+      invoice: "Invoice",
+      receipt: "Receipt/Expense",
+      manual: "Manual Entry",
+      payment: "Payment",
+      adjustment: "Adjustment",
     };
-    
+
     return (
       <Badge variant="outline" className="ml-2">
         <FileText className="w-3 h-3 mr-1" />
@@ -131,9 +150,7 @@ export default function JournalEntryDetail() {
         <Card>
           <CardContent className="py-12 text-center">
             <XCircle className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">
-              The requested journal entry could not be found.
-            </p>
+            <p className="text-muted-foreground">The requested journal entry could not be found.</p>
             <Link href="/journal">
               <Button className="mt-4" data-testid="button-return-to-journal">
                 Return to Journal
@@ -145,8 +162,8 @@ export default function JournalEntryDetail() {
     );
   }
 
-  const totalDebit = entry.lines.reduce((sum, line) => sum + parseFloat(line.debit || '0'), 0);
-  const totalCredit = entry.lines.reduce((sum, line) => sum + parseFloat(line.credit || '0'), 0);
+  const totalDebit = entry.lines.reduce((sum, line) => sum + parseFloat(line.debit || "0"), 0);
+  const totalCredit = entry.lines.reduce((sum, line) => sum + parseFloat(line.credit || "0"), 0);
 
   return (
     <div className="space-y-6 p-6">
@@ -166,9 +183,7 @@ export default function JournalEntryDetail() {
               {getStatusBadge(entry.status)}
               {getSourceTypeBadge(entry.sourceType)}
             </div>
-            <p className="text-muted-foreground">
-              {format(new Date(entry.date), 'MMMM d, yyyy')}
-            </p>
+            <p className="text-muted-foreground">{format(new Date(entry.date), "MMMM d, yyyy")}</p>
           </div>
         </div>
         <Link href="/journal">
@@ -185,7 +200,7 @@ export default function JournalEntryDetail() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600" data-testid="text-total-debits">
-              {formatCurrency(totalDebit, 'AED', locale)}
+              {formatCurrency(totalDebit, "AED", locale)}
             </div>
           </CardContent>
         </Card>
@@ -196,7 +211,7 @@ export default function JournalEntryDetail() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600" data-testid="text-total-credits">
-              {formatCurrency(totalCredit, 'AED', locale)}
+              {formatCurrency(totalCredit, "AED", locale)}
             </div>
           </CardContent>
         </Card>
@@ -206,8 +221,13 @@ export default function JournalEntryDetail() {
             <CardTitle className="text-sm font-medium">Balance</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? 'text-green-600' : 'text-red-600'}`} data-testid="text-balance">
-              {Math.abs(totalDebit - totalCredit) < 0.01 ? 'Balanced' : formatCurrency(Math.abs(totalDebit - totalCredit), 'AED', locale)}
+            <div
+              className={`text-2xl font-bold ${Math.abs(totalDebit - totalCredit) < 0.01 ? "text-green-600" : "text-red-600"}`}
+              data-testid="text-balance"
+            >
+              {Math.abs(totalDebit - totalCredit) < 0.01
+                ? "Balanced"
+                : formatCurrency(Math.abs(totalDebit - totalCredit), "AED", locale)}
             </div>
           </CardContent>
         </Card>
@@ -219,7 +239,9 @@ export default function JournalEntryDetail() {
             <CardTitle className="text-lg">Memo</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-muted-foreground" data-testid="text-memo">{entry.memo}</p>
+            <p className="text-muted-foreground" data-testid="text-memo">
+              {entry.memo}
+            </p>
           </CardContent>
         </Card>
       )}
@@ -227,9 +249,7 @@ export default function JournalEntryDetail() {
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Line Items</CardTitle>
-          <CardDescription>
-            Double-entry transaction details
-          </CardDescription>
+          <CardDescription>Double-entry transaction details</CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
@@ -245,28 +265,26 @@ export default function JournalEntryDetail() {
             <TableBody>
               {entry.lines.map((line, index) => (
                 <TableRow key={line.id} data-testid={`row-journal-line-${index}`}>
-                  <TableCell className="font-mono">
-                    {line.account?.code || '-'}
-                  </TableCell>
+                  <TableCell className="font-mono">{line.account?.code || "-"}</TableCell>
                   <TableCell>
-                    {locale === 'ar' && line.account?.nameAr 
-                      ? line.account.nameAr 
-                      : line.account?.nameEn || 'Unknown Account'}
+                    {locale === "ar" && line.account?.nameAr
+                      ? line.account.nameAr
+                      : line.account?.nameEn || "Unknown Account"}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize">
-                      {line.account?.type || '-'}
+                      {line.account?.type || "-"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    {parseFloat(line.debit) > 0 
-                      ? formatCurrency(parseFloat(line.debit), 'AED', locale)
-                      : '-'}
+                    {parseFloat(line.debit) > 0
+                      ? formatCurrency(parseFloat(line.debit), "AED", locale)
+                      : "-"}
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    {parseFloat(line.credit) > 0 
-                      ? formatCurrency(parseFloat(line.credit), 'AED', locale)
-                      : '-'}
+                    {parseFloat(line.credit) > 0
+                      ? formatCurrency(parseFloat(line.credit), "AED", locale)
+                      : "-"}
                   </TableCell>
                 </TableRow>
               ))}
@@ -275,10 +293,10 @@ export default function JournalEntryDetail() {
                   Totals
                 </TableCell>
                 <TableCell className="text-right font-mono">
-                  {formatCurrency(totalDebit, 'AED', locale)}
+                  {formatCurrency(totalDebit, "AED", locale)}
                 </TableCell>
                 <TableCell className="text-right font-mono">
-                  {formatCurrency(totalCredit, 'AED', locale)}
+                  {formatCurrency(totalCredit, "AED", locale)}
                 </TableCell>
               </TableRow>
             </TableBody>
@@ -293,9 +311,13 @@ export default function JournalEntryDetail() {
           </CardHeader>
           <CardContent>
             <p className="text-muted-foreground">
-              This entry has been reversed.{' '}
+              This entry has been reversed.{" "}
               <Link href={`/journal/${entry.reversedEntryId}`}>
-                <Button variant="ghost" className="text-primary p-0 h-auto" data-testid="link-reversal-entry">
+                <Button
+                  variant="ghost"
+                  className="text-primary p-0 h-auto"
+                  data-testid="link-reversal-entry"
+                >
                   View reversal entry
                 </Button>
               </Link>
@@ -312,12 +334,14 @@ export default function JournalEntryDetail() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Entry ID:</span>
-              <span className="ml-2 font-mono" data-testid="text-entry-id">{entry.id}</span>
+              <span className="ml-2 font-mono" data-testid="text-entry-id">
+                {entry.id}
+              </span>
             </div>
             <div>
               <span className="text-muted-foreground">Created:</span>
               <span className="ml-2" data-testid="text-created-at">
-                {format(new Date(entry.createdAt), 'MMM d, yyyy HH:mm')}
+                {format(new Date(entry.createdAt), "MMM d, yyyy HH:mm")}
               </span>
             </div>
             {entry.sourceType && (

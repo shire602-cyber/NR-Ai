@@ -1,10 +1,17 @@
-import { storage } from '../storage';
-import type { BankTransaction, JournalEntry, JournalLine, Invoice, Receipt, Account } from '../../shared/schema';
-import { ACCOUNT_CODES } from '../constants';
+import { storage } from "../storage";
+import type {
+  BankTransaction,
+  JournalEntry,
+  JournalLine,
+  Invoice,
+  Receipt,
+  Account,
+} from "../../shared/schema";
+import { ACCOUNT_CODES } from "../constants";
 
 export interface ReconcileMatch {
   bankTransactionId: string;
-  matchedType: 'journal_entry' | 'invoice' | 'receipt';
+  matchedType: "journal_entry" | "invoice" | "receipt";
   matchedId: string;
   confidence: number;
   matchReason: string;
@@ -33,7 +40,7 @@ function extractReferenceNumbers(text: string): Set<string> {
   const refPattern = /\b([A-Z]{2,6}[-/]?\d{3,}|\d{6,})\b/gi;
   const matches = text.match(refPattern);
   if (matches) {
-    for (const m of matches) refs.add(m.toUpperCase().replace(/[/]/g, '-'));
+    for (const m of matches) refs.add(m.toUpperCase().replace(/[/]/g, "-"));
   }
   return refs;
 }
@@ -56,16 +63,40 @@ function textSimilarity(text1: string, text2: string): number {
   if (!text1 || !text2) return 0;
 
   const stopWords = new Set([
-    'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'for', 'on', 'at', 'by',
-    'from', 'with', 'ltd', 'llc', 'fze', 'pjsc', 'llp', 'inc', 'co', 'payment',
-    'transfer', 'bank', 'charge', 'fee', 'aed',
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "of",
+    "to",
+    "in",
+    "for",
+    "on",
+    "at",
+    "by",
+    "from",
+    "with",
+    "ltd",
+    "llc",
+    "fze",
+    "pjsc",
+    "llp",
+    "inc",
+    "co",
+    "payment",
+    "transfer",
+    "bank",
+    "charge",
+    "fee",
+    "aed",
   ]);
 
   const tokenize = (text: string): Set<string> => {
     return new Set(
       text
         .toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/[^a-z0-9\s]/g, " ")
         .split(/\s+/)
         .filter((w) => w.length > 2 && !stopWords.has(w))
     );
@@ -113,13 +144,19 @@ function calculateConfidence(
   // Amount matching (gate — if amounts don't match at all, skip)
   if (Math.abs(bankAmount - candidateAmount) < 0.01) {
     score += 50;
-    reasons.push('Exact amount match');
-  } else if (candidateAmount > 0 && Math.abs(bankAmount - candidateAmount) / candidateAmount <= 0.01) {
+    reasons.push("Exact amount match");
+  } else if (
+    candidateAmount > 0 &&
+    Math.abs(bankAmount - candidateAmount) / candidateAmount <= 0.01
+  ) {
     score += 35;
-    reasons.push('Amount within 1%');
-  } else if (candidateAmount > 0 && Math.abs(bankAmount - candidateAmount) / candidateAmount <= 0.05) {
+    reasons.push("Amount within 1%");
+  } else if (
+    candidateAmount > 0 &&
+    Math.abs(bankAmount - candidateAmount) / candidateAmount <= 0.05
+  ) {
     score += 15;
-    reasons.push('Amount within 5%');
+    reasons.push("Amount within 5%");
   } else {
     return { score: 0, reasons: [] };
   }
@@ -127,35 +164,35 @@ function calculateConfidence(
   // Date proximity
   if (datesWithinDays(bankDate, candidateDate, 0)) {
     score += 30;
-    reasons.push('Same date');
+    reasons.push("Same date");
   } else if (datesWithinDays(bankDate, candidateDate, 1)) {
     score += 25;
-    reasons.push('Within 1 day');
+    reasons.push("Within 1 day");
   } else if (datesWithinDays(bankDate, candidateDate, 3)) {
     score += 15;
-    reasons.push('Within 3 days');
+    reasons.push("Within 3 days");
   } else if (datesWithinDays(bankDate, candidateDate, 7)) {
     score += 5;
-    reasons.push('Within 7 days');
+    reasons.push("Within 7 days");
   }
 
   // Reference number overlap (invoice #, cheque #, payment ref)
   if (hasReferenceOverlap(bankDesc, candidateDesc)) {
     score += 20;
-    reasons.push('Reference number match');
+    reasons.push("Reference number match");
   }
 
   // Keyword text similarity
   const similarity = textSimilarity(bankDesc, candidateDesc);
   if (similarity >= 0.5) {
     score += 15;
-    reasons.push('Strong description match');
+    reasons.push("Strong description match");
   } else if (similarity >= 0.25) {
     score += 10;
-    reasons.push('Partial description match');
+    reasons.push("Partial description match");
   } else if (similarity > 0) {
     score += 5;
-    reasons.push('Weak description match');
+    reasons.push("Weak description match");
   }
 
   return { score: Math.min(score, 100), reasons };
@@ -200,18 +237,16 @@ async function loadCandidatePool(companyId: string): Promise<CandidatePool> {
   ]);
 
   const arAccountIds = new Set(
-    accounts.filter((a) => a.code === ACCOUNT_CODES.AR).map((a) => a.id),
+    accounts.filter((a) => a.code === ACCOUNT_CODES.AR).map((a) => a.id)
   );
   const apAccountIds = new Set(
-    accounts.filter((a) => a.code === ACCOUNT_CODES.AP).map((a) => a.id),
+    accounts.filter((a) => a.code === ACCOUNT_CODES.AP).map((a) => a.id)
   );
   // Bank GL accounts are the cash/bank side of any reconciliation JE — we
   // exclude them from the "largest non-bank line" fallback so the scorer
   // doesn't trivially match a JE against itself by its own bank-side amount.
   const bankGlAccountIds = new Set(
-    managedBankAccounts
-      .map((b) => b.glAccountId)
-      .filter((id): id is string => id !== null),
+    managedBankAccounts.map((b) => b.glAccountId).filter((id): id is string => id !== null)
   );
 
   const postedEntries: JournalEntry[] = [];
@@ -263,7 +298,7 @@ function matchTransaction(
 ): ReconcileMatch[] {
   const bankAmount = Math.abs(txn.amount);
   const bankDate = new Date(txn.transactionDate);
-  const bankDesc = txn.description + (txn.reference ? ' ' + txn.reference : '');
+  const bankDesc = txn.description + (txn.reference ? " " + txn.reference : "");
   const isCredit = txn.amount > 0;
 
   const candidates: ReconcileMatch[] = [];
@@ -285,35 +320,40 @@ function matchTransaction(
     if (!amounts) continue;
 
     const preferred = isCredit ? amounts.arAmount : amounts.apAmount;
-    const candidateAmount = preferred > 0
-      ? preferred
-      : amounts.largestNonBankLine > 0
-        ? amounts.largestNonBankLine
-        : amounts.totalDebit;
+    const candidateAmount =
+      preferred > 0
+        ? preferred
+        : amounts.largestNonBankLine > 0
+          ? amounts.largestNonBankLine
+          : amounts.totalDebit;
     if (candidateAmount === 0) continue;
 
     const entryDate = new Date(entry.date);
     const { score, reasons } = calculateConfidence(
-      bankAmount, candidateAmount, bankDate, entryDate, bankDesc, amounts.description
+      bankAmount,
+      candidateAmount,
+      bankDate,
+      entryDate,
+      bankDesc,
+      amounts.description
     );
 
     if (score > 0) {
       candidates.push({
         bankTransactionId: txn.id,
-        matchedType: 'journal_entry',
+        matchedType: "journal_entry",
         matchedId: entry.id,
         confidence: score,
-        matchReason: reasons.join('; '),
+        matchReason: reasons.join("; "),
         bankDescription: txn.description,
         bankAmount: txn.amount,
-        bankDate: txn.transactionDate instanceof Date
-          ? txn.transactionDate.toISOString()
-          : String(txn.transactionDate),
+        bankDate:
+          txn.transactionDate instanceof Date
+            ? txn.transactionDate.toISOString()
+            : String(txn.transactionDate),
         matchedDescription: amounts.description,
         matchedAmount: candidateAmount,
-        matchedDate: entry.date instanceof Date
-          ? entry.date.toISOString()
-          : String(entry.date),
+        matchedDate: entry.date instanceof Date ? entry.date.toISOString() : String(entry.date),
       });
     }
   }
@@ -323,30 +363,34 @@ function matchTransaction(
     for (const inv of pool.invoices) {
       const key = `inv-${inv.id}`;
       if (usedCandidates?.has(key)) continue;
-      if (inv.status === 'void') continue;
+      if (inv.status === "void") continue;
 
-      const invDesc = `Invoice ${inv.number} ${(inv as any).customerName || ''}`.trim();
+      const invDesc = `Invoice ${inv.number} ${(inv as any).customerName || ""}`.trim();
       const { score, reasons } = calculateConfidence(
-        bankAmount, inv.total, bankDate, new Date(inv.date), bankDesc, invDesc
+        bankAmount,
+        inv.total,
+        bankDate,
+        new Date(inv.date),
+        bankDesc,
+        invDesc
       );
 
       if (score > 0) {
         candidates.push({
           bankTransactionId: txn.id,
-          matchedType: 'invoice',
+          matchedType: "invoice",
           matchedId: inv.id,
           confidence: score,
-          matchReason: reasons.join('; '),
+          matchReason: reasons.join("; "),
           bankDescription: txn.description,
           bankAmount: txn.amount,
-          bankDate: txn.transactionDate instanceof Date
-            ? txn.transactionDate.toISOString()
-            : String(txn.transactionDate),
+          bankDate:
+            txn.transactionDate instanceof Date
+              ? txn.transactionDate.toISOString()
+              : String(txn.transactionDate),
           matchedDescription: invDesc,
           matchedAmount: inv.total,
-          matchedDate: inv.date instanceof Date
-            ? inv.date.toISOString()
-            : String(inv.date),
+          matchedDate: inv.date instanceof Date ? inv.date.toISOString() : String(inv.date),
         });
       }
     }
@@ -360,29 +404,35 @@ function matchTransaction(
       if (!receipt.amount || receipt.amount <= 0) continue;
 
       const rcptDate = receipt.date ? new Date(receipt.date) : new Date(receipt.createdAt);
-      const rcptDesc = `${(receipt as any).merchant || ''} ${receipt.category || ''}`.trim();
+      const rcptDesc = `${(receipt as any).merchant || ""} ${receipt.category || ""}`.trim();
 
       // Bank transactions show the gross paid amount; receipts.amount is
       // the net subtotal so we add VAT to compare like-for-like.
       const receiptGross = receipt.amount + ((receipt as any).vatAmount || 0);
 
       const { score, reasons } = calculateConfidence(
-        bankAmount, receiptGross, bankDate, rcptDate, bankDesc, rcptDesc
+        bankAmount,
+        receiptGross,
+        bankDate,
+        rcptDate,
+        bankDesc,
+        rcptDesc
       );
 
       if (score > 0) {
         candidates.push({
           bankTransactionId: txn.id,
-          matchedType: 'receipt',
+          matchedType: "receipt",
           matchedId: receipt.id,
           confidence: score,
-          matchReason: reasons.join('; '),
+          matchReason: reasons.join("; "),
           bankDescription: txn.description,
           bankAmount: txn.amount,
-          bankDate: txn.transactionDate instanceof Date
-            ? txn.transactionDate.toISOString()
-            : String(txn.transactionDate),
-          matchedDescription: rcptDesc || 'Receipt',
+          bankDate:
+            txn.transactionDate instanceof Date
+              ? txn.transactionDate.toISOString()
+              : String(txn.transactionDate),
+          matchedDescription: rcptDesc || "Receipt",
           matchedAmount: receiptGross,
           matchedDate: rcptDate.toISOString(),
         });
@@ -429,8 +479,12 @@ export async function autoReconcileTransactions(companyId: string): Promise<Auto
     if (candidates.length > 0) {
       const best = candidates[0];
       matches.push(best);
-      const prefix = best.matchedType === 'journal_entry' ? 'je'
-        : best.matchedType === 'invoice' ? 'inv' : 'rcpt';
+      const prefix =
+        best.matchedType === "journal_entry"
+          ? "je"
+          : best.matchedType === "invoice"
+            ? "inv"
+            : "rcpt";
       matchedCandidates.add(`${prefix}-${best.matchedId}`);
     }
   }
@@ -440,7 +494,9 @@ export async function autoReconcileTransactions(companyId: string): Promise<Auto
   return {
     matches,
     autoMatchedCount: matches.filter((m) => m.confidence >= AUTO_MATCH_THRESHOLD).length,
-    manualReviewCount: matches.filter((m) => m.confidence < AUTO_MATCH_THRESHOLD && m.confidence > 0).length,
+    manualReviewCount: matches.filter(
+      (m) => m.confidence < AUTO_MATCH_THRESHOLD && m.confidence > 0
+    ).length,
     totalUnreconciled: unreconciledTxns.length,
   };
 }
@@ -455,7 +511,7 @@ export async function autoReconcileTransactions(companyId: string): Promise<Auto
 export async function applyReconcileMatches(
   companyId: string,
   matchIds: { bankTransactionId: string; matchedType: string; matchedId: string }[],
-  userId?: string,
+  userId?: string
 ): Promise<{ applied: number; errors: string[] }> {
   let applied = 0;
   const errors: string[] = [];
@@ -466,12 +522,14 @@ export async function applyReconcileMatches(
         match.bankTransactionId,
         companyId,
         match.matchedId,
-        match.matchedType as 'journal' | 'receipt' | 'invoice',
-        userId,
+        match.matchedType as "journal" | "receipt" | "invoice",
+        userId
       );
       applied++;
     } catch (err: any) {
-      errors.push(`Failed to reconcile ${match.bankTransactionId}: ${err.message || 'Unknown error'}`);
+      errors.push(
+        `Failed to reconcile ${match.bankTransactionId}: ${err.message || "Unknown error"}`
+      );
     }
   }
 

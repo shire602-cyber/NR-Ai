@@ -1,25 +1,31 @@
-import { useState, useRef, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest } from '@/lib/queryClient';
-import { getAuthHeaders } from '@/lib/auth';
-import { apiUrl } from '@/lib/api';
-import { withCsrfHeader } from '@/lib/csrf';
-import { 
-  Send, 
-  Bot, 
+import { useState, useRef, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/auth";
+import { apiUrl } from "@/lib/api";
+import { withCsrfHeader } from "@/lib/csrf";
+import {
+  Send,
+  Bot,
   User,
   Loader2,
   Settings,
@@ -28,13 +34,13 @@ import {
   ChevronDown,
   X,
   Clock,
-  Zap
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
+  Zap,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: Date;
   model?: string;
@@ -54,9 +60,9 @@ export default function AIChat() {
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [model, setModel] = useState<'gpt-3.5-turbo' | 'gpt-4' | 'gpt-4-turbo'>('gpt-3.5-turbo');
-  const [systemPrompt, setSystemPrompt] = useState('');
+  const [input, setInput] = useState("");
+  const [model, setModel] = useState<"gpt-3.5-turbo" | "gpt-4" | "gpt-4-turbo">("gpt-3.5-turbo");
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [useCustomSystemPrompt, setUseCustomSystemPrompt] = useState(false);
   const [streaming, setStreaming] = useState(true);
   const [showHistory, setShowHistory] = useState(false);
@@ -74,20 +80,20 @@ export default function AIChat() {
       // Radix UI ScrollArea structure: Root > Viewport (scrollable) > children
       // Find the viewport element - it's typically the first child div
       const rootElement = scrollRef.current as HTMLElement;
-      const viewport = rootElement.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement ||
-                      Array.from(rootElement.children).find(
-                        (child): child is HTMLElement => 
-                          child instanceof HTMLElement && 
-                          child.scrollHeight > child.clientHeight
-                      ) as HTMLElement;
-      
+      const viewport =
+        (rootElement.querySelector("[data-radix-scroll-area-viewport]") as HTMLElement) ||
+        (Array.from(rootElement.children).find(
+          (child): child is HTMLElement =>
+            child instanceof HTMLElement && child.scrollHeight > child.clientHeight
+        ) as HTMLElement);
+
       if (viewport) {
         // Directly scroll the viewport to bottom
         viewport.scrollTop = viewport.scrollHeight;
       } else {
         // Fallback: Use scrollIntoView on the last message element
         // This scrolls the element into view within its scrollable ancestor
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
       }
     }
   }, [messages]);
@@ -99,10 +105,10 @@ export default function AIChat() {
 
   // Fetch conversation history
   const { data: history, refetch: refetchHistory } = useQuery<Conversation[]>({
-    queryKey: ['/api/ask/history', companyId],
+    queryKey: ["/api/ask/history", companyId],
     queryFn: async () => {
-      const params = companyId ? `?companyId=${companyId}` : '';
-      return apiRequest('GET', `/api/ask/history${params}`);
+      const params = companyId ? `?companyId=${companyId}` : "";
+      return apiRequest("GET", `/api/ask/history${params}`);
     },
     enabled: showHistory,
   });
@@ -111,13 +117,13 @@ export default function AIChat() {
   const streamMutation = useMutation({
     mutationFn: async (message: string) => {
       abortControllerRef.current = new AbortController();
-      const response = await fetch(apiUrl('/api/ask'), {
-        method: 'POST',
-        headers: await withCsrfHeader('POST', {
-          'Content-Type': 'application/json',
+      const response = await fetch(apiUrl("/api/ask"), {
+        method: "POST",
+        headers: await withCsrfHeader("POST", {
+          "Content-Type": "application/json",
           ...getAuthHeaders(),
         }),
-        credentials: 'include',
+        credentials: "include",
         body: JSON.stringify({
           message,
           companyId: companyId || undefined,
@@ -130,29 +136,32 @@ export default function AIChat() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error?.message || 'Failed to get response');
+        throw new Error(error?.message || "Failed to get response");
       }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
-      let assistantMessage = '';
+      let assistantMessage = "";
       const messageId = `assistant-${Date.now()}`;
 
       // Add streaming message placeholder
-      setMessages(prev => [...prev, {
-        id: messageId,
-        role: 'assistant',
-        content: '',
-        timestamp: new Date(),
-        model,
-        streaming: true,
-        error: false,
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: messageId,
+          role: "assistant",
+          content: "",
+          timestamp: new Date(),
+          model,
+          streaming: true,
+          error: false,
+        },
+      ]);
 
-      if (!reader) throw new Error('No reader available');
+      if (!reader) throw new Error("No reader available");
 
       // Buffer for incomplete SSE messages
-      let buffer = '';
+      let buffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -162,37 +171,35 @@ export default function AIChat() {
         buffer += decoder.decode(value, { stream: true });
 
         // SSE messages are delimited by double newlines
-        const messages = buffer.split('\n\n');
-        
+        const messages = buffer.split("\n\n");
+
         // Keep the last incomplete message in buffer
-        buffer = messages.pop() || '';
+        buffer = messages.pop() || "";
 
         // Process complete SSE messages
         for (const message of messages) {
-          const lines = message.split('\n');
+          const lines = message.split("\n");
           for (const line of lines) {
-            if (line.startsWith('data: ')) {
+            if (line.startsWith("data: ")) {
               try {
                 const data = JSON.parse(line.slice(6));
                 if (data.content) {
                   assistantMessage += data.content;
-                  setMessages(prev => prev.map(msg => 
-                    msg.id === messageId 
-                      ? { ...msg, content: assistantMessage }
-                      : msg
-                  ));
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === messageId ? { ...msg, content: assistantMessage } : msg
+                    )
+                  );
                 }
                 if (data.done) {
-                  setMessages(prev => prev.map(msg => 
-                    msg.id === messageId 
-                      ? { ...msg, streaming: false }
-                      : msg
-                  ));
+                  setMessages((prev) =>
+                    prev.map((msg) => (msg.id === messageId ? { ...msg, streaming: false } : msg))
+                  );
                   refetchHistory();
                 }
               } catch (e) {
                 // Ignore parse errors for malformed JSON
-                console.warn('Failed to parse SSE data:', e);
+                console.warn("Failed to parse SSE data:", e);
               }
             }
           }
@@ -201,29 +208,27 @@ export default function AIChat() {
 
       // Process any remaining buffered data
       if (buffer.trim()) {
-        const lines = buffer.split('\n');
+        const lines = buffer.split("\n");
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
+          if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
               if (data.content) {
                 assistantMessage += data.content;
-                setMessages(prev => prev.map(msg => 
-                  msg.id === messageId 
-                    ? { ...msg, content: assistantMessage }
-                    : msg
-                ));
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === messageId ? { ...msg, content: assistantMessage } : msg
+                  )
+                );
               }
               if (data.done) {
-                setMessages(prev => prev.map(msg => 
-                  msg.id === messageId 
-                    ? { ...msg, streaming: false }
-                    : msg
-                ));
+                setMessages((prev) =>
+                  prev.map((msg) => (msg.id === messageId ? { ...msg, streaming: false } : msg))
+                );
                 refetchHistory();
               }
             } catch (e) {
-              console.warn('Failed to parse final SSE data:', e);
+              console.warn("Failed to parse final SSE data:", e);
             }
           }
         }
@@ -232,30 +237,35 @@ export default function AIChat() {
       return assistantMessage;
     },
     onError: (error: any) => {
-      if (error.name === 'AbortError') {
+      if (error.name === "AbortError") {
         toast({
-          title: 'Request cancelled',
-          description: 'The request was cancelled.',
+          title: "Request cancelled",
+          description: "The request was cancelled.",
         });
         // For cancelled requests, remove the streaming message
-        setMessages(prev => prev.filter(msg => msg.streaming !== true));
+        setMessages((prev) => prev.filter((msg) => msg.streaming !== true));
       } else {
         toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: error?.message || 'Failed to get response',
+          variant: "destructive",
+          title: "Error",
+          description: error?.message || "Failed to get response",
         });
         // Preserve partial content but mark message as error and stop streaming
-        setMessages(prev => prev.map(msg => 
-          msg.streaming === true
-            ? { 
-                ...msg, 
-                streaming: false, 
-                error: true,
-                content: msg.content || 'Error: Failed to get response. ' + (error?.message || 'Unknown error occurred.')
-              }
-            : msg
-        ));
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.streaming === true
+              ? {
+                  ...msg,
+                  streaming: false,
+                  error: true,
+                  content:
+                    msg.content ||
+                    "Error: Failed to get response. " +
+                      (error?.message || "Unknown error occurred."),
+                }
+              : msg
+          )
+        );
       }
     },
   });
@@ -263,7 +273,7 @@ export default function AIChat() {
   // Non-streaming mutation
   const nonStreamMutation = useMutation({
     mutationFn: async (message: string) => {
-      return apiRequest('POST', '/api/ask', {
+      return apiRequest("POST", "/api/ask", {
         message,
         companyId: companyId || undefined,
         model,
@@ -272,20 +282,23 @@ export default function AIChat() {
       });
     },
     onSuccess: (data) => {
-      setMessages(prev => [...prev, {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: data.response,
-        timestamp: new Date(data.timestamp),
-        model: data.model,
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: data.response,
+          timestamp: new Date(data.timestamp),
+          model: data.model,
+        },
+      ]);
       refetchHistory();
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error?.message || 'Failed to get response',
+        variant: "destructive",
+        title: "Error",
+        description: error?.message || "Failed to get response",
       });
     },
   });
@@ -296,14 +309,14 @@ export default function AIChat() {
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
-      role: 'user',
+      role: "user",
       content: input,
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     const messageText = input;
-    setInput('');
+    setInput("");
 
     if (streaming) {
       streamMutation.mutate(messageText);
@@ -323,13 +336,13 @@ export default function AIChat() {
     setMessages([
       {
         id: `user-${conversation.id}`,
-        role: 'user',
+        role: "user",
         content: conversation.prompt,
         timestamp: new Date(conversation.createdAt),
       },
       {
         id: `assistant-${conversation.id}`,
-        role: 'assistant',
+        role: "assistant",
         content: conversation.response,
         timestamp: new Date(conversation.createdAt),
         model: conversation.model,
@@ -350,22 +363,16 @@ export default function AIChat() {
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
                 <CardTitle>AI Assistant</CardTitle>
-                <Badge variant="outline" className="ml-2">{model}</Badge>
+                <Badge variant="outline" className="ml-2">
+                  {model}
+                </Badge>
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowHistory(!showHistory)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>
                   <History className="h-4 w-4 mr-2" />
                   History
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowSettings(!showSettings)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setShowSettings(!showSettings)}>
                   <Settings className="h-4 w-4 mr-2" />
                   Settings
                 </Button>
@@ -395,11 +402,7 @@ export default function AIChat() {
                 </div>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="streaming">Streaming Response</Label>
-                  <Switch
-                    id="streaming"
-                    checked={streaming}
-                    onCheckedChange={setStreaming}
-                  />
+                  <Switch id="streaming" checked={streaming} onCheckedChange={setStreaming} />
                 </div>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="custom-prompt">Custom System Prompt</Label>
@@ -440,10 +443,10 @@ export default function AIChat() {
                   key={message.id}
                   className={cn(
                     "flex gap-3 animate-slide-up",
-                    message.role === 'user' ? 'justify-end' : 'justify-start'
+                    message.role === "user" ? "justify-end" : "justify-start"
                   )}
                 >
-                  {message.role === 'assistant' && (
+                  {message.role === "assistant" && (
                     <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                       <Bot className="h-4 w-4 text-primary" />
                     </div>
@@ -451,11 +454,11 @@ export default function AIChat() {
                   <div
                     className={cn(
                       "rounded-lg px-4 py-2 max-w-[80%] animate-fade-in",
-                      message.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
+                      message.role === "user"
+                        ? "bg-primary text-primary-foreground"
                         : message.error
-                        ? 'bg-destructive/10 border border-destructive/20 text-destructive'
-                        : 'bg-muted'
+                          ? "bg-destructive/10 border border-destructive/20 text-destructive"
+                          : "bg-muted"
                     )}
                   >
                     {message.error && (
@@ -465,22 +468,25 @@ export default function AIChat() {
                       </div>
                     )}
                     <div className="whitespace-pre-wrap break-words">
-                      {message.content || (message.streaming && (
-                        <span className="inline-flex items-center gap-1">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          Thinking...
-                        </span>
-                      ))}
+                      {message.content ||
+                        (message.streaming && (
+                          <span className="inline-flex items-center gap-1">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Thinking...
+                          </span>
+                        ))}
                     </div>
                     <div className="text-xs opacity-70 mt-1 flex items-center gap-2">
                       <Clock className="h-3 w-3" />
                       {message.timestamp.toLocaleTimeString()}
                       {message.model && (
-                        <Badge variant="outline" className="text-xs">{message.model}</Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {message.model}
+                        </Badge>
                       )}
                     </div>
                   </div>
-                  {message.role === 'user' && (
+                  {message.role === "user" && (
                     <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary flex items-center justify-center">
                       <User className="h-4 w-4" />
                     </div>
@@ -505,7 +511,7 @@ export default function AIChat() {
                   className="resize-none"
                   disabled={isPending}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
+                    if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       handleSubmit(e);
                     }
@@ -525,12 +531,7 @@ export default function AIChat() {
                     )}
                   </Button>
                   {isPending && streaming && (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="icon"
-                      onClick={handleStop}
-                    >
+                    <Button type="button" variant="destructive" size="icon" onClick={handleStop}>
                       <X className="h-4 w-4" />
                     </Button>
                   )}
@@ -546,11 +547,7 @@ export default function AIChat() {
             <CardHeader className="flex-shrink-0 border-b">
               <div className="flex items-center justify-between">
                 <CardTitle>History</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowHistory(false)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>
                   <X className="h-4 w-4" />
                 </Button>
               </div>
@@ -574,7 +571,9 @@ export default function AIChat() {
                           <p className="text-sm line-clamp-2 mb-2">{conv.prompt}</p>
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
                             <span>{new Date(conv.createdAt).toLocaleDateString()}</span>
-                            <Badge variant="outline" className="text-xs">{conv.model}</Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {conv.model}
+                            </Badge>
                           </div>
                         </CardContent>
                       </Card>

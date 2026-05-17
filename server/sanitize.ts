@@ -1,5 +1,5 @@
-import DOMPurify from 'isomorphic-dompurify';
-import path from 'path';
+import DOMPurify from "isomorphic-dompurify";
+import path from "path";
 
 /**
  * Strip ALL HTML/SVG markup. Use for user-supplied text fields that should
@@ -19,13 +19,30 @@ export function sanitizeText<T extends string | null | undefined>(value: T): T {
 export function sanitizeRichText(html: string): string {
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS: [
-      'p', 'br', 'strong', 'em', 'b', 'i', 'u',
-      'ul', 'ol', 'li',
-      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'blockquote', 'code', 'pre',
-      'a', 'span', 'div',
+      "p",
+      "br",
+      "strong",
+      "em",
+      "b",
+      "i",
+      "u",
+      "ul",
+      "ol",
+      "li",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "blockquote",
+      "code",
+      "pre",
+      "a",
+      "span",
+      "div",
     ],
-    ALLOWED_ATTR: ['href', 'title', 'target', 'rel', 'class'],
+    ALLOWED_ATTR: ["href", "title", "target", "rel", "class"],
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):)/i,
   });
 }
@@ -37,11 +54,11 @@ export function sanitizeRichText(html: string): string {
  */
 export function sanitizeStringsDeep<T>(value: T): T {
   if (value == null) return value;
-  if (typeof value === 'string') return sanitizeText(value) as unknown as T;
+  if (typeof value === "string") return sanitizeText(value) as unknown as T;
   if (Array.isArray(value)) {
     return value.map((v) => sanitizeStringsDeep(v)) as unknown as T;
   }
-  if (typeof value === 'object' && value.constructor === Object) {
+  if (typeof value === "object" && value.constructor === Object) {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
       out[k] = sanitizeStringsDeep(v);
@@ -55,20 +72,18 @@ export function sanitizeStringsDeep<T>(value: T): T {
 
 const SAFE_FILENAME = /^[A-Za-z0-9._-]+$/;
 const ALLOWED_MIME_PREFIXES = [
-  'image/',
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
-  'text/csv',
-  'text/plain',
+  "image/",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "text/csv",
+  "text/plain",
 ];
 
 export function isAllowedMimeType(mime: string): boolean {
   if (!mime) return false;
   const lower = mime.toLowerCase();
-  return ALLOWED_MIME_PREFIXES.some((p) =>
-    p.endsWith('/') ? lower.startsWith(p) : lower === p,
-  );
+  return ALLOWED_MIME_PREFIXES.some((p) => (p.endsWith("/") ? lower.startsWith(p) : lower === p));
 }
 
 /**
@@ -76,19 +91,19 @@ export function isAllowedMimeType(mime: string): boolean {
  * tricks, and anything outside [A-Za-z0-9._-]. Always returns a safe basename.
  */
 export function sanitizeFilename(name: string): string {
-  if (!name) return 'file';
+  if (!name) return "file";
   // Strip path components
   const base = path.basename(name);
   // Drop anything not in our allowlist; collapse repeats; trim leading dots
   const cleaned = base
-    .replace(/[^A-Za-z0-9._-]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^\.+/, '');
-  return cleaned.length > 0 ? cleaned.slice(0, 200) : 'file';
+    .replace(/[^A-Za-z0-9._-]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^\.+/, "");
+  return cleaned.length > 0 ? cleaned.slice(0, 200) : "file";
 }
 
 export function isSafeFilename(name: string): boolean {
-  return SAFE_FILENAME.test(name) && !name.includes('..');
+  return SAFE_FILENAME.test(name) && !name.includes("..");
 }
 
 export interface UploadCheck {
@@ -97,18 +112,23 @@ export interface UploadCheck {
   safeName?: string;
 }
 
-export function validateUpload(file: {
-  originalname: string;
-  mimetype: string;
-  size: number;
-}, opts: { maxBytes?: number; allowedMimePrefixes?: string[] } = {}): UploadCheck {
+export function validateUpload(
+  file: {
+    originalname: string;
+    mimetype: string;
+    size: number;
+  },
+  opts: { maxBytes?: number; allowedMimePrefixes?: string[] } = {}
+): UploadCheck {
   const maxBytes = opts.maxBytes ?? 10 * 1024 * 1024; // 10 MB default
   if (file.size > maxBytes) {
     return { ok: false, error: `File exceeds ${Math.round(maxBytes / 1024 / 1024)}MB limit` };
   }
   const allowed = opts.allowedMimePrefixes
     ? opts.allowedMimePrefixes.some((p) =>
-        p.endsWith('/') ? file.mimetype.toLowerCase().startsWith(p) : file.mimetype.toLowerCase() === p,
+        p.endsWith("/")
+          ? file.mimetype.toLowerCase().startsWith(p)
+          : file.mimetype.toLowerCase() === p
       )
     : isAllowedMimeType(file.mimetype);
   if (!allowed) {

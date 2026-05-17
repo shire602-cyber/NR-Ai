@@ -1,21 +1,29 @@
-import { useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { FileText, Save, Info } from 'lucide-react';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import type { Company } from '@shared/schema';
+import { useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormDescription,
+} from "@/components/ui/form";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { FileText, Save, Info } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import type { Company } from "@shared/schema";
 
 const invoiceSettingsSchema = z.object({
   invoiceShowLogo: z.boolean().default(true),
@@ -23,8 +31,14 @@ const invoiceSettingsSchema = z.object({
   invoiceShowPhone: z.boolean().default(true),
   invoiceShowEmail: z.boolean().default(true),
   invoiceShowWebsite: z.boolean().default(false),
-  invoiceCustomTitle: z.string().transform(val => val || undefined).optional(),
-  invoiceFooterNote: z.string().transform(val => val || undefined).optional(),
+  invoiceCustomTitle: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
+  invoiceFooterNote: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
 });
 
 type InvoiceSettingsFormData = z.infer<typeof invoiceSettingsSchema>;
@@ -34,7 +48,7 @@ export default function InvoiceSettings() {
   const { companyId } = useDefaultCompany();
 
   const { data: company, isLoading } = useQuery<Company>({
-    queryKey: ['/api/companies', companyId],
+    queryKey: ["/api/companies", companyId],
     enabled: !!companyId,
   });
 
@@ -46,8 +60,8 @@ export default function InvoiceSettings() {
       invoiceShowPhone: true,
       invoiceShowEmail: true,
       invoiceShowWebsite: false,
-      invoiceCustomTitle: '',
-      invoiceFooterNote: '',
+      invoiceCustomTitle: "",
+      invoiceFooterNote: "",
     },
   });
 
@@ -60,29 +74,29 @@ export default function InvoiceSettings() {
         invoiceShowPhone: company.invoiceShowPhone ?? true,
         invoiceShowEmail: company.invoiceShowEmail ?? true,
         invoiceShowWebsite: company.invoiceShowWebsite ?? false,
-        invoiceCustomTitle: company.invoiceCustomTitle || '',
-        invoiceFooterNote: company.invoiceFooterNote || '',
+        invoiceCustomTitle: company.invoiceCustomTitle || "",
+        invoiceFooterNote: company.invoiceFooterNote || "",
       });
     }
   }, [company, form]);
 
   const updateMutation = useMutation({
     mutationFn: (data: InvoiceSettingsFormData) => {
-      return apiRequest('PATCH', `/api/companies/${companyId}`, data);
+      return apiRequest("PATCH", `/api/companies/${companyId}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: 'Invoice settings updated',
-        description: 'Your invoice customization settings have been saved successfully.',
+        title: "Invoice settings updated",
+        description: "Your invoice customization settings have been saved successfully.",
       });
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Failed to update settings',
-        description: error?.message || 'Please try again.',
+        variant: "destructive",
+        title: "Failed to update settings",
+        description: error?.message || "Please try again.",
       });
     },
   });
@@ -113,17 +127,16 @@ export default function InvoiceSettings() {
     <div className="space-y-8 max-w-3xl">
       <div>
         <h1 className="text-3xl font-semibold mb-2">Invoice Settings</h1>
-        <p className="text-muted-foreground">
-          Customize how your invoices appear to customers
-        </p>
+        <p className="text-muted-foreground">Customize how your invoices appear to customers</p>
       </div>
 
       {isVATRegistered && (
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            Your company is VAT registered. All invoices will automatically display your TRN ({company.trnVatNumber}) 
-            and be labeled as "Tax Invoice" to comply with UAE FTA requirements.
+            Your company is VAT registered. All invoices will automatically display your TRN (
+            {company.trnVatNumber}) and be labeled as "Tax Invoice" to comply with UAE FTA
+            requirements.
           </AlertDescription>
         </Alert>
       )}
@@ -288,9 +301,7 @@ export default function InvoiceSettings() {
           <Card>
             <CardHeader>
               <CardTitle>Invoice Customization</CardTitle>
-              <CardDescription>
-                Customize the appearance and text of your invoices
-              </CardDescription>
+              <CardDescription>Customize the appearance and text of your invoices</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -301,16 +312,17 @@ export default function InvoiceSettings() {
                     <FormLabel>Invoice Title</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder={isVATRegistered ? "Tax Invoice (default)" : "Invoice (default)"}
+                        placeholder={
+                          isVATRegistered ? "Tax Invoice (default)" : "Invoice (default)"
+                        }
                         {...field}
                         data-testid="input-invoice-title"
                       />
                     </FormControl>
                     <FormDescription>
-                      {isVATRegistered 
+                      {isVATRegistered
                         ? 'For VAT-registered companies, invoices default to "Tax Invoice". You can customize this, but it must comply with FTA regulations.'
-                        : 'Custom title for your invoices. Leave blank to use "Invoice".'
-                      }
+                        : 'Custom title for your invoices. Leave blank to use "Invoice".'}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -333,7 +345,8 @@ export default function InvoiceSettings() {
                       />
                     </FormControl>
                     <FormDescription>
-                      Add a custom message at the bottom of your invoices (e.g., payment terms, thank you message)
+                      Add a custom message at the bottom of your invoices (e.g., payment terms,
+                      thank you message)
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -349,7 +362,7 @@ export default function InvoiceSettings() {
               data-testid="button-save-settings"
             >
               <Save className="w-4 h-4 mr-2" />
-              {updateMutation.isPending ? 'Saving...' : 'Save Settings'}
+              {updateMutation.isPending ? "Saving..." : "Save Settings"}
             </Button>
           </div>
         </form>

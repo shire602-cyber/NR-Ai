@@ -4,9 +4,9 @@
  * Executive dashboard for firm owners with key metrics, client health table,
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
-import { useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useMemo, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -24,7 +24,7 @@ import {
   Building2,
   Loader2,
   Activity,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -34,13 +34,13 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
   Legend,
-} from 'recharts';
+} from "recharts";
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -48,14 +48,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,16 +66,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+} from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 // ─── Types (mirror server) ──────────────────────────────────────────────
 
-type Severity = 'critical' | 'warning' | 'info';
-type RankBy = 'health' | 'revenue' | 'overdue' | 'compliance';
-type Granularity = 'month' | 'quarter';
+type Severity = "critical" | "warning" | "info";
+type RankBy = "health" | "revenue" | "overdue" | "compliance";
+type Granularity = "month" | "quarter";
 
 interface DashboardSummary {
   totalClients: number;
@@ -94,7 +94,7 @@ interface ClientHealthRow {
   companyId: string;
   companyName: string;
   score: number;
-  rating: 'excellent' | 'good' | 'fair' | 'poor' | 'critical';
+  rating: "excellent" | "good" | "fair" | "poor" | "critical";
   healthScore: number;
   revenue: number;
   overdueBalance: number;
@@ -137,37 +137,37 @@ interface ComparisonResponse {
 // ─── Helpers ────────────────────────────────────────────────────────────
 
 function formatAed(n: number): string {
-  return new Intl.NumberFormat('en-AE', {
-    style: 'currency',
-    currency: 'AED',
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
+    currency: "AED",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(n);
 }
 
-function ratingColor(rating: ClientHealthRow['rating']): string {
+function ratingColor(rating: ClientHealthRow["rating"]): string {
   switch (rating) {
-    case 'excellent':
-      return 'bg-emerald-100 text-emerald-800';
-    case 'good':
-      return 'bg-green-100 text-green-800';
-    case 'fair':
-      return 'bg-amber-100 text-amber-800';
-    case 'poor':
-      return 'bg-orange-100 text-orange-800';
-    case 'critical':
-      return 'bg-red-100 text-red-800';
+    case "excellent":
+      return "bg-emerald-100 text-emerald-800";
+    case "good":
+      return "bg-green-100 text-green-800";
+    case "fair":
+      return "bg-amber-100 text-amber-800";
+    case "poor":
+      return "bg-orange-100 text-orange-800";
+    case "critical":
+      return "bg-red-100 text-red-800";
   }
 }
 
 function severityColor(s: Severity): string {
   switch (s) {
-    case 'critical':
-      return 'bg-red-100 text-red-800 border-red-300';
-    case 'warning':
-      return 'bg-amber-100 text-amber-800 border-amber-300';
-    case 'info':
-      return 'bg-blue-100 text-blue-800 border-blue-300';
+    case "critical":
+      return "bg-red-100 text-red-800 border-red-300";
+    case "warning":
+      return "bg-amber-100 text-amber-800 border-amber-300";
+    case "info":
+      return "bg-blue-100 text-blue-800 border-blue-300";
   }
 }
 
@@ -199,12 +199,12 @@ function MetricCard({
         {trend && (
           <div
             className={`text-xs mt-2 flex items-center gap-1 ${
-              isUp ? 'text-emerald-600' : 'text-red-600'
+              isUp ? "text-emerald-600" : "text-red-600"
             }`}
           >
             {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
             <span>
-              {trend.value > 0 ? '+' : ''}
+              {trend.value > 0 ? "+" : ""}
               {trend.value}% {trend.label}
             </span>
           </div>
@@ -221,113 +221,111 @@ export default function FirmCommandCenter() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const [search, setSearch] = useState('');
-  const [rankBy, setRankBy] = useState<RankBy>('health');
-  const [granularity, setGranularity] = useState<Granularity>('month');
+  const [search, setSearch] = useState("");
+  const [rankBy, setRankBy] = useState<RankBy>("health");
+  const [granularity, setGranularity] = useState<Granularity>("month");
   const [selectedClients, setSelectedClients] = useState<Set<string>>(new Set());
-  const [severityFilter, setSeverityFilter] = useState<Severity | 'all'>('all');
+  const [severityFilter, setSeverityFilter] = useState<Severity | "all">("all");
 
   // ─── Queries ───────────────────────────────────────────────────────
   const dashboardQuery = useQuery<{
     summary: DashboardSummary;
     healthScores: ClientHealthRow[];
   }>({
-    queryKey: ['/api/firm/command-center/dashboard'],
+    queryKey: ["/api/firm/command-center/dashboard"],
   });
 
   const healthQuery = useQuery<ClientHealthRow[]>({
-    queryKey: ['/api/firm/command-center/clients/health', rankBy],
+    queryKey: ["/api/firm/command-center/clients/health", rankBy],
     queryFn: () =>
-      apiRequest('GET', `/api/firm/command-center/clients/health?by=${rankBy}&dir=desc`),
+      apiRequest("GET", `/api/firm/command-center/clients/health?by=${rankBy}&dir=desc`),
   });
 
   const alertsQuery = useQuery<FirmAlertRow[]>({
-    queryKey: ['/api/firm/command-center/alerts', severityFilter],
+    queryKey: ["/api/firm/command-center/alerts", severityFilter],
     queryFn: () => {
       const url =
-        severityFilter === 'all'
-          ? '/api/firm/command-center/alerts'
+        severityFilter === "all"
+          ? "/api/firm/command-center/alerts"
           : `/api/firm/command-center/alerts?severity=${severityFilter}`;
-      return apiRequest('GET', url);
+      return apiRequest("GET", url);
     },
   });
 
   const workloadQuery = useQuery<StaffWorkloadRow[]>({
-    queryKey: ['/api/firm/command-center/staff/workload'],
+    queryKey: ["/api/firm/command-center/staff/workload"],
   });
 
   const comparisonQuery = useQuery<ComparisonResponse>({
-    queryKey: ['/api/firm/command-center/metrics/comparison', granularity],
+    queryKey: ["/api/firm/command-center/metrics/comparison", granularity],
     queryFn: () =>
-      apiRequest(
-        'GET',
-        `/api/firm/command-center/metrics/comparison?granularity=${granularity}`
-      ),
+      apiRequest("GET", `/api/firm/command-center/metrics/comparison?granularity=${granularity}`),
   });
 
   // ─── Mutations ─────────────────────────────────────────────────────
   const refreshAlerts = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/firm/command-center/alerts/refresh'),
+    mutationFn: () => apiRequest("POST", "/api/firm/command-center/alerts/refresh"),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/api/firm/command-center/alerts'] });
-      toast({ title: 'Alerts refreshed' });
+      qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
+      toast({ title: "Alerts refreshed" });
     },
-    onError: (e: Error) => toast({ title: 'Refresh failed', description: e.message, variant: 'destructive' }),
+    onError: (e: Error) =>
+      toast({ title: "Refresh failed", description: e.message, variant: "destructive" }),
   });
 
   const markRead = useMutation({
     mutationFn: (alertId: string) =>
-      apiRequest('PATCH', `/api/firm/command-center/alerts/${alertId}/read`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['/api/firm/command-center/alerts'] }),
+      apiRequest("PATCH", `/api/firm/command-center/alerts/${alertId}/read`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] }),
   });
 
   const resolveAlert = useMutation({
     mutationFn: (alertId: string) =>
-      apiRequest('PATCH', `/api/firm/command-center/alerts/${alertId}/resolve`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['/api/firm/command-center/alerts'] }),
+      apiRequest("PATCH", `/api/firm/command-center/alerts/${alertId}/resolve`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] }),
   });
 
   const batchVat = useMutation({
     mutationFn: (companyIds: string[]) =>
-      apiRequest('POST', '/api/firm/command-center/batch/vat-calculate', { companyIds }),
+      apiRequest("POST", "/api/firm/command-center/batch/vat-calculate", { companyIds }),
     onSuccess: (data: { results?: unknown[] }) => {
       toast({
-        title: 'Batch VAT calc complete',
+        title: "Batch VAT calc complete",
         description: `${data.results?.length ?? 0} clients calculated.`,
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: 'Batch VAT failed', description: e.message, variant: 'destructive' }),
+      toast({ title: "Batch VAT failed", description: e.message, variant: "destructive" }),
   });
 
   const batchChasePayments = useMutation({
     mutationFn: (companyIds: string[]) =>
-      apiRequest('POST', '/api/firm/command-center/batch/chase-payments', { companyIds }),
+      apiRequest("POST", "/api/firm/command-center/batch/chase-payments", { companyIds }),
     onSuccess: (data: { chasedInvoiceCount?: number }) => {
       toast({
-        title: 'Payment chase queued',
+        title: "Payment chase queued",
         description: `${data.chasedInvoiceCount ?? 0} invoices queued.`,
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: 'Chase failed', description: e.message, variant: 'destructive' }),
+      toast({ title: "Chase failed", description: e.message, variant: "destructive" }),
   });
 
   const batchChaseDocuments = useMutation({
     mutationFn: (companyIds: string[]) =>
-      apiRequest('POST', '/api/firm/command-center/batch/chase-documents', { companyIds }),
+      apiRequest("POST", "/api/firm/command-center/batch/chase-documents", { companyIds }),
     onSuccess: (data: { chasedClientCount?: number }) => {
-      qc.invalidateQueries({ queryKey: ['/api/firm/command-center/alerts'] });
+      qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
       toast({
-        title: 'Document chase queued',
+        title: "Document chase queued",
         description: `${data.chasedClientCount ?? 0} clients notified.`,
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: 'Chase failed', description: e.message, variant: 'destructive' }),
+      toast({ title: "Chase failed", description: e.message, variant: "destructive" }),
   });
 
   // ─── Derived data ──────────────────────────────────────────────────
@@ -341,7 +339,8 @@ export default function FirmCommandCenter() {
     [allClients, search]
   );
 
-  const allSelected = filteredClients.length > 0 && filteredClients.every((c) => selectedClients.has(c.companyId));
+  const allSelected =
+    filteredClients.length > 0 && filteredClients.every((c) => selectedClients.has(c.companyId));
 
   const toggleClient = (id: string) => {
     setSelectedClients((prev) => {
@@ -372,8 +371,18 @@ export default function FirmCommandCenter() {
     const c = comparisonQuery.data;
     if (!c) return [];
     return [
-      { name: 'Previous', revenue: c.previous.revenue, invoices: c.previous.invoices, receipts: c.previous.receipts },
-      { name: 'Current', revenue: c.current.revenue, invoices: c.current.invoices, receipts: c.current.receipts },
+      {
+        name: "Previous",
+        revenue: c.previous.revenue,
+        invoices: c.previous.invoices,
+        receipts: c.previous.receipts,
+      },
+      {
+        name: "Current",
+        revenue: c.current.revenue,
+        invoices: c.current.invoices,
+        receipts: c.current.receipts,
+      },
     ];
   }, [comparisonQuery.data]);
 
@@ -389,7 +398,7 @@ export default function FirmCommandCenter() {
         <div className="text-muted-foreground">
           {dashboardQuery.error instanceof Error
             ? dashboardQuery.error.message
-            : 'An unexpected error occurred.'}
+            : "An unexpected error occurred."}
         </div>
         <Button
           variant="outline"
@@ -433,24 +442,24 @@ export default function FirmCommandCenter() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <MetricCard
           title="Total clients"
-          value={summary ? `${summary.totalClients}` : '—'}
+          value={summary ? `${summary.totalClients}` : "—"}
           subtitle={summary ? `${summary.activeClients} active` : undefined}
           icon={Building2}
         />
         <MetricCard
           title="Outstanding AR"
-          value={summary ? formatAed(summary.totalOutstandingAr) : '—'}
+          value={summary ? formatAed(summary.totalOutstandingAr) : "—"}
           icon={DollarSign}
         />
         <MetricCard
           title="VAT liability"
-          value={summary ? formatAed(summary.totalVatLiability) : '—'}
+          value={summary ? formatAed(summary.totalVatLiability) : "—"}
           subtitle="Across unfiled returns"
           icon={Calculator}
         />
         <MetricCard
           title="Receipts this month"
-          value={summary ? `${summary.receiptsProcessedThisMonth}` : '—'}
+          value={summary ? `${summary.receiptsProcessedThisMonth}` : "—"}
           subtitle={summary ? `${summary.invoicesIssuedThisMonth} invoices issued` : undefined}
           icon={Activity}
         />
@@ -463,7 +472,7 @@ export default function FirmCommandCenter() {
             <CardTitle className="text-sm">Average health score</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold">{summary?.averageHealthScore ?? '—'}</div>
+            <div className="text-4xl font-bold">{summary?.averageHealthScore ?? "—"}</div>
             <p className="text-xs text-muted-foreground mt-1">across all managed clients</p>
           </CardContent>
         </Card>
@@ -476,7 +485,7 @@ export default function FirmCommandCenter() {
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-bold text-red-600">
-              {summary?.criticalAlertCount ?? '—'}
+              {summary?.criticalAlertCount ?? "—"}
             </div>
           </CardContent>
         </Card>
@@ -489,7 +498,7 @@ export default function FirmCommandCenter() {
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-bold text-amber-600">
-              {summary?.warningAlertCount ?? '—'}
+              {summary?.warningAlertCount ?? "—"}
             </div>
           </CardContent>
         </Card>
@@ -533,30 +542,28 @@ export default function FirmCommandCenter() {
             <CardContent>
               {selectedCount > 0 && (
                 <div className="flex items-center gap-2 mb-3 p-3 rounded-md bg-muted">
-                  <span className="text-sm font-medium">
-                    {selectedCount} selected
-                  </span>
+                  <span className="text-sm font-medium">{selectedCount} selected</span>
                   <div className="ml-auto flex gap-2">
                     <BatchActionButton
                       label="Run VAT calc"
                       icon={Calculator}
                       onConfirm={() => batchVat.mutate(selectedIds)}
                       pending={batchVat.isPending}
-                      description={`Run VAT calculation for ${selectedCount} client${selectedCount === 1 ? '' : 's'}.`}
+                      description={`Run VAT calculation for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
                     />
                     <BatchActionButton
                       label="Chase payments"
                       icon={Mail}
                       onConfirm={() => batchChasePayments.mutate(selectedIds)}
                       pending={batchChasePayments.isPending}
-                      description={`Queue payment chase for overdue invoices across ${selectedCount} client${selectedCount === 1 ? '' : 's'}.`}
+                      description={`Queue payment chase for overdue invoices across ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
                     />
                     <BatchActionButton
                       label="Chase documents"
                       icon={FileSearch}
                       onConfirm={() => batchChaseDocuments.mutate(selectedIds)}
                       pending={batchChaseDocuments.isPending}
-                      description={`Queue document chase for ${selectedCount} client${selectedCount === 1 ? '' : 's'}.`}
+                      description={`Queue document chase for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
                     />
                   </div>
                 </div>
@@ -565,7 +572,11 @@ export default function FirmCommandCenter() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
-                      <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={toggleAll}
+                        aria-label="Select all"
+                      />
                     </TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Health</TableHead>
@@ -605,7 +616,7 @@ export default function FirmCommandCenter() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {c.factors.daysSinceActivity === null
-                          ? '—'
+                          ? "—"
                           : `${c.factors.daysSinceActivity}d ago`}
                       </TableCell>
                       <TableCell>
@@ -623,7 +634,7 @@ export default function FirmCommandCenter() {
                   {filteredClients.length === 0 && !healthQuery.isLoading && (
                     <TableRow>
                       <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                        {search ? 'No clients match your search.' : 'No clients yet.'}
+                        {search ? "No clients match your search." : "No clients yet."}
                       </TableCell>
                     </TableRow>
                   )}
@@ -639,7 +650,10 @@ export default function FirmCommandCenter() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Alert feed</CardTitle>
-                <Select value={severityFilter} onValueChange={(v) => setSeverityFilter(v as Severity | 'all')}>
+                <Select
+                  value={severityFilter}
+                  onValueChange={(v) => setSeverityFilter(v as Severity | "all")}
+                >
                   <SelectTrigger className="w-[180px]" data-testid="select-severity-filter">
                     <SelectValue />
                   </SelectTrigger>
@@ -658,7 +672,7 @@ export default function FirmCommandCenter() {
                   <div
                     key={a.id}
                     className={`p-3 border rounded-md flex items-center justify-between gap-3 ${
-                      a.isRead ? 'opacity-60' : ''
+                      a.isRead ? "opacity-60" : ""
                     }`}
                     data-testid={`alert-${a.id}`}
                   >
@@ -775,18 +789,9 @@ export default function FirmCommandCenter() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4 mb-6">
-                <DeltaCard
-                  label="Revenue"
-                  value={comparisonQuery.data?.deltas.revenuePct ?? 0}
-                />
-                <DeltaCard
-                  label="Receipts"
-                  value={comparisonQuery.data?.deltas.receiptsPct ?? 0}
-                />
-                <DeltaCard
-                  label="Invoices"
-                  value={comparisonQuery.data?.deltas.invoicesPct ?? 0}
-                />
+                <DeltaCard label="Revenue" value={comparisonQuery.data?.deltas.revenuePct ?? 0} />
+                <DeltaCard label="Receipts" value={comparisonQuery.data?.deltas.receiptsPct ?? 0} />
+                <DeltaCard label="Invoices" value={comparisonQuery.data?.deltas.invoicesPct ?? 0} />
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={comparisonChartData}>
@@ -818,11 +823,11 @@ function DeltaCard({ label, value }: { label: string; value: number }) {
         <div className="text-sm text-muted-foreground">{label}</div>
         <div
           className={`text-2xl font-bold flex items-center gap-1 ${
-            positive ? 'text-emerald-600' : 'text-red-600'
+            positive ? "text-emerald-600" : "text-red-600"
           }`}
         >
           {positive ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownRight className="w-5 h-5" />}
-          {value > 0 ? '+' : ''}
+          {value > 0 ? "+" : ""}
           {value}%
         </div>
       </CardContent>
@@ -846,8 +851,16 @@ function BatchActionButton({
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button size="sm" disabled={pending} data-testid={`button-batch-${label.toLowerCase().replace(/\s+/g, '-')}`}>
-          {pending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Icon className="w-4 h-4 mr-1" />}
+        <Button
+          size="sm"
+          disabled={pending}
+          data-testid={`button-batch-${label.toLowerCase().replace(/\s+/g, "-")}`}
+        >
+          {pending ? (
+            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+          ) : (
+            <Icon className="w-4 h-4 mr-1" />
+          )}
           {label}
         </Button>
       </AlertDialogTrigger>

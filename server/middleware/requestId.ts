@@ -1,13 +1,13 @@
-import type { Request, Response, NextFunction } from 'express';
-import { randomUUID } from 'crypto';
+import type { Request, Response, NextFunction } from "express";
+import { randomUUID } from "crypto";
 
-declare module 'express-serve-static-core' {
+declare module "express-serve-static-core" {
   interface Request {
     id?: string;
   }
 }
 
-const HEADER = 'x-request-id';
+const HEADER = "x-request-id";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
@@ -22,6 +22,6 @@ export function requestId(req: Request, res: Response, next: NextFunction): void
   const inbound = req.header(HEADER);
   const id = inbound && UUID_RE.test(inbound) ? inbound : randomUUID();
   req.id = id;
-  res.setHeader('X-Request-Id', id);
+  res.setHeader("X-Request-Id", id);
   next();
 }

@@ -1,25 +1,25 @@
-import crypto from 'crypto';
-import type { Invoice, InvoiceLine, Company } from '../../shared/schema';
-import { UAE_VAT_RATE } from '../constants';
+import crypto from "crypto";
+import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
+import { UAE_VAT_RATE } from "../constants";
 
 /**
  * Escape XML special characters to prevent malformed output.
  */
 function escapeXml(str: string): string {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 /**
  * Format a Date as YYYY-MM-DD for UBL IssueDate.
  */
 function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toISOString().split('T')[0];
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toISOString().split("T")[0];
 }
 
 /**
@@ -37,7 +37,7 @@ export function generateEInvoiceXML(
 ): { xml: string; uuid: string; hash: string } {
   const uuid = crypto.randomUUID();
   const issueDate = formatDate(invoice.date);
-  const currency = invoice.currency || 'AED';
+  const currency = invoice.currency || "AED";
 
   // Build invoice lines XML
   const invoiceLinesXml = lines
@@ -67,7 +67,7 @@ export function generateEInvoiceXML(
       </cac:Price>
     </cac:InvoiceLine>`;
     })
-    .join('');
+    .join("");
 
   // Calculate tax breakdown (grouped by VAT rate)
   const taxByRate = new Map<number, { taxable: number; tax: number }>();
@@ -96,10 +96,10 @@ export function generateEInvoiceXML(
         </cac:TaxCategory>
       </cac:TaxSubtotal>`;
     })
-    .join('');
+    .join("");
 
-  const customerName = customer?.name || invoice.customerName || 'Cash Customer';
-  const customerTrn = customer?.trn || invoice.customerTrn || '';
+  const customerName = customer?.name || invoice.customerName || "Cash Customer";
+  const customerTrn = customer?.trn || invoice.customerTrn || "";
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -121,24 +121,32 @@ export function generateEInvoiceXML(
         <cbc:Name>${escapeXml(company.name)}</cbc:Name>
       </cac:PartyName>
       <cac:PostalAddress>
-        <cbc:StreetName>${escapeXml(company.businessAddress || '')}</cbc:StreetName>
+        <cbc:StreetName>${escapeXml(company.businessAddress || "")}</cbc:StreetName>
         <cac:Country>
           <cbc:IdentificationCode>AE</cbc:IdentificationCode>
         </cac:Country>
       </cac:PostalAddress>
       <cac:PartyTaxScheme>
-        <cbc:CompanyID>${escapeXml(company.trnVatNumber || '')}</cbc:CompanyID>
+        <cbc:CompanyID>${escapeXml(company.trnVatNumber || "")}</cbc:CompanyID>
         <cac:TaxScheme>
           <cbc:ID>VAT</cbc:ID>
         </cac:TaxScheme>
       </cac:PartyTaxScheme>
       <cac:PartyLegalEntity>
         <cbc:RegistrationName>${escapeXml(company.name)}</cbc:RegistrationName>
-      </cac:PartyLegalEntity>${company.contactEmail ? `
+      </cac:PartyLegalEntity>${
+        company.contactEmail
+          ? `
       <cac:Contact>
-        <cbc:ElectronicMail>${escapeXml(company.contactEmail)}</cbc:ElectronicMail>${company.contactPhone ? `
-        <cbc:Telephone>${escapeXml(company.contactPhone)}</cbc:Telephone>` : ''}
-      </cac:Contact>` : ''}
+        <cbc:ElectronicMail>${escapeXml(company.contactEmail)}</cbc:ElectronicMail>${
+          company.contactPhone
+            ? `
+        <cbc:Telephone>${escapeXml(company.contactPhone)}</cbc:Telephone>`
+            : ""
+        }
+      </cac:Contact>`
+          : ""
+      }
     </cac:Party>
   </cac:AccountingSupplierParty>
 
@@ -147,13 +155,17 @@ export function generateEInvoiceXML(
     <cac:Party>
       <cac:PartyName>
         <cbc:Name>${escapeXml(customerName)}</cbc:Name>
-      </cac:PartyName>${customerTrn ? `
+      </cac:PartyName>${
+        customerTrn
+          ? `
       <cac:PartyTaxScheme>
         <cbc:CompanyID>${escapeXml(customerTrn)}</cbc:CompanyID>
         <cac:TaxScheme>
           <cbc:ID>VAT</cbc:ID>
         </cac:TaxScheme>
-      </cac:PartyTaxScheme>` : ''}
+      </cac:PartyTaxScheme>`
+          : ""
+      }
       <cac:PartyLegalEntity>
         <cbc:RegistrationName>${escapeXml(customerName)}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
@@ -176,7 +188,7 @@ export function generateEInvoiceXML(
   <!-- Invoice Lines -->${invoiceLinesXml}
 </Invoice>`;
 
-  const hash = crypto.createHash('sha256').update(xml).digest('hex');
+  const hash = crypto.createHash("sha256").update(xml).digest("hex");
 
   return { xml, uuid, hash };
 }

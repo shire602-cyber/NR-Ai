@@ -27,7 +27,7 @@ npm run audit:api-coverage
 Run staging smoke when staging credentials exist:
 
 ```bash
-BASE_URL=https://staging.example.com SMOKE_EMAIL=... SMOKE_PASSWORD=... npm run smoke:prod
+SMOKE_BASE_URL=https://staging.example.com SMOKE_EMAIL=... SMOKE_PASSWORD=... npm run smoke:prod
 ```
 
 Run production security verification only with production database access:

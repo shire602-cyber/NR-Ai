@@ -6,14 +6,10 @@ import {
   useMemo,
   useState,
   type ReactNode,
-} from 'react';
-import { useQuery } from '@tanstack/react-query';
-import type { Company } from '@shared/schema';
-import {
-  getActiveCompanyId,
-  switchActiveCompany,
-  clearActiveCompany,
-} from '@/lib/activeCompany';
+} from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { Company } from "@shared/schema";
+import { getActiveCompanyId, switchActiveCompany, clearActiveCompany } from "@/lib/activeCompany";
 
 interface ActiveCompanyContextValue {
   /** The currently active company (firm-managed client if switched, else first owned company). */
@@ -46,23 +42,27 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
   // Also listen for same-tab `auth:logout` so the in-memory active-client id
   // does not leak into the next user's session.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === "undefined") return;
     const handler = () => setActiveId(getActiveCompanyId());
     const onLogout = () => setActiveId(null);
-    window.addEventListener('muhasib:active-company-changed', handler);
-    window.addEventListener('storage', handler);
-    window.addEventListener('auth:logout', onLogout);
+    window.addEventListener("muhasib:active-company-changed", handler);
+    window.addEventListener("storage", handler);
+    window.addEventListener("auth:logout", onLogout);
     return () => {
-      window.removeEventListener('muhasib:active-company-changed', handler);
-      window.removeEventListener('storage', handler);
-      window.removeEventListener('auth:logout', onLogout);
+      window.removeEventListener("muhasib:active-company-changed", handler);
+      window.removeEventListener("storage", handler);
+      window.removeEventListener("auth:logout", onLogout);
     };
   }, []);
 
   // /api/companies returns a merged list (direct + firm-accessible) for firm
   // staff, so we can resolve the active company id locally.
-  const { data: companies, isLoading, error } = useQuery<Company[]>({
-    queryKey: ['/api/companies'],
+  const {
+    data: companies,
+    isLoading,
+    error,
+  } = useQuery<Company[]>({
+    queryKey: ["/api/companies"],
   });
 
   const setActiveClientCompany = useCallback((id: string) => {
@@ -71,9 +71,9 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
 
   const clearActiveClientCompany = useCallback(() => {
     clearActiveCompany();
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       window.dispatchEvent(
-        new CustomEvent('muhasib:active-company-changed', { detail: { companyId: null } }),
+        new CustomEvent("muhasib:active-company-changed", { detail: { companyId: null } })
       );
     }
     setActiveId(null);
@@ -81,7 +81,7 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ActiveCompanyContextValue>(() => {
     const list = companies ?? [];
-    const activeMatch = activeId ? list.find(c => c.id === activeId) : undefined;
+    const activeMatch = activeId ? list.find((c) => c.id === activeId) : undefined;
     const fallback = list[0];
     const company = activeMatch ?? fallback;
     return {
@@ -91,17 +91,13 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
       isLoading,
       error,
       hasNoCompanies: !isLoading && !error && list.length === 0,
-      isFirmContext: !!activeMatch && activeMatch.companyType === 'client',
+      isFirmContext: !!activeMatch && activeMatch.companyType === "client",
       setActiveClientCompany,
       clearActiveClientCompany,
     };
   }, [companies, activeId, isLoading, error, setActiveClientCompany, clearActiveClientCompany]);
 
-  return (
-    <ActiveCompanyContext.Provider value={value}>
-      {children}
-    </ActiveCompanyContext.Provider>
-  );
+  return <ActiveCompanyContext.Provider value={value}>{children}</ActiveCompanyContext.Provider>;
 }
 
 /**
@@ -112,7 +108,7 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
 export function useActiveCompany(): ActiveCompanyContextValue {
   const ctx = useContext(ActiveCompanyContext);
   if (!ctx) {
-    throw new Error('useActiveCompany must be used within ActiveCompanyProvider');
+    throw new Error("useActiveCompany must be used within ActiveCompanyProvider");
   }
   return ctx;
 }

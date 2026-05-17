@@ -1,27 +1,24 @@
-import type { Request, Response } from 'express';
-import { Router } from 'express';
-import type { Express } from 'express';
-import bcrypt from 'bcryptjs';
-import { randomBytes, createHash } from 'crypto';
-import { z } from 'zod';
+import type { Request, Response } from "express";
+import { Router } from "express";
+import type { Express } from "express";
+import bcrypt from "bcryptjs";
+import { randomBytes, createHash } from "crypto";
+import { z } from "zod";
 
-import { storage } from '../storage';
-import { getEnv } from '../config/env';
-import {
-  generateToken,
-  authMiddleware,
-} from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { validate } from '../middleware/validate';
-import { insertUserSchema } from '../../shared/schema';
+import { storage } from "../storage";
+import { getEnv } from "../config/env";
+import { generateToken, authMiddleware } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { validate } from "../middleware/validate";
+import { insertUserSchema } from "../../shared/schema";
 import {
   loginSchema as sharedLoginSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
   trnSchema,
-} from '../../shared/validators';
-import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
-import { createLogger } from '../config/logger';
+} from "../../shared/validators";
+import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { createLogger } from "../config/logger";
 import {
   blacklistToken,
   createRefreshSession,
@@ -29,19 +26,19 @@ import {
   revokeRefreshSession,
   createEmailVerificationToken,
   consumeEmailVerificationToken,
-} from '../services/auth-tokens.service';
+} from "../services/auth-tokens.service";
 import {
   clearAuthCookies,
   getAccessTokenFromRequest,
   getRefreshTokenFromRequest,
   sessionMetaFromRequest,
   setAuthCookies,
-} from '../services/auth-cookies.service';
-import { db } from '../db';
-import { users } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+} from "../services/auth-cookies.service";
+import { db } from "../db";
+import { users } from "../../shared/schema";
+import { eq } from "drizzle-orm";
 
-const log = createLogger('auth');
+const log = createLogger("auth");
 
 // =============================================
 // Helpers (migrated from monolith routes.ts)
@@ -55,7 +52,7 @@ async function seedChartOfAccounts(
 ): Promise<{ created: number; alreadyExisted: boolean }> {
   const hasAccounts = await storage.companyHasAccounts(companyId);
   if (hasAccounts) {
-    log.info({ companyId }, 'Company already has accounts, skipping seed');
+    log.info({ companyId }, "Company already has accounts, skipping seed");
     return { created: 0, alreadyExisted: true };
   }
 
@@ -63,20 +60,30 @@ async function seedChartOfAccounts(
 
   try {
     const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
-    log.info({ companyId, count: createdAccounts.length }, 'Created chart of accounts');
+    log.info({ companyId, count: createdAccounts.length }, "Created chart of accounts");
     return { created: createdAccounts.length, alreadyExisted: false };
   } catch (error: any) {
-    if (error.message?.includes('PARTIAL_INSERT')) {
-      log.error({ companyId, err: error.message }, 'Partial insert detected during COA seed');
+    if (error.message?.includes("PARTIAL_INSERT")) {
+      log.error({ companyId, err: error.message }, "Partial insert detected during COA seed");
       throw new Error(
-        'PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support.'
+        "PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support."
       );
     }
     throw error;
   }
 }
 
-async function issueAuthCookies(user: { id: string; email: string; isAdmin?: boolean; userType?: string; firmRole?: string | null }, req: Request, res: Response): Promise<void> {
+async function issueAuthCookies(
+  user: {
+    id: string;
+    email: string;
+    isAdmin?: boolean;
+    userType?: string;
+    firmRole?: string | null;
+  },
+  req: Request,
+  res: Response
+): Promise<void> {
   const accessToken = generateToken(user);
   const refresh = await createRefreshSession(user.id, sessionMetaFromRequest(req));
   setAuthCookies(res, accessToken, refresh.token, refresh.expiresAt);
@@ -88,7 +95,7 @@ function publicUser(user: any) {
 }
 
 // Stronger password validation: 8+ characters
-const passwordSchema = z.string().min(8, 'Password must be at least 8 characters');
+const passwordSchema = z.string().min(8, "Password must be at least 8 characters");
 
 // =============================================
 // Route registration
@@ -103,7 +110,7 @@ export function registerAuthRoutes(app: Express): void {
 
   // Customer self-signup (SaaS customers only - clients must use invitation)
   router.post(
-    '/auth/register',
+    "/auth/register",
     asyncHandler(async (req: Request, res: Response) => {
       const validated = insertUserSchema.parse(req.body);
 
@@ -115,12 +122,12 @@ export function registerAuthRoutes(app: Express): void {
       // valid value. Format is enforced via the shared schema.
       const trnFromBody = (req.body as any)?.trn as string | undefined;
       let trn: string | undefined;
-      if (typeof trnFromBody === 'string' && trnFromBody.trim() !== '') {
+      if (typeof trnFromBody === "string" && trnFromBody.trim() !== "") {
         const trnParse = trnSchema.safeParse(trnFromBody.trim());
         if (!trnParse.success) {
           return res.status(400).json({
-            message: trnParse.error.issues[0]?.message || 'Invalid TRN',
-            field: 'trn',
+            message: trnParse.error.issues[0]?.message || "Invalid TRN",
+            field: "trn",
           });
         }
         trn = trnParse.data;
@@ -131,8 +138,7 @@ export function registerAuthRoutes(app: Express): void {
       const existingUser = await storage.getUserByEmail(validated.email);
       if (existingUser) {
         return res.status(400).json({
-          message:
-            'Unable to create account. Please try again or use a different email.',
+          message: "Unable to create account. Please try again or use a different email.",
         });
       }
 
@@ -145,7 +151,7 @@ export function registerAuthRoutes(app: Express): void {
       const user = await storage.createUser({
         name: validated.name,
         email: validated.email,
-        userType: 'customer', // FORCED: Self-signup users are always customers
+        userType: "customer", // FORCED: Self-signup users are always customers
         isAdmin: false, // FORCED: Self-signup users cannot be admins
         passwordHash,
       } as any);
@@ -157,9 +163,9 @@ export function registerAuthRoutes(app: Express): void {
       const uniqueCompanyName = `${companyName} (${timestamp})`;
       const company = await storage.createCompany({
         name: uniqueCompanyName,
-        baseCurrency: 'AED',
-        locale: 'en',
-        companyType: 'customer', // Self-signup companies are customer type (not managed by NR)
+        baseCurrency: "AED",
+        locale: "en",
+        companyType: "customer", // Self-signup companies are customer type (not managed by NR)
         trnVatNumber: trn,
       });
 
@@ -167,7 +173,7 @@ export function registerAuthRoutes(app: Express): void {
       await storage.createCompanyUser({
         companyId: company.id,
         userId: user.id,
-        role: 'owner',
+        role: "owner",
       });
 
       // Seed Chart of Accounts for new company
@@ -180,9 +186,9 @@ export function registerAuthRoutes(app: Express): void {
 
       await storage.createSubscription({
         companyId: company.id,
-        planId: 'free',
-        planName: 'Free',
-        status: 'active',
+        planId: "free",
+        planName: "Free",
+        status: "active",
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
       });
@@ -194,10 +200,10 @@ export function registerAuthRoutes(app: Express): void {
         const verificationToken = await createEmailVerificationToken(user.id);
         log.info(
           { userId: user.id, email: user.email },
-          `Email verification pending — verify URL: /verify-email/${verificationToken}`,
+          `Email verification pending — verify URL: /verify-email/${verificationToken}`
         );
       } catch (err) {
-        log.error({ err, userId: user.id }, 'Failed to issue email verification token');
+        log.error({ err, userId: user.id }, "Failed to issue email verification token");
       }
 
       await issueAuthCookies(user, req, res);
@@ -208,7 +214,7 @@ export function registerAuthRoutes(app: Express): void {
           email: user.email,
           name: user.name,
           isAdmin: false,
-          userType: 'customer',
+          userType: "customer",
           firmRole: user.firmRole ?? null,
           emailVerified: false,
         },
@@ -222,26 +228,24 @@ export function registerAuthRoutes(app: Express): void {
 
   // Login — body validated up-front via shared schema before reaching handler.
   router.post(
-    '/auth/login',
+    "/auth/login",
     validate({ body: sharedLoginSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { email, password } = req.body as { email: string; password: string };
 
       const user = await storage.getUserByEmail(email);
       if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials' });
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       const isValid = await bcrypt.compare(password, user.passwordHash);
       if (!isValid) {
-        return res.status(401).json({ message: 'Invalid credentials' });
+        return res.status(401).json({ message: "Invalid credentials" });
       }
 
       // Ensure isAdmin is a proper boolean
       const isAdminBoolean =
-        user.isAdmin === true ||
-        (user.isAdmin as any) === 'true' ||
-        (user.isAdmin as any) === 1;
+        user.isAdmin === true || (user.isAdmin as any) === "true" || (user.isAdmin as any) === 1;
 
       await issueAuthCookies(user, req, res);
 
@@ -251,7 +255,7 @@ export function registerAuthRoutes(app: Express): void {
           email: user.email,
           name: user.name,
           isAdmin: isAdminBoolean,
-          userType: user.userType || 'customer', // Include userType in response
+          userType: user.userType || "customer", // Include userType in response
           firmRole: user.firmRole ?? null,
           emailVerified: user.emailVerified === true,
         },
@@ -263,23 +267,23 @@ export function registerAuthRoutes(app: Express): void {
   const handleRefreshToken = asyncHandler(async (req: Request, res: Response) => {
     const refreshToken = getRefreshTokenFromRequest(req);
     if (!refreshToken) {
-      return res.status(401).json({ message: 'Invalid or expired refresh token' });
+      return res.status(401).json({ message: "Invalid or expired refresh token" });
     }
 
     const rotated = await rotateRefreshSession(refreshToken, sessionMetaFromRequest(req));
     if (!rotated.ok) {
       clearAuthCookies(res);
       const message =
-        rotated.reason === 'reused'
-          ? 'Refresh token reuse detected. Please sign in again.'
-          : 'Invalid or expired refresh token';
+        rotated.reason === "reused"
+          ? "Refresh token reuse detected. Please sign in again."
+          : "Invalid or expired refresh token";
       return res.status(401).json({ message });
     }
 
     const user = await storage.getUser(rotated.userId);
     if (!user) {
       clearAuthCookies(res);
-      return res.status(401).json({ message: 'User not found' });
+      return res.status(401).json({ message: "User not found" });
     }
 
     const newToken = generateToken(user);
@@ -289,10 +293,10 @@ export function registerAuthRoutes(app: Express): void {
   });
 
   // Refresh token endpoint (canonical path)
-  router.post('/auth/refresh-token', handleRefreshToken);
+  router.post("/auth/refresh-token", handleRefreshToken);
 
   // Alias for frontend compatibility: POST /api/auth/refresh
-  router.post('/auth/refresh', handleRefreshToken);
+  router.post("/auth/refresh", handleRefreshToken);
 
   // =====================================
   // PASSWORD RESET
@@ -300,11 +304,11 @@ export function registerAuthRoutes(app: Express): void {
 
   // Hash a raw token before storing or looking up — DB only ever sees the digest.
   const hashResetToken = (token: string): string =>
-    createHash('sha256').update(token).digest('hex');
+    createHash("sha256").update(token).digest("hex");
 
   // Request a password reset link. Always returns 200 to prevent email enumeration.
   router.post(
-    '/auth/forgot-password',
+    "/auth/forgot-password",
     validate({ body: forgotPasswordSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { email } = req.body as { email: string };
@@ -312,7 +316,7 @@ export function registerAuthRoutes(app: Express): void {
 
       // Generic response — never reveal whether the email exists
       const genericResponse = {
-        message: 'If that email is registered, a reset link has been sent.',
+        message: "If that email is registered, a reset link has been sent.",
       };
 
       if (!user) {
@@ -321,7 +325,7 @@ export function registerAuthRoutes(app: Express): void {
 
       // Issue a one-time token; raw token only exists in memory long enough
       // to email the user. The DB stores only the SHA-256 digest.
-      const rawToken = randomBytes(32).toString('hex');
+      const rawToken = randomBytes(32).toString("hex");
       const tokenHash = hashResetToken(rawToken);
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
@@ -334,14 +338,14 @@ export function registerAuthRoutes(app: Express): void {
       });
 
       const env = getEnv();
-      const appUrl = (env as any).APP_URL || (env as any).PUBLIC_URL || '';
+      const appUrl = (env as any).APP_URL || (env as any).PUBLIC_URL || "";
       const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
 
-      log.info({ userId: user.id, email }, 'Password reset requested');
+      log.info({ userId: user.id, email }, "Password reset requested");
 
       // TODO(email): wire to outbound email service when configured.
       // In non-production, return the URL so QA can verify the flow.
-      const isProd = (env as any).NODE_ENV === 'production';
+      const isProd = (env as any).NODE_ENV === "production";
       if (!isProd) {
         return res.json({
           ...genericResponse,
@@ -350,12 +354,12 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       return res.json(genericResponse);
-    }),
+    })
   );
 
   // Consume a reset token and set a new password.
   router.post(
-    '/auth/reset-password',
+    "/auth/reset-password",
     validate({ body: resetPasswordSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { token, password } = req.body as { token: string; password: string };
@@ -364,7 +368,9 @@ export function registerAuthRoutes(app: Express): void {
       const record = await storage.findValidPasswordResetToken(tokenHash);
 
       if (!record) {
-        return res.status(400).json({ message: 'This reset link is invalid or has expired. Please request a new one.' });
+        return res.status(400).json({
+          message: "This reset link is invalid or has expired. Please request a new one.",
+        });
       }
 
       const newHash = await bcrypt.hash(password, 10);
@@ -374,10 +380,12 @@ export function registerAuthRoutes(app: Express): void {
       // invalidates the whole batch.
       await storage.deletePasswordResetTokensForUser(record.userId);
 
-      log.info({ userId: record.userId }, 'Password reset completed');
+      log.info({ userId: record.userId }, "Password reset completed");
 
-      res.json({ message: 'Your password has been reset. You can now sign in with your new password.' });
-    }),
+      res.json({
+        message: "Your password has been reset. You can now sign in with your new password.",
+      });
+    })
   );
 
   // =====================================
@@ -386,21 +394,21 @@ export function registerAuthRoutes(app: Express): void {
 
   // Verify invitation token (public endpoint)
   router.get(
-    '/invitations/verify/:token',
+    "/invitations/verify/:token",
     asyncHandler(async (req: Request, res: Response) => {
       const { token } = req.params;
       const invitation = await storage.getInvitationByToken(token);
 
       if (!invitation) {
-        return res.status(404).json({ message: 'Invitation not found' });
+        return res.status(404).json({ message: "Invitation not found" });
       }
 
-      if (invitation.status !== 'pending') {
+      if (invitation.status !== "pending") {
         return res.status(400).json({ message: `Invitation has been ${invitation.status}` });
       }
 
       if (new Date() > invitation.expiresAt) {
-        return res.status(400).json({ message: 'Invitation has expired' });
+        return res.status(400).json({ message: "Invitation has expired" });
       }
 
       // Get company details if associated
@@ -420,7 +428,7 @@ export function registerAuthRoutes(app: Express): void {
 
   // Accept invitation and create account (public endpoint)
   router.post(
-    '/invitations/accept/:token',
+    "/invitations/accept/:token",
     asyncHandler(async (req: Request, res: Response) => {
       const { token } = req.params;
       const { name, password } = req.body;
@@ -431,21 +439,21 @@ export function registerAuthRoutes(app: Express): void {
       const invitation = await storage.getInvitationByToken(token);
 
       if (!invitation) {
-        return res.status(404).json({ message: 'Invitation not found' });
+        return res.status(404).json({ message: "Invitation not found" });
       }
 
-      if (invitation.status !== 'pending') {
+      if (invitation.status !== "pending") {
         return res.status(400).json({ message: `Invitation has been ${invitation.status}` });
       }
 
       if (new Date() > invitation.expiresAt) {
-        return res.status(400).json({ message: 'Invitation has expired' });
+        return res.status(400).json({ message: "Invitation has expired" });
       }
 
       // Check if user already exists
       const existingUser = await storage.getUserByEmail(invitation.email);
       if (existingUser) {
-        return res.status(400).json({ message: 'User already exists with this email' });
+        return res.status(400).json({ message: "User already exists with this email" });
       }
 
       // Create user with appropriate userType from invitation
@@ -454,8 +462,8 @@ export function registerAuthRoutes(app: Express): void {
         email: invitation.email,
         name,
         password,
-        isAdmin: invitation.role === 'staff' || invitation.userType === 'admin',
-        userType: invitation.userType || 'client',
+        isAdmin: invitation.role === "staff" || invitation.userType === "admin",
+        userType: invitation.userType || "client",
         passwordHash,
       } as any);
 
@@ -464,20 +472,20 @@ export function registerAuthRoutes(app: Express): void {
         await storage.createCompanyUser({
           companyId: invitation.companyId,
           userId: user.id,
-          role: 'owner', // Client users are owners of their company view
+          role: "owner", // Client users are owners of their company view
         });
 
         // Set company type based on user type (client companies are managed by NR)
-        if (invitation.userType === 'client') {
+        if (invitation.userType === "client") {
           await storage.updateCompany(invitation.companyId, {
-            companyType: 'client',
+            companyType: "client",
           });
         }
       }
 
       // Mark invitation as accepted
       await storage.updateInvitation(invitation.id, {
-        status: 'accepted',
+        status: "accepted",
         acceptedAt: new Date(),
       });
 
@@ -485,8 +493,8 @@ export function registerAuthRoutes(app: Express): void {
       await storage.createActivityLog({
         userId: user.id,
         companyId: invitation.companyId || null,
-        action: 'create',
-        entityType: 'user',
+        action: "create",
+        entityType: "user",
         entityId: user.id,
         description: `User registered via invitation: ${user.email}`,
       });
@@ -498,13 +506,13 @@ export function registerAuthRoutes(app: Express): void {
 
   // Current user profile
   router.get(
-    '/auth/me',
+    "/auth/me",
     authMiddleware as any,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
       res.json(publicUser(user));
     })
@@ -512,75 +520,73 @@ export function registerAuthRoutes(app: Express): void {
 
   // Logout — server-side JWT invalidation via the token_blacklist table.
   router.post(
-    '/auth/logout',
+    "/auth/logout",
     authMiddleware as any,
     asyncHandler(async (req: Request, res: Response) => {
       const authHeader = req.headers.authorization;
       const accessToken =
         getAccessTokenFromRequest(req) ||
-        (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
+        (authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null);
       const refreshToken = getRefreshTokenFromRequest(req);
 
       if (accessToken) {
         try {
           await blacklistToken(accessToken);
         } catch (err) {
-          log.error({ err }, 'Failed to blacklist token on logout');
+          log.error({ err }, "Failed to blacklist token on logout");
         }
       }
 
       await revokeRefreshSession(refreshToken).catch((err) => {
-        log.error({ err }, 'Failed to revoke refresh session on logout');
+        log.error({ err }, "Failed to revoke refresh session on logout");
       });
       clearAuthCookies(res);
 
-      res.json({ message: 'Logged out successfully' });
+      res.json({ message: "Logged out successfully" });
     })
   );
 
   // ─── Email verification ────────────────────────────────────────────
 
   router.post(
-    '/auth/verify-email/:token',
+    "/auth/verify-email/:token",
     asyncHandler(async (req: Request, res: Response) => {
       const { token } = req.params;
       const userId = await consumeEmailVerificationToken(token);
       if (!userId) {
-        return res
-          .status(400)
-          .json({ message: 'Verification link is invalid or has expired' });
+        return res.status(400).json({ message: "Verification link is invalid or has expired" });
       }
       await db.update(users).set({ emailVerified: true }).where(eq(users.id, userId));
-      res.json({ message: 'Email verified successfully' });
+      res.json({ message: "Email verified successfully" });
     })
   );
 
   // Resend verification email — authenticated; rate-limited at the network layer.
   router.post(
-    '/auth/resend-verification',
+    "/auth/resend-verification",
     authMiddleware as any,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const user = await storage.getUser(userId);
       if (!user) {
-        return res.status(404).json({ message: 'User not found' });
+        return res.status(404).json({ message: "User not found" });
       }
       if (user.emailVerified) {
-        return res.json({ message: 'Email is already verified' });
+        return res.json({ message: "Email is already verified" });
       }
       try {
         const verificationToken = await createEmailVerificationToken(user.id);
         log.info(
           { userId: user.id, email: user.email },
-          `Verification re-issued — verify URL: /verify-email/${verificationToken}`,
+          `Verification re-issued — verify URL: /verify-email/${verificationToken}`
         );
       } catch (err) {
-        log.error({ err, userId: user.id }, 'Failed to re-issue verification token');
+        log.error({ err, userId: user.id }, "Failed to re-issue verification token");
       }
-      res.json({ message: 'Verification email sent' });
+      res.json({ message: "Verification email sent" });
     })
   );
 
   // Mount all auth routes under /api
-  app.use('/api', router);
+  app.use("/api", router);
 }

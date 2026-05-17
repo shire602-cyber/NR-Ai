@@ -1,13 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
-import { MessageSquare, Loader2 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { apiRequest } from '@/lib/queryClient';
-import { format } from 'date-fns';
+import { useQuery } from "@tanstack/react-query";
+import { MessageSquare, Loader2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { apiRequest } from "@/lib/queryClient";
+import { format } from "date-fns";
 
 export default function PortalMessages() {
   const { data: messages = [], isLoading } = useQuery<any[]>({
-    queryKey: ['portal-messages'],
-    queryFn: () => apiRequest('GET', '/api/client-portal/messages'),
+    queryKey: ["portal-messages"],
+    queryFn: () => apiRequest("GET", "/api/client-portal/messages"),
   });
 
   const sorted = [...messages].sort(
@@ -39,16 +39,22 @@ export default function PortalMessages() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       {msg.subject && (
-                        <p className="text-sm font-semibold text-gray-900 truncate">{msg.subject}</p>
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {msg.subject}
+                        </p>
                       )}
-                      <p className="text-sm text-gray-700 mt-0.5 whitespace-pre-wrap">{msg.content}</p>
+                      <p className="text-sm text-gray-700 mt-0.5 whitespace-pre-wrap">
+                        {msg.content}
+                      </p>
                     </div>
                     <span className="text-xs text-gray-400 flex-shrink-0 mt-0.5">
-                      {msg.createdAt ? format(new Date(msg.createdAt), 'MMM d, h:mm a') : ''}
+                      {msg.createdAt ? format(new Date(msg.createdAt), "MMM d, h:mm a") : ""}
                     </span>
                   </div>
                   {!msg.isRead && (
-                    <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">Unread</span>
+                    <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                      Unread
+                    </span>
                   )}
                 </div>
               ))}

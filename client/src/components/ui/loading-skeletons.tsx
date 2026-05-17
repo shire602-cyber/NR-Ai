@@ -1,6 +1,6 @@
-import { cn } from '@/lib/utils';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -8,7 +8,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 
 interface TableSkeletonProps {
   rows?: number;
@@ -30,17 +30,13 @@ export function TableSkeleton({
 }: TableSkeletonProps) {
   const cols = columnLabels?.length ?? columns;
   return (
-    <div className={cn('w-full overflow-x-auto', className)} data-testid="table-skeleton">
+    <div className={cn("w-full overflow-x-auto", className)} data-testid="table-skeleton">
       <Table>
         <TableHeader>
           <TableRow>
             {Array.from({ length: cols }).map((_, i) => (
               <TableHead key={i}>
-                {columnLabels ? (
-                  columnLabels[i]
-                ) : (
-                  <Skeleton className="h-4 w-20" />
-                )}
+                {columnLabels ? columnLabels[i] : <Skeleton className="h-4 w-20" />}
               </TableHead>
             ))}
           </TableRow>
@@ -50,7 +46,7 @@ export function TableSkeleton({
             <TableRow key={rowIdx}>
               {Array.from({ length: cols }).map((_, colIdx) => (
                 <TableCell key={colIdx}>
-                  <Skeleton className={cn('h-4', colIdx === 0 ? 'w-24' : 'w-full max-w-[160px]')} />
+                  <Skeleton className={cn("h-4", colIdx === 0 ? "w-24" : "w-full max-w-[160px]")} />
                 </TableCell>
               ))}
             </TableRow>
@@ -69,12 +65,9 @@ interface CardListSkeletonProps {
 /** Skeleton loader for a vertical list of card-shaped rows (e.g. receipts list). */
 export function CardListSkeleton({ count = 4, className }: CardListSkeletonProps) {
   return (
-    <div className={cn('space-y-3', className)} data-testid="card-list-skeleton">
+    <div className={cn("space-y-3", className)} data-testid="card-list-skeleton">
       {Array.from({ length: count }).map((_, i) => (
-        <div
-          key={i}
-          className="flex items-center justify-between gap-4 p-4 border rounded-lg"
-        >
+        <div key={i} className="flex items-center justify-between gap-4 p-4 border rounded-lg">
           <div className="flex items-center gap-4 flex-1 min-w-0">
             <Skeleton className="w-12 h-12 rounded-md shrink-0" />
             <div className="space-y-2 flex-1 min-w-0">
@@ -98,10 +91,7 @@ interface StatCardSkeletonProps {
 export function StatCardSkeleton({ count = 3, className }: StatCardSkeletonProps) {
   return (
     <div
-      className={cn(
-        'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4',
-        className,
-      )}
+      className={cn("grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4", className)}
       data-testid="stat-card-skeleton"
     >
       {Array.from({ length: count }).map((_, i) => (
@@ -136,7 +126,7 @@ export function PageSkeleton({
   className,
 }: PageSkeletonProps) {
   return (
-    <div className={cn('space-y-6', className)} data-testid="page-skeleton">
+    <div className={cn("space-y-6", className)} data-testid="page-skeleton">
       <div className="space-y-2">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-4 w-72" />

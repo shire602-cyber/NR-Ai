@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -35,10 +35,10 @@ import {
   Users,
   Activity,
   Wallet,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { useLocation } from 'wouter';
-import { motion, AnimatePresence } from 'framer-motion';
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { useLocation } from "wouter";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Sidebar,
   SidebarContent,
@@ -50,15 +50,15 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-} from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
-import { useTranslation, useI18n } from '@/lib/i18n';
-import { useRTL } from '@/components/RTLProvider';
-import { removeToken } from '@/lib/auth';
-import { apiRequest } from '@/lib/queryClient';
-import { useQueryClient } from '@tanstack/react-query';
-import { CompanySwitcher } from '@/components/CompanySwitcher';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
+} from "@/components/ui/sidebar";
+import { cn } from "@/lib/utils";
+import { useTranslation, useI18n } from "@/lib/i18n";
+import { useRTL } from "@/components/RTLProvider";
+import { removeToken } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
+import { useQueryClient } from "@tanstack/react-query";
+import { CompanySwitcher } from "@/components/CompanySwitcher";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -78,133 +78,134 @@ interface NavGroup {
 
 const CUSTOMER_GROUPS: NavGroup[] = [
   {
-    key: 'sales',
-    titleKey: 'sales',
+    key: "sales",
+    titleKey: "sales",
     icon: TrendingUp,
     items: [
-      { titleKey: 'invoices', url: '/invoices' },
-      { titleKey: 'recurringInvoices', url: '/recurring-invoices' },
-      { titleKey: 'paymentChasing', url: '/payment-chasing' },
-      { titleKey: 'contacts', url: '/contacts' },
+      { titleKey: "invoices", url: "/invoices" },
+      { titleKey: "recurringInvoices", url: "/recurring-invoices" },
+      { titleKey: "paymentChasing", url: "/payment-chasing" },
+      { titleKey: "contacts", url: "/contacts" },
     ],
   },
   {
-    key: 'purchases',
-    titleKey: 'purchases',
+    key: "purchases",
+    titleKey: "purchases",
     icon: ShoppingCart,
     items: [
-      { titleKey: 'receipts', url: '/receipts' },
-      { titleKey: 'receiptAutopilot', url: '/receipt-autopilot' },
-      { titleKey: 'billPay', url: '/bill-pay' },
-      { titleKey: 'expenseClaims', url: '/expense-claims' },
-      { titleKey: 'inventory', url: '/inventory' },
+      { titleKey: "receipts", url: "/receipts" },
+      { titleKey: "receiptAutopilot", url: "/receipt-autopilot" },
+      { titleKey: "billPay", url: "/bill-pay" },
+      { titleKey: "expenseClaims", url: "/expense-claims" },
+      { titleKey: "inventory", url: "/inventory" },
     ],
   },
   {
-    key: 'accounting',
-    titleKey: 'accounting',
+    key: "accounting",
+    titleKey: "accounting",
     icon: BookMarked,
     items: [
-      { titleKey: 'chartOfAccounts', url: '/chart-of-accounts' },
-      { titleKey: 'journal', url: '/journal' },
-      { titleKey: 'bankReconciliation', url: '/bank-reconciliation' },
-      { titleKey: 'fixedAssets', url: '/fixed-assets' },
-      { titleKey: 'monthEndClose', url: '/month-end' },
+      { titleKey: "chartOfAccounts", url: "/chart-of-accounts" },
+      { titleKey: "journal", url: "/journal" },
+      { titleKey: "bankReconciliation", url: "/bank-reconciliation" },
+      { titleKey: "fixedAssets", url: "/fixed-assets" },
+      { titleKey: "monthEndClose", url: "/month-end" },
     ],
   },
   {
-    key: 'reports',
-    titleKey: 'reportsSection',
+    key: "reports",
+    titleKey: "reportsSection",
     icon: BarChart3,
     items: [
-      { titleKey: 'reports', url: '/reports' },
-      { titleKey: 'vatFiling', url: '/vat-filing' },
-      { titleKey: 'vatAutopilot', url: '/vat-autopilot' },
-      { titleKey: 'corporateTax', url: '/corporate-tax' },
-      { titleKey: 'budgeting', url: '/budgets' },
-      { titleKey: 'cashFlowForecast', url: '/cashflow-forecast' },
+      { titleKey: "reports", url: "/reports" },
+      { titleKey: "vatFiling", url: "/vat-filing" },
+      { titleKey: "vatAutopilot", url: "/vat-autopilot" },
+      { titleKey: "corporateTax", url: "/corporate-tax" },
+      { titleKey: "budgeting", url: "/budgets" },
+      { titleKey: "cashFlowForecast", url: "/cashflow-forecast" },
     ],
   },
   {
-    key: 'payroll',
-    titleKey: 'hrPayroll',
+    key: "payroll",
+    titleKey: "hrPayroll",
     icon: Banknote,
-    items: [
-      { titleKey: 'payroll', url: '/payroll' },
-    ],
+    items: [{ titleKey: "payroll", url: "/payroll" }],
   },
   {
-    key: 'compliance',
-    titleKey: 'compliance',
+    key: "compliance",
+    titleKey: "compliance",
     icon: ClipboardList,
     items: [
-      { titleKey: 'documentChasing', url: '/document-chasing' },
-      { titleKey: 'complianceCalendar', url: '/compliance-calendar' },
+      { titleKey: "documentChasing", url: "/document-chasing" },
+      { titleKey: "complianceCalendar", url: "/compliance-calendar" },
     ],
   },
   {
-    key: 'settings',
-    titleKey: 'settings',
+    key: "settings",
+    titleKey: "settings",
     icon: Settings,
     items: [
-      { titleKey: 'companySettings', url: '/settings/company' },
-      { titleKey: 'companyProfile', url: '/company-profile' },
-      { titleKey: 'teamManagement', url: '/team' },
-      { titleKey: 'integrations', url: '/integrations' },
-      { titleKey: 'whatsappInbox', url: '/whatsapp' },
-      { titleKey: 'backupRestore', url: '/backup-restore' },
-      { titleKey: 'history', url: '/history' },
+      { titleKey: "companySettings", url: "/settings/company" },
+      { titleKey: "companyProfile", url: "/company-profile" },
+      { titleKey: "teamManagement", url: "/team" },
+      { titleKey: "integrations", url: "/integrations" },
+      { titleKey: "whatsappInbox", url: "/whatsapp" },
+      { titleKey: "backupRestore", url: "/backup-restore" },
+      { titleKey: "history", url: "/history" },
     ],
   },
 ];
 
 const NRA_GROUP: NavGroup = {
-  key: 'nra',
-  titleKey: 'nraCenter',
+  key: "nra",
+  titleKey: "nraCenter",
   icon: Briefcase,
   items: [
-    { titleKey: 'firmCommandCenter', url: '/firm/command-center' },
-    { titleKey: 'valueOps', url: '/firm/value-ops' },
-    { titleKey: 'clientPortfolio', url: '/firm/clients' },
-    { titleKey: 'staffManagement', url: '/firm/staff' },
-    { titleKey: 'healthDashboard', url: '/firm/health' },
-    { titleKey: 'communications', url: '/firm/comms' },
+    { titleKey: "firmCommandCenter", url: "/firm/command-center" },
+    { titleKey: "valueOps", url: "/firm/value-ops" },
+    { titleKey: "clientPortfolio", url: "/firm/clients" },
+    { titleKey: "staffManagement", url: "/firm/staff" },
+    { titleKey: "bulkOperations", url: "/firm/bulk" },
+    { titleKey: "healthDashboard", url: "/firm/health" },
+    { titleKey: "communications", url: "/firm/comms" },
+    { titleKey: "firmAnalytics", url: "/firm/analytics" },
+    { titleKey: "leadPipeline", url: "/firm/pipeline" },
   ],
 };
 
 const ADMIN_GROUP: NavGroup = {
-  key: 'admin',
-  titleKey: 'adminPanel',
+  key: "admin",
+  titleKey: "adminPanel",
   icon: Shield,
   items: [
-    { titleKey: 'adminDashboard', url: '/admin/dashboard' },
-    { titleKey: 'clientManagement', url: '/admin/clients' },
-    { titleKey: 'clientDocuments', url: '/admin/documents' },
-    { titleKey: 'userInvitations', url: '/admin/invitations' },
-    { titleKey: 'clientImport', url: '/admin/import' },
-    { titleKey: 'userManagement', url: '/admin/users' },
-    { titleKey: 'activityLogs', url: '/admin/activity-logs' },
-    { titleKey: 'systemSettings', url: '/admin' },
+    { titleKey: "adminDashboard", url: "/admin/dashboard" },
+    { titleKey: "clientManagement", url: "/admin/clients" },
+    { titleKey: "clientDocuments", url: "/admin/documents" },
+    { titleKey: "userInvitations", url: "/admin/invitations" },
+    { titleKey: "clientImport", url: "/admin/import" },
+    { titleKey: "userManagement", url: "/admin/users" },
+    { titleKey: "activityLogs", url: "/admin/activity-logs" },
+    { titleKey: "systemSettings", url: "/admin" },
   ],
 };
 
 // Client portal flat items (no collapsible — spec: "don't change this")
 const CLIENT_PORTAL_ITEMS = [
-  { titleKey: 'documentVault', icon: FolderArchive, url: '/document-vault' },
-  { titleKey: 'taxReturnArchive', icon: FileStack, url: '/tax-return-archive' },
-  { titleKey: 'complianceCalendar', icon: CalendarDays, url: '/compliance-calendar' },
-  { titleKey: 'taskCenter', icon: ListTodo, url: '/task-center' },
-  { titleKey: 'newsFeed', icon: Newspaper, url: '/news-feed' },
+  { titleKey: "documentVault", icon: FolderArchive, url: "/document-vault" },
+  { titleKey: "taxReturnArchive", icon: FileStack, url: "/tax-return-archive" },
+  { titleKey: "complianceCalendar", icon: CalendarDays, url: "/compliance-calendar" },
+  { titleKey: "taskCenter", icon: ListTodo, url: "/task-center" },
+  { titleKey: "newsFeed", icon: Newspaper, url: "/news-feed" },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const SIDEBAR_LS_KEY = 'sidebar-expanded-group';
+const SIDEBAR_LS_KEY = "sidebar-expanded-group";
 
 function getGroupForRoute(location: string, groups: NavGroup[]): string | null {
   for (const group of groups) {
     for (const item of group.items) {
-      if (location === item.url || location.startsWith(item.url + '/')) {
+      if (location === item.url || location.startsWith(item.url + "/")) {
         return group.key;
       }
     }
@@ -223,10 +224,10 @@ export function AppSidebar() {
   const { data: currentUser } = useCurrentUser();
 
   const isAdmin = currentUser?.isAdmin === true;
-  const userType = currentUser?.userType || 'customer';
+  const userType = currentUser?.userType || "customer";
   const firmRole = currentUser?.firmRole ?? null;
 
-  const hasFirmRole = firmRole === 'firm_owner' || firmRole === 'firm_admin';
+  const hasFirmRole = firmRole === "firm_owner" || firmRole === "firm_admin";
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(
@@ -235,16 +236,12 @@ export function AppSidebar() {
       ...(hasFirmRole ? [NRA_GROUP] : []),
       ...(isAdmin ? [ADMIN_GROUP] : []),
     ],
-    [hasFirmRole, isAdmin],
+    [hasFirmRole, isAdmin]
   );
 
   // Initialize expanded group: active route's group takes precedence, then localStorage
   const [expandedGroup, setExpandedGroup] = useState<string | null>(() => {
-    const fromRoute = getGroupForRoute(location, [
-      ...CUSTOMER_GROUPS,
-      NRA_GROUP,
-      ADMIN_GROUP,
-    ]);
+    const fromRoute = getGroupForRoute(location, [...CUSTOMER_GROUPS, NRA_GROUP, ADMIN_GROUP]);
     if (fromRoute) return fromRoute;
     try {
       return localStorage.getItem(SIDEBAR_LS_KEY);
@@ -258,34 +255,40 @@ export function AppSidebar() {
     const group = getGroupForRoute(location, allGroups);
     if (group && group !== expandedGroup) {
       setExpandedGroup(group);
-      try { localStorage.setItem(SIDEBAR_LS_KEY, group); } catch { /* ignore */ }
+      try {
+        localStorage.setItem(SIDEBAR_LS_KEY, group);
+      } catch {
+        /* ignore */
+      }
     }
   }, [location, allGroups]);
 
   const toggleGroup = (key: string) => {
-    setExpandedGroup(prev => {
+    setExpandedGroup((prev) => {
       const next = prev === key ? null : key;
       try {
         if (next) localStorage.setItem(SIDEBAR_LS_KEY, next);
         else localStorage.removeItem(SIDEBAR_LS_KEY);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       return next;
     });
   };
 
   const handleLogout = async () => {
     try {
-      await apiRequest('POST', '/api/auth/logout');
+      await apiRequest("POST", "/api/auth/logout");
     } catch {
       // Network failure shouldn't block local sign-out; cookies still expire.
     }
     removeToken();
     queryClient.clear();
-    setLocation('/');
+    setLocation("/");
   };
 
   const toggleLanguage = () => {
-    setLocale(locale === 'en' ? 'ar' : 'en');
+    setLocale(locale === "en" ? "ar" : "en");
   };
 
   // ── Renderers ──────────────────────────────────────────────────────────────
@@ -294,7 +297,7 @@ export function AppSidebar() {
     const Icon = group.icon;
     const isExpanded = expandedGroup === group.key;
     const hasActive = group.items.some(
-      item => location === item.url || location.startsWith(item.url + '/'),
+      (item) => location === item.url || location.startsWith(item.url + "/")
     );
     const groupTitle = (t as Record<string, string>)[group.titleKey] ?? group.titleKey;
 
@@ -302,7 +305,7 @@ export function AppSidebar() {
       <SidebarMenuItem key={group.key}>
         <SidebarMenuButton
           onClick={() => toggleGroup(group.key)}
-          className={cn(hasActive && 'text-primary font-medium')}
+          className={cn(hasActive && "text-primary font-medium")}
           data-testid={`group-${group.key}`}
         >
           <Icon className="w-4 h-4" />
@@ -321,17 +324,15 @@ export function AppSidebar() {
             <motion.div
               key="sub"
               initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
+              animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: 'easeInOut' }}
-              style={{ overflow: 'hidden' }}
+              transition={{ duration: 0.2, ease: "easeInOut" }}
+              style={{ overflow: "hidden" }}
             >
               <SidebarMenuSub>
-                {group.items.map(item => {
-                  const isActive =
-                    location === item.url || location.startsWith(item.url + '/');
-                  const label =
-                    (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
+                {group.items.map((item) => {
+                  const isActive = location === item.url || location.startsWith(item.url + "/");
+                  const label = (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
                   return (
                     <SidebarMenuSubItem key={item.url}>
                       <SidebarMenuSubButton
@@ -354,7 +355,7 @@ export function AppSidebar() {
     );
   };
 
-  const renderClientPortalItem = (item: typeof CLIENT_PORTAL_ITEMS[0]) => {
+  const renderClientPortalItem = (item: (typeof CLIENT_PORTAL_ITEMS)[0]) => {
     const Icon = item.icon;
     const isActive = location === item.url;
     const label = (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
@@ -375,7 +376,7 @@ export function AppSidebar() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <Sidebar side={isRTL ? 'right' : 'left'}>
+    <Sidebar side={isRTL ? "right" : "left"}>
       <motion.div
         initial={{ opacity: 0, x: rtlValue(-12, 12) }}
         animate={{ opacity: 1, x: 0 }}
@@ -385,14 +386,17 @@ export function AppSidebar() {
           <div className="flex items-center gap-2.5">
             <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-sidebar-primary to-sidebar-primary/70 flex items-center justify-center shrink-0 shadow-sm ring-1 ring-sidebar-primary/30">
               <Wallet className="w-4 h-4 text-sidebar-primary-foreground" strokeWidth={2.25} />
-              <span aria-hidden className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot" />
+              <span
+                aria-hidden
+                className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot"
+              />
             </div>
             <div className="min-w-0">
               <div className="font-semibold text-[13px] tracking-tight text-sidebar-foreground leading-tight">
                 Muhasib<span className="text-sidebar-primary">.ai</span>
               </div>
               <div className="text-[10.5px] text-sidebar-foreground/55 uppercase tracking-[0.12em] leading-tight font-medium">
-                {t.smartAccounting ?? 'Smart Accounting'}
+                {t.smartAccounting ?? "Smart Accounting"}
               </div>
             </div>
           </div>
@@ -402,7 +406,7 @@ export function AppSidebar() {
 
       <SidebarContent className="px-1.5">
         {/* ── Client portal — simplified flat view ── */}
-        {userType === 'client' && (
+        {userType === "client" && (
           <>
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
               Workspace
@@ -410,8 +414,8 @@ export function AppSidebar() {
             <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={location === '/dashboard'}
-                  onClick={() => setLocation('/dashboard')}
+                  isActive={location === "/dashboard"}
+                  onClick={() => setLocation("/dashboard")}
                   data-testid="link-dashboard"
                 >
                   <LayoutDashboard className="w-4 h-4" />
@@ -433,8 +437,8 @@ export function AppSidebar() {
             <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={location === '/reports'}
-                  onClick={() => setLocation('/reports')}
+                  isActive={location === "/reports"}
+                  onClick={() => setLocation("/reports")}
                   data-testid="link-reports"
                 >
                   <BarChart3 className="w-4 h-4" />
@@ -446,7 +450,7 @@ export function AppSidebar() {
         )}
 
         {/* ── Customer / admin — 7 collapsible accordion groups ── */}
-        {(userType === 'customer' || userType === 'admin') && (
+        {(userType === "customer" || userType === "admin") && (
           <>
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
               Overview
@@ -454,8 +458,8 @@ export function AppSidebar() {
             <SidebarMenu className="px-1.5">
               <SidebarMenuItem>
                 <SidebarMenuButton
-                  isActive={location === '/dashboard'}
-                  onClick={() => setLocation('/dashboard')}
+                  isActive={location === "/dashboard"}
+                  onClick={() => setLocation("/dashboard")}
                   data-testid="link-dashboard"
                 >
                   <LayoutDashboard className="w-4 h-4" />
@@ -467,9 +471,7 @@ export function AppSidebar() {
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
               Operations
             </div>
-            <SidebarMenu className="px-1.5 pb-4">
-              {allGroups.map(renderNavGroup)}
-            </SidebarMenu>
+            <SidebarMenu className="px-1.5 pb-4">{allGroups.map(renderNavGroup)}</SidebarMenu>
           </>
         )}
       </SidebarContent>
@@ -482,9 +484,9 @@ export function AppSidebar() {
           className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/80 hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors"
         >
           <Languages className="w-4 h-4 opacity-70" />
-          <span className="text-[13px]">{locale === 'en' ? 'العربية' : 'English'}</span>
+          <span className="text-[13px]">{locale === "en" ? "العربية" : "English"}</span>
           <span className="ms-auto text-[10px] uppercase tracking-wider text-sidebar-foreground/45 font-medium">
-            {locale === 'en' ? 'AR' : 'EN'}
+            {locale === "en" ? "AR" : "EN"}
           </span>
         </button>
 
@@ -495,7 +497,7 @@ export function AppSidebar() {
           className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-sidebar-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors"
         >
           <LogOut className="w-4 h-4 opacity-70" />
-          <span className="text-[13px]">{t.logout ?? 'Sign out'}</span>
+          <span className="text-[13px]">{t.logout ?? "Sign out"}</span>
         </button>
       </SidebarFooter>
     </Sidebar>

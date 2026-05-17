@@ -1,20 +1,34 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency } from '@/lib/format';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { format } from "date-fns";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { useTranslation } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency } from "@/lib/format";
 import {
   FileCheck,
   Calculator,
@@ -24,7 +38,7 @@ import {
   Clock,
   Banknote,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface CorporateTaxReturn {
   id: string;
@@ -61,12 +75,27 @@ interface CalculationResult {
 
 const statusBadge = (status: string) => {
   switch (status) {
-    case 'filed':
-      return <Badge variant="default" className="bg-blue-500 hover:bg-blue-600"><CheckCircle2 className="w-3 h-3 mr-1" />Filed</Badge>;
-    case 'paid':
-      return <Badge variant="default" className="bg-green-500 hover:bg-green-600"><Banknote className="w-3 h-3 mr-1" />Paid</Badge>;
+    case "filed":
+      return (
+        <Badge variant="default" className="bg-blue-500 hover:bg-blue-600">
+          <CheckCircle2 className="w-3 h-3 mr-1" />
+          Filed
+        </Badge>
+      );
+    case "paid":
+      return (
+        <Badge variant="default" className="bg-green-500 hover:bg-green-600">
+          <Banknote className="w-3 h-3 mr-1" />
+          Paid
+        </Badge>
+      );
     default:
-      return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />Draft</Badge>;
+      return (
+        <Badge variant="secondary">
+          <Clock className="w-3 h-3 mr-1" />
+          Draft
+        </Badge>
+      );
   }
 };
 
@@ -81,7 +110,7 @@ export default function CorporateTax() {
   const [periodEnd, setPeriodEnd] = useState(`${currentYear}-12-31`);
   const [deductions, setDeductions] = useState(0);
   const [calculation, setCalculation] = useState<CalculationResult | null>(null);
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState("");
 
   // Detail dialog
   const [viewReturn, setViewReturn] = useState<CorporateTaxReturn | null>(null);
@@ -89,26 +118,29 @@ export default function CorporateTax() {
 
   // Fetch existing returns
   const { data: taxReturns, isLoading: isLoadingReturns } = useQuery<CorporateTaxReturn[]>({
-    queryKey: ['/api/companies', companyId, 'corporate-tax', 'returns'],
+    queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
     enabled: !!companyId,
   });
 
   // Calculate mutation
   const calculateMutation = useMutation({
     mutationFn: () =>
-      apiRequest('GET', `/api/companies/${companyId}/corporate-tax/calculate?periodStart=${periodStart}&periodEnd=${periodEnd}`),
+      apiRequest(
+        "GET",
+        `/api/companies/${companyId}/corporate-tax/calculate?periodStart=${periodStart}&periodEnd=${periodEnd}`
+      ),
     onSuccess: (data: CalculationResult) => {
       setCalculation(data);
       toast({
-        title: 'Calculation Complete',
+        title: "Calculation Complete",
         description: `Processed ${data.journalEntriesProcessed} journal entries.`,
       });
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Calculation Failed',
-        description: error?.message || 'Failed to calculate corporate tax',
+        variant: "destructive",
+        title: "Calculation Failed",
+        description: error?.message || "Failed to calculate corporate tax",
       });
     },
   });
@@ -116,12 +148,12 @@ export default function CorporateTax() {
   // Save as draft mutation
   const saveDraftMutation = useMutation({
     mutationFn: () => {
-      if (!calculation) throw new Error('No calculation to save');
+      if (!calculation) throw new Error("No calculation to save");
       const taxableIncome = calculation.totalRevenue - calculation.totalExpenses - deductions;
       const taxableAmount = Math.max(0, taxableIncome - calculation.exemptionThreshold);
       const taxPayable = Math.round(taxableAmount * calculation.taxRate * 100) / 100;
 
-      return apiRequest('POST', `/api/companies/${companyId}/corporate-tax/returns`, {
+      return apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, {
         taxPeriodStart: new Date(periodStart).toISOString(),
         taxPeriodEnd: new Date(periodEnd).toISOString(),
         totalRevenue: calculation.totalRevenue,
@@ -131,25 +163,27 @@ export default function CorporateTax() {
         exemptionThreshold: calculation.exemptionThreshold,
         taxRate: calculation.taxRate,
         taxPayable,
-        status: 'draft',
+        status: "draft",
         notes: notes || null,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'corporate-tax', 'returns'] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
+      });
       toast({
-        title: 'Draft Saved',
-        description: 'Corporate tax return saved as draft.',
+        title: "Draft Saved",
+        description: "Corporate tax return saved as draft.",
       });
       setCalculation(null);
-      setNotes('');
+      setNotes("");
       setDeductions(0);
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Save Failed',
-        description: error?.message || 'Failed to save draft',
+        variant: "destructive",
+        title: "Save Failed",
+        description: error?.message || "Failed to save draft",
       });
     },
   });
@@ -157,19 +191,21 @@ export default function CorporateTax() {
   // Update status mutation
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest('PATCH', `/api/corporate-tax/returns/${id}`, {
+      apiRequest("PATCH", `/api/corporate-tax/returns/${id}`, {
         status,
-        ...(status === 'filed' ? { filedAt: new Date().toISOString() } : {}),
+        ...(status === "filed" ? { filedAt: new Date().toISOString() } : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'corporate-tax', 'returns'] });
-      toast({ title: 'Status Updated', description: 'Tax return status has been updated.' });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
+      });
+      toast({ title: "Status Updated", description: "Tax return status has been updated." });
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Update Failed',
-        description: error?.message || 'Failed to update status',
+        variant: "destructive",
+        title: "Update Failed",
+        description: error?.message || "Failed to update status",
       });
     },
   });
@@ -177,16 +213,18 @@ export default function CorporateTax() {
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest('PATCH', `/api/corporate-tax/returns/${id}`, { status: 'void' }),
+      apiRequest("PATCH", `/api/corporate-tax/returns/${id}`, { status: "void" }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'corporate-tax', 'returns'] });
-      toast({ title: 'Return Removed', description: 'Corporate tax return has been removed.' });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
+      });
+      toast({ title: "Return Removed", description: "Corporate tax return has been removed." });
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Delete Failed',
-        description: error?.message || 'Failed to remove return',
+        variant: "destructive",
+        title: "Delete Failed",
+        description: error?.message || "Failed to remove return",
       });
     },
   });
@@ -197,7 +235,13 @@ export default function CorporateTax() {
         const taxableIncome = calculation.totalRevenue - calculation.totalExpenses - deductions;
         const taxableAmount = Math.max(0, taxableIncome - calculation.exemptionThreshold);
         const taxPayable = Math.round(taxableAmount * calculation.taxRate * 100) / 100;
-        return { ...calculation, totalDeductions: deductions, taxableIncome, taxableAmount, taxPayable };
+        return {
+          ...calculation,
+          totalDeductions: deductions,
+          taxableIncome,
+          taxableAmount,
+          taxPayable,
+        };
       })()
     : null;
 
@@ -226,7 +270,7 @@ export default function CorporateTax() {
           <FileCheck className="w-8 h-8 text-primary" />
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              {(t as any).corporateTax || 'Corporate Tax (9%)'}
+              {(t as any).corporateTax || "Corporate Tax (9%)"}
             </h1>
             <p className="text-muted-foreground mt-1">
               UAE Corporate Tax &mdash; 9% on taxable income above AED 375,000
@@ -273,9 +317,13 @@ export default function CorporateTax() {
               className="w-full md:w-auto"
             >
               {calculateMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Calculating...</>
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Calculating...
+                </>
               ) : (
-                <><Calculator className="w-4 h-4 mr-2" /> Calculate</>
+                <>
+                  <Calculator className="w-4 h-4 mr-2" /> Calculate
+                </>
               )}
             </Button>
           </div>
@@ -285,23 +333,37 @@ export default function CorporateTax() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-lg border p-4 space-y-3">
-                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Income Summary</h3>
+                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+                    Income Summary
+                  </h3>
                   <div className="flex justify-between">
                     <span>Total Revenue</span>
-                    <span className="font-medium">{formatCurrency(adjustedCalculation.totalRevenue, 'AED', locale)}</span>
+                    <span className="font-medium">
+                      {formatCurrency(adjustedCalculation.totalRevenue, "AED", locale)}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Total Expenses</span>
-                    <span className="font-medium text-red-600">({formatCurrency(adjustedCalculation.totalExpenses, 'AED', locale)})</span>
+                    <span className="font-medium text-red-600">
+                      ({formatCurrency(adjustedCalculation.totalExpenses, "AED", locale)})
+                    </span>
                   </div>
                   <div className="flex justify-between border-t pt-2">
                     <span className="font-semibold">Gross Profit</span>
-                    <span className="font-semibold">{formatCurrency(adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses, 'AED', locale)}</span>
+                    <span className="font-semibold">
+                      {formatCurrency(
+                        adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses,
+                        "AED",
+                        locale
+                      )}
+                    </span>
                   </div>
                 </div>
 
                 <div className="rounded-lg border p-4 space-y-3">
-                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">Tax Calculation</h3>
+                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+                    Tax Calculation
+                  </h3>
                   <div className="flex justify-between items-center">
                     <span>Deductions</span>
                     <Input
@@ -315,15 +377,21 @@ export default function CorporateTax() {
                   </div>
                   <div className="flex justify-between">
                     <span>Taxable Income</span>
-                    <span className="font-medium">{formatCurrency(adjustedCalculation.taxableIncome, 'AED', locale)}</span>
+                    <span className="font-medium">
+                      {formatCurrency(adjustedCalculation.taxableIncome, "AED", locale)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>Exemption Threshold</span>
-                    <span>{formatCurrency(adjustedCalculation.exemptionThreshold, 'AED', locale)}</span>
+                    <span>
+                      {formatCurrency(adjustedCalculation.exemptionThreshold, "AED", locale)}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Taxable Amount (above threshold)</span>
-                    <span className="font-medium">{formatCurrency(adjustedCalculation.taxableAmount, 'AED', locale)}</span>
+                    <span className="font-medium">
+                      {formatCurrency(adjustedCalculation.taxableAmount, "AED", locale)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span>Tax Rate</span>
@@ -331,13 +399,16 @@ export default function CorporateTax() {
                   </div>
                   <div className="flex justify-between border-t pt-2">
                     <span className="text-lg font-bold">Tax Payable</span>
-                    <span className="text-lg font-bold text-primary">{formatCurrency(adjustedCalculation.taxPayable, 'AED', locale)}</span>
+                    <span className="text-lg font-bold text-primary">
+                      {formatCurrency(adjustedCalculation.taxPayable, "AED", locale)}
+                    </span>
                   </div>
                 </div>
               </div>
 
               <div className="text-xs text-muted-foreground">
-                Based on {adjustedCalculation.journalEntriesProcessed} posted journal entries in the selected period.
+                Based on {adjustedCalculation.journalEntriesProcessed} posted journal entries in the
+                selected period.
               </div>
 
               {/* Notes and Save */}
@@ -357,9 +428,11 @@ export default function CorporateTax() {
                   disabled={saveDraftMutation.isPending}
                 >
                   {saveDraftMutation.isPending ? (
-                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
+                    </>
                   ) : (
-                    'Save as Draft'
+                    "Save as Draft"
                   )}
                 </Button>
               </div>
@@ -372,9 +445,7 @@ export default function CorporateTax() {
       <Card>
         <CardHeader>
           <CardTitle>Tax Returns</CardTitle>
-          <CardDescription>
-            Saved corporate tax returns and their filing status
-          </CardDescription>
+          <CardDescription>Saved corporate tax returns and their filing status</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoadingReturns ? (
@@ -403,64 +474,80 @@ export default function CorporateTax() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {taxReturns.filter(r => r.status !== 'void').map((taxReturn) => (
-                    <TableRow key={taxReturn.id}>
-                      <TableCell className="font-medium">
-                        {format(new Date(taxReturn.taxPeriodStart), 'dd MMM yyyy')} &mdash; {format(new Date(taxReturn.taxPeriodEnd), 'dd MMM yyyy')}
-                      </TableCell>
-                      <TableCell className="text-right">{formatCurrency(taxReturn.totalRevenue, 'AED', locale)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(taxReturn.taxableIncome, 'AED', locale)}</TableCell>
-                      <TableCell className="text-right font-semibold">{formatCurrency(taxReturn.taxPayable, 'AED', locale)}</TableCell>
-                      <TableCell>{statusBadge(taxReturn.status)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setViewReturn(taxReturn);
-                              setViewDialogOpen(true);
-                            }}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          {taxReturn.status === 'draft' && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => updateStatusMutation.mutate({ id: taxReturn.id, status: 'filed' })}
-                                disabled={updateStatusMutation.isPending}
-                                title="Mark as Filed"
-                              >
-                                <CheckCircle2 className="w-4 h-4 text-blue-500" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => deleteMutation.mutate(taxReturn.id)}
-                                disabled={deleteMutation.isPending}
-                                title="Delete"
-                              >
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            </>
-                          )}
-                          {taxReturn.status === 'filed' && (
+                  {taxReturns
+                    .filter((r) => r.status !== "void")
+                    .map((taxReturn) => (
+                      <TableRow key={taxReturn.id}>
+                        <TableCell className="font-medium">
+                          {format(new Date(taxReturn.taxPeriodStart), "dd MMM yyyy")} &mdash;{" "}
+                          {format(new Date(taxReturn.taxPeriodEnd), "dd MMM yyyy")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(taxReturn.totalRevenue, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(taxReturn.taxableIncome, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold">
+                          {formatCurrency(taxReturn.taxPayable, "AED", locale)}
+                        </TableCell>
+                        <TableCell>{statusBadge(taxReturn.status)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => updateStatusMutation.mutate({ id: taxReturn.id, status: 'paid' })}
-                              disabled={updateStatusMutation.isPending}
-                              title="Mark as Paid"
+                              onClick={() => {
+                                setViewReturn(taxReturn);
+                                setViewDialogOpen(true);
+                              }}
                             >
-                              <Banknote className="w-4 h-4 text-green-500" />
+                              <Eye className="w-4 h-4" />
                             </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            {taxReturn.status === "draft" && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    updateStatusMutation.mutate({
+                                      id: taxReturn.id,
+                                      status: "filed",
+                                    })
+                                  }
+                                  disabled={updateStatusMutation.isPending}
+                                  title="Mark as Filed"
+                                >
+                                  <CheckCircle2 className="w-4 h-4 text-blue-500" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => deleteMutation.mutate(taxReturn.id)}
+                                  disabled={deleteMutation.isPending}
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                </Button>
+                              </>
+                            )}
+                            {taxReturn.status === "filed" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  updateStatusMutation.mutate({ id: taxReturn.id, status: "paid" })
+                                }
+                                disabled={updateStatusMutation.isPending}
+                                title="Mark as Paid"
+                              >
+                                <Banknote className="w-4 h-4 text-green-500" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                 </TableBody>
               </Table>
             </div>
@@ -476,7 +563,8 @@ export default function CorporateTax() {
             <DialogDescription>
               {viewReturn && (
                 <>
-                  Period: {format(new Date(viewReturn.taxPeriodStart), 'dd MMM yyyy')} &mdash; {format(new Date(viewReturn.taxPeriodEnd), 'dd MMM yyyy')}
+                  Period: {format(new Date(viewReturn.taxPeriodStart), "dd MMM yyyy")} &mdash;{" "}
+                  {format(new Date(viewReturn.taxPeriodEnd), "dd MMM yyyy")}
                 </>
               )}
             </DialogDescription>
@@ -485,25 +573,37 @@ export default function CorporateTax() {
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
                 <span className="text-muted-foreground">Total Revenue</span>
-                <span className="text-right font-medium">{formatCurrency(viewReturn.totalRevenue, 'AED', locale)}</span>
+                <span className="text-right font-medium">
+                  {formatCurrency(viewReturn.totalRevenue, "AED", locale)}
+                </span>
 
                 <span className="text-muted-foreground">Total Expenses</span>
-                <span className="text-right font-medium">{formatCurrency(viewReturn.totalExpenses, 'AED', locale)}</span>
+                <span className="text-right font-medium">
+                  {formatCurrency(viewReturn.totalExpenses, "AED", locale)}
+                </span>
 
                 <span className="text-muted-foreground">Deductions</span>
-                <span className="text-right font-medium">{formatCurrency(viewReturn.totalDeductions, 'AED', locale)}</span>
+                <span className="text-right font-medium">
+                  {formatCurrency(viewReturn.totalDeductions, "AED", locale)}
+                </span>
 
                 <span className="text-muted-foreground">Taxable Income</span>
-                <span className="text-right font-medium">{formatCurrency(viewReturn.taxableIncome, 'AED', locale)}</span>
+                <span className="text-right font-medium">
+                  {formatCurrency(viewReturn.taxableIncome, "AED", locale)}
+                </span>
 
                 <span className="text-muted-foreground">Exemption Threshold</span>
-                <span className="text-right">{formatCurrency(viewReturn.exemptionThreshold, 'AED', locale)}</span>
+                <span className="text-right">
+                  {formatCurrency(viewReturn.exemptionThreshold, "AED", locale)}
+                </span>
 
                 <span className="text-muted-foreground">Tax Rate</span>
                 <span className="text-right">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
 
                 <span className="font-semibold border-t pt-2">Tax Payable</span>
-                <span className="text-right font-bold text-primary border-t pt-2">{formatCurrency(viewReturn.taxPayable, 'AED', locale)}</span>
+                <span className="text-right font-bold text-primary border-t pt-2">
+                  {formatCurrency(viewReturn.taxPayable, "AED", locale)}
+                </span>
               </div>
 
               <div className="flex items-center gap-2 pt-2">
@@ -513,7 +613,7 @@ export default function CorporateTax() {
 
               {viewReturn.filedAt && (
                 <div className="text-muted-foreground text-xs">
-                  Filed on: {format(new Date(viewReturn.filedAt), 'dd MMM yyyy, HH:mm')}
+                  Filed on: {format(new Date(viewReturn.filedAt), "dd MMM yyyy, HH:mm")}
                 </div>
               )}
 

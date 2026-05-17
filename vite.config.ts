@@ -52,9 +52,11 @@ export default defineConfig({
           if (id.includes("@radix-ui")) return "vendor-radix";
           if (id.includes("react-day-picker") || id.includes("date-fns")) return "vendor-dates";
           if (id.includes("tesseract")) return "vendor-tesseract";
-          if (id.includes("isomorphic-dompurify") || id.includes("dompurify")) return "vendor-dompurify";
+          if (id.includes("isomorphic-dompurify") || id.includes("dompurify"))
+            return "vendor-dompurify";
           if (id.includes("@tanstack")) return "vendor-query";
-          if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("zod")) return "vendor-forms";
+          if (id.includes("react-hook-form") || id.includes("@hookform") || id.includes("zod"))
+            return "vendor-forms";
           if (id.includes("react-icons")) return "vendor-icons";
           if (id.includes("lucide-react")) return "vendor-lucide";
           if (id.includes("socket.io-client")) return "vendor-socketio";

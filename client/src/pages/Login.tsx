@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
-import { useLocation, Link } from 'wouter';
-import { LoginForm } from '@/components/auth/LoginForm';
-import { fetchCurrentUser } from '@/lib/auth';
-import { establishAuthenticatedSession } from '@/lib/authSession';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, Briefcase } from 'lucide-react';
+import { useEffect } from "react";
+import { useLocation, Link } from "wouter";
+import { LoginForm } from "@/components/auth/LoginForm";
+import { fetchCurrentUser } from "@/lib/auth";
+import { establishAuthenticatedSession } from "@/lib/authSession";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, Briefcase } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -12,14 +12,19 @@ export default function Login() {
   useEffect(() => {
     fetchCurrentUser()
       .then((user) => {
-        if (user) setLocation(user.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
+        if (user)
+          setLocation(
+            user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard"
+          );
       })
       .catch(() => {});
   }, [setLocation]);
 
   const handleSuccess = async (user: any) => {
     const currentUser = await establishAuthenticatedSession(user);
-    setLocation(currentUser?.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
+    setLocation(
+      currentUser?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard"
+    );
   };
 
   return (
@@ -27,7 +32,10 @@ export default function Login() {
       {/* Background Effect */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/10 rounded-full blur-[128px] animate-pulse" style={{ animationDelay: '1s' }} />
+        <div
+          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/10 rounded-full blur-[128px] animate-pulse"
+          style={{ animationDelay: "1s" }}
+        />
       </div>
 
       {/* Back to Home Link */}

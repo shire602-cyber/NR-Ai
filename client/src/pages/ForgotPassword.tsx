@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Link } from 'wouter';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Form,
   FormControl,
@@ -12,7 +12,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
+} from "@/components/ui/form";
 import {
   Card,
   CardContent,
@@ -20,14 +20,14 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { apiUrl } from '@/lib/api';
-import { withCsrfHeader } from '@/lib/csrf';
-import { ArrowLeft, Briefcase, CheckCircle2, Mail } from 'lucide-react';
+} from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { apiUrl } from "@/lib/api";
+import { withCsrfHeader } from "@/lib/csrf";
+import { ArrowLeft, Briefcase, CheckCircle2, Mail } from "lucide-react";
 
 const forgotSchema = z.object({
-  email: z.string().email('Please enter a valid email'),
+  email: z.string().email("Please enter a valid email"),
 });
 
 type ForgotFormData = z.infer<typeof forgotSchema>;
@@ -40,21 +40,21 @@ export default function ForgotPassword() {
 
   const form = useForm<ForgotFormData>({
     resolver: zodResolver(forgotSchema),
-    defaultValues: { email: '' },
+    defaultValues: { email: "" },
   });
 
   const onSubmit = async (data: ForgotFormData) => {
     setIsLoading(true);
     try {
-      const res = await fetch(apiUrl('/api/auth/forgot-password'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: await withCsrfHeader('POST', { 'Content-Type': 'application/json' }),
+      const res = await fetch(apiUrl("/api/auth/forgot-password"), {
+        method: "POST",
+        credentials: "include",
+        headers: await withCsrfHeader("POST", { "Content-Type": "application/json" }),
         body: JSON.stringify(data),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || 'Could not start password reset');
+        throw new Error(err?.message || "Could not start password reset");
       }
       const body = await res.json();
       // Server returns devResetUrl outside of production so QA can verify
@@ -63,9 +63,9 @@ export default function ForgotPassword() {
       setSubmitted(true);
     } catch (error: any) {
       toast({
-        variant: 'destructive',
-        title: 'Could not send reset link',
-        description: error?.message || 'Please try again in a moment.',
+        variant: "destructive",
+        title: "Could not send reset link",
+        description: error?.message || "Please try again in a moment.",
       });
     } finally {
       setIsLoading(false);
@@ -76,7 +76,10 @@ export default function ForgotPassword() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-primary/10 rounded-full blur-[128px] animate-pulse" />
-        <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/10 rounded-full blur-[128px] animate-pulse" style={{ animationDelay: '1s' }} />
+        <div
+          className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-violet-500/10 rounded-full blur-[128px] animate-pulse"
+          style={{ animationDelay: "1s" }}
+        />
       </div>
 
       <div className="absolute top-8 left-8">
@@ -101,8 +104,7 @@ export default function ForgotPassword() {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-semibold">Forgot password?</CardTitle>
           <CardDescription>
-            Enter the email associated with your account and we'll send a
-            reset link.
+            Enter the email associated with your account and we'll send a reset link.
           </CardDescription>
         </CardHeader>
 
@@ -112,12 +114,10 @@ export default function ForgotPassword() {
               <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900">
                 <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
                 <div className="text-sm">
-                  <p className="font-medium text-green-800 dark:text-green-200">
-                    Check your inbox
-                  </p>
+                  <p className="font-medium text-green-800 dark:text-green-200">Check your inbox</p>
                   <p className="text-green-700 dark:text-green-300/80 mt-0.5">
-                    If that email is registered, a reset link is on its way.
-                    The link is valid for one hour.
+                    If that email is registered, a reset link is on its way. The link is valid for
+                    one hour.
                   </p>
                 </div>
               </div>
@@ -166,7 +166,7 @@ export default function ForgotPassword() {
                   data-testid="button-send-reset"
                 >
                   <Mail className="w-4 h-4 mr-2" />
-                  {isLoading ? 'Sending…' : 'Send reset link'}
+                  {isLoading ? "Sending…" : "Send reset link"}
                 </Button>
               </form>
             </Form>
@@ -174,7 +174,7 @@ export default function ForgotPassword() {
         </CardContent>
         <CardFooter className="flex flex-col space-y-2">
           <div className="text-sm text-muted-foreground text-center">
-            Remembered your password?{' '}
+            Remembered your password?{" "}
             <Link href="/login" className="text-primary hover:underline font-medium">
               Sign in
             </Link>

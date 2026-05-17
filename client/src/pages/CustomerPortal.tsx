@@ -1,8 +1,8 @@
-import { useParams } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { useParams } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -10,9 +10,18 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Download, FileText, AlertCircle, Clock, Loader2, Receipt, DollarSign, FileCheck } from 'lucide-react';
-import { apiUrl } from '@/lib/api';
+} from "@/components/ui/table";
+import {
+  Download,
+  FileText,
+  AlertCircle,
+  Clock,
+  Loader2,
+  Receipt,
+  DollarSign,
+  FileCheck,
+} from "lucide-react";
+import { apiUrl } from "@/lib/api";
 
 interface PortalInfo {
   customerName: string;
@@ -32,9 +41,9 @@ interface PortalInvoice {
   status: string;
 }
 
-function formatCurrency(amount: number, currency: string = 'AED'): string {
-  return new Intl.NumberFormat('en-AE', {
-    style: 'currency',
+function formatCurrency(amount: number, currency: string = "AED"): string {
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -42,22 +51,22 @@ function formatCurrency(amount: number, currency: string = 'AED'): string {
 }
 
 function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString('en-AE', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+  return new Date(date).toLocaleDateString("en-AE", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 }
 
 function getStatusBadge(status: string) {
   switch (status) {
-    case 'paid':
+    case "paid":
       return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
-    case 'sent':
+    case "sent":
       return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Sent</Badge>;
-    case 'draft':
+    case "draft":
       return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Draft</Badge>;
-    case 'void':
+    case "void":
       return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Void</Badge>;
     default:
       return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">{status}</Badge>;
@@ -65,7 +74,8 @@ function getStatusBadge(status: string) {
 }
 
 function isOverdue(invoice: PortalInvoice): boolean {
-  if (invoice.status === 'paid' || invoice.status === 'void' || invoice.status === 'draft') return false;
+  if (invoice.status === "paid" || invoice.status === "void" || invoice.status === "draft")
+    return false;
   const invoiceDate = new Date(invoice.date);
   const thirtyDaysLater = new Date(invoiceDate);
   thirtyDaysLater.setDate(thirtyDaysLater.getDate() + 30);
@@ -76,13 +86,17 @@ export default function CustomerPortal() {
   const { token } = useParams<{ token: string }>();
 
   // Fetch portal info
-  const { data: info, isLoading: infoLoading, error: infoError } = useQuery<PortalInfo>({
-    queryKey: ['portal-info', token],
+  const {
+    data: info,
+    isLoading: infoLoading,
+    error: infoError,
+  } = useQuery<PortalInfo>({
+    queryKey: ["portal-info", token],
     queryFn: async () => {
       const res = await fetch(apiUrl(`/api/portal/${token}/info`));
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || 'Failed to load portal');
+        throw new Error(body.message || "Failed to load portal");
       }
       return res.json();
     },
@@ -92,12 +106,12 @@ export default function CustomerPortal() {
 
   // Fetch invoices (only after info loads successfully)
   const { data: invoices = [], isLoading: invoicesLoading } = useQuery<PortalInvoice[]>({
-    queryKey: ['portal-invoices', token],
+    queryKey: ["portal-invoices", token],
     queryFn: async () => {
       const res = await fetch(apiUrl(`/api/portal/${token}/invoices`));
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || 'Failed to load invoices');
+        throw new Error(body.message || "Failed to load invoices");
       }
       return res.json();
     },
@@ -106,7 +120,7 @@ export default function CustomerPortal() {
   });
 
   const handleDownloadPDF = (invoiceId: string, invoiceNumber: string) => {
-    window.open(apiUrl(`/api/portal/${token}/invoices/${invoiceId}/pdf`), '_blank');
+    window.open(apiUrl(`/api/portal/${token}/invoices/${invoiceId}/pdf`), "_blank");
   };
 
   // Loading state
@@ -123,8 +137,8 @@ export default function CustomerPortal() {
 
   // Error state
   if (infoError || !info) {
-    const message = infoError instanceof Error ? infoError.message : 'Portal not found';
-    const isExpired = message.includes('expired');
+    const message = infoError instanceof Error ? infoError.message : "Portal not found";
+    const isExpired = message.includes("expired");
 
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -136,12 +150,12 @@ export default function CustomerPortal() {
               <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
             )}
             <h2 className="text-xl font-semibold mb-2">
-              {isExpired ? 'Link Expired' : 'Invalid Portal Link'}
+              {isExpired ? "Link Expired" : "Invalid Portal Link"}
             </h2>
             <p className="text-gray-500">
               {isExpired
-                ? 'This portal link has expired. Please contact the accounting firm for a new link.'
-                : 'This portal link is invalid or has been removed. Please contact the accounting firm for assistance.'}
+                ? "This portal link has expired. Please contact the accounting firm for a new link."
+                : "This portal link is invalid or has been removed. Please contact the accounting firm for assistance."}
             </p>
           </CardContent>
         </Card>
@@ -151,16 +165,16 @@ export default function CustomerPortal() {
 
   // Calculate summary stats
   const totalOutstanding = invoices
-    .filter(inv => inv.status !== 'paid' && inv.status !== 'void' && inv.status !== 'draft')
+    .filter((inv) => inv.status !== "paid" && inv.status !== "void" && inv.status !== "draft")
     .reduce((sum, inv) => sum + inv.total, 0);
 
   const totalPaid = invoices
-    .filter(inv => inv.status === 'paid')
+    .filter((inv) => inv.status === "paid")
     .reduce((sum, inv) => sum + inv.total, 0);
 
   const invoiceCount = invoices.length;
 
-  const defaultCurrency = invoices.length > 0 ? invoices[0].currency : 'AED';
+  const defaultCurrency = invoices.length > 0 ? invoices[0].currency : "AED";
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -175,9 +189,7 @@ export default function CustomerPortal() {
             <div className="text-right">
               <p className="text-sm text-gray-500">Welcome,</p>
               <p className="text-lg font-semibold text-gray-900">{info.customerName}</p>
-              {info.contactPerson && (
-                <p className="text-sm text-gray-500">{info.contactPerson}</p>
-              )}
+              {info.contactPerson && <p className="text-sm text-gray-500">{info.contactPerson}</p>}
             </div>
           </div>
         </div>
@@ -279,7 +291,9 @@ export default function CustomerPortal() {
                           </TableCell>
                           <TableCell>
                             {overdue ? (
-                              <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Overdue</Badge>
+                              <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                                Overdue
+                              </Badge>
                             ) : (
                               getStatusBadge(invoice.status)
                             )}
@@ -308,9 +322,7 @@ export default function CustomerPortal() {
       {/* Footer */}
       <footer className="border-t bg-white mt-12">
         <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-gray-400">
-            Powered by {info.companyName}
-          </p>
+          <p className="text-center text-sm text-gray-400">Powered by {info.companyName}</p>
         </div>
       </footer>
     </div>

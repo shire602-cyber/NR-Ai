@@ -1,28 +1,35 @@
-import { useState, useCallback } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { 
-  Upload, 
-  FileSpreadsheet, 
-  Download, 
-  CheckCircle2, 
-  XCircle, 
+import { useState, useCallback } from "react";
+import { useMutation } from "@tanstack/react-query";
+import {
+  Upload,
+  FileSpreadsheet,
+  Download,
+  CheckCircle2,
+  XCircle,
   AlertCircle,
   Loader2,
   Mail,
   Building2,
-  Users
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { apiUrl } from '@/lib/api';
+  Users,
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiUrl } from "@/lib/api";
 
 interface PreviewData {
   fileName: string;
@@ -52,9 +59,9 @@ export default function ClientImport() {
 
   const previewMutation = useMutation({
     mutationFn: async (fileData: string) => {
-      return await apiRequest('POST', '/api/admin/import/preview', { 
-        fileData, 
-        fileName: file?.name 
+      return await apiRequest("POST", "/api/admin/import/preview", {
+        fileData,
+        fileName: file?.name,
       });
     },
     onSuccess: (data: PreviewData) => {
@@ -62,61 +69,67 @@ export default function ClientImport() {
       toast({ title: `Found ${data.totalRows} records in ${data.fileName}` });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to parse file', description: error?.message });
+      toast({ variant: "destructive", title: "Failed to parse file", description: error?.message });
     },
   });
 
   const importMutation = useMutation({
     mutationFn: async (data: any[]) => {
-      return await apiRequest('POST', '/api/admin/import/clients', { 
+      return await apiRequest("POST", "/api/admin/import/clients", {
         data,
         createInvitations,
       });
     },
     onSuccess: (result: ImportResult) => {
       setImportResults(result);
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
-      toast({ 
-        title: 'Import completed!', 
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
+      toast({
+        title: "Import completed!",
         description: result.message,
       });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Import failed', description: error?.message });
+      toast({ variant: "destructive", title: "Import failed", description: error?.message });
     },
   });
 
-  const handleFileSelect = useCallback((selectedFile: File) => {
-    if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid file type',
-        description: 'Please upload an Excel file (.xlsx) or CSV file'
-      });
-      return;
-    }
+  const handleFileSelect = useCallback(
+    (selectedFile: File) => {
+      if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
+        toast({
+          variant: "destructive",
+          title: "Invalid file type",
+          description: "Please upload an Excel file (.xlsx) or CSV file",
+        });
+        return;
+      }
 
-    setFile(selectedFile);
-    setPreviewData(null);
-    setImportResults(null);
+      setFile(selectedFile);
+      setPreviewData(null);
+      setImportResults(null);
 
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const base64 = (e.target?.result as string).split(',')[1];
-      previewMutation.mutate(base64);
-    };
-    reader.readAsDataURL(selectedFile);
-  }, [previewMutation, toast]);
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64 = (e.target?.result as string).split(",")[1];
+        previewMutation.mutate(base64);
+      };
+      reader.readAsDataURL(selectedFile);
+    },
+    [previewMutation, toast]
+  );
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile) {
-      handleFileSelect(droppedFile);
-    }
-  }, [handleFileSelect]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      const droppedFile = e.dataTransfer.files[0];
+      if (droppedFile) {
+        handleFileSelect(droppedFile);
+      }
+    },
+    [handleFileSelect]
+  );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -136,25 +149,25 @@ export default function ClientImport() {
 
   const downloadTemplate = async () => {
     try {
-      const response = await fetch(apiUrl('/api/admin/import/template'), {
-        credentials: 'include',
+      const response = await fetch(apiUrl("/api/admin/import/template"), {
+        credentials: "include",
       });
-      
-      if (!response.ok) throw new Error('Failed to download template');
-      
+
+      if (!response.ok) throw new Error("Failed to download template");
+
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = 'client_import_template.xlsx';
+      a.download = "client_import_template.xlsx";
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-      
-      toast({ title: 'Template downloaded successfully' });
+
+      toast({ title: "Template downloaded successfully" });
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Download failed', description: error?.message });
+      toast({ variant: "destructive", title: "Download failed", description: error?.message });
     }
   };
 
@@ -168,8 +181,12 @@ export default function ClientImport() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-import-title">Import Clients</h1>
-          <p className="text-muted-foreground">Bulk import client companies from Excel spreadsheets</p>
+          <h1 className="text-3xl font-bold" data-testid="text-import-title">
+            Import Clients
+          </h1>
+          <p className="text-muted-foreground">
+            Bulk import client companies from Excel spreadsheets
+          </p>
         </div>
         <Button variant="outline" onClick={downloadTemplate} data-testid="button-download-template">
           <Download className="w-4 h-4 mr-2" />
@@ -186,16 +203,16 @@ export default function ClientImport() {
                 Upload Excel File
               </CardTitle>
               <CardDescription>
-                Upload an Excel file (.xlsx) or CSV containing your client data.
-                We'll automatically map common column names like "Company Name", "Email", "Phone", etc.
+                Upload an Excel file (.xlsx) or CSV containing your client data. We'll automatically
+                map common column names like "Company Name", "Email", "Phone", etc.
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                  isDragOver 
-                    ? 'border-primary bg-primary/5' 
-                    : 'border-muted-foreground/25 hover:border-primary/50'
+                  isDragOver
+                    ? "border-primary bg-primary/5"
+                    : "border-muted-foreground/25 hover:border-primary/50"
                 }`}
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
@@ -244,7 +261,8 @@ export default function ClientImport() {
                     <Badge variant="secondary">{previewData.totalRows} records found</Badge>
                   </CardTitle>
                   <CardDescription>
-                    Review the mapped data before importing. We detected the following columns: {previewData.headers.join(', ')}
+                    Review the mapped data before importing. We detected the following columns:{" "}
+                    {previewData.headers.join(", ")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -265,11 +283,11 @@ export default function ClientImport() {
                         {previewData.preview.map((row, index) => (
                           <TableRow key={index} data-testid={`row-preview-${index}`}>
                             <TableCell className="text-muted-foreground">{index + 1}</TableCell>
-                            <TableCell className="font-medium">{row.name || '-'}</TableCell>
-                            <TableCell>{row.email || '-'}</TableCell>
-                            <TableCell>{row.phone || '-'}</TableCell>
-                            <TableCell>{row.trn || '-'}</TableCell>
-                            <TableCell>{row.industry || '-'}</TableCell>
+                            <TableCell className="font-medium">{row.name || "-"}</TableCell>
+                            <TableCell>{row.email || "-"}</TableCell>
+                            <TableCell>{row.phone || "-"}</TableCell>
+                            <TableCell>{row.trn || "-"}</TableCell>
+                            <TableCell>{row.industry || "-"}</TableCell>
                             <TableCell>
                               {row.name ? (
                                 <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
@@ -302,8 +320,8 @@ export default function ClientImport() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center space-x-2">
-                    <Checkbox 
-                      id="createInvitations" 
+                    <Checkbox
+                      id="createInvitations"
                       checked={createInvitations}
                       onCheckedChange={(checked) => setCreateInvitations(checked as boolean)}
                       data-testid="checkbox-create-invitations"
@@ -314,7 +332,8 @@ export default function ClientImport() {
                     </Label>
                   </div>
                   <p className="text-sm text-muted-foreground ml-6">
-                    If enabled, clients with email addresses will receive invitation links to access their portal.
+                    If enabled, clients with email addresses will receive invitation links to access
+                    their portal.
                   </p>
                 </CardContent>
               </Card>
@@ -323,8 +342,8 @@ export default function ClientImport() {
                 <Button variant="outline" onClick={resetImport} data-testid="button-cancel-import">
                   Cancel
                 </Button>
-                <Button 
-                  onClick={handleImport} 
+                <Button
+                  onClick={handleImport}
                   disabled={importMutation.isPending}
                   data-testid="button-confirm-import"
                 >
@@ -393,7 +412,7 @@ export default function ClientImport() {
                               {item.name}
                             </div>
                           </TableCell>
-                          <TableCell>{item.email || '-'}</TableCell>
+                          <TableCell>{item.email || "-"}</TableCell>
                           <TableCell>
                             <Badge className="bg-green-500/10 text-green-500 border-green-500/20">
                               Created
@@ -418,7 +437,9 @@ export default function ClientImport() {
                     <TableBody>
                       {importResults.results.errors.map((item, index) => (
                         <TableRow key={index}>
-                          <TableCell className="font-medium">{item.row?.name || 'Unknown'}</TableCell>
+                          <TableCell className="font-medium">
+                            {item.row?.name || "Unknown"}
+                          </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2 text-destructive">
                               <AlertCircle className="w-4 h-4" />
@@ -465,7 +486,10 @@ export default function ClientImport() {
                 <Upload className="w-4 h-4 mr-2" />
                 Import Another File
               </Button>
-              <Button onClick={() => window.location.href = '/admin/clients'} data-testid="button-view-clients">
+              <Button
+                onClick={() => (window.location.href = "/admin/clients")}
+                data-testid="button-view-clients"
+              >
                 <Users className="w-4 h-4 mr-2" />
                 View All Clients
               </Button>

@@ -1,11 +1,11 @@
-import OpenAI from 'openai';
-import { pool } from '../db';
-import { storage } from '../storage';
-import { getEnv } from '../config/env';
-import { createLogger } from '../config/logger';
-import { assertPeriodNotLocked } from './period-lock.service';
+import OpenAI from "openai";
+import { pool } from "../db";
+import { storage } from "../storage";
+import { getEnv } from "../config/env";
+import { createLogger } from "../config/logger";
+import { assertPeriodNotLocked } from "./period-lock.service";
 
-const log = createLogger('autonomous-gl');
+const log = createLogger("autonomous-gl");
 
 type QueryResult<T = any> = { rows: T[] };
 type Queryable = {
@@ -13,18 +13,18 @@ type Queryable = {
 };
 
 async function withFeedbackTransaction<T>(work: (client: Queryable) => Promise<T>): Promise<T> {
-  if (typeof pool.connect !== 'function') {
+  if (typeof pool.connect !== "function") {
     return work(pool);
   }
 
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
     const result = await work(client);
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return result;
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    await client.query("ROLLBACK").catch(() => {});
     throw err;
   } finally {
     client.release();
@@ -42,14 +42,14 @@ function hashStringToInt(s: string): number {
 async function generateEntryNumberInTransaction(
   dbClient: Queryable,
   companyId: string,
-  date: Date,
+  date: Date
 ): Promise<string> {
-  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, "");
   const prefix = `JE-${dateStr}`;
   const likePattern = `${prefix}-%`;
   const counterStart = prefix.length + 2;
 
-  await dbClient.query('SELECT pg_advisory_xact_lock($1, $2)', [
+  await dbClient.query("SELECT pg_advisory_xact_lock($1, $2)", [
     hashStringToInt(companyId),
     hashStringToInt(prefix),
   ]);
@@ -62,10 +62,10 @@ async function generateEntryNumberInTransaction(
      FROM journal_entries
      WHERE company_id = $1
        AND entry_number LIKE $2`,
-    [companyId, likePattern, counterStart],
+    [companyId, likePattern, counterStart]
   );
   const maxSeq = Number(rows[0]?.max_seq ?? 0);
-  return `${prefix}-${String(maxSeq + 1).padStart(3, '0')}`;
+  return `${prefix}-${String(maxSeq + 1).padStart(3, "0")}`;
 }
 
 // =============================================
@@ -151,7 +151,7 @@ interface AICategorizationResult {
 function createOpenAIClient(): OpenAI | null {
   const apiKey = getEnv().OPENAI_API_KEY;
   if (!apiKey) {
-    log.warn('OPENAI_API_KEY not set — autonomous GL AI features disabled');
+    log.warn("OPENAI_API_KEY not set — autonomous GL AI features disabled");
     return null;
   }
   return new OpenAI({ apiKey });
@@ -260,11 +260,11 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           Math.abs(txn.amount),
           txn.transaction_date,
           matchedRule.account_id,
-          matchedAccount?.type || 'expense',
+          matchedAccount?.type || "expense",
           matchedRule.confidence,
           `Matched rule: ${matchedRule.merchant_pattern || matchedRule.description_pattern} (applied ${matchedRule.times_applied} times, ${matchedRule.times_accepted} accepted)`,
           0,
-          'pending_review',
+          "pending_review",
         ]
       );
 
@@ -293,21 +293,16 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           Math.abs(txn.amount),
           txn.transaction_date,
           0,
-          'OpenAI not configured — manual categorization required',
+          "OpenAI not configured — manual categorization required",
           0,
-          'pending_review',
+          "pending_review",
         ]
       );
       continue;
     }
 
     try {
-      const result = await classifyWithOpenAI(
-        openai,
-        txn,
-        accounts,
-        fewShotExamples
-      );
+      const result = await classifyWithOpenAI(openai, txn, accounts, fewShotExamples);
 
       await pool.query(
         `INSERT INTO ai_gl_queue
@@ -326,13 +321,13 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           result.confidence,
           result.reason,
           fewShotExamples.length,
-          'pending_review',
+          "pending_review",
         ]
       );
 
       aiClassified++;
     } catch (err: any) {
-      log.error({ err, txnId: txn.id }, 'Failed to classify transaction with OpenAI');
+      log.error({ err, txnId: txn.id }, "Failed to classify transaction with OpenAI");
 
       // Store with zero confidence on error
       await pool.query(
@@ -347,9 +342,9 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           Math.abs(txn.amount),
           txn.transaction_date,
           0,
-          `AI classification error: ${err.message || 'Unknown error'}`,
+          `AI classification error: ${err.message || "Unknown error"}`,
           0,
-          'pending_review',
+          "pending_review",
         ]
       );
     }
@@ -377,18 +372,21 @@ async function classifyWithOpenAI(
 
   // Build chart of accounts context
   const accountList = accounts
-    .map(a => `- ${a.code} | ${a.name_en}${a.name_ar ? ` (${a.name_ar})` : ''} | Type: ${a.type}${a.sub_type ? ` / ${a.sub_type}` : ''}`)
-    .join('\n');
+    .map(
+      (a) =>
+        `- ${a.code} | ${a.name_en}${a.name_ar ? ` (${a.name_ar})` : ""} | Type: ${a.type}${a.sub_type ? ` / ${a.sub_type}` : ""}`
+    )
+    .join("\n");
 
   // Build few-shot examples
-  let fewShotBlock = '';
+  let fewShotBlock = "";
   if (fewShotExamples.length > 0) {
     const examples = fewShotExamples
       .map(
         (ex, i) =>
           `Example ${i + 1}: "${ex.description}" (AED ${ex.amount}) -> Account: ${ex.account_code} ${ex.account_name}`
       )
-      .join('\n');
+      .join("\n");
     fewShotBlock = `\n\nHere are previously accepted categorizations for this company:\n${examples}`;
   }
 
@@ -416,46 +414,49 @@ Return a JSON object with exactly these fields:
 
   const userPrompt = `Categorize this bank transaction:
 Description: ${txn.description}
-Amount: AED ${Math.abs(txn.amount).toFixed(2)} (${txn.amount > 0 ? 'credit/deposit' : 'debit/payment'})
-Date: ${txn.transaction_date}${txn.reference ? `\nReference: ${txn.reference}` : ''}`;
+Amount: AED ${Math.abs(txn.amount).toFixed(2)} (${txn.amount > 0 ? "credit/deposit" : "debit/payment"})
+Date: ${txn.transaction_date}${txn.reference ? `\nReference: ${txn.reference}` : ""}`;
 
   const completion = await openai.chat.completions.create({
     model: AI_MODEL,
     messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
     ],
-    response_format: { type: 'json_object' },
+    response_format: { type: "json_object" },
     temperature: 0.2,
   });
 
-  const responseText = completion.choices[0].message.content || '{}';
+  const responseText = completion.choices[0].message.content || "{}";
   const parsed = JSON.parse(responseText);
 
   // Validate the accountId exists in the chart of accounts
-  const matchedAccount = accounts.find(a => a.id === parsed.accountId);
+  const matchedAccount = accounts.find((a) => a.id === parsed.accountId);
   if (!matchedAccount) {
     // Try matching by name or code as fallback
     const byName = accounts.find(
-      a => a.name_en.toLowerCase() === (parsed.accountName || '').toLowerCase()
+      (a) => a.name_en.toLowerCase() === (parsed.accountName || "").toLowerCase()
     );
     if (byName) {
       parsed.accountId = byName.id;
       parsed.accountName = byName.name_en;
     } else {
       // AI returned an invalid account — reduce confidence
-      log.warn({ txnId: txn.id, aiAccountId: parsed.accountId }, 'AI returned unrecognized account ID');
+      log.warn(
+        { txnId: txn.id, aiAccountId: parsed.accountId },
+        "AI returned unrecognized account ID"
+      );
       parsed.confidence = Math.min(parsed.confidence || 0, 0.3);
-      parsed.reason = (parsed.reason || '') + ' (Warning: AI suggested an unrecognized account)';
+      parsed.reason = (parsed.reason || "") + " (Warning: AI suggested an unrecognized account)";
     }
   }
 
   return {
     accountId: parsed.accountId || null,
-    accountName: parsed.accountName || 'Unknown',
-    category: parsed.category || 'expense',
+    accountName: parsed.accountName || "Unknown",
+    category: parsed.category || "expense",
     confidence: Math.max(0, Math.min(1, parsed.confidence || 0)),
-    reason: parsed.reason || 'AI categorization',
+    reason: parsed.reason || "AI categorization",
   };
 }
 
@@ -504,14 +505,14 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
       draftedEntryIds.push(journalEntryId);
       posted++;
     } catch (err: any) {
-      log.error({ err, queueItemId: item.id }, 'Failed to draft queue item');
+      log.error({ err, queueItemId: item.id }, "Failed to draft queue item");
       errors.push(`Failed to draft item ${item.id}: ${err.message}`);
     }
   }
 
   if (draftedEntryIds.length > 0) {
     await notifyOwnerOfDrafts(companyId, draftedEntryIds.length).catch((err) => {
-      log.error({ err, companyId }, 'Failed to send draft notification');
+      log.error({ err, companyId }, "Failed to send draft notification");
     });
   }
 
@@ -533,8 +534,8 @@ async function notifyOwnerOfDrafts(companyId: string, draftCount: number): Promi
     [
       ownerUserId,
       companyId,
-      `${draftCount} AI draft journal ${draftCount === 1 ? 'entry' : 'entries'} need review`,
-      `The AI categorized ${draftCount} bank transaction${draftCount === 1 ? '' : 's'} with high confidence. Review and approve each draft journal entry before it posts to the GL.`,
+      `${draftCount} AI draft journal ${draftCount === 1 ? "entry" : "entries"} need review`,
+      `The AI categorized ${draftCount} bank transaction${draftCount === 1 ? "" : "s"} with high confidence. Review and approve each draft journal entry before it posts to the GL.`,
     ]
   );
 }
@@ -546,10 +547,12 @@ async function notifyOwnerOfDrafts(companyId: string, draftCount: number): Promi
 async function createJournalEntryForQueueItem(
   companyId: string,
   item: AIGLQueueItem & { bank_account_id?: string | null },
-  dbClient?: Queryable,
+  dbClient?: Queryable
 ): Promise<string> {
   if (!dbClient) {
-    return withFeedbackTransaction((client) => createJournalEntryForQueueItem(companyId, item, client));
+    return withFeedbackTransaction((client) =>
+      createJournalEntryForQueueItem(companyId, item, client)
+    );
   }
 
   const amount = parseFloat(item.amount);
@@ -573,20 +576,20 @@ async function createJournalEntryForQueueItem(
   }
 
   if (!bankAccountId) {
-    throw new Error('No bank account found for journal entry');
+    throw new Error("No bank account found for journal entry");
   }
 
   if (!item.suggested_account_id) {
-    throw new Error('Cannot post: queue item has no suggested account');
+    throw new Error("Cannot post: queue item has no suggested account");
   }
 
   const accountIds = Array.from(new Set([item.suggested_account_id, bankAccountId as string]));
   const { rows: companyAccounts } = await dbClient.query<{ id: string }>(
     `SELECT id FROM accounts WHERE company_id = $1 AND id = ANY($2::uuid[])`,
-    [companyId, accountIds],
+    [companyId, accountIds]
   );
   if (companyAccounts.length !== accountIds.length) {
-    throw new Error('Cannot post: one or more journal accounts do not belong to this company');
+    throw new Error("Cannot post: one or more journal accounts do not belong to this company");
   }
 
   // Resolve the company owner's user ID to satisfy the FK constraint on created_by
@@ -596,7 +599,9 @@ async function createJournalEntryForQueueItem(
   );
   const systemUserId = ownerRows[0]?.user_id;
   if (!systemUserId) {
-    throw new Error(`No owner user found for company ${companyId} — cannot create auto-posted journal entry`);
+    throw new Error(
+      `No owner user found for company ${companyId} — cannot create auto-posted journal entry`
+    );
   }
 
   // Determine direction from original bank transaction:
@@ -604,7 +609,9 @@ async function createJournalEntryForQueueItem(
   //   positive amount → deposit in (debit bank, credit income)
   let isDebit = true;
   if (item.bank_transaction_id) {
-    const { rows: [bankTxn] } = await dbClient.query(
+    const {
+      rows: [bankTxn],
+    } = await dbClient.query(
       `SELECT amount FROM bank_transactions WHERE id = $1 AND company_id = $2`,
       [item.bank_transaction_id, companyId]
     );
@@ -615,12 +622,32 @@ async function createJournalEntryForQueueItem(
 
   const lines = isDebit
     ? [
-        { accountId: item.suggested_account_id, debit: amount, credit: 0, description: item.description },
-        { accountId: bankAccountId as string, debit: 0, credit: amount, description: item.description },
+        {
+          accountId: item.suggested_account_id,
+          debit: amount,
+          credit: 0,
+          description: item.description,
+        },
+        {
+          accountId: bankAccountId as string,
+          debit: 0,
+          credit: amount,
+          description: item.description,
+        },
       ]
     : [
-        { accountId: bankAccountId as string, debit: amount, credit: 0, description: item.description },
-        { accountId: item.suggested_account_id, debit: 0, credit: amount, description: item.description },
+        {
+          accountId: bankAccountId as string,
+          debit: amount,
+          credit: 0,
+          description: item.description,
+        },
+        {
+          accountId: item.suggested_account_id,
+          debit: 0,
+          credit: amount,
+          description: item.description,
+        },
       ];
 
   const totals = lines.reduce(
@@ -629,16 +656,18 @@ async function createJournalEntryForQueueItem(
       acc.credit += Number(line.credit) || 0;
       return acc;
     },
-    { debit: 0, credit: 0 },
+    { debit: 0, credit: 0 }
   );
   if (Math.abs(totals.debit - totals.credit) > 0.01) {
-    throw new Error('Cannot post: Debits must equal credits');
+    throw new Error("Cannot post: Debits must equal credits");
   }
 
   // High-confidence AI suggestions are saved as DRAFT. When accepting or
   // correcting, callers post the same entry in the surrounding transaction.
   const entryNumber = await generateEntryNumberInTransaction(dbClient, companyId, txnDate);
-  const { rows: [entry] } = await dbClient.query<{ id: string }>(
+  const {
+    rows: [entry],
+  } = await dbClient.query<{ id: string }>(
     `INSERT INTO journal_entries
        (company_id, entry_number, date, memo, status, source, source_id, created_by)
      VALUES ($1, $2, $3, $4, 'draft', 'system', $5, $6)
@@ -650,7 +679,7 @@ async function createJournalEntryForQueueItem(
       `AI Draft (review required): ${item.description}`,
       item.bank_transaction_id,
       systemUserId,
-    ],
+    ]
   );
 
   for (const line of lines) {
@@ -658,7 +687,7 @@ async function createJournalEntryForQueueItem(
       `INSERT INTO journal_lines
          (entry_id, account_id, debit, credit, description)
        VALUES ($1, $2, $3, $4, $5)`,
-      [entry.id, line.accountId, line.debit, line.credit, line.description],
+      [entry.id, line.accountId, line.debit, line.credit, line.description]
     );
   }
 
@@ -669,30 +698,34 @@ async function postDraftJournalEntry(
   companyId: string,
   journalEntryId: string,
   userId: string,
-  dbClient?: Queryable,
+  dbClient?: Queryable
 ): Promise<void> {
   if (!dbClient) {
-    return withFeedbackTransaction((client) => postDraftJournalEntry(companyId, journalEntryId, userId, client));
+    return withFeedbackTransaction((client) =>
+      postDraftJournalEntry(companyId, journalEntryId, userId, client)
+    );
   }
 
-  const { rows: [entry] } = await dbClient.query(
+  const {
+    rows: [entry],
+  } = await dbClient.query(
     `SELECT id, date, status
      FROM journal_entries
      WHERE id = $1 AND company_id = $2
      FOR UPDATE`,
-    [journalEntryId, companyId],
+    [journalEntryId, companyId]
   );
   if (!entry) {
-    throw new Error('Journal entry not found for company');
+    throw new Error("Journal entry not found for company");
   }
-  if (entry.status === 'posted') return;
-  if (entry.status !== 'draft') {
+  if (entry.status === "posted") return;
+  if (entry.status !== "draft") {
     throw new Error(`Cannot post journal entry with status: ${entry.status}`);
   }
 
   const { rows: lines } = await dbClient.query(
     `SELECT debit, credit FROM journal_lines WHERE entry_id = $1`,
-    [journalEntryId],
+    [journalEntryId]
   );
   const totals = lines.reduce(
     (acc, line) => {
@@ -700,11 +733,11 @@ async function postDraftJournalEntry(
       acc.credit += Number(line.credit) || 0;
       return acc;
     },
-    { debit: 0, credit: 0 },
+    { debit: 0, credit: 0 }
   );
 
   if (Math.abs(totals.debit - totals.credit) > 0.01) {
-    throw new Error('Cannot post: Debits must equal credits');
+    throw new Error("Cannot post: Debits must equal credits");
   }
 
   await assertPeriodNotLocked(companyId, entry.date);
@@ -712,7 +745,7 @@ async function postDraftJournalEntry(
     `UPDATE journal_entries
      SET status = 'posted', posted_by = $1, posted_at = now(), updated_at = now()
      WHERE id = $2 AND company_id = $3`,
-    [userId, journalEntryId, companyId],
+    [userId, journalEntryId, companyId]
   );
 }
 
@@ -722,7 +755,7 @@ async function postDraftJournalEntry(
 export async function processUserFeedback(
   companyId: string,
   queueId: string,
-  action: 'accept' | 'reject' | 'correct',
+  action: "accept" | "reject" | "correct",
   userId: string,
   userAccountId?: string
 ): Promise<{ success: boolean; message: string }> {
@@ -734,23 +767,28 @@ export async function processUserFeedback(
     const [item]: AIGLQueueItem[] = _itemResult.rows;
 
     if (!item) {
-      return { success: false, message: 'Queue item not found' };
+      return { success: false, message: "Queue item not found" };
     }
 
-    if (item.status !== 'pending_review' && item.status !== 'auto_posted') {
-      return { success: false, message: `Cannot process feedback for item with status: ${item.status}` };
+    if (item.status !== "pending_review" && item.status !== "auto_posted") {
+      return {
+        success: false,
+        message: `Cannot process feedback for item with status: ${item.status}`,
+      };
     }
 
-    if (action === 'accept') {
+    if (action === "accept") {
       if (!item.suggested_account_id) {
-        return { success: false, message: 'Cannot accept: no suggested account' };
+        return { success: false, message: "Cannot accept: no suggested account" };
       }
 
       let journalEntryId = item.journal_entry_id;
       if (!journalEntryId) {
         let bankAccountId: string | null = null;
         if (item.bank_transaction_id) {
-          const { rows: [bt] } = await dbClient.query(
+          const {
+            rows: [bt],
+          } = await dbClient.query(
             `SELECT bank_account_id FROM bank_transactions WHERE id = $1 AND company_id = $2`,
             [item.bank_transaction_id, companyId]
           );
@@ -759,7 +797,7 @@ export async function processUserFeedback(
         journalEntryId = await createJournalEntryForQueueItem(
           companyId,
           { ...item, bank_account_id: bankAccountId },
-          dbClient,
+          dbClient
         );
       }
 
@@ -781,7 +819,7 @@ export async function processUserFeedback(
         );
       }
 
-      await updateRuleFromFeedback(item, 'accepted', dbClient);
+      await updateRuleFromFeedback(item, "accepted", dbClient);
 
       await dbClient.query(
         `INSERT INTO transaction_classifications
@@ -799,10 +837,10 @@ export async function processUserFeedback(
         ]
       );
 
-      return { success: true, message: 'Transaction accepted and posted to GL' };
+      return { success: true, message: "Transaction accepted and posted to GL" };
     }
 
-    if (action === 'reject') {
+    if (action === "reject") {
       await dbClient.query(
         `UPDATE ai_gl_queue
          SET status = 'rejected', reviewed_by = $1, reviewed_at = now()
@@ -810,24 +848,26 @@ export async function processUserFeedback(
         [userId, queueId, companyId]
       );
 
-      await updateRuleFromFeedback(item, 'rejected', dbClient);
+      await updateRuleFromFeedback(item, "rejected", dbClient);
 
-      return { success: true, message: 'Transaction rejected' };
+      return { success: true, message: "Transaction rejected" };
     }
 
-    if (action === 'correct') {
+    if (action === "correct") {
       if (!userAccountId) {
-        return { success: false, message: 'userAccountId is required for correction' };
+        return { success: false, message: "userAccountId is required for correction" };
       }
 
       const selectedAccount = await storage.getAccount(userAccountId, companyId);
       if (!selectedAccount) {
-        return { success: false, message: 'Selected account does not belong to this company' };
+        return { success: false, message: "Selected account does not belong to this company" };
       }
 
       let bankAccountId: string | null = null;
       if (item.bank_transaction_id) {
-        const { rows: [bt] } = await dbClient.query(
+        const {
+          rows: [bt],
+        } = await dbClient.query(
           `SELECT bank_account_id FROM bank_transactions WHERE id = $1 AND company_id = $2`,
           [item.bank_transaction_id, companyId]
         );
@@ -842,7 +882,7 @@ export async function processUserFeedback(
       const journalEntryId = await createJournalEntryForQueueItem(
         companyId,
         correctedItem,
-        dbClient,
+        dbClient
       );
 
       await postDraftJournalEntry(companyId, journalEntryId, userId, dbClient);
@@ -883,10 +923,10 @@ export async function processUserFeedback(
         ]
       );
 
-      return { success: true, message: 'Transaction corrected and posted to GL' };
+      return { success: true, message: "Transaction corrected and posted to GL" };
     }
 
-    return { success: false, message: 'Invalid action' };
+    return { success: false, message: "Invalid action" };
   });
 }
 
@@ -895,8 +935,8 @@ export async function processUserFeedback(
  */
 async function updateRuleFromFeedback(
   item: AIGLQueueItem,
-  feedbackType: 'accepted' | 'rejected',
-  dbClient: Queryable = pool,
+  feedbackType: "accepted" | "rejected",
+  dbClient: Queryable = pool
 ): Promise<void> {
   if (!item.suggested_account_id) return;
 
@@ -919,7 +959,7 @@ async function updateRuleFromFeedback(
 
   if (matchingRules.length > 0) {
     const rule = matchingRules[0];
-    if (feedbackType === 'accepted') {
+    if (feedbackType === "accepted") {
       // Increment accepted count and boost confidence
       const newAccepted = rule.times_accepted + 1;
       const total = newAccepted + rule.times_rejected;
@@ -959,16 +999,16 @@ async function updateRuleFromFeedback(
 async function createOrUpdateRuleFromCorrection(
   item: AIGLQueueItem,
   correctAccountId: string,
-  dbClient: Queryable = pool,
+  dbClient: Queryable = pool
 ): Promise<void> {
   // Extract a simple merchant/pattern from the description
   // Take the first 2-3 meaningful words as the pattern
   const words = item.description
-    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .replace(/[^a-zA-Z0-9\s]/g, "")
     .split(/\s+/)
-    .filter(w => w.length > 2)
+    .filter((w) => w.length > 2)
     .slice(0, 3);
-  const pattern = words.join(' ').toLowerCase();
+  const pattern = words.join(" ").toLowerCase();
 
   if (!pattern) return;
 
@@ -1014,7 +1054,9 @@ export async function getAIGLStats(companyId: string): Promise<{
   pendingReview: number;
   rulesCount: number;
 }> {
-  const { rows: [stats] } = await pool.query(
+  const {
+    rows: [stats],
+  } = await pool.query(
     `SELECT
        COUNT(*) FILTER (WHERE status != 'pending_review') as total_processed,
        COUNT(*) FILTER (WHERE status = 'auto_posted') as auto_posted,
@@ -1027,7 +1069,9 @@ export async function getAIGLStats(companyId: string): Promise<{
     [companyId]
   );
 
-  const { rows: [ruleStats] } = await pool.query(
+  const {
+    rows: [ruleStats],
+  } = await pool.query(
     `SELECT COUNT(*) as rules_count
      FROM ai_company_rules
      WHERE company_id = $1 AND is_active = true`,
@@ -1068,8 +1112,8 @@ export async function scanAndClassifyAllCompanies(): Promise<void> {
       await scanAndClassifyTransactions(companyId);
     } catch (err) {
       // Log per-company failures but continue with others
-      const log = (await import('../config/logger')).createLogger('autonomous-gl');
-      log.error({ err, companyId }, 'Error scanning company');
+      const log = (await import("../config/logger")).createLogger("autonomous-gl");
+      log.error({ err, companyId }, "Error scanning company");
     }
   }
 }

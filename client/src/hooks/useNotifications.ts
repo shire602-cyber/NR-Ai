@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { io, type Socket } from 'socket.io-client';
-import { apiRequest } from '@/lib/queryClient';
-import { API_BASE_URL, apiUrl } from '@/lib/api';
-import { useCurrentUser } from './useCurrentUser';
+import { useState, useEffect, useCallback, useRef } from "react";
+import { io, type Socket } from "socket.io-client";
+import { apiRequest } from "@/lib/queryClient";
+import { API_BASE_URL, apiUrl } from "@/lib/api";
+import { useCurrentUser } from "./useCurrentUser";
 
 export interface AppNotification {
   id: string;
@@ -38,7 +38,7 @@ export function useNotifications(): UseNotificationsReturn {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl('/api/notifications'), { credentials: 'include' });
+      const res = await fetch(apiUrl("/api/notifications"), { credentials: "include" });
       if (!res.ok) return;
       const data = await res.json();
       setNotifications(data.notifications ?? []);
@@ -54,17 +54,17 @@ export function useNotifications(): UseNotificationsReturn {
     fetchNotifications();
 
     const socket = io(API_BASE_URL || window.location.origin, {
-      path: '/socket.io',
+      path: "/socket.io",
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ["websocket", "polling"],
     });
 
     socketRef.current = socket;
 
-    socket.on('connect', () => setIsConnected(true));
-    socket.on('disconnect', () => setIsConnected(false));
+    socket.on("connect", () => setIsConnected(true));
+    socket.on("disconnect", () => setIsConnected(false));
 
-    socket.on('notification:new', (notification: AppNotification) => {
+    socket.on("notification:new", (notification: AppNotification) => {
       setNotifications((prev) => [notification, ...prev]);
       setUnreadCount((prev) => prev + 1);
     });
@@ -77,10 +77,8 @@ export function useNotifications(): UseNotificationsReturn {
 
   const markAsRead = useCallback(async (id: string) => {
     try {
-      await apiRequest('PATCH', `/api/notifications/${id}/read`);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-      );
+      await apiRequest("PATCH", `/api/notifications/${id}/read`);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
       setUnreadCount((prev) => Math.max(0, prev - 1));
     } catch {
       // ignore
@@ -89,7 +87,7 @@ export function useNotifications(): UseNotificationsReturn {
 
   const markAllAsRead = useCallback(async () => {
     try {
-      await apiRequest('POST', '/api/notifications/read-all');
+      await apiRequest("POST", "/api/notifications/read-all");
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
     } catch {

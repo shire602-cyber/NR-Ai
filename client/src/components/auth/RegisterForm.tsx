@@ -1,32 +1,44 @@
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Link } from 'wouter';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { apiUrl } from '@/lib/api';
-import { UserPlus } from 'lucide-react';
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { apiUrl } from "@/lib/api";
+import { UserPlus } from "lucide-react";
 
 // TRN is optional at sign-up — many users register before they have one — but
 // when supplied it must match the FTA's 15-digit format so the company record
 // isn't seeded with a malformed value that breaks VAT filing later.
 const registerSchema = z.object({
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Please enter a valid email'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Please enter a valid email"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   trn: z
     .string()
     .trim()
     .optional()
-    .refine(
-      (v) => !v || /^[0-9]{15}$/.test(v),
-      'UAE TRN must be exactly 15 digits',
-    ),
+    .refine((v) => !v || /^[0-9]{15}$/.test(v), "UAE TRN must be exactly 15 digits"),
 });
 
 type RegisterFormData = z.infer<typeof registerSchema>;
@@ -43,10 +55,10 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   const form = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      name: '',
-      email: '',
-      password: '',
-      trn: '',
+      name: "",
+      email: "",
+      password: "",
+      trn: "",
     },
   });
 
@@ -59,30 +71,30 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         ...data,
         trn: data.trn?.trim() ? data.trn.trim() : undefined,
       };
-      const response = await fetch(apiUrl('/api/auth/register'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+      const response = await fetch(apiUrl("/api/auth/register"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error?.message || 'Registration failed');
+        throw new Error(error?.message || "Registration failed");
       }
 
       const result = await response.json();
       await onSuccess(result.user);
-      
+
       toast({
-        title: 'Account created!',
-        description: 'Welcome to AI Bookkeeping. Let\'s get started!',
+        title: "Account created!",
+        description: "Welcome to AI Bookkeeping. Let's get started!",
       });
     } catch (error: any) {
       toast({
-        variant: 'destructive',
-        title: 'Registration failed',
-        description: error?.message || 'Please try again.',
+        variant: "destructive",
+        title: "Registration failed",
+        description: error?.message || "Please try again.",
       });
     } finally {
       setIsLoading(false);
@@ -93,9 +105,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
     <Card className="w-full max-w-md">
       <CardHeader className="space-y-1">
         <CardTitle className="text-2xl font-semibold">{t.register}</CardTitle>
-        <CardDescription>
-          Create your account to start managing your books
-        </CardDescription>
+        <CardDescription>Create your account to start managing your books</CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -152,9 +162,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                       data-testid="input-password"
                     />
                   </FormControl>
-                  <FormDescription>
-                    Use at least 8 characters.
-                  </FormDescription>
+                  <FormDescription>Use at least 8 characters.</FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
@@ -178,7 +186,8 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
                     />
                   </FormControl>
                   <FormDescription>
-                    Your 15-digit FTA Tax Registration Number. You can add this later from the company profile.
+                    Your 15-digit FTA Tax Registration Number. You can add this later from the
+                    company profile.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>
@@ -198,8 +207,12 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       </CardContent>
       <CardFooter className="flex flex-col space-y-4">
         <div className="text-sm text-muted-foreground text-center">
-          {t.alreadyHaveAccount}{' '}
-          <Link href="/login" className="text-primary hover:underline font-medium" data-testid="link-login">
+          {t.alreadyHaveAccount}{" "}
+          <Link
+            href="/login"
+            className="text-primary hover:underline font-medium"
+            data-testid="link-login"
+          >
             {t.signIn}
           </Link>
         </div>

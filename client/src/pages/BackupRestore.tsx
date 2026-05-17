@@ -1,54 +1,87 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { 
-  Database, 
-  Download, 
-  Upload, 
-  Plus, 
-  Trash2, 
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Database,
+  Download,
+  Upload,
+  Plus,
+  Trash2,
   Clock,
   CheckCircle,
   XCircle,
   AlertTriangle,
   HardDrive,
   FileJson,
-  RefreshCw
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { apiUrl } from '@/lib/api';
-import { format } from 'date-fns';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import type { Backup } from '@shared/schema';
+  RefreshCw,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiUrl } from "@/lib/api";
+import { format } from "date-fns";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import type { Backup } from "@shared/schema";
 
-type BackupWithoutData = Omit<Backup, 'dataSnapshot'>;
+type BackupWithoutData = Omit<Backup, "dataSnapshot">;
 
 export default function BackupRestore() {
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [newBackupName, setNewBackupName] = useState('');
-  const [newBackupDescription, setNewBackupDescription] = useState('');
+  const [newBackupName, setNewBackupName] = useState("");
+  const [newBackupDescription, setNewBackupDescription] = useState("");
   const [restorePreview, setRestorePreview] = useState<any>(null);
-  const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<BackupWithoutData | null>(null);
+  const [selectedBackupForRestore, setSelectedBackupForRestore] =
+    useState<BackupWithoutData | null>(null);
 
   const { data: backups = [], isLoading } = useQuery<BackupWithoutData[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'backups'],
+    queryKey: ["/api/companies", selectedCompanyId, "backups"],
     queryFn: async () => {
       if (!selectedCompanyId) return [];
       const res = await fetch(apiUrl(`/api/companies/${selectedCompanyId}/backups`), {
-        credentials: 'include',
+        credentials: "include",
       });
-      if (!res.ok) throw new Error('Failed to fetch backups');
+      if (!res.ok) throw new Error("Failed to fetch backups");
       return res.json();
     },
     enabled: !!selectedCompanyId,
@@ -56,81 +89,81 @@ export default function BackupRestore() {
 
   const createBackupMutation = useMutation({
     mutationFn: async (data: { name: string; description: string }) => {
-      return apiRequest('POST', `/api/companies/${selectedCompanyId}/backups`, data);
+      return apiRequest("POST", `/api/companies/${selectedCompanyId}/backups`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'backups'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({
-        title: 'Backup Created',
-        description: 'Your financial data has been backed up successfully.',
+        title: "Backup Created",
+        description: "Your financial data has been backed up successfully.",
       });
       setIsCreateDialogOpen(false);
-      setNewBackupName('');
-      setNewBackupDescription('');
+      setNewBackupName("");
+      setNewBackupDescription("");
     },
     onError: (error: any) => {
       toast({
-        title: 'Backup Failed',
-        description: error?.message || 'Failed to create backup',
-        variant: 'destructive',
+        title: "Backup Failed",
+        description: error?.message || "Failed to create backup",
+        variant: "destructive",
       });
     },
   });
 
   const deleteBackupMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('DELETE', `/api/backups/${id}`);
+      return apiRequest("DELETE", `/api/backups/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'backups'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({
-        title: 'Backup Deleted',
-        description: 'The backup has been removed.',
+        title: "Backup Deleted",
+        description: "The backup has been removed.",
       });
     },
     onError: (error: any) => {
       toast({
-        title: 'Delete Failed',
-        description: error?.message || 'Failed to delete backup',
-        variant: 'destructive',
+        title: "Delete Failed",
+        description: error?.message || "Failed to delete backup",
+        variant: "destructive",
       });
     },
   });
 
   const getRestorePreviewMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('POST', `/api/backups/${id}/restore-preview`);
+      return apiRequest("POST", `/api/backups/${id}/restore-preview`);
     },
     onSuccess: (data) => {
       setRestorePreview(data);
     },
     onError: (error: any) => {
       toast({
-        title: 'Preview Failed',
-        description: error?.message || 'Failed to get restore preview',
-        variant: 'destructive',
+        title: "Preview Failed",
+        description: error?.message || "Failed to get restore preview",
+        variant: "destructive",
       });
     },
   });
 
   const restoreMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('POST', `/api/backups/${id}/restore`, { confirmRestore: true });
+      return apiRequest("POST", `/api/backups/${id}/restore`, { confirmRestore: true });
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'backups'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({
-        title: 'Restore Initiated',
-        description: data.message || 'Backup restore process has started.',
+        title: "Restore Initiated",
+        description: data.message || "Backup restore process has started.",
       });
       setRestorePreview(null);
       setSelectedBackupForRestore(null);
     },
     onError: (error: any) => {
       toast({
-        title: 'Restore Failed',
-        description: error?.message || 'Failed to restore backup',
-        variant: 'destructive',
+        title: "Restore Failed",
+        description: error?.message || "Failed to restore backup",
+        variant: "destructive",
       });
     },
   });
@@ -138,41 +171,56 @@ export default function BackupRestore() {
   const handleDownload = async (backup: BackupWithoutData) => {
     try {
       const res = await fetch(apiUrl(`/api/backups/${backup.id}/download`), {
-        credentials: 'include',
+        credentials: "include",
       });
-      if (!res.ok) throw new Error('Download failed');
-      
+      if (!res.ok) throw new Error("Download failed");
+
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
-      a.download = `${backup.name.replace(/[^a-z0-9]/gi, '_')}_${backup.id.slice(0, 8)}.json`;
+      a.download = `${backup.name.replace(/[^a-z0-9]/gi, "_")}_${backup.id.slice(0, 8)}.json`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       a.remove();
-      
+
       toast({
-        title: 'Download Started',
-        description: 'Your backup file is downloading.',
+        title: "Download Started",
+        description: "Your backup file is downloading.",
       });
     } catch (error: any) {
       toast({
-        title: 'Download Failed',
-        description: error?.message || 'Failed to download backup',
-        variant: 'destructive',
+        title: "Download Failed",
+        description: error?.message || "Failed to download backup",
+        variant: "destructive",
       });
     }
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'completed':
-        return <Badge className="bg-green-500/10 text-green-600 border-green-500/20"><CheckCircle className="h-3 w-3 mr-1" />Completed</Badge>;
-      case 'in_progress':
-        return <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20"><RefreshCw className="h-3 w-3 mr-1 animate-spin" />In Progress</Badge>;
-      case 'failed':
-        return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      case "completed":
+        return (
+          <Badge className="bg-green-500/10 text-green-600 border-green-500/20">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Completed
+          </Badge>
+        );
+      case "in_progress":
+        return (
+          <Badge className="bg-blue-500/10 text-blue-600 border-blue-500/20">
+            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+            In Progress
+          </Badge>
+        );
+      case "failed":
+        return (
+          <Badge variant="destructive">
+            <XCircle className="h-3 w-3 mr-1" />
+            Failed
+          </Badge>
+        );
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -180,23 +228,23 @@ export default function BackupRestore() {
 
   const getBackupTypeLabel = (type: string) => {
     switch (type) {
-      case 'manual':
-        return 'Manual';
-      case 'scheduled':
-        return 'Scheduled';
-      case 'pre_restore':
-        return 'Pre-Restore';
+      case "manual":
+        return "Manual";
+      case "scheduled":
+        return "Scheduled";
+      case "pre_restore":
+        return "Pre-Restore";
       default:
         return type;
     }
   };
 
   const formatBytes = (bytes: number) => {
-    if (!bytes) return '0 B';
+    if (!bytes) return "0 B";
     const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
   if (!selectedCompanyId) {
@@ -211,8 +259,12 @@ export default function BackupRestore() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-backup-title">Backup & Restore</h1>
-          <p className="text-muted-foreground">Safeguard your financial records with automated backups</p>
+          <h1 className="text-3xl font-bold" data-testid="text-backup-title">
+            Backup & Restore
+          </h1>
+          <p className="text-muted-foreground">
+            Safeguard your financial records with automated backups
+          </p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
@@ -225,7 +277,8 @@ export default function BackupRestore() {
             <DialogHeader>
               <DialogTitle>Create New Backup</DialogTitle>
               <DialogDescription>
-                Create a complete backup of your financial data including accounts, invoices, journal entries, and receipts.
+                Create a complete backup of your financial data including accounts, invoices,
+                journal entries, and receipts.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
@@ -254,11 +307,13 @@ export default function BackupRestore() {
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button 
-                onClick={() => createBackupMutation.mutate({ 
-                  name: newBackupName || `Backup ${new Date().toLocaleDateString()}`,
-                  description: newBackupDescription 
-                })}
+              <Button
+                onClick={() =>
+                  createBackupMutation.mutate({
+                    name: newBackupName || `Backup ${new Date().toLocaleDateString()}`,
+                    description: newBackupDescription,
+                  })
+                }
                 disabled={createBackupMutation.isPending}
                 data-testid="button-confirm-backup"
               >
@@ -288,7 +343,9 @@ export default function BackupRestore() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold" data-testid="text-total-backups">{backups.length}</p>
+            <p className="text-2xl font-bold" data-testid="text-total-backups">
+              {backups.length}
+            </p>
             <p className="text-xs text-muted-foreground">Backup history</p>
           </CardContent>
         </Card>
@@ -315,14 +372,14 @@ export default function BackupRestore() {
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold" data-testid="text-last-backup">
-              {backups.length > 0 && backups[0].createdAt 
-                ? format(new Date(backups[0].createdAt), 'MMM d, yyyy')
-                : 'Never'}
+              {backups.length > 0 && backups[0].createdAt
+                ? format(new Date(backups[0].createdAt), "MMM d, yyyy")
+                : "Never"}
             </p>
             <p className="text-xs text-muted-foreground">
               {backups.length > 0 && backups[0].createdAt
-                ? format(new Date(backups[0].createdAt), 'h:mm a')
-                : 'Create your first backup'}
+                ? format(new Date(backups[0].createdAt), "h:mm a")
+                : "Create your first backup"}
             </p>
           </CardContent>
         </Card>
@@ -345,7 +402,10 @@ export default function BackupRestore() {
               <p className="text-muted-foreground mb-4">
                 Create your first backup to protect your financial records
               </p>
-              <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-first-backup">
+              <Button
+                onClick={() => setIsCreateDialogOpen(true)}
+                data-testid="button-create-first-backup"
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 Create First Backup
               </Button>
@@ -382,7 +442,8 @@ export default function BackupRestore() {
                       <div className="text-sm">
                         <p>{backup.accountsCount || 0} accounts</p>
                         <p className="text-muted-foreground">
-                          {backup.invoicesCount || 0} invoices, {backup.journalEntriesCount || 0} entries
+                          {backup.invoicesCount || 0} invoices, {backup.journalEntriesCount || 0}{" "}
+                          entries
                         </p>
                       </div>
                     </TableCell>
@@ -390,8 +451,12 @@ export default function BackupRestore() {
                     <TableCell>
                       {backup.createdAt && (
                         <div>
-                          <p className="text-sm">{format(new Date(backup.createdAt), 'MMM d, yyyy')}</p>
-                          <p className="text-xs text-muted-foreground">{format(new Date(backup.createdAt), 'h:mm a')}</p>
+                          <p className="text-sm">
+                            {format(new Date(backup.createdAt), "MMM d, yyyy")}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(backup.createdAt), "h:mm a")}
+                          </p>
                         </div>
                       )}
                     </TableCell>
@@ -401,7 +466,7 @@ export default function BackupRestore() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleDownload(backup)}
-                          disabled={backup.status !== 'completed'}
+                          disabled={backup.status !== "completed"}
                           data-testid={`button-download-${backup.id}`}
                         >
                           <Download className="h-4 w-4" />
@@ -413,7 +478,7 @@ export default function BackupRestore() {
                             setSelectedBackupForRestore(backup);
                             getRestorePreviewMutation.mutate(backup.id);
                           }}
-                          disabled={backup.status !== 'completed'}
+                          disabled={backup.status !== "completed"}
                           data-testid={`button-restore-${backup.id}`}
                         >
                           <Upload className="h-4 w-4" />
@@ -433,7 +498,8 @@ export default function BackupRestore() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Delete Backup?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                This will permanently delete "{backup.name}". This action cannot be undone.
+                                This will permanently delete "{backup.name}". This action cannot be
+                                undone.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
@@ -457,16 +523,20 @@ export default function BackupRestore() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!restorePreview} onOpenChange={() => { setRestorePreview(null); setSelectedBackupForRestore(null); }}>
+      <Dialog
+        open={!!restorePreview}
+        onOpenChange={() => {
+          setRestorePreview(null);
+          setSelectedBackupForRestore(null);
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-yellow-500" />
               Confirm Restore
             </DialogTitle>
-            <DialogDescription>
-              Review the changes before restoring from backup
-            </DialogDescription>
+            <DialogDescription>Review the changes before restoring from backup</DialogDescription>
           </DialogHeader>
           {restorePreview && (
             <div className="space-y-4 py-4">
@@ -475,7 +545,7 @@ export default function BackupRestore() {
                   {restorePreview.warning}
                 </p>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <Card>
                   <CardHeader className="pb-2">
@@ -502,17 +572,27 @@ export default function BackupRestore() {
               </div>
 
               <p className="text-sm text-muted-foreground">
-                Backup created: {restorePreview.backup?.createdAt && format(new Date(restorePreview.backup.createdAt), 'PPpp')}
+                Backup created:{" "}
+                {restorePreview.backup?.createdAt &&
+                  format(new Date(restorePreview.backup.createdAt), "PPpp")}
               </p>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setRestorePreview(null); setSelectedBackupForRestore(null); }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setRestorePreview(null);
+                setSelectedBackupForRestore(null);
+              }}
+            >
               Cancel
             </Button>
-            <Button 
+            <Button
               variant="destructive"
-              onClick={() => selectedBackupForRestore && restoreMutation.mutate(selectedBackupForRestore.id)}
+              onClick={() =>
+                selectedBackupForRestore && restoreMutation.mutate(selectedBackupForRestore.id)
+              }
               disabled={restoreMutation.isPending}
             >
               {restoreMutation.isPending ? (
@@ -540,15 +620,15 @@ export default function BackupRestore() {
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            Backups capture all your financial data including chart of accounts, journal entries, 
+            Backups capture all your financial data including chart of accounts, journal entries,
             invoices, receipts, and VAT returns.
           </p>
           <p>
             Backups are stored for 90 days and can be downloaded as JSON files for external storage.
           </p>
           <p>
-            Before any restore operation, an automatic backup of your current data is created 
-            so you can recover if needed.
+            Before any restore operation, an automatic backup of your current data is created so you
+            can recover if needed.
           </p>
         </CardContent>
       </Card>

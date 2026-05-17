@@ -1,4 +1,4 @@
-import ExcelJS from 'exceljs';
+import ExcelJS from "exceljs";
 
 export interface ParsedSpreadsheet {
   sheetName: string;
@@ -8,21 +8,23 @@ export interface ParsedSpreadsheet {
 
 export function assertSupportedSpreadsheetName(fileName?: string | null): void {
   if (fileName && /\.xls$/i.test(fileName)) {
-    throw new Error('Legacy .xls files are not supported. Please save the file as .xlsx or .csv and try again.');
+    throw new Error(
+      "Legacy .xls files are not supported. Please save the file as .xlsx or .csv and try again."
+    );
   }
 }
 
 export async function parseSpreadsheetBuffer(
   buffer: Buffer,
-  fileName?: string | null,
+  fileName?: string | null
 ): Promise<ParsedSpreadsheet> {
   assertSupportedSpreadsheetName(fileName);
 
   if (fileName && /\.csv$/i.test(fileName)) {
-    const rows = parseCsv(buffer.toString('utf8'));
+    const rows = parseCsv(buffer.toString("utf8"));
     const headers = rows[0] ?? [];
     return {
-      sheetName: 'CSV',
+      sheetName: "CSV",
       headers,
       rows: rows.slice(1).map((row) => rowToObject(headers, row)),
     };
@@ -32,18 +34,18 @@ export async function parseSpreadsheetBuffer(
   await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
   const worksheet = workbook.worksheets[0];
   if (!worksheet) {
-    throw new Error('Workbook does not contain any sheets');
+    throw new Error("Workbook does not contain any sheets");
   }
 
   const headers = valuesFromRow(worksheet.getRow(1)).map((value, index) =>
-    value ? String(value) : `Column ${index + 1}`,
+    value ? String(value) : `Column ${index + 1}`
   );
 
   const rows: Record<string, any>[] = [];
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return;
     const values = valuesFromRow(row);
-    if (values.every((value) => value === '')) return;
+    if (values.every((value) => value === "")) return;
     rows.push(rowToObject(headers, values));
   });
 
@@ -53,10 +55,10 @@ export async function parseSpreadsheetBuffer(
 export async function buildXlsxBufferFromRows(
   rows: Record<string, any>[],
   sheetName: string,
-  widths: number[] = [],
+  widths: number[] = []
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet(sheetName.substring(0, 31) || 'Sheet1');
+  const worksheet = workbook.addWorksheet(sheetName.substring(0, 31) || "Sheet1");
   const headers = Object.keys(rows[0] ?? {});
 
   worksheet.columns = headers.map((header, index) => ({
@@ -87,15 +89,15 @@ function rowToObject(headers: string[], row: any[]): Record<string, any> {
 }
 
 function normalizeCellValue(value: any): any {
-  if (value == null) return '';
+  if (value == null) return "";
   if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'object') {
-    if ('text' in value) return value.text ?? '';
-    if ('result' in value) return value.result ?? '';
-    if ('richText' in value && Array.isArray(value.richText)) {
-      return value.richText.map((part: any) => part.text ?? '').join('');
+  if (typeof value === "object") {
+    if ("text" in value) return value.text ?? "";
+    if ("result" in value) return value.result ?? "";
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((part: any) => part.text ?? "").join("");
     }
-    if ('hyperlink' in value && 'text' in value) return value.text ?? value.hyperlink;
+    if ("hyperlink" in value && "text" in value) return value.text ?? value.hyperlink;
   }
   return value;
 }
@@ -103,7 +105,7 @@ function normalizeCellValue(value: any): any {
 function parseCsv(input: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
-  let cell = '';
+  let cell = "";
   let inQuotes = false;
 
   for (let i = 0; i < input.length; i++) {
@@ -119,23 +121,23 @@ function parseCsv(input: string): string[][] {
       inQuotes = !inQuotes;
       continue;
     }
-    if (char === ',' && !inQuotes) {
+    if (char === "," && !inQuotes) {
       row.push(cell);
-      cell = '';
+      cell = "";
       continue;
     }
-    if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && next === '\n') i++;
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && next === "\n") i++;
       row.push(cell);
-      if (row.some((value) => value !== '')) rows.push(row);
+      if (row.some((value) => value !== "")) rows.push(row);
       row = [];
-      cell = '';
+      cell = "";
       continue;
     }
     cell += char;
   }
 
   row.push(cell);
-  if (row.some((value) => value !== '')) rows.push(row);
+  if (row.some((value) => value !== "")) rows.push(row);
   return rows;
 }

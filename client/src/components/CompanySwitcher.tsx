@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import type { Company } from '@shared/schema';
-import { Building2, Check, ChevronsUpDown } from 'lucide-react';
+import { useQuery } from "@tanstack/react-query";
+import type { Company } from "@shared/schema";
+import { Building2, Check, ChevronsUpDown } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,11 +8,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { switchActiveCompany } from '@/lib/activeCompany';
-import { useToast } from '@/hooks/use-toast';
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { switchActiveCompany } from "@/lib/activeCompany";
+import { useToast } from "@/hooks/use-toast";
 
 /**
  * Switch which company the rest of the UI is scoped to. Hidden when the
@@ -26,7 +26,7 @@ export function CompanySwitcher() {
   const { toast } = useToast();
   const { company: active } = useDefaultCompany();
   const { data: companies } = useQuery<Company[]>({
-    queryKey: ['/api/companies'],
+    queryKey: ["/api/companies"],
   });
 
   if (!companies || companies.length <= 1 || !active) {
@@ -39,14 +39,14 @@ export function CompanySwitcher() {
       await switchActiveCompany(companyId);
       const next = companies.find((c) => c.id === companyId);
       toast({
-        title: 'Company switched',
-        description: next ? `Now viewing ${next.name}.` : 'Active company updated.',
+        title: "Company switched",
+        description: next ? `Now viewing ${next.name}.` : "Active company updated.",
       });
     } catch {
       toast({
-        variant: 'destructive',
-        title: 'Could not switch company',
-        description: 'Please try again.',
+        variant: "destructive",
+        title: "Could not switch company",
+        description: "Please try again.",
       });
     }
   };

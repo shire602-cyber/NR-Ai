@@ -1,19 +1,6 @@
-import {
-  and,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  lt,
-  lte,
-  max,
-  ne,
-  sql,
-  sum,
-} from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, sql, sum } from "drizzle-orm";
 
-import { db } from '../db';
+import { db } from "../db";
 import {
   anomalyAlerts,
   bankTransactions,
@@ -31,20 +18,20 @@ import {
   serviceInvoices,
   taxReturnArchive,
   vatReturns,
-} from '../../shared/schema';
+} from "../../shared/schema";
 
-type Priority = 'critical' | 'high' | 'medium' | 'low';
+type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
-  | 'audit_defense'
-  | 'bank_close'
-  | 'penalty_prevention'
-  | 'cash_recovery'
-  | 'nra_profitability'
-  | 'compliance_risk'
-  | 'ai_review'
-  | 'whatsapp_cockpit'
-  | 'monthly_cfo_pack'
-  | 'migration_concierge';
+  | "audit_defense"
+  | "bank_close"
+  | "penalty_prevention"
+  | "cash_recovery"
+  | "nra_profitability"
+  | "compliance_risk"
+  | "ai_review"
+  | "whatsapp_cockpit"
+  | "monthly_cfo_pack"
+  | "migration_concierge";
 
 export interface ValueOpsClient {
   companyId: string;
@@ -179,7 +166,7 @@ export interface ClientAuditPack {
   } | null;
   evidence: Array<{
     label: string;
-    status: 'ready' | 'attention' | 'missing';
+    status: "ready" | "attention" | "missing";
     count: number;
     detail: string;
   }>;
@@ -206,12 +193,12 @@ export interface ClientCfoPack {
 }
 
 export type ReviewItemKind =
-  | 'bank_match'
-  | 'receipt_posting'
-  | 'anomaly'
-  | 'vat_review'
-  | 'trial_balance'
-  | 'document_request';
+  | "bank_match"
+  | "receipt_posting"
+  | "anomaly"
+  | "vat_review"
+  | "trial_balance"
+  | "document_request";
 
 export interface FirmReviewItem {
   id: string;
@@ -268,10 +255,10 @@ function clampScore(score: number): number {
 
 function priorityFromScore(score: number, inverse = false): Priority {
   const risk = inverse ? 100 - score : score;
-  if (risk >= 80) return 'critical';
-  if (risk >= 60) return 'high';
-  if (risk >= 35) return 'medium';
-  return 'low';
+  if (risk >= 80) return "critical";
+  if (risk >= 60) return "high";
+  if (risk >= 35) return "medium";
+  return "low";
 }
 
 function priorityRank(priority: Priority): number {
@@ -280,10 +267,10 @@ function priorityRank(priority: Priority): number {
 
 function priorityFromAmount(amount: number): Priority {
   const absolute = Math.abs(amount);
-  if (absolute >= 100_000) return 'critical';
-  if (absolute >= 25_000) return 'high';
-  if (absolute >= 5_000) return 'medium';
-  return 'low';
+  if (absolute >= 100_000) return "critical";
+  if (absolute >= 25_000) return "high";
+  if (absolute >= 5_000) return "medium";
+  return "low";
 }
 
 function latestDate(...dates: Array<Date | null | undefined>): Date | null {
@@ -298,15 +285,13 @@ function latestDate(...dates: Array<Date | null | undefined>): Date | null {
 function topClientBy(
   clients: ValueOpsClient[],
   predicate: (client: ValueOpsClient) => boolean,
-  score: (client: ValueOpsClient) => number,
+  score: (client: ValueOpsClient) => number
 ): ValueOpsClient | null {
-  return clients
-    .filter(predicate)
-    .sort((a, b) => score(b) - score(a))[0] ?? null;
+  return clients.filter(predicate).sort((a, b) => score(b) - score(a))[0] ?? null;
 }
 
 function formatAedBrief(value: number): string {
-  return `AED ${Math.round(value || 0).toLocaleString('en-AE')}`;
+  return `AED ${Math.round(value || 0).toLocaleString("en-AE")}`;
 }
 
 function briefPriority(client: ValueOpsClient): Priority {
@@ -320,15 +305,25 @@ function briefPriority(client: ValueOpsClient): Priority {
   if (
     client.status.daysToVatDue !== null &&
     client.status.daysToVatDue < 0 &&
-    client.status.latestVatStatus !== 'filed' &&
-    client.status.latestVatStatus !== 'submitted'
+    client.status.latestVatStatus !== "filed" &&
+    client.status.latestVatStatus !== "submitted"
   ) {
-    return 'critical';
+    return "critical";
   }
-  if (client.scores.complianceRisk >= 80 || exposure >= 100_000) return 'critical';
-  if (client.scores.complianceRisk >= 60 || exposure >= 25_000 || client.workload.reviewerQueueItems >= 8) return 'high';
-  if (client.scores.complianceRisk >= 35 || exposure >= 5_000 || client.workload.reviewerQueueItems > 0) return 'medium';
-  return 'low';
+  if (client.scores.complianceRisk >= 80 || exposure >= 100_000) return "critical";
+  if (
+    client.scores.complianceRisk >= 60 ||
+    exposure >= 25_000 ||
+    client.workload.reviewerQueueItems >= 8
+  )
+    return "high";
+  if (
+    client.scores.complianceRisk >= 35 ||
+    exposure >= 5_000 ||
+    client.workload.reviewerQueueItems > 0
+  )
+    return "medium";
+  return "low";
 }
 
 function clientImpactAed(client: ValueOpsClient): number {
@@ -337,43 +332,63 @@ function clientImpactAed(client: ValueOpsClient): number {
       client.money.nraServiceAr +
       Math.max(client.money.vatPayable, 0) +
       client.workload.reviewerQueueItems * 1_500 +
-      client.workload.missingDocuments * 500,
+      client.workload.missingDocuments * 500
   );
 }
 
 function clientBriefHeadline(client: ValueOpsClient): string {
-  if (client.money.overdueAr > 0) return `Recover ${formatAedBrief(client.money.overdueAr)} overdue from client customers`;
-  if (client.money.nraServiceAr > 0) return `Collect ${formatAedBrief(client.money.nraServiceAr)} NRA service AR`;
-  if (client.workload.reviewerQueueItems > 0) return `Clear ${client.workload.reviewerQueueItems} AI review exceptions`;
-  if (client.status.daysToVatDue !== null && client.status.daysToVatDue <= 14) return 'Finish VAT evidence before deadline';
-  if (!client.status.onboardingCompleted) return 'Complete onboarding and migration readiness';
-  return 'Prepare monthly CFO pack';
+  if (client.money.overdueAr > 0)
+    return `Recover ${formatAedBrief(client.money.overdueAr)} overdue from client customers`;
+  if (client.money.nraServiceAr > 0)
+    return `Collect ${formatAedBrief(client.money.nraServiceAr)} NRA service AR`;
+  if (client.workload.reviewerQueueItems > 0)
+    return `Clear ${client.workload.reviewerQueueItems} AI review exceptions`;
+  if (client.status.daysToVatDue !== null && client.status.daysToVatDue <= 14)
+    return "Finish VAT evidence before deadline";
+  if (!client.status.onboardingCompleted) return "Complete onboarding and migration readiness";
+  return "Prepare monthly CFO pack";
 }
 
 function clientWhyNow(client: ValueOpsClient): string {
   const signals: string[] = [];
   if (client.status.daysToVatDue !== null) {
-    if (client.status.daysToVatDue < 0) signals.push(`VAT is ${Math.abs(client.status.daysToVatDue)} days overdue`);
-    else if (client.status.daysToVatDue <= 14) signals.push(`VAT due in ${client.status.daysToVatDue} days`);
+    if (client.status.daysToVatDue < 0)
+      signals.push(`VAT is ${Math.abs(client.status.daysToVatDue)} days overdue`);
+    else if (client.status.daysToVatDue <= 14)
+      signals.push(`VAT due in ${client.status.daysToVatDue} days`);
   }
-  if (client.money.overdueAr > 0) signals.push(`${formatAedBrief(client.money.overdueAr)} overdue AR`);
-  if (client.money.nraServiceAr > 0) signals.push(`${formatAedBrief(client.money.nraServiceAr)} NRA service AR`);
-  if (client.workload.reviewerQueueItems > 0) signals.push(`${client.workload.reviewerQueueItems} review items`);
-  if (client.workload.missingDocuments > 0) signals.push(`${client.workload.missingDocuments} missing documents`);
-  if (!client.status.hasBankFeedData) signals.push('no bank feed evidence');
-  return signals.slice(0, 4).join(' · ') || 'ready for proactive advisory touchpoint';
+  if (client.money.overdueAr > 0)
+    signals.push(`${formatAedBrief(client.money.overdueAr)} overdue AR`);
+  if (client.money.nraServiceAr > 0)
+    signals.push(`${formatAedBrief(client.money.nraServiceAr)} NRA service AR`);
+  if (client.workload.reviewerQueueItems > 0)
+    signals.push(`${client.workload.reviewerQueueItems} review items`);
+  if (client.workload.missingDocuments > 0)
+    signals.push(`${client.workload.missingDocuments} missing documents`);
+  if (!client.status.hasBankFeedData) signals.push("no bank feed evidence");
+  return signals.slice(0, 4).join(" · ") || "ready for proactive advisory touchpoint";
 }
 
 function clientRecommendedActions(client: ValueOpsClient, reviewItems: FirmReviewItem[]): string[] {
   const actions: string[] = [];
   const topReview = reviewItems[0];
   if (topReview) actions.push(topReview.suggestedAction);
-  if (client.money.overdueAr > 0) actions.push(`Send collections follow-up for ${formatAedBrief(client.money.overdueAr)} overdue AR.`);
-  if (client.money.nraServiceAr > 0) actions.push(`Escalate NRA service AR of ${formatAedBrief(client.money.nraServiceAr)} to billing owner.`);
-  if (client.workload.missingDocuments > 0) actions.push('Send a focused document request for the missing VAT and bank evidence.');
-  if (client.status.daysToVatDue !== null && client.status.daysToVatDue <= 14) actions.push('Open the audit pack and clear reviewer notes before VAT submission.');
-  if (!client.status.onboardingCompleted) actions.push('Finish onboarding, TRN capture, and migration checklist.');
-  if (actions.length === 0) actions.push('Generate the CFO pack and send a proactive monthly check-in.');
+  if (client.money.overdueAr > 0)
+    actions.push(
+      `Send collections follow-up for ${formatAedBrief(client.money.overdueAr)} overdue AR.`
+    );
+  if (client.money.nraServiceAr > 0)
+    actions.push(
+      `Escalate NRA service AR of ${formatAedBrief(client.money.nraServiceAr)} to billing owner.`
+    );
+  if (client.workload.missingDocuments > 0)
+    actions.push("Send a focused document request for the missing VAT and bank evidence.");
+  if (client.status.daysToVatDue !== null && client.status.daysToVatDue <= 14)
+    actions.push("Open the audit pack and clear reviewer notes before VAT submission.");
+  if (!client.status.onboardingCompleted)
+    actions.push("Finish onboarding, TRN capture, and migration checklist.");
+  if (actions.length === 0)
+    actions.push("Generate the CFO pack and send a proactive monthly check-in.");
   return [...new Set(actions)].slice(0, 4);
 }
 
@@ -389,7 +404,7 @@ function clientHealthSignals(client: ValueOpsClient): string[] {
 
 export async function buildFirmValueOps(
   companyIds: string[],
-  now: Date = new Date(),
+  now: Date = new Date()
 ): Promise<ValueOpsDashboard> {
   if (companyIds.length === 0) {
     return {
@@ -430,9 +445,9 @@ export async function buildFirmValueOps(
     .where(
       and(
         inArray(companies.id, companyIds),
-        eq(companies.companyType, 'client'),
-        sql`${companies.deletedAt} IS NULL`,
-      ),
+        eq(companies.companyType, "client"),
+        sql`${companies.deletedAt} IS NULL`
+      )
     )) as CompanyRow[];
 
   type InvoiceAggRow = {
@@ -574,12 +589,12 @@ export async function buildFirmValueOps(
   const latestVatSub = db
     .select({
       companyId: vatReturns.companyId,
-      maxPeriodEnd: max(vatReturns.periodEnd).as('max_period_end'),
+      maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
     .where(inArray(vatReturns.companyId, companyIds))
     .groupBy(vatReturns.companyId)
-    .as('latest_value_ops_vat');
+    .as("latest_value_ops_vat");
 
   type VatRow = {
     companyId: string;
@@ -605,8 +620,8 @@ export async function buildFirmValueOps(
       latestVatSub,
       and(
         eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
-      ),
+        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd)
+      )
     )) as VatRow[];
   const vatMap = new Map(vatRows.map((r) => [r.companyId, r]));
 
@@ -618,7 +633,9 @@ export async function buildFirmValueOps(
       latestFiledAt: max(taxReturnArchive.filingDate),
     })
     .from(taxReturnArchive)
-    .where(and(inArray(taxReturnArchive.companyId, companyIds), eq(taxReturnArchive.returnType, 'vat')))
+    .where(
+      and(inArray(taxReturnArchive.companyId, companyIds), eq(taxReturnArchive.returnType, "vat"))
+    )
     .groupBy(taxReturnArchive.companyId)) as ArchiveAggRow[];
   const archiveMap = new Map(archiveRows.map((r) => [r.companyId, r]));
 
@@ -634,7 +651,12 @@ export async function buildFirmValueOps(
     .groupBy(anomalyAlerts.companyId)) as AnomalyAggRow[];
   const anomalyMap = new Map(anomalyRows.map((r) => [r.companyId, r]));
 
-  type TrialBalanceRow = { companyId: string; debit: string | null; credit: string | null; lastJournalAt: Date | null };
+  type TrialBalanceRow = {
+    companyId: string;
+    debit: string | null;
+    credit: string | null;
+    lastJournalAt: Date | null;
+  };
   const trialRows = (await db
     .select({
       companyId: journalEntries.companyId,
@@ -644,7 +666,7 @@ export async function buildFirmValueOps(
     })
     .from(journalEntries)
     .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, 'posted')))
+    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, "posted")))
     .groupBy(journalEntries.companyId)) as TrialBalanceRow[];
   const trialMap = new Map(trialRows.map((r) => [r.companyId, r]));
 
@@ -655,7 +677,7 @@ export async function buildFirmValueOps(
       monthlyFee: sql<number | null>`max(${engagements.monthlyFee})`,
     })
     .from(engagements)
-    .where(and(inArray(engagements.companyId, companyIds), eq(engagements.status, 'active')))
+    .where(and(inArray(engagements.companyId, companyIds), eq(engagements.status, "active")))
     .groupBy(engagements.companyId)) as EngagementRow[];
   const engagementMap = new Map(engagementRows.map((r) => [r.companyId, r]));
 
@@ -714,55 +736,61 @@ export async function buildFirmValueOps(
     const overdueTasks = asNumber(comp?.overdueTasks) + asNumber(cal?.overdue);
     const upcomingCompliance = asNumber(cal?.upcoming);
     const daysToVatDue = daysUntil(vat?.dueDate, now);
-    const vatOpen = vat ? vat.status !== 'filed' && vat.status !== 'submitted' : true;
+    const vatOpen = vat ? vat.status !== "filed" && vat.status !== "submitted" : true;
     const vatOverdue = vatOpen && daysToVatDue !== null && daysToVatDue < 0;
     const vatDueSoon = vatOpen && daysToVatDue !== null && daysToVatDue <= 14;
     const trialDiscrepancy = Math.abs(asNumber(trial?.debit) - asNumber(trial?.credit));
-    const lastClientActivity = latestDate(invoice?.lastInvoiceAt, receipt?.lastReceiptAt, bank?.lastBankAt, trial?.lastJournalAt, company.createdAt);
+    const lastClientActivity = latestDate(
+      invoice?.lastInvoiceAt,
+      receipt?.lastReceiptAt,
+      bank?.lastBankAt,
+      trial?.lastJournalAt,
+      company.createdAt
+    );
     const inactiveDays = daysSince(lastClientActivity, now);
     const hasArchivedReturn = asNumber(archive?.filedReturns) > 0;
     const hasBankFeedData = (bank?.total ?? 0) > 0;
 
     const auditDefense = clampScore(
-      100
-        - (!company.trnVatNumber ? 18 : 0)
-        - (!vat ? 18 : 0)
-        - (vatOpen ? 10 : 0)
-        - (!hasArchivedReturn ? 10 : 0)
-        - (asNumber(doc?.bankStatements) === 0 ? 10 : 0)
-        - Math.min(missingDocuments * 4, 20)
-        - (criticalAnomalies > 0 ? 14 : 0),
+      100 -
+        (!company.trnVatNumber ? 18 : 0) -
+        (!vat ? 18 : 0) -
+        (vatOpen ? 10 : 0) -
+        (!hasArchivedReturn ? 10 : 0) -
+        (asNumber(doc?.bankStatements) === 0 ? 10 : 0) -
+        Math.min(missingDocuments * 4, 20) -
+        (criticalAnomalies > 0 ? 14 : 0)
     );
     const closeReadiness = clampScore(
-      100
-        - Math.min(unreconciledBankTransactions * 2, 30)
-        - Math.min(unpostedReceipts * 3, 25)
-        - (trialDiscrepancy > 0.01 ? 25 : 0)
-        - (!hasBankFeedData ? 10 : 0)
-        - (inactiveDays !== null && inactiveDays > 45 ? 10 : 0),
+      100 -
+        Math.min(unreconciledBankTransactions * 2, 30) -
+        Math.min(unpostedReceipts * 3, 25) -
+        (trialDiscrepancy > 0.01 ? 25 : 0) -
+        (!hasBankFeedData ? 10 : 0) -
+        (inactiveDays !== null && inactiveDays > 45 ? 10 : 0)
     );
     const penaltyRisk = clampScore(
-      (vatOverdue ? 45 : vatDueSoon ? 28 : 0)
-        + Math.min(overdueDocuments * 10, 25)
-        + Math.min(overdueTasks * 12, 30)
-        + (!company.trnVatNumber ? 10 : 0)
-        + (!company.corporateTaxId ? 5 : 0),
+      (vatOverdue ? 45 : vatDueSoon ? 28 : 0) +
+        Math.min(overdueDocuments * 10, 25) +
+        Math.min(overdueTasks * 12, 30) +
+        (!company.trnVatNumber ? 10 : 0) +
+        (!company.corporateTaxId ? 5 : 0)
     );
     const complianceRisk = clampScore(
-      penaltyRisk
-        + Math.min(missingDocuments * 5, 25)
-        + Math.min(anomalyCount * 7, 25)
-        + (asNumber(doc?.tradeLicenses) === 0 ? 8 : 0),
+      penaltyRisk +
+        Math.min(missingDocuments * 5, 25) +
+        Math.min(anomalyCount * 7, 25) +
+        (asNumber(doc?.tradeLicenses) === 0 ? 8 : 0)
     );
     const migrationReadiness = clampScore(
-      100
-        - (!company.trnVatNumber ? 15 : 0)
-        - (!company.contactEmail && !company.contactPhone ? 12 : 0)
-        - (!hasBankFeedData ? 18 : 0)
-        - (asNumber(invoice?.invoiceCount90d) === 0 ? 12 : 0)
-        - (asNumber(receipt?.receiptCount90d) === 0 ? 12 : 0)
-        - (!company.onboardingCompleted ? 14 : 0)
-        - (asNumber(doc?.total) === 0 ? 10 : 0),
+      100 -
+        (!company.trnVatNumber ? 15 : 0) -
+        (!company.contactEmail && !company.contactPhone ? 12 : 0) -
+        (!hasBankFeedData ? 18 : 0) -
+        (asNumber(invoice?.invoiceCount90d) === 0 ? 12 : 0) -
+        (asNumber(receipt?.receiptCount90d) === 0 ? 12 : 0) -
+        (!company.onboardingCompleted ? 14 : 0) -
+        (asNumber(doc?.total) === 0 ? 10 : 0)
     );
 
     const reviewerQueueItems =
@@ -776,7 +804,9 @@ export async function buildFirmValueOps(
       missingDocuments +
       overdueInvoiceCount +
       (vatDueSoon || vatOverdue ? 1 : 0) +
-      (asNumber(comm?.outbound30d) === 0 && (missingDocuments > 0 || overdueInvoiceCount > 0) ? 1 : 0);
+      (asNumber(comm?.outbound30d) === 0 && (missingDocuments > 0 || overdueInvoiceCount > 0)
+        ? 1
+        : 0);
 
     return {
       companyId: company.id,
@@ -829,12 +859,12 @@ export async function buildFirmValueOps(
       actions.push({
         id: `${client.companyId}:penalty`,
         actionKey: `value_ops:penalty_prevention:${client.companyId}`,
-        lane: 'penalty_prevention',
+        lane: "penalty_prevention",
         priority: priorityFromScore(client.scores.penaltyRisk),
         companyId: client.companyId,
         companyName: client.companyName,
-        title: 'Prevent filing or document penalty',
-        detail: `${client.workload.overdueDocuments} overdue docs, VAT due ${client.status.daysToVatDue ?? 'unknown'} days`,
+        title: "Prevent filing or document penalty",
+        detail: `${client.workload.overdueDocuments} overdue docs, VAT due ${client.status.daysToVatDue ?? "unknown"} days`,
         impactAed: Math.max(client.money.vatPayable, 0),
         href: `/firm/clients/${client.companyId}`,
       });
@@ -843,11 +873,16 @@ export async function buildFirmValueOps(
       actions.push({
         id: `${client.companyId}:cash`,
         actionKey: `value_ops:cash_recovery:${client.companyId}`,
-        lane: 'cash_recovery',
-        priority: client.money.overdueAr >= 100_000 ? 'critical' : client.money.overdueAr >= 25_000 ? 'high' : 'medium',
+        lane: "cash_recovery",
+        priority:
+          client.money.overdueAr >= 100_000
+            ? "critical"
+            : client.money.overdueAr >= 25_000
+              ? "high"
+              : "medium",
         companyId: client.companyId,
         companyName: client.companyName,
-        title: 'Recover overdue receivables',
+        title: "Recover overdue receivables",
         detail: `${client.workload.whatsappQueueItems} collection or document messages ready`,
         impactAed: client.money.overdueAr,
         href: `/firm/clients/${client.companyId}`,
@@ -857,11 +892,11 @@ export async function buildFirmValueOps(
       actions.push({
         id: `${client.companyId}:close`,
         actionKey: `value_ops:bank_close:${client.companyId}`,
-        lane: 'bank_close',
+        lane: "bank_close",
         priority: priorityFromScore(client.scores.closeReadiness, true),
         companyId: client.companyId,
         companyName: client.companyName,
-        title: 'Unblock month-end close',
+        title: "Unblock month-end close",
         detail: `${client.workload.unreconciledBankTransactions} bank items, ${client.workload.unpostedReceipts} receipts need review`,
         impactAed: 0,
         href: `/firm/clients/${client.companyId}`,
@@ -871,12 +906,12 @@ export async function buildFirmValueOps(
       actions.push({
         id: `${client.companyId}:audit`,
         actionKey: `value_ops:audit_defense:${client.companyId}`,
-        lane: 'audit_defense',
+        lane: "audit_defense",
         priority: priorityFromScore(client.scores.auditDefense, true),
         companyId: client.companyId,
         companyName: client.companyName,
-        title: 'Complete audit defense evidence',
-        detail: `${client.workload.missingDocuments} missing documents; archived return ${client.status.hasArchivedReturn ? 'ready' : 'missing'}`,
+        title: "Complete audit defense evidence",
+        detail: `${client.workload.missingDocuments} missing documents; archived return ${client.status.hasArchivedReturn ? "ready" : "missing"}`,
         impactAed: client.money.vatPayable,
         href: `/firm/value-ops?client=${client.companyId}`,
       });
@@ -891,96 +926,151 @@ export async function buildFirmValueOps(
     })
     .slice(0, 12);
 
-  const penaltyTop = topClientBy(clients, (c) => c.scores.penaltyRisk >= 35, (c) => c.scores.penaltyRisk);
-  const cashTop = topClientBy(clients, (c) => c.money.overdueAr > 0, (c) => c.money.overdueAr);
-  const closeTop = topClientBy(clients, (c) => c.scores.closeReadiness < 75, (c) => 100 - c.scores.closeReadiness);
-  const auditTop = topClientBy(clients, (c) => c.scores.auditDefense < 80, (c) => 100 - c.scores.auditDefense);
-  const riskTop = topClientBy(clients, (c) => c.scores.complianceRisk >= 45, (c) => c.scores.complianceRisk);
-  const reviewTop = topClientBy(clients, (c) => c.workload.reviewerQueueItems > 0, (c) => c.workload.reviewerQueueItems);
-  const whatsappTop = topClientBy(clients, (c) => c.workload.whatsappQueueItems > 0, (c) => c.workload.whatsappQueueItems);
-  const cfoTop = topClientBy(clients, (c) => c.money.revenue90d > 0 || c.money.expenses90d > 0, (c) => c.money.revenue90d + c.money.expenses90d);
-  const migrationTop = topClientBy(clients, (c) => c.scores.migrationReadiness < 75, (c) => 100 - c.scores.migrationReadiness);
-  const profitTop = topClientBy(clients, (c) => c.money.nraMonthlyFee === 0 || c.money.nraServiceAr > 0, (c) => c.money.nraServiceAr + (c.money.nraMonthlyFee === 0 ? 1_000 : 0));
+  const penaltyTop = topClientBy(
+    clients,
+    (c) => c.scores.penaltyRisk >= 35,
+    (c) => c.scores.penaltyRisk
+  );
+  const cashTop = topClientBy(
+    clients,
+    (c) => c.money.overdueAr > 0,
+    (c) => c.money.overdueAr
+  );
+  const closeTop = topClientBy(
+    clients,
+    (c) => c.scores.closeReadiness < 75,
+    (c) => 100 - c.scores.closeReadiness
+  );
+  const auditTop = topClientBy(
+    clients,
+    (c) => c.scores.auditDefense < 80,
+    (c) => 100 - c.scores.auditDefense
+  );
+  const riskTop = topClientBy(
+    clients,
+    (c) => c.scores.complianceRisk >= 45,
+    (c) => c.scores.complianceRisk
+  );
+  const reviewTop = topClientBy(
+    clients,
+    (c) => c.workload.reviewerQueueItems > 0,
+    (c) => c.workload.reviewerQueueItems
+  );
+  const whatsappTop = topClientBy(
+    clients,
+    (c) => c.workload.whatsappQueueItems > 0,
+    (c) => c.workload.whatsappQueueItems
+  );
+  const cfoTop = topClientBy(
+    clients,
+    (c) => c.money.revenue90d > 0 || c.money.expenses90d > 0,
+    (c) => c.money.revenue90d + c.money.expenses90d
+  );
+  const migrationTop = topClientBy(
+    clients,
+    (c) => c.scores.migrationReadiness < 75,
+    (c) => 100 - c.scores.migrationReadiness
+  );
+  const profitTop = topClientBy(
+    clients,
+    (c) => c.money.nraMonthlyFee === 0 || c.money.nraServiceAr > 0,
+    (c) => c.money.nraServiceAr + (c.money.nraMonthlyFee === 0 ? 1_000 : 0)
+  );
 
   const opportunities: ValueOpsOpportunity[] = [
     {
-      lane: 'audit_defense',
-      title: 'FTA audit defense packs',
+      lane: "audit_defense",
+      title: "FTA audit defense packs",
       valueMetric: `${clients.filter((c) => c.scores.auditDefense >= 80).length} ready`,
       count: clients.filter((c) => c.scores.auditDefense < 80).length,
-      impactAed: clients.reduce((sumAed, c) => sumAed + (c.scores.auditDefense < 80 ? c.money.vatPayable : 0), 0),
+      impactAed: clients.reduce(
+        (sumAed, c) => sumAed + (c.scores.auditDefense < 80 ? c.money.vatPayable : 0),
+        0
+      ),
       topClient: auditTop?.companyName ?? null,
     },
     {
-      lane: 'bank_close',
-      title: 'Bank-feed close autopilot',
+      lane: "bank_close",
+      title: "Bank-feed close autopilot",
       valueMetric: `${clients.filter((c) => c.scores.closeReadiness >= 80).length} close-ready`,
       count: clients.filter((c) => c.scores.closeReadiness < 80).length,
       impactAed: 0,
       topClient: closeTop?.companyName ?? null,
     },
     {
-      lane: 'penalty_prevention',
-      title: 'Penalty prevention engine',
+      lane: "penalty_prevention",
+      title: "Penalty prevention engine",
       valueMetric: `${clients.filter((c) => c.scores.penaltyRisk >= 35).length} clients at risk`,
       count: clients.filter((c) => c.scores.penaltyRisk >= 35).length,
-      impactAed: clients.reduce((sumAed, c) => sumAed + (c.scores.penaltyRisk >= 35 ? c.money.vatPayable : 0), 0),
+      impactAed: clients.reduce(
+        (sumAed, c) => sumAed + (c.scores.penaltyRisk >= 35 ? c.money.vatPayable : 0),
+        0
+      ),
       topClient: penaltyTop?.companyName ?? null,
     },
     {
-      lane: 'cash_recovery',
-      title: 'AR cash recovery workflow',
+      lane: "cash_recovery",
+      title: "AR cash recovery workflow",
       valueMetric: `${clients.reduce((sumCount, c) => sumCount + (c.money.overdueAr > 0 ? 1 : 0), 0)} clients`,
       count: clients.filter((c) => c.money.overdueAr > 0).length,
       impactAed: clients.reduce((sumAed, c) => sumAed + c.money.overdueAr, 0),
       topClient: cashTop?.companyName ?? null,
     },
     {
-      lane: 'nra_profitability',
-      title: 'NRA client profitability',
+      lane: "nra_profitability",
+      title: "NRA client profitability",
       valueMetric: `${clients.filter((c) => c.money.nraMonthlyFee > 0).length} priced clients`,
       count: clients.filter((c) => c.money.nraMonthlyFee === 0 || c.money.nraServiceAr > 0).length,
       impactAed: clients.reduce((sumAed, c) => sumAed + c.money.nraServiceAr, 0),
       topClient: profitTop?.companyName ?? null,
     },
     {
-      lane: 'compliance_risk',
-      title: 'Compliance risk scoring',
+      lane: "compliance_risk",
+      title: "Compliance risk scoring",
       valueMetric: `${clients.filter((c) => c.scores.complianceRisk >= 45).length} high-risk clients`,
       count: clients.filter((c) => c.scores.complianceRisk >= 45).length,
-      impactAed: clients.reduce((sumAed, c) => sumAed + (c.scores.complianceRisk >= 45 ? c.money.vatPayable : 0), 0),
+      impactAed: clients.reduce(
+        (sumAed, c) => sumAed + (c.scores.complianceRisk >= 45 ? c.money.vatPayable : 0),
+        0
+      ),
       topClient: riskTop?.companyName ?? null,
     },
     {
-      lane: 'ai_review',
-      title: 'AI reviewer queue',
+      lane: "ai_review",
+      title: "AI reviewer queue",
       valueMetric: `${clients.reduce((sumCount, c) => sumCount + c.workload.reviewerQueueItems, 0)} review items`,
       count: clients.filter((c) => c.workload.reviewerQueueItems > 0).length,
       impactAed: 0,
       topClient: reviewTop?.companyName ?? null,
     },
     {
-      lane: 'whatsapp_cockpit',
-      title: 'Owner WhatsApp cockpit',
+      lane: "whatsapp_cockpit",
+      title: "Owner WhatsApp cockpit",
       valueMetric: `${clients.reduce((sumCount, c) => sumCount + c.workload.whatsappQueueItems, 0)} messages ready`,
       count: clients.filter((c) => c.workload.whatsappQueueItems > 0).length,
-      impactAed: clients.reduce((sumAed, c) => sumAed + (c.workload.whatsappQueueItems > 0 ? c.money.overdueAr : 0), 0),
+      impactAed: clients.reduce(
+        (sumAed, c) => sumAed + (c.workload.whatsappQueueItems > 0 ? c.money.overdueAr : 0),
+        0
+      ),
       topClient: whatsappTop?.companyName ?? null,
     },
     {
-      lane: 'monthly_cfo_pack',
-      title: 'Monthly CFO packs',
+      lane: "monthly_cfo_pack",
+      title: "Monthly CFO packs",
       valueMetric: `${clients.filter((c) => c.money.revenue90d > 0 || c.money.expenses90d > 0).length} pack-ready`,
       count: clients.filter((c) => c.money.revenue90d > 0 || c.money.expenses90d > 0).length,
       impactAed: clients.reduce((sumAed, c) => sumAed + Math.max(c.money.net90d, 0), 0),
       topClient: cfoTop?.companyName ?? null,
     },
     {
-      lane: 'migration_concierge',
-      title: 'Migration/import concierge',
+      lane: "migration_concierge",
+      title: "Migration/import concierge",
       valueMetric: `${clients.filter((c) => c.scores.migrationReadiness < 75).length} onboarding blockers`,
       count: clients.filter((c) => c.scores.migrationReadiness < 75).length,
-      impactAed: clients.reduce((sumAed, c) => sumAed + (c.scores.migrationReadiness < 75 ? c.money.nraMonthlyFee : 0), 0),
+      impactAed: clients.reduce(
+        (sumAed, c) => sumAed + (c.scores.migrationReadiness < 75 ? c.money.nraMonthlyFee : 0),
+        0
+      ),
       topClient: migrationTop?.companyName ?? null,
     },
   ];
@@ -992,8 +1082,14 @@ export async function buildFirmValueOps(
       penaltyRiskClients: clients.filter((c) => c.scores.penaltyRisk >= 35).length,
       auditPacksReady: clients.filter((c) => c.scores.auditDefense >= 80).length,
       closeReadyClients: clients.filter((c) => c.scores.closeReadiness >= 80).length,
-      reviewerQueueItems: clients.reduce((sumCount, c) => sumCount + c.workload.reviewerQueueItems, 0),
-      whatsappQueueItems: clients.reduce((sumCount, c) => sumCount + c.workload.whatsappQueueItems, 0),
+      reviewerQueueItems: clients.reduce(
+        (sumCount, c) => sumCount + c.workload.reviewerQueueItems,
+        0
+      ),
+      whatsappQueueItems: clients.reduce(
+        (sumCount, c) => sumCount + c.workload.whatsappQueueItems,
+        0
+      ),
       projectedNraMonthlyRevenue: clients.reduce((sumAed, c) => sumAed + c.money.nraMonthlyFee, 0),
       nraServiceAr: clients.reduce((sumAed, c) => sumAed + c.money.nraServiceAr, 0),
       migrationBlockers: clients.filter((c) => c.scores.migrationReadiness < 75).length,
@@ -1006,7 +1102,7 @@ export async function buildFirmValueOps(
 
 export async function buildFirmActionBrief(
   companyIds: string[],
-  now: Date = new Date(),
+  now: Date = new Date()
 ): Promise<ValueOpsActionBrief> {
   const [dashboard, reviewQueue] = await Promise.all([
     buildFirmValueOps(companyIds, now),
@@ -1028,12 +1124,12 @@ export async function buildFirmActionBrief(
       const commercialImpactAed = clientImpactAed(client);
       const ownerRole =
         client.money.nraServiceAr > 0 || client.money.overdueAr > 0
-          ? 'Client success'
+          ? "Client success"
           : client.workload.reviewerQueueItems > 0
-            ? 'Reviewer'
+            ? "Reviewer"
             : client.scores.complianceRisk >= 45
-              ? 'Tax lead'
-              : 'Account manager';
+              ? "Tax lead"
+              : "Account manager";
 
       return {
         actionKey: `value_ops:client_brief:${client.companyId}`,
@@ -1050,7 +1146,7 @@ export async function buildFirmActionBrief(
         href: `/firm/clients/${client.companyId}`,
       };
     })
-    .filter((brief) => brief.priority !== 'low' || brief.commercialImpactAed > 0)
+    .filter((brief) => brief.priority !== "low" || brief.commercialImpactAed > 0)
     .sort((a, b) => {
       const rankDelta = priorityRank(b.priority) - priorityRank(a.priority);
       if (rankDelta !== 0) return rankDelta;
@@ -1060,67 +1156,79 @@ export async function buildFirmActionBrief(
 
   const operatingMoveCandidates: ValueOpsOperatingMove[] = [
     {
-      lane: 'cash_recovery',
-      priority: dashboard.summary.cashAtRisk >= 100_000 ? 'critical' : dashboard.summary.cashAtRisk > 0 ? 'high' : 'low',
-      title: 'Recover client cash',
+      lane: "cash_recovery",
+      priority:
+        dashboard.summary.cashAtRisk >= 100_000
+          ? "critical"
+          : dashboard.summary.cashAtRisk > 0
+            ? "high"
+            : "low",
+      title: "Recover client cash",
       metric: formatAedBrief(dashboard.summary.cashAtRisk),
-      detail: 'Prioritize clients with overdue AR and ready communication queues.',
-      href: '/firm/value-ops',
+      detail: "Prioritize clients with overdue AR and ready communication queues.",
+      href: "/firm/value-ops",
     },
     {
-      lane: 'ai_review',
-      priority: dashboard.summary.reviewerQueueItems >= 25 ? 'critical' : dashboard.summary.reviewerQueueItems > 0 ? 'high' : 'low',
-      title: 'Clear AI review exceptions',
+      lane: "ai_review",
+      priority:
+        dashboard.summary.reviewerQueueItems >= 25
+          ? "critical"
+          : dashboard.summary.reviewerQueueItems > 0
+            ? "high"
+            : "low",
+      title: "Clear AI review exceptions",
       metric: `${dashboard.summary.reviewerQueueItems} items`,
-      detail: 'Work the highest-confidence bank, receipt, VAT, anomaly, and document exceptions first.',
-      href: '/firm/value-ops',
+      detail:
+        "Work the highest-confidence bank, receipt, VAT, anomaly, and document exceptions first.",
+      href: "/firm/value-ops",
     },
     {
-      lane: 'penalty_prevention',
-      priority: dashboard.summary.penaltyRiskClients > 0 ? 'high' : 'low',
-      title: 'Prevent filing penalties',
+      lane: "penalty_prevention",
+      priority: dashboard.summary.penaltyRiskClients > 0 ? "high" : "low",
+      title: "Prevent filing penalties",
       metric: `${dashboard.summary.penaltyRiskClients} clients`,
-      detail: 'Open audit packs for clients with VAT deadlines, missing evidence, or unresolved anomalies.',
-      href: '/firm/value-ops',
+      detail:
+        "Open audit packs for clients with VAT deadlines, missing evidence, or unresolved anomalies.",
+      href: "/firm/value-ops",
     },
     {
-      lane: 'migration_concierge',
-      priority: dashboard.summary.migrationBlockers > 0 ? 'medium' : 'low',
-      title: 'Finish onboarding blockers',
+      lane: "migration_concierge",
+      priority: dashboard.summary.migrationBlockers > 0 ? "medium" : "low",
+      title: "Finish onboarding blockers",
       metric: `${dashboard.summary.migrationBlockers} clients`,
-      detail: 'Move incomplete clients through TRN, bank evidence, and opening-balance readiness.',
-      href: '/firm/clients',
+      detail: "Move incomplete clients through TRN, bank evidence, and opening-balance readiness.",
+      href: "/firm/clients",
     },
   ];
-  const operatingMoves = operatingMoveCandidates.filter((move) => move.priority !== 'low');
+  const operatingMoves = operatingMoveCandidates.filter((move) => move.priority !== "low");
 
   const servicePlayCandidates: ValueOpsOperatingMove[] = [
     {
-      lane: 'monthly_cfo_pack',
-      priority: dashboard.summary.closeReadyClients > 0 ? 'medium' : 'low',
-      title: 'Ship CFO packs',
+      lane: "monthly_cfo_pack",
+      priority: dashboard.summary.closeReadyClients > 0 ? "medium" : "low",
+      title: "Ship CFO packs",
       metric: `${dashboard.summary.closeReadyClients} close-ready`,
-      detail: 'Turn clean books into advisory output clients can understand and act on.',
-      href: '/firm/value-ops',
+      detail: "Turn clean books into advisory output clients can understand and act on.",
+      href: "/firm/value-ops",
     },
     {
-      lane: 'nra_profitability',
-      priority: dashboard.summary.nraServiceAr > 0 ? 'high' : 'low',
-      title: 'Protect NRA revenue',
+      lane: "nra_profitability",
+      priority: dashboard.summary.nraServiceAr > 0 ? "high" : "low",
+      title: "Protect NRA revenue",
       metric: formatAedBrief(dashboard.summary.nraServiceAr),
-      detail: 'Collect open service invoices and flag unpriced active engagements.',
-      href: '/firm/value-ops',
+      detail: "Collect open service invoices and flag unpriced active engagements.",
+      href: "/firm/value-ops",
     },
     {
-      lane: 'whatsapp_cockpit',
-      priority: dashboard.summary.whatsappQueueItems > 0 ? 'medium' : 'low',
-      title: 'Send owner nudges',
+      lane: "whatsapp_cockpit",
+      priority: dashboard.summary.whatsappQueueItems > 0 ? "medium" : "low",
+      title: "Send owner nudges",
       metric: `${dashboard.summary.whatsappQueueItems} messages`,
-      detail: 'Use WhatsApp follow-ups for missing documents, collections, and approval reminders.',
-      href: '/firm/comms',
+      detail: "Use WhatsApp follow-ups for missing documents, collections, and approval reminders.",
+      href: "/firm/comms",
     },
   ];
-  const servicePlays = servicePlayCandidates.filter((move) => move.priority !== 'low');
+  const servicePlays = servicePlayCandidates.filter((move) => move.priority !== "low");
 
   const topClient = clientBriefs[0];
   const summary = [
@@ -1128,7 +1236,7 @@ export async function buildFirmActionBrief(
     `${dashboard.summary.reviewerQueueItems} AI review items and ${dashboard.summary.penaltyRiskClients} penalty-risk clients need attention.`,
     topClient
       ? `Next best move: ${topClient.companyName} — ${topClient.headline}.`
-      : 'No urgent client move is currently above the action threshold.',
+      : "No urgent client move is currently above the action threshold.",
   ];
 
   return {
@@ -1140,11 +1248,20 @@ export async function buildFirmActionBrief(
   };
 }
 
-export async function buildClientAuditPack(companyId: string, now: Date = new Date()): Promise<ClientAuditPack | null> {
+export async function buildClientAuditPack(
+  companyId: string,
+  now: Date = new Date()
+): Promise<ClientAuditPack | null> {
   const [company] = (await db
     .select({ id: companies.id, name: companies.name, trn: companies.trnVatNumber })
     .from(companies)
-    .where(and(eq(companies.id, companyId), eq(companies.companyType, 'client'), sql`${companies.deletedAt} IS NULL`))
+    .where(
+      and(
+        eq(companies.id, companyId),
+        eq(companies.companyType, "client"),
+        sql`${companies.deletedAt} IS NULL`
+      )
+    )
     .limit(1)) as Array<{ id: string; name: string; trn: string | null }>;
   if (!company) return null;
 
@@ -1174,32 +1291,47 @@ export async function buildClientAuditPack(companyId: string, now: Date = new Da
   const periodStart = vat?.periodStart ?? new Date(now.getFullYear(), now.getMonth() - 3, 1);
   const periodEnd = vat?.periodEnd ?? now;
 
-  const [salesEvidence, receiptEvidence, documentEvidence, archivedReturn, unresolvedAnomalies] = await Promise.all([
-    db
-      .select({ cnt: count(), vat: sum(invoices.vatAmount), total: sum(invoices.total) })
-      .from(invoices)
-      .where(and(eq(invoices.companyId, companyId), gte(invoices.date, periodStart), lte(invoices.date, periodEnd))),
-    db
-      .select({ cnt: count(), vat: sum(receipts.vatAmount), total: sum(receipts.amount) })
-      .from(receipts)
-      .where(and(eq(receipts.companyId, companyId), gte(receipts.createdAt, periodStart), lte(receipts.createdAt, periodEnd))),
-    db
-      .select({
-        bankStatements: sql<string>`count(*) filter (where ${documents.category} = 'bank_statement' and ${documents.isArchived} = false)`,
-        taxCertificates: sql<string>`count(*) filter (where ${documents.category} = 'tax_certificate' and ${documents.isArchived} = false)`,
-        auditReports: sql<string>`count(*) filter (where ${documents.category} = 'audit_report' and ${documents.isArchived} = false)`,
-      })
-      .from(documents)
-      .where(eq(documents.companyId, companyId)),
-    db
-      .select({ cnt: count() })
-      .from(taxReturnArchive)
-      .where(and(eq(taxReturnArchive.companyId, companyId), eq(taxReturnArchive.returnType, 'vat'))),
-    db
-      .select({ cnt: count() })
-      .from(anomalyAlerts)
-      .where(and(eq(anomalyAlerts.companyId, companyId), eq(anomalyAlerts.isResolved, false))),
-  ]);
+  const [salesEvidence, receiptEvidence, documentEvidence, archivedReturn, unresolvedAnomalies] =
+    await Promise.all([
+      db
+        .select({ cnt: count(), vat: sum(invoices.vatAmount), total: sum(invoices.total) })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.companyId, companyId),
+            gte(invoices.date, periodStart),
+            lte(invoices.date, periodEnd)
+          )
+        ),
+      db
+        .select({ cnt: count(), vat: sum(receipts.vatAmount), total: sum(receipts.amount) })
+        .from(receipts)
+        .where(
+          and(
+            eq(receipts.companyId, companyId),
+            gte(receipts.createdAt, periodStart),
+            lte(receipts.createdAt, periodEnd)
+          )
+        ),
+      db
+        .select({
+          bankStatements: sql<string>`count(*) filter (where ${documents.category} = 'bank_statement' and ${documents.isArchived} = false)`,
+          taxCertificates: sql<string>`count(*) filter (where ${documents.category} = 'tax_certificate' and ${documents.isArchived} = false)`,
+          auditReports: sql<string>`count(*) filter (where ${documents.category} = 'audit_report' and ${documents.isArchived} = false)`,
+        })
+        .from(documents)
+        .where(eq(documents.companyId, companyId)),
+      db
+        .select({ cnt: count() })
+        .from(taxReturnArchive)
+        .where(
+          and(eq(taxReturnArchive.companyId, companyId), eq(taxReturnArchive.returnType, "vat"))
+        ),
+      db
+        .select({ cnt: count() })
+        .from(anomalyAlerts)
+        .where(and(eq(anomalyAlerts.companyId, companyId), eq(anomalyAlerts.isResolved, false))),
+    ]);
 
   const saleCount = salesEvidence[0]?.cnt ?? 0;
   const receiptCount = receiptEvidence[0]?.cnt ?? 0;
@@ -1210,51 +1342,53 @@ export async function buildClientAuditPack(companyId: string, now: Date = new Da
 
   const evidence = [
     {
-      label: 'VAT return calculation',
-      status: vat ? ('ready' as const) : ('missing' as const),
+      label: "VAT return calculation",
+      status: vat ? ("ready" as const) : ("missing" as const),
       count: vat ? 1 : 0,
-      detail: vat ? `${vat.status} return for ${periodStart.toISOString().slice(0, 10)} to ${periodEnd.toISOString().slice(0, 10)}` : 'No VAT return exists for this client',
+      detail: vat
+        ? `${vat.status} return for ${periodStart.toISOString().slice(0, 10)} to ${periodEnd.toISOString().slice(0, 10)}`
+        : "No VAT return exists for this client",
     },
     {
-      label: 'Sales invoice evidence',
-      status: saleCount > 0 ? ('ready' as const) : ('attention' as const),
+      label: "Sales invoice evidence",
+      status: saleCount > 0 ? ("ready" as const) : ("attention" as const),
       count: saleCount,
-      detail: `AED ${asNumber(salesEvidence[0]?.vat).toLocaleString('en-AE')} output VAT represented`,
+      detail: `AED ${asNumber(salesEvidence[0]?.vat).toLocaleString("en-AE")} output VAT represented`,
     },
     {
-      label: 'Expense receipt evidence',
-      status: receiptCount > 0 ? ('ready' as const) : ('attention' as const),
+      label: "Expense receipt evidence",
+      status: receiptCount > 0 ? ("ready" as const) : ("attention" as const),
       count: receiptCount,
-      detail: `AED ${asNumber(receiptEvidence[0]?.vat).toLocaleString('en-AE')} input VAT represented`,
+      detail: `AED ${asNumber(receiptEvidence[0]?.vat).toLocaleString("en-AE")} input VAT represented`,
     },
     {
-      label: 'Bank statement support',
-      status: bankStatementCount > 0 ? ('ready' as const) : ('missing' as const),
+      label: "Bank statement support",
+      status: bankStatementCount > 0 ? ("ready" as const) : ("missing" as const),
       count: bankStatementCount,
-      detail: 'Bank statement documents in the client vault',
+      detail: "Bank statement documents in the client vault",
     },
     {
-      label: 'TRN/tax certificate',
-      status: company.trn || taxCertificateCount > 0 ? ('ready' as const) : ('missing' as const),
+      label: "TRN/tax certificate",
+      status: company.trn || taxCertificateCount > 0 ? ("ready" as const) : ("missing" as const),
       count: taxCertificateCount,
-      detail: company.trn ? `TRN ${company.trn}` : 'No TRN or tax certificate evidence found',
+      detail: company.trn ? `TRN ${company.trn}` : "No TRN or tax certificate evidence found",
     },
     {
-      label: 'Filed-return archive',
-      status: archiveCount > 0 ? ('ready' as const) : ('attention' as const),
+      label: "Filed-return archive",
+      status: archiveCount > 0 ? ("ready" as const) : ("attention" as const),
       count: archiveCount,
-      detail: 'Historical filed returns available for audit continuity',
+      detail: "Historical filed returns available for audit continuity",
     },
     {
-      label: 'Open anomaly clearance',
-      status: anomalyCount === 0 ? ('ready' as const) : ('attention' as const),
+      label: "Open anomaly clearance",
+      status: anomalyCount === 0 ? ("ready" as const) : ("attention" as const),
       count: anomalyCount,
-      detail: 'Unresolved anomaly alerts before sign-off',
+      detail: "Unresolved anomaly alerts before sign-off",
     },
   ];
 
   const reviewerNotes = evidence
-    .filter((item) => item.status !== 'ready')
+    .filter((item) => item.status !== "ready")
     .map((item) => `${item.label}: ${item.detail}`);
 
   return {
@@ -1270,11 +1404,20 @@ export async function buildClientAuditPack(companyId: string, now: Date = new Da
   };
 }
 
-export async function buildClientCfoPack(companyId: string, now: Date = new Date()): Promise<ClientCfoPack | null> {
+export async function buildClientCfoPack(
+  companyId: string,
+  now: Date = new Date()
+): Promise<ClientCfoPack | null> {
   const [company] = (await db
     .select({ id: companies.id, name: companies.name, trn: companies.trnVatNumber })
     .from(companies)
-    .where(and(eq(companies.id, companyId), eq(companies.companyType, 'client'), sql`${companies.deletedAt} IS NULL`))
+    .where(
+      and(
+        eq(companies.id, companyId),
+        eq(companies.companyType, "client"),
+        sql`${companies.deletedAt} IS NULL`
+      )
+    )
     .limit(1)) as Array<{ id: string; name: string; trn: string | null }>;
   if (!company) return null;
 
@@ -1285,11 +1428,26 @@ export async function buildClientCfoPack(companyId: string, now: Date = new Date
     db
       .select({ total: sum(invoices.total) })
       .from(invoices)
-      .where(and(eq(invoices.companyId, companyId), ne(invoices.status, 'void'), gte(invoices.date, start), lt(invoices.date, end))),
+      .where(
+        and(
+          eq(invoices.companyId, companyId),
+          ne(invoices.status, "void"),
+          gte(invoices.date, start),
+          lt(invoices.date, end)
+        )
+      ),
     db
-      .select({ total: sql<string>`sum(coalesce(${receipts.amount}, 0) + coalesce(${receipts.vatAmount}, 0))` })
+      .select({
+        total: sql<string>`sum(coalesce(${receipts.amount}, 0) + coalesce(${receipts.vatAmount}, 0))`,
+      })
       .from(receipts)
-      .where(and(eq(receipts.companyId, companyId), gte(receipts.createdAt, start), lt(receipts.createdAt, end))),
+      .where(
+        and(
+          eq(receipts.companyId, companyId),
+          gte(receipts.createdAt, start),
+          lt(receipts.createdAt, end)
+        )
+      ),
     db
       .select({
         openAr: sql<string>`sum(case when ${invoices.status} in ('sent', 'partial') then ${invoices.total} else 0 end)`,
@@ -1317,20 +1475,24 @@ export async function buildClientCfoPack(companyId: string, now: Date = new Date
   const vatPayable = asNumber(vatRow[0]?.payableTax);
 
   const narrative = [
-    `Revenue for the month was AED ${revenue.toLocaleString('en-AE')}.`,
-    `Expenses were AED ${expenses.toLocaleString('en-AE')}, leaving AED ${net.toLocaleString('en-AE')} net before owner adjustments.`,
-    `Open receivables stand at AED ${openAr.toLocaleString('en-AE')}, with AED ${overdueAr.toLocaleString('en-AE')} overdue.`,
+    `Revenue for the month was AED ${revenue.toLocaleString("en-AE")}.`,
+    `Expenses were AED ${expenses.toLocaleString("en-AE")}, leaving AED ${net.toLocaleString("en-AE")} net before owner adjustments.`,
+    `Open receivables stand at AED ${openAr.toLocaleString("en-AE")}, with AED ${overdueAr.toLocaleString("en-AE")} overdue.`,
     vatRow[0]
-      ? `Latest VAT return is ${vatRow[0].status} with AED ${vatPayable.toLocaleString('en-AE')} payable.`
-      : 'No VAT return is currently available for this client.',
+      ? `Latest VAT return is ${vatRow[0].status} with AED ${vatPayable.toLocaleString("en-AE")} payable.`
+      : "No VAT return is currently available for this client.",
   ];
 
   const nextActions = [
-    ...(overdueAr > 0 ? [`Prioritize collections on AED ${overdueAr.toLocaleString('en-AE')} overdue AR.`] : []),
-    ...(vatRow[0] && vatRow[0].status !== 'filed' && vatRow[0].status !== 'submitted'
+    ...(overdueAr > 0
+      ? [`Prioritize collections on AED ${overdueAr.toLocaleString("en-AE")} overdue AR.`]
+      : []),
+    ...(vatRow[0] && vatRow[0].status !== "filed" && vatRow[0].status !== "submitted"
       ? [`Review VAT return due ${vatRow[0].dueDate.toISOString().slice(0, 10)}.`]
       : []),
-    ...(revenue === 0 && expenses === 0 ? ['Request missing bank statements or source documents for the month.'] : []),
+    ...(revenue === 0 && expenses === 0
+      ? ["Request missing bank statements or source documents for the month."]
+      : []),
   ];
 
   return {
@@ -1351,7 +1513,7 @@ export async function buildClientCfoPack(companyId: string, now: Date = new Date
 
 export async function buildFirmReviewQueue(
   companyIds: string[],
-  now: Date = new Date(),
+  now: Date = new Date()
 ): Promise<FirmReviewItem[]> {
   if (companyIds.length === 0) return [];
 
@@ -1362,12 +1524,12 @@ export async function buildFirmReviewQueue(
     .where(
       and(
         inArray(companies.id, companyIds),
-        eq(companies.companyType, 'client'),
-        sql`${companies.deletedAt} IS NULL`,
-      ),
+        eq(companies.companyType, "client"),
+        sql`${companies.deletedAt} IS NULL`
+      )
     )) as CompanyNameRow[];
   const companyName = new Map<string, string>(
-    companyRows.map((company: CompanyNameRow) => [company.id, company.name]),
+    companyRows.map((company: CompanyNameRow) => [company.id, company.name])
   );
   const dueSoon = new Date(now.getTime() + 14 * 86_400_000);
 
@@ -1391,7 +1553,9 @@ export async function buildFirmReviewQueue(
       matchConfidence: bankTransactions.matchConfidence,
     })
     .from(bankTransactions)
-    .where(and(inArray(bankTransactions.companyId, companyIds), eq(bankTransactions.isReconciled, false)))
+    .where(
+      and(inArray(bankTransactions.companyId, companyIds), eq(bankTransactions.isReconciled, false))
+    )
     .orderBy(desc(bankTransactions.transactionDate))
     .limit(80)) as BankReviewRow[];
 
@@ -1472,10 +1636,10 @@ export async function buildFirmReviewQueue(
     .where(
       and(
         inArray(vatReturns.companyId, companyIds),
-        ne(vatReturns.status, 'filed'),
-        ne(vatReturns.status, 'submitted'),
-        lte(vatReturns.dueDate, dueSoon),
-      ),
+        ne(vatReturns.status, "filed"),
+        ne(vatReturns.status, "submitted"),
+        lte(vatReturns.dueDate, dueSoon)
+      )
     )
     .orderBy(vatReturns.dueDate)
     .limit(80)) as VatReviewRow[];
@@ -1501,9 +1665,9 @@ export async function buildFirmReviewQueue(
     .where(
       and(
         inArray(documentRequirements.companyId, companyIds),
-        inArray(documentRequirements.status, ['pending', 'requested', 'overdue']),
-        lte(documentRequirements.dueDate, dueSoon),
-      ),
+        inArray(documentRequirements.status, ["pending", "requested", "overdue"]),
+        lte(documentRequirements.dueDate, dueSoon)
+      )
     )
     .orderBy(documentRequirements.dueDate)
     .limit(80)) as DocumentReviewRow[];
@@ -1523,27 +1687,29 @@ export async function buildFirmReviewQueue(
     })
     .from(journalEntries)
     .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, 'posted')))
+    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, "posted")))
     .groupBy(journalEntries.companyId)) as TrialReviewRow[];
 
   const items: FirmReviewItem[] = [];
 
   for (const row of bankRows) {
     const amount = asNumber(row.amount);
-    const suggested = row.matchStatus === 'suggested';
+    const suggested = row.matchStatus === "suggested";
     const amountPriority = priorityFromAmount(amount);
     items.push({
       id: `bank:${row.id}`,
       actionKey: `review:bank_match:${row.id}`,
-      kind: 'bank_match',
-      priority: suggested ? amountPriority : amountPriority === 'critical' ? 'critical' : 'medium',
+      kind: "bank_match",
+      priority: suggested ? amountPriority : amountPriority === "critical" ? "critical" : "medium",
       companyId: row.companyId,
-      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      companyName: companyName.get(row.companyId) ?? "Unknown client",
       entityId: row.id,
-      entityType: 'bank_transaction',
-      title: suggested ? 'Confirm suggested bank match' : 'Match unreconciled bank transaction',
-      explanation: `${row.description} for AED ${Math.abs(amount).toLocaleString('en-AE')} is not reconciled.`,
-      suggestedAction: suggested ? 'Confirm the suggested match or correct the counterparty before close.' : 'Match to an invoice, receipt, journal entry, or create a transfer.',
+      entityType: "bank_transaction",
+      title: suggested ? "Confirm suggested bank match" : "Match unreconciled bank transaction",
+      explanation: `${row.description} for AED ${Math.abs(amount).toLocaleString("en-AE")} is not reconciled.`,
+      suggestedAction: suggested
+        ? "Confirm the suggested match or correct the counterparty before close."
+        : "Match to an invoice, receipt, journal entry, or create a transfer.",
       confidence: row.matchConfidence ?? (suggested ? 0.72 : 0.4),
       amountAed: Math.abs(amount),
       dueDate: null,
@@ -1556,15 +1722,17 @@ export async function buildFirmReviewQueue(
     items.push({
       id: `receipt:${row.id}`,
       actionKey: `review:receipt_posting:${row.id}`,
-      kind: 'receipt_posting',
+      kind: "receipt_posting",
       priority: priorityFromAmount(amount),
       companyId: row.companyId,
-      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      companyName: companyName.get(row.companyId) ?? "Unknown client",
       entityId: row.id,
-      entityType: 'receipt',
-      title: 'Review unposted receipt',
-      explanation: `${row.merchant ?? 'Receipt'} has not posted to GL or VAT evidence yet.`,
-      suggestedAction: row.classifierMethod ? 'Approve the suggested expense account or correct it before posting.' : 'Classify the receipt, confirm VAT treatment, then post.',
+      entityType: "receipt",
+      title: "Review unposted receipt",
+      explanation: `${row.merchant ?? "Receipt"} has not posted to GL or VAT evidence yet.`,
+      suggestedAction: row.classifierMethod
+        ? "Approve the suggested expense account or correct it before posting."
+        : "Classify the receipt, confirm VAT treatment, then post.",
       confidence: row.classifierMethod ? 0.68 : 0.35,
       amountAed: amount,
       dueDate: row.date,
@@ -1574,19 +1742,19 @@ export async function buildFirmReviewQueue(
 
   for (const row of anomalyRows) {
     const priority: Priority =
-      row.severity === 'critical' ? 'critical' : row.severity === 'high' ? 'high' : 'medium';
+      row.severity === "critical" ? "critical" : row.severity === "high" ? "high" : "medium";
     items.push({
       id: `anomaly:${row.id}`,
       actionKey: `review:anomaly:${row.id}`,
-      kind: 'anomaly',
+      kind: "anomaly",
       priority,
       companyId: row.companyId,
-      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      companyName: companyName.get(row.companyId) ?? "Unknown client",
       entityId: row.relatedEntityId ?? row.id,
-      entityType: row.relatedEntityType ?? 'anomaly',
+      entityType: row.relatedEntityType ?? "anomaly",
       title: row.title,
       explanation: row.description,
-      suggestedAction: 'Review the source transaction and resolve or document the exception.',
+      suggestedAction: "Review the source transaction and resolve or document the exception.",
       confidence: row.aiConfidence ?? 0.55,
       amountAed: 0,
       dueDate: null,
@@ -1596,19 +1764,20 @@ export async function buildFirmReviewQueue(
 
   for (const row of vatRows) {
     const dueIn = daysUntil(row.dueDate, now);
-    const priority: Priority = dueIn !== null && dueIn < 0 ? 'critical' : dueIn !== null && dueIn <= 7 ? 'high' : 'medium';
+    const priority: Priority =
+      dueIn !== null && dueIn < 0 ? "critical" : dueIn !== null && dueIn <= 7 ? "high" : "medium";
     items.push({
       id: `vat:${row.id}`,
       actionKey: `review:vat:${row.id}`,
-      kind: 'vat_review',
+      kind: "vat_review",
       priority,
       companyId: row.companyId,
-      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      companyName: companyName.get(row.companyId) ?? "Unknown client",
       entityId: row.id,
-      entityType: 'vat_return',
-      title: 'Review VAT return before deadline',
+      entityType: "vat_return",
+      title: "Review VAT return before deadline",
       explanation: `VAT return is ${row.status}; due ${row.dueDate.toISOString().slice(0, 10)}.`,
-      suggestedAction: 'Open the audit pack, clear missing evidence, and submit or mark filed.',
+      suggestedAction: "Open the audit pack, clear missing evidence, and submit or mark filed.",
       confidence: 0.95,
       amountAed: asNumber(row.payableTax),
       dueDate: row.dueDate,
@@ -1617,19 +1786,20 @@ export async function buildFirmReviewQueue(
   }
 
   for (const row of documentRows) {
-    const overdue = row.status === 'overdue' || row.dueDate < now;
+    const overdue = row.status === "overdue" || row.dueDate < now;
     items.push({
       id: `document:${row.id}`,
       actionKey: `review:document_request:${row.id}`,
-      kind: 'document_request',
-      priority: overdue ? 'high' : 'medium',
+      kind: "document_request",
+      priority: overdue ? "high" : "medium",
       companyId: row.companyId,
-      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      companyName: companyName.get(row.companyId) ?? "Unknown client",
       entityId: row.id,
-      entityType: 'document_requirement',
-      title: `Request ${row.documentType.replace(/_/g, ' ')}`,
+      entityType: "document_requirement",
+      title: `Request ${row.documentType.replace(/_/g, " ")}`,
       explanation: row.description ?? `Required document is ${row.status}.`,
-      suggestedAction: 'Send a WhatsApp document request and attach the received file to the client vault.',
+      suggestedAction:
+        "Send a WhatsApp document request and attach the received file to the client vault.",
       confidence: 0.9,
       amountAed: 0,
       dueDate: row.dueDate,
@@ -1638,20 +1808,22 @@ export async function buildFirmReviewQueue(
   }
 
   for (const row of trialRows) {
-    const discrepancy = Math.round(Math.abs(asNumber(row.debit) - asNumber(row.credit)) * 100) / 100;
+    const discrepancy =
+      Math.round(Math.abs(asNumber(row.debit) - asNumber(row.credit)) * 100) / 100;
     if (discrepancy <= 0.01) continue;
     items.push({
       id: `trial:${row.companyId}`,
       actionKey: `review:trial_balance:${row.companyId}`,
-      kind: 'trial_balance',
-      priority: 'critical',
+      kind: "trial_balance",
+      priority: "critical",
       companyId: row.companyId,
-      companyName: companyName.get(row.companyId) ?? 'Unknown client',
+      companyName: companyName.get(row.companyId) ?? "Unknown client",
       entityId: row.companyId,
-      entityType: 'trial_balance',
-      title: 'Trial balance discrepancy',
-      explanation: `Posted journals are out of balance by AED ${discrepancy.toLocaleString('en-AE')}.`,
-      suggestedAction: 'Inspect recent posted journals and reverse or correct the unbalanced entry before close.',
+      entityType: "trial_balance",
+      title: "Trial balance discrepancy",
+      explanation: `Posted journals are out of balance by AED ${discrepancy.toLocaleString("en-AE")}.`,
+      suggestedAction:
+        "Inspect recent posted journals and reverse or correct the unbalanced entry before close.",
       confidence: 1,
       amountAed: discrepancy,
       dueDate: row.lastJournalAt,

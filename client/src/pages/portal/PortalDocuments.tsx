@@ -1,29 +1,29 @@
-import { useQuery } from '@tanstack/react-query';
-import { FolderOpen, FileText, FileImage, File, Loader2, CheckCircle2 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { apiRequest } from '@/lib/queryClient';
-import { format } from 'date-fns';
+import { useQuery } from "@tanstack/react-query";
+import { FolderOpen, FileText, FileImage, File, Loader2, CheckCircle2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { apiRequest } from "@/lib/queryClient";
+import { format } from "date-fns";
 
 const CATEGORY_LABELS: Record<string, string> = {
-  trade_license: 'Trade License',
-  contract: 'Contract',
-  tax_certificate: 'Tax Certificate',
-  audit_report: 'Audit Report',
-  bank_statement: 'Bank Statement',
-  insurance: 'Insurance',
-  visa: 'Visa',
-  other: 'Other',
+  trade_license: "Trade License",
+  contract: "Contract",
+  tax_certificate: "Tax Certificate",
+  audit_report: "Audit Report",
+  bank_statement: "Bank Statement",
+  insurance: "Insurance",
+  visa: "Visa",
+  other: "Other",
 };
 
 function fileIcon(mime: string) {
-  if (mime?.startsWith('image/')) return <FileImage className="w-5 h-5 text-blue-400" />;
-  if (mime === 'application/pdf') return <FileText className="w-5 h-5 text-red-400" />;
+  if (mime?.startsWith("image/")) return <FileImage className="w-5 h-5 text-blue-400" />;
+  if (mime === "application/pdf") return <FileText className="w-5 h-5 text-red-400" />;
   return <File className="w-5 h-5 text-gray-400" />;
 }
 
 function formatBytes(bytes: number | null) {
-  if (!bytes) return '';
+  if (!bytes) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -31,8 +31,8 @@ function formatBytes(bytes: number | null) {
 
 export default function PortalDocuments() {
   const { data: documents = [], isLoading } = useQuery<any[]>({
-    queryKey: ['portal-documents'],
-    queryFn: () => apiRequest('GET', '/api/client-portal/documents'),
+    queryKey: ["portal-documents"],
+    queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
   });
 
   return (
@@ -58,13 +58,16 @@ export default function PortalDocuments() {
           ) : (
             <div className="divide-y divide-gray-100">
               {documents.map((doc: any) => (
-                <div key={doc.id} className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition-colors">
+                <div
+                  key={doc.id}
+                  className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition-colors"
+                >
                   <div className="flex-shrink-0">{fileIcon(doc.mimeType)}</div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{doc.name}</p>
                     <p className="text-xs text-gray-400">
-                      {doc.createdAt ? format(new Date(doc.createdAt), 'MMM d, yyyy') : '—'}
-                      {doc.fileSize ? ` · ${formatBytes(doc.fileSize)}` : ''}
+                      {doc.createdAt ? format(new Date(doc.createdAt), "MMM d, yyyy") : "—"}
+                      {doc.fileSize ? ` · ${formatBytes(doc.fileSize)}` : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
@@ -72,7 +75,10 @@ export default function PortalDocuments() {
                       {CATEGORY_LABELS[doc.category] ?? doc.category}
                     </Badge>
                     {doc.uploadedBy && (
-                      <CheckCircle2 className="w-4 h-4 text-green-500" aria-label="Received by NRA" />
+                      <CheckCircle2
+                        className="w-4 h-4 text-green-500"
+                        aria-label="Received by NRA"
+                      />
                     )}
                   </div>
                 </div>

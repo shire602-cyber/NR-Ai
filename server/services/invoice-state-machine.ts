@@ -10,31 +10,24 @@
 //
 // Anything not listed is rejected.
 
-export type InvoiceStatus =
-  | 'draft'
-  | 'sent'
-  | 'posted'
-  | 'partial'
-  | 'paid'
-  | 'void'
-  | 'cancelled';
+export type InvoiceStatus = "draft" | "sent" | "posted" | "partial" | "paid" | "void" | "cancelled";
 
 export const INVOICE_STATUSES: InvoiceStatus[] = [
-  'draft',
-  'sent',
-  'posted',
-  'partial',
-  'paid',
-  'void',
-  'cancelled',
+  "draft",
+  "sent",
+  "posted",
+  "partial",
+  "paid",
+  "void",
+  "cancelled",
 ];
 
 const TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
-  draft: ['sent', 'posted', 'void'],
-  sent: ['paid', 'partial', 'void'],
-  posted: ['paid', 'partial', 'void'],
-  partial: ['paid', 'void'],
-  paid: ['void'],
+  draft: ["sent", "posted", "void"],
+  sent: ["paid", "partial", "void"],
+  posted: ["paid", "partial", "void"],
+  partial: ["paid", "void"],
+  paid: ["void"],
   void: [],
   cancelled: [],
 };
@@ -50,7 +43,7 @@ export function canTransition(from: string, to: string): boolean {
 }
 
 export function isTerminal(status: string): boolean {
-  return status === 'void' || status === 'cancelled' || status === 'paid';
+  return status === "void" || status === "cancelled" || status === "paid";
 }
 
 /**
@@ -64,13 +57,11 @@ export function isTerminal(status: string): boolean {
 export function statusFromPayments(
   currentStatus: InvoiceStatus,
   total: number,
-  totalPaid: number,
+  totalPaid: number
 ): InvoiceStatus {
   if (isTerminal(currentStatus)) return currentStatus;
-  if (totalPaid >= total - 0.005) return 'paid';
-  if (totalPaid > 0) return 'partial';
+  if (totalPaid >= total - 0.005) return "paid";
+  if (totalPaid > 0) return "partial";
   // No payments — keep whatever non-payment state we were in.
-  return currentStatus === 'partial' || currentStatus === 'paid'
-    ? 'sent'
-    : currentStatus;
+  return currentStatus === "partial" || currentStatus === "paid" ? "sent" : currentStatus;
 }

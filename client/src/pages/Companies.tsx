@@ -1,25 +1,45 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, Building2, CheckCircle2 } from 'lucide-react';
-import type { Company } from '@shared/schema';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Plus, Building2, CheckCircle2 } from "lucide-react";
+import type { Company } from "@shared/schema";
 
 const companySchema = z.object({
-  name: z.string().min(2, 'Company name must be at least 2 characters'),
-  baseCurrency: z.string().default('AED'),
-  locale: z.enum(['en', 'ar']).default('en'),
+  name: z.string().min(2, "Company name must be at least 2 characters"),
+  baseCurrency: z.string().default("AED"),
+  locale: z.enum(["en", "ar"]).default("en"),
 });
 
 type CompanyFormData = z.infer<typeof companySchema>;
@@ -30,34 +50,34 @@ export default function Companies() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const { data: companies, isLoading } = useQuery<Company[]>({
-    queryKey: ['/api/companies'],
+    queryKey: ["/api/companies"],
   });
 
   const form = useForm<CompanyFormData>({
     resolver: zodResolver(companySchema),
     defaultValues: {
-      name: '',
-      baseCurrency: 'AED',
-      locale: 'en',
+      name: "",
+      baseCurrency: "AED",
+      locale: "en",
     },
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: CompanyFormData) => apiRequest('POST', '/api/companies', data),
+    mutationFn: (data: CompanyFormData) => apiRequest("POST", "/api/companies", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: 'Company created',
-        description: 'Your company has been created with a Chart of Accounts.',
+        title: "Company created",
+        description: "Your company has been created with a Chart of Accounts.",
       });
       setDialogOpen(false);
       form.reset();
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Failed to create company',
-        description: error?.message || 'Please try again.',
+        variant: "destructive",
+        title: "Failed to create company",
+        description: error?.message || "Please try again.",
       });
     },
   });
@@ -96,7 +116,11 @@ export default function Companies() {
                     <FormItem>
                       <FormLabel>{t.companyName}</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Acme Corp" data-testid="input-company-name" />
+                        <Input
+                          {...field}
+                          placeholder="Acme Corp"
+                          data-testid="input-company-name"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -146,10 +170,20 @@ export default function Companies() {
                   )}
                 />
                 <div className="flex gap-3 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="flex-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setDialogOpen(false)}
+                    className="flex-1"
+                  >
                     {t.cancel}
                   </Button>
-                  <Button type="submit" disabled={createMutation.isPending} className="flex-1" data-testid="button-submit-company">
+                  <Button
+                    type="submit"
+                    disabled={createMutation.isPending}
+                    className="flex-1"
+                    data-testid="button-submit-company"
+                  >
                     {createMutation.isPending ? t.loading : t.save}
                   </Button>
                 </div>
@@ -168,7 +202,11 @@ export default function Companies() {
       ) : companies && companies.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {companies.map((company) => (
-            <Card key={company.id} className="hover-elevate cursor-pointer" data-testid={`company-card-${company.id}`}>
+            <Card
+              key={company.id}
+              className="hover-elevate cursor-pointer"
+              data-testid={`company-card-${company.id}`}
+            >
               <CardHeader>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -178,7 +216,7 @@ export default function Companies() {
                     <div className="min-w-0 flex-1">
                       <CardTitle className="text-lg truncate">{company.name}</CardTitle>
                       <CardDescription className="text-xs">
-                        {company.baseCurrency} • {company.locale === 'en' ? 'English' : 'العربية'}
+                        {company.baseCurrency} • {company.locale === "en" ? "English" : "العربية"}
                       </CardDescription>
                     </div>
                   </div>

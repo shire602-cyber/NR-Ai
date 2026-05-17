@@ -1,20 +1,18 @@
 // ✅ Must come first before any usage of process.env
-import 'dotenv/config';
+import "dotenv/config";
 
-import { sql } from 'drizzle-orm';
-import * as schema from '@shared/schema';
-import { createLogger } from './config/logger';
+import { sql } from "drizzle-orm";
+import * as schema from "@shared/schema";
+import { createLogger } from "./config/logger";
 
-const log = createLogger('db');
+const log = createLogger("db");
 
 if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?"
-  );
+  throw new Error("DATABASE_URL must be set. Did you forget to provision a database?");
 }
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const isNeon = DATABASE_URL.includes('neon.tech') || DATABASE_URL.includes('neon.');
+const isNeon = DATABASE_URL.includes("neon.tech") || DATABASE_URL.includes("neon.");
 
 // Pool sizing is overridable via env so Railway / Docker / Neon can be tuned
 // without a redeploy. Defaults match a single-instance Railway deployment.
@@ -26,41 +24,41 @@ function envInt(name: string, fallback: number): number {
 }
 
 const POOL_CONFIG = {
-  max: envInt('DB_POOL_MAX', 10),
-  min: envInt('DB_POOL_MIN', 1),
-  idleTimeoutMillis: envInt('DB_POOL_IDLE_MS', 30_000),
-  connectionTimeoutMillis: envInt('DB_POOL_CONN_MS', 10_000),
+  max: envInt("DB_POOL_MAX", 10),
+  min: envInt("DB_POOL_MIN", 1),
+  idleTimeoutMillis: envInt("DB_POOL_IDLE_MS", 30_000),
+  connectionTimeoutMillis: envInt("DB_POOL_CONN_MS", 10_000),
   // pg also honours `statement_timeout` per-connection; expose via env for
   // long-running analytical queries that should be killed to protect the pool.
-  statement_timeout: envInt('DB_STATEMENT_TIMEOUT_MS', 30_000),
+  statement_timeout: envInt("DB_STATEMENT_TIMEOUT_MS", 30_000),
 };
 
 let pool: any;
 let db: any;
-let _driver: 'neon' | 'pg' = 'pg';
+let _driver: "neon" | "pg" = "pg";
 
 type QueryRow = Record<string, unknown>;
 
 if (isNeon) {
   // Use Neon serverless driver (WebSocket-based) for Neon databases
-  const { Pool: NeonPool, neonConfig } = await import('@neondatabase/serverless');
-  const { drizzle: neonDrizzle } = await import('drizzle-orm/neon-serverless');
-  const ws = await import('ws');
+  const { Pool: NeonPool, neonConfig } = await import("@neondatabase/serverless");
+  const { drizzle: neonDrizzle } = await import("drizzle-orm/neon-serverless");
+  const ws = await import("ws");
   neonConfig.webSocketConstructor = ws.default;
   pool = new NeonPool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
   db = neonDrizzle({ client: pool, schema });
-  _driver = 'neon';
+  _driver = "neon";
 } else {
   // Use standard pg driver for Railway/Docker/standard PostgreSQL
-  const pg = await import('pg');
-  const { drizzle: pgDrizzle } = await import('drizzle-orm/node-postgres');
+  const pg = await import("pg");
+  const { drizzle: pgDrizzle } = await import("drizzle-orm/node-postgres");
   pool = new pg.default.Pool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
   // Prevent unhandled 'error' events from crashing the process
-  pool.on('error', (err: Error) => {
-    log.error({ err: err.message }, 'Unexpected pool client error');
+  pool.on("error", (err: Error) => {
+    log.error({ err: err.message }, "Unexpected pool client error");
   });
   db = pgDrizzle({ client: pool, schema });
-  _driver = 'pg';
+  _driver = "pg";
 }
 
 function rowsFromResult<T extends QueryRow = QueryRow>(result: unknown): T[] {
@@ -72,7 +70,9 @@ function rowsFromResult<T extends QueryRow = QueryRow>(result: unknown): T[] {
   return Array.isArray(rows) ? (rows as T[]) : [];
 }
 
-async function queryRows<T extends QueryRow = QueryRow>(query: ReturnType<typeof sql>): Promise<T[]> {
+async function queryRows<T extends QueryRow = QueryRow>(
+  query: ReturnType<typeof sql>
+): Promise<T[]> {
   return rowsFromResult<T>(await db.execute(query));
 }
 
@@ -97,29 +97,32 @@ async function tableExists(schemaName: string, tableName: string): Promise<boole
  */
 async function baselineMigrationLedgerForExistingSchema(migrationsFolder: string): Promise<void> {
   const hasExistingAppSchema = await Promise.all([
-    tableExists('public', 'accounts'),
-    tableExists('public', 'companies'),
-    tableExists('public', 'users'),
-    tableExists('public', 'journal_entries'),
+    tableExists("public", "accounts"),
+    tableExists("public", "companies"),
+    tableExists("public", "users"),
+    tableExists("public", "journal_entries"),
   ]).then((checks) => checks.every(Boolean));
 
   if (!hasExistingAppSchema) {
-    log.info('Migration baseline check skipped: core app schema not present');
+    log.info("Migration baseline check skipped: core app schema not present");
     return;
   }
 
-  const ledgerExists = await tableExists('drizzle', '__drizzle_migrations');
+  const ledgerExists = await tableExists("drizzle", "__drizzle_migrations");
   if (ledgerExists) {
     const rows = await queryRows<{ count: string | number }>(
       sql`SELECT COUNT(*) AS "count" FROM "drizzle"."__drizzle_migrations"`
     );
     if (Number(rows[0]?.count ?? 0) > 0) {
-      log.info({ count: Number(rows[0]?.count ?? 0) }, 'Migration baseline check passed: Drizzle ledger already populated');
+      log.info(
+        { count: Number(rows[0]?.count ?? 0) },
+        "Migration baseline check passed: Drizzle ledger already populated"
+      );
       return;
     }
   }
 
-  const { readMigrationFiles } = await import('drizzle-orm/migrator');
+  const { readMigrationFiles } = await import("drizzle-orm/migrator");
   const migrations = readMigrationFiles({ migrationsFolder });
 
   await db.execute(sql`CREATE SCHEMA IF NOT EXISTS "drizzle"`);
@@ -140,28 +143,28 @@ async function baselineMigrationLedgerForExistingSchema(migrationsFolder: string
 
   log.warn(
     { count: migrations.length },
-    'Baselined Drizzle migration ledger for existing app schema'
+    "Baselined Drizzle migration ledger for existing app schema"
   );
 }
 
 export async function runMigrations(migrationsFolder: string): Promise<void> {
-  log.info({ migrationsFolder, driver: _driver }, 'Running migrations');
+  log.info({ migrationsFolder, driver: _driver }, "Running migrations");
   try {
-    log.info('Checking migration ledger baseline');
+    log.info("Checking migration ledger baseline");
     await baselineMigrationLedgerForExistingSchema(migrationsFolder);
-    log.info({ driver: _driver }, 'Executing Drizzle migrations');
-    if (_driver === 'neon') {
-      const { migrate } = await import('drizzle-orm/neon-serverless/migrator');
+    log.info({ driver: _driver }, "Executing Drizzle migrations");
+    if (_driver === "neon") {
+      const { migrate } = await import("drizzle-orm/neon-serverless/migrator");
       await migrate(db, { migrationsFolder });
     } else {
-      const { migrate } = await import('drizzle-orm/node-postgres/migrator');
+      const { migrate } = await import("drizzle-orm/node-postgres/migrator");
       await migrate(db, { migrationsFolder });
     }
-    log.info('Migrations completed successfully');
+    log.info("Migrations completed successfully");
   } catch (err: any) {
     log.error(
       { err, message: err?.message, code: err?.code, detail: err?.detail, query: err?.query },
-      'Migration failed',
+      "Migration failed"
     );
     throw err;
   }
@@ -177,33 +180,33 @@ export async function ensureCriticalSchema(): Promise<void> {
   const schemaSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     // ── 0003: invoice share token ────────────────────────────────────────
     {
-      name: 'invoices.share_token',
+      name: "invoices.share_token",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "share_token" text UNIQUE`,
     },
     {
-      name: 'invoices.share_token_expires_at',
+      name: "invoices.share_token_expires_at",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "share_token_expires_at" timestamp`,
     },
     // ── 0006: e-invoice fields ───────────────────────────────────────────
     {
-      name: 'invoices.einvoice_uuid',
+      name: "invoices.einvoice_uuid",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "einvoice_uuid" text`,
     },
     {
-      name: 'invoices.einvoice_xml',
+      name: "invoices.einvoice_xml",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "einvoice_xml" text`,
     },
     {
-      name: 'invoices.einvoice_hash',
+      name: "invoices.einvoice_hash",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "einvoice_hash" text`,
     },
     {
-      name: 'invoices.einvoice_status',
+      name: "invoices.einvoice_status",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "einvoice_status" text`,
     },
     // ── 0015: exchange_rate columns ──────────────────────────────────────
     {
-      name: 'exchange_rates table',
+      name: "exchange_rates table",
       sql: sql`CREATE TABLE IF NOT EXISTS "exchange_rates" (
         "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         "base_currency" TEXT NOT NULL DEFAULT 'AED',
@@ -215,40 +218,40 @@ export async function ensureCriticalSchema(): Promise<void> {
       )`,
     },
     {
-      name: 'invoices.exchange_rate',
+      name: "invoices.exchange_rate",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "exchange_rate" REAL NOT NULL DEFAULT 1`,
     },
     {
-      name: 'invoices.base_currency_amount',
+      name: "invoices.base_currency_amount",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "base_currency_amount" REAL NOT NULL DEFAULT 0`,
     },
     {
-      name: 'receipts.exchange_rate',
+      name: "receipts.exchange_rate",
       sql: sql`ALTER TABLE "receipts" ADD COLUMN IF NOT EXISTS "exchange_rate" REAL NOT NULL DEFAULT 1`,
     },
     {
-      name: 'receipts.base_currency_amount',
+      name: "receipts.base_currency_amount",
       sql: sql`ALTER TABLE "receipts" ADD COLUMN IF NOT EXISTS "base_currency_amount" REAL NOT NULL DEFAULT 0`,
     },
     {
-      name: 'journal_lines.foreign_currency',
+      name: "journal_lines.foreign_currency",
       sql: sql`ALTER TABLE "journal_lines" ADD COLUMN IF NOT EXISTS "foreign_currency" TEXT`,
     },
     {
-      name: 'journal_lines.foreign_debit',
+      name: "journal_lines.foreign_debit",
       sql: sql`ALTER TABLE "journal_lines" ADD COLUMN IF NOT EXISTS "foreign_debit" REAL DEFAULT 0`,
     },
     {
-      name: 'journal_lines.foreign_credit',
+      name: "journal_lines.foreign_credit",
       sql: sql`ALTER TABLE "journal_lines" ADD COLUMN IF NOT EXISTS "foreign_credit" REAL DEFAULT 0`,
     },
     {
-      name: 'journal_lines.exchange_rate',
+      name: "journal_lines.exchange_rate",
       sql: sql`ALTER TABLE "journal_lines" ADD COLUMN IF NOT EXISTS "exchange_rate" REAL DEFAULT 1`,
     },
     // ── 0016: bank_accounts table + bank_transaction columns ─────────────
     {
-      name: 'bank_accounts table',
+      name: "bank_accounts table",
       sql: sql`CREATE TABLE IF NOT EXISTS "bank_accounts" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
         "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
@@ -263,61 +266,61 @@ export async function ensureCriticalSchema(): Promise<void> {
       )`,
     },
     {
-      name: 'bank_transactions.bank_statement_account_id',
+      name: "bank_transactions.bank_statement_account_id",
       sql: sql`ALTER TABLE "bank_transactions" ADD COLUMN IF NOT EXISTS "bank_statement_account_id" uuid REFERENCES "bank_accounts"("id")`,
     },
     {
-      name: 'bank_transactions.match_status',
+      name: "bank_transactions.match_status",
       sql: sql`ALTER TABLE "bank_transactions" ADD COLUMN IF NOT EXISTS "match_status" text NOT NULL DEFAULT 'unmatched'`,
     },
     {
-      name: 'bank_transactions.balance',
+      name: "bank_transactions.balance",
       sql: sql`ALTER TABLE "bank_transactions" ADD COLUMN IF NOT EXISTS "balance" real`,
     },
     // ── 0017: invoice email / reminder fields ────────────────────────────
     {
-      name: 'invoices.due_date',
+      name: "invoices.due_date",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "due_date" timestamp`,
     },
     {
-      name: 'invoices.payment_terms',
+      name: "invoices.payment_terms",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "payment_terms" text DEFAULT 'net30'`,
     },
     {
-      name: 'invoices.reminder_count',
+      name: "invoices.reminder_count",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "reminder_count" integer DEFAULT 0 NOT NULL`,
     },
     {
-      name: 'invoices.last_reminder_sent_at',
+      name: "invoices.last_reminder_sent_at",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "last_reminder_sent_at" timestamp`,
     },
     // ── 0018: credit notes + recurring + invoice_payments ────────────────
     {
-      name: 'invoices.invoice_type',
+      name: "invoices.invoice_type",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "invoice_type" text NOT NULL DEFAULT 'invoice'`,
     },
     {
-      name: 'invoices.original_invoice_id',
+      name: "invoices.original_invoice_id",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "original_invoice_id" uuid REFERENCES "invoices"("id")`,
     },
     {
-      name: 'invoices.is_recurring',
+      name: "invoices.is_recurring",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "is_recurring" boolean NOT NULL DEFAULT false`,
     },
     {
-      name: 'invoices.recurring_interval',
+      name: "invoices.recurring_interval",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "recurring_interval" text`,
     },
     {
-      name: 'invoices.next_recurring_date',
+      name: "invoices.next_recurring_date",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "next_recurring_date" timestamp`,
     },
     {
-      name: 'invoices.recurring_end_date',
+      name: "invoices.recurring_end_date",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "recurring_end_date" timestamp`,
     },
     {
-      name: 'invoice_payments table',
+      name: "invoice_payments table",
       sql: sql`CREATE TABLE IF NOT EXISTS "invoice_payments" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "invoice_id" uuid NOT NULL REFERENCES "invoices"("id") ON DELETE CASCADE,
@@ -335,16 +338,16 @@ export async function ensureCriticalSchema(): Promise<void> {
     },
     // ── 0024: receipt image_path column ─────────────────────────────────
     {
-      name: 'receipts.image_path',
+      name: "receipts.image_path",
       sql: sql`ALTER TABLE "receipts" ADD COLUMN IF NOT EXISTS "image_path" text`,
     },
     // ── 0019/0020: firm_role + firm_staff_assignments ────────────────────
     {
-      name: 'users.firm_role',
+      name: "users.firm_role",
       sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "firm_role" text`,
     },
     {
-      name: 'firm_staff_assignments table',
+      name: "firm_staff_assignments table",
       sql: sql`CREATE TABLE IF NOT EXISTS "firm_staff_assignments" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
@@ -356,7 +359,7 @@ export async function ensureCriticalSchema(): Promise<void> {
     },
     // ── 0021: client_communications + communication_templates ────────────
     {
-      name: 'client_communications table',
+      name: "client_communications table",
       sql: sql`CREATE TABLE IF NOT EXISTS "client_communications" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
         "company_id" uuid NOT NULL REFERENCES "companies"("id") ON DELETE CASCADE,
@@ -375,7 +378,7 @@ export async function ensureCriticalSchema(): Promise<void> {
       )`,
     },
     {
-      name: 'communication_templates table',
+      name: "communication_templates table",
       sql: sql`CREATE TABLE IF NOT EXISTS "communication_templates" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
         "name" text NOT NULL,
@@ -390,7 +393,7 @@ export async function ensureCriticalSchema(): Promise<void> {
     },
     // ── 0022: firm_leads ─────────────────────────────────────────────────
     {
-      name: 'firm_leads table',
+      name: "firm_leads table",
       sql: sql`CREATE TABLE IF NOT EXISTS "firm_leads" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
         "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
@@ -406,7 +409,7 @@ export async function ensureCriticalSchema(): Promise<void> {
     },
     // ── 0026: onboarding_completed on companies ──────────────────────────
     {
-      name: 'companies.onboarding_completed',
+      name: "companies.onboarding_completed",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "onboarding_completed" boolean NOT NULL DEFAULT false`,
     },
     // ── 0001/production drift: complete companies profile surface ───────
@@ -414,91 +417,91 @@ export async function ensureCriticalSchema(): Promise<void> {
     // historical profile column is missing, onboarding step 2 fails with a
     // generic 500 even when the submitted fields are valid.
     {
-      name: 'companies.company_type',
+      name: "companies.company_type",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "company_type" text NOT NULL DEFAULT 'customer'`,
     },
     {
-      name: 'companies.legal_structure',
+      name: "companies.legal_structure",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "legal_structure" text`,
     },
     {
-      name: 'companies.industry',
+      name: "companies.industry",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "industry" text`,
     },
     {
-      name: 'companies.registration_number',
+      name: "companies.registration_number",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "registration_number" text`,
     },
     {
-      name: 'companies.business_address',
+      name: "companies.business_address",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "business_address" text`,
     },
     {
-      name: 'companies.contact_phone',
+      name: "companies.contact_phone",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "contact_phone" text`,
     },
     {
-      name: 'companies.contact_email',
+      name: "companies.contact_email",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "contact_email" text`,
     },
     {
-      name: 'companies.website_url',
+      name: "companies.website_url",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "website_url" text`,
     },
     {
-      name: 'companies.logo_url',
+      name: "companies.logo_url",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "logo_url" text`,
     },
     {
-      name: 'companies.trn_vat_number',
+      name: "companies.trn_vat_number",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "trn_vat_number" text`,
     },
     {
-      name: 'companies.tax_registration_type',
+      name: "companies.tax_registration_type",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "tax_registration_type" text`,
     },
     {
-      name: 'companies.vat_filing_frequency',
+      name: "companies.vat_filing_frequency",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "vat_filing_frequency" text`,
     },
     {
-      name: 'companies.tax_registration_date',
+      name: "companies.tax_registration_date",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "tax_registration_date" timestamp`,
     },
     {
-      name: 'companies.corporate_tax_id',
+      name: "companies.corporate_tax_id",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "corporate_tax_id" text`,
     },
     {
-      name: 'companies.emirate',
+      name: "companies.emirate",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "emirate" text DEFAULT 'dubai'`,
     },
     {
-      name: 'companies.invoice_show_logo',
+      name: "companies.invoice_show_logo",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_logo" boolean NOT NULL DEFAULT true`,
     },
     {
-      name: 'companies.invoice_show_address',
+      name: "companies.invoice_show_address",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_address" boolean NOT NULL DEFAULT true`,
     },
     {
-      name: 'companies.invoice_show_phone',
+      name: "companies.invoice_show_phone",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_phone" boolean NOT NULL DEFAULT true`,
     },
     {
-      name: 'companies.invoice_show_email',
+      name: "companies.invoice_show_email",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_email" boolean NOT NULL DEFAULT true`,
     },
     {
-      name: 'companies.invoice_show_website',
+      name: "companies.invoice_show_website",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_show_website" boolean NOT NULL DEFAULT false`,
     },
     {
-      name: 'companies.invoice_custom_title',
+      name: "companies.invoice_custom_title",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_custom_title" text`,
     },
     {
-      name: 'companies.invoice_footer_note',
+      name: "companies.invoice_footer_note",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "invoice_footer_note" text`,
     },
     // ── 0029: drop incorrect global UNIQUE on companies.name ─────────────
@@ -509,7 +512,7 @@ export async function ensureCriticalSchema(): Promise<void> {
     // for the second tenant. Migration 0029 drops it; this guard ensures
     // the drop happens even when 0029 was skipped (tracked-but-not-run).
     {
-      name: 'companies.name unique constraint drop',
+      name: "companies.name unique constraint drop",
       sql: sql`DO $$
         DECLARE cname text;
         BEGIN
@@ -530,21 +533,21 @@ export async function ensureCriticalSchema(): Promise<void> {
     // ── 0019 (was missing): companies soft-delete columns [CRITICAL] ─────
     // Without deleted_at, ALL Drizzle company queries fail (column in schema but not in DB).
     {
-      name: 'companies.deleted_at',
+      name: "companies.deleted_at",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "deleted_at" timestamp`,
     },
     {
-      name: 'companies.is_active',
+      name: "companies.is_active",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "is_active" boolean NOT NULL DEFAULT true`,
     },
     // ── 0020 (was missing): invoice contact_id FK ─────────────────────────
     {
-      name: 'invoices.contact_id',
+      name: "invoices.contact_id",
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "contact_id" uuid REFERENCES "customer_contacts"("id") ON DELETE SET NULL`,
     },
     // ── audit_logs: critical for financial audit trail (now wired in) ────
     {
-      name: 'audit_logs table',
+      name: "audit_logs table",
       sql: sql`CREATE TABLE IF NOT EXISTS "audit_logs" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "user_id" uuid REFERENCES "users"("id"),
@@ -558,11 +561,11 @@ export async function ensureCriticalSchema(): Promise<void> {
       )`,
     },
     {
-      name: 'audit_logs.created_at index',
+      name: "audit_logs.created_at index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_created_at" ON "audit_logs" ("created_at" DESC)`,
     },
     {
-      name: 'audit_logs.resource index',
+      name: "audit_logs.resource index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_audit_logs_resource" ON "audit_logs" ("resource_type", "resource_id")`,
     },
     // ── 0040: auth & session security [CRITICAL FOR LOGIN] ───────────────
@@ -571,11 +574,11 @@ export async function ensureCriticalSchema(): Promise<void> {
     // companion token tables back logout/blacklist, password-reset, and
     // email-verification flows.
     {
-      name: 'users.email_verified',
+      name: "users.email_verified",
       sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "email_verified" boolean NOT NULL DEFAULT false`,
     },
     {
-      name: 'token_blacklist table',
+      name: "token_blacklist table",
       sql: sql`CREATE TABLE IF NOT EXISTS "token_blacklist" (
         "token_hash" text PRIMARY KEY,
         "expires_at" timestamp NOT NULL,
@@ -583,11 +586,11 @@ export async function ensureCriticalSchema(): Promise<void> {
       )`,
     },
     {
-      name: 'token_blacklist.expires_at index',
+      name: "token_blacklist.expires_at index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_token_blacklist_expires_at" ON "token_blacklist" ("expires_at")`,
     },
     {
-      name: 'password_reset_tokens table',
+      name: "password_reset_tokens table",
       sql: sql`CREATE TABLE IF NOT EXISTS "password_reset_tokens" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
@@ -601,23 +604,23 @@ export async function ensureCriticalSchema(): Promise<void> {
       // 0042 added used_at after 0040 created the table. If 0040 ran but 0042
       // did not, the column is missing — guard separately so the table-create
       // step above (a no-op when the table already exists) does not mask it.
-      name: 'password_reset_tokens.used_at',
+      name: "password_reset_tokens.used_at",
       sql: sql`ALTER TABLE "password_reset_tokens" ADD COLUMN IF NOT EXISTS "used_at" timestamp`,
     },
     {
-      name: 'password_reset_tokens.user_id index',
+      name: "password_reset_tokens.user_id index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_user_id" ON "password_reset_tokens" ("user_id")`,
     },
     {
-      name: 'password_reset_tokens.expires_at index',
+      name: "password_reset_tokens.expires_at index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_tokens_expires_at" ON "password_reset_tokens" ("expires_at")`,
     },
     {
-      name: 'password_reset_tokens.token_hash index',
+      name: "password_reset_tokens.token_hash index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_password_reset_token_hash" ON "password_reset_tokens" ("token_hash")`,
     },
     {
-      name: 'email_verification_tokens table',
+      name: "email_verification_tokens table",
       sql: sql`CREATE TABLE IF NOT EXISTS "email_verification_tokens" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
@@ -627,11 +630,11 @@ export async function ensureCriticalSchema(): Promise<void> {
       )`,
     },
     {
-      name: 'email_verification_tokens.user_id index',
+      name: "email_verification_tokens.user_id index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_email_verification_tokens_user_id" ON "email_verification_tokens" ("user_id")`,
     },
     {
-      name: 'refresh_sessions table',
+      name: "refresh_sessions table",
       sql: sql`CREATE TABLE IF NOT EXISTS "refresh_sessions" (
         "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
         "user_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
@@ -647,15 +650,15 @@ export async function ensureCriticalSchema(): Promise<void> {
       )`,
     },
     {
-      name: 'refresh_sessions.token_hash index',
+      name: "refresh_sessions.token_hash index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_refresh_sessions_token_hash" ON "refresh_sessions" ("token_hash")`,
     },
     {
-      name: 'refresh_sessions.user_id index',
+      name: "refresh_sessions.user_id index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_refresh_sessions_user_id" ON "refresh_sessions" ("user_id")`,
     },
     {
-      name: 'refresh_sessions.expires_at index',
+      name: "refresh_sessions.expires_at index",
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_refresh_sessions_expires_at" ON "refresh_sessions" ("expires_at")`,
     },
     // ── 0033: companies.exempt_supply_ratio (partial-exemption VAT) ──────
@@ -664,24 +667,24 @@ export async function ensureCriticalSchema(): Promise<void> {
     // Drizzle's generated SQL references this column explicitly. That
     // surfaces as a 500 "Internal Server Error" on the onboarding wizard.
     {
-      name: 'companies.exempt_supply_ratio',
+      name: "companies.exempt_supply_ratio",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "exempt_supply_ratio" numeric(5,4) NOT NULL DEFAULT 0`,
     },
     // ── 0039: companies MOHRE + WPS employer bank fields ────────────────
     {
-      name: 'companies.mohre_establishment_id',
+      name: "companies.mohre_establishment_id",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "mohre_establishment_id" text`,
     },
     {
-      name: 'companies.wps_employer_bank_name',
+      name: "companies.wps_employer_bank_name",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "wps_employer_bank_name" text`,
     },
     {
-      name: 'companies.wps_employer_iban',
+      name: "companies.wps_employer_iban",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "wps_employer_iban" text`,
     },
     {
-      name: 'companies.wps_employer_routing_code',
+      name: "companies.wps_employer_routing_code",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "wps_employer_routing_code" text`,
     },
     // ── 0044: companies preferences columns (QuickBooks-style settings) ──
@@ -689,43 +692,43 @@ export async function ensureCriticalSchema(): Promise<void> {
     // RETURNING clause on every PATCH /api/companies/:id, so a missing
     // column blocks the onboarding "Save & Continue" step.
     {
-      name: 'companies.legal_name',
+      name: "companies.legal_name",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "legal_name" text`,
     },
     {
-      name: 'companies.date_format',
+      name: "companies.date_format",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "date_format" text NOT NULL DEFAULT 'DD/MM/YYYY'`,
     },
     {
-      name: 'companies.fiscal_year_start_month',
+      name: "companies.fiscal_year_start_month",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "fiscal_year_start_month" integer NOT NULL DEFAULT 1`,
     },
     {
-      name: 'companies.default_vat_rate',
+      name: "companies.default_vat_rate",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "default_vat_rate" numeric(5,4) NOT NULL DEFAULT 0.05`,
     },
     {
-      name: 'companies.address_street',
+      name: "companies.address_street",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "address_street" text`,
     },
     {
-      name: 'companies.address_city',
+      name: "companies.address_city",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "address_city" text`,
     },
     {
-      name: 'companies.address_country',
+      name: "companies.address_country",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "address_country" text DEFAULT 'AE'`,
     },
     {
-      name: 'companies.vat_auto_calculate',
+      name: "companies.vat_auto_calculate",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "vat_auto_calculate" boolean NOT NULL DEFAULT true`,
     },
     {
-      name: 'companies.vat_period_start_month',
+      name: "companies.vat_period_start_month",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "vat_period_start_month" integer NOT NULL DEFAULT 1`,
     },
     {
-      name: 'companies.classifier_config',
+      name: "companies.classifier_config",
       sql: sql`ALTER TABLE "companies" ADD COLUMN IF NOT EXISTS "classifier_config" jsonb NOT NULL DEFAULT '{"mode":"hybrid","accuracyThreshold":0.8,"autopilotEnabled":false}'::jsonb`,
     },
   ];
@@ -746,11 +749,11 @@ export async function ensureCriticalSchema(): Promise<void> {
       await db.execute(step.sql);
       ok++;
     } catch (err: any) {
-      log.error({ step: step.name, err: err.message }, 'Schema guard step failed');
+      log.error({ step: step.name, err: err.message }, "Schema guard step failed");
       failed++;
     }
   }
-  log.info({ ok, failed, mode: 'schema-only' }, 'Critical schema guard completed');
+  log.info({ ok, failed, mode: "schema-only" }, "Critical schema guard completed");
 }
 
 /** Ping the database — used by /health and connection validation. */
@@ -770,13 +773,13 @@ export async function pingDb(): Promise<{ ok: boolean; latencyMs: number; error?
     await db.execute(sql`SELECT 1`);
     return { ok: true, latencyMs: Date.now() - start };
   } catch (err: any) {
-    return { ok: false, latencyMs: Date.now() - start, error: err?.message || 'unknown' };
+    return { ok: false, latencyMs: Date.now() - start, error: err?.message || "unknown" };
   }
 }
 
 /** Snapshot of pool state — total/idle/waiting connections. */
 export function getPoolStats(): {
-  driver: 'pg' | 'neon';
+  driver: "pg" | "neon";
   total: number;
   idle: number;
   waiting: number;
@@ -794,10 +797,7 @@ export function getPoolStats(): {
 /** Drain and close the pool. Bounded by `timeoutMs` so shutdown is never stuck. */
 export async function closePool(timeoutMs = 10_000): Promise<void> {
   if (!pool?.end) return;
-  await Promise.race([
-    pool.end(),
-    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
-  ]);
+  await Promise.race([pool.end(), new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))]);
 }
 
 export { pool, db };

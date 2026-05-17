@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -13,14 +13,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -28,11 +28,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency, formatDate } from '@/lib/format';
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency, formatDate } from "@/lib/format";
 import {
   Brain,
   Check,
@@ -49,7 +49,7 @@ import {
   XCircle,
   ArrowUpDown,
   BarChart3,
-} from 'lucide-react';
+} from "lucide-react";
 
 // =============================================
 // Types
@@ -116,33 +116,31 @@ interface ScanResult {
 
 function getConfidenceLevel(confidence: number): {
   label: string;
-  variant: 'default' | 'secondary' | 'destructive';
+  variant: "default" | "secondary" | "destructive";
   color: string;
 } {
-  if (confidence >= 0.85)
-    return { label: 'High', variant: 'default', color: 'text-green-600' };
-  if (confidence >= 0.6)
-    return { label: 'Medium', variant: 'secondary', color: 'text-orange-500' };
-  return { label: 'Low', variant: 'destructive', color: 'text-red-500' };
+  if (confidence >= 0.85) return { label: "High", variant: "default", color: "text-green-600" };
+  if (confidence >= 0.6) return { label: "Medium", variant: "secondary", color: "text-orange-500" };
+  return { label: "Low", variant: "destructive", color: "text-red-500" };
 }
 
 function getStatusBadge(status: string): {
   label: string;
-  variant: 'default' | 'secondary' | 'destructive' | 'outline';
+  variant: "default" | "secondary" | "destructive" | "outline";
 } {
   switch (status) {
-    case 'pending_review':
-      return { label: 'Pending Review', variant: 'outline' };
-    case 'auto_posted':
-      return { label: 'Auto-Posted', variant: 'default' };
-    case 'accepted':
-      return { label: 'Accepted', variant: 'default' };
-    case 'rejected':
-      return { label: 'Rejected', variant: 'destructive' };
-    case 'corrected':
-      return { label: 'Corrected', variant: 'secondary' };
+    case "pending_review":
+      return { label: "Pending Review", variant: "outline" };
+    case "auto_posted":
+      return { label: "Auto-Posted", variant: "default" };
+    case "accepted":
+      return { label: "Accepted", variant: "default" };
+    case "rejected":
+      return { label: "Rejected", variant: "destructive" };
+    case "corrected":
+      return { label: "Corrected", variant: "secondary" };
     default:
-      return { label: status, variant: 'outline' };
+      return { label: status, variant: "outline" };
   }
 }
 
@@ -153,35 +151,35 @@ function getStatusBadge(status: string): {
 export default function AIInbox() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
-  const [activeTab, setActiveTab] = useState('pending');
+  const [activeTab, setActiveTab] = useState("pending");
   const [correctDialogOpen, setCorrectDialogOpen] = useState(false);
   const [correctingItem, setCorrectingItem] = useState<AIGLQueueItem | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
 
   // ---- Queries ----
 
   const statsQuery = useQuery<AIGLStats>({
-    queryKey: ['/api/companies', companyId, 'ai-gl', 'stats'],
+    queryKey: ["/api/companies", companyId, "ai-gl", "stats"],
     enabled: !!companyId,
   });
 
   const pendingQuery = useQuery<AIGLQueueItem[]>({
-    queryKey: ['/api/companies', companyId, 'ai-gl', 'queue?status=pending_review'],
-    enabled: !!companyId && activeTab === 'pending',
+    queryKey: ["/api/companies", companyId, "ai-gl", "queue?status=pending_review"],
+    enabled: !!companyId && activeTab === "pending",
   });
 
   const autoPostedQuery = useQuery<AIGLQueueItem[]>({
-    queryKey: ['/api/companies', companyId, 'ai-gl', 'queue?status=auto_posted'],
-    enabled: !!companyId && activeTab === 'autoposted',
+    queryKey: ["/api/companies", companyId, "ai-gl", "queue?status=auto_posted"],
+    enabled: !!companyId && activeTab === "autoposted",
   });
 
   const historyQuery = useQuery<AIGLQueueItem[]>({
-    queryKey: ['/api/companies', companyId, 'ai-gl', 'queue'],
-    enabled: !!companyId && activeTab === 'history',
+    queryKey: ["/api/companies", companyId, "ai-gl", "queue"],
+    enabled: !!companyId && activeTab === "history",
   });
 
   const accountsQuery = useQuery<AccountOption[]>({
-    queryKey: ['/api/companies', companyId, 'accounts'],
+    queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
   });
 
@@ -189,93 +187,79 @@ export default function AIInbox() {
 
   const scanMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('POST', `/api/companies/${companyId}/ai-gl/scan`);
+      return apiRequest("POST", `/api/companies/${companyId}/ai-gl/scan`);
     },
     onSuccess: (data: ScanResult) => {
       toast({
-        title: 'Scan Complete',
+        title: "Scan Complete",
         description: data.message,
       });
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: 'Scan Failed',
+        title: "Scan Failed",
         description: error?.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
 
   const acceptMutation = useMutation({
     mutationFn: async (itemId: string) => {
-      return apiRequest(
-        'POST',
-        `/api/companies/${companyId}/ai-gl/queue/${itemId}/accept`
-      );
+      return apiRequest("POST", `/api/companies/${companyId}/ai-gl/queue/${itemId}/accept`);
     },
     onSuccess: (_data: any, itemId: string) => {
-      toast({ title: 'Accepted', description: 'Transaction posted to GL.' });
+      toast({ title: "Accepted", description: "Transaction posted to GL." });
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: 'Accept Failed',
+        title: "Accept Failed",
         description: error?.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
 
   const rejectMutation = useMutation({
     mutationFn: async (itemId: string) => {
-      return apiRequest(
-        'POST',
-        `/api/companies/${companyId}/ai-gl/queue/${itemId}/reject`
-      );
+      return apiRequest("POST", `/api/companies/${companyId}/ai-gl/queue/${itemId}/reject`);
     },
     onSuccess: () => {
-      toast({ title: 'Rejected', description: 'Transaction rejected.' });
+      toast({ title: "Rejected", description: "Transaction rejected." });
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: 'Reject Failed',
+        title: "Reject Failed",
         description: error?.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
 
   const correctMutation = useMutation({
-    mutationFn: async ({
-      itemId,
-      accountId,
-    }: {
-      itemId: string;
-      accountId: string;
-    }) => {
-      return apiRequest(
-        'POST',
-        `/api/companies/${companyId}/ai-gl/queue/${itemId}/correct`,
-        { accountId }
-      );
+    mutationFn: async ({ itemId, accountId }: { itemId: string; accountId: string }) => {
+      return apiRequest("POST", `/api/companies/${companyId}/ai-gl/queue/${itemId}/correct`, {
+        accountId,
+      });
     },
     onSuccess: () => {
       toast({
-        title: 'Corrected',
-        description: 'Transaction corrected and posted to GL.',
+        title: "Corrected",
+        description: "Transaction corrected and posted to GL.",
       });
       setCorrectDialogOpen(false);
       setCorrectingItem(null);
-      setSelectedAccountId('');
+      setSelectedAccountId("");
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: 'Correction Failed',
+        title: "Correction Failed",
         description: error?.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
@@ -285,10 +269,7 @@ export default function AIInbox() {
       const results = [];
       for (const item of items) {
         try {
-          await apiRequest(
-            'POST',
-            `/api/companies/${companyId}/ai-gl/queue/${item.id}/accept`
-          );
+          await apiRequest("POST", `/api/companies/${companyId}/ai-gl/queue/${item.id}/accept`);
           results.push({ id: item.id, success: true });
         } catch (err: any) {
           results.push({ id: item.id, success: false, error: err?.message });
@@ -300,32 +281,32 @@ export default function AIInbox() {
       const successCount = results.filter((r) => r.success).length;
       const failCount = results.filter((r) => !r.success).length;
       toast({
-        title: 'Bulk Accept Complete',
-        description: `${successCount} accepted${failCount > 0 ? `, ${failCount} failed` : ''}.`,
+        title: "Bulk Accept Complete",
+        description: `${successCount} accepted${failCount > 0 ? `, ${failCount} failed` : ""}.`,
       });
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: 'Bulk Accept Failed',
+        title: "Bulk Accept Failed",
         description: error?.message,
-        variant: 'destructive',
+        variant: "destructive",
       });
     },
   });
 
   function invalidateAll() {
     queryClient.invalidateQueries({
-      queryKey: ['/api/companies', companyId, 'ai-gl'],
+      queryKey: ["/api/companies", companyId, "ai-gl"],
     });
     queryClient.invalidateQueries({
-      queryKey: ['/api/companies', companyId, 'bank-transactions'],
+      queryKey: ["/api/companies", companyId, "bank-transactions"],
     });
   }
 
   function openCorrectDialog(item: AIGLQueueItem) {
     setCorrectingItem(item);
-    setSelectedAccountId('');
+    setSelectedAccountId("");
     setCorrectDialogOpen(true);
   }
 
@@ -384,17 +365,13 @@ export default function AIInbox() {
             </p>
           </div>
         </div>
-        <Button
-          onClick={() => scanMutation.mutate()}
-          disabled={scanMutation.isPending}
-          size="lg"
-        >
+        <Button onClick={() => scanMutation.mutate()} disabled={scanMutation.isPending} size="lg">
           {scanMutation.isPending ? (
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
           ) : (
             <RefreshCw className="h-4 w-4 mr-2" />
           )}
-          {scanMutation.isPending ? 'Scanning...' : 'Run Scan'}
+          {scanMutation.isPending ? "Scanning..." : "Run Scan"}
         </Button>
       </div>
 
@@ -420,9 +397,7 @@ export default function AIInbox() {
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-blue-600">
-                {stats.autoPostedPercent}%
-              </div>
+              <div className="text-3xl font-bold text-blue-600">{stats.autoPostedPercent}%</div>
             </CardContent>
           </Card>
           <Card className="border-green-200">
@@ -433,9 +408,7 @@ export default function AIInbox() {
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-green-600">
-                {stats.accuracy}%
-              </div>
+              <div className="text-3xl font-bold text-green-600">{stats.accuracy}%</div>
             </CardContent>
           </Card>
           <Card className="border-orange-200">
@@ -446,9 +419,7 @@ export default function AIInbox() {
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-orange-600">
-                {stats.pendingReview}
-              </div>
+              <div className="text-3xl font-bold text-orange-600">{stats.pendingReview}</div>
             </CardContent>
           </Card>
           <Card>
@@ -515,8 +486,8 @@ export default function AIInbox() {
                   <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
                   <h3 className="text-lg font-semibold">All Clear</h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    No transactions pending review. Click "Run Scan" to check for
-                    new unreconciled bank transactions.
+                    No transactions pending review. Click "Run Scan" to check for new unreconciled
+                    bank transactions.
                   </p>
                 </div>
               </CardContent>
@@ -547,9 +518,7 @@ export default function AIInbox() {
                               {formatDate(item.transaction_date)}
                             </TableCell>
                             <TableCell>
-                              <span className="text-sm font-medium">
-                                {item.description}
-                              </span>
+                              <span className="text-sm font-medium">{item.description}</span>
                             </TableCell>
                             <TableCell className="text-right whitespace-nowrap font-mono text-sm">
                               {formatCurrency(parseFloat(item.amount))}
@@ -565,35 +534,25 @@ export default function AIInbox() {
                                   </span>
                                 </div>
                               ) : (
-                                <span className="text-sm text-muted-foreground">
-                                  No suggestion
-                                </span>
+                                <span className="text-sm text-muted-foreground">No suggestion</span>
                               )}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2 min-w-[140px]">
                                 <div className="w-16">
-                                  <Progress
-                                    value={confidence * 100}
-                                    className="h-2"
-                                  />
+                                  <Progress value={confidence * 100} className="h-2" />
                                 </div>
-                                <span
-                                  className={`text-sm font-semibold ${confLevel.color}`}
-                                >
+                                <span className={`text-sm font-semibold ${confLevel.color}`}>
                                   {Math.round(confidence * 100)}%
                                 </span>
-                                <Badge
-                                  variant={confLevel.variant}
-                                  className="text-xs"
-                                >
+                                <Badge variant={confLevel.variant} className="text-xs">
                                   {confLevel.label}
                                 </Badge>
                               </div>
                             </TableCell>
                             <TableCell>
                               <span className="text-xs text-muted-foreground line-clamp-2 max-w-[200px]">
-                                {item.ai_reason || 'N/A'}
+                                {item.ai_reason || "N/A"}
                               </span>
                             </TableCell>
                             <TableCell>
@@ -603,10 +562,7 @@ export default function AIInbox() {
                                   variant="ghost"
                                   className="h-8 w-8 p-0 text-green-600 hover:text-green-700 hover:bg-green-50"
                                   onClick={() => acceptMutation.mutate(item.id)}
-                                  disabled={
-                                    acceptMutation.isPending ||
-                                    !item.suggested_account_id
-                                  }
+                                  disabled={acceptMutation.isPending || !item.suggested_account_id}
                                   title="Accept"
                                 >
                                   <Check className="h-4 w-4" />
@@ -654,8 +610,7 @@ export default function AIInbox() {
                   <Zap className="h-12 w-12 text-muted-foreground mx-auto" />
                   <h3 className="text-lg font-semibold">No Auto-Posted Items</h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    High-confidence transactions will be automatically posted here
-                    when scanned.
+                    High-confidence transactions will be automatically posted here when scanned.
                   </p>
                 </div>
               </CardContent>
@@ -685,9 +640,7 @@ export default function AIInbox() {
                               {formatDate(item.transaction_date)}
                             </TableCell>
                             <TableCell>
-                              <span className="text-sm font-medium">
-                                {item.description}
-                              </span>
+                              <span className="text-sm font-medium">{item.description}</span>
                             </TableCell>
                             <TableCell className="text-right whitespace-nowrap font-mono text-sm">
                               {formatCurrency(parseFloat(item.amount))}
@@ -695,7 +648,7 @@ export default function AIInbox() {
                             <TableCell>
                               <div className="flex flex-col">
                                 <span className="text-sm font-medium">
-                                  {item.suggested_account_name || 'N/A'}
+                                  {item.suggested_account_name || "N/A"}
                                 </span>
                                 <span className="text-xs text-muted-foreground">
                                   {item.suggested_account_code}
@@ -704,15 +657,10 @@ export default function AIInbox() {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <span
-                                  className={`text-sm font-semibold ${confLevel.color}`}
-                                >
+                                <span className={`text-sm font-semibold ${confLevel.color}`}>
                                   {Math.round(confidence * 100)}%
                                 </span>
-                                <Badge
-                                  variant={confLevel.variant}
-                                  className="text-xs"
-                                >
+                                <Badge variant={confLevel.variant} className="text-xs">
                                   {confLevel.label}
                                 </Badge>
                               </div>
@@ -726,9 +674,7 @@ export default function AIInbox() {
                                   {item.journal_entry_id.substring(0, 8)}...
                                 </a>
                               ) : (
-                                <span className="text-sm text-muted-foreground">
-                                  N/A
-                                </span>
+                                <span className="text-sm text-muted-foreground">N/A</span>
                               )}
                             </TableCell>
                           </TableRow>
@@ -781,8 +727,7 @@ export default function AIInbox() {
                         const statusBadge = getStatusBadge(item.status);
                         const displayAccount =
                           item.user_account_name || item.suggested_account_name;
-                        const displayCode =
-                          item.user_account_code || item.suggested_account_code;
+                        const displayCode = item.user_account_code || item.suggested_account_code;
 
                         return (
                           <TableRow key={item.id}>
@@ -790,9 +735,7 @@ export default function AIInbox() {
                               {formatDate(item.transaction_date)}
                             </TableCell>
                             <TableCell>
-                              <span className="text-sm font-medium">
-                                {item.description}
-                              </span>
+                              <span className="text-sm font-medium">{item.description}</span>
                             </TableCell>
                             <TableCell className="text-right whitespace-nowrap font-mono text-sm">
                               {formatCurrency(parseFloat(item.amount))}
@@ -800,30 +743,22 @@ export default function AIInbox() {
                             <TableCell>
                               {displayAccount ? (
                                 <div className="flex flex-col">
-                                  <span className="text-sm font-medium">
-                                    {displayAccount}
-                                  </span>
+                                  <span className="text-sm font-medium">{displayAccount}</span>
                                   <span className="text-xs text-muted-foreground">
                                     {displayCode}
                                   </span>
                                 </div>
                               ) : (
-                                <span className="text-sm text-muted-foreground">
-                                  N/A
-                                </span>
+                                <span className="text-sm text-muted-foreground">N/A</span>
                               )}
                             </TableCell>
                             <TableCell>
-                              <span
-                                className={`text-sm font-semibold ${confLevel.color}`}
-                              >
+                              <span className={`text-sm font-semibold ${confLevel.color}`}>
                                 {Math.round(confidence * 100)}%
                               </span>
                             </TableCell>
                             <TableCell>
-                              <Badge variant={statusBadge.variant}>
-                                {statusBadge.label}
-                              </Badge>
+                              <Badge variant={statusBadge.variant}>{statusBadge.label}</Badge>
                             </TableCell>
                             <TableCell>
                               {item.reviewed_at ? (
@@ -831,9 +766,7 @@ export default function AIInbox() {
                                   {formatDate(item.reviewed_at)}
                                 </span>
                               ) : (
-                                <span className="text-xs text-muted-foreground">
-                                  --
-                                </span>
+                                <span className="text-xs text-muted-foreground">--</span>
                               )}
                             </TableCell>
                           </TableRow>
@@ -854,9 +787,8 @@ export default function AIInbox() {
           <DialogHeader>
             <DialogTitle>Correct Account Assignment</DialogTitle>
             <DialogDescription>
-              Choose the correct account for this transaction. This will create a
-              new rule so similar transactions are categorized correctly in the
-              future.
+              Choose the correct account for this transaction. This will create a new rule so
+              similar transactions are categorized correctly in the future.
             </DialogDescription>
           </DialogHeader>
           {correctingItem && (
@@ -868,17 +800,14 @@ export default function AIInbox() {
                 </p>
                 {correctingItem.suggested_account_name && (
                   <p className="text-xs text-muted-foreground">
-                    AI suggested: {correctingItem.suggested_account_code}{' '}
+                    AI suggested: {correctingItem.suggested_account_code}{" "}
                     {correctingItem.suggested_account_name}
                   </p>
                 )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">Select Account</label>
-                <Select
-                  value={selectedAccountId}
-                  onValueChange={setSelectedAccountId}
-                >
+                <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Choose an account..." />
                   </SelectTrigger>
@@ -894,10 +823,7 @@ export default function AIInbox() {
             </div>
           )}
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setCorrectDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setCorrectDialogOpen(false)}>
               Cancel
             </Button>
             <Button

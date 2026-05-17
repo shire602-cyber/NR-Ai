@@ -2,58 +2,376 @@
   "version": "7",
   "dialect": "postgresql",
   "entries": [
-    { "idx": 0, "version": "7", "when": 1761941267087, "tag": "0000_workable_fixer", "breakpoints": true },
-    { "idx": 1, "version": "7", "when": 1765007741865, "tag": "0001_loose_whistler", "breakpoints": true },
-    { "idx": 2, "version": "7", "when": 1765100000000, "tag": "0002_add_whatsapp_reminders", "breakpoints": false },
-    { "idx": 3, "version": "7", "when": 1765200000000, "tag": "0003_add_invoice_share_token", "breakpoints": false },
-    { "idx": 4, "version": "7", "when": 1765300000000, "tag": "0004_add_recurring_invoices", "breakpoints": false },
-    { "idx": 5, "version": "7", "when": 1765400000000, "tag": "0005_add_corporate_tax", "breakpoints": false },
-    { "idx": 6, "version": "7", "when": 1765500000000, "tag": "0006_add_einvoice_fields", "breakpoints": false },
-    { "idx": 7, "version": "7", "when": 1765600000000, "tag": "0007_add_inventory", "breakpoints": false },
-    { "idx": 8, "version": "7", "when": 1765700000000, "tag": "0008_add_portal_access", "breakpoints": false },
-    { "idx": 9, "version": "7", "when": 1765800000000, "tag": "0009_add_payroll", "breakpoints": false },
-    { "idx": 10, "version": "7", "when": 1765900000000, "tag": "0010_add_bill_pay", "breakpoints": false },
-    { "idx": 11, "version": "7", "when": 1766000000000, "tag": "0011_add_fixed_assets", "breakpoints": false },
-    { "idx": 12, "version": "7", "when": 1766100000000, "tag": "0012_add_budgets", "breakpoints": false },
-    { "idx": 13, "version": "7", "when": 1766200000000, "tag": "0013_add_expense_claims", "breakpoints": false },
-    { "idx": 14, "version": "7", "when": 1766300000000, "tag": "0014_add_autonomous_gl", "breakpoints": false },
-    { "idx": 15, "version": "7", "when": 1766400000000, "tag": "0015_add_exchange_rates", "breakpoints": false },
-    { "idx": 16, "version": "7", "when": 1766500000000, "tag": "0016_add_bank_accounts", "breakpoints": false },
-    { "idx": 17, "version": "7", "when": 1766600000000, "tag": "0017_add_invoice_email_fields", "breakpoints": false },
-    { "idx": 18, "version": "7", "when": 1766700000000, "tag": "0018_add_payments_credit_notes", "breakpoints": false },
-    { "idx": 19, "version": "7", "when": 1766800000000, "tag": "0019_add_firm_roles", "breakpoints": false },
-    { "idx": 20, "version": "7", "when": 1766900000000, "tag": "0020_repair_firm_roles", "breakpoints": false },
-    { "idx": 21, "version": "7", "when": 1767000000000, "tag": "0021_add_communications", "breakpoints": false },
-    { "idx": 22, "version": "7", "when": 1767100000000, "tag": "0022_add_firm_leads", "breakpoints": false },
-    { "idx": 23, "version": "7", "when": 1767200000000, "tag": "0023_seed_test_firm_owner", "breakpoints": false },
-    { "idx": 24, "version": "7", "when": 1767300000000, "tag": "0024_fix_test_firm_owner_role", "breakpoints": false },
-    { "idx": 25, "version": "7", "when": 1767400000000, "tag": "0025_receipt_image_path", "breakpoints": false },
-    { "idx": 26, "version": "7", "when": 1767500000000, "tag": "0026_add_onboarding_completed", "breakpoints": false },
-    { "idx": 27, "version": "7", "when": 1767600000000, "tag": "0027_apply_missing_migrations", "breakpoints": false },
-    { "idx": 28, "version": "7", "when": 1767700000000, "tag": "0028_fix_test_credentials", "breakpoints": false },
-    { "idx": 29, "version": "7", "when": 1767800000000, "tag": "0029_money_precision_and_constraints", "breakpoints": false },
-    { "idx": 30, "version": "7", "when": 1767900000000, "tag": "0030_payroll_pension_gratuity", "breakpoints": false },
-    { "idx": 31, "version": "7", "when": 1768000000000, "tag": "0031_fixed_assets_depreciation_schedules", "breakpoints": false },
-    { "idx": 32, "version": "7", "when": 1768100000000, "tag": "0032_reverse_charge_vat", "breakpoints": false },
-    { "idx": 33, "version": "7", "when": 1768200000000, "tag": "0033_partial_exemption_vat", "breakpoints": false },
-    { "idx": 34, "version": "7", "when": 1768300000000, "tag": "0034_invoice_number_sequences", "breakpoints": false },
-    { "idx": 35, "version": "7", "when": 1768400000000, "tag": "0035_fta_exchange_rates", "breakpoints": false },
-    { "idx": 36, "version": "7", "when": 1768500000000, "tag": "0036_retention_policy", "breakpoints": false },
-    { "idx": 37, "version": "7", "when": 1768600000000, "tag": "0037_customer_contact_whatsapp", "breakpoints": false },
-    { "idx": 38, "version": "7", "when": 1768700000000, "tag": "0038_fixed_assets_capitalization_flag", "breakpoints": false },
-    { "idx": 39, "version": "7", "when": 1768800000000, "tag": "0039_payroll_state_machine", "breakpoints": false },
-    { "idx": 40, "version": "7", "when": 1768900000000, "tag": "0040_auth_session_security", "breakpoints": false },
-    { "idx": 41, "version": "7", "when": 1769000000000, "tag": "0041_invoice_fta_pdf_fields", "breakpoints": false },
-    { "idx": 42, "version": "7", "when": 1769100000000, "tag": "0042_password_reset_tokens", "breakpoints": false },
-    { "idx": 43, "version": "7", "when": 1769200000000, "tag": "0043_performance_indexes", "breakpoints": false },
-    { "idx": 44, "version": "7", "when": 1769300000000, "tag": "0044_company_preferences", "breakpoints": false },
-    { "idx": 45, "version": "7", "when": 1769400000000, "tag": "0045_receipt_autopilot", "breakpoints": false },
-    { "idx": 46, "version": "7", "when": 1769500000000, "tag": "0046_receipt_classifier_method", "breakpoints": false },
-    { "idx": 47, "version": "7", "when": 1769600000000, "tag": "0047_vat_autopilot", "breakpoints": false },
-    { "idx": 48, "version": "7", "when": 1769700000000, "tag": "0048_payment_chasing", "breakpoints": false },
-    { "idx": 49, "version": "7", "when": 1769800000000, "tag": "0049_document_chasing", "breakpoints": false },
-    { "idx": 50, "version": "7", "when": 1769900000000, "tag": "0050_firm_command_center", "breakpoints": false },
-    { "idx": 51, "version": "7", "when": 1770000000000, "tag": "0051_revoke_test_backdoor_accounts", "breakpoints": false },
-    { "idx": 52, "version": "7", "when": 1770100000000, "tag": "0052_refresh_sessions", "breakpoints": false }
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1761941267087,
+      "tag": "0000_workable_fixer",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1765007741865,
+      "tag": "0001_loose_whistler",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1765100000000,
+      "tag": "0002_add_whatsapp_reminders",
+      "breakpoints": false
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1765200000000,
+      "tag": "0003_add_invoice_share_token",
+      "breakpoints": false
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1765300000000,
+      "tag": "0004_add_recurring_invoices",
+      "breakpoints": false
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1765400000000,
+      "tag": "0005_add_corporate_tax",
+      "breakpoints": false
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1765500000000,
+      "tag": "0006_add_einvoice_fields",
+      "breakpoints": false
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1765600000000,
+      "tag": "0007_add_inventory",
+      "breakpoints": false
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1765700000000,
+      "tag": "0008_add_portal_access",
+      "breakpoints": false
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1765800000000,
+      "tag": "0009_add_payroll",
+      "breakpoints": false
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1765900000000,
+      "tag": "0010_add_bill_pay",
+      "breakpoints": false
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1766000000000,
+      "tag": "0011_add_fixed_assets",
+      "breakpoints": false
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1766100000000,
+      "tag": "0012_add_budgets",
+      "breakpoints": false
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1766200000000,
+      "tag": "0013_add_expense_claims",
+      "breakpoints": false
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1766300000000,
+      "tag": "0014_add_autonomous_gl",
+      "breakpoints": false
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1766400000000,
+      "tag": "0015_add_exchange_rates",
+      "breakpoints": false
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1766500000000,
+      "tag": "0016_add_bank_accounts",
+      "breakpoints": false
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1766600000000,
+      "tag": "0017_add_invoice_email_fields",
+      "breakpoints": false
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1766700000000,
+      "tag": "0018_add_payments_credit_notes",
+      "breakpoints": false
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1766800000000,
+      "tag": "0019_add_firm_roles",
+      "breakpoints": false
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1766900000000,
+      "tag": "0020_repair_firm_roles",
+      "breakpoints": false
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1767000000000,
+      "tag": "0021_add_communications",
+      "breakpoints": false
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1767100000000,
+      "tag": "0022_add_firm_leads",
+      "breakpoints": false
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1767200000000,
+      "tag": "0023_seed_test_firm_owner",
+      "breakpoints": false
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1767300000000,
+      "tag": "0024_fix_test_firm_owner_role",
+      "breakpoints": false
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1767400000000,
+      "tag": "0025_receipt_image_path",
+      "breakpoints": false
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1767500000000,
+      "tag": "0026_add_onboarding_completed",
+      "breakpoints": false
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1767600000000,
+      "tag": "0027_apply_missing_migrations",
+      "breakpoints": false
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1767700000000,
+      "tag": "0028_fix_test_credentials",
+      "breakpoints": false
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1767800000000,
+      "tag": "0029_money_precision_and_constraints",
+      "breakpoints": false
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1767900000000,
+      "tag": "0030_payroll_pension_gratuity",
+      "breakpoints": false
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1768000000000,
+      "tag": "0031_fixed_assets_depreciation_schedules",
+      "breakpoints": false
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1768100000000,
+      "tag": "0032_reverse_charge_vat",
+      "breakpoints": false
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1768200000000,
+      "tag": "0033_partial_exemption_vat",
+      "breakpoints": false
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1768300000000,
+      "tag": "0034_invoice_number_sequences",
+      "breakpoints": false
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1768400000000,
+      "tag": "0035_fta_exchange_rates",
+      "breakpoints": false
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1768500000000,
+      "tag": "0036_retention_policy",
+      "breakpoints": false
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1768600000000,
+      "tag": "0037_customer_contact_whatsapp",
+      "breakpoints": false
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1768700000000,
+      "tag": "0038_fixed_assets_capitalization_flag",
+      "breakpoints": false
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1768800000000,
+      "tag": "0039_payroll_state_machine",
+      "breakpoints": false
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1768900000000,
+      "tag": "0040_auth_session_security",
+      "breakpoints": false
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1769000000000,
+      "tag": "0041_invoice_fta_pdf_fields",
+      "breakpoints": false
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1769100000000,
+      "tag": "0042_password_reset_tokens",
+      "breakpoints": false
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1769200000000,
+      "tag": "0043_performance_indexes",
+      "breakpoints": false
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1769300000000,
+      "tag": "0044_company_preferences",
+      "breakpoints": false
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1769400000000,
+      "tag": "0045_receipt_autopilot",
+      "breakpoints": false
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1769500000000,
+      "tag": "0046_receipt_classifier_method",
+      "breakpoints": false
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1769600000000,
+      "tag": "0047_vat_autopilot",
+      "breakpoints": false
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1769700000000,
+      "tag": "0048_payment_chasing",
+      "breakpoints": false
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1769800000000,
+      "tag": "0049_document_chasing",
+      "breakpoints": false
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1769900000000,
+      "tag": "0050_firm_command_center",
+      "breakpoints": false
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1770000000000,
+      "tag": "0051_revoke_test_backdoor_accounts",
+      "breakpoints": false
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1770100000000,
+      "tag": "0052_refresh_sessions",
+      "breakpoints": false
+    }
   ]
 }

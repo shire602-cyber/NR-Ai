@@ -1,7 +1,7 @@
-import type { Request, Response, NextFunction } from 'express';
-import { ZodError, type ZodSchema } from 'zod';
+import type { Request, Response, NextFunction } from "express";
+import { ZodError, type ZodSchema } from "zod";
 
-type RequestPart = 'body' | 'query' | 'params';
+type RequestPart = "body" | "query" | "params";
 
 /**
  * Build an Express middleware that validates a single request part with a
@@ -25,7 +25,7 @@ export function validate(schemas: Partial<Record<RequestPart, ZodSchema>>) {
     } catch (err) {
       if (err instanceof ZodError) {
         res.status(400).json({
-          message: 'Validation error',
+          message: "Validation error",
           errors: err.flatten().fieldErrors,
           formErrors: err.flatten().formErrors,
         });

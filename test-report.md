@@ -9,13 +9,13 @@
 
 ## Summary
 
-| Category | Tests | Pass | Fail | Fixed |
-|----------|-------|------|------|-------|
-| Build verification | 3 | 3 | 0 | — |
-| Phase 0 Security | 5 | 4 | 1 | 1 |
-| Phase 1 Client Portfolio | 9 | 7 | 2 | 2 |
-| Auth boundaries (no token) | 5 | 5 | 0 | — |
-| **Total** | **22** | **19** | **3** | **3** |
+| Category                   | Tests  | Pass   | Fail  | Fixed |
+| -------------------------- | ------ | ------ | ----- | ----- |
+| Build verification         | 3      | 3      | 0     | —     |
+| Phase 0 Security           | 5      | 4      | 1     | 1     |
+| Phase 1 Client Portfolio   | 9      | 7      | 2     | 2     |
+| Auth boundaries (no token) | 5      | 5      | 0     | —     |
+| **Total**                  | **22** | **19** | **3** | **3** |
 
 All 3 failures were bugs that have been fixed in this session. Build passes post-fix.
 
@@ -24,16 +24,19 @@ All 3 failures were bugs that have been fixed in this session. Build passes post
 ## Build Verification
 
 ### TEST B1 — TypeScript compilation (`tsc --noEmit`)
+
 - **Command:** `npx tsc --noEmit`
 - **Result:** No errors
 - **Status: PASS ✓**
 
 ### TEST B2 — Full production build (`npm run build`)
+
 - **Command:** `npm run build`
 - **Result:** Built successfully — `dist/index.js 741.9kb`, frontend assets compiled
 - **Status: PASS ✓**
 
 ### TEST B3 — Unit test suite
+
 - **Command:** `npm test`
 - **Result:** 14/14 tests passed (2 test files: env.test.ts, middleware.test.ts)
 - **Status: PASS ✓**
@@ -43,6 +46,7 @@ All 3 failures were bugs that have been fixed in this session. Build passes post
 ## Phase 0 — Security Foundation
 
 ### TEST 1 — JWT firmRole inclusion
+
 **What:** Verify `firmRole` is included in generated JWT payloads.  
 **Method:** Code review of `server/middleware/auth.ts:173-186`
 
@@ -66,20 +70,22 @@ All 3 failures were bugs that have been fixed in this session. Build passes post
 ---
 
 ### TEST 2 — RBAC middleware correctness
+
 **What:** Verify `requireFirmRole()` correctly gates `/api/firm/*` and `/nra/*` routes.  
 **Method:** Code review of `server/middleware/rbac.ts` + production HTTP tests
 
 **Code review findings:**
+
 ```typescript
 export function requireFirmRole() {
   return function (req, res, next): void {
     if (!req.user) {
-      res.status(401).json({ message: 'Authentication required' });
+      res.status(401).json({ message: "Authentication required" });
       return;
     }
     const firmRole = (req.user as any).firmRole;
     if (!firmRole || !FIRM_ROLES.includes(firmRole as FirmRole)) {
-      res.status(403).json({ message: 'NRA firm staff access required' });
+      res.status(403).json({ message: "NRA firm staff access required" });
       return;
     }
     next();
@@ -91,19 +97,20 @@ Key security property: `req.user` is populated by `authMiddleware` which **alway
 
 **Production tests (no token → expect 401):**
 
-| Request | Expected | Got | Status |
-|---------|----------|-----|--------|
-| `GET /api/firm/clients` | 401 | 401 | ✓ |
-| `GET /api/firm/staff` | 401 | 401 | ✓ |
-| `POST /api/firm/clients` | 401 | 401 | ✓ |
-| `GET /api/firm/clients/:id/summary` | 401 | 401 | ✓ |
-| `GET /nra/clients` | 401 | 401 | ✓ |
+| Request                             | Expected | Got | Status |
+| ----------------------------------- | -------- | --- | ------ |
+| `GET /api/firm/clients`             | 401      | 401 | ✓      |
+| `GET /api/firm/staff`               | 401      | 401 | ✓      |
+| `POST /api/firm/clients`            | 401      | 401 | ✓      |
+| `GET /api/firm/clients/:id/summary` | 401      | 401 | ✓      |
+| `GET /nra/clients`                  | 401      | 401 | ✓      |
 
 **Status: PASS ✓**
 
 ---
 
 ### TEST 3 — Firm role gating on `/nra/*` routes
+
 **What:** Verify NRA routes are inaccessible to users without `firmRole`.  
 **Method:** Code review of `server/routes/nra.routes.ts`
 
@@ -121,6 +128,7 @@ Applied router-wide before any handler — no route can be accessed without both
 ---
 
 ### TEST 4 — Admin client scoping (`firm_admin` vs `firm_owner`)
+
 **What:** `firm_owner` sees all clients; `firm_admin` sees only assigned companies.  
 **Method:** Code review + fix
 
@@ -139,6 +147,7 @@ router.get('/firm/clients', asyncHandler(async (_req, res) => {
 Same issue on `GET /api/firm/clients/:companyId/summary` and `PUT /api/firm/clients/:companyId` — no firm_admin assignment check.
 
 Contrast: `/nra/clients` correctly used `getAccessibleCompanyIds()`:
+
 ```typescript
 // nra.routes.ts — correct:
 const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
@@ -152,18 +161,20 @@ else { rows = filter by accessibleIds; }
 `server/routes/firm.routes.ts` — three changes:
 
 1. **GET /api/firm/clients** — now applies `getAccessibleCompanyIds()` filter:
+
 ```typescript
 const { id: userId, firmRole } = (req as any).user;
-const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
 // firm_owner: accessibleIds === null → return all
 // firm_admin: accessibleIds = [assigned UUIDs] → filter to those
 ```
 
 2. **GET /api/firm/clients/:companyId/summary** — now returns 403 if firm_admin isn't assigned:
+
 ```typescript
-const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
 if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-  return res.status(403).json({ message: 'Access denied to this client' });
+  return res.status(403).json({ message: "Access denied to this client" });
 }
 ```
 
@@ -174,27 +185,30 @@ if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
 ---
 
 ### TEST 5 — Sidebar gating (frontend code review)
+
 **What:** Frontend only renders NRA menu items when `firmRole` is present.  
 **Method:** Code review of `client/src/components/layout/AppSidebar.tsx` and `client/src/App.tsx`
 
 **Sidebar visibility gate (AppSidebar.tsx:402):**
+
 ```tsx
-{(firmRole === 'firm_owner' || firmRole === 'firm_admin') && (
-  <SidebarGroup>
-    <SidebarGroupLabel>NRA Management</SidebarGroupLabel>
-    <SidebarMenu>
-      {nraItems.map(renderMenuItem)}
-    </SidebarMenu>
-  </SidebarGroup>
-)}
+{
+  (firmRole === "firm_owner" || firmRole === "firm_admin") && (
+    <SidebarGroup>
+      <SidebarGroupLabel>NRA Management</SidebarGroupLabel>
+      <SidebarMenu>{nraItems.map(renderMenuItem)}</SidebarMenu>
+    </SidebarGroup>
+  );
+}
 ```
 
 **Route-level guard (App.tsx FirmRoute):**
+
 ```tsx
 function FirmRoute({ children }) {
-  const payload = JSON.parse(atob(token.split('.')[1]));
-  if (payload.firmRole !== 'firm_owner' && payload.firmRole !== 'firm_admin') {
-    navigate('/dashboard');
+  const payload = JSON.parse(atob(token.split(".")[1]));
+  if (payload.firmRole !== "firm_owner" && payload.firmRole !== "firm_admin") {
+    navigate("/dashboard");
     return null;
   }
   return <>{children}</>;
@@ -212,10 +226,12 @@ FirmRoute wraps `/firm/clients`, `/firm/clients/:companyId`, and `/firm/staff` r
 ## Phase 1 — Client Portfolio
 
 ### TEST 6 — GET /api/firm/clients (list with stats)
+
 **What:** Returns client companies with invoice count, AR, last receipt, VAT status, assigned staff.  
 **Method:** Code review of `server/routes/firm.routes.ts:153-180` and `getClientStats()`
 
 Response shape per company:
+
 ```typescript
 {
   // company fields (id, name, baseCurrency, companyType, trnVatNumber, ...)
@@ -242,10 +258,12 @@ After the firm_admin scoping fix, `firm_owner` sees all client companies; `firm_
 ---
 
 ### TEST 7 — GET /api/firm/clients/:companyId/summary
+
 **What:** Detailed summary with company info, stats, recent transactions.  
 **Method:** Code review of `server/routes/firm.routes.ts:182-225`
 
 Response shape:
+
 ```typescript
 {
   company: Company,
@@ -257,6 +275,7 @@ Response shape:
 ```
 
 Guards:
+
 - 403 if firm_admin isn't assigned to this company (after fix)
 - 404 if company doesn't exist
 - 400 if company exists but isn't a client (`companyType !== 'client'`)
@@ -266,10 +285,12 @@ Guards:
 ---
 
 ### TEST 8 — POST /api/firm/clients (create new client)
+
 **What:** Creates a new NRA client company with UAE defaults.  
 **Method:** Code review of `server/routes/firm.routes.ts:210-254`
 
 Input schema (validated via Zod):
+
 ```typescript
 {
   name: string (required),
@@ -289,6 +310,7 @@ Input schema (validated via Zod):
 ```
 
 UAE defaults hardcoded on creation:
+
 - `baseCurrency: 'AED'`
 - `locale: 'en'`
 - `companyType: 'client'`
@@ -303,6 +325,7 @@ Duplicate name check: returns 400 if company name already exists.
 ---
 
 ### TEST 9 — PUT /api/firm/clients/:companyId (update client)
+
 **What:** Updates client company details.  
 **Method:** Code review of `server/routes/firm.routes.ts:256-295`
 
@@ -316,10 +339,12 @@ Duplicate name check: returns 400 if company name already exists.
 ---
 
 ### TEST 10 — POST /api/firm/clients/:companyId/assign-staff
+
 **What:** Assigns or unassigns firm staff from a client company.  
 **Method:** Code review of `server/routes/firm.routes.ts:297-358`
 
 Input:
+
 ```typescript
 {
   staffUserId: UUID (required),
@@ -329,6 +354,7 @@ Input:
 ```
 
 Validation chain:
+
 1. Company must exist → 404
 2. Staff user must exist → 404
 3. Staff user must have `isAdmin === true` → 400 (prevents assigning non-staff)
@@ -344,6 +370,7 @@ Logs both assign and unassign actions.
 ---
 
 ### TEST 11 — GET /api/firm/staff
+
 **What:** Lists all firm staff with their client assignments.  
 **Method:** Code review of `server/routes/firm.routes.ts:360-397`
 
@@ -367,27 +394,29 @@ Logs both assign and unassign actions.
 ---
 
 ### TEST 12 — Error handling
+
 **What:** Invalid inputs, missing resources, malformed requests return correct error codes.  
 **Method:** Code review of all route handlers
 
-| Scenario | Expected | Code location | Status |
-|----------|----------|---------------|--------|
-| Invalid UUID in URL | 404 (company not found) | storage.getCompany() returns undefined | ✓ |
-| Nonexistent companyId | 404 | `if (!company) return 404` | ✓ |
-| Non-client company in summary | 400 "Company is not an NRA client" | companyType check | ✓ |
-| Duplicate company name on create | 400 "Company name already exists" | storage.getCompanyByName() check | ✓ |
-| Missing `name` on create | 400 (Zod validation) | createClientSchema | ✓ |
-| Non-UUID staffUserId on assign | 400 (Zod validation) | z.string().uuid() | ✓ |
-| Invalid action on assign | 400 (Zod validation) | z.enum(['assign','unassign']) | ✓ |
-| Nonexistent staff user | 404 "Staff user not found" | storage.getUser() check | ✓ |
-| Non-admin user assigned as staff | 400 "User is not a firm staff member" | isAdmin check | ✓ |
-| firm_admin accessing unassigned client | 403 "Access denied to this client" | getAccessibleCompanyIds() (after fix) | ✓ |
+| Scenario                               | Expected                              | Code location                          | Status |
+| -------------------------------------- | ------------------------------------- | -------------------------------------- | ------ |
+| Invalid UUID in URL                    | 404 (company not found)               | storage.getCompany() returns undefined | ✓      |
+| Nonexistent companyId                  | 404                                   | `if (!company) return 404`             | ✓      |
+| Non-client company in summary          | 400 "Company is not an NRA client"    | companyType check                      | ✓      |
+| Duplicate company name on create       | 400 "Company name already exists"     | storage.getCompanyByName() check       | ✓      |
+| Missing `name` on create               | 400 (Zod validation)                  | createClientSchema                     | ✓      |
+| Non-UUID staffUserId on assign         | 400 (Zod validation)                  | z.string().uuid()                      | ✓      |
+| Invalid action on assign               | 400 (Zod validation)                  | z.enum(['assign','unassign'])          | ✓      |
+| Nonexistent staff user                 | 404 "Staff user not found"            | storage.getUser() check                | ✓      |
+| Non-admin user assigned as staff       | 400 "User is not a firm staff member" | isAdmin check                          | ✓      |
+| firm_admin accessing unassigned client | 403 "Access denied to this client"    | getAccessibleCompanyIds() (after fix)  | ✓      |
 
 **Status: PASS ✓**
 
 ---
 
 ### TEST 13 — Auth boundary: no token
+
 **What:** All firm routes return 401 when called without a token.  
 **Method:** Live HTTP tests against production
 
@@ -406,14 +435,16 @@ Auth check happens before any DB query — the 401 is from `authMiddleware` chec
 ---
 
 ### TEST 14 — Auth boundary: non-firm token
+
 **What:** A valid JWT with `firmRole: null` should get 403 on firm/NRA routes.  
 **Method:** Code review (could not integration-test without a valid JWT from production)
 
 The `requireFirmRole()` middleware (rbac.ts:67-82) logic:
+
 ```typescript
-const firmRole = (req.user as any).firmRole;   // always from DB, not JWT
+const firmRole = (req.user as any).firmRole; // always from DB, not JWT
 if (!firmRole || !FIRM_ROLES.includes(firmRole as FirmRole)) {
-  res.status(403).json({ message: 'NRA firm staff access required' });
+  res.status(403).json({ message: "NRA firm staff access required" });
   return;
 }
 ```
@@ -431,13 +462,16 @@ Because `req.user` is populated from the database (not from JWT claims), a user 
 ### ISSUE P1 — POST /api/auth/login returns 500 (Internal Server Error)
 
 **What tested:**
+
 ```
 POST https://nr-ai-production.up.railway.app/api/auth/login
 Body: {"email":"test@example.com","password":"password123"}
 ```
+
 **Response:** `HTTP 500 — {"message":"Internal Server Error"}`
 
 **Also affected:**
+
 - `POST /api/auth/register` → 500
 - Any authenticated endpoint using `storage.getUser()` via authMiddleware
 
@@ -446,6 +480,7 @@ Body: {"email":"test@example.com","password":"password123"}
 The production database is missing the `firm_role` column in the `users` table. Drizzle ORM generates an explicit column-list SELECT statement including `firm_role`. PostgreSQL throws `column "firm_role" does not exist`, which propagates as an unhandled error → 500.
 
 Evidence:
+
 - `POST /api/auth/login` (queries users table) → 500 ✗
 - `POST /api/auth/register` (queries users table) → 500 ✗
 - `POST /api/invitations/accept/:token` with invalid token (doesn't reach users query) → 404 ✓
@@ -455,6 +490,7 @@ Evidence:
 **Why migration didn't apply:**
 
 Migration `0019_add_firm_roles.sql` runs on server startup via `runMigrations()`. The startup code catches migration errors and continues:
+
 ```typescript
 } catch (migrationErr) {
   log.error({ err: migrationErr }, 'Database migration failed — continuing startup with existing schema');
@@ -462,15 +498,18 @@ Migration `0019_add_firm_roles.sql` runs on server startup via `runMigrations()`
 ```
 
 The migration SQL itself is correct and idempotent (`ADD COLUMN IF NOT EXISTS`). The most likely causes:
+
 1. The current running instance is a deployment BEFORE Phase 0 was merged, and Railway hasn't redeployed yet
 2. A transient DB connection failure during the migration step at startup
 
 **Fix required:**
 
 Option A — Trigger Railway redeploy (if old deployment is running):
+
 - Push any change to `main` to trigger a fresh build and migration run
 
 Option B — Run SQL directly on production DB:
+
 ```sql
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "firm_role" text;
 
@@ -490,16 +529,19 @@ CREATE TABLE IF NOT EXISTS "firm_staff_assignments" (
 ## Bugs Found and Fixed
 
 ### BUG 1 — firm_admin could see ALL client companies (security)
+
 **File:** `server/routes/firm.routes.ts`  
 **Endpoint:** `GET /api/firm/clients`  
 **Fix:** Added `getAccessibleCompanyIds()` filtering. firm_owner returns all; firm_admin returns only assigned.
 
 ### BUG 2 — firm_admin could access any client summary (security)
+
 **File:** `server/routes/firm.routes.ts`  
 **Endpoint:** `GET /api/firm/clients/:companyId/summary`  
 **Fix:** Added 403 guard when firm_admin requests an unassigned company.
 
 ### BUG 3 — firm_admin could update any client (security)
+
 **File:** `server/routes/firm.routes.ts`  
 **Endpoint:** `PUT /api/firm/clients/:companyId`  
 **Fix:** Added 403 guard when firm_admin attempts to update an unassigned company.

@@ -1,132 +1,134 @@
-import { useEffect, lazy, Suspense } from 'react';
-import { Switch, Route, useLocation, Link } from 'wouter';
-import { queryClient } from './lib/queryClient';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import { AppSidebar } from '@/components/layout/AppSidebar';
-import { PortalLayout } from '@/components/layout/PortalLayout';
-import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
-import { ErrorBoundary, SectionBoundary } from '@/components/ErrorBoundary';
-import { useI18n, useTranslation } from '@/lib/i18n';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { Button } from '@/components/ui/button';
-import { User, Building2, ArrowLeft } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
-import { PageSkeleton } from '@/components/PageSkeleton';
+import { useEffect, lazy, Suspense } from "react";
+import { Switch, Route, useLocation, Link } from "wouter";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/layout/AppSidebar";
+import { PortalLayout } from "@/components/layout/PortalLayout";
+import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
+import { useI18n, useTranslation } from "@/lib/i18n";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { Button } from "@/components/ui/button";
+import { User, Building2, ArrowLeft } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Loader2 } from "lucide-react";
+import { PageSkeleton } from "@/components/PageSkeleton";
 
 // All pages lazy-loaded for route-level code splitting.
 // Layout shell (AppSidebar, ProtectedLayout) is NOT lazy — needed immediately.
-const NotFound = lazy(() => import('@/pages/not-found'));
-const Login = lazy(() => import('@/pages/Login'));
-const Register = lazy(() => import('@/pages/Register'));
-const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
-const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const LandingPage = lazy(() => import('@/pages/LandingPage'));
-const Services = lazy(() => import('@/pages/Services'));
-const Pricing = lazy(() => import('@/pages/Pricing'));
-const PublicInvoiceView = lazy(() => import('@/pages/PublicInvoiceView'));
-const CustomerPortal = lazy(() => import('@/pages/CustomerPortal'));
-const PrivacyPolicy = lazy(() => import('@/pages/PrivacyPolicy'));
-const TermsOfService = lazy(() => import('@/pages/TermsOfService'));
-const CookiePolicy = lazy(() => import('@/pages/CookiePolicy'));
+const NotFound = lazy(() => import("@/pages/not-found"));
+const Login = lazy(() => import("@/pages/Login"));
+const Register = lazy(() => import("@/pages/Register"));
+const ForgotPassword = lazy(() => import("@/pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const LandingPage = lazy(() => import("@/pages/LandingPage"));
+const Services = lazy(() => import("@/pages/Services"));
+const Pricing = lazy(() => import("@/pages/Pricing"));
+const PublicInvoiceView = lazy(() => import("@/pages/PublicInvoiceView"));
+const CustomerPortal = lazy(() => import("@/pages/CustomerPortal"));
+const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
+const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
+const CookiePolicy = lazy(() => import("@/pages/CookiePolicy"));
 
 // Client Portal — lazy loaded
-const PortalDashboard = lazy(() => import('@/pages/portal/PortalDashboard'));
-const PortalInvoices = lazy(() => import('@/pages/portal/PortalInvoices'));
-const PortalDocuments = lazy(() => import('@/pages/portal/PortalDocuments'));
-const PortalStatements = lazy(() => import('@/pages/portal/PortalStatements'));
-const PortalMessages = lazy(() => import('@/pages/portal/PortalMessages'));
+const PortalDashboard = lazy(() => import("@/pages/portal/PortalDashboard"));
+const PortalInvoices = lazy(() => import("@/pages/portal/PortalInvoices"));
+const PortalDocuments = lazy(() => import("@/pages/portal/PortalDocuments"));
+const PortalStatements = lazy(() => import("@/pages/portal/PortalStatements"));
+const PortalMessages = lazy(() => import("@/pages/portal/PortalMessages"));
 
 // Firm (NRA Management Center) — lazy loaded
-const ClientPortfolio = lazy(() => import('@/pages/firm/ClientPortfolio'));
-const ClientProfile = lazy(() => import('@/pages/firm/ClientProfile'));
-const StaffManagement = lazy(() => import('@/pages/firm/StaffManagement'));
-const BulkOperations = lazy(() => import('@/pages/firm/BulkOperations'));
-const FirmHealth = lazy(() => import('@/pages/firm/FirmHealth'));
-const FirmComms = lazy(() => import('@/pages/firm/FirmComms'));
-const FirmAnalytics = lazy(() => import('@/pages/firm/FirmAnalytics'));
-const LeadPipeline = lazy(() => import('@/pages/firm/LeadPipeline'));
-const ValueOps = lazy(() => import('@/pages/firm/ValueOps'));
-const FirmCommandCenter = lazy(() => import('@/pages/FirmCommandCenter'));
+const ClientPortfolio = lazy(() => import("@/pages/firm/ClientPortfolio"));
+const ClientProfile = lazy(() => import("@/pages/firm/ClientProfile"));
+const StaffManagement = lazy(() => import("@/pages/firm/StaffManagement"));
+const BulkOperations = lazy(() => import("@/pages/firm/BulkOperations"));
+const FirmHealth = lazy(() => import("@/pages/firm/FirmHealth"));
+const FirmComms = lazy(() => import("@/pages/firm/FirmComms"));
+const FirmAnalytics = lazy(() => import("@/pages/firm/FirmAnalytics"));
+const LeadPipeline = lazy(() => import("@/pages/firm/LeadPipeline"));
+const ValueOps = lazy(() => import("@/pages/firm/ValueOps"));
+const FirmCommandCenter = lazy(() => import("@/pages/FirmCommandCenter"));
 
 // Core accounting
-const Accounts = lazy(() => import('@/pages/Accounts'));
-const ChartOfAccounts = lazy(() => import('@/pages/ChartOfAccounts'));
-const AccountLedger = lazy(() => import('@/pages/AccountLedger'));
-const Invoices = lazy(() => import('@/pages/Invoices'));
-const Journal = lazy(() => import('@/pages/Journal'));
-const JournalEntryDetail = lazy(() => import('@/pages/JournalEntryDetail'));
-const Reports = lazy(() => import('@/pages/Reports'));
-const Receipts = lazy(() => import('@/pages/Receipts'));
-const ReceiptAutopilot = lazy(() => import('@/pages/ReceiptAutopilot'));
-const CompanyProfile = lazy(() => import('@/pages/CompanyProfile'));
-const CompanySettings = lazy(() => import('@/pages/CompanySettings'));
+const Accounts = lazy(() => import("@/pages/Accounts"));
+const ChartOfAccounts = lazy(() => import("@/pages/ChartOfAccounts"));
+const AccountLedger = lazy(() => import("@/pages/AccountLedger"));
+const Invoices = lazy(() => import("@/pages/Invoices"));
+const Journal = lazy(() => import("@/pages/Journal"));
+const JournalEntryDetail = lazy(() => import("@/pages/JournalEntryDetail"));
+const Reports = lazy(() => import("@/pages/Reports"));
+const Receipts = lazy(() => import("@/pages/Receipts"));
+const ReceiptAutopilot = lazy(() => import("@/pages/ReceiptAutopilot"));
+const CompanyProfile = lazy(() => import("@/pages/CompanyProfile"));
+const CompanySettings = lazy(() => import("@/pages/CompanySettings"));
 
 // Lazy-loaded pages (large or infrequently visited)
-const Admin = lazy(() => import('@/pages/Admin'));
-const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
-const ClientManagement = lazy(() => import('@/pages/ClientManagement'));
-const ClientDetails = lazy(() => import('@/pages/ClientDetails'));
-const ClientDocuments = lazy(() => import('@/pages/ClientDocuments'));
-const ClientTasks = lazy(() => import('@/pages/ClientTasks'));
-const ClientImport = lazy(() => import('@/pages/ClientImport'));
-const UserInvitations = lazy(() => import('@/pages/UserInvitations'));
-const ActivityLogs = lazy(() => import('@/pages/ActivityLogs'));
-const AdminDocuments = lazy(() => import('@/pages/AdminDocuments'));
+const Admin = lazy(() => import("@/pages/Admin"));
+const AdminDashboard = lazy(() => import("@/pages/AdminDashboard"));
+const ClientManagement = lazy(() => import("@/pages/ClientManagement"));
+const ClientDetails = lazy(() => import("@/pages/ClientDetails"));
+const ClientDocuments = lazy(() => import("@/pages/ClientDocuments"));
+const ClientTasks = lazy(() => import("@/pages/ClientTasks"));
+const ClientImport = lazy(() => import("@/pages/ClientImport"));
+const UserInvitations = lazy(() => import("@/pages/UserInvitations"));
+const ActivityLogs = lazy(() => import("@/pages/ActivityLogs"));
+const AdminDocuments = lazy(() => import("@/pages/AdminDocuments"));
 
-const AdvancedReports = lazy(() => import('@/pages/AdvancedReports'));
-const AdvancedAnalytics = lazy(() => import('@/pages/AdvancedAnalytics'));
-const Analytics = lazy(() => import('@/pages/Analytics'));
+const AdvancedReports = lazy(() => import("@/pages/AdvancedReports"));
+const AdvancedAnalytics = lazy(() => import("@/pages/AdvancedAnalytics"));
+const Analytics = lazy(() => import("@/pages/Analytics"));
 
-const Payroll = lazy(() => import('@/pages/Payroll'));
-const FixedAssets = lazy(() => import('@/pages/FixedAssets'));
-const Budgets = lazy(() => import('@/pages/Budgets'));
-const DocumentVault = lazy(() => import('@/pages/DocumentVault'));
-const BillPay = lazy(() => import('@/pages/BillPay'));
-const ExpenseClaims = lazy(() => import('@/pages/ExpenseClaims'));
-const Inventory = lazy(() => import('@/pages/Inventory'));
-const RecurringInvoices = lazy(() => import('@/pages/RecurringInvoices'));
-const PaymentChasing = lazy(() => import('@/pages/PaymentChasing'));
+const Payroll = lazy(() => import("@/pages/Payroll"));
+const FixedAssets = lazy(() => import("@/pages/FixedAssets"));
+const Budgets = lazy(() => import("@/pages/Budgets"));
+const DocumentVault = lazy(() => import("@/pages/DocumentVault"));
+const BillPay = lazy(() => import("@/pages/BillPay"));
+const ExpenseClaims = lazy(() => import("@/pages/ExpenseClaims"));
+const Inventory = lazy(() => import("@/pages/Inventory"));
+const RecurringInvoices = lazy(() => import("@/pages/RecurringInvoices"));
+const PaymentChasing = lazy(() => import("@/pages/PaymentChasing"));
 
-const AICFO = lazy(() => import('@/pages/AICFO'));
-const AIChat = lazy(() => import('@/pages/AIChat'));
-const AIFeatures = lazy(() => import('@/pages/AIFeatures'));
-const AIInbox = lazy(() => import('@/pages/AIInbox'));
-const SmartAssistant = lazy(() => import('@/pages/SmartAssistant'));
+const AICFO = lazy(() => import("@/pages/AICFO"));
+const AIChat = lazy(() => import("@/pages/AIChat"));
+const AIFeatures = lazy(() => import("@/pages/AIFeatures"));
+const AIInbox = lazy(() => import("@/pages/AIInbox"));
+const SmartAssistant = lazy(() => import("@/pages/SmartAssistant"));
 
-const CustomerContacts = lazy(() => import('@/pages/CustomerContacts'));
-const Integrations = lazy(() => import('@/pages/Integrations'));
-const IntegrationsHub = lazy(() => import('@/pages/IntegrationsHub'));
-const WhatsAppDashboard = lazy(() => import('@/pages/WhatsAppDashboard'));
-const Notifications = lazy(() => import('@/pages/Notifications'));
-const Reminders = lazy(() => import('@/pages/Reminders'));
-const DocumentChasing = lazy(() => import('@/pages/DocumentChasing'));
-const Referrals = lazy(() => import('@/pages/Referrals'));
-const Feedback = lazy(() => import('@/pages/Feedback'));
+const CustomerContacts = lazy(() => import("@/pages/CustomerContacts"));
+const Integrations = lazy(() => import("@/pages/Integrations"));
+const IntegrationsHub = lazy(() => import("@/pages/IntegrationsHub"));
+const WhatsAppDashboard = lazy(() => import("@/pages/WhatsAppDashboard"));
+const Notifications = lazy(() => import("@/pages/Notifications"));
+const Reminders = lazy(() => import("@/pages/Reminders"));
+const DocumentChasing = lazy(() => import("@/pages/DocumentChasing"));
+const Referrals = lazy(() => import("@/pages/Referrals"));
+const Feedback = lazy(() => import("@/pages/Feedback"));
 
-const Onboarding = lazy(() => import('@/pages/Onboarding'));
-const BankReconciliation = lazy(() => import('@/pages/BankReconciliation'));
-const VATFiling = lazy(() => import('@/pages/VATFiling'));
-const VATAutopilot = lazy(() => import('@/pages/VATAutopilot'));
-const CorporateTax = lazy(() => import('@/pages/CorporateTax'));
-const TeamManagement = lazy(() => import('@/pages/TeamManagement'));
-const TaxReturnArchive = lazy(() => import('@/pages/TaxReturnArchive'));
-const ComplianceCalendar = lazy(() => import('@/pages/ComplianceCalendar'));
-const TaskCenter = lazy(() => import('@/pages/TaskCenter'));
-const UAENewsFeed = lazy(() => import('@/pages/UAENewsFeed'));
-const History = lazy(() => import('@/pages/History'));
-const BackupRestore = lazy(() => import('@/pages/BackupRestore'));
-const CashFlowForecast = lazy(() => import('@/pages/CashFlowForecast'));
-const AnomalyDetection = lazy(() => import('@/pages/AnomalyDetection'));
-const AutoReconcile = lazy(() => import('@/pages/AutoReconcile'));
-const MonthEndClose = lazy(() => import('@/pages/MonthEndClose'));
+const Onboarding = lazy(() => import("@/pages/Onboarding"));
+const BankReconciliation = lazy(() => import("@/pages/BankReconciliation"));
+const VATFiling = lazy(() => import("@/pages/VATFiling"));
+const VATAutopilot = lazy(() => import("@/pages/VATAutopilot"));
+const CorporateTax = lazy(() => import("@/pages/CorporateTax"));
+const TeamManagement = lazy(() => import("@/pages/TeamManagement"));
+const TaxReturnArchive = lazy(() => import("@/pages/TaxReturnArchive"));
+const ComplianceCalendar = lazy(() => import("@/pages/ComplianceCalendar"));
+const TaskCenter = lazy(() => import("@/pages/TaskCenter"));
+const UAENewsFeed = lazy(() => import("@/pages/UAENewsFeed"));
+const History = lazy(() => import("@/pages/History"));
+const BackupRestore = lazy(() => import("@/pages/BackupRestore"));
+const CashFlowForecast = lazy(() => import("@/pages/CashFlowForecast"));
+const AnomalyDetection = lazy(() => import("@/pages/AnomalyDetection"));
+const AutoReconcile = lazy(() => import("@/pages/AutoReconcile"));
+const MonthEndClose = lazy(() => import("@/pages/MonthEndClose"));
 
-function PageLoader({ variant }: { variant?: 'list' | 'detail' | 'dashboard' | 'form' | 'minimal' } = {}) {
-  return <PageSkeleton variant={variant ?? 'list'} />;
+function PageLoader({
+  variant,
+}: { variant?: "list" | "detail" | "dashboard" | "form" | "minimal" } = {}) {
+  return <PageSkeleton variant={variant ?? "list"} />;
 }
 
 function MinimalPageLoader() {
@@ -138,29 +140,29 @@ function MinimalPageLoader() {
 }
 
 function routeName(location: string): string {
-  const seg = location.split('/').filter(Boolean)[0] ?? 'app';
+  const seg = location.split("/").filter(Boolean)[0] ?? "app";
   return seg
-    .split('-')
+    .split("-")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+    .join(" ");
 }
 
-import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
-import { MobileNav } from '@/components/MobileNav';
-import { NotificationBell } from '@/components/NotificationBell';
-import { OfflineIndicator } from '@/components/OfflineIndicator';
-import { RouteGuard } from '@/components/layout/RouteGuard';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { ActiveCompanyProvider, useActiveCompany } from '@/components/ActiveCompanyProvider';
-import { RTLProvider } from '@/components/RTLProvider';
-import '@/styles/rtl.css';
-import '@/styles/mobile.css';
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { MobileNav } from "@/components/MobileNav";
+import { NotificationBell } from "@/components/NotificationBell";
+import { OfflineIndicator } from "@/components/OfflineIndicator";
+import { RouteGuard } from "@/components/layout/RouteGuard";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { ActiveCompanyProvider, useActiveCompany } from "@/components/ActiveCompanyProvider";
+import { RTLProvider } from "@/components/RTLProvider";
+import "@/styles/rtl.css";
+import "@/styles/mobile.css";
 
 // Components
-import { OnboardingWizard } from '@/components/Onboarding';
-import { CommandPaletteProvider } from '@/components/CommandPalette';
-import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
-import { SkipLink } from '@/components/SkipLink';
+import { OnboardingWizard } from "@/components/Onboarding";
+import { CommandPaletteProvider } from "@/components/CommandPalette";
+import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
+import { SkipLink } from "@/components/SkipLink";
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
@@ -170,7 +172,7 @@ function FirmContextBanner() {
 
   const goBackToFirm = () => {
     clearActiveClientCompany();
-    navigate('/firm/clients');
+    navigate("/firm/clients");
   };
 
   return (
@@ -190,12 +192,7 @@ function FirmContextBanner() {
           </span>
         )}
       </div>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={goBackToFirm}
-        data-testid="button-back-to-firm"
-      >
+      <Button size="sm" variant="outline" onClick={goBackToFirm} data-testid="button-back-to-firm">
         <ArrowLeft className="w-3.5 h-3.5 mr-1.5" />
         Back to Firm
       </Button>
@@ -210,7 +207,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { isFirmContext } = useActiveCompany();
 
   useEffect(() => {
-    if (companyLoading || location === '/onboarding') return;
+    if (companyLoading || location === "/onboarding") return;
 
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
@@ -220,26 +217,25 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     // Only auto-redirect once per session. If the user has dismissed the
     // wizard (or already filled in company details) we must not trap them
     // in a loop on every navigation — they can resume onboarding manually.
-    const REDIRECT_FLAG = 'onboarding_redirect_seen';
+    const REDIRECT_FLAG = "onboarding_redirect_seen";
     if (sessionStorage.getItem(REDIRECT_FLAG)) return;
 
     // No company yet — send the user to onboarding so they can create one.
     if (hasNoCompanies) {
-      sessionStorage.setItem(REDIRECT_FLAG, '1');
-      navigate('/onboarding');
+      sessionStorage.setItem(REDIRECT_FLAG, "1");
+      navigate("/onboarding");
       return;
     }
 
     if (company && !company.onboardingCompleted) {
-      sessionStorage.setItem(REDIRECT_FLAG, '1');
-      navigate('/onboarding');
+      sessionStorage.setItem(REDIRECT_FLAG, "1");
+      navigate("/onboarding");
     }
   }, [company, hasNoCompanies, companyLoading, location, navigate, isFirmContext]);
 
-
   const style = {
-    '--sidebar-width': '16rem',
-    '--sidebar-width-icon': '3rem',
+    "--sidebar-width": "16rem",
+    "--sidebar-width-icon": "3rem",
   };
 
   return (
@@ -253,7 +249,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             className="flex items-center justify-between gap-3 px-3 md:px-6 h-14 border-b border-border/70 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60 sticky top-0 z-20"
             initial={{ y: -16, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
           >
             <div className="flex items-center gap-2">
               <SidebarTrigger
@@ -297,19 +293,17 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={location}
-                  initial={false}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.25, ease: 'easeOut' }}
-                >
-                  <SectionBoundary name={routeName(location)}>
-                    {children}
-                  </SectionBoundary>
-                </motion.div>
-              </AnimatePresence>
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={location}
+                    initial={false}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.25, ease: "easeOut" }}
+                  >
+                    <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
+                  </motion.div>
+                </AnimatePresence>
               </RouteGuard>
             </div>
           </main>
@@ -328,9 +322,13 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return null;
-  if (!user) { navigate('/login'); return null; }
-  if (user.userType !== 'client_portal' && !user.isAdmin) {
-    navigate('/dashboard'); return null;
+  if (!user) {
+    navigate("/login");
+    return null;
+  }
+  if (user.userType !== "client_portal" && !user.isAdmin) {
+    navigate("/dashboard");
+    return null;
   }
   return <>{children}</>;
 }
@@ -341,9 +339,13 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return null;
-  if (!user) { navigate('/login'); return null; }
-  if (user.firmRole !== 'firm_owner' && user.firmRole !== 'firm_admin') {
-    navigate('/dashboard'); return null;
+  if (!user) {
+    navigate("/login");
+    return null;
+  }
+  if (user.firmRole !== "firm_owner" && user.firmRole !== "firm_admin") {
+    navigate("/dashboard");
+    return null;
   }
   return <>{children}</>;
 }
@@ -351,27 +353,27 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
 function Router() {
   const [location, setLocation] = useLocation();
   const { data: user, isLoading: userLoading } = useCurrentUser();
-  
+
   // Redirect authenticated users from landing to their home (portal or main dashboard)
   useEffect(() => {
-    if (location === '/' && user) {
-      setLocation(user.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
+    if (location === "/" && user) {
+      setLocation(user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard");
     }
   }, [location, user, setLocation]);
-  
+
   // Guard: authenticated users at root - wait for redirect
-  if (location === '/' && userLoading) {
+  if (location === "/" && userLoading) {
     return null;
   }
 
-  if (location === '/' && user) {
+  if (location === "/" && user) {
     return null;
   }
-  
+
   // Landing page (public only).
   // `initial={false}` skips the entry fade so the page is visible immediately;
   // a stalled or throttled animation must never leave the root at opacity:0.
-  if (location === '/' && !user) {
+  if (location === "/" && !user) {
     return (
       <AnimatePresence mode="wait">
         <motion.div
@@ -388,9 +390,9 @@ function Router() {
       </AnimatePresence>
     );
   }
-  
+
   // Client Portal routes — authenticated, portal layout
-  if (location.startsWith('/client-portal')) {
+  if (location.startsWith("/client-portal")) {
     return (
       <PortalRoute>
         <PortalLayout>
@@ -410,7 +412,7 @@ function Router() {
   }
 
   // Full-page protected route: onboarding wizard (no sidebar)
-  if (location === '/onboarding') {
+  if (location === "/onboarding") {
     return (
       <ProtectedRoute>
         <Suspense fallback={<PageLoader variant="form" />}>
@@ -422,17 +424,17 @@ function Router() {
 
   // Public routes (no sidebar)
   if (
-    location === '/login' ||
-    location === '/register' ||
-    location === '/forgot-password' ||
-    location === '/reset-password' ||
-    location === '/services' ||
-    location === '/pricing' ||
-    location === '/privacy' ||
-    location === '/terms' ||
-    location === '/cookies' ||
-    location.startsWith('/view/invoice/') ||
-    location.startsWith('/portal/')
+    location === "/login" ||
+    location === "/register" ||
+    location === "/forgot-password" ||
+    location === "/reset-password" ||
+    location === "/services" ||
+    location === "/pricing" ||
+    location === "/privacy" ||
+    location === "/terms" ||
+    location === "/cookies" ||
+    location.startsWith("/view/invoice/") ||
+    location.startsWith("/portal/")
   ) {
     return (
       <AnimatePresence mode="wait">
@@ -468,109 +470,129 @@ function Router() {
     <ProtectedRoute>
       <ProtectedLayout>
         <Suspense fallback={<PageLoader variant="list" />}>
-        <Switch>
-          <Route path="/dashboard" component={Dashboard} />
-          <Route path="/company-profile" component={CompanyProfile} />
-          <Route path="/settings/company" component={CompanySettings} />
-          <Route path="/accounts" component={Accounts} />
-          <Route path="/chart-of-accounts" component={ChartOfAccounts} />
-          <Route path="/accounts/:id/ledger" component={AccountLedger} />
-          <Route path="/invoices" component={Invoices} />
-          <Route path="/recurring-invoices" component={RecurringInvoices} />
-          <Route path="/payment-chasing" component={PaymentChasing} />
-          <Route path="/journal" component={Journal} />
-          <Route path="/journal/:id" component={JournalEntryDetail} />
-          <Route path="/reports" component={Reports} />
-          <Route path="/receipts" component={Receipts} />
-          <Route path="/receipt-autopilot" component={ReceiptAutopilot} />
-          <Route path="/contacts" component={CustomerContacts} />
-          <Route path="/inventory" component={Inventory} />
-          <Route path="/payroll" component={Payroll} />
-          <Route path="/bill-pay" component={BillPay} />
-          <Route path="/fixed-assets" component={FixedAssets} />
-          <Route path="/budgets" component={Budgets} />
-          <Route path="/expense-claims" component={ExpenseClaims} />
-          <Route path="/cashflow-forecast" component={CashFlowForecast} />
-          <Route path="/anomaly-detection" component={AnomalyDetection} />
-          <Route path="/auto-reconcile" component={AutoReconcile} />
-          <Route path="/ai-inbox" component={AIInbox} />
-          <Route path="/month-end" component={MonthEndClose} />
-          <Route path="/ai-cfo" component={AICFO} />
-          <Route path="/ai-features" component={AIFeatures} />
-          <Route path="/smart-assistant" component={SmartAssistant} />
-          <Route path="/ai-chat" component={AIChat} />
-          <Route path="/advanced-analytics" component={AdvancedAnalytics} />
-          <Route path="/integrations" component={Integrations} />
-          <Route path="/integrations-hub" component={IntegrationsHub} />
-          <Route path="/whatsapp" component={WhatsAppDashboard} />
-          <Route path="/notifications" component={Notifications} />
-          <Route path="/reminders" component={Reminders} />
-          <Route path="/document-chasing" component={DocumentChasing} />
-          <Route path="/referrals" component={Referrals} />
-          <Route path="/feedback" component={Feedback} />
-          <Route path="/analytics" component={Analytics} />
-          <Route path="/admin" component={Admin} />
-          <Route path="/bank-reconciliation" component={BankReconciliation} />
-          <Route path="/vat-filing" component={VATFiling} />
-          <Route path="/vat-autopilot" component={VATAutopilot} />
-          <Route path="/corporate-tax" component={CorporateTax} />
-          <Route path="/team" component={TeamManagement} />
-          <Route path="/history" component={History} />
-          <Route path="/backup-restore" component={BackupRestore} />
-          <Route path="/advanced-reports" component={AdvancedReports} />
-          <Route path="/document-vault" component={DocumentVault} />
-          <Route path="/tax-return-archive" component={TaxReturnArchive} />
-          <Route path="/compliance-calendar" component={ComplianceCalendar} />
-          <Route path="/task-center" component={TaskCenter} />
-          <Route path="/news-feed" component={UAENewsFeed} />
-          
-          {/* Admin Routes */}
-          <Route path="/admin/dashboard" component={AdminDashboard} />
-          <Route path="/admin/clients" component={ClientManagement} />
-          <Route path="/admin/clients/:id" component={ClientDetails} />
-          <Route path="/admin/clients/:id/documents" component={ClientDocuments} />
-          <Route path="/admin/clients/:id/tasks" component={ClientTasks} />
-          <Route path="/admin/documents" component={AdminDocuments} />
-          <Route path="/admin/invitations" component={UserInvitations} />
-          <Route path="/admin/import" component={ClientImport} />
-          <Route path="/admin/activity-logs" component={ActivityLogs} />
-          <Route path="/admin/users" component={Admin} />
-          <Route path="/admin" component={Admin} />
+          <Switch>
+            <Route path="/dashboard" component={Dashboard} />
+            <Route path="/company-profile" component={CompanyProfile} />
+            <Route path="/settings/company" component={CompanySettings} />
+            <Route path="/accounts" component={Accounts} />
+            <Route path="/chart-of-accounts" component={ChartOfAccounts} />
+            <Route path="/accounts/:id/ledger" component={AccountLedger} />
+            <Route path="/invoices" component={Invoices} />
+            <Route path="/recurring-invoices" component={RecurringInvoices} />
+            <Route path="/payment-chasing" component={PaymentChasing} />
+            <Route path="/journal" component={Journal} />
+            <Route path="/journal/:id" component={JournalEntryDetail} />
+            <Route path="/reports" component={Reports} />
+            <Route path="/receipts" component={Receipts} />
+            <Route path="/receipt-autopilot" component={ReceiptAutopilot} />
+            <Route path="/contacts" component={CustomerContacts} />
+            <Route path="/inventory" component={Inventory} />
+            <Route path="/payroll" component={Payroll} />
+            <Route path="/bill-pay" component={BillPay} />
+            <Route path="/fixed-assets" component={FixedAssets} />
+            <Route path="/budgets" component={Budgets} />
+            <Route path="/expense-claims" component={ExpenseClaims} />
+            <Route path="/cashflow-forecast" component={CashFlowForecast} />
+            <Route path="/anomaly-detection" component={AnomalyDetection} />
+            <Route path="/auto-reconcile" component={AutoReconcile} />
+            <Route path="/ai-inbox" component={AIInbox} />
+            <Route path="/month-end" component={MonthEndClose} />
+            <Route path="/ai-cfo" component={AICFO} />
+            <Route path="/ai-features" component={AIFeatures} />
+            <Route path="/smart-assistant" component={SmartAssistant} />
+            <Route path="/ai-chat" component={AIChat} />
+            <Route path="/advanced-analytics" component={AdvancedAnalytics} />
+            <Route path="/integrations" component={Integrations} />
+            <Route path="/integrations-hub" component={IntegrationsHub} />
+            <Route path="/whatsapp" component={WhatsAppDashboard} />
+            <Route path="/notifications" component={Notifications} />
+            <Route path="/reminders" component={Reminders} />
+            <Route path="/document-chasing" component={DocumentChasing} />
+            <Route path="/referrals" component={Referrals} />
+            <Route path="/feedback" component={Feedback} />
+            <Route path="/analytics" component={Analytics} />
+            <Route path="/admin" component={Admin} />
+            <Route path="/bank-reconciliation" component={BankReconciliation} />
+            <Route path="/vat-filing" component={VATFiling} />
+            <Route path="/vat-autopilot" component={VATAutopilot} />
+            <Route path="/corporate-tax" component={CorporateTax} />
+            <Route path="/team" component={TeamManagement} />
+            <Route path="/history" component={History} />
+            <Route path="/backup-restore" component={BackupRestore} />
+            <Route path="/advanced-reports" component={AdvancedReports} />
+            <Route path="/document-vault" component={DocumentVault} />
+            <Route path="/tax-return-archive" component={TaxReturnArchive} />
+            <Route path="/compliance-calendar" component={ComplianceCalendar} />
+            <Route path="/task-center" component={TaskCenter} />
+            <Route path="/news-feed" component={UAENewsFeed} />
 
-          {/* NRA Firm Management Center */}
-          <Route path="/firm/command-center">
-            <FirmRoute><FirmCommandCenter /></FirmRoute>
-          </Route>
-          <Route path="/firm/value-ops">
-            <FirmRoute><ValueOps /></FirmRoute>
-          </Route>
-          <Route path="/firm/health">
-            <FirmRoute><FirmHealth /></FirmRoute>
-          </Route>
-          <Route path="/firm/clients/:companyId">
-            <FirmRoute><ClientProfile /></FirmRoute>
-          </Route>
-          <Route path="/firm/clients">
-            <FirmRoute><ClientPortfolio /></FirmRoute>
-          </Route>
-          <Route path="/firm/staff">
-            <FirmRoute><StaffManagement /></FirmRoute>
-          </Route>
-          <Route path="/firm/bulk">
-            <FirmRoute><BulkOperations /></FirmRoute>
-          </Route>
-          <Route path="/firm/comms">
-            <FirmRoute><FirmComms /></FirmRoute>
-          </Route>
-          <Route path="/firm/analytics">
-            <FirmRoute><FirmAnalytics /></FirmRoute>
-          </Route>
-          <Route path="/firm/pipeline">
-            <FirmRoute><LeadPipeline /></FirmRoute>
-          </Route>
+            {/* Admin Routes */}
+            <Route path="/admin/dashboard" component={AdminDashboard} />
+            <Route path="/admin/clients" component={ClientManagement} />
+            <Route path="/admin/clients/:id" component={ClientDetails} />
+            <Route path="/admin/clients/:id/documents" component={ClientDocuments} />
+            <Route path="/admin/clients/:id/tasks" component={ClientTasks} />
+            <Route path="/admin/documents" component={AdminDocuments} />
+            <Route path="/admin/invitations" component={UserInvitations} />
+            <Route path="/admin/import" component={ClientImport} />
+            <Route path="/admin/activity-logs" component={ActivityLogs} />
+            <Route path="/admin/users" component={Admin} />
+            <Route path="/admin" component={Admin} />
 
-          <Route component={NotFound} />
-        </Switch>
+            {/* NRA Firm Management Center */}
+            <Route path="/firm/command-center">
+              <FirmRoute>
+                <FirmCommandCenter />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/value-ops">
+              <FirmRoute>
+                <ValueOps />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/health">
+              <FirmRoute>
+                <FirmHealth />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/clients/:companyId">
+              <FirmRoute>
+                <ClientProfile />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/clients">
+              <FirmRoute>
+                <ClientPortfolio />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/staff">
+              <FirmRoute>
+                <StaffManagement />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/bulk">
+              <FirmRoute>
+                <BulkOperations />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/comms">
+              <FirmRoute>
+                <FirmComms />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/analytics">
+              <FirmRoute>
+                <FirmAnalytics />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/pipeline">
+              <FirmRoute>
+                <LeadPipeline />
+              </FirmRoute>
+            </Route>
+
+            <Route component={NotFound} />
+          </Switch>
         </Suspense>
       </ProtectedLayout>
     </ProtectedRoute>

@@ -11,22 +11,22 @@
  * accuracy power the auto-failsafe that flips a company to `openai_only` mode.
  */
 
-import { pool } from '../db';
-import { storage } from '../storage';
+import { pool } from "../db";
+import { storage } from "../storage";
 import {
   type InternalClassifierModel,
   type CompanyRuleSnapshot,
   type TrainingExample,
   STANDARD_CATEGORIES,
-} from './receipt-classifier.service';
+} from "./receipt-classifier.service";
 import {
   type ClassifierMethod,
   type ClassifierConfig,
   DEFAULT_CLASSIFIER_CONFIG,
-} from '../../shared/schema';
-import { createLogger } from '../config/logger';
+} from "../../shared/schema";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('training-data');
+const log = createLogger("training-data");
 
 // =============================================
 // Cache
@@ -72,7 +72,7 @@ export async function getModel(companyId: string): Promise<InternalClassifierMod
     if (modelCache.get(companyId) === entry) {
       modelCache.delete(companyId);
     }
-    log.warn({ err: err?.message || err, companyId }, 'buildModel failed — cache evicted');
+    log.warn({ err: err?.message || err, companyId }, "buildModel failed — cache evicted");
   });
   return promise;
 }
@@ -112,7 +112,7 @@ async function loadRules(companyId: string): Promise<CompanyRuleSnapshot[]> {
      LEFT JOIN accounts a ON a.id = r.account_id
      WHERE r.company_id = $1 AND r.is_active = true
      ORDER BY r.times_accepted DESC, r.confidence DESC`,
-    [companyId],
+    [companyId]
   );
 
   return rows.map((r: any) => ({
@@ -141,7 +141,7 @@ async function loadTrainingExamples(companyId: string): Promise<TrainingExample[
        AND tc.was_accepted = true
        AND COALESCE(tc.merchant, tc.description) IS NOT NULL
        AND tc.suggested_category IS NOT NULL`,
-    [companyId],
+    [companyId]
   );
 
   return rows.map((r: any) => ({
@@ -162,13 +162,23 @@ function deriveCategoryFromAccountName(accountName: string | null | undefined): 
     if (lower.includes(c.toLowerCase())) return c;
   }
   // Then a few common synonyms.
-  if (lower.includes('utility') || lower.includes('utilities') || lower.includes('water') || lower.includes('electric')) return 'Utilities';
-  if (lower.includes('telecom') || lower.includes('phone') || lower.includes('internet')) return 'Communication';
-  if (lower.includes('transport') || lower.includes('vehicle') || lower.includes('fuel')) return 'Travel';
-  if (lower.includes('food') || lower.includes('catering') || lower.includes('entertainment')) return 'Meals';
-  if (lower.includes('advertis')) return 'Marketing';
-  if (lower.includes('repair')) return 'Maintenance';
-  if (lower.includes('legal') || lower.includes('audit') || lower.includes('professional')) return 'Professional Services';
+  if (
+    lower.includes("utility") ||
+    lower.includes("utilities") ||
+    lower.includes("water") ||
+    lower.includes("electric")
+  )
+    return "Utilities";
+  if (lower.includes("telecom") || lower.includes("phone") || lower.includes("internet"))
+    return "Communication";
+  if (lower.includes("transport") || lower.includes("vehicle") || lower.includes("fuel"))
+    return "Travel";
+  if (lower.includes("food") || lower.includes("catering") || lower.includes("entertainment"))
+    return "Meals";
+  if (lower.includes("advertis")) return "Marketing";
+  if (lower.includes("repair")) return "Maintenance";
+  if (lower.includes("legal") || lower.includes("audit") || lower.includes("professional"))
+    return "Professional Services";
   return null;
 }
 
@@ -199,7 +209,7 @@ export interface ModelStats {
   config: ClassifierConfig;
 }
 
-const ALL_METHODS: ClassifierMethod[] = ['rule', 'keyword', 'statistical', 'openai'];
+const ALL_METHODS: ClassifierMethod[] = ["rule", "keyword", "statistical", "openai"];
 
 export async function getModelStats(companyId: string): Promise<ModelStats> {
   const config = await getClassifierConfig(companyId);
@@ -214,7 +224,7 @@ export async function getModelStats(companyId: string): Promise<ModelStats> {
      FROM transaction_classifications
      WHERE company_id = $1
      GROUP BY COALESCE(classifier_method, 'openai')`,
-    [companyId],
+    [companyId]
   );
 
   const byMethod = ALL_METHODS.map((method) => {
@@ -244,14 +254,15 @@ export async function getModelStats(companyId: string): Promise<ModelStats> {
   // Failsafe — only consider the internal methods (rule/keyword/statistical)
   // when judging whether to flip to openai_only. We use a minimum-judged-count
   // floor so a single rejection on a brand-new company doesn't flip everything.
-  const internalMethods = byMethod.filter((m) => m.method !== 'openai');
+  const internalMethods = byMethod.filter((m) => m.method !== "openai");
   const internalAccepted = internalMethods.reduce((s, m) => s + m.accepted, 0);
   const internalRejected = internalMethods.reduce((s, m) => s + m.rejected, 0);
   const internalJudged = internalAccepted + internalRejected;
   const internalAccuracy = internalJudged > 0 ? internalAccepted / internalJudged : 1;
 
   const MIN_SAMPLE = 20;
-  const belowThreshold = internalJudged >= MIN_SAMPLE && internalAccuracy < config.accuracyThreshold;
+  const belowThreshold =
+    internalJudged >= MIN_SAMPLE && internalAccuracy < config.accuracyThreshold;
 
   return {
     companyId,
@@ -291,9 +302,9 @@ export async function getClassifierConfig(companyId: string): Promise<Classifier
   const cfg = company.classifierConfig as Partial<ClassifierConfig> | null;
   if (!cfg) return { ...DEFAULT_CLASSIFIER_CONFIG };
   return {
-    mode: cfg.mode === 'openai_only' ? 'openai_only' : 'hybrid',
+    mode: cfg.mode === "openai_only" ? "openai_only" : "hybrid",
     accuracyThreshold:
-      typeof cfg.accuracyThreshold === 'number'
+      typeof cfg.accuracyThreshold === "number"
         ? clampThreshold(cfg.accuracyThreshold)
         : DEFAULT_CLASSIFIER_CONFIG.accuracyThreshold,
     autopilotEnabled: !!cfg.autopilotEnabled,
@@ -302,22 +313,23 @@ export async function getClassifierConfig(companyId: string): Promise<Classifier
 
 export async function setClassifierConfig(
   companyId: string,
-  patch: Partial<ClassifierConfig>,
+  patch: Partial<ClassifierConfig>
 ): Promise<ClassifierConfig> {
   const current = await getClassifierConfig(companyId);
   // Defense-in-depth: even if a service-layer caller bypasses the route schema,
   // we re-clamp the threshold and whitelist the mode here.
   const sanitizedPatch: Partial<ClassifierConfig> = {};
-  if (patch.mode === 'hybrid' || patch.mode === 'openai_only') sanitizedPatch.mode = patch.mode;
-  if (typeof patch.accuracyThreshold === 'number') {
+  if (patch.mode === "hybrid" || patch.mode === "openai_only") sanitizedPatch.mode = patch.mode;
+  if (typeof patch.accuracyThreshold === "number") {
     sanitizedPatch.accuracyThreshold = clampThreshold(patch.accuracyThreshold);
   }
-  if (typeof patch.autopilotEnabled === 'boolean') sanitizedPatch.autopilotEnabled = patch.autopilotEnabled;
+  if (typeof patch.autopilotEnabled === "boolean")
+    sanitizedPatch.autopilotEnabled = patch.autopilotEnabled;
   const next: ClassifierConfig = { ...current, ...sanitizedPatch };
-  await pool.query(
-    `UPDATE companies SET classifier_config = $1::jsonb WHERE id = $2`,
-    [JSON.stringify(next), companyId],
-  );
+  await pool.query(`UPDATE companies SET classifier_config = $1::jsonb WHERE id = $2`, [
+    JSON.stringify(next),
+    companyId,
+  ]);
   invalidateModel(companyId);
   return next;
 }
@@ -328,12 +340,12 @@ export async function setClassifierConfig(
  */
 export async function applyAccuracyFailsafe(companyId: string): Promise<ClassifierConfig> {
   const stats = await getModelStats(companyId);
-  if (stats.belowThreshold && stats.config.mode === 'hybrid') {
+  if (stats.belowThreshold && stats.config.mode === "hybrid") {
     log.warn(
       { companyId, accuracy: stats.overallAccuracy, threshold: stats.threshold },
-      'Internal classifier accuracy below threshold — switching company to openai_only',
+      "Internal classifier accuracy below threshold — switching company to openai_only"
     );
-    return setClassifierConfig(companyId, { mode: 'openai_only' });
+    return setClassifierConfig(companyId, { mode: "openai_only" });
   }
   return stats.config;
 }

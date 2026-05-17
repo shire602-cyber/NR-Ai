@@ -1,6 +1,6 @@
-import { useRef, ReactNode, CSSProperties } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { cn } from '@/lib/utils';
+import { useRef, ReactNode, CSSProperties } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { cn } from "@/lib/utils";
 
 interface VirtualListProps<T> {
   items: T[];
@@ -59,18 +59,18 @@ export function VirtualList<T>({
   return (
     <div
       ref={parentRef}
-      className={cn('overflow-auto', className)}
-      style={{ height: typeof height === 'number' ? `${height}px` : height, contain: 'strict' }}
+      className={cn("overflow-auto", className)}
+      style={{ height: typeof height === "number" ? `${height}px` : height, contain: "strict" }}
       data-testid="virtual-list"
     >
-      <div style={{ height: totalSize, position: 'relative', width: '100%' }}>
+      <div style={{ height: totalSize, position: "relative", width: "100%" }}>
         {virtualItems.map((virtualRow) => {
           const item = items[virtualRow.index];
           const style: CSSProperties = {
-            position: 'absolute',
+            position: "absolute",
             top: 0,
             left: 0,
-            width: '100%',
+            width: "100%",
             transform: `translateY(${virtualRow.start}px)`,
           };
           return (

@@ -1,11 +1,11 @@
-import express, { type Express } from 'express';
-import fs from 'fs';
-import path from 'path';
-import { type Server } from 'http';
-import { fileURLToPath } from 'url';
+import express, { type Express } from "express";
+import fs from "fs";
+import path from "path";
+import { type Server } from "http";
+import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.resolve(__dirname, "..");
 
 /**
  * Set up Vite dev server (development only).
@@ -13,13 +13,13 @@ const projectRoot = path.resolve(__dirname, '..');
  */
 export async function setupVite(app: Express, server: Server) {
   // Dynamic imports — these packages are devDependencies
-  const { createServer: createViteServer, createLogger } = await import('vite');
-  const { nanoid } = await import('nanoid');
+  const { createServer: createViteServer, createLogger } = await import("vite");
+  const { nanoid } = await import("nanoid");
 
   const viteLogger = createLogger();
 
   const vite = await createViteServer({
-    configFile: path.resolve(projectRoot, 'vite.config.ts'),
+    configFile: path.resolve(projectRoot, "vite.config.ts"),
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
@@ -30,23 +30,20 @@ export async function setupVite(app: Express, server: Server) {
       middlewareMode: true,
       hmr: { server },
     },
-    appType: 'custom',
+    appType: "custom",
   });
 
   app.use(vite.middlewares);
-  app.use('*', async (req, res, next) => {
+  app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
     try {
-      const clientTemplate = path.resolve(projectRoot, 'client', 'index.html');
+      const clientTemplate = path.resolve(projectRoot, "client", "index.html");
 
-      let template = await fs.promises.readFile(clientTemplate, 'utf-8');
-      template = template.replace(
-        `src="/src/main.tsx"`,
-        `src="/src/main.tsx?v=${nanoid()}"`,
-      );
+      let template = await fs.promises.readFile(clientTemplate, "utf-8");
+      template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ 'Content-Type': 'text/html' }).end(page);
+      res.status(200).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
@@ -59,40 +56,40 @@ export async function setupVite(app: Express, server: Server) {
  * No dev dependencies required.
  */
 export function serveStatic(app: Express) {
-  const distPath = path.resolve(projectRoot, 'dist', 'public');
+  const distPath = path.resolve(projectRoot, "dist", "public");
 
   if (!fs.existsSync(distPath)) {
     throw new Error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`,
+      `Could not find the build directory: ${distPath}, make sure to build the client first`
     );
   }
 
   // Long-lived cache for hashed assets (Vite emits content-hashed filenames
   // under /assets/, so they are safe to cache aggressively).
   app.use(
-    '/assets',
-    express.static(path.join(distPath, 'assets'), {
-      maxAge: '1y',
+    "/assets",
+    express.static(path.join(distPath, "assets"), {
+      maxAge: "1y",
       immutable: true,
-    }),
+    })
   );
 
   // Other static files — short cache, since index.html and similar are not
   // content-hashed and need to refresh on deploy.
   app.use(
     express.static(distPath, {
-      maxAge: '1h',
+      maxAge: "1h",
       setHeaders: (res, filePath) => {
-        if (filePath.endsWith('index.html')) {
-          res.setHeader('Cache-Control', 'no-cache');
+        if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
         }
       },
-    }),
+    })
   );
 
   // SPA fallback
-  app.use('*', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile(path.resolve(distPath, 'index.html'));
+  app.use("*", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache");
+    res.sendFile(path.resolve(distPath, "index.html"));
   });
 }

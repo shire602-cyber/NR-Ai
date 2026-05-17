@@ -3,11 +3,11 @@
 //   1. Google Service Account (GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)
 //   2. OAuth2 with refresh token (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN)
 
-import { google, sheets_v4 } from 'googleapis';
-import type { JWT, OAuth2Client } from 'google-auth-library';
-import { createLogger } from '../config/logger';
+import { google, sheets_v4 } from "googleapis";
+import type { JWT, OAuth2Client } from "google-auth-library";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('google-sheets');
+const log = createLogger("google-sheets");
 
 // ---------------------------------------------------------------------------
 // Authentication helpers
@@ -25,17 +25,12 @@ function getAuthClient(): JWT | OAuth2Client {
 
   if (saEmail && saKey) {
     // The private key in env vars typically has literal "\n" – convert to real newlines.
-    const formattedKey = saKey.replace(/\\n/g, '\n');
+    const formattedKey = saKey.replace(/\\n/g, "\n");
 
-    const jwtClient = new google.auth.JWT(
-      saEmail,
-      undefined,
-      formattedKey,
-      [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive.file',
-      ],
-    );
+    const jwtClient = new google.auth.JWT(saEmail, undefined, formattedKey, [
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/drive.file",
+    ]);
 
     return jwtClient;
   }
@@ -52,9 +47,9 @@ function getAuthClient(): JWT | OAuth2Client {
   }
 
   throw new Error(
-    'Google Sheets credentials not configured. ' +
-    'Provide either GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, ' +
-    'or GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN.',
+    "Google Sheets credentials not configured. " +
+      "Provide either GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY, " +
+      "or GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN."
   );
 }
 
@@ -66,32 +61,34 @@ export async function getGoogleSheetsClient(): Promise<sheets_v4.Sheets> {
   const auth = getAuthClient();
 
   // For JWT (service account) we need to authorize once to obtain a token.
-  if ('authorize' in auth) {
+  if ("authorize" in auth) {
     await (auth as JWT).authorize();
   }
 
-  return google.sheets({ version: 'v4', auth });
+  return google.sheets({ version: "v4", auth });
 }
 
 export async function isGoogleSheetsConnected(): Promise<boolean> {
   try {
     const sheets = await getGoogleSheetsClient();
     // Make a lightweight call to verify the credentials are valid.
-    await sheets.spreadsheets.create({
-      requestBody: { properties: { title: '__connection_test__' } },
-      fields: 'spreadsheetId',
-    }).then(async (res) => {
-      // Clean up the test spreadsheet silently.
-      const auth = getAuthClient();
-      if ('authorize' in auth) await (auth as JWT).authorize();
-      const drive = google.drive({ version: 'v3', auth });
-      if (res.data.spreadsheetId) {
-        await drive.files.delete({ fileId: res.data.spreadsheetId }).catch(() => {});
-      }
-    });
+    await sheets.spreadsheets
+      .create({
+        requestBody: { properties: { title: "__connection_test__" } },
+        fields: "spreadsheetId",
+      })
+      .then(async (res) => {
+        // Clean up the test spreadsheet silently.
+        const auth = getAuthClient();
+        if ("authorize" in auth) await (auth as JWT).authorize();
+        const drive = google.drive({ version: "v3", auth });
+        if (res.data.spreadsheetId) {
+          await drive.files.delete({ fileId: res.data.spreadsheetId }).catch(() => {});
+        }
+      });
     return true;
   } catch (err) {
-    log.warn({ err: (err as Error).message }, 'Connection check failed');
+    log.warn({ err: (err as Error).message }, "Connection check failed");
     return false;
   }
 }
@@ -112,14 +109,14 @@ export async function createSpreadsheet(title: string): Promise<string> {
     },
   });
 
-  return response.data.spreadsheetId || '';
+  return response.data.spreadsheetId || "";
 }
 
 // Export data to a spreadsheet
 export async function exportToSheet(
   spreadsheetId: string,
   sheetName: string,
-  data: (string | number | null)[][],
+  data: (string | number | null)[][]
 ): Promise<void> {
   const sheets = await getGoogleSheetsClient();
 
@@ -141,8 +138,8 @@ export async function exportToSheet(
     });
   } catch (error: any) {
     // Sheet might already exist, that's fine
-    if (!error.message?.includes('already exists')) {
-      log.info('Note: Sheet may already exist');
+    if (!error.message?.includes("already exists")) {
+      log.info("Note: Sheet may already exist");
     }
   }
 
@@ -150,7 +147,7 @@ export async function exportToSheet(
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${sheetName}!A1`,
-    valueInputOption: 'USER_ENTERED',
+    valueInputOption: "USER_ENTERED",
     requestBody: {
       values: data,
     },
@@ -158,10 +155,7 @@ export async function exportToSheet(
 }
 
 // Read data from a spreadsheet
-export async function readFromSheet(
-  spreadsheetId: string,
-  range: string,
-): Promise<any[][]> {
+export async function readFromSheet(spreadsheetId: string, range: string): Promise<any[][]> {
   const sheets = await getGoogleSheetsClient();
 
   const response = await sheets.spreadsheets.values.get({
@@ -175,20 +169,20 @@ export async function readFromSheet(
 // List all spreadsheets accessible by the authenticated user / service account
 export async function listSpreadsheets(): Promise<{ id: string; name: string }[]> {
   const auth = getAuthClient();
-  if ('authorize' in auth) await (auth as JWT).authorize();
+  if ("authorize" in auth) await (auth as JWT).authorize();
 
-  const drive = google.drive({ version: 'v3', auth });
+  const drive = google.drive({ version: "v3", auth });
 
   const response = await drive.files.list({
     q: "mimeType='application/vnd.google-apps.spreadsheet'",
-    fields: 'files(id, name)',
-    orderBy: 'modifiedTime desc',
+    fields: "files(id, name)",
+    orderBy: "modifiedTime desc",
     pageSize: 50,
   });
 
   return (response.data.files || []).map((file) => ({
-    id: file.id || '',
-    name: file.name || '',
+    id: file.id || "",
+    name: file.name || "",
   }));
 }
 
@@ -199,45 +193,45 @@ export async function listSpreadsheets(): Promise<{ id: string; name: string }[]
 // Export invoices to Google Sheets
 export async function exportInvoicesToSheet(
   invoices: any[],
-  spreadsheetId?: string,
+  spreadsheetId?: string
 ): Promise<{ spreadsheetId: string; url: string }> {
   let sheetId = spreadsheetId;
 
   if (!sheetId) {
     sheetId = await createSpreadsheet(
-      `BookKeep AI - Invoices Export ${new Date().toLocaleDateString()}`,
+      `BookKeep AI - Invoices Export ${new Date().toLocaleDateString()}`
     );
   }
 
   const headers = [
-    'Invoice Number',
-    'Customer Name',
-    'Customer Email',
-    'Customer TRN',
-    'Issue Date',
-    'Due Date',
-    'Subtotal (AED)',
-    'VAT Amount (AED)',
-    'Total (AED)',
-    'Status',
-    'Notes',
+    "Invoice Number",
+    "Customer Name",
+    "Customer Email",
+    "Customer TRN",
+    "Issue Date",
+    "Due Date",
+    "Subtotal (AED)",
+    "VAT Amount (AED)",
+    "Total (AED)",
+    "Status",
+    "Notes",
   ];
 
   const rows = invoices.map((inv) => [
     inv.invoiceNumber,
     inv.customerName,
-    inv.customerEmail || '',
-    inv.customerTrn || '',
+    inv.customerEmail || "",
+    inv.customerTrn || "",
     inv.issueDate,
     inv.dueDate,
     Number(inv.subtotal).toFixed(2),
     Number(inv.vatAmount).toFixed(2),
     Number(inv.total).toFixed(2),
     inv.status,
-    inv.notes || '',
+    inv.notes || "",
   ]);
 
-  await exportToSheet(sheetId, 'Invoices', [headers, ...rows]);
+  await exportToSheet(sheetId, "Invoices", [headers, ...rows]);
 
   return {
     spreadsheetId: sheetId,
@@ -248,39 +242,39 @@ export async function exportInvoicesToSheet(
 // Export expenses/receipts to Google Sheets
 export async function exportExpensesToSheet(
   expenses: any[],
-  spreadsheetId?: string,
+  spreadsheetId?: string
 ): Promise<{ spreadsheetId: string; url: string }> {
   let sheetId = spreadsheetId;
 
   if (!sheetId) {
     sheetId = await createSpreadsheet(
-      `BookKeep AI - Expenses Export ${new Date().toLocaleDateString()}`,
+      `BookKeep AI - Expenses Export ${new Date().toLocaleDateString()}`
     );
   }
 
   const headers = [
-    'Date',
-    'Merchant',
-    'Description',
-    'Category',
-    'Amount (AED)',
-    'VAT Amount (AED)',
-    'Payment Method',
-    'Status',
+    "Date",
+    "Merchant",
+    "Description",
+    "Category",
+    "Amount (AED)",
+    "VAT Amount (AED)",
+    "Payment Method",
+    "Status",
   ];
 
   const rows = expenses.map((exp) => [
     exp.date,
-    exp.merchant || '',
-    exp.description || '',
-    exp.category || '',
+    exp.merchant || "",
+    exp.description || "",
+    exp.category || "",
     Number(exp.amount).toFixed(2),
     Number(exp.vatAmount || 0).toFixed(2),
-    exp.paymentMethod || '',
-    exp.status || 'pending',
+    exp.paymentMethod || "",
+    exp.status || "pending",
   ]);
 
-  await exportToSheet(sheetId, 'Expenses', [headers, ...rows]);
+  await exportToSheet(sheetId, "Expenses", [headers, ...rows]);
 
   return {
     spreadsheetId: sheetId,
@@ -291,24 +285,24 @@ export async function exportExpensesToSheet(
 // Export journal entries to Google Sheets
 export async function exportJournalEntriesToSheet(
   entries: any[],
-  spreadsheetId?: string,
+  spreadsheetId?: string
 ): Promise<{ spreadsheetId: string; url: string }> {
   let sheetId = spreadsheetId;
 
   if (!sheetId) {
     sheetId = await createSpreadsheet(
-      `BookKeep AI - Journal Entries ${new Date().toLocaleDateString()}`,
+      `BookKeep AI - Journal Entries ${new Date().toLocaleDateString()}`
     );
   }
 
   const headers = [
-    'Entry Number',
-    'Date',
-    'Description',
-    'Account Code',
-    'Account Name',
-    'Debit (AED)',
-    'Credit (AED)',
+    "Entry Number",
+    "Date",
+    "Description",
+    "Account Code",
+    "Account Name",
+    "Debit (AED)",
+    "Credit (AED)",
   ];
 
   const rows: (string | number)[][] = [];
@@ -319,9 +313,9 @@ export async function exportJournalEntriesToSheet(
         rows.push([
           entry.entryNumber,
           entry.date,
-          entry.description || '',
-          line.accountCode || '',
-          line.accountName || '',
+          entry.description || "",
+          line.accountCode || "",
+          line.accountName || "",
           Number(line.debit || 0).toFixed(2),
           Number(line.credit || 0).toFixed(2),
         ]);
@@ -329,7 +323,7 @@ export async function exportJournalEntriesToSheet(
     }
   }
 
-  await exportToSheet(sheetId, 'Journal Entries', [headers, ...rows]);
+  await exportToSheet(sheetId, "Journal Entries", [headers, ...rows]);
 
   return {
     spreadsheetId: sheetId,
@@ -340,33 +334,33 @@ export async function exportJournalEntriesToSheet(
 // Export Chart of Accounts to Google Sheets
 export async function exportChartOfAccountsToSheet(
   accounts: any[],
-  spreadsheetId?: string,
+  spreadsheetId?: string
 ): Promise<{ spreadsheetId: string; url: string }> {
   let sheetId = spreadsheetId;
 
   if (!sheetId) {
     sheetId = await createSpreadsheet(
-      `BookKeep AI - Chart of Accounts ${new Date().toLocaleDateString()}`,
+      `BookKeep AI - Chart of Accounts ${new Date().toLocaleDateString()}`
     );
   }
 
   const headers = [
-    'Account Code',
-    'Account Name (English)',
-    'Account Name (Arabic)',
-    'Type',
-    'Parent Account',
+    "Account Code",
+    "Account Name (English)",
+    "Account Name (Arabic)",
+    "Type",
+    "Parent Account",
   ];
 
   const rows = accounts.map((acc) => [
     acc.code,
     acc.nameEn,
-    acc.nameAr || '',
+    acc.nameAr || "",
     acc.type,
-    acc.parentCode || '',
+    acc.parentCode || "",
   ]);
 
-  await exportToSheet(sheetId, 'Chart of Accounts', [headers, ...rows]);
+  await exportToSheet(sheetId, "Chart of Accounts", [headers, ...rows]);
 
   return {
     spreadsheetId: sheetId,
@@ -377,7 +371,7 @@ export async function exportChartOfAccountsToSheet(
 // Export custom data to Google Sheets (for filtered/custom exports from frontend)
 export async function exportCustomDataToSheet(
   title: string,
-  sheets: { name: string; headers: string[]; rows: (string | number | null)[][] }[],
+  sheets: { name: string; headers: string[]; rows: (string | number | null)[][] }[]
 ): Promise<{ spreadsheetId: string; url: string }> {
   const sheetId = await createSpreadsheet(title);
 
@@ -396,20 +390,18 @@ export async function exportCustomDataToSheet(
 // ---------------------------------------------------------------------------
 
 // Import invoices from a Google Sheet
-export async function importInvoicesFromSheet(
-  spreadsheetId: string,
-): Promise<any[]> {
+export async function importInvoicesFromSheet(spreadsheetId: string): Promise<any[]> {
   const sheets = await getGoogleSheetsClient();
 
   // Get all sheets in the spreadsheet
   const response = await sheets.spreadsheets.get({
     spreadsheetId,
-    fields: 'sheets.properties',
+    fields: "sheets.properties",
   });
 
   const firstSheet = response.data.sheets?.[0]?.properties?.title;
   if (!firstSheet) {
-    throw new Error('No sheets found in spreadsheet');
+    throw new Error("No sheets found in spreadsheet");
   }
 
   // Read from first sheet
@@ -424,36 +416,34 @@ export async function importInvoicesFromSheet(
 
   return rows
     .map((row) => ({
-      invoiceNumber: row[0]?.toString() || '',
-      customerName: row[1]?.toString() || '',
-      customerEmail: row[2]?.toString() || '',
-      customerTrn: row[3]?.toString() || '',
-      issueDate: row[4]?.toString() || new Date().toISOString().split('T')[0],
-      dueDate: row[5]?.toString() || new Date().toISOString().split('T')[0],
+      invoiceNumber: row[0]?.toString() || "",
+      customerName: row[1]?.toString() || "",
+      customerEmail: row[2]?.toString() || "",
+      customerTrn: row[3]?.toString() || "",
+      issueDate: row[4]?.toString() || new Date().toISOString().split("T")[0],
+      dueDate: row[5]?.toString() || new Date().toISOString().split("T")[0],
       subtotal: parseFloat(row[6] as string) || 0,
       vatAmount: parseFloat(row[7] as string) || 0,
       total: parseFloat(row[8] as string) || 0,
-      status: row[9]?.toString() || 'draft',
-      notes: row[10]?.toString() || '',
+      status: row[9]?.toString() || "draft",
+      notes: row[10]?.toString() || "",
     }))
     .filter((inv) => inv.subtotal > 0);
 }
 
 // Import expenses from a Google Sheet
-export async function importExpensesFromSheet(
-  spreadsheetId: string,
-): Promise<any[]> {
+export async function importExpensesFromSheet(spreadsheetId: string): Promise<any[]> {
   const sheets = await getGoogleSheetsClient();
 
   // Get all sheets in the spreadsheet
   const response = await sheets.spreadsheets.get({
     spreadsheetId,
-    fields: 'sheets.properties',
+    fields: "sheets.properties",
   });
 
   const firstSheet = response.data.sheets?.[0]?.properties?.title;
   if (!firstSheet) {
-    throw new Error('No sheets found in spreadsheet');
+    throw new Error("No sheets found in spreadsheet");
   }
 
   // Read from first sheet
@@ -468,7 +458,7 @@ export async function importExpensesFromSheet(
 
   return rows
     .map((row) => {
-      let date = new Date().toISOString().split('T')[0];
+      let date = new Date().toISOString().split("T")[0];
       const dateStr = row[0]?.toString().trim();
       if (dateStr) {
         try {
@@ -476,8 +466,8 @@ export async function importExpensesFromSheet(
           // Handles: DD/MM/YY, DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY
           let parsedDate: Date | null = null;
 
-          if (dateStr.includes('/')) {
-            const parts = dateStr.split('/');
+          if (dateStr.includes("/")) {
+            const parts = dateStr.split("/");
             if (parts.length === 3) {
               let day = parseInt(parts[0], 10);
               let month = parseInt(parts[1], 10);
@@ -490,7 +480,7 @@ export async function importExpensesFromSheet(
 
               parsedDate = new Date(year, month - 1, day);
             }
-          } else if (dateStr.includes('-')) {
+          } else if (dateStr.includes("-")) {
             parsedDate = new Date(dateStr);
           } else {
             // Try generic parsing
@@ -498,7 +488,7 @@ export async function importExpensesFromSheet(
           }
 
           if (parsedDate && !isNaN(parsedDate.getTime())) {
-            date = parsedDate.toISOString().split('T')[0];
+            date = parsedDate.toISOString().split("T")[0];
           }
         } catch (e) {
           // Fall back to today's date
@@ -507,13 +497,13 @@ export async function importExpensesFromSheet(
 
       return {
         date,
-        merchant: row[1] || '',
-        description: row[2] || '',
-        category: row[3] || '',
+        merchant: row[1] || "",
+        description: row[2] || "",
+        category: row[3] || "",
         amount: parseFloat(row[4]) || 0,
         vatAmount: parseFloat(row[5]) || 0,
-        paymentMethod: row[6] || '',
-        status: row[7] || 'pending',
+        paymentMethod: row[6] || "",
+        status: row[7] || "pending",
       };
     })
     .filter((exp) => exp.amount > 0);

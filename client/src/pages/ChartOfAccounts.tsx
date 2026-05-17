@@ -1,21 +1,21 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency } from '@/lib/format';
-import type { Account } from '@shared/schema';
-import { 
-  ChevronDown, 
-  ChevronRight, 
-  Search, 
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { motion, AnimatePresence } from "framer-motion";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatCurrency } from "@/lib/format";
+import type { Account } from "@shared/schema";
+import {
+  ChevronDown,
+  ChevronRight,
+  Search,
   Plus,
   Wallet,
   CreditCard,
@@ -23,8 +23,8 @@ import {
   TrendingUp,
   Receipt,
   BookOpen,
-  ArrowRight
-} from 'lucide-react';
+  ArrowRight,
+} from "lucide-react";
 
 interface AccountWithBalance {
   account: Account;
@@ -33,68 +33,71 @@ interface AccountWithBalance {
   creditTotal: number;
 }
 
-const ACCOUNT_TYPE_ORDER = ['asset', 'liability', 'equity', 'income', 'expense'];
+const ACCOUNT_TYPE_ORDER = ["asset", "liability", "equity", "income", "expense"];
 
-const ACCOUNT_TYPE_CONFIG: Record<string, { 
-  label: string; 
-  labelAr: string;
-  icon: typeof Wallet;
-  colorClass: string;
-  bgClass: string;
-}> = {
-  asset: { 
-    label: 'Assets', 
-    labelAr: 'الأصول',
-    icon: Wallet,
-    colorClass: 'text-emerald-600 dark:text-emerald-400',
-    bgClass: 'bg-emerald-50 dark:bg-emerald-900/20'
-  },
-  liability: { 
-    label: 'Liabilities', 
-    labelAr: 'الخصوم',
-    icon: CreditCard,
-    colorClass: 'text-rose-600 dark:text-rose-400',
-    bgClass: 'bg-rose-50 dark:bg-rose-900/20'
-  },
-  equity: { 
-    label: 'Equity', 
-    labelAr: 'حقوق الملكية',
-    icon: PiggyBank,
-    colorClass: 'text-violet-600 dark:text-violet-400',
-    bgClass: 'bg-violet-50 dark:bg-violet-900/20'
-  },
-  income: { 
-    label: 'Revenue', 
-    labelAr: 'الإيرادات',
-    icon: TrendingUp,
-    colorClass: 'text-blue-600 dark:text-blue-400',
-    bgClass: 'bg-blue-50 dark:bg-blue-900/20'
-  },
-  expense: { 
-    label: 'Expenses', 
-    labelAr: 'المصروفات',
-    icon: Receipt,
-    colorClass: 'text-amber-600 dark:text-amber-400',
-    bgClass: 'bg-amber-50 dark:bg-amber-900/20'
+const ACCOUNT_TYPE_CONFIG: Record<
+  string,
+  {
+    label: string;
+    labelAr: string;
+    icon: typeof Wallet;
+    colorClass: string;
+    bgClass: string;
   }
+> = {
+  asset: {
+    label: "Assets",
+    labelAr: "الأصول",
+    icon: Wallet,
+    colorClass: "text-emerald-600 dark:text-emerald-400",
+    bgClass: "bg-emerald-50 dark:bg-emerald-900/20",
+  },
+  liability: {
+    label: "Liabilities",
+    labelAr: "الخصوم",
+    icon: CreditCard,
+    colorClass: "text-rose-600 dark:text-rose-400",
+    bgClass: "bg-rose-50 dark:bg-rose-900/20",
+  },
+  equity: {
+    label: "Equity",
+    labelAr: "حقوق الملكية",
+    icon: PiggyBank,
+    colorClass: "text-violet-600 dark:text-violet-400",
+    bgClass: "bg-violet-50 dark:bg-violet-900/20",
+  },
+  income: {
+    label: "Revenue",
+    labelAr: "الإيرادات",
+    icon: TrendingUp,
+    colorClass: "text-blue-600 dark:text-blue-400",
+    bgClass: "bg-blue-50 dark:bg-blue-900/20",
+  },
+  expense: {
+    label: "Expenses",
+    labelAr: "المصروفات",
+    icon: Receipt,
+    colorClass: "text-amber-600 dark:text-amber-400",
+    bgClass: "bg-amber-50 dark:bg-amber-900/20",
+  },
 };
 
 export default function ChartOfAccounts() {
   const { t, locale } = useTranslation();
   const [, navigate] = useLocation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(ACCOUNT_TYPE_ORDER));
 
   const { data: accountsWithBalances, isLoading } = useQuery<AccountWithBalance[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'accounts-with-balances'],
+    queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
     enabled: !!selectedCompanyId,
   });
 
   const groupedAccounts = useMemo(() => {
     if (!accountsWithBalances) return {};
-    
-    const filtered = accountsWithBalances.filter(item => {
+
+    const filtered = accountsWithBalances.filter((item) => {
       if (!searchQuery) return true;
       const query = searchQuery.toLowerCase();
       return (
@@ -104,13 +107,13 @@ export default function ChartOfAccounts() {
     });
 
     const grouped: Record<string, AccountWithBalance[]> = {};
-    ACCOUNT_TYPE_ORDER.forEach(type => {
-      const accounts = filtered.filter(item => item.account.type === type);
+    ACCOUNT_TYPE_ORDER.forEach((type) => {
+      const accounts = filtered.filter((item) => item.account.type === type);
       if (accounts.length > 0) {
         grouped[type] = accounts;
       }
     });
-    
+
     return grouped;
   }, [accountsWithBalances, searchQuery]);
 
@@ -144,7 +147,7 @@ export default function ChartOfAccounts() {
         <p className="text-muted-foreground text-center max-w-md mb-4">
           You need a company before you can configure your Chart of Accounts.
         </p>
-        <Button onClick={() => navigate('/onboarding')} data-testid="button-create-company">
+        <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
           Create your company
         </Button>
       </div>
@@ -155,17 +158,18 @@ export default function ChartOfAccounts() {
     <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight" data-testid="text-page-title">
+          <h1
+            className="text-2xl md:text-3xl font-bold tracking-tight"
+            data-testid="text-page-title"
+          >
             {t.chartOfAccounts}
           </h1>
-          <p className="text-muted-foreground mt-1">
-            {t.chartOfAccountsDescription}
-          </p>
+          <p className="text-muted-foreground mt-1">{t.chartOfAccountsDescription}</p>
         </div>
-        <Button 
+        <Button
           size="default"
           data-testid="button-add-account"
-          onClick={() => navigate('/journal')}
+          onClick={() => navigate("/journal")}
         >
           <Plus className="h-4 w-4 mr-2" />
           {t.addAccount}
@@ -205,16 +209,10 @@ export default function ChartOfAccounts() {
           <div className="flex flex-col items-center">
             <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">
-              {searchQuery 
-                ? t.noResultsFound
-                : t.noAccountsYet
-              }
+              {searchQuery ? t.noResultsFound : t.noAccountsYet}
             </h3>
             <p className="text-muted-foreground">
-              {searchQuery
-                ? t.tryDifferentKeywords
-                : t.addAccountsToStart
-              }
+              {searchQuery ? t.tryDifferentKeywords : t.addAccountsToStart}
             </p>
           </div>
         </Card>
@@ -240,7 +238,7 @@ export default function ChartOfAccounts() {
                   <Card className="overflow-hidden">
                     <Collapsible open={isExpanded} onOpenChange={() => toggleType(type)}>
                       <CollapsibleTrigger asChild>
-                        <CardHeader 
+                        <CardHeader
                           className={`py-4 cursor-pointer hover-elevate ${config.bgClass}`}
                           data-testid={`button-toggle-${type}`}
                         >
@@ -251,7 +249,7 @@ export default function ChartOfAccounts() {
                               </div>
                               <div>
                                 <CardTitle className="text-lg font-semibold">
-                                  {locale === 'ar' ? config.labelAr : config.label}
+                                  {locale === "ar" ? config.labelAr : config.label}
                                 </CardTitle>
                                 <CardDescription>
                                   {accounts.length} {t.accountsCount}
@@ -260,12 +258,12 @@ export default function ChartOfAccounts() {
                             </div>
                             <div className="flex items-center gap-4">
                               <div className="text-right">
-                                <p className="text-sm text-muted-foreground">
-                                  {t.total}
-                                </p>
-                                <p className={`text-lg font-mono font-semibold ${
-                                  typeTotals[type] >= 0 ? 'text-foreground' : 'text-destructive'
-                                }`}>
+                                <p className="text-sm text-muted-foreground">{t.total}</p>
+                                <p
+                                  className={`text-lg font-mono font-semibold ${
+                                    typeTotals[type] >= 0 ? "text-foreground" : "text-destructive"
+                                  }`}
+                                >
                                   {formatCurrency(Math.abs(typeTotals[type]))}
                                 </p>
                               </div>
@@ -294,8 +292,8 @@ export default function ChartOfAccounts() {
                                 <div className="flex items-center gap-3 min-w-0 flex-1">
                                   <div className="min-w-0">
                                     <p className="font-medium truncate">
-                                      {locale === 'ar' && item.account.nameAr 
-                                        ? item.account.nameAr 
+                                      {locale === "ar" && item.account.nameAr
+                                        ? item.account.nameAr
                                         : item.account.nameEn}
                                     </p>
                                   </div>
@@ -307,9 +305,11 @@ export default function ChartOfAccounts() {
                                 </div>
                                 <div className="flex items-center gap-4">
                                   <div className="text-right">
-                                    <p className={`font-mono font-medium ${
-                                      item.balance >= 0 ? 'text-foreground' : 'text-destructive'
-                                    }`}>
+                                    <p
+                                      className={`font-mono font-medium ${
+                                        item.balance >= 0 ? "text-foreground" : "text-destructive"
+                                      }`}
+                                    >
                                       {formatCurrency(Math.abs(item.balance))}
                                     </p>
                                     <div className="flex gap-2 text-xs text-muted-foreground">
@@ -335,9 +335,7 @@ export default function ChartOfAccounts() {
 
       <Card className="mt-6">
         <CardHeader className="py-4">
-          <CardTitle className="text-lg">
-            {t.balanceSummary}
-          </CardTitle>
+          <CardTitle className="text-lg">{t.balanceSummary}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -347,20 +345,22 @@ export default function ChartOfAccounts() {
               const total = typeTotals[type] || 0;
 
               return (
-                <div 
-                  key={type} 
+                <div
+                  key={type}
                   className={`p-4 rounded-lg ${config.bgClass}`}
                   data-testid={`summary-${type}`}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <Icon className={`h-4 w-4 ${config.colorClass}`} />
                     <span className="text-sm font-medium">
-                      {locale === 'ar' ? config.labelAr : config.label}
+                      {locale === "ar" ? config.labelAr : config.label}
                     </span>
                   </div>
-                  <p className={`font-mono font-semibold text-lg ${
-                    total >= 0 ? 'text-foreground' : 'text-destructive'
-                  }`}>
+                  <p
+                    className={`font-mono font-semibold text-lg ${
+                      total >= 0 ? "text-foreground" : "text-destructive"
+                    }`}
+                  >
                     {formatCurrency(Math.abs(total))}
                   </p>
                 </div>
