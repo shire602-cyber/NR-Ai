@@ -393,6 +393,70 @@ export type InsertFirmStaffAssignment = z.infer<typeof insertFirmStaffAssignment
 export type FirmStaffAssignment = typeof firmStaffAssignments.$inferSelect;
 
 // ===========================
+// Firm Growth Opportunities
+// ===========================
+// Internal revenue-ops opportunities surfaced to NRA bookkeepers. These records
+// are intentionally internal; action rows log scripts/notes and do not imply
+// a client message was delivered unless a real provider is added later.
+export const firmGrowthOpportunities = pgTable("firm_growth_opportunities", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  prospectUserId: uuid("prospect_user_id").references(() => users.id, { onDelete: "set null" }),
+  sourceKey: text("source_key").notNull().unique(),
+  opportunityType: text("opportunity_type").notNull(), // service_ar | cleanup | advisory_pack | audit_pack | cfo_pack | saas_conversion | compliance_extra
+  sourceSignal: text("source_signal").notNull(),
+  title: text("title").notNull(),
+  reason: text("reason").notNull(),
+  estimatedValue: money("estimated_value").notNull().default(0),
+  confidence: real("confidence").notNull().default(0.5),
+  priority: text("priority").notNull().default("medium"), // critical | high | medium | low
+  status: text("status").notNull().default("open"), // open | accepted | snoozed | dismissed | completed
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  dueDate: timestamp("due_date"),
+  snoozedUntil: timestamp("snoozed_until"),
+  resolvedAt: timestamp("resolved_at"),
+  resolutionNote: text("resolution_note"),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_firm_growth_opportunities_company_id").on(table.companyId),
+  statusIdx: index("idx_firm_growth_opportunities_status").on(table.status),
+  priorityIdx: index("idx_firm_growth_opportunities_priority").on(table.priority),
+  ownerIdx: index("idx_firm_growth_opportunities_owner").on(table.ownerUserId),
+}));
+
+export const firmGrowthActions = pgTable("firm_growth_actions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  opportunityId: uuid("opportunity_id").notNull().references(() => firmGrowthOpportunities.id, { onDelete: "cascade" }),
+  actionType: text("action_type").notNull(), // accept | assign | snooze | dismiss | complete | note | script
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  channel: text("channel").notNull().default("internal"),
+  deliveryState: text("delivery_state").notNull().default("logged"),
+  note: text("note"),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  opportunityIdIdx: index("idx_firm_growth_actions_opportunity_id").on(table.opportunityId),
+  actorIdx: index("idx_firm_growth_actions_actor").on(table.actorUserId),
+}));
+
+export const insertFirmGrowthOpportunitySchema = createInsertSchema(firmGrowthOpportunities).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertFirmGrowthActionSchema = createInsertSchema(firmGrowthActions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFirmGrowthOpportunity = z.infer<typeof insertFirmGrowthOpportunitySchema>;
+export type FirmGrowthOpportunity = typeof firmGrowthOpportunities.$inferSelect;
+export type InsertFirmGrowthAction = z.infer<typeof insertFirmGrowthActionSchema>;
+export type FirmGrowthAction = typeof firmGrowthActions.$inferSelect;
+
+// ===========================
 // Chart of Accounts
 // ===========================
 export const accounts = pgTable("accounts", {
@@ -1921,6 +1985,103 @@ export interface VatReturnAdjustment {
   userId: string;
   createdAt: string;       // ISO timestamp
 }
+
+// ===========================
+// Firm VAT Submission Workspace
+// ===========================
+// Bookkeeper-owned VAT workpapers. Rows are VAT evidence only; they do not post
+// accounting invoices, receipts, bills, or journals.
+export const vatWorkpapers = pgTable("vat_workpapers", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  status: text("status").notNull().default("draft"), // draft | in_review | ready | generated | filed | locked
+  reviewerUserId: uuid("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+  generatedVatReturnId: uuid("generated_vat_return_id").references(() => vatReturns.id, { onDelete: "set null" }),
+  totalsSnapshot: jsonb("totals_snapshot").notNull().default(sql`'{}'::jsonb`),
+  notes: text("notes"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyPeriodUnique: unique("vat_workpapers_company_period_unique").on(table.companyId, table.periodStart, table.periodEnd),
+  companyIdIdx: index("idx_vat_workpapers_company_id").on(table.companyId),
+  statusIdx: index("idx_vat_workpapers_status").on(table.status),
+  dueDateIdx: index("idx_vat_workpapers_due_date").on(table.dueDate),
+}));
+
+export const vatWorkpaperRows = pgTable("vat_workpaper_rows", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  workpaperId: uuid("workpaper_id").notNull().references(() => vatWorkpapers.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  rowCategory: text("row_category").notNull(), // standard_sale | tourist_refund | reverse_charge_output | zero_rated_sale | exempt_sale | import | import_adjustment | standard_expense | reverse_charge_input | manual_adjustment
+  vat201Box: text("vat201_box").notNull(),
+  invoiceNumber: text("invoice_number"),
+  documentDate: timestamp("document_date"),
+  counterpartyName: text("counterparty_name"),
+  counterpartyTrn: text("counterparty_trn"),
+  emirate: text("emirate"),
+  taxableAmount: money("taxable_amount").notNull().default(0),
+  vatAmount: money("vat_amount").notNull().default(0),
+  adjustmentAmount: money("adjustment_amount").notNull().default(0),
+  grossAmount: money("gross_amount").notNull().default(0),
+  status: text("status").notNull().default("draft"), // draft | approved | excluded
+  sourceMethod: text("source_method").notNull().default("manual"), // manual | ocr | import | generated
+  sourceDocumentType: text("source_document_type"),
+  sourceDocumentId: uuid("source_document_id"),
+  notes: text("notes"),
+  auditReason: text("audit_reason"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  workpaperIdIdx: index("idx_vat_workpaper_rows_workpaper_id").on(table.workpaperId),
+  companyIdIdx: index("idx_vat_workpaper_rows_company_id").on(table.companyId),
+  statusIdx: index("idx_vat_workpaper_rows_status").on(table.status),
+  categoryIdx: index("idx_vat_workpaper_rows_category").on(table.rowCategory),
+}));
+
+export const vatWorkpaperAttachments = pgTable("vat_workpaper_attachments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  workpaperId: uuid("workpaper_id").notNull().references(() => vatWorkpapers.id, { onDelete: "cascade" }),
+  rowId: uuid("row_id").references(() => vatWorkpaperRows.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  filePath: text("file_path"),
+  extractedText: text("extracted_text"),
+  extractionJson: jsonb("extraction_json").notNull().default(sql`'{}'::jsonb`),
+  uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  workpaperIdIdx: index("idx_vat_workpaper_attachments_workpaper_id").on(table.workpaperId),
+  rowIdIdx: index("idx_vat_workpaper_attachments_row_id").on(table.rowId),
+}));
+
+export const insertVatWorkpaperSchema = createInsertSchema(vatWorkpapers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertVatWorkpaperRowSchema = createInsertSchema(vatWorkpaperRows).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertVatWorkpaperAttachmentSchema = createInsertSchema(vatWorkpaperAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertVatWorkpaper = z.infer<typeof insertVatWorkpaperSchema>;
+export type VatWorkpaper = typeof vatWorkpapers.$inferSelect;
+export type InsertVatWorkpaperRow = z.infer<typeof insertVatWorkpaperRowSchema>;
+export type VatWorkpaperRow = typeof vatWorkpaperRows.$inferSelect;
+export type InsertVatWorkpaperAttachment = z.infer<typeof insertVatWorkpaperAttachmentSchema>;
+export type VatWorkpaperAttachment = typeof vatWorkpaperAttachments.$inferSelect;
 
 // ===========================
 // Corporate Tax Returns (9% UAE CT)

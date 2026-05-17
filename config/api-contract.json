@@ -24,6 +24,26 @@
       "name": "firm command center dashboard",
       "file": "server/routes/firm-command-center.routes.ts",
       "mustContain": ["app.use('/api/firm/command-center', router)", "'/dashboard'"]
+    },
+    {
+      "name": "firm growth opportunities",
+      "file": "server/routes/firm-growth.routes.ts",
+      "mustContain": ["app.use('/api/firm/growth-opportunities', router)", "'/'", "'/refresh'", "'/:id'"]
+    },
+    {
+      "name": "firm vat workspace",
+      "file": "server/routes/firm-vat-workspace.routes.ts",
+      "mustContain": [
+        "app.use('/api/firm/vat-workpapers', router)",
+        "'/'",
+        "'/:id'",
+        "'/:id/rows'",
+        "'/:id/rows/:rowId'",
+        "'/:id/scan'",
+        "'/:id/recalculate'",
+        "'/:id/generate-return'",
+        "'/:id/status'"
+      ]
     }
   ]
 }

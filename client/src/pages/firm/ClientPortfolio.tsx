@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import {
@@ -6,7 +6,7 @@ import {
   ChevronRight, Users, Calendar,
   BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
   Calculator, CheckCircle2, Clock, FileText, TrendingUp,
-  UserCheck, Target,
+  UserCheck, Target, RefreshCw, Copy, ScanLine, Check, XCircle,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -183,6 +183,91 @@ interface BookkeeperDashboard {
   clients: BookkeeperClient[];
 }
 
+type GrowthOpportunityStatus = 'open' | 'accepted' | 'snoozed' | 'dismissed' | 'completed';
+
+interface GrowthOpportunity {
+  id: string;
+  companyId: string;
+  companyName: string | null;
+  opportunityType: string;
+  sourceSignal: string;
+  title: string;
+  reason: string;
+  estimatedValue: number;
+  confidence: number;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  status: GrowthOpportunityStatus;
+  ownerUserId: string | null;
+  dueDate: string | null;
+  snoozedUntil: string | null;
+  resolutionNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface GrowthDashboard {
+  summary: {
+    estimated: number;
+    accepted: number;
+    completed: number;
+    missed: number;
+    openCount: number;
+  };
+  opportunities: GrowthOpportunity[];
+}
+
+type VatRowCategory =
+  | 'standard_sale'
+  | 'tourist_refund'
+  | 'reverse_charge_output'
+  | 'zero_rated_sale'
+  | 'exempt_sale'
+  | 'import'
+  | 'import_adjustment'
+  | 'standard_expense'
+  | 'reverse_charge_input'
+  | 'manual_adjustment';
+
+interface VatWorkpaperSummary {
+  id: string;
+  companyId: string;
+  companyName: string;
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string;
+  status: string;
+  generatedVatReturnId: string | null;
+  totalsSnapshot: Record<string, number>;
+  updatedAt: string;
+}
+
+interface VatWorkpaperRow {
+  id: string;
+  rowCategory: VatRowCategory;
+  vat201Box: string;
+  invoiceNumber: string | null;
+  documentDate: string | null;
+  counterpartyName: string | null;
+  counterpartyTrn: string | null;
+  emirate: string | null;
+  taxableAmount: number;
+  vatAmount: number;
+  adjustmentAmount: number;
+  grossAmount: number;
+  status: 'draft' | 'approved' | 'excluded';
+  sourceMethod: 'manual' | 'ocr' | 'import' | 'generated';
+  notes: string | null;
+  auditReason: string | null;
+}
+
+interface VatWorkpaperDetail {
+  workpaper: VatWorkpaperSummary;
+  company: { id: string; name: string; trnVatNumber: string | null } | null;
+  rows: VatWorkpaperRow[];
+  attachments: unknown[];
+  totals: Record<string, number>;
+}
+
 function formatAed(amount: number) {
   return new Intl.NumberFormat('en-AE', {
     style: 'currency',
@@ -208,6 +293,60 @@ function formatDays(days: number | null | undefined) {
   if (days === 0) return 'Due today';
   return `${days}d left`;
 }
+
+function inputDate(date: string | null | undefined) {
+  if (!date) return '';
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return format(parsed, 'yyyy-MM-dd');
+}
+
+function copyText(value: unknown) {
+  void navigator.clipboard?.writeText(String(value ?? '0'));
+}
+
+const vatRowCategories: Array<{ value: VatRowCategory; label: string }> = [
+  { value: 'standard_sale', label: 'Standard sales by emirate' },
+  { value: 'tourist_refund', label: 'Tourist refunds' },
+  { value: 'reverse_charge_output', label: 'Reverse charge output' },
+  { value: 'zero_rated_sale', label: 'Zero-rated supplies' },
+  { value: 'exempt_sale', label: 'Exempt supplies' },
+  { value: 'import', label: 'Imports' },
+  { value: 'import_adjustment', label: 'Import adjustments' },
+  { value: 'standard_expense', label: 'Standard expenses' },
+  { value: 'reverse_charge_input', label: 'Reverse charge input' },
+  { value: 'manual_adjustment', label: 'Manual adjustment' },
+];
+
+const vat201CopyFields = [
+  ['box1aAbuDhabiAmount', '1a Abu Dhabi amount'],
+  ['box1aAbuDhabiVat', '1a Abu Dhabi VAT'],
+  ['box1bDubaiAmount', '1b Dubai amount'],
+  ['box1bDubaiVat', '1b Dubai VAT'],
+  ['box1cSharjahAmount', '1c Sharjah amount'],
+  ['box1cSharjahVat', '1c Sharjah VAT'],
+  ['box1dAjmanAmount', '1d Ajman amount'],
+  ['box1dAjmanVat', '1d Ajman VAT'],
+  ['box1eUmmAlQuwainAmount', '1e UAQ amount'],
+  ['box1eUmmAlQuwainVat', '1e UAQ VAT'],
+  ['box1fRasAlKhaimahAmount', '1f RAK amount'],
+  ['box1fRasAlKhaimahVat', '1f RAK VAT'],
+  ['box1gFujairahAmount', '1g Fujairah amount'],
+  ['box1gFujairahVat', '1g Fujairah VAT'],
+  ['box2TouristRefundVat', '2 Tourist refund VAT'],
+  ['box3ReverseChargeVat', '3 Reverse charge VAT'],
+  ['box4ZeroRatedAmount', '4 Zero-rated amount'],
+  ['box5ExemptAmount', '5 Exempt amount'],
+  ['box6ImportsVat', '6 Import VAT'],
+  ['box7ImportsAdjVat', '7 Import adjustment VAT'],
+  ['box8TotalVat', '8 Total output VAT'],
+  ['box9ExpensesVat', '9 Input VAT'],
+  ['box10ReverseChargeVat', '10 Reverse charge input VAT'],
+  ['box11TotalVat', '11 Total input VAT'],
+  ['box12TotalDueTax', '12 Due tax'],
+  ['box13RecoverableTax', '13 Recoverable tax'],
+  ['box14PayableTax', '14 Payable tax'],
+] as const;
 
 function priorityClass(priority: BookkeeperPriority | 'filed') {
   if (priority === 'filed' || priority === 'on_track') return 'bg-green-100 text-green-800 border-green-200';
@@ -1358,6 +1497,660 @@ function BookkeeperCommandCenter({
   );
 }
 
+function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string) => void }) {
+  const { toast } = useToast();
+  const { data, isLoading } = useQuery<GrowthDashboard>({
+    queryKey: ['/api/firm/growth-opportunities'],
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: () => apiRequest('POST', '/api/firm/growth-opportunities/refresh'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/growth-opportunities'] });
+      toast({ title: 'Revenue opportunities refreshed' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not refresh revenue opportunities', description: e?.message }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, status, actionType, resolutionNote }: { id: string; status: GrowthOpportunityStatus; actionType: string; resolutionNote?: string }) =>
+      apiRequest('PATCH', `/api/firm/growth-opportunities/${id}`, { status, actionType, resolutionNote }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/growth-opportunities'] });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not update opportunity', description: e?.message }),
+  });
+
+  const opportunities = data?.opportunities ?? [];
+  const active = opportunities
+    .filter(item => item.status !== 'dismissed' && item.status !== 'completed')
+    .slice(0, 6);
+  const summary = data?.summary ?? { estimated: 0, accepted: 0, completed: 0, missed: 0, openCount: 0 };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Target className="w-4 h-4 text-primary" />
+              Revenue Growth
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Internal opportunity queue for service AR, cleanup work, advisory packs, and compliance extras.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => refreshMutation.mutate()}
+            disabled={refreshMutation.isPending}
+          >
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Refresh Signals
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="rounded-md border bg-muted/20 p-3">
+            <p className="text-xs text-muted-foreground">Open pipeline</p>
+            <p className="text-lg font-semibold">{formatAed(summary.estimated)}</p>
+          </div>
+          <div className="rounded-md border bg-muted/20 p-3">
+            <p className="text-xs text-muted-foreground">Accepted</p>
+            <p className="text-lg font-semibold">{formatAed(summary.accepted)}</p>
+          </div>
+          <div className="rounded-md border bg-muted/20 p-3">
+            <p className="text-xs text-muted-foreground">Completed</p>
+            <p className="text-lg font-semibold">{formatAed(summary.completed)}</p>
+          </div>
+          <div className="rounded-md border bg-muted/20 p-3">
+            <p className="text-xs text-muted-foreground">Open count</p>
+            <p className="text-lg font-semibold">{summary.openCount}</p>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading revenue signals...</p>
+        ) : active.length === 0 ? (
+          <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            No active revenue opportunities yet. Refresh signals after new AR, cleanup, or compliance data lands.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {active.map(opportunity => (
+              <div key={opportunity.id} className="rounded-md border p-3 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{opportunity.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">{opportunity.companyName ?? 'Client'}</p>
+                  </div>
+                  <Badge variant={opportunity.priority === 'critical' ? 'destructive' : 'outline'}>
+                    {opportunity.priority}
+                  </Badge>
+                </div>
+                <p className="text-sm text-muted-foreground">{opportunity.reason}</p>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-semibold">{formatAed(Number(opportunity.estimatedValue ?? 0))}</span>
+                  <span className="text-muted-foreground">{Math.round(Number(opportunity.confidence ?? 0) * 100)}% confidence</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onOpenClient(opportunity.companyId)}
+                  >
+                    Client
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => updateMutation.mutate({ id: opportunity.id, status: 'accepted', actionType: 'accept' })}
+                    disabled={updateMutation.isPending}
+                  >
+                    Accept
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => updateMutation.mutate({ id: opportunity.id, status: 'completed', actionType: 'complete' })}
+                    disabled={updateMutation.isPending}
+                  >
+                    Complete
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => updateMutation.mutate({
+                      id: opportunity.id,
+                      status: 'dismissed',
+                      actionType: 'dismiss',
+                      resolutionNote: 'Dismissed from Client Operations.',
+                    })}
+                    disabled={updateMutation.isPending}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function VatWorkspacePanel({
+  dashboard,
+  clients,
+  onOpenWorkspace,
+}: {
+  dashboard?: BookkeeperDashboard;
+  clients: ClientWithStats[];
+  onOpenWorkspace: (companyId: string) => void;
+}) {
+  const { data } = useQuery<{ workpapers: VatWorkpaperSummary[] }>({
+    queryKey: ['/api/firm/vat-workpapers'],
+  });
+  const workpapers = data?.workpapers ?? [];
+  const draftCount = workpapers.filter(workpaper => workpaper.status === 'draft' || workpaper.status === 'in_review').length;
+  const dueClients = (dashboard?.clients ?? [])
+    .filter(client => client.vat.status !== 'filed')
+    .sort((a, b) => (a.vat.daysTilDue ?? 99999) - (b.vat.daysTilDue ?? 99999))
+    .slice(0, 6);
+  const recentWorkpapers = workpapers.slice(0, 5);
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-primary" />
+              VAT Submission Workspace
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              VAT-only workpapers for invoice rows, OCR drafts, evidence, and copy-ready VAT 201 figures.
+            </p>
+          </div>
+          <Badge variant="outline">{draftCount} draft/review workpapers</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">VAT queue</p>
+            <span className="text-xs text-muted-foreground">{dashboard?.summary.vatDue28Days ?? 0} due in 28d</span>
+          </div>
+          {dueClients.length === 0 ? (
+            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No VAT queue items need action.</div>
+          ) : (
+            dueClients.map(client => (
+              <div key={client.companyId} className="rounded-md border p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{client.companyName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {client.vat.cohortLabel} · {formatPeriod(client.vat.periodStart, client.vat.periodEnd)} · {formatDays(client.vat.daysTilDue)}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => onOpenWorkspace(client.companyId)}>
+                  Workspace
+                </Button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Recent workpapers</p>
+            <span className="text-xs text-muted-foreground">{workpapers.length} total</span>
+          </div>
+          {recentWorkpapers.length === 0 ? (
+            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              No VAT workpapers yet. Open a client from the VAT queue to create one.
+            </div>
+          ) : (
+            recentWorkpapers.map(workpaper => (
+              <div key={workpaper.id} className="rounded-md border p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{workpaper.companyName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatPeriod(workpaper.periodStart, workpaper.periodEnd)} · {workpaper.status}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => onOpenWorkspace(workpaper.companyId)}>
+                  Open
+                </Button>
+              </div>
+            ))
+          )}
+          {clients.length > 0 && dueClients.length === 0 && (
+            <Button size="sm" variant="outline" onClick={() => onOpenWorkspace(clients[0].id)}>
+              Create for first client
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function VatWorkspaceDialog({
+  client,
+  ops,
+  open,
+  onOpenChange,
+}: {
+  client: ClientWithStats | undefined;
+  ops: BookkeeperClient | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { toast } = useToast();
+  const [selectedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
+  const [periodStart, setPeriodStart] = useState('');
+  const [periodEnd, setPeriodEnd] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [rowForm, setRowForm] = useState({
+    rowCategory: 'standard_sale' as VatRowCategory,
+    vat201Box: 'box1bDubaiAmount',
+    invoiceNumber: '',
+    documentDate: '',
+    counterpartyName: '',
+    counterpartyTrn: '',
+    emirate: client?.emirate ?? 'dubai',
+    taxableAmount: '',
+    vatAmount: '',
+    adjustmentAmount: '',
+    grossAmount: '',
+    notes: '',
+    auditReason: '',
+  });
+
+  useEffect(() => {
+    if (!open || !client) return;
+    setPeriodStart(inputDate(ops?.vat.periodStart) || format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'));
+    setPeriodEnd(inputDate(ops?.vat.periodEnd) || format(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0), 'yyyy-MM-dd'));
+    setDueDate(inputDate(ops?.vat.dueDate));
+    setRowForm(form => ({ ...form, emirate: client.emirate ?? 'dubai' }));
+  }, [client, open, ops?.vat.dueDate, ops?.vat.periodEnd, ops?.vat.periodStart]);
+
+  const workpapersQuery = useQuery<{ workpapers: VatWorkpaperSummary[] }>({
+    queryKey: ['/api/firm/vat-workpapers', client?.id],
+    queryFn: () => apiRequest('GET', `/api/firm/vat-workpapers?companyId=${client?.id}`),
+    enabled: open && !!client,
+  });
+  const workpapers = workpapersQuery.data?.workpapers ?? [];
+
+  useEffect(() => {
+    if (!open) return;
+    if (!selectedWorkpaperId && workpapers.length > 0) setSelectedWorkpaperId(workpapers[0].id);
+    if (selectedWorkpaperId && workpapers.length > 0 && !workpapers.some(workpaper => workpaper.id === selectedWorkpaperId)) {
+      setSelectedWorkpaperId(workpapers[0].id);
+    }
+  }, [open, selectedWorkpaperId, workpapers]);
+
+  const detailQuery = useQuery<VatWorkpaperDetail>({
+    queryKey: ['/api/firm/vat-workpapers/detail', selectedWorkpaperId],
+    queryFn: () => apiRequest('GET', `/api/firm/vat-workpapers/${selectedWorkpaperId}`),
+    enabled: open && !!selectedWorkpaperId,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: () => apiRequest('POST', '/api/firm/vat-workpapers', {
+      companyId: client?.id,
+      periodStart,
+      periodEnd,
+      dueDate: dueDate || null,
+    }),
+    onSuccess: (workpaper: VatWorkpaperSummary) => {
+      setSelectedWorkpaperId(workpaper.id);
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers', client?.id] });
+      toast({ title: 'VAT workpaper ready' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not create VAT workpaper', description: e?.message }),
+  });
+
+  const invalidateWorkspace = () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers', client?.id] });
+    queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers/detail', selectedWorkpaperId] });
+  };
+
+  const rowPayload = (mode: 'manual' | 'ocr') => ({
+    rowCategory: rowForm.rowCategory,
+    vat201Box: rowForm.rowCategory === 'manual_adjustment' ? rowForm.vat201Box : undefined,
+    invoiceNumber: rowForm.invoiceNumber || null,
+    documentDate: rowForm.documentDate || null,
+    counterpartyName: rowForm.counterpartyName || null,
+    counterpartyTrn: rowForm.counterpartyTrn || null,
+    emirate: rowForm.emirate || null,
+    taxableAmount: Number(rowForm.taxableAmount || 0),
+    vatAmount: Number(rowForm.vatAmount || 0),
+    adjustmentAmount: Number(rowForm.adjustmentAmount || 0),
+    grossAmount: Number(rowForm.grossAmount || 0),
+    status: mode === 'ocr' ? 'draft' : 'approved',
+    sourceMethod: mode,
+    notes: rowForm.notes || null,
+    auditReason: rowForm.auditReason || null,
+  });
+
+  const resetRowForm = () => {
+    setRowForm(form => ({
+      ...form,
+      invoiceNumber: '',
+      documentDate: '',
+      counterpartyName: '',
+      counterpartyTrn: '',
+      taxableAmount: '',
+      vatAmount: '',
+      adjustmentAmount: '',
+      grossAmount: '',
+      notes: '',
+      auditReason: '',
+    }));
+  };
+
+  const addRowMutation = useMutation({
+    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows`, rowPayload('manual')),
+    onSuccess: () => {
+      invalidateWorkspace();
+      resetRowForm();
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not add VAT row', description: e?.message }),
+  });
+
+  const scanMutation = useMutation({
+    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/scan`, {
+      attachment: {
+        fileName: rowForm.invoiceNumber ? `${rowForm.invoiceNumber}.scan` : 'vat-evidence.scan',
+        mimeType: 'application/octet-stream',
+        extractedText: rowForm.notes || null,
+        extractionJson: { source: 'manual_ocr_review' },
+      },
+      draftRow: rowPayload('ocr'),
+    }),
+    onSuccess: () => {
+      invalidateWorkspace();
+      resetRowForm();
+      toast({ title: 'OCR draft row logged for review' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not log OCR draft', description: e?.message }),
+  });
+
+  const updateRowMutation = useMutation({
+    mutationFn: ({ rowId, status }: { rowId: string; status: 'approved' | 'excluded' }) =>
+      apiRequest('PATCH', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}`, { status }),
+    onSuccess: invalidateWorkspace,
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not update VAT row', description: e?.message }),
+  });
+
+  const recalculateMutation = useMutation({
+    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/recalculate`),
+    onSuccess: invalidateWorkspace,
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not recalculate VAT workpaper', description: e?.message }),
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/generate-return`),
+    onSuccess: () => {
+      invalidateWorkspace();
+      toast({ title: 'VAT return generated for review', description: 'No FTA submission was performed.' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not generate VAT return', description: e?.message }),
+  });
+
+  const detail = detailQuery.data;
+  const rows = detail?.rows ?? [];
+  const totals = detail?.totals ?? detail?.workpaper.totalsSnapshot ?? {};
+  const draftRows = rows.filter(row => row.status === 'draft');
+  const approvedRows = rows.filter(row => row.status === 'approved');
+  const selectedSummary = workpapers.find(workpaper => workpaper.id === selectedWorkpaperId);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{client?.name ?? 'VAT Submission Workspace'}</DialogTitle>
+          <DialogDescription>
+            VAT-only workpaper. Approved rows total into VAT 201 copy fields; draft OCR rows do not count until reviewed.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              <div className="grid gap-1">
+                <Label>Period start</Label>
+                <Input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} />
+              </div>
+              <div className="grid gap-1">
+                <Label>Period end</Label>
+                <Input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
+              </div>
+              <div className="grid gap-1">
+                <Label>Due date</Label>
+                <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+              </div>
+              <div className="grid gap-1">
+                <Label>Workpaper</Label>
+                <Select value={selectedWorkpaperId ?? ''} onValueChange={setSelectedWorkpaperId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select workpaper" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workpapers.map(workpaper => (
+                      <SelectItem key={workpaper.id} value={workpaper.id}>
+                        {formatPeriod(workpaper.periodStart, workpaper.periodEnd)} · {workpaper.status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-end gap-2">
+              <Button onClick={() => createMutation.mutate()} disabled={!client || !periodStart || !periodEnd || createMutation.isPending}>
+                <Plus className="w-4 h-4 mr-2" />
+                Create/Open
+              </Button>
+              <Button variant="outline" onClick={() => recalculateMutation.mutate()} disabled={!selectedWorkpaperId || recalculateMutation.isPending}>
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+
+          {selectedSummary || detail ? (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Status</p>
+                  <p className="font-semibold">{detail?.workpaper.status ?? selectedSummary?.status}</p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Approved rows</p>
+                  <p className="font-semibold">{approvedRows.length}</p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Draft OCR rows</p>
+                  <p className="font-semibold">{draftRows.length}</p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">VAT payable</p>
+                  <p className="font-semibold">{formatAed(Number(totals.box14PayableTax ?? 0))}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md border p-3">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <p className="font-medium">Add VAT row</p>
+                    <p className="text-xs text-muted-foreground">Use OCR draft for scanned evidence that still needs review.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={() => scanMutation.mutate()} disabled={!selectedWorkpaperId || scanMutation.isPending}>
+                      <ScanLine className="w-4 h-4 mr-2" />
+                      OCR Draft
+                    </Button>
+                    <Button size="sm" onClick={() => addRowMutation.mutate()} disabled={!selectedWorkpaperId || addRowMutation.isPending}>
+                      <Check className="w-4 h-4 mr-2" />
+                      Add Approved
+                    </Button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                  <Select value={rowForm.rowCategory} onValueChange={value => setRowForm(form => ({ ...form, rowCategory: value as VatRowCategory }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vatRowCategories.map(category => (
+                        <SelectItem key={category.value} value={category.value}>{category.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input placeholder="Invoice no." value={rowForm.invoiceNumber} onChange={e => setRowForm(form => ({ ...form, invoiceNumber: e.target.value }))} />
+                  <Input type="date" value={rowForm.documentDate} onChange={e => setRowForm(form => ({ ...form, documentDate: e.target.value }))} />
+                  <Input placeholder="Customer / vendor" value={rowForm.counterpartyName} onChange={e => setRowForm(form => ({ ...form, counterpartyName: e.target.value }))} />
+                  <Input placeholder="TRN" value={rowForm.counterpartyTrn} onChange={e => setRowForm(form => ({ ...form, counterpartyTrn: e.target.value }))} />
+                  <Select value={rowForm.emirate} onValueChange={value => setRowForm(form => ({ ...form, emirate: value }))}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="abu_dhabi">Abu Dhabi</SelectItem>
+                      <SelectItem value="dubai">Dubai</SelectItem>
+                      <SelectItem value="sharjah">Sharjah</SelectItem>
+                      <SelectItem value="ajman">Ajman</SelectItem>
+                      <SelectItem value="umm_al_quwain">Umm Al Quwain</SelectItem>
+                      <SelectItem value="ras_al_khaimah">Ras Al Khaimah</SelectItem>
+                      <SelectItem value="fujairah">Fujairah</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input placeholder="Taxable amount" value={rowForm.taxableAmount} onChange={e => setRowForm(form => ({ ...form, taxableAmount: e.target.value }))} />
+                  <Input placeholder="VAT amount" value={rowForm.vatAmount} onChange={e => setRowForm(form => ({ ...form, vatAmount: e.target.value }))} />
+                  <Input placeholder="Adjustment" value={rowForm.adjustmentAmount} onChange={e => setRowForm(form => ({ ...form, adjustmentAmount: e.target.value }))} />
+                  <Input placeholder="Gross" value={rowForm.grossAmount} onChange={e => setRowForm(form => ({ ...form, grossAmount: e.target.value }))} />
+                  <Input placeholder="Notes / OCR text" value={rowForm.notes} onChange={e => setRowForm(form => ({ ...form, notes: e.target.value }))} />
+                  <Input placeholder="Override reason" value={rowForm.auditReason} onChange={e => setRowForm(form => ({ ...form, auditReason: e.target.value }))} />
+                  {rowForm.rowCategory === 'manual_adjustment' && (
+                    <Input placeholder="VAT 201 box, e.g. box9ExpensesVat" value={rowForm.vat201Box} onChange={e => setRowForm(form => ({ ...form, vat201Box: e.target.value }))} />
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-4">
+                <div className="rounded-md border overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Source</TableHead>
+                        <TableHead>Invoice</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead className="text-right">Taxable</TableHead>
+                        <TableHead className="text-right">VAT</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Review</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-sm text-muted-foreground text-center py-8">
+                            No VAT rows yet.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        rows.map(row => (
+                          <TableRow key={row.id}>
+                            <TableCell>
+                              <Badge variant={row.sourceMethod === 'ocr' ? 'secondary' : 'outline'}>{row.sourceMethod}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <p className="font-medium">{row.invoiceNumber || '—'}</p>
+                              <p className="text-xs text-muted-foreground truncate max-w-40">{row.counterpartyName || 'No counterparty'}</p>
+                            </TableCell>
+                            <TableCell className="text-sm">{vatRowCategories.find(category => category.value === row.rowCategory)?.label ?? row.rowCategory}</TableCell>
+                            <TableCell className="text-right">{formatAed(Number(row.taxableAmount ?? 0))}</TableCell>
+                            <TableCell className="text-right">{formatAed(Number(row.vatAmount ?? 0))}</TableCell>
+                            <TableCell>
+                              <Badge variant={row.status === 'approved' ? 'default' : row.status === 'excluded' ? 'outline' : 'secondary'}>
+                                {row.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {row.status === 'draft' ? (
+                                <div className="flex justify-end gap-1">
+                                  <Button size="sm" variant="outline" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'approved' })}>
+                                    <Check className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button size="sm" variant="ghost" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'excluded' })}>
+                                    <XCircle className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <Button size="sm" variant="ghost" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: row.status === 'approved' ? 'excluded' : 'approved' })}>
+                                  {row.status === 'approved' ? 'Exclude' : 'Approve'}
+                                </Button>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="rounded-md border p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">FTA VAT 201 copy fields</p>
+                      <p className="text-xs text-muted-foreground">Copy figures into FTA. No submission happens here.</p>
+                    </div>
+                    <Button size="sm" onClick={() => generateMutation.mutate()} disabled={!selectedWorkpaperId || generateMutation.isPending}>
+                      <FileText className="w-4 h-4 mr-2" />
+                      Generate Return
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
+                    {vat201CopyFields.map(([key, label]) => {
+                      const value = Number(totals[key] ?? 0).toFixed(2);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => copyText(value)}
+                          className="rounded-md border p-2 text-left hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-muted-foreground">{label}</span>
+                            <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                          </div>
+                          <p className="font-semibold mt-1">{value}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
+              Create a VAT workpaper to start entering VAT rows and reviewing OCR drafts.
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
   if (!vatStatus) return <Badge variant="outline">No VAT</Badge>;
   const due = new Date(vatStatus.dueDate);
@@ -1448,6 +2241,7 @@ export default function ClientPortfolio() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [briefClientId, setBriefClientId] = useState<string | null>(null);
+  const [vatWorkspaceClientId, setVatWorkspaceClientId] = useState<string | null>(null);
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
@@ -1469,6 +2263,14 @@ export default function ClientPortfolio() {
   const briefClient = useMemo(() => {
     return briefClientId ? bookkeeperByClientId.get(briefClientId) : undefined;
   }, [bookkeeperByClientId, briefClientId]);
+
+  const vatWorkspaceClient = useMemo(() => {
+    return vatWorkspaceClientId ? clients.find(client => client.id === vatWorkspaceClientId) : undefined;
+  }, [clients, vatWorkspaceClientId]);
+
+  const vatWorkspaceOps = useMemo(() => {
+    return vatWorkspaceClientId ? bookkeeperByClientId.get(vatWorkspaceClientId) : undefined;
+  }, [bookkeeperByClientId, vatWorkspaceClientId]);
 
   const createMutation = useMutation({
     mutationFn: (data: AddClientFormData) => apiRequest('POST', '/api/firm/clients', data),
@@ -1643,6 +2445,14 @@ export default function ClientPortfolio() {
         onViewProfile={handleViewProfile}
         onOpenBrief={setBriefClientId}
         onManageStaff={() => navigate('/firm/staff')}
+      />
+
+      <RevenueGrowthPanel onOpenClient={handleViewProfile} />
+
+      <VatWorkspacePanel
+        dashboard={bookkeeperDashboard}
+        clients={clients}
+        onOpenWorkspace={setVatWorkspaceClientId}
       />
 
       {/* Quick filters */}
@@ -1838,6 +2648,9 @@ export default function ClientPortfolio() {
                                 Brief
                               </Button>
                             )}
+                            <Button size="sm" variant="outline" onClick={() => setVatWorkspaceClientId(client.id)}>
+                              VAT
+                            </Button>
                             <Button size="sm" variant="outline" onClick={() => handleOpenBooks(client.id)} disabled={switchMutation.isPending}>
                               <BookOpen className="w-3.5 h-3.5 mr-1" />
                               Open
@@ -1952,6 +2765,13 @@ export default function ClientPortfolio() {
                     )}
                     <Button
                       size="sm"
+                      variant="outline"
+                      onClick={() => setVatWorkspaceClientId(client.id)}
+                    >
+                      VAT
+                    </Button>
+                    <Button
+                      size="sm"
                       className="flex-1"
                       onClick={() => handleOpenBooks(client.id)}
                       disabled={switchMutation.isPending}
@@ -2037,6 +2857,9 @@ export default function ClientPortfolio() {
                             Brief
                           </Button>
                         )}
+                        <Button size="sm" variant="outline" onClick={() => setVatWorkspaceClientId(client.id)}>
+                          VAT
+                        </Button>
                         <Button
                           size="sm"
                           onClick={() => handleOpenBooks(client.id)}
@@ -2264,7 +3087,7 @@ export default function ClientPortfolio() {
               <Input
                 id="import-file"
                 type="file"
-                accept=".csv,.xlsx"
+                accept=".csv,.xlsx,.xls"
                 onChange={e => {
                   setImportFile(e.target.files?.[0] ?? null);
                   setImportResult(null);
@@ -2318,6 +3141,12 @@ export default function ClientPortfolio() {
         onOpenChange={open => !open && setBriefClientId(null)}
         onOpenBooks={handleOpenBooks}
         onViewProfile={handleViewProfile}
+      />
+      <VatWorkspaceDialog
+        client={vatWorkspaceClient}
+        ops={vatWorkspaceOps}
+        open={!!vatWorkspaceClientId}
+        onOpenChange={open => !open && setVatWorkspaceClientId(null)}
       />
     </div>
   );

@@ -56,6 +56,7 @@
     { "idx": 51, "version": "7", "when": 1770000000000, "tag": "0051_revoke_test_backdoor_accounts", "breakpoints": false },
     { "idx": 52, "version": "7", "when": 1770100000000, "tag": "0052_refresh_sessions", "breakpoints": false },
     { "idx": 53, "version": "7", "when": 1770200000000, "tag": "0053_social_login", "breakpoints": false },
-    { "idx": 54, "version": "7", "when": 1770300000000, "tag": "0054_promote_shire602_firm_owner", "breakpoints": false }
+    { "idx": 54, "version": "7", "when": 1770300000000, "tag": "0054_promote_shire602_firm_owner", "breakpoints": false },
+    { "idx": 55, "version": "7", "when": 1770400000000, "tag": "0055_growth_ops_vat_workspace", "breakpoints": false }
   ]
 }
