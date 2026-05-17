@@ -72,6 +72,7 @@ interface ClientStats {
 }
 
 type ClientWithStats = Company & ClientStats;
+const EMPTY_CLIENT_LIST: ClientWithStats[] = [];
 
 interface FirmOverview {
   totalClients: number;
@@ -1781,17 +1782,21 @@ export default function ClientPortfolio() {
   const [briefClientId, setBriefClientId] = useState<string | null>(null);
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
-  const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
+  const clientsQuery = useQuery<ClientWithStats[]>({
     queryKey: ["/api/firm/clients"],
   });
 
-  const { data: overview } = useQuery<FirmOverview>({
+  const overviewQuery = useQuery<FirmOverview>({
     queryKey: ["/api/firm/overview"],
   });
 
-  const { data: bookkeeperDashboard } = useQuery<BookkeeperDashboard>({
+  const bookkeeperDashboardQuery = useQuery<BookkeeperDashboard>({
     queryKey: ["/api/firm/bookkeeper-dashboard"],
   });
+
+  const clients = clientsQuery.data ?? EMPTY_CLIENT_LIST;
+  const overview = overviewQuery.data;
+  const bookkeeperDashboard = bookkeeperDashboardQuery.data;
 
   const bookkeeperByClientId = useMemo(() => {
     return new Map(
@@ -1847,7 +1852,10 @@ export default function ClientPortfolio() {
         binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
       }
       const fileData = btoa(binary);
-      return apiRequest("POST", "/api/firm/clients/import", { fileData }) as Promise<ImportResult>;
+      return apiRequest("POST", "/api/firm/clients/import", {
+        fileData,
+        fileName: file.name,
+      }) as Promise<ImportResult>;
     },
     onSuccess: (result) => {
       setImportResult(result);
@@ -1907,13 +1915,39 @@ export default function ClientPortfolio() {
     navigate(`/firm/clients/${id}`);
   };
 
-  if (isLoading) {
+  if (clientsQuery.isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-muted-foreground">Loading client portfolio...</div>
       </div>
     );
   }
+
+  if (clientsQuery.isError) {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-red-200 bg-red-50 p-6 text-sm text-red-900"
+      >
+        <div className="font-medium">Client portfolio could not be loaded.</div>
+        <div className="mt-1 text-red-800">
+          {clientsQuery.error instanceof Error
+            ? clientsQuery.error.message
+            : "An unexpected error occurred."}
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => void clientsQuery.refetch()}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const secondaryLoadFailed = overviewQuery.isError || bookkeeperDashboardQuery.isError;
 
   return (
     <div className="space-y-6">
@@ -1943,6 +1977,29 @@ export default function ClientPortfolio() {
           </Button>
         </div>
       </div>
+
+      {secondaryLoadFailed && (
+        <div
+          role="alert"
+          className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+        >
+          <div className="font-medium">Some firm metrics could not be loaded.</div>
+          <div className="mt-1">
+            Client records are still available, but KPI and operations counts may be incomplete.
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => {
+              if (overviewQuery.isError) void overviewQuery.refetch();
+              if (bookkeeperDashboardQuery.isError) void bookkeeperDashboardQuery.refetch();
+            }}
+          >
+            Retry metrics
+          </Button>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

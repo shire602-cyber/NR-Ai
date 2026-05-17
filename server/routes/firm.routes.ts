@@ -21,10 +21,11 @@ import {
 } from "../services/firm-clients.service";
 import { parseSpreadsheetBuffer } from "../utils/spreadsheet";
 import { db } from "../db";
-import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne, lte } from "drizzle-orm";
+import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne, lte, isNull } from "drizzle-orm";
 import {
   companies,
   companyUsers,
+  firmStaffAssignments,
   users,
   invoices,
   receipts,
@@ -46,83 +47,274 @@ async function seedChartOfAccounts(companyId: string): Promise<void> {
   await storage.createBulkAccounts(defaultAccounts as any);
 }
 
-async function getClientStats(companyId: string) {
-  const [invoiceStats, arStats, lastReceipt, lastBankTx, latestVatReturn, staffRows] =
-    await Promise.all([
-      // Total invoices: count + sum
-      db
-        .select({ cnt: count(), total: sum(invoices.total) })
-        .from(invoices)
-        .where(eq(invoices.companyId, companyId))
-        .then((r: { cnt: number; total: string | null }[]) => r[0]),
+type ClientStats = {
+  invoiceCount: number;
+  invoiceTotal: number;
+  outstandingAr: number;
+  lastReceiptDate: Date | null;
+  lastBankActivityDate: Date | null;
+  vatStatus: { status: string; dueDate: Date; periodEnd: Date } | null;
+  assignedStaff: { id: string; name: string; email: string; role: string }[];
+};
 
-      // Outstanding AR: sum of totals for sent/partial invoices
-      db
-        .select({ ar: sum(invoices.total) })
-        .from(invoices)
-        .where(
-          and(
-            eq(invoices.companyId, companyId),
-            or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
-          )
-        )
-        .then((r: { ar: string | null }[]) => r[0]),
-
-      // Last receipt uploaded
-      db
-        .select({ lastDate: max(receipts.createdAt) })
-        .from(receipts)
-        .where(eq(receipts.companyId, companyId))
-        .then((r: { lastDate: Date | null }[]) => r[0]),
-
-      // Last bank transaction (proxy for last reconciliation activity)
-      db
-        .select({ lastDate: max(bankTransactions.transactionDate) })
-        .from(bankTransactions)
-        .where(eq(bankTransactions.companyId, companyId))
-        .then((r: { lastDate: Date | null }[]) => r[0]),
-
-      // Latest VAT return
-      db
-        .select({
-          status: vatReturns.status,
-          dueDate: vatReturns.dueDate,
-          periodEnd: vatReturns.periodEnd,
-        })
-        .from(vatReturns)
-        .where(eq(vatReturns.companyId, companyId))
-        .orderBy(desc(vatReturns.periodEnd))
-        .limit(1)
-        .then((r: { status: string; dueDate: Date; periodEnd: Date }[]) => r[0] || null),
-
-      // Assigned staff: users linked to this company who are admins
-      db
-        .select({
-          id: users.id,
-          name: users.name,
-          email: users.email,
-          role: companyUsers.role,
-        })
-        .from(companyUsers)
-        .innerJoin(users, eq(users.id, companyUsers.userId))
-        .where(and(eq(companyUsers.companyId, companyId), eq(users.isAdmin, true))),
-    ]);
-
+function emptyClientStats(): ClientStats {
   return {
-    invoiceCount: Number(invoiceStats?.cnt ?? 0),
-    invoiceTotal: Number(invoiceStats?.total ?? 0),
-    outstandingAr: Number(arStats?.ar ?? 0),
-    lastReceiptDate: lastReceipt?.lastDate ?? null,
-    lastBankActivityDate: lastBankTx?.lastDate ?? null,
-    vatStatus: latestVatReturn
-      ? {
-          status: latestVatReturn.status,
-          dueDate: latestVatReturn.dueDate,
-          periodEnd: latestVatReturn.periodEnd,
-        }
-      : null,
-    assignedStaff: staffRows,
+    invoiceCount: 0,
+    invoiceTotal: 0,
+    outstandingAr: 0,
+    lastReceiptDate: null,
+    lastBankActivityDate: null,
+    vatStatus: null,
+    assignedStaff: [],
   };
+}
+
+async function getClientStatsMap(companyIds: string[]): Promise<Map<string, ClientStats>> {
+  const statsByCompanyId = new Map<string, ClientStats>();
+  for (const companyId of companyIds) {
+    statsByCompanyId.set(companyId, emptyClientStats());
+  }
+  if (companyIds.length === 0) return statsByCompanyId;
+
+  const [
+    invoiceRows,
+    arRows,
+    lastReceiptRows,
+    lastBankTxRows,
+    latestVatRows,
+    companyUserStaffRows,
+    firmAssignmentStaffRows,
+  ] = await Promise.all([
+    db
+      .select({ companyId: invoices.companyId, cnt: count(), total: sum(invoices.total) })
+      .from(invoices)
+      .where(inArray(invoices.companyId, companyIds))
+      .groupBy(invoices.companyId),
+    db
+      .select({ companyId: invoices.companyId, ar: sum(invoices.total) })
+      .from(invoices)
+      .where(
+        and(
+          inArray(invoices.companyId, companyIds),
+          or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
+        )
+      )
+      .groupBy(invoices.companyId),
+    db
+      .select({ companyId: receipts.companyId, lastDate: max(receipts.createdAt) })
+      .from(receipts)
+      .where(inArray(receipts.companyId, companyIds))
+      .groupBy(receipts.companyId),
+    db
+      .select({
+        companyId: bankTransactions.companyId,
+        lastDate: max(bankTransactions.transactionDate),
+      })
+      .from(bankTransactions)
+      .where(inArray(bankTransactions.companyId, companyIds))
+      .groupBy(bankTransactions.companyId),
+    db
+      .select({
+        companyId: vatReturns.companyId,
+        status: vatReturns.status,
+        dueDate: vatReturns.dueDate,
+        periodEnd: vatReturns.periodEnd,
+      })
+      .from(vatReturns)
+      .where(inArray(vatReturns.companyId, companyIds))
+      .orderBy(vatReturns.companyId, desc(vatReturns.periodEnd)),
+    db
+      .select({
+        companyId: companyUsers.companyId,
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: companyUsers.role,
+      })
+      .from(companyUsers)
+      .innerJoin(users, eq(users.id, companyUsers.userId))
+      .where(and(inArray(companyUsers.companyId, companyIds), eq(users.firmRole, "firm_admin"))),
+    db
+      .select({
+        companyId: firmStaffAssignments.companyId,
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        role: firmStaffAssignments.role,
+      })
+      .from(firmStaffAssignments)
+      .innerJoin(users, eq(users.id, firmStaffAssignments.userId))
+      .where(
+        and(inArray(firmStaffAssignments.companyId, companyIds), eq(users.firmRole, "firm_admin"))
+      ),
+  ]);
+
+  for (const row of invoiceRows as { companyId: string; cnt: number; total: string | null }[]) {
+    const stats = statsByCompanyId.get(row.companyId);
+    if (!stats) continue;
+    stats.invoiceCount = Number(row.cnt ?? 0);
+    stats.invoiceTotal = Number(row.total ?? 0);
+  }
+
+  for (const row of arRows as { companyId: string; ar: string | null }[]) {
+    const stats = statsByCompanyId.get(row.companyId);
+    if (!stats) continue;
+    stats.outstandingAr = Number(row.ar ?? 0);
+  }
+
+  for (const row of lastReceiptRows as { companyId: string; lastDate: Date | null }[]) {
+    const stats = statsByCompanyId.get(row.companyId);
+    if (!stats) continue;
+    stats.lastReceiptDate = row.lastDate ?? null;
+  }
+
+  for (const row of lastBankTxRows as { companyId: string; lastDate: Date | null }[]) {
+    const stats = statsByCompanyId.get(row.companyId);
+    if (!stats) continue;
+    stats.lastBankActivityDate = row.lastDate ?? null;
+  }
+
+  for (const row of latestVatRows as {
+    companyId: string;
+    status: string;
+    dueDate: Date;
+    periodEnd: Date;
+  }[]) {
+    const stats = statsByCompanyId.get(row.companyId);
+    if (!stats || stats.vatStatus) continue;
+    stats.vatStatus = {
+      status: row.status,
+      dueDate: row.dueDate,
+      periodEnd: row.periodEnd,
+    };
+  }
+
+  const seenStaff = new Set<string>();
+  const addStaff = (row: {
+    companyId: string;
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  }) => {
+    const stats = statsByCompanyId.get(row.companyId);
+    if (!stats) return;
+    const key = `${row.companyId}:${row.id}`;
+    if (seenStaff.has(key)) return;
+    seenStaff.add(key);
+    stats.assignedStaff.push({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      role: row.role,
+    });
+  };
+
+  for (const row of firmAssignmentStaffRows as {
+    companyId: string;
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  }[]) {
+    addStaff(row);
+  }
+  for (const row of companyUserStaffRows as {
+    companyId: string;
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  }[]) {
+    addStaff(row);
+  }
+
+  return statsByCompanyId;
+}
+
+async function getClientStats(companyId: string): Promise<ClientStats> {
+  return (await getClientStatsMap([companyId])).get(companyId) ?? emptyClientStats();
+}
+
+async function assignFirmAdminToClient(
+  companyId: string,
+  staffUserId: string,
+  role: string
+): Promise<void> {
+  await Promise.all([
+    db
+      .insert(companyUsers)
+      .values({ companyId, userId: staffUserId, role })
+      .onConflictDoUpdate({
+        target: [companyUsers.companyId, companyUsers.userId],
+        set: { role },
+      }),
+    db
+      .insert(firmStaffAssignments)
+      .values({ companyId, userId: staffUserId, role })
+      .onConflictDoUpdate({
+        target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
+        set: { role },
+      }),
+  ]);
+}
+
+async function unassignFirmAdminFromClient(companyId: string, staffUserId: string): Promise<void> {
+  await Promise.all([
+    db
+      .delete(companyUsers)
+      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, staffUserId))),
+    db
+      .delete(firmStaffAssignments)
+      .where(
+        and(
+          eq(firmStaffAssignments.companyId, companyId),
+          eq(firmStaffAssignments.userId, staffUserId)
+        )
+      ),
+  ]);
+}
+
+async function getAssignedClientRowsForStaff(staffId: string) {
+  const [companyUserRows, firmAssignmentRows] = await Promise.all([
+    db
+      .select({
+        companyId: companyUsers.companyId,
+        role: companyUsers.role,
+        companyName: companies.name,
+        companyType: companies.companyType,
+      })
+      .from(companyUsers)
+      .innerJoin(companies, eq(companies.id, companyUsers.companyId))
+      .where(
+        and(
+          eq(companyUsers.userId, staffId),
+          eq(companies.companyType, "client"),
+          isNull(companies.deletedAt)
+        )
+      ),
+    db
+      .select({
+        companyId: firmStaffAssignments.companyId,
+        role: firmStaffAssignments.role,
+        companyName: companies.name,
+        companyType: companies.companyType,
+      })
+      .from(firmStaffAssignments)
+      .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
+      .where(
+        and(
+          eq(firmStaffAssignments.userId, staffId),
+          eq(companies.companyType, "client"),
+          isNull(companies.deletedAt)
+        )
+      ),
+  ]);
+
+  const byCompanyId = new Map<string, (typeof companyUserRows)[number]>();
+  for (const row of companyUserRows) byCompanyId.set(row.companyId, row);
+  for (const row of firmAssignmentRows) byCompanyId.set(row.companyId, row);
+  return Array.from(byCompanyId.values());
 }
 
 type HealthStatus = "healthy" | "attention" | "critical";
@@ -354,15 +546,22 @@ export function registerFirmRoutes(app: Express): void {
         clientCompanies = await db
           .select()
           .from(companies)
-          .where(and(eq(companies.companyType, "client"), inArray(companies.id, accessibleIds)));
+          .where(
+            and(
+              eq(companies.companyType, "client"),
+              isNull(companies.deletedAt),
+              inArray(companies.id, accessibleIds)
+            )
+          );
       }
 
-      const clientsWithStats = await Promise.all(
-        clientCompanies.map(async (company) => {
-          const stats = await getClientStats(company.id);
-          return { ...company, ...stats };
-        })
+      const statsByCompanyId = await getClientStatsMap(
+        clientCompanies.map((company) => company.id)
       );
+      const clientsWithStats = clientCompanies.map((company) => ({
+        ...company,
+        ...(statsByCompanyId.get(company.id) ?? emptyClientStats()),
+      }));
 
       res.json(clientsWithStats);
     })
@@ -454,10 +653,7 @@ export function registerFirmRoutes(app: Express): void {
       // Auto-assign firm_admin who created the client so they retain access.
       // firm_owner already has implicit access to all client companies via firmRole.
       if (firmRole === "firm_admin") {
-        await db
-          .insert(companyUsers)
-          .values({ companyId: company.id, userId, role: "accountant" })
-          .onConflictDoNothing();
+        await assignFirmAdminToClient(company.id, userId, "accountant");
       }
 
       await storage.createActivityLog({
@@ -489,6 +685,9 @@ export function registerFirmRoutes(app: Express): void {
       const company = await storage.getCompany(companyId);
       if (!company) {
         return res.status(404).json({ message: "Client not found" });
+      }
+      if (company.companyType !== "client" || company.deletedAt) {
+        return res.status(400).json({ message: "Company is not an active NRA client" });
       }
 
       const updated = await storage.updateCompany(companyId, validated as any);
@@ -537,19 +736,12 @@ export function registerFirmRoutes(app: Express): void {
       if (!staffUser) {
         return res.status(404).json({ message: "Staff user not found" });
       }
-      if (!staffUser.isAdmin) {
-        return res.status(400).json({ message: "User is not a firm staff member" });
+      if (staffUser.firmRole !== "firm_admin") {
+        return res.status(400).json({ message: "Only firm admins can be assigned to clients" });
       }
 
       if (action === "assign") {
-        const existing = await storage.getUserRole(companyId, staffUserId);
-        if (!existing) {
-          await storage.createCompanyUser({
-            companyId,
-            userId: staffUserId,
-            role,
-          });
-        }
+        await assignFirmAdminToClient(companyId, staffUserId, role);
         await storage.createActivityLog({
           userId: requestingUserId,
           companyId,
@@ -559,10 +751,7 @@ export function registerFirmRoutes(app: Express): void {
           description: `Assigned ${staffUser.name} to ${company.name}`,
         });
       } else {
-        // Unassign: remove from companyUsers
-        await db
-          .delete(companyUsers)
-          .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, staffUserId)));
+        await unassignFirmAdminFromClient(companyId, staffUserId);
         await storage.createActivityLog({
           userId: requestingUserId,
           companyId,
@@ -582,20 +771,14 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/staff",
     asyncHandler(async (_req: Request, res: Response) => {
       const allUsers = await storage.getAllUsers();
-      const firmStaff = allUsers.filter((u) => u.isAdmin);
+      const firmStaff = allUsers.filter(
+        (u) => u.firmRole === "firm_owner" || u.firmRole === "firm_admin"
+      );
 
       const staffWithAssignments = await Promise.all(
         firmStaff.map(async (staff) => {
-          const assignments = await db
-            .select({
-              companyId: companyUsers.companyId,
-              role: companyUsers.role,
-              companyName: companies.name,
-              companyType: companies.companyType,
-            })
-            .from(companyUsers)
-            .innerJoin(companies, eq(companies.id, companyUsers.companyId))
-            .where(and(eq(companyUsers.userId, staff.id), eq(companies.companyType, "client")));
+          const assignments =
+            staff.firmRole === "firm_admin" ? await getAssignedClientRowsForStaff(staff.id) : [];
 
           const { passwordHash: _ph, ...safeStaff } = staff;
           return {
@@ -1892,10 +2075,7 @@ export function registerFirmRoutes(app: Express): void {
           // firm_admin who runs the import becomes auto-assigned so they can
           // continue to manage what they imported.
           if (firmRole === "firm_admin") {
-            await db
-              .insert(companyUsers)
-              .values({ companyId: company.id, userId, role: "accountant" })
-              .onConflictDoNothing();
+            await assignFirmAdminToClient(company.id, userId, "accountant");
           }
 
           await storage.createActivityLog({

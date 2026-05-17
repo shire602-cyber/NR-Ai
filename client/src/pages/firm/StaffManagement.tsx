@@ -17,6 +17,7 @@ interface StaffMember {
   email: string;
   isAdmin: boolean;
   userType: string;
+  firmRole?: "firm_owner" | "firm_admin" | null;
   lastLoginAt: string | null;
   createdAt: string;
   assignedClients: {
@@ -76,6 +77,7 @@ export default function StaffManagement() {
   };
 
   const toggleAssignment = (staffMember: StaffMember, companyId: string) => {
+    if (staffMember.firmRole !== "firm_admin") return;
     const key = `${staffMember.id}:${companyId}`;
     const currentlyAssigned = staffMember.assignedClients.some((c) => c.companyId === companyId);
     const pendingAction = pendingChanges.get(key)?.action;
@@ -230,6 +232,9 @@ export default function StaffManagement() {
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{member.name}</p>
                         <Shield className="w-3.5 h-3.5 text-primary" />
+                        <Badge variant="outline" className="capitalize">
+                          {(member.firmRole ?? "firm").replace(/_/g, " ")}
+                        </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground flex items-center gap-1">
                         <Mail className="w-3 h-3" />
@@ -276,6 +281,7 @@ export default function StaffManagement() {
                             const assigned = isAssigned(member, client.id);
                             const key = `${member.id}:${client.id}`;
                             const hasPending = pendingChanges.has(key);
+                            const canAssign = member.firmRole === "firm_admin";
 
                             return (
                               <label
@@ -284,10 +290,12 @@ export default function StaffManagement() {
                                   "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
                                   assigned ? "bg-primary/5 border-primary/20" : "hover:bg-muted/40",
                                   hasPending ? "ring-1 ring-amber-300" : "",
+                                  canAssign ? "" : "opacity-60 cursor-not-allowed",
                                 ].join(" ")}
                               >
                                 <Checkbox
                                   checked={assigned}
+                                  disabled={!canAssign}
                                   onCheckedChange={() => toggleAssignment(member, client.id)}
                                 />
                                 <div className="flex-1 min-w-0">

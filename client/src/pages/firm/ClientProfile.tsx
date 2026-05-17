@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import type { Company } from "@shared/schema";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -74,6 +74,7 @@ interface StaffMember {
   name: string;
   email: string;
   isAdmin: boolean;
+  firmRole?: "firm_owner" | "firm_admin" | null;
   assignedClients: { companyId: string; companyName: string; role: string }[];
 }
 
@@ -177,12 +178,12 @@ export default function ClientProfile() {
     },
   });
 
-  const { data: summary, isLoading } = useQuery<ClientSummary>({
+  const summaryQuery = useQuery<ClientSummary>({
     queryKey: [`/api/firm/clients/${companyId}/summary`],
     enabled: !!companyId,
   });
 
-  const { data: firmStaff = [] } = useQuery<StaffMember[]>({
+  const { data: firmStaffData = [] } = useQuery<StaffMember[]>({
     queryKey: ["/api/firm/staff"],
     enabled: assignOpen,
   });
@@ -223,10 +224,45 @@ export default function ClientProfile() {
     },
   });
 
+  const firmStaff = firmStaffData.filter((staff) => staff.firmRole === "firm_admin");
+  const { data: summary, isLoading, isError, error } = summaryQuery;
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground">
         Loading client profile...
+      </div>
+    );
+  }
+
+  if (isError) {
+    const status = error instanceof ApiError ? error.status : undefined;
+    const title =
+      status === 403
+        ? "Access denied"
+        : status === 404
+          ? "Client not found"
+          : "Client profile could not be loaded";
+    const message =
+      status === 403
+        ? "You do not have access to this NRA client."
+        : error instanceof Error
+          ? error.message
+          : "An unexpected error occurred.";
+
+    return (
+      <div role="alert" className="flex flex-col items-center justify-center h-64 text-center">
+        <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
+        <p className="font-medium">{title}</p>
+        <p className="text-sm text-muted-foreground mt-1 max-w-md">{message}</p>
+        <div className="mt-3 flex gap-2">
+          <Button variant="outline" onClick={() => void summaryQuery.refetch()}>
+            Retry
+          </Button>
+          <Button variant="ghost" onClick={() => navigate("/firm/clients")}>
+            Back to portfolio
+          </Button>
+        </div>
       </div>
     );
   }
@@ -603,7 +639,7 @@ export default function ClientProfile() {
           <div className="py-3 space-y-3">
             {unassignedStaff.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">
-                All firm staff are already assigned to this client.
+                All assignable firm admins are already assigned to this client.
               </p>
             ) : (
               <>

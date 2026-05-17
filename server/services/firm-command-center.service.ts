@@ -15,10 +15,11 @@
  */
 
 import { db } from "../db";
-import { and, count, desc, eq, gte, inArray, lt, max, ne, or, sql, sum } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lt, max, ne, or, sql, sum } from "drizzle-orm";
 import {
   bankTransactions,
   companies,
+  companyUsers,
   firmAlerts,
   firmMetricsCache,
   firmStaffAssignments,
@@ -852,41 +853,84 @@ export async function resolveAlert(firmId: string, alertId: string): Promise<Fir
 // ─── DB-backed: staff workload ────────────────────────────────────────────────
 
 export async function fetchStaffWorkload(): Promise<StaffWorkloadRow[]> {
-  type Row = {
+  type StaffRow = {
     userId: string;
     userName: string;
     userEmail: string;
+  };
+  type AssignmentRow = {
+    userId: string;
     companyId: string | null;
     role: string | null;
   };
-  const rows = (await db
+  const staffRows = (await db
     .select({
       userId: users.id,
       userName: users.name,
       userEmail: users.email,
-      companyId: firmStaffAssignments.companyId,
-      role: firmStaffAssignments.role,
     })
     .from(users)
-    .leftJoin(firmStaffAssignments, eq(firmStaffAssignments.userId, users.id))
-    .where(eq(users.firmRole, "firm_admin"))) as Row[];
+    .where(eq(users.firmRole, "firm_admin"))) as StaffRow[];
+
+  const [firmAssignmentRows, companyUserRows] = (await Promise.all([
+    db
+      .select({
+        userId: firmStaffAssignments.userId,
+        companyId: firmStaffAssignments.companyId,
+        role: firmStaffAssignments.role,
+      })
+      .from(firmStaffAssignments)
+      .innerJoin(users, eq(users.id, firmStaffAssignments.userId))
+      .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
+      .where(
+        and(
+          eq(users.firmRole, "firm_admin"),
+          eq(companies.companyType, "client"),
+          isNull(companies.deletedAt)
+        )
+      ),
+    db
+      .select({
+        userId: companyUsers.userId,
+        companyId: companyUsers.companyId,
+        role: companyUsers.role,
+      })
+      .from(companyUsers)
+      .innerJoin(users, eq(users.id, companyUsers.userId))
+      .innerJoin(companies, eq(companies.id, companyUsers.companyId))
+      .where(
+        and(
+          eq(users.firmRole, "firm_admin"),
+          eq(companies.companyType, "client"),
+          isNull(companies.deletedAt)
+        )
+      ),
+  ])) as [AssignmentRow[], AssignmentRow[]];
 
   const grouped = new Map<string, StaffWorkloadInput>();
-  for (const r of rows) {
-    let entry = grouped.get(r.userId);
-    if (!entry) {
-      entry = {
-        userId: r.userId,
-        userName: r.userName,
-        userEmail: r.userEmail,
-        assignments: [],
-      };
-      grouped.set(r.userId, entry);
-    }
-    if (r.companyId && r.role) {
-      entry.assignments.push({ companyId: r.companyId, role: r.role });
-    }
+  for (const r of staffRows) {
+    grouped.set(r.userId, {
+      userId: r.userId,
+      userName: r.userName,
+      userEmail: r.userEmail,
+      assignments: [],
+    });
   }
+
+  const seenAssignments = new Set<string>();
+  const addAssignment = (r: AssignmentRow) => {
+    if (!r.companyId || !r.role) return;
+    const entry = grouped.get(r.userId);
+    if (!entry) return;
+    const key = `${r.userId}:${r.companyId}`;
+    if (seenAssignments.has(key)) return;
+    seenAssignments.add(key);
+    entry.assignments.push({ companyId: r.companyId, role: r.role });
+  };
+
+  for (const r of firmAssignmentRows) addAssignment(r);
+  for (const r of companyUserRows) addAssignment(r);
+
   return computeStaffWorkload(Array.from(grouped.values()));
 }
 
@@ -904,17 +948,26 @@ export async function assignStaffToCompany(
   // Validate the target is a managed client company.
   const [c] = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
   if (!c) throw new NotFoundError("Company");
-  if (c.companyType !== "client") {
+  if (c.companyType !== "client" || c.deletedAt) {
     throw new ValidationError("Only managed client companies can have staff assignments");
   }
 
-  await db
-    .insert(firmStaffAssignments)
-    .values({ userId, companyId, role })
-    .onConflictDoUpdate({
-      target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
-      set: { role },
-    });
+  await Promise.all([
+    db
+      .insert(firmStaffAssignments)
+      .values({ userId, companyId, role })
+      .onConflictDoUpdate({
+        target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
+        set: { role },
+      }),
+    db
+      .insert(companyUsers)
+      .values({ userId, companyId, role })
+      .onConflictDoUpdate({
+        target: [companyUsers.companyId, companyUsers.userId],
+        set: { role },
+      }),
+  ]);
 }
 
 // ─── DB-backed: cache ─────────────────────────────────────────────────────────
@@ -990,16 +1043,40 @@ export async function resolveAccessibleClientIds(
     const rows = await db
       .select({ id: companies.id })
       .from(companies)
-      .where(eq(companies.companyType, "client"));
+      .where(and(eq(companies.companyType, "client"), isNull(companies.deletedAt)));
     return rows.map((r: { id: string }) => r.id);
   }
   if (firmRole === "firm_admin") {
-    const rows = await db
-      .select({ id: firmStaffAssignments.companyId })
-      .from(firmStaffAssignments)
-      .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
-      .where(and(eq(firmStaffAssignments.userId, userId), eq(companies.companyType, "client")));
-    return rows.map((r: { id: string }) => r.id);
+    const [byAssignment, byMembership] = await Promise.all([
+      db
+        .select({ id: firmStaffAssignments.companyId })
+        .from(firmStaffAssignments)
+        .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
+        .where(
+          and(
+            eq(firmStaffAssignments.userId, userId),
+            eq(companies.companyType, "client"),
+            isNull(companies.deletedAt)
+          )
+        ),
+      db
+        .select({ id: companyUsers.companyId })
+        .from(companyUsers)
+        .innerJoin(companies, eq(companies.id, companyUsers.companyId))
+        .where(
+          and(
+            eq(companyUsers.userId, userId),
+            eq(companies.companyType, "client"),
+            isNull(companies.deletedAt)
+          )
+        ),
+    ]);
+    return Array.from(
+      new Set([
+        ...(byAssignment as { id: string }[]).map((r) => r.id),
+        ...(byMembership as { id: string }[]).map((r) => r.id),
+      ])
+    );
   }
   return [];
 }
