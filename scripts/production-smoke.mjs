@@ -3,13 +3,16 @@
 const baseUrl = (process.env.SMOKE_BASE_URL || process.argv[2] || '').replace(/\/$/, '');
 const email = process.env.SMOKE_EMAIL;
 const password = process.env.SMOKE_PASSWORD;
+const expectedCommit = process.env.SMOKE_EXPECTED_COMMIT;
+const readOnly = process.env.SMOKE_READ_ONLY === 'true';
+const requireOAuthConfigured = process.env.SMOKE_REQUIRE_OAUTH_CONFIG === 'true';
 
 if (!baseUrl) {
   console.error('SMOKE_BASE_URL or first argument is required');
   process.exit(1);
 }
 
-if (!email || !password) {
+if (!readOnly && (!email || !password)) {
   console.error('SMOKE_EMAIL and SMOKE_PASSWORD are required for protected-route smoke checks');
   process.exit(1);
 }
@@ -75,7 +78,27 @@ async function checkJson(name, path, predicate, options = {}) {
 
 await check('liveness', '/health/live');
 await check('readiness', '/health/ready');
-await checkJson('version', '/api/version', (body) => body?.status === 'ok' && body?.commit);
+await checkJson('version', '/api/version', (body) => {
+  if (body?.status !== 'ok' || !body?.commit) return false;
+  if (expectedCommit && !String(body.commit).startsWith(expectedCommit)) return false;
+  return true;
+});
+await checkJson('oauth providers', '/api/auth/oauth/providers', (body) => {
+  if (!Array.isArray(body?.providers)) return false;
+  const byId = new Map(body.providers.map((provider) => [provider?.id, provider]));
+  const google = byId.get('google');
+  const microsoft = byId.get('microsoft');
+  if (!google || !microsoft) return false;
+  if (requireOAuthConfigured) {
+    return google.configured === true && microsoft.configured === true;
+  }
+  return typeof google.configured === 'boolean' && typeof microsoft.configured === 'boolean';
+});
+
+if (readOnly) {
+  console.log('production read-only smoke checks passed');
+  process.exit(0);
+}
 
 const loginBody = await checkJson('login', '/api/auth/login', (body) => body?.user?.id, {
   method: 'POST',

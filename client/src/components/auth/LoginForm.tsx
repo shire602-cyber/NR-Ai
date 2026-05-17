@@ -24,6 +24,13 @@ interface LoginFormProps {
   onSuccess: (user: any) => void | Promise<void>;
 }
 
+function currentEpochMs(): number {
+  if (typeof performance !== 'undefined' && Number.isFinite(performance.timeOrigin)) {
+    return Math.round(performance.timeOrigin + performance.now());
+  }
+  return new Date().getTime();
+}
+
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
@@ -43,7 +50,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     if (!cooldownUntil) return;
 
     const update = () => {
-      const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+      const remaining = Math.max(0, Math.ceil((cooldownUntil - currentEpochMs()) / 1000));
       setCooldownSeconds(remaining);
       if (remaining === 0) setCooldownUntil(null);
     };
@@ -72,7 +79,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         if (response.status === 429) {
           const retryAfter = Number(error?.details?.retryAfterSeconds ?? response.headers.get('Retry-After') ?? 60);
           const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.ceil(retryAfter) : 60;
-          setCooldownUntil(Date.now() + seconds * 1000);
+          setCooldownUntil(currentEpochMs() + seconds * 1000);
           setCooldownSeconds(seconds);
         }
         throw new Error(error?.message || 'Login failed');
