@@ -3,7 +3,7 @@
   "name": "NR WhatsApp Bridge",
   "description": "Draft audited Muhasib.ai WhatsApp jobs inside WhatsApp Web for staff review.",
   "version": "0.1.0",
-  "permissions": ["tabs", "storage"],
+  "permissions": ["tabs", "storage", "scripting"],
   "host_permissions": [
     "https://web.whatsapp.com/*",
     "https://nr-ai-staging.up.railway.app/*",

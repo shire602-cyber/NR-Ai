@@ -1,4 +1,38 @@
 const JOB_STORAGE_KEY = 'nrWhatsappBridgeJobs';
+const APP_HOSTS = new Set([
+  'nr-ai-staging.up.railway.app',
+  'nr-ai-production.up.railway.app',
+  'nr-ai.up.railway.app',
+  'localhost',
+  '127.0.0.1',
+]);
+
+function scriptForUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url || '');
+  } catch {
+    return null;
+  }
+
+  if (APP_HOSTS.has(parsed.hostname)) return 'src/app-bridge.js';
+  if (parsed.hostname === 'web.whatsapp.com') return 'src/whatsapp-web.js';
+  return null;
+}
+
+async function injectBridgeScript(tabId, url) {
+  const file = scriptForUrl(url);
+  if (!file || !tabId) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: [file],
+    });
+  } catch {
+    // The tab may be restricted, gone, or not ready. Static content_scripts
+    // and the next navigation event still provide coverage.
+  }
+}
 
 function normalizePhone(raw) {
   let cleaned = String(raw || '').replace(/[^\d]/g, '');
@@ -75,4 +109,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({ installedAt: new Date().toISOString() });
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) injectBridgeScript(tab.id, tab.url);
+  });
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) injectBridgeScript(tab.id, tab.url);
+  });
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  const url = changeInfo.url || tab.url;
+  if (changeInfo.status === 'loading' || changeInfo.status === 'complete' || changeInfo.url) {
+    injectBridgeScript(tabId, url);
+  }
 });

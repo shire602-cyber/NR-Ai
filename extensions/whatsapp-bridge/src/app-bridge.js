@@ -1,6 +1,12 @@
 const REQUEST_TYPE = 'NR_WHATSAPP_BRIDGE_REQUEST';
 const RESPONSE_TYPE = 'NR_WHATSAPP_BRIDGE_RESPONSE';
 
+if (globalThis.__NR_WHATSAPP_BRIDGE_APP_LOADED__) {
+  // Chrome MV3 can inject this file statically and programmatically depending
+  // on site-access state. Keep one listener per isolated world.
+} else {
+  globalThis.__NR_WHATSAPP_BRIDGE_APP_LOADED__ = true;
+
 function respond(requestId, ok, payload, error) {
   window.postMessage({
     type: RESPONSE_TYPE,
@@ -52,3 +58,5 @@ window.postMessage({
     version: chrome.runtime.getManifest().version,
   },
 }, window.location.origin);
+
+}
