@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { apiUrl } from '@/lib/api';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { format } from 'date-fns';
 import type { Company } from '@shared/schema';
@@ -261,11 +262,21 @@ interface VatWorkpaperRow {
   auditReason: string | null;
 }
 
+interface VatWorkpaperAttachment {
+  id: string;
+  rowId: string | null;
+  fileName: string;
+  mimeType: string;
+  filePath: string | null;
+  extractedText: string | null;
+  createdAt: string;
+}
+
 interface VatWorkpaperDetail {
   workpaper: VatWorkpaperSummary;
   company: { id: string; name: string; trnVatNumber: string | null } | null;
   rows: VatWorkpaperRow[];
-  attachments: unknown[];
+  attachments: VatWorkpaperAttachment[];
   totals: Record<string, number>;
 }
 
@@ -390,6 +401,24 @@ function parseVatPasteRows(text: string, defaultEmirate: string) {
       auditReason: 'Bulk pasted by bookkeeper',
     };
   }).filter(row => row.invoiceNumber || row.counterpartyName || row.taxableAmount || row.vatAmount || row.grossAmount);
+}
+
+async function readFileAsBase64(file: File) {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read evidence file'));
+    reader.readAsDataURL(file);
+  });
+  return dataUrl.split(',')[1] ?? '';
+}
+
+async function readEvidenceText(file: File) {
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  const isTextLike = type.startsWith('text/') || name.endsWith('.csv') || name.endsWith('.txt') || name.endsWith('.json');
+  if (!isTextLike || file.size > 500_000) return '';
+  return file.text();
 }
 
 const vat201CopyFields = [
@@ -1827,6 +1856,8 @@ function VatWorkspaceDialog({
   const [periodStart, setPeriodStart] = useState('');
   const [periodEnd, setPeriodEnd] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidenceInputKey, setEvidenceInputKey] = useState(0);
   const [rowForm, setRowForm] = useState({
     rowCategory: 'standard_sale' as VatRowCategory,
     vat201Box: 'box1bDubaiAmount',
@@ -1962,18 +1993,34 @@ function VatWorkspaceDialog({
   });
 
   const scanMutation = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/scan`, {
-      attachment: {
-        fileName: rowForm.invoiceNumber ? `${rowForm.invoiceNumber}.scan` : 'vat-evidence.scan',
-        mimeType: 'application/octet-stream',
-        extractedText: rowForm.notes || null,
-        extractionJson: { source: 'manual_ocr_review' },
-      },
-      draftRow: rowPayload('ocr'),
-    }),
+    mutationFn: async () => {
+      const uploadedEvidence = evidenceFile
+        ? {
+            fileDataBase64: await readFileAsBase64(evidenceFile),
+            extractedText: await readEvidenceText(evidenceFile),
+          }
+        : null;
+
+      return apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/scan`, {
+        attachment: {
+          fileName: evidenceFile?.name || (rowForm.invoiceNumber ? `${rowForm.invoiceNumber}.scan` : 'vat-evidence.scan'),
+          mimeType: evidenceFile?.type || 'application/octet-stream',
+          fileDataBase64: uploadedEvidence?.fileDataBase64,
+          extractedText: rowForm.notes || uploadedEvidence?.extractedText || null,
+          extractionJson: {
+            source: evidenceFile ? 'uploaded_evidence' : 'manual_ocr_review',
+            originalSize: evidenceFile?.size,
+            originalLastModified: evidenceFile ? new Date(evidenceFile.lastModified).toISOString() : undefined,
+          },
+        },
+        draftRow: rowPayload('ocr'),
+      });
+    },
     onSuccess: () => {
       invalidateWorkspace();
       resetRowForm();
+      setEvidenceFile(null);
+      setEvidenceInputKey(key => key + 1);
       toast({ title: 'OCR draft row logged for review' });
     },
     onError: (e: any) => toast({ variant: 'destructive', title: 'Could not log OCR draft', description: e?.message }),
@@ -2006,7 +2053,37 @@ function VatWorkspaceDialog({
   const totals = detail?.totals ?? detail?.workpaper.totalsSnapshot ?? {};
   const draftRows = rows.filter(row => row.status === 'draft');
   const approvedRows = rows.filter(row => row.status === 'approved');
+  const attachments = detail?.attachments ?? [];
   const selectedSummary = workpapers.find(workpaper => workpaper.id === selectedWorkpaperId);
+
+  const downloadAttachment = async (attachment: VatWorkpaperAttachment) => {
+    if (!selectedWorkpaperId || !attachment.filePath) {
+      toast({
+        variant: 'destructive',
+        title: 'Evidence file is not downloadable',
+        description: 'This evidence record was logged before file storage was enabled.',
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl(`/api/firm/vat-workpapers/${selectedWorkpaperId}/attachments/${attachment.id}/download`), {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = attachment.fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Could not download evidence', description: error?.message });
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -2137,6 +2214,42 @@ function VatWorkspaceDialog({
                     <Input placeholder="VAT 201 box, e.g. box9ExpensesVat" value={rowForm.vat201Box} onChange={e => setRowForm(form => ({ ...form, vat201Box: e.target.value }))} />
                   )}
                 </div>
+                <div className="mt-3 rounded-md border bg-background/70 p-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <Label htmlFor="vat-evidence-upload">Upload invoice or receipt evidence</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Attach PDF, image, CSV, or text evidence. Uploaded files create draft OCR rows until reviewed.
+                      </p>
+                    </div>
+                    {evidenceFile ? (
+                      <Badge variant="secondary">{(evidenceFile.size / 1024).toFixed(1)} KB</Badge>
+                    ) : null}
+                  </div>
+                  <Input
+                    key={evidenceInputKey}
+                    id="vat-evidence-upload"
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,text/plain,text/csv,application/json"
+                    onChange={event => setEvidenceFile(event.target.files?.[0] ?? null)}
+                    data-testid="input-vat-evidence-upload"
+                  />
+                  {evidenceFile ? (
+                    <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs">
+                      <span className="truncate">{evidenceFile.name}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setEvidenceFile(null);
+                          setEvidenceInputKey(key => key + 1);
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
               </div>
 
               <div className="rounded-md border p-3 space-y-3">
@@ -2216,11 +2329,25 @@ function VatWorkspaceDialog({
                             <TableCell className="text-right">
                               {row.status === 'draft' ? (
                                 <div className="flex justify-end gap-1">
-                                  <Button size="sm" variant="outline" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'approved' })}>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    aria-label={`Approve ${row.invoiceNumber || 'draft VAT row'}`}
+                                    title="Approve draft VAT row"
+                                    onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'approved' })}
+                                  >
                                     <Check className="w-3.5 h-3.5" />
+                                    <span className="sr-only">Approve draft row</span>
                                   </Button>
-                                  <Button size="sm" variant="ghost" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'excluded' })}>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    aria-label={`Exclude ${row.invoiceNumber || 'draft VAT row'}`}
+                                    title="Exclude draft VAT row"
+                                    onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'excluded' })}
+                                  >
                                     <XCircle className="w-3.5 h-3.5" />
+                                    <span className="sr-only">Exclude draft row</span>
                                   </Button>
                                 </div>
                               ) : (
@@ -2267,6 +2394,38 @@ function VatWorkspaceDialog({
                     })}
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-md border p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">Evidence files</p>
+                    <p className="text-xs text-muted-foreground">Uploaded invoices and receipts are linked to draft VAT rows for later review.</p>
+                  </div>
+                  <Badge variant="outline">{attachments.length} file{attachments.length === 1 ? '' : 's'}</Badge>
+                </div>
+                {attachments.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No invoice evidence uploaded yet.</p>
+                ) : (
+                  <div className="grid gap-2">
+                    {attachments.map(attachment => (
+                      <div key={attachment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">{attachment.fileName}</p>
+                          <p className="text-xs text-muted-foreground">{attachment.mimeType || 'file'} · {formatDateShort(attachment.createdAt)}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void downloadAttachment(attachment)}
+                          disabled={!attachment.filePath}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           ) : (

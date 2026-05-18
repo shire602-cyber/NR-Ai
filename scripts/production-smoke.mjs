@@ -20,6 +20,7 @@ if (!readOnly && (!email || !password)) {
 
 const cookieJar = new Map();
 let bearerToken = '';
+let csrfToken = '';
 
 function rememberCookies(headers) {
   const raw = typeof headers.getSetCookie === 'function'
@@ -51,10 +52,12 @@ function cookieHeader() {
 
 async function check(name, path, options = {}) {
   const url = `${baseUrl}${path}`;
+  const method = (options.method || 'GET').toUpperCase();
   const headers = {
     ...(options.headers || {}),
     ...(cookieJar.size ? { Cookie: cookieHeader() } : {}),
     ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {}),
+    ...(csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? { 'x-csrf-token': csrfToken } : {}),
   };
   const response = await fetch(url, { ...options, headers });
   rememberCookies(response.headers);
@@ -107,17 +110,19 @@ const loginBody = await checkJson('login', '/api/auth/login', (body) => body?.us
   body: JSON.stringify({ email, password }),
 });
 bearerToken = loginBody?.token || loginBody?.accessToken || bearerToken;
+const csrfBody = await checkJson('csrf token', '/api/csrf-token', (body) => body?.csrfToken);
+csrfToken = csrfBody.csrfToken;
 
 await checkJson('auth session', '/api/auth/me', (body) => body?.id === loginBody.user.id);
 await checkJson('firm clients', '/api/firm/clients', (body) => Array.isArray(body));
 await checkJson('firm bookkeeper dashboard', '/api/firm/bookkeeper-dashboard', (body) => body?.summary && Array.isArray(body?.vatCohorts) && Array.isArray(body?.clients));
 await checkJson('firm health', '/api/firm/health', (body) => Array.isArray(body?.clients) && body?.summary);
-await checkJson('firm deadlines', '/api/firm/health/deadlines', (body) => Array.isArray(body));
+await checkJson('firm deadlines', '/api/firm/health/deadlines', (body) => Array.isArray(body?.deadlines));
 await checkJson('firm comms log', '/api/firm/comms/log', (body) => Array.isArray(body?.data));
 await checkJson('value ops dashboard', '/api/firm/value-ops', (body) => body?.summary && Array.isArray(body?.clients));
 await checkJson('value ops action brief', '/api/firm/value-ops/action-brief', (body) => Array.isArray(body?.summary) && Array.isArray(body?.clientBriefs));
 await checkJson('value ops review queue', '/api/firm/value-ops/review-queue', (body) => Array.isArray(body));
-await checkJson('command center dashboard', '/api/firm/command-center/dashboard', (body) => body?.summary && Array.isArray(body?.clients));
+await checkJson('command center dashboard', '/api/firm/command-center/dashboard', (body) => body?.summary && Array.isArray(body?.healthScores));
 await checkJson('growth opportunities', '/api/firm/growth-opportunities', (body) => body?.summary && Array.isArray(body?.opportunities));
 await checkJson('vat workpapers', '/api/firm/vat-workpapers', (body) => Array.isArray(body?.workpapers));
 
@@ -160,6 +165,13 @@ if (runWorkspaceMutations) {
     }),
   });
 
+  const baselineRecalc = await checkJson('baseline VAT workpaper before OCR draft', `/api/firm/vat-workpapers/${workpaper.id}/recalculate`, (body) => body?.totals, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const baselineInputVat = Number(baselineRecalc?.totals?.box9ExpensesVat ?? 0);
+
   const draftRow = await checkJson('add OCR draft VAT row', `/api/firm/vat-workpapers/${workpaper.id}/scan`, (body) => body?.row?.id && body?.row?.status === 'draft', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -167,6 +179,7 @@ if (runWorkspaceMutations) {
       attachment: {
         fileName: `smoke-${rowSeed}.txt`,
         mimeType: 'text/plain',
+        fileDataBase64: Buffer.from(`Smoke VAT evidence upload ${rowSeed}`, 'utf8').toString('base64'),
         extractedText: 'Smoke OCR draft. This row must not count until approved.',
         extractionJson: { smoke: true },
       },
@@ -182,13 +195,17 @@ if (runWorkspaceMutations) {
       },
     }),
   });
+  if (!draftRow?.attachment?.id || !draftRow?.attachment?.filePath) {
+    throw new Error('VAT OCR evidence file was not stored for download');
+  }
+  await check('download VAT evidence file', `/api/firm/vat-workpapers/${workpaper.id}/attachments/${draftRow.attachment.id}/download`);
 
   const recalculated = await checkJson('recalculate VAT workpaper excludes draft', `/api/firm/vat-workpapers/${workpaper.id}/recalculate`, (body) => body?.totals, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
   });
-  if (Number(recalculated?.totals?.box9ExpensesVat ?? 0) !== 0) {
+  if (Number(recalculated?.totals?.box9ExpensesVat ?? 0) !== baselineInputVat) {
     throw new Error('VAT OCR draft row counted before approval');
   }
 
@@ -203,7 +220,7 @@ if (runWorkspaceMutations) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
   });
-  if (Number(approvedRecalc?.totals?.box9ExpensesVat ?? 0) < 10) {
+  if (Number(approvedRecalc?.totals?.box9ExpensesVat ?? 0) < baselineInputVat + 10) {
     throw new Error('Approved OCR draft row was not included in VAT totals');
   }
 

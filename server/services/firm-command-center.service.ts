@@ -22,6 +22,7 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   lt,
   max,
   ne,
@@ -943,6 +944,15 @@ export async function assignStaffToCompany(
 
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+function cachePeriodConditions(period?: { start: Date | null; end: Date | null }) {
+  const start = period?.start ?? null;
+  const end = period?.end ?? null;
+  return [
+    start ? eq(firmMetricsCache.periodStart, start) : isNull(firmMetricsCache.periodStart),
+    end ? eq(firmMetricsCache.periodEnd, end) : isNull(firmMetricsCache.periodEnd),
+  ];
+}
+
 export async function readMetricsCache<T>(
   firmId: string,
   metricType: string,
@@ -952,11 +962,8 @@ export async function readMetricsCache<T>(
   const conds = [
     eq(firmMetricsCache.firmId, firmId),
     eq(firmMetricsCache.metricType, metricType),
+    ...cachePeriodConditions(period),
   ];
-  if (period) {
-    if (period.start) conds.push(eq(firmMetricsCache.periodStart, period.start));
-    if (period.end) conds.push(eq(firmMetricsCache.periodEnd, period.end));
-  }
   const [row] = await db
     .select()
     .from(firmMetricsCache)
@@ -978,27 +985,28 @@ export async function writeMetricsCache<T>(
   value: T,
   period?: { start: Date | null; end: Date | null }
 ): Promise<void> {
-  await db
-    .insert(firmMetricsCache)
-    .values({
+  const periodStart = period?.start ?? null;
+  const periodEnd = period?.end ?? null;
+
+  await db.transaction(async (tx: typeof db) => {
+    await tx
+      .delete(firmMetricsCache)
+      .where(
+        and(
+          eq(firmMetricsCache.firmId, firmId),
+          eq(firmMetricsCache.metricType, metricType),
+          ...cachePeriodConditions(period),
+        )
+      );
+
+    await tx.insert(firmMetricsCache).values({
       firmId,
       metricType,
       metricValue: JSON.stringify(value),
-      periodStart: period?.start ?? null,
-      periodEnd: period?.end ?? null,
-    })
-    .onConflictDoUpdate({
-      target: [
-        firmMetricsCache.firmId,
-        firmMetricsCache.metricType,
-        firmMetricsCache.periodStart,
-        firmMetricsCache.periodEnd,
-      ],
-      set: {
-        metricValue: JSON.stringify(value),
-        calculatedAt: new Date(),
-      },
+      periodStart,
+      periodEnd,
     });
+  });
 }
 
 // ─── Helpers re-exported from rbac ────────────────────────────────────────────
@@ -1102,4 +1110,3 @@ export async function buildFirmDashboard(
   }
   return result;
 }
-

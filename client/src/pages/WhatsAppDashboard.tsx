@@ -346,6 +346,12 @@ export default function WhatsAppDashboard() {
     setSendMessage(msg);
   };
 
+  const selectedInvoiceRecord = invoices.find((invoice) => invoice.id === selectedInvoice);
+  const selectedInvoiceCustomer = selectedInvoiceRecord
+    ? customers.find((customer) => customer.name === selectedInvoiceRecord.customerName)
+    : null;
+  const selectedInvoicePhone = selectedInvoiceCustomer ? pickWhatsAppNumber(selectedInvoiceCustomer) : null;
+
   // ─── Render ─────────────────────────────────────────────
 
   return (
@@ -405,6 +411,19 @@ export default function WhatsAppDashboard() {
             </DialogContent>
           </Dialog>
 
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSelectedTemplate('document_request');
+              applyTemplate('document_request');
+              setShowSendDialog(true);
+            }}
+            data-testid="button-document-request-whatsapp"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            {en ? 'Document Request' : 'طلب مستندات'}
+          </Button>
+
           {/* Invoice Reminder */}
           <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
             <DialogTrigger asChild>
@@ -455,19 +474,27 @@ export default function WhatsAppDashboard() {
                   </Select>
                 </div>
 
-                {selectedInvoice && (() => {
-                  const inv = invoices.find(i => i.id === selectedInvoice);
-                  const cust = inv ? customers.find(c => c.name === inv.customerName) : null;
-                  return inv ? (
-                    <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
-                      <p><strong>{en ? 'Customer' : 'العميل'}:</strong> {inv.customerName}</p>
-                      <p><strong>{en ? 'Amount' : 'المبلغ'}:</strong> AED {inv.total.toFixed(2)}</p>
-                      <p><strong>{en ? 'Phone' : 'الهاتف'}:</strong> {cust?.phone || (en ? 'No phone' : 'لا يوجد رقم')}</p>
-                    </div>
-                  ) : null;
-                })()}
+                {selectedInvoiceRecord ? (
+                  <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
+                    <p><strong>{en ? 'Customer' : 'العميل'}:</strong> {selectedInvoiceRecord.customerName}</p>
+                    <p><strong>{en ? 'Amount' : 'المبلغ'}:</strong> AED {selectedInvoiceRecord.total.toFixed(2)}</p>
+                    <p><strong>{en ? 'Phone' : 'الهاتف'}:</strong> {selectedInvoicePhone || (en ? 'No phone' : 'لا يوجد رقم')}</p>
+                    {!selectedInvoicePhone ? (
+                      <p className="text-xs text-destructive">
+                        {en
+                          ? 'Add a WhatsApp number to this customer before opening an invoice reminder.'
+                          : 'أضف رقم واتساب لهذا العميل قبل فتح تذكير الفاتورة.'}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
 
-                <Button onClick={handleSendInvoice} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-open-whatsapp-invoice">
+                <Button
+                  onClick={handleSendInvoice}
+                  disabled={!selectedInvoice || !selectedInvoicePhone}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  data-testid="button-open-whatsapp-invoice"
+                >
                   <SiWhatsapp className="w-4 h-4 mr-2" />
                   {en ? 'Open in WhatsApp' : 'فتح في واتساب'}
                 </Button>
@@ -713,6 +740,9 @@ export default function WhatsAppDashboard() {
                   <p className="text-muted-foreground">
                     {en ? 'No customers yet. Add contacts to message them via WhatsApp.' : 'لا يوجد عملاء بعد. أضف جهات اتصال لمراسلتهم عبر واتساب.'}
                   </p>
+                  <Button asChild className="mt-4" variant="outline">
+                    <a href="/contacts">{en ? 'Add contacts' : 'أضف جهات اتصال'}</a>
+                  </Button>
                 </CardContent>
               </Card>
             )}
