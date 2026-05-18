@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -86,6 +86,8 @@ const DEFAULT_RULES: WhatsAppRule[] = [
   { id: 'rule_7', name: 'VAT deadline (7 days)', type: 'before_due', daysOffset: -7, templateId: 'vat_deadline_reminder', enabled: true },
 ];
 
+type WhatsAppBadgeVariant = ComponentProps<typeof Badge>['variant'];
+
 // ─── Component ────────────────────────────────────────────
 
 export default function WhatsAppDashboard() {
@@ -156,6 +158,32 @@ export default function WhatsAppDashboard() {
     return new Date(dateStr).toLocaleString(en ? 'en-AE' : 'ar-AE', {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
+  };
+
+  const getMessageDeliveryMeta = (msg: WhatsappMessage): { label: string; variant: WhatsAppBadgeVariant } => {
+    if (msg.direction !== 'outbound') {
+      return { label: en ? 'Received' : 'مستلم', variant: 'secondary' };
+    }
+
+    const status = (msg.status || '').toLowerCase();
+    const isPersonalLink =
+      msg.from === 'personal' ||
+      msg.waMessageId?.startsWith('personal_') ||
+      msg.waMessageId?.startsWith('chase_');
+
+    if (isPersonalLink || status === 'logged') {
+      return { label: en ? 'Logged' : 'مسجل', variant: 'neutral' };
+    }
+
+    if (status === 'failed') {
+      return { label: en ? 'Failed' : 'فشل', variant: 'danger' };
+    }
+
+    if (status === 'delivered' || status === 'processed') {
+      return { label: en ? 'Delivered' : 'تم التسليم', variant: 'success' };
+    }
+
+    return { label: en ? 'Sent' : 'مرسل', variant: 'info' };
   };
 
   const logAndOpen = (phone: string, message: string) => {
@@ -591,43 +619,47 @@ export default function WhatsAppDashboard() {
             <div className="space-y-2">
               {filteredMessages
                 .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
-                .map((msg) => (
-                  <Card key={msg.id} className="hover:bg-accent/50 transition-colors">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
-                            <SiWhatsapp className="w-5 h-5 text-green-500" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium text-sm">
-                                {msg.direction === 'outbound'
-                                  ? `→ ${getCustomerName(msg.to || '')}`
-                                  : `← ${getCustomerName(msg.from || '')}`}
-                              </span>
-                              <Badge variant={msg.direction === 'outbound' ? 'default' : 'secondary'} className="text-xs">
-                                {msg.direction === 'outbound' ? (en ? 'Sent' : 'مرسل') : (en ? 'Received' : 'مستلم')}
-                              </Badge>
+                .map((msg) => {
+                  const delivery = getMessageDeliveryMeta(msg);
+
+                  return (
+                    <Card key={msg.id} className="hover:bg-accent/50 transition-colors">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
+                              <SiWhatsapp className="w-5 h-5 text-green-500" />
                             </div>
-                            <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">{msg.content}</p>
-                            <div className="flex items-center gap-2 mt-1.5">
-                              <Clock className="w-3 h-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">
-                                {msg.createdAt ? formatTime(String(msg.createdAt)) : ''}
-                              </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium text-sm">
+                                  {msg.direction === 'outbound'
+                                    ? `→ ${getCustomerName(msg.to || '')}`
+                                    : `← ${getCustomerName(msg.from || '')}`}
+                                </span>
+                                <Badge variant={delivery.variant} className="text-xs">
+                                  {delivery.label}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">{msg.content}</p>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <Clock className="w-3 h-3 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">
+                                  {msg.createdAt ? formatTime(String(msg.createdAt)) : ''}
+                                </span>
+                              </div>
                             </div>
                           </div>
+                          {msg.to && (
+                            <Button variant="ghost" size="sm" className="text-green-600 shrink-0" onClick={() => openWhatsApp(msg.to!, '')}>
+                              <ExternalLink className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
-                        {msg.to && (
-                          <Button variant="ghost" size="sm" className="text-green-600 shrink-0" onClick={() => openWhatsApp(msg.to!, '')}>
-                            <ExternalLink className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
             </div>
           )}
         </TabsContent>

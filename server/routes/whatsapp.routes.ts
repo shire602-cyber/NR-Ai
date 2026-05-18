@@ -9,12 +9,13 @@ const log = createLogger('whatsapp');
 /**
  * WhatsApp Routes (Personal WhatsApp via wa.me links)
  *
- * Messages are sent by opening wa.me links on the client side.
- * The backend only logs messages for history/tracking.
+ * Messages are prepared by opening wa.me links on the client side.
+ * The backend only logs prepared messages for history/tracking; it cannot
+ * confirm delivery unless a real WhatsApp provider is connected.
  */
 export function registerWhatsAppRoutes(app: Express) {
 
-  // Log a message that was sent via wa.me link
+  // Log a prepared personal WhatsApp deep-link message.
   app.post("/api/integrations/whatsapp/log-message", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     if (!userId) {
@@ -43,11 +44,11 @@ export function registerWhatsAppRoutes(app: Express) {
       messageType: 'text',
       content: String(message).slice(0, 5000),
       direction: 'outbound',
-      status: 'sent',
+      status: 'logged',
     });
 
-    log.info(`WhatsApp message logged for company ${companyId} to ${to}`);
-    res.json({ success: true, id: logged.id });
+    log.info(`WhatsApp personal-link message logged for company ${companyId} to ${to}`);
+    res.json({ success: true, id: logged.id, deliveryStatus: 'logged_only' });
   }));
 
   // Get WhatsApp message history
@@ -67,12 +68,14 @@ export function registerWhatsAppRoutes(app: Express) {
     res.json(messages);
   }));
 
-  // Get WhatsApp config — always return configured:true since personal WhatsApp needs no setup
+  // Personal WhatsApp links need no provider setup, but delivery is confirmed inside WhatsApp.
   app.get("/api/integrations/whatsapp/config", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     res.json({
       configured: true,
       isActive: true,
       mode: 'personal',
+      deliveryMode: 'personal_link',
+      deliveryStatus: 'logged_only',
     });
   }));
 
@@ -82,6 +85,8 @@ export function registerWhatsAppRoutes(app: Express) {
       connected: true,
       configured: true,
       mode: 'personal',
+      deliveryMode: 'personal_link',
+      deliveryStatus: 'logged_only',
     });
   }));
 

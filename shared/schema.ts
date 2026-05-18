@@ -1040,7 +1040,7 @@ export const whatsappMessages = pgTable("whatsapp_messages", {
   mediaUrl: text("media_url"),
   mediaId: text("media_id"),
   direction: text("direction").notNull().default("inbound"), // inbound | outbound
-  status: text("status").notNull().default("received"), // received | processing | processed | failed
+  status: text("status").notNull().default("received"), // received | logged | processing | processed | failed | delivered
   receiptId: uuid("receipt_id").references(() => receipts.id), // Link to created receipt
   errorMessage: text("error_message"),
   processedAt: timestamp("processed_at"),
