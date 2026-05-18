@@ -25,6 +25,11 @@ const log = createLogger('whatsapp');
 
 const sessionIdSchema = z.object({ sessionId: z.string().uuid() });
 const jobIdSchema = z.object({ jobId: z.string().uuid() });
+const messageIdSchema = z.object({ messageId: z.string().uuid() });
+const messageStatusUpdateSchema = z.object({
+  status: z.enum(['sent_unverified', 'failed']),
+  errorMessage: z.string().max(1000).optional(),
+});
 
 async function resolveCompanyId(req: Request, requestedCompanyId?: string): Promise<string | null> {
   const userId = (req as any).user?.id as string | undefined;
@@ -46,9 +51,9 @@ function sessionExpiry(): Date {
 }
 
 /**
- * WhatsApp Routes (Personal WhatsApp via wa.me links)
+ * WhatsApp Routes (Personal WhatsApp via WhatsApp Web links)
  *
- * Messages are prepared by opening wa.me links on the client side.
+ * Messages are prepared by opening WhatsApp Web draft links on the client side.
  * The backend only logs prepared messages for history/tracking; it cannot
  * confirm delivery unless a real WhatsApp provider is connected.
  */
@@ -105,6 +110,56 @@ export function registerWhatsAppRoutes(app: Express) {
     const companyId = companies[0].id;
     const messages = await storage.getWhatsappMessagesByCompanyId(companyId);
     res.json(messages);
+  }));
+
+  app.patch("/api/integrations/whatsapp/messages/:messageId/status", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const { messageId } = messageIdSchema.parse(req.params);
+    const validated = messageStatusUpdateSchema.parse(req.body);
+    const companies = await storage.getCompaniesByUserId(userId);
+    if (companies.length === 0) {
+      return res.status(404).json({ message: 'No company found' });
+    }
+
+    const now = new Date();
+    const [message] = await db
+      .update(whatsappMessages)
+      .set({
+        status: validated.status,
+        errorMessage: validated.errorMessage || null,
+        processedAt: now,
+      })
+      .where(and(
+        eq(whatsappMessages.id, messageId),
+        eq(whatsappMessages.companyId, companies[0].id),
+        eq(whatsappMessages.direction, 'outbound'),
+      ))
+      .returning();
+
+    if (!message) {
+      return res.status(404).json({ message: 'WhatsApp message not found' });
+    }
+
+    await db
+      .update(whatsappBridgeJobs)
+      .set({
+        status: validated.status,
+        deliveryStatus: validated.status,
+        errorMessage: validated.errorMessage || null,
+        completedAt: now,
+        updatedAt: now,
+      })
+      .where(and(
+        eq(whatsappBridgeJobs.whatsappMessageId, messageId),
+        eq(whatsappBridgeJobs.createdBy, userId),
+      ));
+
+    log.info({ messageId, status: validated.status }, 'WhatsApp message status confirmed by user');
+    res.json({ message });
   }));
 
   // Personal WhatsApp links need no provider setup, but delivery is confirmed inside WhatsApp.

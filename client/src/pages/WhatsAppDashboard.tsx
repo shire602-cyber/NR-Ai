@@ -174,6 +174,28 @@ export default function WhatsAppDashboard() {
     queryKey: ['/api/integrations/whatsapp/bridge/status'],
   });
 
+  const confirmSentMutation = useMutation({
+    mutationFn: (messageId: string) => apiRequest('PATCH', `/api/integrations/whatsapp/messages/${messageId}/status`, {
+      status: 'sent_unverified',
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/bridge/status'] });
+      toast({
+        title: en ? 'Marked as sent' : 'تم التأكيد كمرسل',
+        description: en
+          ? 'The message is marked sent-unverified because WhatsApp Web confirmed the human send, not Muhasib delivery tracking.'
+          : 'تم وضع علامة مرسل غير مؤكد لأن الإرسال تم من واتساب ويب.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: en ? 'Could not update WhatsApp status' : 'تعذر تحديث حالة واتساب',
+        variant: 'destructive',
+      });
+    },
+  });
+
   // Notifications for pending actions
   const { data: notificationsData } = useQuery<{ notifications: Notification[]; unreadCount: number }>({
     queryKey: ['/api/notifications'],
@@ -277,6 +299,13 @@ export default function WhatsAppDashboard() {
     }
 
     return { label: en ? 'Sent' : 'مرسل', variant: 'info' };
+  };
+
+  const canConfirmSent = (msg: WhatsappMessage) => {
+    const status = (msg.status || '').toLowerCase();
+    return msg.direction === 'outbound'
+      && msg.from === 'whatsapp_web_bridge'
+      && ['queued', 'drafted', 'logged'].includes(status);
   };
 
   const logAndOpen = async (phone: string, message: string, options: WhatsAppDispatchOptions = {}) => {
@@ -912,11 +941,24 @@ export default function WhatsAppDashboard() {
                               </div>
                             </div>
                           </div>
-                          {msg.to && (
-                            <Button variant="ghost" size="sm" className="text-green-600 shrink-0" onClick={() => openWhatsApp(msg.to!, '')}>
-                              <ExternalLink className="w-4 h-4" />
-                            </Button>
-                          )}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {canConfirmSent(msg) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => confirmSentMutation.mutate(msg.id)}
+                                disabled={confirmSentMutation.isPending}
+                              >
+                                <CheckCircle2 className="w-4 h-4 mr-1" />
+                                {en ? 'Confirm sent' : 'تأكيد الإرسال'}
+                              </Button>
+                            )}
+                            {msg.to && (
+                              <Button variant="ghost" size="sm" className="text-green-600" onClick={() => openWhatsApp(msg.to!, '')}>
+                                <ExternalLink className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
