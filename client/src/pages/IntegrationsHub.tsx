@@ -219,13 +219,17 @@ export default function IntegrationsHub() {
     });
   };
 
-  // Sample transactions for demo
-  const sampleTransactions: EcommerceTransaction[] = [
-    { id: '1', platform: 'stripe', externalId: 'ch_1234', transactionType: 'payment', amount: 2500, currency: 'AED', customerName: 'Ahmed Hassan', customerEmail: 'ahmed@email.com', status: 'succeeded', transactionDate: '2024-11-28T10:30:00Z', isReconciled: true },
-    { id: '2', platform: 'stripe', externalId: 'ch_1235', transactionType: 'payment', amount: 1850, currency: 'AED', customerName: 'Sara Ali', customerEmail: 'sara@email.com', status: 'succeeded', transactionDate: '2024-11-27T14:15:00Z', isReconciled: false },
-    { id: '3', platform: 'shopify', externalId: 'ord_5678', transactionType: 'order', amount: 3200, currency: 'AED', customerName: 'Mohammed Khan', customerEmail: 'mkhan@email.com', status: 'succeeded', transactionDate: '2024-11-27T09:45:00Z', isReconciled: true },
-    { id: '4', platform: 'stripe', externalId: 'ch_1236', transactionType: 'refund', amount: -450, currency: 'AED', customerName: 'Fatima Omar', customerEmail: 'fatima@email.com', status: 'succeeded', transactionDate: '2024-11-26T16:20:00Z', isReconciled: true },
-  ];
+  const transactionRows = transactions ?? [];
+  const activeIntegrationCount = (integrations ?? []).filter((integration) => integration.isActive).length;
+  const today = new Date().toISOString().slice(0, 10);
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const syncedTodayCount = transactionRows.filter((txn) => txn.transactionDate?.slice(0, 10) === today).length;
+  const monthlyTransactionValue = transactionRows
+    .filter((txn) => txn.transactionDate?.slice(0, 7) === currentMonth)
+    .reduce((sum, txn) => sum + (Number(txn.amount) || 0), 0);
+  const reconciledPercent = transactionRows.length > 0
+    ? Math.round((transactionRows.filter((txn) => txn.isReconciled).length / transactionRows.length) * 100)
+    : 0;
 
   return (
     <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
@@ -274,7 +278,7 @@ export default function IntegrationsHub() {
                 <Link2 className="w-4 h-4 text-green-600 dark:text-green-400" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">1</div>
+                <div className="text-2xl font-bold">{activeIntegrationCount}</div>
                 <p className="text-xs text-muted-foreground mt-1">Active integrations</p>
               </CardContent>
             </Card>
@@ -285,7 +289,7 @@ export default function IntegrationsHub() {
                 <RefreshCw className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">24</div>
+                <div className="text-2xl font-bold">{syncedTodayCount}</div>
                 <p className="text-xs text-muted-foreground mt-1">Transactions imported</p>
               </CardContent>
             </Card>
@@ -296,7 +300,7 @@ export default function IntegrationsHub() {
                 <CreditCard className="w-4 h-4 text-purple-600 dark:text-purple-400" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono">{formatCurrency(45850, 'AED')}</div>
+                <div className="text-2xl font-bold font-mono">{formatCurrency(monthlyTransactionValue, 'AED')}</div>
                 <p className="text-xs text-muted-foreground mt-1">This month</p>
               </CardContent>
             </Card>
@@ -307,7 +311,7 @@ export default function IntegrationsHub() {
                 <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">89%</div>
+                <div className="text-2xl font-bold">{reconciledPercent}%</div>
                 <p className="text-xs text-muted-foreground mt-1">Auto-matched</p>
               </CardContent>
             </Card>
@@ -488,7 +492,21 @@ export default function IntegrationsHub() {
             <CardContent className="p-0">
               <ScrollArea className="h-[500px]">
                 <div className="divide-y">
-                  {sampleTransactions.map((txn) => {
+                  {transactionsLoading && (
+                    <div className="p-6 space-y-3">
+                      <Skeleton className="h-16 w-full" />
+                      <Skeleton className="h-16 w-full" />
+                      <Skeleton className="h-16 w-full" />
+                    </div>
+                  )}
+                  {!transactionsLoading && transactionRows.length === 0 && (
+                    <div className="p-10 text-center text-muted-foreground">
+                      <CreditCard className="w-8 h-8 mx-auto mb-3" />
+                      <p className="font-medium">No imported transactions yet</p>
+                      <p className="text-sm">Connect Stripe or Shopify and run a sync to populate this list.</p>
+                    </div>
+                  )}
+                  {!transactionsLoading && transactionRows.map((txn) => {
                     const platform = PLATFORMS.find(p => p.id === txn.platform);
                     const Icon = platform?.icon || CreditCard;
                     const isRefund = txn.transactionType === 'refund';

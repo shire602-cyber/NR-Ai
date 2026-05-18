@@ -324,27 +324,55 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 }
 
 // Guard: client portal routes require userType 'client_portal' or 'client'
-function PortalRoute({ children }: { children: React.ReactNode }) {
+function AccessRedirect({
+  title,
+  description,
+  redirectTo,
+  actionLabel = 'Go to dashboard',
+}: {
+  title: string;
+  description: string;
+  redirectTo: string;
+  actionLabel?: string;
+}) {
   const [, navigate] = useLocation();
+
+  useEffect(() => {
+    navigate(redirectTo);
+  }, [navigate, redirectTo]);
+
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center p-6">
+      <div className="max-w-md text-center space-y-3">
+        <h1 className="text-xl font-semibold">{title}</h1>
+        <p className="text-sm text-muted-foreground">{description}</p>
+        <Button variant="outline" onClick={() => navigate(redirectTo)}>
+          {actionLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PortalRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return null;
-  if (!user) { navigate('/login'); return null; }
+  if (!user) return <AccessRedirect title="Sign in required" description="Please sign in to open the client portal." redirectTo="/login" actionLabel="Sign in" />;
   if (user.userType !== 'client_portal' && !user.isAdmin) {
-    navigate('/dashboard'); return null;
+    return <AccessRedirect title="Client portal access required" description="This area is only available to invited client portal users." redirectTo="/dashboard" />;
   }
   return <>{children}</>;
 }
 
 // Guard: firm routes require firmRole (firm_owner or firm_admin) in JWT
 function FirmRoute({ children }: { children: React.ReactNode }) {
-  const [, navigate] = useLocation();
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return null;
-  if (!user) { navigate('/login'); return null; }
+  if (!user) return <AccessRedirect title="Sign in required" description="Please sign in to open the firm workspace." redirectTo="/login" actionLabel="Sign in" />;
   if (user.firmRole !== 'firm_owner' && user.firmRole !== 'firm_admin') {
-    navigate('/dashboard'); return null;
+    return <AccessRedirect title="NRA firm access required" description="This workspace is available only to NRA firm owners and firm admins." redirectTo="/dashboard" />;
   }
   return <>{children}</>;
 }

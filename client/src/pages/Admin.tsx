@@ -1156,16 +1156,16 @@ export default function Admin() {
                   </div>
                   WhatsApp
                 </CardTitle>
-                <CardDescription>Send messages via your personal WhatsApp</CardDescription>
+                <CardDescription>Prepare messages for WhatsApp Desktop/Web</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">Active</Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700">Prepared links</Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  WhatsApp messaging works through your personal WhatsApp — no API setup needed.
-                  Go to the WhatsApp page to send messages and invoice reminders directly.
+                  WhatsApp messages are prepared as links and opened in WhatsApp for final sending.
+                  Provider delivery is not verified unless a WhatsApp Business API provider is configured.
                 </p>
                 <Button
                   variant="outline"

@@ -14,14 +14,14 @@ import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  BarChart3, 
-  Brain, 
-  Wallet, 
-  Calendar, 
-  Target, 
+import {
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
+  Brain,
+  Wallet,
+  Calendar,
+  Target,
   AlertTriangle,
   ArrowUp,
   ArrowDown,
@@ -150,73 +150,45 @@ export default function AdvancedAnalytics() {
     },
   });
 
-  // Sample data for demo (will be replaced by real API data)
-  const sampleForecasts = [
-    { month: 'Dec', inflow: 125000, outflow: 98000, balance: 27000 },
-    { month: 'Jan', inflow: 118000, outflow: 105000, balance: 40000 },
-    { month: 'Feb', inflow: 132000, outflow: 108000, balance: 64000 },
-    { month: 'Mar', inflow: 145000, outflow: 112000, balance: 97000 },
-  ];
+  const forecastRows = (forecasts ?? []).map((forecast) => ({
+    month: new Date(forecast.forecastDate).toLocaleDateString('en-AE', { month: 'short' }),
+    inflow: Number(forecast.predictedInflow) || 0,
+    outflow: Number(forecast.predictedOutflow) || 0,
+    balance: Number(forecast.predictedBalance) || 0,
+    confidence: Number(forecast.confidenceLevel) || 0,
+  }));
+  const hasForecastRows = forecastRows.length > 0;
+  const forecastSummary = forecastRows.reduce(
+    (summary, row) => ({
+      inflow: summary.inflow + row.inflow,
+      outflow: summary.outflow + row.outflow,
+      balance: row.balance,
+      confidence: summary.confidence + row.confidence,
+    }),
+    { inflow: 0, outflow: 0, balance: 0, confidence: 0 },
+  );
+  const averageForecastConfidence = hasForecastRows
+    ? Math.round((forecastSummary.confidence / forecastRows.length) * 100)
+    : 0;
 
-  const sampleBudgetData = [
-    { category: 'Revenue', budgeted: 150000, actual: 142500, variance: -7500 },
-    { category: 'Salaries', budgeted: 45000, actual: 47200, variance: 2200 },
-    { category: 'Marketing', budgeted: 15000, actual: 12800, variance: -2200 },
-    { category: 'Operations', budgeted: 25000, actual: 28500, variance: 3500 },
-    { category: 'Rent', budgeted: 12000, actual: 12000, variance: 0 },
-    { category: 'Utilities', budgeted: 3500, actual: 4100, variance: 600 },
-  ];
+  const budgetRows = (budgetData ?? []).map((item) => ({
+    category: item.accountName,
+    budgeted: Number(item.budgeted) || 0,
+    actual: Number(item.actual) || 0,
+    variance: Number(item.variance) || 0,
+  }));
+  const hasBudgetRows = budgetRows.length > 0;
+  const budgetSummary = budgetRows.reduce(
+    (summary, row) => ({
+      budgeted: summary.budgeted + row.budgeted,
+      actual: summary.actual + row.actual,
+      variance: summary.variance + row.variance,
+    }),
+    { budgeted: 0, actual: 0, variance: 0 },
+  );
 
-  const sampleKPIs: FinancialKPI[] = [
-    { type: 'profit_margin', label: 'Profit Margin', value: 18.5, previousValue: 16.2, changePercent: 14.2, trend: 'up', benchmark: 15, unit: '%' },
-    { type: 'expense_ratio', label: 'Expense Ratio', value: 72.3, previousValue: 75.1, changePercent: -3.7, trend: 'down', benchmark: 70, unit: '%' },
-    { type: 'revenue_growth', label: 'Revenue Growth', value: 12.8, previousValue: 8.5, changePercent: 50.6, trend: 'up', benchmark: 10, unit: '%' },
-    { type: 'cash_runway', label: 'Cash Runway', value: 8.5, previousValue: 7.2, changePercent: 18.1, trend: 'up', benchmark: 6, unit: 'months' },
-    { type: 'dso', label: 'Days Sales Outstanding', value: 32, previousValue: 38, changePercent: -15.8, trend: 'down', benchmark: 30, unit: 'days' },
-    { type: 'current_ratio', label: 'Current Ratio', value: 2.4, previousValue: 2.1, changePercent: 14.3, trend: 'up', benchmark: 2.0, unit: 'x' },
-  ];
-
-  const sampleInsights: AIInsight[] = [
-    {
-      id: '1',
-      type: 'opportunity',
-      title: 'Revenue Growth Opportunity',
-      description: 'Based on seasonal patterns, Q4 typically shows 22% higher revenue. Consider increasing marketing spend by 15% to capitalize.',
-      impact: 'Potential AED 28,500 additional revenue',
-      priority: 'high',
-      actionable: true,
-      action: 'Review marketing budget',
-    },
-    {
-      id: '2',
-      type: 'warning',
-      title: 'Expense Overrun Alert',
-      description: 'Operations expenses are 14% over budget this month. Primary driver: unexpected equipment maintenance costs.',
-      impact: 'AED 3,500 over budget',
-      priority: 'high',
-      actionable: true,
-      action: 'Review expense details',
-    },
-    {
-      id: '3',
-      type: 'trend',
-      title: 'Positive Cash Flow Trend',
-      description: 'Cash flow has improved consistently over the past 3 months. Current trajectory suggests 25% improvement by Q2.',
-      impact: 'Healthy financial position',
-      priority: 'medium',
-      actionable: false,
-    },
-    {
-      id: '4',
-      type: 'recommendation',
-      title: 'VAT Recovery Opportunity',
-      description: 'Analysis shows AED 4,200 in potentially recoverable input VAT from recent equipment purchases.',
-      impact: 'Possible AED 4,200 recovery',
-      priority: 'medium',
-      actionable: true,
-      action: 'Review VAT claims',
-    },
-  ];
+  const kpiRows = kpis ?? [];
+  const insightRows = insights ?? [];
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
@@ -294,7 +266,7 @@ export default function AdvancedAnalytics() {
                 </SelectContent>
               </Select>
             </div>
-            <Button 
+            <Button
               onClick={() => generateForecastMutation.mutate()}
               disabled={generateForecastMutation.isPending}
               data-testid="button-generate-forecast"
@@ -317,7 +289,7 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono text-green-600 dark:text-green-400">
-                  {formatCurrency(520000, 'AED')}
+                  {formatCurrency(forecastSummary.inflow, 'AED')}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Next {forecastPeriod === '3months' ? '3' : forecastPeriod === '6months' ? '6' : '12'} months</p>
               </CardContent>
@@ -330,7 +302,7 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono text-blue-600 dark:text-blue-400">
-                  {formatCurrency(423000, 'AED')}
+                  {formatCurrency(forecastSummary.outflow, 'AED')}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Estimated expenses</p>
               </CardContent>
@@ -343,7 +315,7 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono text-green-600 dark:text-green-400">
-                  {formatCurrency(97000, 'AED')}
+                  {formatCurrency(forecastSummary.balance, 'AED')}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Projected balance</p>
               </CardContent>
@@ -357,41 +329,51 @@ export default function AdvancedAnalytics() {
               <CardDescription>AI-predicted inflows and outflows with confidence bands</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={350}>
-                <AreaChart data={sampleForecasts}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis tickFormatter={(value) => `${value / 1000}k`} />
-                  <Tooltip formatter={(value) => formatCurrency(value as number, 'AED')} />
-                  <Legend />
-                  <Area 
-                    type="monotone" 
-                    dataKey="inflow" 
-                    stackId="1"
-                    stroke="hsl(142, 76%, 36%)" 
-                    fill="hsl(142, 76%, 36%)"
-                    fillOpacity={0.3}
-                    name="Inflow"
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="outflow" 
-                    stackId="2"
-                    stroke="hsl(221, 83%, 53%)" 
-                    fill="hsl(221, 83%, 53%)"
-                    fillOpacity={0.3}
-                    name="Outflow"
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="balance" 
-                    stroke="hsl(262, 83%, 58%)"
-                    strokeWidth={2}
-                    dot={{ fill: 'hsl(262, 83%, 58%)' }}
-                    name="Net Balance"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+              {forecastsLoading ? (
+                <Skeleton className="h-[350px] w-full" />
+              ) : hasForecastRows ? (
+                <ResponsiveContainer width="100%" height={350}>
+                  <AreaChart data={forecastRows}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis tickFormatter={(value) => `${value / 1000}k`} />
+                    <Tooltip formatter={(value) => formatCurrency(value as number, 'AED')} />
+                    <Legend />
+                    <Area
+                      type="monotone"
+                      dataKey="inflow"
+                      stackId="1"
+                      stroke="hsl(142, 76%, 36%)"
+                      fill="hsl(142, 76%, 36%)"
+                      fillOpacity={0.3}
+                      name="Inflow"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="outflow"
+                      stackId="2"
+                      stroke="hsl(221, 83%, 53%)"
+                      fill="hsl(221, 83%, 53%)"
+                      fillOpacity={0.3}
+                      name="Outflow"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="balance"
+                      stroke="hsl(262, 83%, 58%)"
+                      strokeWidth={2}
+                      dot={{ fill: 'hsl(262, 83%, 58%)' }}
+                      name="Net Balance"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[350px] flex flex-col items-center justify-center text-center text-muted-foreground">
+                  <Calendar className="w-8 h-8 mb-3" />
+                  <p className="font-medium">No forecast generated yet</p>
+                  <p className="text-sm">Generate a forecast once invoices, receipts, or journals exist.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -405,12 +387,14 @@ export default function AdvancedAnalytics() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Based on 18 months of historical data</span>
-                <span className="font-mono font-bold text-primary">87%</span>
+                <span className="text-sm text-muted-foreground">
+                  {hasForecastRows ? 'Based on generated forecast history' : 'Needs transaction history before confidence is meaningful'}
+                </span>
+                <span className="font-mono font-bold text-primary">{averageForecastConfidence}%</span>
               </div>
-              <Progress value={87} className="h-2" />
+              <Progress value={averageForecastConfidence} className="h-2" />
               <p className="text-xs text-muted-foreground mt-2">
-                Confidence increases with more transaction history. Current model accuracy is high.
+                Confidence increases with more transaction history. Empty demo data is not shown as a real forecast.
               </p>
             </CardContent>
           </Card>
@@ -449,7 +433,7 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(250500, 'AED')}
+                  {formatCurrency(budgetSummary.budgeted, 'AED')}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Planned for {months[budgetMonth - 1]} {budgetYear}</p>
               </CardContent>
@@ -462,7 +446,7 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(247100, 'AED')}
+                  {formatCurrency(budgetSummary.actual, 'AED')}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Recorded transactions</p>
               </CardContent>
@@ -474,10 +458,12 @@ export default function AdvancedAnalytics() {
                 <PiggyBank className="w-4 h-4 text-green-600 dark:text-green-400" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold font-mono text-green-600 dark:text-green-400">
-                  {formatCurrency(-3400, 'AED')}
+                <div className={`text-2xl font-bold font-mono ${budgetSummary.variance > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                  {formatCurrency(budgetSummary.variance, 'AED')}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Under budget</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {budgetSummary.variance > 0 ? 'Over budget' : 'Under or on budget'}
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -489,17 +475,27 @@ export default function AdvancedAnalytics() {
               <CardDescription>Category-wise breakdown of planned vs actual spending</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={350}>
-                <ComposedChart data={sampleBudgetData} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" tickFormatter={(value) => `${value / 1000}k`} />
-                  <YAxis type="category" dataKey="category" width={100} />
-                  <Tooltip formatter={(value) => formatCurrency(value as number, 'AED')} />
-                  <Legend />
-                  <Bar dataKey="budgeted" fill="hsl(var(--muted))" name="Budgeted" barSize={20} />
-                  <Bar dataKey="actual" fill="hsl(var(--primary))" name="Actual" barSize={20} />
-                </ComposedChart>
-              </ResponsiveContainer>
+              {budgetLoading ? (
+                <Skeleton className="h-[350px] w-full" />
+              ) : hasBudgetRows ? (
+                <ResponsiveContainer width="100%" height={350}>
+                  <ComposedChart data={budgetRows} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" tickFormatter={(value) => `${value / 1000}k`} />
+                    <YAxis type="category" dataKey="category" width={100} />
+                    <Tooltip formatter={(value) => formatCurrency(value as number, 'AED')} />
+                    <Legend />
+                    <Bar dataKey="budgeted" fill="hsl(var(--muted))" name="Budgeted" barSize={20} />
+                    <Bar dataKey="actual" fill="hsl(var(--primary))" name="Actual" barSize={20} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-[350px] flex flex-col items-center justify-center text-center text-muted-foreground">
+                  <Target className="w-8 h-8 mb-3" />
+                  <p className="font-medium">No budget data yet</p>
+                  <p className="text-sm">Create budgets and post transactions to compare planned versus actual performance.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -511,10 +507,17 @@ export default function AdvancedAnalytics() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {sampleBudgetData.map((item, idx) => {
+                {budgetRows.length === 0 && !budgetLoading && (
+                  <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                    No variance analysis is available yet.
+                  </div>
+                )}
+                {budgetRows.map((item, idx) => {
                   const isOverBudget = item.variance > 0;
-                  const variancePercent = Math.abs((item.variance / item.budgeted) * 100);
-                  
+                  const variancePercent = item.budgeted > 0
+                    ? Math.abs((item.variance / item.budgeted) * 100)
+                    : 0;
+
                   return (
                     <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover-elevate">
                       <div className="flex items-center gap-3">
@@ -556,17 +559,29 @@ export default function AdvancedAnalytics() {
 
           {/* KPI Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sampleKPIs.map((kpi, idx) => {
-              const isPositiveTrend = (kpi.type === 'expense_ratio' || kpi.type === 'dso') 
-                ? kpi.trend === 'down' 
+            {kpisLoading && Array.from({ length: 3 }).map((_, idx) => (
+              <Skeleton key={idx} className="h-40 w-full" />
+            ))}
+            {!kpisLoading && kpiRows.length === 0 && (
+              <Card className="md:col-span-2 lg:col-span-3">
+                <CardContent className="py-10 text-center text-muted-foreground">
+                  <Activity className="w-8 h-8 mx-auto mb-3" />
+                  <p className="font-medium">No KPI history yet</p>
+                  <p className="text-sm">KPIs will appear after financial activity is recorded.</p>
+                </CardContent>
+              </Card>
+            )}
+            {kpiRows.map((kpi, idx) => {
+              const isPositiveTrend = (kpi.type === 'expense_ratio' || kpi.type === 'dso')
+                ? kpi.trend === 'down'
                 : kpi.trend === 'up';
-              const meetsOrExceedsBenchmark = kpi.benchmark 
+              const meetsOrExceedsBenchmark = kpi.benchmark
                 ? (kpi.type === 'expense_ratio' || kpi.type === 'dso' ? kpi.value <= kpi.benchmark : kpi.value >= kpi.benchmark)
                 : true;
 
               return (
                 <Card key={idx} className="hover-elevate relative overflow-hidden">
-                  <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-20 
+                  <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-20
                     ${isPositiveTrend ? 'bg-green-500' : 'bg-red-500'}`} />
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
                     <div>
@@ -614,25 +629,11 @@ export default function AdvancedAnalytics() {
               <CardDescription>Historical performance of key financial indicators</CardDescription>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={[
-                  { month: 'Jul', profitMargin: 14, expenseRatio: 78, revenueGrowth: 5 },
-                  { month: 'Aug', profitMargin: 15, expenseRatio: 77, revenueGrowth: 7 },
-                  { month: 'Sep', profitMargin: 16, expenseRatio: 76, revenueGrowth: 9 },
-                  { month: 'Oct', profitMargin: 17, expenseRatio: 74, revenueGrowth: 10 },
-                  { month: 'Nov', profitMargin: 18, expenseRatio: 73, revenueGrowth: 12 },
-                  { month: 'Dec', profitMargin: 18.5, expenseRatio: 72, revenueGrowth: 13 },
-                ]}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="profitMargin" stroke="hsl(142, 76%, 36%)" name="Profit Margin %" strokeWidth={2} />
-                  <Line type="monotone" dataKey="expenseRatio" stroke="hsl(221, 83%, 53%)" name="Expense Ratio %" strokeWidth={2} />
-                  <Line type="monotone" dataKey="revenueGrowth" stroke="hsl(262, 83%, 58%)" name="Revenue Growth %" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
+              <div className="h-[300px] flex flex-col items-center justify-center text-center text-muted-foreground">
+                <BarChart3 className="w-8 h-8 mb-3" />
+                <p className="font-medium">Trend history is not available yet</p>
+                <p className="text-sm">This chart will populate once periodic KPI snapshots are recorded.</p>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -645,12 +646,24 @@ export default function AdvancedAnalytics() {
             </p>
             <Badge variant="secondary" className="bg-primary/10 text-primary">
               <Sparkles className="w-3 h-3 mr-1" />
-              {sampleInsights.length} Active Insights
+              {insightRows.length} Active Insights
             </Badge>
           </div>
 
           <div className="grid gap-4">
-            {sampleInsights.map((insight) => {
+            {insightsLoading && Array.from({ length: 2 }).map((_, idx) => (
+              <Skeleton key={idx} className="h-32 w-full" />
+            ))}
+            {!insightsLoading && insightRows.length === 0 && (
+              <Card>
+                <CardContent className="py-10 text-center text-muted-foreground">
+                  <Brain className="w-8 h-8 mx-auto mb-3" />
+                  <p className="font-medium">No AI insights yet</p>
+                  <p className="text-sm">Insights will appear when real invoices, expenses, and patterns exist.</p>
+                </CardContent>
+              </Card>
+            )}
+            {insightRows.map((insight) => {
               const priorityColors = {
                 high: 'border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20',
                 medium: 'border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20',
@@ -701,7 +714,7 @@ export default function AdvancedAnalytics() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Our AI analyzes your transaction patterns, compares against industry benchmarks, and identifies opportunities and risks. 
+                Our AI analyzes your transaction patterns, compares against industry benchmarks, and identifies opportunities and risks.
                 Insights are updated daily as new data comes in. More transaction history improves accuracy.
               </p>
             </CardContent>

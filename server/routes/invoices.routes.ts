@@ -33,6 +33,36 @@ async function findInvoiceForUser(userId: string, invoiceId: string): Promise<In
   return undefined;
 }
 
+const invoiceLineInputSchema = z.object({
+  description: z.string().trim().min(1, 'Line description is required').max(1000),
+  quantity: z.coerce.number().finite().positive('Line quantity must be greater than 0'),
+  unitPrice: z.coerce.number().finite().positive('Line unit price must be greater than 0'),
+  vatRate: z.coerce.number().finite().min(0).max(1).default(UAE_VAT_RATE),
+});
+
+const invoiceLinesInputSchema = z.array(invoiceLineInputSchema).min(1, 'At least one invoice line is required');
+
+type InvoiceLineInput = z.infer<typeof invoiceLineInputSchema>;
+
+function calculateInvoiceTotals(lines: InvoiceLineInput[]) {
+  let subtotalD = new Decimal(0);
+  let vatAmountD = new Decimal(0);
+
+  for (const line of lines) {
+    const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
+    subtotalD = subtotalD.plus(lineTotal);
+    vatAmountD = vatAmountD.plus(
+      lineTotal.times(line.vatRate ?? UAE_VAT_RATE),
+    );
+  }
+
+  return {
+    subtotal: subtotalD.toDecimalPlaces(2).toNumber(),
+    vatAmount: vatAmountD.toDecimalPlaces(2).toNumber(),
+    total: subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber(),
+  };
+}
+
 export function registerInvoiceRoutes(app: Express) {
   // =====================================
   // Invoice Routes
@@ -147,6 +177,7 @@ export function registerInvoiceRoutes(app: Express) {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
     const { lines, date, ...invoiceData } = req.body;
+    const parsedLines = invoiceLinesInputSchema.parse(lines);
 
     // Check if user has access to this company
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -156,20 +187,7 @@ export function registerInvoiceRoutes(app: Express) {
 
     // Calculate totals using decimal.js to avoid binary-float drift on
     // NUMERIC(15,2) columns. Sums are kept as Decimal until the very end.
-    let subtotalD = new Decimal(0);
-    let vatAmountD = new Decimal(0);
-
-    for (const line of lines) {
-      const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
-      subtotalD = subtotalD.plus(lineTotal);
-      vatAmountD = vatAmountD.plus(
-        lineTotal.times(line.vatRate ?? UAE_VAT_RATE),
-      );
-    }
-
-    const subtotal = subtotalD.toDecimalPlaces(2).toNumber();
-    const vatAmount = vatAmountD.toDecimalPlaces(2).toNumber();
-    const total = subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber();
+    const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
 
     // Convert date string to Date object if it's a string
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
@@ -194,7 +212,7 @@ export function registerInvoiceRoutes(app: Express) {
         subtotal,
         vatAmount,
         total,
-        linesCount: lines.length,
+        linesCount: parsedLines.length,
       }, 'Creating invoice');
 
       const [insertedInvoice] = await tx
@@ -210,7 +228,7 @@ export function registerInvoiceRoutes(app: Express) {
         })
         .returning();
 
-      for (const line of lines) {
+      for (const line of parsedLines) {
         await tx.insert(invoiceLinesTable).values({
           invoiceId: insertedInvoice.id,
           ...line,
@@ -353,6 +371,7 @@ export function registerInvoiceRoutes(app: Express) {
     const { id } = req.params;
     const userId = (req as any).user.id;
     const { lines, date, ...invoiceData } = req.body;
+    const parsedLines = invoiceLinesInputSchema.parse(lines);
 
     const invoice = await findInvoiceForUser(userId, id);
     if (!invoice) {
@@ -367,18 +386,7 @@ export function registerInvoiceRoutes(app: Express) {
     }
 
     // Recompute totals from lines using decimal.js for precise money math.
-    let subtotalD = new Decimal(0);
-    let vatAmountD = new Decimal(0);
-    for (const line of lines) {
-      const lineTotal = new Decimal(line.unitPrice).times(line.quantity);
-      subtotalD = subtotalD.plus(lineTotal);
-      vatAmountD = vatAmountD.plus(
-        lineTotal.times(line.vatRate ?? UAE_VAT_RATE),
-      );
-    }
-    const subtotal = subtotalD.toDecimalPlaces(2).toNumber();
-    const vatAmount = vatAmountD.toDecimalPlaces(2).toNumber();
-    const total = subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber();
+    const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
 
     // If a posted journal entry exists for this invoice and the amount is
     // changing, refuse. The user must void & reissue (or issue a credit
@@ -421,7 +429,7 @@ export function registerInvoiceRoutes(app: Express) {
     });
 
     await storage.deleteInvoiceLinesByInvoiceId(id);
-    for (const line of lines) {
+    for (const line of parsedLines) {
       await storage.createInvoiceLine({
         invoiceId: id,
         ...line,

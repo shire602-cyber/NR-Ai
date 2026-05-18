@@ -55,7 +55,7 @@ export default function AIChat() {
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [model, setModel] = useState<'gpt-3.5-turbo' | 'gpt-4' | 'gpt-4-turbo'>('gpt-3.5-turbo');
+  const [model, setModel] = useState<'gpt-4o-mini' | 'gpt-3.5-turbo'>('gpt-4o-mini');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [useCustomSystemPrompt, setUseCustomSystemPrompt] = useState(false);
   const [streaming, setStreaming] = useState(true);
@@ -387,9 +387,8 @@ export default function AIChat() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo (Fast & Cheap)</SelectItem>
-                      <SelectItem value="gpt-4">GPT-4 (More Capable)</SelectItem>
-                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo (Balanced)</SelectItem>
+                      <SelectItem value="gpt-4o-mini">GPT-4o Mini (Recommended)</SelectItem>
+                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo (Legacy fallback)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

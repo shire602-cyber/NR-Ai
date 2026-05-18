@@ -1251,7 +1251,8 @@ export default function Receipts() {
               type="file"
               accept="image/*,application/pdf"
               multiple
-              className="hidden"
+              className="sr-only"
+              aria-label="Upload receipt images or PDFs"
               onChange={(e) => {
                 const files = e.target.files;
                 if (files && files.length > 0) handleFilesSelect(files);
@@ -1285,6 +1286,17 @@ export default function Receipts() {
                 <p className="text-xs text-muted-foreground">
                   Supports: JPG, PNG, HEIC, PDF • Bulk upload enabled
                 </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    document.getElementById('file-input')?.click();
+                  }}
+                  data-testid="button-browse-receipts"
+                >
+                  Browse files
+                </Button>
               </div>
             )}
           </div>

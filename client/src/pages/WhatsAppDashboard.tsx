@@ -331,7 +331,9 @@ export default function WhatsAppDashboard() {
           <div>
             <h1 className="text-2xl font-bold">{en ? 'WhatsApp' : 'واتساب'}</h1>
             <p className="text-sm text-muted-foreground">
-              {en ? 'Send messages, invoices & reminders via your personal WhatsApp' : 'أرسل رسائل وفواتير وتذكيرات عبر واتساب الشخصي'}
+              {en
+                ? 'Prepare messages, invoice reminders, and broadcasts for WhatsApp Desktop/Web. Sending is confirmed inside WhatsApp.'
+                : 'جهّز الرسائل وتذكيرات الفواتير والبث لواتساب. يتم تأكيد الإرسال داخل واتساب.'}
             </p>
           </div>
         </div>
@@ -350,8 +352,8 @@ export default function WhatsAppDashboard() {
                 <DialogTitle>{en ? 'Broadcast to All Clients' : 'بث لجميع العملاء'}</DialogTitle>
                 <DialogDescription>
                   {en
-                    ? `Send a news or announcement to all ${customers.filter((c) => pickWhatsAppNumber(c)).length} customer(s) with phone numbers`
-                    : `أرسل خبر أو إعلان لجميع ${customers.filter((c) => pickWhatsAppNumber(c)).length} عميل لديهم أرقام هواتف`}
+                    ? `Prepare a news or announcement message for ${customers.filter((c) => pickWhatsAppNumber(c)).length} customer(s) with phone numbers`
+                    : `جهّز خبر أو إعلان لـ ${customers.filter((c) => pickWhatsAppNumber(c)).length} عميل لديهم أرقام هواتف`}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -369,7 +371,7 @@ export default function WhatsAppDashboard() {
                 </p>
                 <Button onClick={handleBroadcast} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-send-broadcast">
                   <Megaphone className="w-4 h-4 mr-2" />
-                  {en ? `Send to ${customers.filter((c) => pickWhatsAppNumber(c)).length} Client(s)` : `إرسال لـ ${customers.filter((c) => pickWhatsAppNumber(c)).length} عميل`}
+                  {en ? `Open ${customers.filter((c) => pickWhatsAppNumber(c)).length} WhatsApp chat(s)` : `فتح ${customers.filter((c) => pickWhatsAppNumber(c)).length} محادثة واتساب`}
                 </Button>
               </div>
             </DialogContent>
@@ -385,9 +387,9 @@ export default function WhatsAppDashboard() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{en ? 'Send Invoice Reminder' : 'إرسال تذكير فاتورة'}</DialogTitle>
+                <DialogTitle>{en ? 'Prepare Invoice Reminder' : 'تجهيز تذكير فاتورة'}</DialogTitle>
                 <DialogDescription>
-                  {en ? 'Select an invoice and template to send via WhatsApp' : 'اختر فاتورة وقالب للإرسال عبر واتساب'}
+                  {en ? 'Select an invoice and template, then open WhatsApp to confirm the send.' : 'اختر فاتورة وقالباً ثم افتح واتساب لتأكيد الإرسال.'}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -450,14 +452,14 @@ export default function WhatsAppDashboard() {
             <DialogTrigger asChild>
               <Button className="bg-green-600 hover:bg-green-700" data-testid="button-send-message">
                 <Send className="w-4 h-4 mr-2" />
-                {en ? 'Send Message' : 'إرسال رسالة'}
+                {en ? 'Prepare Message' : 'تجهيز رسالة'}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>{en ? 'Send WhatsApp Message' : 'إرسال رسالة واتساب'}</DialogTitle>
+                <DialogTitle>{en ? 'Prepare WhatsApp Message' : 'تجهيز رسالة واتساب'}</DialogTitle>
                 <DialogDescription>
-                  {en ? 'Compose a message — it will open in your WhatsApp app' : 'اكتب رسالة — ستفتح في تطبيق واتساب'}
+                  {en ? 'Compose a message. It will open in WhatsApp Desktop/Web and be logged here; delivery is not verified by Muhasib.' : 'اكتب الرسالة. ستفتح في واتساب ويتم تسجيلها هنا؛ لا يتحقق محاسب من التسليم.'}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -577,11 +579,11 @@ export default function WhatsAppDashboard() {
                 </div>
                 <h3 className="text-lg font-semibold mb-2">{en ? 'No messages yet' : 'لا توجد رسائل بعد'}</h3>
                 <p className="text-muted-foreground mb-6 max-w-md">
-                  {en ? 'Start by sending a message, invoice reminder, or broadcast to your clients' : 'ابدأ بإرسال رسالة أو تذكير فاتورة أو بث لعملائك'}
+                  {en ? 'Start by preparing a message, invoice reminder, or broadcast for your clients' : 'ابدأ بتجهيز رسالة أو تذكير فاتورة أو بث لعملائك'}
                 </p>
                 <Button onClick={() => setShowSendDialog(true)} className="bg-green-600 hover:bg-green-700">
                   <Send className="w-4 h-4 mr-2" />
-                  {en ? 'Send Message' : 'إرسال رسالة'}
+                  {en ? 'Prepare Message' : 'تجهيز رسالة'}
                 </Button>
               </CardContent>
             </Card>
@@ -699,8 +701,8 @@ export default function WhatsAppDashboard() {
                 </div>
                 <CardDescription>
                   {en
-                    ? 'These notifications were created by the scheduler. Click "Send via WhatsApp" to open a pre-filled message.'
-                    : 'تم إنشاء هذه الإشعارات بواسطة المجدول. انقر "إرسال عبر واتساب" لفتح رسالة جاهزة.'}
+                    ? 'These notifications were created by the scheduler. Open a pre-filled WhatsApp message, review it, then confirm the send in WhatsApp.'
+                    : 'تم إنشاء هذه الإشعارات بواسطة المجدول. افتح رسالة واتساب جاهزة وراجعها ثم أكد الإرسال داخل واتساب.'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -743,7 +745,7 @@ export default function WhatsAppDashboard() {
                             onClick={() => handleActionNotification(notification)}
                           >
                             <SiWhatsapp className="w-3.5 h-3.5 mr-1" />
-                            {en ? 'Send' : 'إرسال'}
+                            {en ? 'Open' : 'فتح'}
                           </Button>
                         )}
                         <Button

@@ -11,6 +11,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -317,6 +318,79 @@ const vatRowCategories: Array<{ value: VatRowCategory; label: string }> = [
   { value: 'reverse_charge_input', label: 'Reverse charge input' },
   { value: 'manual_adjustment', label: 'Manual adjustment' },
 ];
+
+function parseDelimitedVatLine(line: string) {
+  if (line.includes('\t')) return line.split('\t').map(cell => cell.trim());
+  const cells: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"' && line[i + 1] === '"') {
+      current += '"';
+      i += 1;
+    } else if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      cells.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function moneyFromCell(value: string | undefined) {
+  const normalized = String(value ?? '').replace(/[^\d.-]/g, '');
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function normalizeVatRowCategory(value: string | undefined): VatRowCategory {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const match = vatRowCategories.find(category => (
+    category.value === normalized ||
+    category.label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') === normalized
+  ));
+  return match?.value ?? 'standard_expense';
+}
+
+function parseVatPasteRows(text: string, defaultEmirate: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return [];
+  const first = parseDelimitedVatLine(lines[0]).map(cell => cell.toLowerCase());
+  const hasHeader = first.some(cell => ['category', 'invoice', 'invoice no', 'invoice number', 'taxable', 'vat', 'gross'].includes(cell));
+  const rows = hasHeader ? lines.slice(1) : lines;
+  return rows.map(line => {
+    const cells = parseDelimitedVatLine(line);
+    return {
+      rowCategory: normalizeVatRowCategory(cells[0]),
+      invoiceNumber: cells[1] || null,
+      documentDate: cells[2] || null,
+      counterpartyName: cells[3] || null,
+      counterpartyTrn: cells[4] || null,
+      emirate: cells[5] || defaultEmirate || null,
+      taxableAmount: moneyFromCell(cells[6]),
+      vatAmount: moneyFromCell(cells[7]),
+      grossAmount: moneyFromCell(cells[8]),
+      adjustmentAmount: 0,
+      status: 'approved' as const,
+      sourceMethod: 'import' as const,
+      notes: cells[9] || null,
+      auditReason: 'Bulk pasted by bookkeeper',
+    };
+  }).filter(row => row.invoiceNumber || row.counterpartyName || row.taxableAmount || row.vatAmount || row.grossAmount);
+}
 
 const vat201CopyFields = [
   ['box1aAbuDhabiAmount', '1a Abu Dhabi amount'],
@@ -1768,6 +1842,7 @@ function VatWorkspaceDialog({
     notes: '',
     auditReason: '',
   });
+  const [pastedVatRows, setPastedVatRows] = useState('');
 
   useEffect(() => {
     if (!open || !client) return;
@@ -1861,6 +1936,29 @@ function VatWorkspaceDialog({
       resetRowForm();
     },
     onError: (e: any) => toast({ variant: 'destructive', title: 'Could not add VAT row', description: e?.message }),
+  });
+
+  const pastePreviewRows = useMemo(
+    () => parseVatPasteRows(pastedVatRows, rowForm.emirate),
+    [pastedVatRows, rowForm.emirate],
+  );
+
+  const importRowsMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedWorkpaperId) throw new Error('Create or select a VAT workpaper first');
+      const rowsToImport = parseVatPasteRows(pastedVatRows, rowForm.emirate);
+      if (rowsToImport.length === 0) throw new Error('Paste at least one VAT row');
+      for (const row of rowsToImport) {
+        await apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows`, row);
+      }
+      return rowsToImport.length;
+    },
+    onSuccess: (count: number) => {
+      invalidateWorkspace();
+      setPastedVatRows('');
+      toast({ title: 'VAT rows imported', description: `${count} row${count === 1 ? '' : 's'} added as approved import rows.` });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not import VAT rows', description: e?.message }),
   });
 
   const scanMutation = useMutation({
@@ -2039,6 +2137,41 @@ function VatWorkspaceDialog({
                     <Input placeholder="VAT 201 box, e.g. box9ExpensesVat" value={rowForm.vat201Box} onChange={e => setRowForm(form => ({ ...form, vat201Box: e.target.value }))} />
                   )}
                 </div>
+              </div>
+
+              <div className="rounded-md border p-3 space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="font-medium">Paste invoice rows</p>
+                    <p className="text-xs text-muted-foreground">
+                      Copy rows from Excel/Sheets using: category, invoice no., date, customer/vendor, TRN, emirate, taxable, VAT, gross, notes.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline">{pastePreviewRows.length} parsed</Badge>
+                    <Button
+                      size="sm"
+                      onClick={() => importRowsMutation.mutate()}
+                      disabled={!selectedWorkpaperId || pastePreviewRows.length === 0 || importRowsMutation.isPending}
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Add pasted rows
+                    </Button>
+                  </div>
+                </div>
+                <Textarea
+                  value={pastedVatRows}
+                  onChange={e => setPastedVatRows(e.target.value)}
+                  placeholder={'standard_expense\tINV-1001\t2026-05-18\tSupplier LLC\t100123456700003\tdubai\t1000\t50\t1050\tMay receipt'}
+                  className="min-h-24 font-mono text-xs"
+                  data-testid="textarea-vat-paste-rows"
+                />
+                {pastePreviewRows.length > 0 && (
+                  <div className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
+                    Preview: {pastePreviewRows.slice(0, 3).map(row => `${row.invoiceNumber || 'No invoice'} ${formatAed(row.taxableAmount)} + VAT ${formatAed(row.vatAmount)}`).join(' · ')}
+                    {pastePreviewRows.length > 3 ? ` · +${pastePreviewRows.length - 3} more` : ''}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-4">

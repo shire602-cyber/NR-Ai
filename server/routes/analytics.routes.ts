@@ -68,6 +68,12 @@ export function registerAnalyticsRoutes(app: Express) {
 
     // Generate simple forecast based on averages
     const months = Object.keys(monthlyData).sort();
+    if (months.length === 0) {
+      return res.status(400).json({
+        message: 'Add invoices, receipts, or journal activity before generating a cash-flow forecast.',
+      });
+    }
+
     const avgInflow = months.length > 0
       ? months.reduce((sum, m) => sum + monthlyData[m].inflow, 0) / months.length
       : 0;
@@ -79,6 +85,7 @@ export function registerAnalyticsRoutes(app: Express) {
     const periodMonths = period === '3months' ? 3 : period === '6months' ? 6 : 12;
     const forecasts = [];
     let runningBalance = avgInflow - avgOutflow;
+    const baseConfidence = Math.min(0.85, 0.45 + months.length * 0.05);
 
     for (let i = 1; i <= periodMonths; i++) {
       const forecastDate = new Date();
@@ -88,10 +95,10 @@ export function registerAnalyticsRoutes(app: Express) {
         companyId,
         forecastDate,
         forecastType: 'monthly',
-        predictedInflow: avgInflow * (1 + Math.random() * 0.1 - 0.05), // +/- 5% variation
-        predictedOutflow: avgOutflow * (1 + Math.random() * 0.1 - 0.05),
+        predictedInflow: avgInflow,
+        predictedOutflow: avgOutflow,
         predictedBalance: runningBalance,
-        confidenceLevel: 0.85 - (i * 0.02), // Confidence decreases over time
+        confidenceLevel: Math.max(0.2, baseConfidence - i * 0.02),
       });
 
       forecasts.push(forecast);

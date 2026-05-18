@@ -146,8 +146,8 @@ export function WhatsAppComposer({
           <DialogDescription>
             {description ||
               (en
-                ? 'Compose and send via your personal WhatsApp Desktop or Web. The message will be logged to your history.'
-                : 'اكتب وأرسل عبر واتساب الشخصي. ستُسجَّل الرسالة في السجل.')}
+                ? 'Compose a message for WhatsApp Desktop/Web. Muhasib logs the draft; delivery is confirmed inside WhatsApp.'
+                : 'اكتب رسالة لواتساب. يسجل محاسب المسودة؛ ويتم تأكيد التسليم داخل واتساب.')}
           </DialogDescription>
         </DialogHeader>
 

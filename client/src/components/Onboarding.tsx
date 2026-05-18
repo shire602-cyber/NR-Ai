@@ -36,8 +36,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: 'welcome',
     field: 'hasCompletedWelcome',
-    title: 'Welcome to BookKeeping AI',
-    description: 'Get started with AI-powered accounting for your UAE business',
+    title: 'Welcome to Muhasib.ai',
+    description: 'Set up UAE-compliant accounting, VAT, and reporting for your business',
     icon: Sparkles,
     action: 'Continue',
     path: '/dashboard',
@@ -160,6 +160,26 @@ export function OnboardingWizard() {
     },
   });
 
+  const skipMutation = useMutation({
+    mutationFn: () => apiRequest('PATCH', '/api/onboarding', { showTour: false }),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['/api/onboarding'] });
+      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(['/api/onboarding']);
+      if (previousOnboarding) {
+        queryClient.setQueryData(['/api/onboarding'], { ...previousOnboarding, showTour: false });
+      }
+      return { previousOnboarding };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousOnboarding) {
+        queryClient.setQueryData(['/api/onboarding'], context.previousOnboarding);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/onboarding'] });
+    },
+  });
+
   useEffect(() => {
     if (onboarding && !onboarding.isOnboardingComplete && onboarding.showTour) {
       setShowWizard(true);
@@ -174,6 +194,7 @@ export function OnboardingWizard() {
 
   const handleSkip = () => {
     setShowWizard(false);
+    skipMutation.mutate();
   };
 
   if (isLoading || !onboarding || onboarding.isOnboardingComplete || !onboarding.showTour) {
