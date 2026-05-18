@@ -32,6 +32,12 @@ Some Chrome unpacked command-line installs still derive the ID from the local
 folder path; the staging app also recognizes the observed local test ID
 `fignfifoniblkonapihmkfakmlgkbkcf`.
 
+The app requires bridge version `0.1.1` or newer. Older unpacked installs can
+report that a draft succeeded while handing the browser to WhatsApp's native
+app prompt instead of opening the target WhatsApp Web conversation. When the
+installed bridge is missing or outdated, Muhasib.ai falls back to a direct
+`https://web.whatsapp.com/send?...` handoff.
+
 ## Delivery Semantics
 
 Statuses remain conservative:

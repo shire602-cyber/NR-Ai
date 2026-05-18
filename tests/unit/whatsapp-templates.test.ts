@@ -5,6 +5,7 @@ import {
   formatPhoneForWhatsApp,
   openWhatsApp,
 } from '../../client/src/lib/whatsapp-templates';
+import { isSupportedWhatsAppBridgeVersion } from '../../client/src/lib/whatsapp-bridge';
 
 describe('whatsapp template helpers', () => {
   it('normalizes UAE phone numbers for WhatsApp Web drafts', () => {
@@ -32,5 +33,12 @@ describe('whatsapp template helpers', () => {
     );
 
     vi.unstubAllGlobals();
+  });
+
+  it('rejects outdated bridge versions that can acknowledge without opening WhatsApp Web', () => {
+    expect(isSupportedWhatsAppBridgeVersion('0.1.0')).toBe(false);
+    expect(isSupportedWhatsAppBridgeVersion('0.1.1')).toBe(true);
+    expect(isSupportedWhatsAppBridgeVersion('0.2.0')).toBe(true);
+    expect(isSupportedWhatsAppBridgeVersion(undefined)).toBe(false);
   });
 });

@@ -820,8 +820,8 @@ export default function WhatsAppDashboard() {
               </div>
               <p className="text-sm text-muted-foreground max-w-3xl">
                 {en
-                  ? 'NR can queue an audited WhatsApp job and draft it in WhatsApp Web when the Chrome bridge is installed. Without it, messages fall back to the existing Desktop/Web handoff and stay marked logged only.'
-                  : 'يمكن لـ NR إنشاء مهمة واتساب مسجلة وفتحها كمسودة في واتساب ويب عند تثبيت إضافة كروم. بدونها، سيتم استخدام الفتح المباشر وتبقى الرسالة مسجلة فقط.'}
+                  ? 'NR queues an audited WhatsApp job and opens a reviewed draft in WhatsApp Web. If the Chrome bridge is missing or outdated, the browser handoff still opens WhatsApp Web directly and staff confirm send status after pressing Send.'
+                  : 'ينشئ NR مهمة واتساب مسجلة ويفتح مسودة للمراجعة في واتساب ويب. إذا كانت إضافة كروم غير موجودة أو قديمة، يتم فتح واتساب ويب مباشرة ويؤكد الموظف حالة الإرسال بعد الضغط على إرسال.'}
               </p>
               {recentBridgeJobs.length > 0 ? (
                 <p className="text-xs text-muted-foreground">

@@ -8,6 +8,7 @@ const KNOWN_EXTENSION_IDS = [
   'jlhkbnegpoefoodkdgfdolkolianihpm',
   'fignfifoniblkonapihmkfakmlgkbkcf',
 ];
+export const MIN_SUPPORTED_WHATSAPP_BRIDGE_VERSION = '0.1.1';
 
 type BridgeCommand = 'ping' | 'draft';
 
@@ -75,6 +76,20 @@ interface BridgeExternalResponse {
 }
 
 let requestSeq = 0;
+
+export function isSupportedWhatsAppBridgeVersion(version?: string | null): boolean {
+  if (!version) return false;
+  const parse = (value: string) => value.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const current = parse(version);
+  const minimum = parse(MIN_SUPPORTED_WHATSAPP_BRIDGE_VERSION);
+  for (let index = 0; index < Math.max(current.length, minimum.length); index += 1) {
+    const currentPart = current[index] || 0;
+    const minimumPart = minimum[index] || 0;
+    if (currentPart > minimumPart) return true;
+    if (currentPart < minimumPart) return false;
+  }
+  return true;
+}
 
 function askExternalBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 1000): Promise<T | null> {
   if (typeof window === 'undefined') return Promise.resolve(null);
@@ -160,7 +175,15 @@ function askBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 100
 export async function pingWhatsAppBridge(timeoutMs = 700): Promise<WhatsAppBridgePing> {
   const result = await askExternalBridge<WhatsAppBridgePing>('ping', {}, timeoutMs)
     || await askBridge<WhatsAppBridgePing>('ping', {}, timeoutMs);
-  return result?.available ? result : { available: false, reason: 'extension_not_detected' };
+  if (!result?.available) return { available: false, reason: 'extension_not_detected' };
+  if (!isSupportedWhatsAppBridgeVersion(result.version)) {
+    return {
+      ...result,
+      available: false,
+      reason: `extension_outdated_${result.version || 'unknown'}`,
+    };
+  }
+  return result;
 }
 
 export async function registerWhatsAppBridgeSession(
@@ -192,7 +215,7 @@ export async function draftWithWhatsAppBridge(
   const result = await askExternalBridge<WhatsAppBridgeDraftResult>('draft', job, timeoutMs)
     || await askBridge<WhatsAppBridgeDraftResult>('draft', job, timeoutMs);
 
-  if (result?.ok) return { ...result, mode: 'extension' };
+  if (result?.ok && isSupportedWhatsAppBridgeVersion(result.version)) return { ...result, mode: 'extension' };
   return { ok: false, mode: 'fallback', message: 'extension_not_detected' };
 }
 
@@ -215,7 +238,7 @@ export async function openWhatsAppWithLoggedFallback(
   bridgeJobId?: string,
 ): Promise<void> {
   if (bridgeJobId) {
-    await updateWhatsAppBridgeJobStatus(bridgeJobId, 'cancelled', 'logged').catch(() => {});
+    await updateWhatsAppBridgeJobStatus(bridgeJobId, 'drafted', 'drafted').catch(() => {});
   } else {
     await apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: phone, message }).catch(() => {});
   }

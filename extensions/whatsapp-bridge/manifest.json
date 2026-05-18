@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NR WhatsApp Bridge",
   "description": "Draft audited Muhasib.ai WhatsApp jobs inside WhatsApp Web for staff review.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Hc6NcuSYBQdzEvdB/Xo2t882G0cD8n5EQpgyuBF5JlK0aW5n+7akMaeW6znEutV9J9ut9x/I2V3AHd8CiMOtpTOeMVcrORe7fXzV2Pvn9NZjrnvzaBsBB821OJV+O2yonqJfnUja7HYCK1ExHVGMnfqAuSQZ8NjPmMWDNyGKxcigzXr5m6+U92ZWwngtENbeSbPMg0XGzpN4wyIYeer1OEd1AYu+O1PjTgECoradeCbSh/xalZTxbq9zt+FNMJ72QrgsVYJIddPS/BJYhgtmGCXWwnTA7ddlTLHJvEXj+57lJclEvhm8Ha8XsCoMWRRQIwfWQF+T+CNXdLJDlD0yQIDAQAB",
   "permissions": ["tabs", "storage", "scripting"],
   "host_permissions": [
