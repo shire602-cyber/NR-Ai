@@ -24,6 +24,14 @@ Chrome Manifest V3 extension for drafting Muhasib.ai WhatsApp jobs in WhatsApp W
 4. Select this folder: `extensions/whatsapp-bridge`.
 5. Open Muhasib.ai, then click **Check Bridge** on `/whatsapp`.
 
+The unpacked extension has a pinned development ID:
+`jlhkbnegpoefoodkdgfdolkolianihpm`. Muhasib.ai uses Chrome's
+`externally_connectable` bridge first and falls back to the content-script
+bridge when Chrome exposes content-script host access.
+Some Chrome unpacked command-line installs still derive the ID from the local
+folder path; the staging app also recognizes the observed local test ID
+`fignfifoniblkonapihmkfakmlgkbkcf`.
+
 ## Delivery Semantics
 
 Statuses remain conservative:

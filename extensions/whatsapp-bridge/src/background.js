@@ -107,6 +107,65 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  const senderUrl = sender?.url || sender?.origin || '';
+  let senderHost = '';
+  try {
+    senderHost = new URL(senderUrl).hostname;
+  } catch {
+    sendResponse({
+      ok: false,
+      mode: 'extension',
+      error: 'Unsupported sender',
+    });
+    return false;
+  }
+
+  if (!APP_HOSTS.has(senderHost) || message?.type !== 'NR_WHATSAPP_BRIDGE_EXTERNAL_REQUEST') {
+    sendResponse({
+      ok: false,
+      mode: 'extension',
+      error: 'Unsupported sender',
+    });
+    return false;
+  }
+
+  if (message.command === 'ping') {
+    sendResponse({
+      ok: true,
+      mode: 'extension',
+      payload: {
+        available: true,
+        extensionId: chrome.runtime.id,
+        version: chrome.runtime.getManifest().version,
+      },
+    });
+    return false;
+  }
+
+  if (message.command !== 'draft') {
+    sendResponse({
+      ok: false,
+      mode: 'extension',
+      error: 'Unknown bridge command',
+    });
+    return false;
+  }
+
+  openDraft(message.payload)
+    .then((result) => sendResponse({
+      ok: true,
+      mode: 'extension',
+      payload: result,
+    }))
+    .catch((error) => sendResponse({
+      ok: false,
+      mode: 'extension',
+      error: error?.message || 'Could not open WhatsApp Web',
+    }));
+  return true;
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.set({ installedAt: new Date().toISOString() });
   chrome.tabs.query({}, (tabs) => {

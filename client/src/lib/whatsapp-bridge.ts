@@ -3,8 +3,30 @@ import { formatPhoneForWhatsApp, openWhatsApp } from './whatsapp-templates';
 
 const BRIDGE_REQUEST = 'NR_WHATSAPP_BRIDGE_REQUEST';
 const BRIDGE_RESPONSE = 'NR_WHATSAPP_BRIDGE_RESPONSE';
+const BRIDGE_EXTERNAL_REQUEST = 'NR_WHATSAPP_BRIDGE_EXTERNAL_REQUEST';
+const KNOWN_EXTENSION_IDS = [
+  'jlhkbnegpoefoodkdgfdolkolianihpm',
+  'fignfifoniblkonapihmkfakmlgkbkcf',
+];
 
 type BridgeCommand = 'ping' | 'draft';
+
+declare global {
+  interface Window {
+    chrome?: {
+      runtime?: {
+        sendMessage?: (
+          extensionId: string,
+          message: unknown,
+          callback: (response?: BridgeExternalResponse) => void,
+        ) => void;
+        lastError?: {
+          message?: string;
+        };
+      };
+    };
+  }
+}
 
 export interface WhatsAppBridgePing {
   available: boolean;
@@ -45,7 +67,60 @@ interface BridgeResponse {
   error?: string;
 }
 
+interface BridgeExternalResponse {
+  ok: boolean;
+  mode?: 'extension';
+  payload?: any;
+  error?: string;
+}
+
 let requestSeq = 0;
+
+function askExternalBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 1000): Promise<T | null> {
+  if (typeof window === 'undefined') return Promise.resolve(null);
+  const sendMessage = window.chrome?.runtime?.sendMessage;
+  if (typeof sendMessage !== 'function') return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(null);
+    }, timeoutMs);
+
+    const done = (value: T | null) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      resolve(value);
+    };
+
+    const message = {
+      type: BRIDGE_EXTERNAL_REQUEST,
+      command,
+      payload,
+    };
+
+    let pending = KNOWN_EXTENSION_IDS.length;
+    for (const extensionId of KNOWN_EXTENSION_IDS) {
+      try {
+        sendMessage(extensionId, message, (response?: BridgeExternalResponse) => {
+          const lastError = window.chrome?.runtime?.lastError;
+          if (!response?.ok || lastError) {
+            pending -= 1;
+            if (pending <= 0) done(null);
+            return;
+          }
+          done((response.payload ?? response) as T);
+        });
+      } catch {
+        pending -= 1;
+        if (pending <= 0) done(null);
+      }
+    }
+  });
+}
 
 function askBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 1000): Promise<T | null> {
   if (typeof window === 'undefined') return Promise.resolve(null);
@@ -83,7 +158,8 @@ function askBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 100
 }
 
 export async function pingWhatsAppBridge(timeoutMs = 700): Promise<WhatsAppBridgePing> {
-  const result = await askBridge<WhatsAppBridgePing>('ping', {}, timeoutMs);
+  const result = await askExternalBridge<WhatsAppBridgePing>('ping', {}, timeoutMs)
+    || await askBridge<WhatsAppBridgePing>('ping', {}, timeoutMs);
   return result?.available ? result : { available: false, reason: 'extension_not_detected' };
 }
 
@@ -109,10 +185,12 @@ export async function draftWithWhatsAppBridge(
     return { ok: false, mode: 'fallback', message: 'Invalid WhatsApp phone number' };
   }
 
-  const result = await askBridge<WhatsAppBridgeDraftResult>('draft', {
+  const job = {
     ...payload,
     phone: normalized,
-  }, timeoutMs);
+  };
+  const result = await askExternalBridge<WhatsAppBridgeDraftResult>('draft', job, timeoutMs)
+    || await askBridge<WhatsAppBridgeDraftResult>('draft', job, timeoutMs);
 
   if (result?.ok) return { ...result, mode: 'extension' };
   return { ok: false, mode: 'fallback', message: 'extension_not_detected' };
