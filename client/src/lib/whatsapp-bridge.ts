@@ -62,7 +62,7 @@ function askBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 100
     }, timeoutMs);
 
     function onMessage(event: MessageEvent<BridgeResponse>) {
-      if (event.source !== window) return;
+      if (event.origin !== window.location.origin) return;
       const data = event.data;
       if (!data || data.type !== BRIDGE_RESPONSE || data.requestId !== requestId) return;
 
