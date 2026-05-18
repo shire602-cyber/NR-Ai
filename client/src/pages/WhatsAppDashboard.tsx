@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,14 @@ import {
   pickWhatsAppNumber,
   type MessageTemplate,
 } from '@/lib/whatsapp-templates';
+import {
+  draftWithWhatsAppBridge,
+  openWhatsAppWithLoggedFallback,
+  pingWhatsAppBridge,
+  registerWhatsAppBridgeSession,
+  updateWhatsAppBridgeJobStatus,
+  type WhatsAppBridgePing,
+} from '@/lib/whatsapp-bridge';
 
 // ─── Rules ────────────────────────────────────────────────
 
@@ -88,6 +96,39 @@ const DEFAULT_RULES: WhatsAppRule[] = [
 
 type WhatsAppBadgeVariant = ComponentProps<typeof Badge>['variant'];
 
+interface WhatsAppBridgeStatus {
+  connected: boolean;
+  deliveryMode: string;
+  deliveryStatus: string;
+  canAutoSend: boolean;
+  note?: string;
+  activeSession?: {
+    id: string;
+    extensionId: string;
+    extensionVersion?: string | null;
+    lastSeenAt: string;
+    expiresAt: string;
+  } | null;
+  recentJobs?: Array<{
+    id: string;
+    kind: string;
+    recipientPhone: string;
+    recipientName?: string | null;
+    status: string;
+    deliveryStatus: string;
+    createdAt: string;
+  }>;
+}
+
+interface WhatsAppDispatchOptions {
+  kind?: 'direct_message' | 'invoice' | 'document_request' | 'payment_chase' | 'vat_submission_proof' | 'broadcast' | 'custom';
+  recipientName?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  attachmentUrl?: string | null;
+  attachmentLabel?: string | null;
+}
+
 // ─── Component ────────────────────────────────────────────
 
 export default function WhatsAppDashboard() {
@@ -109,6 +150,8 @@ export default function WhatsAppDashboard() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [rules, setRules] = useState<WhatsAppRule[]>(DEFAULT_RULES);
+  const [bridgePing, setBridgePing] = useState<WhatsAppBridgePing>({ available: false });
+  const [bridgeChecking, setBridgeChecking] = useState(false);
 
   // Data queries
   const { data: messages = [], isLoading: messagesLoading } = useQuery<WhatsappMessage[]>({
@@ -127,6 +170,10 @@ export default function WhatsAppDashboard() {
     enabled: !!currentCompany?.id,
   });
 
+  const { data: bridgeStatus, refetch: refetchBridgeStatus } = useQuery<WhatsAppBridgeStatus>({
+    queryKey: ['/api/integrations/whatsapp/bridge/status'],
+  });
+
   // Notifications for pending actions
   const { data: notificationsData } = useQuery<{ notifications: Notification[]; unreadCount: number }>({
     queryKey: ['/api/notifications'],
@@ -134,6 +181,40 @@ export default function WhatsAppDashboard() {
   const pendingActions = (notificationsData?.notifications || []).filter(
     (n) => n.type === 'payment_due' && !n.isDismissed && !n.isRead
   );
+
+  const checkBridge = async (showToast = false) => {
+    setBridgeChecking(true);
+    try {
+      const ping = await pingWhatsAppBridge();
+      setBridgePing(ping);
+      if (ping.available) {
+        await registerWhatsAppBridgeSession(ping, currentCompany?.id).catch(() => {});
+        await refetchBridgeStatus();
+        if (showToast) {
+          toast({
+            title: en ? 'WhatsApp Bridge detected' : 'تم العثور على جسر واتساب',
+            description: en
+              ? 'Messages can be drafted in WhatsApp Web for staff review.'
+              : 'يمكن تجهيز الرسائل في واتساب ويب للمراجعة.',
+          });
+        }
+      } else if (showToast) {
+        toast({
+          title: en ? 'Bridge extension not detected' : 'لم يتم العثور على الإضافة',
+          description: en
+            ? 'We will use the safe WhatsApp Desktop/Web handoff instead.'
+            : 'سنستخدم فتح واتساب الآمن بدلاً من ذلك.',
+        });
+      }
+    } finally {
+      setBridgeChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    void checkBridge(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCompany?.id]);
 
   // Filter messages
   const filteredMessages = messages.filter(msg => {
@@ -175,6 +256,18 @@ export default function WhatsAppDashboard() {
       return { label: en ? 'Logged' : 'مسجل', variant: 'neutral' };
     }
 
+    if (status === 'queued') {
+      return { label: en ? 'Queued' : 'في الانتظار', variant: 'secondary' };
+    }
+
+    if (status === 'drafted') {
+      return { label: en ? 'Drafted' : 'مسودة', variant: 'info' };
+    }
+
+    if (status === 'sent_unverified') {
+      return { label: en ? 'Sent, unverified' : 'مرسل غير مؤكد', variant: 'warning' };
+    }
+
     if (status === 'failed') {
       return { label: en ? 'Failed' : 'فشل', variant: 'danger' };
     }
@@ -186,13 +279,80 @@ export default function WhatsAppDashboard() {
     return { label: en ? 'Sent' : 'مرسل', variant: 'info' };
   };
 
-  const logAndOpen = (phone: string, message: string) => {
-    apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: phone, message }).catch(() => {});
-    openWhatsApp(phone, message);
-    toast({ title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...' });
-    setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
-    }, 1000);
+  const logAndOpen = async (phone: string, message: string, options: WhatsAppDispatchOptions = {}) => {
+    const normalized = formatPhoneForWhatsApp(phone);
+    if (!normalized) {
+      toast({
+        title: en ? 'Invalid WhatsApp number' : 'رقم واتساب غير صالح',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    let bridgeJobId: string | undefined;
+    try {
+      const created = await apiRequest('POST', '/api/integrations/whatsapp/bridge/jobs', {
+        companyId: currentCompany?.id,
+        to: phone,
+        recipientName: options.recipientName || null,
+        message,
+        kind: options.kind || 'direct_message',
+        sourceType: options.sourceType || null,
+        sourceId: options.sourceId || null,
+        attachmentUrl: options.attachmentUrl || null,
+        attachmentLabel: options.attachmentLabel || null,
+      });
+      bridgeJobId = created?.job?.id;
+      if (!bridgeJobId) {
+        throw new Error('Bridge job was not created');
+      }
+
+      const draft = await draftWithWhatsAppBridge({
+        jobId: bridgeJobId,
+        phone: normalized,
+        message,
+        recipientName: options.recipientName || null,
+        attachmentUrl: options.attachmentUrl || null,
+        attachmentLabel: options.attachmentLabel || null,
+      });
+
+      if (draft.ok && bridgeJobId) {
+        await updateWhatsAppBridgeJobStatus(bridgeJobId, 'drafted', 'drafted').catch(() => {});
+        setBridgePing({
+          available: true,
+          extensionId: draft.extensionId || bridgePing.extensionId,
+          version: draft.version || bridgePing.version,
+        });
+        toast({
+          title: en ? 'Draft opened in WhatsApp Web' : 'تم فتح المسودة في واتساب ويب',
+          description: en
+            ? 'Review the message in WhatsApp Web, then press send there.'
+            : 'راجع الرسالة في واتساب ويب ثم أرسلها من هناك.',
+        });
+      } else {
+        await openWhatsAppWithLoggedFallback(normalized, message, bridgeJobId);
+        toast({
+          title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...',
+          description: en
+            ? 'Bridge extension was not detected; using Desktop/Web handoff.'
+            : 'لم يتم العثور على الإضافة؛ سيتم فتح واتساب مباشرة.',
+        });
+      }
+    } catch (error: any) {
+      await apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: normalized, message }).catch(() => {});
+      openWhatsApp(normalized, message);
+      toast({
+        title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...',
+        description: error?.message
+          ? (en ? 'Bridge queue failed, so we used the safe handoff.' : 'تعذر إنشاء مهمة الجسر، لذلك استخدمنا الفتح الآمن.')
+          : undefined,
+      });
+    } finally {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/bridge/status'] });
+      }, 1000);
+    }
   };
 
   // ─── Handlers ───────────────────────────────────────────
@@ -211,7 +371,11 @@ export default function WhatsAppDashboard() {
     if (!phone.trim()) { toast({ title: en ? 'Phone required' : 'رقم الهاتف مطلوب', variant: 'destructive' }); return; }
     if (!sendMessage.trim()) { toast({ title: en ? 'Message required' : 'الرسالة مطلوبة', variant: 'destructive' }); return; }
 
-    logAndOpen(phone, sendMessage);
+    const selectedContact = selectedCustomer ? customers.find(c => c.id === selectedCustomer) : null;
+    void logAndOpen(phone, sendMessage, {
+      kind: selectedTemplate === 'document_request' ? 'document_request' : 'direct_message',
+      recipientName: selectedContact?.name || null,
+    });
     setSendTo(''); setSendMessage(''); setSelectedCustomer(''); setSelectedTemplate('');
     setShowSendDialog(false);
   };
@@ -238,7 +402,13 @@ export default function WhatsAppDashboard() {
       company_name: currentCompany?.name || 'Our Company',
     });
 
-    logAndOpen(recipient, message);
+    void logAndOpen(recipient, message, {
+      kind: 'invoice',
+      recipientName: inv.customerName,
+      sourceType: 'invoice',
+      sourceId: inv.id,
+      attachmentLabel: `Invoice ${inv.number}`,
+    });
     setSelectedInvoice(''); setSelectedTemplate(''); setShowInvoiceDialog(false);
   };
 
@@ -258,8 +428,13 @@ export default function WhatsAppDashboard() {
         company_name: currentCompany?.name || 'Our Company',
       });
 
-      apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: r.number, message: msg }).catch(() => {});
-      setTimeout(() => openWhatsApp(r.number, msg), i * 800);
+      setTimeout(() => {
+        void logAndOpen(r.number, msg, {
+          kind: 'broadcast',
+          recipientName: r.customer.name,
+          sourceType: 'broadcast',
+        });
+      }, i * 900);
     });
 
     toast({ title: en ? `Opening WhatsApp for ${recipients.length} customer(s)...` : `جاري فتح واتساب لـ ${recipients.length} عميل...` });
@@ -310,7 +485,12 @@ export default function WhatsAppDashboard() {
           company_name: currentCompany?.name || 'Our Company',
         });
 
-        logAndOpen(wa, message);
+        void logAndOpen(wa, message, {
+          kind: 'payment_chase',
+          recipientName: inv.customerName,
+          sourceType: 'invoice',
+          sourceId: inv.id,
+        });
       } else {
         toast({ title: en ? 'No phone number for this customer' : 'لا يوجد رقم هاتف لهذا العميل', variant: 'destructive' });
       }
@@ -351,6 +531,8 @@ export default function WhatsAppDashboard() {
     ? customers.find((customer) => customer.name === selectedInvoiceRecord.customerName)
     : null;
   const selectedInvoicePhone = selectedInvoiceCustomer ? pickWhatsAppNumber(selectedInvoiceCustomer) : null;
+  const bridgeDetected = Boolean(bridgePing.available || bridgeStatus?.connected);
+  const recentBridgeJobs = bridgeStatus?.recentJobs ?? [];
 
   // ─── Render ─────────────────────────────────────────────
 
@@ -587,6 +769,59 @@ export default function WhatsAppDashboard() {
           </Dialog>
         </div>
       </div>
+
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={bridgeDetected ? 'success' : 'warning'} dot>
+                  {bridgeDetected
+                    ? (en ? 'Bridge ready' : 'الجسر جاهز')
+                    : (en ? 'Bridge not detected' : 'لم يتم العثور على الجسر')}
+                </Badge>
+                <Badge variant="neutral">
+                  {en ? 'Human-confirmed send' : 'إرسال بمراجعة الموظف'}
+                </Badge>
+                {bridgePing.version || bridgeStatus?.activeSession?.extensionVersion ? (
+                  <Badge variant="outline">
+                    v{bridgePing.version || bridgeStatus?.activeSession?.extensionVersion}
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="text-sm text-muted-foreground max-w-3xl">
+                {en
+                  ? 'NR can queue an audited WhatsApp job and draft it in WhatsApp Web when the Chrome bridge is installed. Without it, messages fall back to the existing Desktop/Web handoff and stay marked logged only.'
+                  : 'يمكن لـ NR إنشاء مهمة واتساب مسجلة وفتحها كمسودة في واتساب ويب عند تثبيت إضافة كروم. بدونها، سيتم استخدام الفتح المباشر وتبقى الرسالة مسجلة فقط.'}
+              </p>
+              {recentBridgeJobs.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {en ? 'Latest bridge job' : 'آخر مهمة'}: {recentBridgeJobs[0].kind} · {recentBridgeJobs[0].deliveryStatus}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void checkBridge(true)}
+                disabled={bridgeChecking}
+                data-testid="button-check-whatsapp-bridge"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                {bridgeChecking ? (en ? 'Checking...' : 'جاري الفحص...') : (en ? 'Check Bridge' : 'فحص الجسر')}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer')}
+                data-testid="button-open-whatsapp-web"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                {en ? 'Open WhatsApp Web' : 'فتح واتساب ويب'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Main Content */}
       <Tabs defaultValue="messages" className="w-full">

@@ -1057,6 +1057,79 @@ export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).
 export type InsertWhatsappMessage = z.infer<typeof insertWhatsappMessageSchema>;
 export type WhatsappMessage = typeof whatsappMessages.$inferSelect;
 
+// WhatsApp Web Bridge sessions created by the Chrome extension. These do not
+// prove delivery; they only show a staff browser can draft messages in
+// WhatsApp Web for human review.
+export const whatsappBridgeSessions = pgTable("whatsapp_bridge_sessions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  extensionId: text("extension_id").notNull(),
+  extensionVersion: text("extension_version"),
+  status: text("status").notNull().default("active"), // active | expired | revoked
+  userAgent: text("user_agent"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_whatsapp_bridge_sessions_company_id").on(table.companyId),
+  userIdIdx: index("idx_whatsapp_bridge_sessions_user_id").on(table.userId),
+  statusIdx: index("idx_whatsapp_bridge_sessions_status").on(table.status),
+}));
+
+export const insertWhatsappBridgeSessionSchema = createInsertSchema(whatsappBridgeSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertWhatsappBridgeSession = z.infer<typeof insertWhatsappBridgeSessionSchema>;
+export type WhatsappBridgeSession = typeof whatsappBridgeSessions.$inferSelect;
+
+// Audited WhatsApp work queue. Jobs can be drafted by the extension, logged by
+// the current wa.me/Desktop fallback, or later sent by an official provider.
+export const whatsappBridgeJobs = pgTable("whatsapp_bridge_jobs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id").references(() => whatsappBridgeSessions.id, { onDelete: "set null" }),
+  whatsappMessageId: uuid("whatsapp_message_id").references(() => whatsappMessages.id, { onDelete: "set null" }),
+  provider: text("provider").notNull().default("whatsapp_web_extension"),
+  kind: text("kind").notNull().default("direct_message"),
+  recipientPhone: text("recipient_phone").notNull(),
+  normalizedRecipientPhone: text("normalized_recipient_phone").notNull(),
+  recipientName: text("recipient_name"),
+  messageBody: text("message_body").notNull(),
+  attachmentUrl: text("attachment_url"),
+  attachmentLabel: text("attachment_label"),
+  sourceType: text("source_type"),
+  sourceId: uuid("source_id"),
+  status: text("status").notNull().default("queued"), // queued | drafted | sent_unverified | failed | cancelled | expired
+  deliveryStatus: text("delivery_status").notNull().default("logged"), // logged | drafted | sent_unverified | failed
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  draftedAt: timestamp("drafted_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_whatsapp_bridge_jobs_company_id").on(table.companyId),
+  createdByIdx: index("idx_whatsapp_bridge_jobs_created_by").on(table.createdBy),
+  statusIdx: index("idx_whatsapp_bridge_jobs_status").on(table.status),
+  recipientIdx: index("idx_whatsapp_bridge_jobs_recipient").on(table.normalizedRecipientPhone),
+  sourceIdx: index("idx_whatsapp_bridge_jobs_source").on(table.sourceType, table.sourceId),
+}));
+
+export const insertWhatsappBridgeJobSchema = createInsertSchema(whatsappBridgeJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertWhatsappBridgeJob = z.infer<typeof insertWhatsappBridgeJobSchema>;
+export type WhatsappBridgeJob = typeof whatsappBridgeJobs.$inferSelect;
+
 // ===========================
 // AI Anomaly Detection
 // ===========================

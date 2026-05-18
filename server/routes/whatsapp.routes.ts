@@ -1,10 +1,49 @@
 import { type Express, type Request, type Response } from 'express';
+import { randomUUID } from 'crypto';
+import { and, desc, eq, gt } from 'drizzle-orm';
+import { z } from 'zod';
 import { storage } from '../storage';
+import { db } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
+import {
+  whatsappBridgeJobs,
+  whatsappBridgeSessions,
+  whatsappMessages,
+} from '../../shared/schema';
+import {
+  WHATSAPP_BRIDGE_PROVIDER,
+  bridgeStatusUpdateSchema,
+  cleanBridgeJobMetadata,
+  createBridgeJobSchema,
+  createBridgeSessionSchema,
+  normalizeWhatsAppBridgePhone,
+} from '../services/whatsapp-bridge.service';
 
 const log = createLogger('whatsapp');
+
+const sessionIdSchema = z.object({ sessionId: z.string().uuid() });
+const jobIdSchema = z.object({ jobId: z.string().uuid() });
+
+async function resolveCompanyId(req: Request, requestedCompanyId?: string): Promise<string | null> {
+  const userId = (req as any).user?.id as string | undefined;
+  const firmRole = ((req as any).user?.firmRole ?? null) as string | null;
+  if (!userId) return null;
+
+  if (requestedCompanyId) {
+    const hasAccess = await storage.hasCompanyAccess(userId, requestedCompanyId, firmRole);
+    if (!hasAccess) return null;
+    return requestedCompanyId;
+  }
+
+  const companies = await storage.getCompaniesByUserId(userId);
+  return companies[0]?.id ?? null;
+}
+
+function sessionExpiry(): Date {
+  return new Date(Date.now() + 60 * 60 * 1000);
+}
 
 /**
  * WhatsApp Routes (Personal WhatsApp via wa.me links)
@@ -88,6 +127,207 @@ export function registerWhatsAppRoutes(app: Express) {
       deliveryMode: 'personal_link',
       deliveryStatus: 'logged_only',
     });
+  }));
+
+  // WhatsApp Web Bridge status. The bridge is extension-assisted and still
+  // human-confirmed inside WhatsApp Web; no provider delivery receipts exist.
+  app.get("/api/integrations/whatsapp/bridge/status", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const companyId = await resolveCompanyId(req, req.query.companyId as string | undefined);
+    if (!companyId) return res.status(404).json({ message: 'No accessible company found' });
+
+    const now = new Date();
+    const activeSessions = await db
+      .select()
+      .from(whatsappBridgeSessions)
+      .where(and(
+        eq(whatsappBridgeSessions.companyId, companyId),
+        eq(whatsappBridgeSessions.userId, userId),
+        eq(whatsappBridgeSessions.status, 'active'),
+        gt(whatsappBridgeSessions.expiresAt, now),
+      ))
+      .orderBy(desc(whatsappBridgeSessions.lastSeenAt))
+      .limit(3);
+
+    const recentJobs = await db
+      .select()
+      .from(whatsappBridgeJobs)
+      .where(and(
+        eq(whatsappBridgeJobs.companyId, companyId),
+        eq(whatsappBridgeJobs.createdBy, userId),
+      ))
+      .orderBy(desc(whatsappBridgeJobs.createdAt))
+      .limit(10);
+
+    res.json({
+      provider: WHATSAPP_BRIDGE_PROVIDER,
+      connected: activeSessions.length > 0,
+      configured: true,
+      canAutoSend: false,
+      deliveryMode: 'whatsapp_web_human_confirmed',
+      deliveryStatus: 'draft_or_logged_only',
+      activeSession: activeSessions[0] ?? null,
+      recentJobs,
+      note: 'The Chrome extension can draft messages in WhatsApp Web. Staff must review and press send in WhatsApp.',
+    });
+  }));
+
+  app.post("/api/integrations/whatsapp/bridge/sessions", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const validated = createBridgeSessionSchema.parse(req.body);
+    const companyId = await resolveCompanyId(req, validated.companyId);
+    if (!companyId) return res.status(404).json({ message: 'No accessible company found' });
+
+    const [session] = await db
+      .insert(whatsappBridgeSessions)
+      .values({
+        companyId,
+        userId,
+        extensionId: validated.extensionId,
+        extensionVersion: validated.extensionVersion || null,
+        status: 'active',
+        userAgent: validated.userAgent || req.headers['user-agent'] || null,
+        lastSeenAt: new Date(),
+        expiresAt: sessionExpiry(),
+      })
+      .returning();
+
+    res.status(201).json({ session });
+  }));
+
+  app.patch("/api/integrations/whatsapp/bridge/sessions/:sessionId/heartbeat", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const { sessionId } = sessionIdSchema.parse(req.params);
+    const [session] = await db
+      .update(whatsappBridgeSessions)
+      .set({ lastSeenAt: new Date(), expiresAt: sessionExpiry(), updatedAt: new Date(), status: 'active' })
+      .where(and(eq(whatsappBridgeSessions.id, sessionId), eq(whatsappBridgeSessions.userId, userId)))
+      .returning();
+
+    if (!session) return res.status(404).json({ message: 'Bridge session not found' });
+    res.json({ session });
+  }));
+
+  app.post("/api/integrations/whatsapp/bridge/jobs", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const validated = createBridgeJobSchema.parse(req.body);
+    const companyId = await resolveCompanyId(req, validated.companyId);
+    if (!companyId) return res.status(404).json({ message: 'No accessible company found' });
+
+    const normalizedPhone = normalizeWhatsAppBridgePhone(validated.to);
+    if (!normalizedPhone) return res.status(400).json({ message: 'Invalid WhatsApp phone number' });
+
+    const correlationId = randomUUID();
+    const [loggedMessage] = await db
+      .insert(whatsappMessages)
+      .values({
+        companyId,
+        waMessageId: `bridge_${correlationId}`,
+        from: 'whatsapp_web_bridge',
+        to: normalizedPhone,
+        messageType: validated.attachmentUrl ? 'document' : 'text',
+        content: validated.message,
+        mediaUrl: validated.attachmentUrl || null,
+        direction: 'outbound',
+        status: 'queued',
+      })
+      .returning();
+
+    const [job] = await db
+      .insert(whatsappBridgeJobs)
+      .values({
+        companyId,
+        createdBy: userId,
+        whatsappMessageId: loggedMessage.id,
+        provider: WHATSAPP_BRIDGE_PROVIDER,
+        kind: validated.kind,
+        recipientPhone: validated.to.trim(),
+        normalizedRecipientPhone: normalizedPhone,
+        recipientName: validated.recipientName || null,
+        messageBody: validated.message,
+        attachmentUrl: validated.attachmentUrl || null,
+        attachmentLabel: validated.attachmentLabel || null,
+        sourceType: validated.sourceType || null,
+        sourceId: validated.sourceId || null,
+        status: 'queued',
+        deliveryStatus: 'logged',
+        metadata: cleanBridgeJobMetadata(validated),
+      })
+      .returning();
+
+    log.info({ jobId: job.id, companyId, userId, kind: job.kind }, 'WhatsApp bridge job queued');
+    res.status(201).json({ job, message: loggedMessage });
+  }));
+
+  app.get("/api/integrations/whatsapp/bridge/jobs", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const companyId = await resolveCompanyId(req, req.query.companyId as string | undefined);
+    if (!companyId) return res.status(404).json({ message: 'No accessible company found' });
+
+    const jobs = await db
+      .select()
+      .from(whatsappBridgeJobs)
+      .where(and(eq(whatsappBridgeJobs.companyId, companyId), eq(whatsappBridgeJobs.createdBy, userId)))
+      .orderBy(desc(whatsappBridgeJobs.createdAt))
+      .limit(50);
+
+    res.json({ jobs });
+  }));
+
+  app.patch("/api/integrations/whatsapp/bridge/jobs/:jobId/status", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
+    const { jobId } = jobIdSchema.parse(req.params);
+    const validated = bridgeStatusUpdateSchema.parse(req.body);
+    const now = new Date();
+    const nextDeliveryStatus = validated.deliveryStatus || (
+      validated.status === 'failed'
+        ? 'failed'
+        : validated.status === 'drafted'
+          ? 'drafted'
+          : 'logged'
+    );
+    const jobUpdate: any = {
+      status: validated.status,
+      deliveryStatus: nextDeliveryStatus,
+      errorMessage: validated.errorMessage || null,
+      updatedAt: now,
+    };
+    if (validated.status === 'drafted') jobUpdate.draftedAt = now;
+    if (validated.status === 'sent_unverified' || validated.status === 'failed') jobUpdate.completedAt = now;
+
+    const [job] = await db
+      .update(whatsappBridgeJobs)
+      .set(jobUpdate)
+      .where(and(eq(whatsappBridgeJobs.id, jobId), eq(whatsappBridgeJobs.createdBy, userId)))
+      .returning();
+
+    if (!job) return res.status(404).json({ message: 'WhatsApp bridge job not found' });
+
+    if (job.whatsappMessageId) {
+      await db
+        .update(whatsappMessages)
+        .set({
+          status: job.deliveryStatus,
+          errorMessage: job.errorMessage,
+          processedAt: job.status === 'drafted' || job.status === 'sent_unverified' || job.status === 'failed' ? now : null,
+        })
+        .where(eq(whatsappMessages.id, job.whatsappMessageId));
+    }
+
+    log.info({ jobId: job.id, status: job.status, deliveryStatus: job.deliveryStatus }, 'WhatsApp bridge job updated');
+    res.json({ job });
   }));
 
   // Save WhatsApp reminder rules (stored per company via admin settings)

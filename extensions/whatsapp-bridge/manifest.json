@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "NR WhatsApp Bridge",
+  "description": "Draft audited Muhasib.ai WhatsApp jobs inside WhatsApp Web for staff review.",
+  "version": "0.1.0",
+  "permissions": ["tabs", "storage"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://nr-ai-staging.up.railway.app/*",
+    "https://nr-ai-production.up.railway.app/*",
+    "https://nr-ai.up.railway.app/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://nr-ai-staging.up.railway.app/*",
+        "https://nr-ai-production.up.railway.app/*",
+        "https://nr-ai.up.railway.app/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "js": ["src/app-bridge.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["src/whatsapp-web.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "NR WhatsApp Bridge",
+    "default_popup": "src/popup.html"
+  }
+}
