@@ -17,9 +17,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { apiUrl } from '@/lib/api';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import {
+  parseVatPasteRows,
+  vat201CopyGroups,
+  vatEmirates,
+  vatRowCategories,
+  vatRowCategoryLabel,
+  type VatRowCategory,
+} from '@/lib/vat-workpaper-grid';
 import { format } from 'date-fns';
 import type { Company } from '@shared/schema';
 import { useActiveCompany } from '@/components/ActiveCompanyProvider';
@@ -218,18 +227,6 @@ interface GrowthDashboard {
   opportunities: GrowthOpportunity[];
 }
 
-type VatRowCategory =
-  | 'standard_sale'
-  | 'tourist_refund'
-  | 'reverse_charge_output'
-  | 'zero_rated_sale'
-  | 'exempt_sale'
-  | 'import'
-  | 'import_adjustment'
-  | 'standard_expense'
-  | 'reverse_charge_input'
-  | 'manual_adjustment';
-
 interface VatWorkpaperSummary {
   id: string;
   companyId: string;
@@ -317,92 +314,6 @@ function copyText(value: unknown) {
   void navigator.clipboard?.writeText(String(value ?? '0'));
 }
 
-const vatRowCategories: Array<{ value: VatRowCategory; label: string }> = [
-  { value: 'standard_sale', label: 'Standard sales by emirate' },
-  { value: 'tourist_refund', label: 'Tourist refunds' },
-  { value: 'reverse_charge_output', label: 'Reverse charge output' },
-  { value: 'zero_rated_sale', label: 'Zero-rated supplies' },
-  { value: 'exempt_sale', label: 'Exempt supplies' },
-  { value: 'import', label: 'Imports' },
-  { value: 'import_adjustment', label: 'Import adjustments' },
-  { value: 'standard_expense', label: 'Standard expenses' },
-  { value: 'reverse_charge_input', label: 'Reverse charge input' },
-  { value: 'manual_adjustment', label: 'Manual adjustment' },
-];
-
-function parseDelimitedVatLine(line: string) {
-  if (line.includes('\t')) return line.split('\t').map(cell => cell.trim());
-  const cells: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (ch === '"' && line[i + 1] === '"') {
-      current += '"';
-      i += 1;
-    } else if (ch === '"') {
-      inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) {
-      cells.push(current.trim());
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  cells.push(current.trim());
-  return cells;
-}
-
-function moneyFromCell(value: string | undefined) {
-  const normalized = String(value ?? '').replace(/[^\d.-]/g, '');
-  const amount = Number(normalized);
-  return Number.isFinite(amount) ? amount : 0;
-}
-
-function normalizeVatRowCategory(value: string | undefined): VatRowCategory {
-  const normalized = String(value ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-  const match = vatRowCategories.find(category => (
-    category.value === normalized ||
-    category.label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') === normalized
-  ));
-  return match?.value ?? 'standard_expense';
-}
-
-function parseVatPasteRows(text: string, defaultEmirate: string) {
-  const lines = text
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-  if (lines.length === 0) return [];
-  const first = parseDelimitedVatLine(lines[0]).map(cell => cell.toLowerCase());
-  const hasHeader = first.some(cell => ['category', 'invoice', 'invoice no', 'invoice number', 'taxable', 'vat', 'gross'].includes(cell));
-  const rows = hasHeader ? lines.slice(1) : lines;
-  return rows.map(line => {
-    const cells = parseDelimitedVatLine(line);
-    return {
-      rowCategory: normalizeVatRowCategory(cells[0]),
-      invoiceNumber: cells[1] || null,
-      documentDate: cells[2] || null,
-      counterpartyName: cells[3] || null,
-      counterpartyTrn: cells[4] || null,
-      emirate: cells[5] || defaultEmirate || null,
-      taxableAmount: moneyFromCell(cells[6]),
-      vatAmount: moneyFromCell(cells[7]),
-      grossAmount: moneyFromCell(cells[8]),
-      adjustmentAmount: 0,
-      status: 'approved' as const,
-      sourceMethod: 'import' as const,
-      notes: cells[9] || null,
-      auditReason: 'Bulk pasted by bookkeeper',
-    };
-  }).filter(row => row.invoiceNumber || row.counterpartyName || row.taxableAmount || row.vatAmount || row.grossAmount);
-}
-
 async function readFileAsBase64(file: File) {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -420,36 +331,6 @@ async function readEvidenceText(file: File) {
   if (!isTextLike || file.size > 500_000) return '';
   return file.text();
 }
-
-const vat201CopyFields = [
-  ['box1aAbuDhabiAmount', '1a Abu Dhabi amount'],
-  ['box1aAbuDhabiVat', '1a Abu Dhabi VAT'],
-  ['box1bDubaiAmount', '1b Dubai amount'],
-  ['box1bDubaiVat', '1b Dubai VAT'],
-  ['box1cSharjahAmount', '1c Sharjah amount'],
-  ['box1cSharjahVat', '1c Sharjah VAT'],
-  ['box1dAjmanAmount', '1d Ajman amount'],
-  ['box1dAjmanVat', '1d Ajman VAT'],
-  ['box1eUmmAlQuwainAmount', '1e UAQ amount'],
-  ['box1eUmmAlQuwainVat', '1e UAQ VAT'],
-  ['box1fRasAlKhaimahAmount', '1f RAK amount'],
-  ['box1fRasAlKhaimahVat', '1f RAK VAT'],
-  ['box1gFujairahAmount', '1g Fujairah amount'],
-  ['box1gFujairahVat', '1g Fujairah VAT'],
-  ['box2TouristRefundVat', '2 Tourist refund VAT'],
-  ['box3ReverseChargeVat', '3 Reverse charge VAT'],
-  ['box4ZeroRatedAmount', '4 Zero-rated amount'],
-  ['box5ExemptAmount', '5 Exempt amount'],
-  ['box6ImportsVat', '6 Import VAT'],
-  ['box7ImportsAdjVat', '7 Import adjustment VAT'],
-  ['box8TotalVat', '8 Total output VAT'],
-  ['box9ExpensesVat', '9 Input VAT'],
-  ['box10ReverseChargeVat', '10 Reverse charge input VAT'],
-  ['box11TotalVat', '11 Total input VAT'],
-  ['box12TotalDueTax', '12 Due tax'],
-  ['box13RecoverableTax', '13 Recoverable tax'],
-  ['box14PayableTax', '14 Payable tax'],
-] as const;
 
 function priorityClass(priority: BookkeeperPriority | 'filed') {
   if (priority === 'filed' || priority === 'on_track') return 'bg-green-100 text-green-800 border-green-200';
@@ -1858,6 +1739,8 @@ function VatWorkspaceDialog({
   const [dueDate, setDueDate] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidenceInputKey, setEvidenceInputKey] = useState(0);
+  const [workspaceTab, setWorkspaceTab] = useState('grid');
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [rowForm, setRowForm] = useState({
     rowCategory: 'standard_sale' as VatRowCategory,
     vat201Box: 'box1bDubaiAmount',
@@ -1872,6 +1755,8 @@ function VatWorkspaceDialog({
     grossAmount: '',
     notes: '',
     auditReason: '',
+    status: 'approved' as VatWorkpaperRow['status'],
+    sourceMethod: 'manual' as VatWorkpaperRow['sourceMethod'],
   });
   const [pastedVatRows, setPastedVatRows] = useState('');
 
@@ -1926,7 +1811,7 @@ function VatWorkspaceDialog({
     queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers/detail', selectedWorkpaperId] });
   };
 
-  const rowPayload = (mode: 'manual' | 'ocr') => ({
+  const rowPayload = (overrides?: Partial<Pick<VatWorkpaperRow, 'status' | 'sourceMethod'>>) => ({
     rowCategory: rowForm.rowCategory,
     vat201Box: rowForm.rowCategory === 'manual_adjustment' ? rowForm.vat201Box : undefined,
     invoiceNumber: rowForm.invoiceNumber || null,
@@ -1938,15 +1823,18 @@ function VatWorkspaceDialog({
     vatAmount: Number(rowForm.vatAmount || 0),
     adjustmentAmount: Number(rowForm.adjustmentAmount || 0),
     grossAmount: Number(rowForm.grossAmount || 0),
-    status: mode === 'ocr' ? 'draft' : 'approved',
-    sourceMethod: mode,
+    status: overrides?.status ?? rowForm.status,
+    sourceMethod: overrides?.sourceMethod ?? rowForm.sourceMethod,
     notes: rowForm.notes || null,
     auditReason: rowForm.auditReason || null,
   });
 
   const resetRowForm = () => {
+    setEditingRowId(null);
     setRowForm(form => ({
       ...form,
+      status: 'approved',
+      sourceMethod: 'manual',
       invoiceNumber: '',
       documentDate: '',
       counterpartyName: '',
@@ -1960,13 +1848,51 @@ function VatWorkspaceDialog({
     }));
   };
 
+  const editVatRow = (row: VatWorkpaperRow) => {
+    setEditingRowId(row.id);
+    setWorkspaceTab('grid');
+    setRowForm({
+      rowCategory: row.rowCategory,
+      vat201Box: row.vat201Box || 'box1bDubaiAmount',
+      invoiceNumber: row.invoiceNumber ?? '',
+      documentDate: inputDate(row.documentDate),
+      counterpartyName: row.counterpartyName ?? '',
+      counterpartyTrn: row.counterpartyTrn ?? '',
+      emirate: row.emirate ?? client?.emirate ?? 'dubai',
+      taxableAmount: String(row.taxableAmount ?? ''),
+      vatAmount: String(row.vatAmount ?? ''),
+      adjustmentAmount: String(row.adjustmentAmount ?? ''),
+      grossAmount: String(row.grossAmount ?? ''),
+      notes: row.notes ?? '',
+      auditReason: row.auditReason ?? '',
+      status: row.status,
+      sourceMethod: row.sourceMethod,
+    });
+  };
+
   const addRowMutation = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows`, rowPayload('manual')),
+    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows`, rowPayload({
+      status: 'approved',
+      sourceMethod: 'manual',
+    })),
     onSuccess: () => {
       invalidateWorkspace();
       resetRowForm();
     },
     onError: (e: any) => toast({ variant: 'destructive', title: 'Could not add VAT row', description: e?.message }),
+  });
+
+  const saveRowMutation = useMutation({
+    mutationFn: () => {
+      if (!editingRowId) throw new Error('Choose a VAT row to update first');
+      return apiRequest('PATCH', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${editingRowId}`, rowPayload());
+    },
+    onSuccess: () => {
+      invalidateWorkspace();
+      resetRowForm();
+      toast({ title: 'VAT row updated' });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not update VAT row', description: e?.message }),
   });
 
   const pastePreviewRows = useMemo(
@@ -2013,7 +1939,10 @@ function VatWorkspaceDialog({
             originalLastModified: evidenceFile ? new Date(evidenceFile.lastModified).toISOString() : undefined,
           },
         },
-        draftRow: rowPayload('ocr'),
+        draftRow: rowPayload({
+          status: 'draft',
+          sourceMethod: 'ocr',
+        }),
       });
     },
     onSuccess: () => {
@@ -2053,6 +1982,11 @@ function VatWorkspaceDialog({
   const totals = detail?.totals ?? detail?.workpaper.totalsSnapshot ?? {};
   const draftRows = rows.filter(row => row.status === 'draft');
   const approvedRows = rows.filter(row => row.status === 'approved');
+  const excludedRows = rows.filter(row => row.status === 'excluded');
+  const sourceBackedRows = approvedRows.filter(row => row.sourceMethod !== 'manual' || row.invoiceNumber || row.counterpartyName);
+  const outputVat = Number(totals.box8TotalVat ?? 0);
+  const inputVat = Number(totals.box11TotalVat ?? 0);
+  const payableVat = Number(totals.box14PayableTax ?? 0);
   const attachments = detail?.attachments ?? [];
   const selectedSummary = workpapers.find(workpaper => workpaper.id === selectedWorkpaperId);
 
@@ -2087,11 +2021,11 @@ function VatWorkspaceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-[96vw] w-[96vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{client?.name ?? 'VAT Submission Workspace'}</DialogTitle>
           <DialogDescription>
-            VAT-only workpaper. Approved rows total into VAT 201 copy fields; draft OCR rows do not count until reviewed.
+            Bookkeeper VAT workbook for invoice entry, scanned evidence, draft OCR review, VAT 201 totals, and copy-paste FTA filing figures. No FTA submission happens here.
           </DialogDescription>
         </DialogHeader>
 
@@ -2139,7 +2073,7 @@ function VatWorkspaceDialog({
 
           {selectedSummary || detail ? (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
                 <div className="rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Status</p>
                   <p className="font-semibold">{detail?.workpaper.status ?? selectedSummary?.status}</p>
@@ -2149,284 +2083,431 @@ function VatWorkspaceDialog({
                   <p className="font-semibold">{approvedRows.length}</p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">Draft OCR rows</p>
-                  <p className="font-semibold">{draftRows.length}</p>
+                  <p className="text-xs text-muted-foreground">Draft / excluded</p>
+                  <p className="font-semibold">{draftRows.length} / {excludedRows.length}</p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
-                  <p className="text-xs text-muted-foreground">VAT payable</p>
-                  <p className="font-semibold">{formatAed(Number(totals.box14PayableTax ?? 0))}</p>
+                  <p className="text-xs text-muted-foreground">Evidence-backed</p>
+                  <p className="font-semibold">{sourceBackedRows.length}</p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Output / input VAT</p>
+                  <p className="font-semibold">{formatAed(outputVat)} / {formatAed(inputVat)}</p>
+                </div>
+                <div className="rounded-md border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Net payable</p>
+                  <p className="font-semibold">{formatAed(payableVat)}</p>
                 </div>
               </div>
 
-              <div className="rounded-md border p-3">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <div>
-                    <p className="font-medium">Add VAT row</p>
-                    <p className="text-xs text-muted-foreground">Use OCR draft for scanned evidence that still needs review.</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" onClick={() => scanMutation.mutate()} disabled={!selectedWorkpaperId || scanMutation.isPending}>
-                      <ScanLine className="w-4 h-4 mr-2" />
-                      OCR Draft
-                    </Button>
-                    <Button size="sm" onClick={() => addRowMutation.mutate()} disabled={!selectedWorkpaperId || addRowMutation.isPending}>
-                      <Check className="w-4 h-4 mr-2" />
-                      Add Approved
-                    </Button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                  <Select value={rowForm.rowCategory} onValueChange={value => setRowForm(form => ({ ...form, rowCategory: value as VatRowCategory }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vatRowCategories.map(category => (
-                        <SelectItem key={category.value} value={category.value}>{category.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input placeholder="Invoice no." value={rowForm.invoiceNumber} onChange={e => setRowForm(form => ({ ...form, invoiceNumber: e.target.value }))} />
-                  <Input type="date" value={rowForm.documentDate} onChange={e => setRowForm(form => ({ ...form, documentDate: e.target.value }))} />
-                  <Input placeholder="Customer / vendor" value={rowForm.counterpartyName} onChange={e => setRowForm(form => ({ ...form, counterpartyName: e.target.value }))} />
-                  <Input placeholder="TRN" value={rowForm.counterpartyTrn} onChange={e => setRowForm(form => ({ ...form, counterpartyTrn: e.target.value }))} />
-                  <Select value={rowForm.emirate} onValueChange={value => setRowForm(form => ({ ...form, emirate: value }))}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="abu_dhabi">Abu Dhabi</SelectItem>
-                      <SelectItem value="dubai">Dubai</SelectItem>
-                      <SelectItem value="sharjah">Sharjah</SelectItem>
-                      <SelectItem value="ajman">Ajman</SelectItem>
-                      <SelectItem value="umm_al_quwain">Umm Al Quwain</SelectItem>
-                      <SelectItem value="ras_al_khaimah">Ras Al Khaimah</SelectItem>
-                      <SelectItem value="fujairah">Fujairah</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input placeholder="Taxable amount" value={rowForm.taxableAmount} onChange={e => setRowForm(form => ({ ...form, taxableAmount: e.target.value }))} />
-                  <Input placeholder="VAT amount" value={rowForm.vatAmount} onChange={e => setRowForm(form => ({ ...form, vatAmount: e.target.value }))} />
-                  <Input placeholder="Adjustment" value={rowForm.adjustmentAmount} onChange={e => setRowForm(form => ({ ...form, adjustmentAmount: e.target.value }))} />
-                  <Input placeholder="Gross" value={rowForm.grossAmount} onChange={e => setRowForm(form => ({ ...form, grossAmount: e.target.value }))} />
-                  <Input placeholder="Notes / OCR text" value={rowForm.notes} onChange={e => setRowForm(form => ({ ...form, notes: e.target.value }))} />
-                  <Input placeholder="Override reason" value={rowForm.auditReason} onChange={e => setRowForm(form => ({ ...form, auditReason: e.target.value }))} />
-                  {rowForm.rowCategory === 'manual_adjustment' && (
-                    <Input placeholder="VAT 201 box, e.g. box9ExpensesVat" value={rowForm.vat201Box} onChange={e => setRowForm(form => ({ ...form, vat201Box: e.target.value }))} />
-                  )}
-                </div>
-                <div className="mt-3 rounded-md border bg-background/70 p-3 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <Label htmlFor="vat-evidence-upload">Upload invoice or receipt evidence</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Attach PDF, image, CSV, or text evidence. Uploaded files create draft OCR rows until reviewed.
-                      </p>
-                    </div>
-                    {evidenceFile ? (
-                      <Badge variant="secondary">{(evidenceFile.size / 1024).toFixed(1)} KB</Badge>
-                    ) : null}
-                  </div>
-                  <Input
-                    key={evidenceInputKey}
-                    id="vat-evidence-upload"
-                    type="file"
-                    accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,text/plain,text/csv,application/json"
-                    onChange={event => setEvidenceFile(event.target.files?.[0] ?? null)}
-                    data-testid="input-vat-evidence-upload"
-                  />
-                  {evidenceFile ? (
-                    <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs">
-                      <span className="truncate">{evidenceFile.name}</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setEvidenceFile(null);
-                          setEvidenceInputKey(key => key + 1);
-                        }}
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
+              <Tabs value={workspaceTab} onValueChange={setWorkspaceTab} className="space-y-4">
+                <TabsList className="grid w-full grid-cols-4">
+                  <TabsTrigger value="grid">Entry Grid</TabsTrigger>
+                  <TabsTrigger value="drafts">OCR Drafts</TabsTrigger>
+                  <TabsTrigger value="return">VAT 201 Review</TabsTrigger>
+                  <TabsTrigger value="evidence">Evidence</TabsTrigger>
+                </TabsList>
 
-              <div className="rounded-md border p-3 space-y-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="font-medium">Paste invoice rows</p>
-                    <p className="text-xs text-muted-foreground">
-                      Copy rows from Excel/Sheets using: category, invoice no., date, customer/vendor, TRN, emirate, taxable, VAT, gross, notes.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">{pastePreviewRows.length} parsed</Badge>
-                    <Button
-                      size="sm"
-                      onClick={() => importRowsMutation.mutate()}
-                      disabled={!selectedWorkpaperId || pastePreviewRows.length === 0 || importRowsMutation.isPending}
-                    >
-                      <Upload className="w-4 h-4 mr-2" />
-                      Add pasted rows
-                    </Button>
-                  </div>
-                </div>
-                <Textarea
-                  value={pastedVatRows}
-                  onChange={e => setPastedVatRows(e.target.value)}
-                  placeholder={'standard_expense\tINV-1001\t2026-05-18\tSupplier LLC\t100123456700003\tdubai\t1000\t50\t1050\tMay receipt'}
-                  className="min-h-24 font-mono text-xs"
-                  data-testid="textarea-vat-paste-rows"
-                />
-                {pastePreviewRows.length > 0 && (
-                  <div className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
-                    Preview: {pastePreviewRows.slice(0, 3).map(row => `${row.invoiceNumber || 'No invoice'} ${formatAed(row.taxableAmount)} + VAT ${formatAed(row.vatAmount)}`).join(' · ')}
-                    {pastePreviewRows.length > 3 ? ` · +${pastePreviewRows.length - 3} more` : ''}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-4">
-                <div className="rounded-md border overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Source</TableHead>
-                        <TableHead>Invoice</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right">Taxable</TableHead>
-                        <TableHead className="text-right">VAT</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Review</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {rows.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={7} className="text-sm text-muted-foreground text-center py-8">
-                            No VAT rows yet.
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        rows.map(row => (
-                          <TableRow key={row.id}>
-                            <TableCell>
-                              <Badge variant={row.sourceMethod === 'ocr' ? 'secondary' : 'outline'}>{row.sourceMethod}</Badge>
-                            </TableCell>
-                            <TableCell>
-                              <p className="font-medium">{row.invoiceNumber || '—'}</p>
-                              <p className="text-xs text-muted-foreground truncate max-w-40">{row.counterpartyName || 'No counterparty'}</p>
-                            </TableCell>
-                            <TableCell className="text-sm">{vatRowCategories.find(category => category.value === row.rowCategory)?.label ?? row.rowCategory}</TableCell>
-                            <TableCell className="text-right">{formatAed(Number(row.taxableAmount ?? 0))}</TableCell>
-                            <TableCell className="text-right">{formatAed(Number(row.vatAmount ?? 0))}</TableCell>
-                            <TableCell>
-                              <Badge variant={row.status === 'approved' ? 'default' : row.status === 'excluded' ? 'outline' : 'secondary'}>
-                                {row.status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {row.status === 'draft' ? (
+                <TabsContent value="grid" className="space-y-4 mt-0">
+                  <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.6fr)_minmax(320px,0.7fr)] gap-4">
+                    <div className="rounded-md border overflow-hidden">
+                      <div className="flex flex-col gap-2 border-b bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-medium">Invoice and bill entry grid</p>
+                          <p className="text-xs text-muted-foreground">Edit rows, approve drafts, exclude mistakes, then review totals in VAT 201 Review.</p>
+                        </div>
+                        <Badge variant="outline">{rows.length} row{rows.length === 1 ? '' : 's'}</Badge>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="min-w-28">Source</TableHead>
+                              <TableHead className="min-w-36">Invoice</TableHead>
+                              <TableHead className="min-w-36">Date</TableHead>
+                              <TableHead className="min-w-56">Customer / vendor</TableHead>
+                              <TableHead className="min-w-36">TRN</TableHead>
+                              <TableHead className="min-w-40">Category</TableHead>
+                              <TableHead className="min-w-32">Emirate</TableHead>
+                              <TableHead className="min-w-28 text-right">Taxable</TableHead>
+                              <TableHead className="min-w-28 text-right">VAT</TableHead>
+                              <TableHead className="min-w-28 text-right">Gross</TableHead>
+                              <TableHead className="min-w-32">Status</TableHead>
+                              <TableHead className="min-w-36 text-right">Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            <TableRow className="bg-background">
+                              <TableCell>
+                                <Badge variant={editingRowId ? 'secondary' : 'outline'}>{editingRowId ? 'editing' : 'new row'}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Input className="h-8 min-w-32" placeholder="INV-1001" value={rowForm.invoiceNumber} onChange={e => setRowForm(form => ({ ...form, invoiceNumber: e.target.value }))} />
+                              </TableCell>
+                              <TableCell>
+                                <Input className="h-8 min-w-32" type="date" value={rowForm.documentDate} onChange={e => setRowForm(form => ({ ...form, documentDate: e.target.value }))} />
+                              </TableCell>
+                              <TableCell>
+                                <Input className="h-8 min-w-48" placeholder="Customer / vendor" value={rowForm.counterpartyName} onChange={e => setRowForm(form => ({ ...form, counterpartyName: e.target.value }))} />
+                              </TableCell>
+                              <TableCell>
+                                <Input className="h-8 min-w-32" placeholder="TRN" value={rowForm.counterpartyTrn} onChange={e => setRowForm(form => ({ ...form, counterpartyTrn: e.target.value }))} />
+                              </TableCell>
+                              <TableCell>
+                                <Select value={rowForm.rowCategory} onValueChange={value => setRowForm(form => ({ ...form, rowCategory: value as VatRowCategory }))}>
+                                  <SelectTrigger className="h-8 min-w-40">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {vatRowCategories.map(category => (
+                                      <SelectItem key={category.value} value={category.value}>{category.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell>
+                                <Select value={rowForm.emirate} onValueChange={value => setRowForm(form => ({ ...form, emirate: value }))}>
+                                  <SelectTrigger className="h-8 min-w-32">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {vatEmirates.map(emirate => (
+                                      <SelectItem key={emirate.value} value={emirate.value}>{emirate.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell>
+                                <Input className="h-8 min-w-24 text-right" placeholder="0.00" value={rowForm.taxableAmount} onChange={e => setRowForm(form => ({ ...form, taxableAmount: e.target.value }))} />
+                              </TableCell>
+                              <TableCell>
+                                <Input className="h-8 min-w-24 text-right" placeholder="0.00" value={rowForm.vatAmount} onChange={e => setRowForm(form => ({ ...form, vatAmount: e.target.value }))} />
+                              </TableCell>
+                              <TableCell>
+                                <Input className="h-8 min-w-24 text-right" placeholder="0.00" value={rowForm.grossAmount} onChange={e => setRowForm(form => ({ ...form, grossAmount: e.target.value }))} />
+                              </TableCell>
+                              <TableCell>
+                                <Select value={rowForm.status} onValueChange={value => setRowForm(form => ({ ...form, status: value as VatWorkpaperRow['status'] }))}>
+                                  <SelectTrigger className="h-8 min-w-28">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="approved">Approved</SelectItem>
+                                    <SelectItem value="draft">Draft</SelectItem>
+                                    <SelectItem value="excluded">Excluded</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </TableCell>
+                              <TableCell className="text-right">
                                 <div className="flex justify-end gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    aria-label={`Approve ${row.invoiceNumber || 'draft VAT row'}`}
-                                    title="Approve draft VAT row"
-                                    onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'approved' })}
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                    <span className="sr-only">Approve draft row</span>
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    aria-label={`Exclude ${row.invoiceNumber || 'draft VAT row'}`}
-                                    title="Exclude draft VAT row"
-                                    onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'excluded' })}
-                                  >
-                                    <XCircle className="w-3.5 h-3.5" />
-                                    <span className="sr-only">Exclude draft row</span>
+                                  {editingRowId ? (
+                                    <Button size="sm" onClick={() => saveRowMutation.mutate()} disabled={!selectedWorkpaperId || saveRowMutation.isPending}>
+                                      Save
+                                    </Button>
+                                  ) : (
+                                    <Button size="sm" onClick={() => addRowMutation.mutate()} disabled={!selectedWorkpaperId || addRowMutation.isPending}>
+                                      Add
+                                    </Button>
+                                  )}
+                                  <Button size="sm" variant="outline" onClick={resetRowForm}>
+                                    Clear
                                   </Button>
                                 </div>
-                              ) : (
-                                <Button size="sm" variant="ghost" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: row.status === 'approved' ? 'excluded' : 'approved' })}>
-                                  {row.status === 'approved' ? 'Exclude' : 'Approve'}
-                                </Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                <div className="rounded-md border p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">FTA VAT 201 copy fields</p>
-                      <p className="text-xs text-muted-foreground">Copy figures into FTA. No submission happens here.</p>
+                              </TableCell>
+                            </TableRow>
+                            {rows.length === 0 ? (
+                              <TableRow>
+                                <TableCell colSpan={12} className="text-sm text-muted-foreground text-center py-8">
+                                  No VAT rows yet. Add invoice lines manually, paste rows from Excel, or upload evidence as OCR drafts.
+                                </TableCell>
+                              </TableRow>
+                            ) : (
+                              rows.map(row => (
+                                <TableRow key={row.id} className={editingRowId === row.id ? 'bg-primary/5' : undefined}>
+                                  <TableCell>
+                                    <Badge variant={row.sourceMethod === 'ocr' ? 'secondary' : 'outline'}>{row.sourceMethod}</Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    <p className="font-medium">{row.invoiceNumber || '—'}</p>
+                                    <p className="text-xs text-muted-foreground">{row.vat201Box}</p>
+                                  </TableCell>
+                                  <TableCell>{formatDateShort(row.documentDate)}</TableCell>
+                                  <TableCell>
+                                    <p className="max-w-56 truncate">{row.counterpartyName || '—'}</p>
+                                  </TableCell>
+                                  <TableCell className="text-xs">{row.counterpartyTrn || '—'}</TableCell>
+                                  <TableCell className="text-sm">{vatRowCategoryLabel(row.rowCategory)}</TableCell>
+                                  <TableCell className="text-sm">{row.emirate || '—'}</TableCell>
+                                  <TableCell className="text-right">{formatAed(Number(row.taxableAmount ?? 0))}</TableCell>
+                                  <TableCell className="text-right">{formatAed(Number(row.vatAmount ?? 0))}</TableCell>
+                                  <TableCell className="text-right">{formatAed(Number(row.grossAmount ?? 0))}</TableCell>
+                                  <TableCell>
+                                    <Badge variant={row.status === 'approved' ? 'default' : row.status === 'excluded' ? 'outline' : 'secondary'}>
+                                      {row.status}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    <div className="flex justify-end gap-1">
+                                      <Button size="sm" variant="outline" onClick={() => editVatRow(row)}>
+                                        Edit
+                                      </Button>
+                                      {row.status === 'draft' ? (
+                                        <>
+                                          <Button
+                                            size="sm"
+                                            variant="outline"
+                                            aria-label={`Approve ${row.invoiceNumber || 'draft VAT row'}`}
+                                            title="Approve draft VAT row"
+                                            onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'approved' })}
+                                          >
+                                            <Check className="w-3.5 h-3.5" />
+                                            <span className="sr-only">Approve draft row</span>
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            aria-label={`Exclude ${row.invoiceNumber || 'draft VAT row'}`}
+                                            title="Exclude draft VAT row"
+                                            onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'excluded' })}
+                                          >
+                                            <XCircle className="w-3.5 h-3.5" />
+                                            <span className="sr-only">Exclude draft row</span>
+                                          </Button>
+                                        </>
+                                      ) : (
+                                        <Button size="sm" variant="ghost" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: row.status === 'approved' ? 'excluded' : 'approved' })}>
+                                          {row.status === 'approved' ? 'Exclude' : 'Approve'}
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ))
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
                     </div>
-                    <Button size="sm" onClick={() => generateMutation.mutate()} disabled={!selectedWorkpaperId || generateMutation.isPending}>
-                      <FileText className="w-4 h-4 mr-2" />
-                      Generate Return
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-96 overflow-y-auto pr-1">
-                    {vat201CopyFields.map(([key, label]) => {
-                      const value = Number(totals[key] ?? 0).toFixed(2);
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => copyText(value)}
-                          className="rounded-md border p-2 text-left hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs text-muted-foreground">{label}</span>
-                            <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-                          </div>
-                          <p className="font-semibold mt-1">{value}</p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
 
-              <div className="rounded-md border p-3 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium">Evidence files</p>
-                    <p className="text-xs text-muted-foreground">Uploaded invoices and receipts are linked to draft VAT rows for later review.</p>
-                  </div>
-                  <Badge variant="outline">{attachments.length} file{attachments.length === 1 ? '' : 's'}</Badge>
-                </div>
-                {attachments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No invoice evidence uploaded yet.</p>
-                ) : (
-                  <div className="grid gap-2">
-                    {attachments.map(attachment => (
-                      <div key={attachment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">{attachment.fileName}</p>
-                          <p className="text-xs text-muted-foreground">{attachment.mimeType || 'file'} · {formatDateShort(attachment.createdAt)}</p>
+                    <div className="space-y-4">
+                      <div className="rounded-md border p-3 space-y-3">
+                        <div>
+                          <p className="font-medium">Row notes and override reason</p>
+                          <p className="text-xs text-muted-foreground">Manual adjustments must explain the audit reason before they can be saved.</p>
                         </div>
+                        {rowForm.rowCategory === 'manual_adjustment' && (
+                          <Input placeholder="VAT 201 box, e.g. box9ExpensesVat" value={rowForm.vat201Box} onChange={e => setRowForm(form => ({ ...form, vat201Box: e.target.value }))} />
+                        )}
+                        <Input placeholder="Adjustment amount" value={rowForm.adjustmentAmount} onChange={e => setRowForm(form => ({ ...form, adjustmentAmount: e.target.value }))} />
+                        <Textarea placeholder="Notes / OCR text" value={rowForm.notes} onChange={e => setRowForm(form => ({ ...form, notes: e.target.value }))} className="min-h-24" />
+                        <Textarea placeholder="Audit reason for overrides or manual adjustments" value={rowForm.auditReason} onChange={e => setRowForm(form => ({ ...form, auditReason: e.target.value }))} className="min-h-20" />
+                      </div>
+
+                      <div className="rounded-md border p-3 space-y-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="font-medium">Paste rows from Excel</p>
+                            <p className="text-xs text-muted-foreground">
+                              Headers are supported: category, invoice number, date, customer/vendor, TRN, emirate, taxable amount, VAT amount, gross amount, notes.
+                            </p>
+                          </div>
+                          <Badge variant="outline">{pastePreviewRows.length} parsed</Badge>
+                        </div>
+                        <Textarea
+                          value={pastedVatRows}
+                          onChange={e => setPastedVatRows(e.target.value)}
+                          placeholder={'category\tinvoice number\tdate\tcustomer/vendor\tTRN\temirate\ttaxable amount\tVAT amount\tgross amount\tnotes\nstandard_expense\tBILL-1001\t2026-05-18\tSupplier LLC\t100123456700003\tdubai\t1000\t50\t1050\tMay receipt'}
+                          className="min-h-36 font-mono text-xs"
+                          data-testid="textarea-vat-paste-rows"
+                        />
+                        {pastePreviewRows.length > 0 && (
+                          <div className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
+                            Preview: {pastePreviewRows.slice(0, 3).map(row => `${row.invoiceNumber || 'No invoice'} ${formatAed(row.taxableAmount)} + VAT ${formatAed(row.vatAmount)}`).join(' · ')}
+                            {pastePreviewRows.length > 3 ? ` · +${pastePreviewRows.length - 3} more` : ''}
+                          </div>
+                        )}
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => void downloadAttachment(attachment)}
-                          disabled={!attachment.filePath}
+                          onClick={() => importRowsMutation.mutate()}
+                          disabled={!selectedWorkpaperId || pastePreviewRows.length === 0 || importRowsMutation.isPending}
                         >
-                          Download
+                          <Upload className="w-4 h-4 mr-2" />
+                          Add pasted rows
                         </Button>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                )}
-              </div>
+                </TabsContent>
+
+                <TabsContent value="drafts" className="space-y-4 mt-0">
+                  <div className="grid grid-cols-1 xl:grid-cols-[0.8fr_1.2fr] gap-4">
+                    <div className="rounded-md border p-3 space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-medium">Upload invoice or receipt evidence</p>
+                          <p className="text-xs text-muted-foreground">Uploaded files create draft OCR rows. They do not count until approved.</p>
+                        </div>
+                        {evidenceFile ? (
+                          <Badge variant="secondary">{(evidenceFile.size / 1024).toFixed(1)} KB</Badge>
+                        ) : null}
+                      </div>
+                      <Input
+                        key={evidenceInputKey}
+                        id="vat-evidence-upload"
+                        type="file"
+                        accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,text/plain,text/csv,application/json"
+                        onChange={event => setEvidenceFile(event.target.files?.[0] ?? null)}
+                        data-testid="input-vat-evidence-upload"
+                      />
+                      {evidenceFile ? (
+                        <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs">
+                          <span className="truncate">{evidenceFile.name}</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEvidenceFile(null);
+                              setEvidenceInputKey(key => key + 1);
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      ) : null}
+                      <Button size="sm" variant="outline" onClick={() => scanMutation.mutate()} disabled={!selectedWorkpaperId || scanMutation.isPending}>
+                        <ScanLine className="w-4 h-4 mr-2" />
+                        Log OCR Draft
+                      </Button>
+                    </div>
+
+                    <div className="rounded-md border overflow-hidden">
+                      <div className="border-b bg-muted/30 px-3 py-2">
+                        <p className="font-medium">Draft review queue</p>
+                        <p className="text-xs text-muted-foreground">Approve only after the bookkeeper has checked the scanned values against evidence.</p>
+                      </div>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Invoice</TableHead>
+                            <TableHead>Counterparty</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead className="text-right">VAT</TableHead>
+                            <TableHead className="text-right">Review</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {draftRows.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-sm text-muted-foreground text-center py-8">No OCR drafts waiting for review.</TableCell>
+                            </TableRow>
+                          ) : (
+                            draftRows.map(row => (
+                              <TableRow key={row.id}>
+                                <TableCell>{row.invoiceNumber || '—'}</TableCell>
+                                <TableCell>{row.counterpartyName || '—'}</TableCell>
+                                <TableCell>{vatRowCategoryLabel(row.rowCategory)}</TableCell>
+                                <TableCell className="text-right">{formatAed(Number(row.vatAmount ?? 0))}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-1">
+                                    <Button size="sm" variant="outline" onClick={() => editVatRow(row)}>Edit</Button>
+                                    <Button size="sm" variant="outline" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'approved' })}>
+                                      <Check className="w-3.5 h-3.5" />
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'excluded' })}>
+                                      <XCircle className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="return" className="space-y-4 mt-0">
+                  <div className="rounded-md border p-3 space-y-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-medium">FTA VAT 201 copy fields</p>
+                        <p className="text-xs text-muted-foreground">Approved rows are aggregated below. Copy each value into the FTA portal manually; this does not submit to FTA.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={() => recalculateMutation.mutate()} disabled={!selectedWorkpaperId || recalculateMutation.isPending}>
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Recalculate
+                        </Button>
+                        <Button size="sm" onClick={() => generateMutation.mutate()} disabled={!selectedWorkpaperId || generateMutation.isPending}>
+                          <FileText className="w-4 h-4 mr-2" />
+                          Generate Return
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                      {vat201CopyGroups.map(group => (
+                        <div key={group.title} className="rounded-md border bg-background p-3">
+                          <p className="text-sm font-semibold mb-2">{group.title}</p>
+                          <div className="grid gap-2">
+                            {group.fields.map(([key, label]) => {
+                              const value = Number(totals[key] ?? 0).toFixed(2);
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => copyText(value)}
+                                  className="rounded-md border p-2 text-left hover:bg-muted/50 transition-colors"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-xs text-muted-foreground">{label}</span>
+                                    <Copy className="w-3.5 h-3.5 text-muted-foreground" />
+                                  </div>
+                                  <p className="font-semibold mt-1">{value}</p>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="evidence" className="space-y-4 mt-0">
+                  <div className="rounded-md border p-3 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">Evidence files</p>
+                        <p className="text-xs text-muted-foreground">Uploaded invoices and receipts stay linked to VAT rows for refund support and later review.</p>
+                      </div>
+                      <Badge variant="outline">{attachments.length} file{attachments.length === 1 ? '' : 's'}</Badge>
+                    </div>
+                    {attachments.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No invoice evidence uploaded yet.</p>
+                    ) : (
+                      <div className="grid gap-2">
+                        {attachments.map(attachment => (
+                          <div key={attachment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{attachment.fileName}</p>
+                              <p className="text-xs text-muted-foreground">{attachment.mimeType || 'file'} · {formatDateShort(attachment.createdAt)}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void downloadAttachment(attachment)}
+                              disabled={!attachment.filePath}
+                            >
+                              Download
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </>
           ) : (
             <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">

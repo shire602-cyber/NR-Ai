@@ -12,7 +12,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   useEffect(() => {
     if (!isLoading && !user) {
-      setLocation('/login');
+      const next = `${window.location.pathname}${window.location.search}`;
+      const safeNext = next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\')
+        ? next
+        : '/dashboard';
+      setLocation(`/login?next=${encodeURIComponent(safeNext)}`);
     }
   }, [isLoading, user, setLocation]);
 

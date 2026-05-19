@@ -50,6 +50,16 @@ function sessionExpiry(): Date {
   return new Date(Date.now() + 60 * 60 * 1000);
 }
 
+function personalWhatsAppStatusPayload() {
+  return {
+    connected: true,
+    configured: true,
+    mode: 'personal',
+    deliveryMode: 'personal_link',
+    deliveryStatus: 'logged_only',
+  };
+}
+
 /**
  * WhatsApp Routes (Personal WhatsApp via WhatsApp Web links)
  *
@@ -175,13 +185,12 @@ export function registerWhatsAppRoutes(app: Express) {
 
   // Get WhatsApp integration status (for dashboard/integrations page)
   app.get("/api/integrations/whatsapp/status", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    res.json({
-      connected: true,
-      configured: true,
-      mode: 'personal',
-      deliveryMode: 'personal_link',
-      deliveryStatus: 'logged_only',
-    });
+    res.json(personalWhatsAppStatusPayload());
+  }));
+
+  // Backwards-compatible status URL for old bookmarks/manual checks.
+  app.get("/api/whatsapp/status", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    res.json(personalWhatsAppStatusPayload());
   }));
 
   // WhatsApp Web Bridge status. The bridge is extension-assisted and still
