@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
 import {
+  buildGenericWorkbook,
   buildOcrReceiptsWorkbook,
   buildExportFilename,
   receiptToExportRow,
@@ -158,5 +159,39 @@ describe('excel-export.service', () => {
     const name = buildExportFilename();
     expect(name.endsWith('.xlsx')).toBe(true);
     expect(name).toMatch(/^muhasib-ocr-receipts-\d{4}-\d{2}-\d{2}\.xlsx$/);
+  });
+
+  it('builds generic multi-sheet XLSX exports without browser ExcelJS', async () => {
+    const wb = await loadWorkbook(await buildGenericWorkbook([
+      {
+        sheetName: 'Invoices',
+        columns: [
+          { header: 'Invoice #', key: 'number', width: 18 },
+          { header: 'Customer', key: 'customerName', width: 28 },
+          { header: 'Total', key: 'total', width: 16 },
+        ],
+        rows: [
+          { number: 'INV-001', customerName: 'Najma Trading', total: 1050.25 },
+        ],
+      },
+      {
+        sheetName: 'VAT Summary',
+        columns: [
+          { header: 'Box', key: 'box' },
+          { header: 'Amount', key: 'amount' },
+        ],
+        rows: [
+          { box: 'Box 1 - Dubai', amount: 500 },
+        ],
+      },
+    ], { title: 'Report Export' }));
+
+    expect(wb.worksheets).toHaveLength(2);
+    expect(wb.worksheets[0].name).toBe('Invoices');
+    expect(wb.worksheets[0].getRow(1).getCell(1).value).toBe('Invoice #');
+    expect(wb.worksheets[0].getRow(2).getCell(3).value).toBe(1050.25);
+    expect(wb.worksheets[0].getRow(2).getCell(3).numFmt).toBe('#,##0.00');
+    expect(wb.worksheets[1].name).toBe('VAT Summary');
+    expect(wb.title).toBe('Report Export');
   });
 });

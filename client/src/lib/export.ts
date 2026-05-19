@@ -28,30 +28,12 @@ export interface ExportData {
 }
 
 export async function exportToExcel(data: ExportData[], filename: string) {
-  const { default: ExcelJS } = await import('exceljs');
-  const workbook = new ExcelJS.Workbook();
-
-  data.forEach((sheet) => {
-    const headers = sheet.columns.map(col => col.header);
-    const rows = sheet.rows.map(row => 
-      sheet.columns.map(col => row[col.key] ?? '')
-    );
-
-    const sheetName = (sheet.sheetName || 'Sheet1').substring(0, 31);
-    const worksheet = workbook.addWorksheet(sheetName);
-    worksheet.columns = sheet.columns.map((col) => ({
-      header: col.header,
-      key: col.key,
-      width: col.width || 15,
-    }));
-    rows.forEach((row) => worksheet.addRow(row));
-  });
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  });
-  await triggerBlobDownload(blob, `${filename}.xlsx`);
+  const { blob, filename: downloadedFilename } = await postForBlob(
+    '/api/export/excel',
+    { sheets: data, filename },
+    `${filename}.xlsx`,
+  );
+  await triggerBlobDownload(blob, downloadedFilename);
 }
 
 export async function exportToGoogleSheets(

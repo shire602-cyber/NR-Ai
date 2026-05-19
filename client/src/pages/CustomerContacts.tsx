@@ -34,10 +34,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/api';
+import { getAuthHeaders } from '@/lib/auth';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import type { CustomerContact } from '@shared/schema';
-import type ExcelJS from 'exceljs';
-import { exportToExcel } from '@/lib/export';
 import { SiWhatsapp } from 'react-icons/si';
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
 import { pickWhatsAppNumber } from '@/lib/whatsapp-templates';
@@ -52,84 +52,49 @@ interface ImportResult {
   errors: string[];
 }
 
-async function parseXlsxRows(buffer: ArrayBuffer): Promise<Record<string, any>[]> {
-  const { default: ExcelJS } = await import('exceljs');
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  const worksheet = workbook.worksheets[0];
-  if (!worksheet) return [];
-  const headers = rowValues(worksheet.getRow(1)).map((value, index) =>
-    value ? String(value) : `Column ${index + 1}`,
-  );
-  const rows: Record<string, any>[] = [];
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
-    const values = rowValues(row);
-    if (values.every((value) => value === '')) return;
-    rows.push(rowToObject(headers, values));
-  });
-  return rows;
+interface ImportPreview {
+  rows: Array<Record<string, any>>;
 }
 
-function parseCsvRows(input: string): Record<string, any>[] {
-  const table: string[][] = [];
-  let row: string[] = [];
-  let cell = '';
-  let inQuotes = false;
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('Could not read file'));
+    reader.onload = () => {
+      const value = String(reader.result ?? '');
+      resolve(value.includes(',') ? value.split(',', 2)[1] : value);
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
-  for (let i = 0; i < input.length; i++) {
-    const char = input[i];
-    const next = input[i + 1];
-    if (char === '"' && inQuotes && next === '"') {
-      cell += '"';
-      i++;
-      continue;
+async function downloadContactTemplate(companyId: string): Promise<void> {
+  const res = await fetch(apiUrl(`/api/companies/${companyId}/customer-contacts/import-template`), {
+    method: 'GET',
+    credentials: 'include',
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const json = await res.json();
+      message = json.message || json.error || message;
+    } catch {
+      /* keep status */
     }
-    if (char === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (char === ',' && !inQuotes) {
-      row.push(cell);
-      cell = '';
-      continue;
-    }
-    if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && next === '\n') i++;
-      row.push(cell);
-      if (row.some((value) => value !== '')) table.push(row);
-      row = [];
-      cell = '';
-      continue;
-    }
-    cell += char;
+    throw new Error(message);
   }
 
-  row.push(cell);
-  if (row.some((value) => value !== '')) table.push(row);
-  const headers = table[0] ?? [];
-  return table.slice(1).map((values) => rowToObject(headers, values));
-}
-
-function rowValues(row: ExcelJS.Row): any[] {
-  const values = Array.isArray(row.values) ? row.values.slice(1) : [];
-  return values.map((value: any) => {
-    if (value == null) return '';
-    if (value instanceof Date) return value.toISOString();
-    if (typeof value === 'object') {
-      if ('text' in value) return value.text ?? '';
-      if ('result' in value) return value.result ?? '';
-    }
-    return value;
-  });
-}
-
-function rowToObject(headers: string[], values: any[]): Record<string, any> {
-  const row: Record<string, any> = {};
-  headers.forEach((header, index) => {
-    row[header] = values[index] ?? '';
-  });
-  return row;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'contact_import_template.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export default function CustomerContacts() {
@@ -271,19 +236,12 @@ export default function CustomerContacts() {
 
     (async () => {
       try {
-        const jsonData = selectedFile.name.match(/\.csv$/i)
-          ? parseCsvRows(await selectedFile.text())
-          : await parseXlsxRows(await selectedFile.arrayBuffer());
-        
-        const mappedData = jsonData.map((row: any) => ({
-          name: row['Name'] || row['name'] || row['Company Name'] || row['company_name'] || '',
-          email: row['Email'] || row['email'] || row['E-mail'] || '',
-          phone: row['Phone'] || row['phone'] || row['Phone Number'] || row['Mobile'] || '',
-          trnNumber: row['TRN'] || row['trn'] || row['TRN Number'] || row['Tax Registration Number'] || '',
-          address: row['Address'] || row['address'] || '',
-          city: row['City'] || row['city'] || '',
-          country: row['Country'] || row['country'] || 'UAE',
-        }));
+        if (!companyId) throw new Error('Select a company before importing contacts');
+        const preview = await apiRequest('POST', `/api/companies/${companyId}/customer-contacts/import-preview`, {
+          fileName: selectedFile.name,
+          contentBase64: await fileToBase64(selectedFile),
+        }) as ImportPreview;
+        const mappedData = preview.rows;
         
         setPreviewData(mappedData);
         toast({ title: `Found ${mappedData.length} contacts in ${selectedFile.name}` });
@@ -291,7 +249,7 @@ export default function CustomerContacts() {
         toast({ variant: 'destructive', title: 'Failed to parse file', description: err?.message });
       }
     })();
-  }, [toast]);
+  }, [companyId, toast]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -325,25 +283,20 @@ export default function CustomerContacts() {
   };
 
   const downloadTemplate = () => {
-    const template = [
-      {
-        'Name': 'Example Company LLC',
-        'Email': 'contact@example.com',
-        'Phone': '+971-50-123-4567',
-        'TRN': '100123456700003',
-        'Address': '123 Business Bay',
-        'City': 'Dubai',
-        'Country': 'UAE'
-      }
-    ];
-    
-    void exportToExcel([{
-      sheetName: 'Contacts',
-      columns: Object.keys(template[0]).map((key) => ({ header: key, key, width: 22 })),
-      rows: template,
-    }], 'contact_import_template').then(() => {
-      toast({ title: 'Template downloaded' });
-    });
+    if (!companyId) {
+      toast({ variant: 'destructive', title: 'Select a company first' });
+      return;
+    }
+
+    void downloadContactTemplate(companyId)
+      .then(() => toast({ title: 'Template downloaded' }))
+      .catch((err: any) =>
+        toast({
+          variant: 'destructive',
+          title: 'Failed to create template',
+          description: err?.message,
+        }),
+      );
   };
 
   const filteredContacts = contacts.filter(contact => 

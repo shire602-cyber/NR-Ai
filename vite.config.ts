@@ -31,10 +31,9 @@ export default defineConfig({
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
     sourcemap: false,
-    // PDF.js workers and ExcelJS are lazy-loaded only when users import/export
-    // documents. Keep the warning budget above those known heavy workflow chunks
-    // so build logs still flag genuinely unexpected bundle growth.
-    chunkSizeWarningLimit: 1300,
+    // Heavy document workflows are split into isolated lazy chunks. Keep Vite's
+    // warning budget tight so build logs catch new accidental eager imports.
+    chunkSizeWarningLimit: 500,
     cssCodeSplit: true,
     minify: "esbuild",
     target: "es2020",
@@ -44,7 +43,6 @@ export default defineConfig({
           if (!id.includes("node_modules")) return undefined;
           // Heavy vendor libs deserve dedicated chunks so route bundles stay small.
           if (id.includes("jspdf") || id.includes("qrcode")) return "vendor-pdf";
-          if (id.includes("exceljs")) return "vendor-spreadsheet";
           if (id.includes("pdfjs-dist/build/pdf.worker")) return "vendor-pdf-worker";
           if (id.includes("pdfjs-dist") || id.includes("pdf.worker")) return "vendor-pdfjs";
           if (id.includes("html2canvas")) return "vendor-html2canvas";

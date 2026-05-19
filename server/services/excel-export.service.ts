@@ -19,6 +19,18 @@ export interface OcrExportOptions {
   title?: string;
 }
 
+export interface GenericExportColumn {
+  header: string;
+  key: string;
+  width?: number;
+}
+
+export interface GenericExportSheet {
+  sheetName?: string;
+  columns: GenericExportColumn[];
+  rows: Record<string, unknown>[];
+}
+
 const BRAND_COLOR = 'FF0F172A'; // slate-900 — matches Muhasib editorial palette
 const HEADER_FONT_COLOR = 'FFFFFFFF';
 const ZEBRA_COLOR = 'FFF8FAFC'; // slate-50
@@ -169,6 +181,70 @@ export async function buildOcrReceiptsWorkbook(
   return Buffer.from(arrayBuffer as ArrayBuffer);
 }
 
+export async function buildGenericWorkbook(
+  sheets: GenericExportSheet[],
+  options: { title?: string } = {},
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Muhasib.ai';
+  workbook.lastModifiedBy = 'Muhasib.ai';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+  workbook.title = options.title ?? 'Muhasib Export';
+  workbook.company = 'Muhasib.ai';
+
+  sheets.forEach((sourceSheet, index) => {
+    const sheet = workbook.addWorksheet(safeSheetName(sourceSheet.sheetName || `Sheet ${index + 1}`), {
+      views: [{ state: 'frozen', ySplit: 1 }],
+      properties: { defaultRowHeight: 18 },
+    });
+
+    sheet.columns = sourceSheet.columns.map((column) => ({
+      header: column.header,
+      key: column.key,
+      width: column.width ?? Math.max(14, Math.min(36, column.header.length + 4)),
+    }));
+
+    const headerRow = sheet.getRow(1);
+    headerRow.height = 24;
+    headerRow.eachCell((cell) => {
+      cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: HEADER_FONT_COLOR } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: BRAND_COLOR } };
+      cell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FF1E293B' } } };
+    });
+
+    sourceSheet.rows.forEach((row, rowIndex) => {
+      const normalized: Record<string, unknown> = {};
+      for (const column of sourceSheet.columns) {
+        normalized[column.key] = normalizeGenericCell(row[column.key]);
+      }
+
+      const dataRow = sheet.addRow(normalized);
+      const isZebra = rowIndex % 2 === 1;
+      dataRow.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 11 };
+        cell.alignment = { vertical: 'middle', indent: 1 };
+        if (typeof cell.value === 'number') {
+          cell.numFmt = '#,##0.00';
+          cell.alignment = { vertical: 'middle', horizontal: 'right', indent: 1 };
+        }
+        if (isZebra) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ZEBRA_COLOR } };
+        }
+      });
+    });
+
+    sheet.pageSetup.orientation = 'landscape';
+    sheet.pageSetup.fitToPage = true;
+    sheet.pageSetup.fitToWidth = 1;
+    sheet.pageSetup.fitToHeight = 0;
+  });
+
+  const arrayBuffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(arrayBuffer as ArrayBuffer);
+}
+
 // Maps a saved receipt record (from `storage.getReceipt*`) onto the export row
 // shape. The Amount column is tax-EXCLUSIVE: saved receipts store `amount` as
 // the net subtotal already, so we use that directly. If a caller supplies only
@@ -210,4 +286,18 @@ export function receiptToExportRow(receipt: {
 export function buildExportFilename(prefix = 'muhasib-ocr-receipts'): string {
   const stamp = new Date().toISOString().slice(0, 10);
   return `${prefix}-${stamp}.xlsx`;
+}
+
+function safeSheetName(name: string): string {
+  const sanitized = name.replace(/[\][:*?/\\]/g, ' ').trim();
+  return (sanitized || 'Sheet').slice(0, 31);
+}
+
+function normalizeGenericCell(value: unknown): unknown {
+  if (value == null) return '';
+  if (value instanceof Date) return value;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : '';
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value;
+  return String(value);
 }

@@ -14,7 +14,7 @@ ARG RAILWAY_GIT_COMMIT_SHA
 ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci || npm install
+RUN npm ci
 LABEL railway.commit-sha="${RAILWAY_GIT_COMMIT_SHA}"
 RUN echo "source-sha: ${RAILWAY_GIT_COMMIT_SHA}" > /tmp/source-sha && \
     echo "build-time: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /tmp/source-sha
@@ -26,7 +26,7 @@ RUN npm run build
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts || npm install --omit=dev --ignore-scripts
+RUN npm ci --omit=dev --ignore-scripts
 
 # Stage 3: Production image
 FROM node:20-alpine
