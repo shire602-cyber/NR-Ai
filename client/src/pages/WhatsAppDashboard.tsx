@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,14 @@ import {
   pickWhatsAppNumber,
   type MessageTemplate,
 } from '@/lib/whatsapp-templates';
+import {
+  draftWithWhatsAppBridge,
+  openWhatsAppWithLoggedFallback,
+  pingWhatsAppBridge,
+  registerWhatsAppBridgeSession,
+  updateWhatsAppBridgeJobStatus,
+  type WhatsAppBridgePing,
+} from '@/lib/whatsapp-bridge';
 
 // ─── Rules ────────────────────────────────────────────────
 
@@ -86,6 +94,41 @@ const DEFAULT_RULES: WhatsAppRule[] = [
   { id: 'rule_7', name: 'VAT deadline (7 days)', type: 'before_due', daysOffset: -7, templateId: 'vat_deadline_reminder', enabled: true },
 ];
 
+type WhatsAppBadgeVariant = ComponentProps<typeof Badge>['variant'];
+
+interface WhatsAppBridgeStatus {
+  connected: boolean;
+  deliveryMode: string;
+  deliveryStatus: string;
+  canAutoSend: boolean;
+  note?: string;
+  activeSession?: {
+    id: string;
+    extensionId: string;
+    extensionVersion?: string | null;
+    lastSeenAt: string;
+    expiresAt: string;
+  } | null;
+  recentJobs?: Array<{
+    id: string;
+    kind: string;
+    recipientPhone: string;
+    recipientName?: string | null;
+    status: string;
+    deliveryStatus: string;
+    createdAt: string;
+  }>;
+}
+
+interface WhatsAppDispatchOptions {
+  kind?: 'direct_message' | 'invoice' | 'document_request' | 'payment_chase' | 'vat_submission_proof' | 'broadcast' | 'custom';
+  recipientName?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  attachmentUrl?: string | null;
+  attachmentLabel?: string | null;
+}
+
 // ─── Component ────────────────────────────────────────────
 
 export default function WhatsAppDashboard() {
@@ -107,6 +150,8 @@ export default function WhatsAppDashboard() {
   const [selectedTemplate, setSelectedTemplate] = useState<string>('');
   const [broadcastMessage, setBroadcastMessage] = useState('');
   const [rules, setRules] = useState<WhatsAppRule[]>(DEFAULT_RULES);
+  const [bridgePing, setBridgePing] = useState<WhatsAppBridgePing>({ available: false });
+  const [bridgeChecking, setBridgeChecking] = useState(false);
 
   // Data queries
   const { data: messages = [], isLoading: messagesLoading } = useQuery<WhatsappMessage[]>({
@@ -125,6 +170,32 @@ export default function WhatsAppDashboard() {
     enabled: !!currentCompany?.id,
   });
 
+  const { data: bridgeStatus, refetch: refetchBridgeStatus } = useQuery<WhatsAppBridgeStatus>({
+    queryKey: ['/api/integrations/whatsapp/bridge/status'],
+  });
+
+  const confirmSentMutation = useMutation({
+    mutationFn: (messageId: string) => apiRequest('PATCH', `/api/integrations/whatsapp/messages/${messageId}/status`, {
+      status: 'sent_unverified',
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/bridge/status'] });
+      toast({
+        title: en ? 'Marked as sent' : 'تم التأكيد كمرسل',
+        description: en
+          ? 'The message is marked sent-unverified because WhatsApp Web confirmed the human send, not Muhasib delivery tracking.'
+          : 'تم وضع علامة مرسل غير مؤكد لأن الإرسال تم من واتساب ويب.',
+      });
+    },
+    onError: () => {
+      toast({
+        title: en ? 'Could not update WhatsApp status' : 'تعذر تحديث حالة واتساب',
+        variant: 'destructive',
+      });
+    },
+  });
+
   // Notifications for pending actions
   const { data: notificationsData } = useQuery<{ notifications: Notification[]; unreadCount: number }>({
     queryKey: ['/api/notifications'],
@@ -132,6 +203,40 @@ export default function WhatsAppDashboard() {
   const pendingActions = (notificationsData?.notifications || []).filter(
     (n) => n.type === 'payment_due' && !n.isDismissed && !n.isRead
   );
+
+  const checkBridge = async (showToast = false) => {
+    setBridgeChecking(true);
+    try {
+      const ping = await pingWhatsAppBridge();
+      setBridgePing(ping);
+      if (ping.available) {
+        await registerWhatsAppBridgeSession(ping, currentCompany?.id).catch(() => {});
+        await refetchBridgeStatus();
+        if (showToast) {
+          toast({
+            title: en ? 'WhatsApp Bridge detected' : 'تم العثور على جسر واتساب',
+            description: en
+              ? 'Messages can be drafted in WhatsApp Web for staff review.'
+              : 'يمكن تجهيز الرسائل في واتساب ويب للمراجعة.',
+          });
+        }
+      } else if (showToast) {
+        toast({
+          title: en ? 'Bridge extension not detected' : 'لم يتم العثور على الإضافة',
+          description: en
+            ? 'We will use the safe WhatsApp Desktop/Web handoff instead.'
+            : 'سنستخدم فتح واتساب الآمن بدلاً من ذلك.',
+        });
+      }
+    } finally {
+      setBridgeChecking(false);
+    }
+  };
+
+  useEffect(() => {
+    void checkBridge(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentCompany?.id]);
 
   // Filter messages
   const filteredMessages = messages.filter(msg => {
@@ -158,13 +263,125 @@ export default function WhatsAppDashboard() {
     });
   };
 
-  const logAndOpen = (phone: string, message: string) => {
-    apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: phone, message }).catch(() => {});
-    openWhatsApp(phone, message);
-    toast({ title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...' });
-    setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
-    }, 1000);
+  const getMessageDeliveryMeta = (msg: WhatsappMessage): { label: string; variant: WhatsAppBadgeVariant } => {
+    if (msg.direction !== 'outbound') {
+      return { label: en ? 'Received' : 'مستلم', variant: 'secondary' };
+    }
+
+    const status = (msg.status || '').toLowerCase();
+    const isPersonalLink =
+      msg.from === 'personal' ||
+      msg.waMessageId?.startsWith('personal_') ||
+      msg.waMessageId?.startsWith('chase_');
+
+    if (isPersonalLink || status === 'logged') {
+      return { label: en ? 'Logged' : 'مسجل', variant: 'neutral' };
+    }
+
+    if (status === 'queued') {
+      return { label: en ? 'Queued' : 'في الانتظار', variant: 'secondary' };
+    }
+
+    if (status === 'drafted') {
+      return { label: en ? 'Drafted' : 'مسودة', variant: 'info' };
+    }
+
+    if (status === 'sent_unverified') {
+      return { label: en ? 'Sent, unverified' : 'مرسل غير مؤكد', variant: 'warning' };
+    }
+
+    if (status === 'failed') {
+      return { label: en ? 'Failed' : 'فشل', variant: 'danger' };
+    }
+
+    if (status === 'delivered' || status === 'processed') {
+      return { label: en ? 'Delivered' : 'تم التسليم', variant: 'success' };
+    }
+
+    return { label: en ? 'Sent' : 'مرسل', variant: 'info' };
+  };
+
+  const canConfirmSent = (msg: WhatsappMessage) => {
+    const status = (msg.status || '').toLowerCase();
+    return msg.direction === 'outbound'
+      && msg.from === 'whatsapp_web_bridge'
+      && ['queued', 'drafted', 'logged'].includes(status);
+  };
+
+  const logAndOpen = async (phone: string, message: string, options: WhatsAppDispatchOptions = {}) => {
+    const normalized = formatPhoneForWhatsApp(phone);
+    if (!normalized) {
+      toast({
+        title: en ? 'Invalid WhatsApp number' : 'رقم واتساب غير صالح',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    let bridgeJobId: string | undefined;
+    try {
+      const created = await apiRequest('POST', '/api/integrations/whatsapp/bridge/jobs', {
+        companyId: currentCompany?.id,
+        to: phone,
+        recipientName: options.recipientName || null,
+        message,
+        kind: options.kind || 'direct_message',
+        sourceType: options.sourceType || null,
+        sourceId: options.sourceId || null,
+        attachmentUrl: options.attachmentUrl || null,
+        attachmentLabel: options.attachmentLabel || null,
+      });
+      bridgeJobId = created?.job?.id;
+      if (!bridgeJobId) {
+        throw new Error('Bridge job was not created');
+      }
+
+      const draft = await draftWithWhatsAppBridge({
+        jobId: bridgeJobId,
+        phone: normalized,
+        message,
+        recipientName: options.recipientName || null,
+        attachmentUrl: options.attachmentUrl || null,
+        attachmentLabel: options.attachmentLabel || null,
+      });
+
+      if (draft.ok && bridgeJobId) {
+        await updateWhatsAppBridgeJobStatus(bridgeJobId, 'drafted', 'drafted').catch(() => {});
+        setBridgePing({
+          available: true,
+          extensionId: draft.extensionId || bridgePing.extensionId,
+          version: draft.version || bridgePing.version,
+        });
+        toast({
+          title: en ? 'Draft opened in WhatsApp Web' : 'تم فتح المسودة في واتساب ويب',
+          description: en
+            ? 'Review the message in WhatsApp Web, then press send there.'
+            : 'راجع الرسالة في واتساب ويب ثم أرسلها من هناك.',
+        });
+      } else {
+        await openWhatsAppWithLoggedFallback(normalized, message, bridgeJobId);
+        toast({
+          title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...',
+          description: en
+            ? 'Bridge extension was not detected; using Desktop/Web handoff.'
+            : 'لم يتم العثور على الإضافة؛ سيتم فتح واتساب مباشرة.',
+        });
+      }
+    } catch (error: any) {
+      await apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: normalized, message }).catch(() => {});
+      openWhatsApp(normalized, message);
+      toast({
+        title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...',
+        description: error?.message
+          ? (en ? 'Bridge queue failed, so we used the safe handoff.' : 'تعذر إنشاء مهمة الجسر، لذلك استخدمنا الفتح الآمن.')
+          : undefined,
+      });
+    } finally {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/bridge/status'] });
+      }, 1000);
+    }
   };
 
   // ─── Handlers ───────────────────────────────────────────
@@ -183,7 +400,11 @@ export default function WhatsAppDashboard() {
     if (!phone.trim()) { toast({ title: en ? 'Phone required' : 'رقم الهاتف مطلوب', variant: 'destructive' }); return; }
     if (!sendMessage.trim()) { toast({ title: en ? 'Message required' : 'الرسالة مطلوبة', variant: 'destructive' }); return; }
 
-    logAndOpen(phone, sendMessage);
+    const selectedContact = selectedCustomer ? customers.find(c => c.id === selectedCustomer) : null;
+    void logAndOpen(phone, sendMessage, {
+      kind: selectedTemplate === 'document_request' ? 'document_request' : 'direct_message',
+      recipientName: selectedContact?.name || null,
+    });
     setSendTo(''); setSendMessage(''); setSelectedCustomer(''); setSelectedTemplate('');
     setShowSendDialog(false);
   };
@@ -210,7 +431,13 @@ export default function WhatsAppDashboard() {
       company_name: currentCompany?.name || 'Our Company',
     });
 
-    logAndOpen(recipient, message);
+    void logAndOpen(recipient, message, {
+      kind: 'invoice',
+      recipientName: inv.customerName,
+      sourceType: 'invoice',
+      sourceId: inv.id,
+      attachmentLabel: `Invoice ${inv.number}`,
+    });
     setSelectedInvoice(''); setSelectedTemplate(''); setShowInvoiceDialog(false);
   };
 
@@ -230,8 +457,13 @@ export default function WhatsAppDashboard() {
         company_name: currentCompany?.name || 'Our Company',
       });
 
-      apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: r.number, message: msg }).catch(() => {});
-      setTimeout(() => openWhatsApp(r.number, msg), i * 800);
+      setTimeout(() => {
+        void logAndOpen(r.number, msg, {
+          kind: 'broadcast',
+          recipientName: r.customer.name,
+          sourceType: 'broadcast',
+        });
+      }, i * 900);
     });
 
     toast({ title: en ? `Opening WhatsApp for ${recipients.length} customer(s)...` : `جاري فتح واتساب لـ ${recipients.length} عميل...` });
@@ -282,7 +514,12 @@ export default function WhatsAppDashboard() {
           company_name: currentCompany?.name || 'Our Company',
         });
 
-        logAndOpen(wa, message);
+        void logAndOpen(wa, message, {
+          kind: 'payment_chase',
+          recipientName: inv.customerName,
+          sourceType: 'invoice',
+          sourceId: inv.id,
+        });
       } else {
         toast({ title: en ? 'No phone number for this customer' : 'لا يوجد رقم هاتف لهذا العميل', variant: 'destructive' });
       }
@@ -318,6 +555,14 @@ export default function WhatsAppDashboard() {
     setSendMessage(msg);
   };
 
+  const selectedInvoiceRecord = invoices.find((invoice) => invoice.id === selectedInvoice);
+  const selectedInvoiceCustomer = selectedInvoiceRecord
+    ? customers.find((customer) => customer.name === selectedInvoiceRecord.customerName)
+    : null;
+  const selectedInvoicePhone = selectedInvoiceCustomer ? pickWhatsAppNumber(selectedInvoiceCustomer) : null;
+  const bridgeDetected = Boolean(bridgePing.available || bridgeStatus?.connected);
+  const recentBridgeJobs = bridgeStatus?.recentJobs ?? [];
+
   // ─── Render ─────────────────────────────────────────────
 
   return (
@@ -331,7 +576,9 @@ export default function WhatsAppDashboard() {
           <div>
             <h1 className="text-2xl font-bold">{en ? 'WhatsApp' : 'واتساب'}</h1>
             <p className="text-sm text-muted-foreground">
-              {en ? 'Send messages, invoices & reminders via your personal WhatsApp' : 'أرسل رسائل وفواتير وتذكيرات عبر واتساب الشخصي'}
+              {en
+                ? 'Prepare messages, invoice reminders, and broadcasts for WhatsApp Desktop/Web. Sending is confirmed inside WhatsApp.'
+                : 'جهّز الرسائل وتذكيرات الفواتير والبث لواتساب. يتم تأكيد الإرسال داخل واتساب.'}
             </p>
           </div>
         </div>
@@ -350,8 +597,8 @@ export default function WhatsAppDashboard() {
                 <DialogTitle>{en ? 'Broadcast to All Clients' : 'بث لجميع العملاء'}</DialogTitle>
                 <DialogDescription>
                   {en
-                    ? `Send a news or announcement to all ${customers.filter((c) => pickWhatsAppNumber(c)).length} customer(s) with phone numbers`
-                    : `أرسل خبر أو إعلان لجميع ${customers.filter((c) => pickWhatsAppNumber(c)).length} عميل لديهم أرقام هواتف`}
+                    ? `Prepare a news or announcement message for ${customers.filter((c) => pickWhatsAppNumber(c)).length} customer(s) with phone numbers`
+                    : `جهّز خبر أو إعلان لـ ${customers.filter((c) => pickWhatsAppNumber(c)).length} عميل لديهم أرقام هواتف`}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -369,11 +616,24 @@ export default function WhatsAppDashboard() {
                 </p>
                 <Button onClick={handleBroadcast} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-send-broadcast">
                   <Megaphone className="w-4 h-4 mr-2" />
-                  {en ? `Send to ${customers.filter((c) => pickWhatsAppNumber(c)).length} Client(s)` : `إرسال لـ ${customers.filter((c) => pickWhatsAppNumber(c)).length} عميل`}
+                  {en ? `Open ${customers.filter((c) => pickWhatsAppNumber(c)).length} WhatsApp chat(s)` : `فتح ${customers.filter((c) => pickWhatsAppNumber(c)).length} محادثة واتساب`}
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
+
+          <Button
+            variant="outline"
+            onClick={() => {
+              setSelectedTemplate('document_request');
+              applyTemplate('document_request');
+              setShowSendDialog(true);
+            }}
+            data-testid="button-document-request-whatsapp"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            {en ? 'Document Request' : 'طلب مستندات'}
+          </Button>
 
           {/* Invoice Reminder */}
           <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
@@ -385,9 +645,9 @@ export default function WhatsAppDashboard() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{en ? 'Send Invoice Reminder' : 'إرسال تذكير فاتورة'}</DialogTitle>
+                <DialogTitle>{en ? 'Prepare Invoice Reminder' : 'تجهيز تذكير فاتورة'}</DialogTitle>
                 <DialogDescription>
-                  {en ? 'Select an invoice and template to send via WhatsApp' : 'اختر فاتورة وقالب للإرسال عبر واتساب'}
+                  {en ? 'Select an invoice and template, then open WhatsApp to confirm the send.' : 'اختر فاتورة وقالباً ثم افتح واتساب لتأكيد الإرسال.'}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -425,19 +685,27 @@ export default function WhatsAppDashboard() {
                   </Select>
                 </div>
 
-                {selectedInvoice && (() => {
-                  const inv = invoices.find(i => i.id === selectedInvoice);
-                  const cust = inv ? customers.find(c => c.name === inv.customerName) : null;
-                  return inv ? (
-                    <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
-                      <p><strong>{en ? 'Customer' : 'العميل'}:</strong> {inv.customerName}</p>
-                      <p><strong>{en ? 'Amount' : 'المبلغ'}:</strong> AED {inv.total.toFixed(2)}</p>
-                      <p><strong>{en ? 'Phone' : 'الهاتف'}:</strong> {cust?.phone || (en ? 'No phone' : 'لا يوجد رقم')}</p>
-                    </div>
-                  ) : null;
-                })()}
+                {selectedInvoiceRecord ? (
+                  <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
+                    <p><strong>{en ? 'Customer' : 'العميل'}:</strong> {selectedInvoiceRecord.customerName}</p>
+                    <p><strong>{en ? 'Amount' : 'المبلغ'}:</strong> AED {selectedInvoiceRecord.total.toFixed(2)}</p>
+                    <p><strong>{en ? 'Phone' : 'الهاتف'}:</strong> {selectedInvoicePhone || (en ? 'No phone' : 'لا يوجد رقم')}</p>
+                    {!selectedInvoicePhone ? (
+                      <p className="text-xs text-destructive">
+                        {en
+                          ? 'Add a WhatsApp number to this customer before opening an invoice reminder.'
+                          : 'أضف رقم واتساب لهذا العميل قبل فتح تذكير الفاتورة.'}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
 
-                <Button onClick={handleSendInvoice} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-open-whatsapp-invoice">
+                <Button
+                  onClick={handleSendInvoice}
+                  disabled={!selectedInvoice || !selectedInvoicePhone}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  data-testid="button-open-whatsapp-invoice"
+                >
                   <SiWhatsapp className="w-4 h-4 mr-2" />
                   {en ? 'Open in WhatsApp' : 'فتح في واتساب'}
                 </Button>
@@ -450,14 +718,14 @@ export default function WhatsAppDashboard() {
             <DialogTrigger asChild>
               <Button className="bg-green-600 hover:bg-green-700" data-testid="button-send-message">
                 <Send className="w-4 h-4 mr-2" />
-                {en ? 'Send Message' : 'إرسال رسالة'}
+                {en ? 'Prepare Message' : 'تجهيز رسالة'}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>{en ? 'Send WhatsApp Message' : 'إرسال رسالة واتساب'}</DialogTitle>
+                <DialogTitle>{en ? 'Prepare WhatsApp Message' : 'تجهيز رسالة واتساب'}</DialogTitle>
                 <DialogDescription>
-                  {en ? 'Compose a message — it will open in your WhatsApp app' : 'اكتب رسالة — ستفتح في تطبيق واتساب'}
+                  {en ? 'Compose a message. It will open in WhatsApp Desktop/Web and be logged here; delivery is not verified by Muhasib.' : 'اكتب الرسالة. ستفتح في واتساب ويتم تسجيلها هنا؛ لا يتحقق محاسب من التسليم.'}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -531,6 +799,59 @@ export default function WhatsAppDashboard() {
         </div>
       </div>
 
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={bridgeDetected ? 'success' : 'warning'} dot>
+                  {bridgeDetected
+                    ? (en ? 'Bridge ready' : 'الجسر جاهز')
+                    : (en ? 'Bridge not detected' : 'لم يتم العثور على الجسر')}
+                </Badge>
+                <Badge variant="neutral">
+                  {en ? 'Human-confirmed send' : 'إرسال بمراجعة الموظف'}
+                </Badge>
+                {bridgePing.version || bridgeStatus?.activeSession?.extensionVersion ? (
+                  <Badge variant="outline">
+                    v{bridgePing.version || bridgeStatus?.activeSession?.extensionVersion}
+                  </Badge>
+                ) : null}
+              </div>
+              <p className="text-sm text-muted-foreground max-w-3xl">
+                {en
+                  ? 'NR queues an audited WhatsApp job and opens a reviewed draft in WhatsApp Web. If the Chrome bridge is missing or outdated, the browser handoff still opens WhatsApp Web directly and staff confirm send status after pressing Send.'
+                  : 'ينشئ NR مهمة واتساب مسجلة ويفتح مسودة للمراجعة في واتساب ويب. إذا كانت إضافة كروم غير موجودة أو قديمة، يتم فتح واتساب ويب مباشرة ويؤكد الموظف حالة الإرسال بعد الضغط على إرسال.'}
+              </p>
+              {recentBridgeJobs.length > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  {en ? 'Latest bridge job' : 'آخر مهمة'}: {recentBridgeJobs[0].kind} · {recentBridgeJobs[0].deliveryStatus}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void checkBridge(true)}
+                disabled={bridgeChecking}
+                data-testid="button-check-whatsapp-bridge"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                {bridgeChecking ? (en ? 'Checking...' : 'جاري الفحص...') : (en ? 'Check Bridge' : 'فحص الجسر')}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer')}
+                data-testid="button-open-whatsapp-web"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                {en ? 'Open WhatsApp Web' : 'فتح واتساب ويب'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Main Content */}
       <Tabs defaultValue="messages" className="w-full">
         <TabsList>
@@ -577,11 +898,11 @@ export default function WhatsAppDashboard() {
                 </div>
                 <h3 className="text-lg font-semibold mb-2">{en ? 'No messages yet' : 'لا توجد رسائل بعد'}</h3>
                 <p className="text-muted-foreground mb-6 max-w-md">
-                  {en ? 'Start by sending a message, invoice reminder, or broadcast to your clients' : 'ابدأ بإرسال رسالة أو تذكير فاتورة أو بث لعملائك'}
+                  {en ? 'Start by preparing a message, invoice reminder, or broadcast for your clients' : 'ابدأ بتجهيز رسالة أو تذكير فاتورة أو بث لعملائك'}
                 </p>
                 <Button onClick={() => setShowSendDialog(true)} className="bg-green-600 hover:bg-green-700">
                   <Send className="w-4 h-4 mr-2" />
-                  {en ? 'Send Message' : 'إرسال رسالة'}
+                  {en ? 'Prepare Message' : 'تجهيز رسالة'}
                 </Button>
               </CardContent>
             </Card>
@@ -589,43 +910,60 @@ export default function WhatsAppDashboard() {
             <div className="space-y-2">
               {filteredMessages
                 .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
-                .map((msg) => (
-                  <Card key={msg.id} className="hover:bg-accent/50 transition-colors">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
-                            <SiWhatsapp className="w-5 h-5 text-green-500" />
+                .map((msg) => {
+                  const delivery = getMessageDeliveryMeta(msg);
+
+                  return (
+                    <Card key={msg.id} className="hover:bg-accent/50 transition-colors">
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="w-10 h-10 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
+                              <SiWhatsapp className="w-5 h-5 text-green-500" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="font-medium text-sm">
+                                  {msg.direction === 'outbound'
+                                    ? `→ ${getCustomerName(msg.to || '')}`
+                                    : `← ${getCustomerName(msg.from || '')}`}
+                                </span>
+                                <Badge variant={delivery.variant} className="text-xs">
+                                  {delivery.label}
+                                </Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">{msg.content}</p>
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <Clock className="w-3 h-3 text-muted-foreground" />
+                                <span className="text-xs text-muted-foreground">
+                                  {msg.createdAt ? formatTime(String(msg.createdAt)) : ''}
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium text-sm">
-                                {msg.direction === 'outbound'
-                                  ? `→ ${getCustomerName(msg.to || '')}`
-                                  : `← ${getCustomerName(msg.from || '')}`}
-                              </span>
-                              <Badge variant={msg.direction === 'outbound' ? 'default' : 'secondary'} className="text-xs">
-                                {msg.direction === 'outbound' ? (en ? 'Sent' : 'مرسل') : (en ? 'Received' : 'مستلم')}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">{msg.content}</p>
-                            <div className="flex items-center gap-2 mt-1.5">
-                              <Clock className="w-3 h-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">
-                                {msg.createdAt ? formatTime(String(msg.createdAt)) : ''}
-                              </span>
-                            </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {canConfirmSent(msg) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => confirmSentMutation.mutate(msg.id)}
+                                disabled={confirmSentMutation.isPending}
+                              >
+                                <CheckCircle2 className="w-4 h-4 mr-1" />
+                                {en ? 'Confirm sent' : 'تأكيد الإرسال'}
+                              </Button>
+                            )}
+                            {msg.to && (
+                              <Button variant="ghost" size="sm" className="text-green-600" onClick={() => openWhatsApp(msg.to!, '')}>
+                                <ExternalLink className="w-4 h-4" />
+                              </Button>
+                            )}
                           </div>
                         </div>
-                        {msg.to && (
-                          <Button variant="ghost" size="sm" className="text-green-600 shrink-0" onClick={() => openWhatsApp(msg.to!, '')}>
-                            <ExternalLink className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
             </div>
           )}
         </TabsContent>
@@ -679,6 +1017,9 @@ export default function WhatsAppDashboard() {
                   <p className="text-muted-foreground">
                     {en ? 'No customers yet. Add contacts to message them via WhatsApp.' : 'لا يوجد عملاء بعد. أضف جهات اتصال لمراسلتهم عبر واتساب.'}
                   </p>
+                  <Button asChild className="mt-4" variant="outline">
+                    <a href="/contacts">{en ? 'Add contacts' : 'أضف جهات اتصال'}</a>
+                  </Button>
                 </CardContent>
               </Card>
             )}
@@ -699,8 +1040,8 @@ export default function WhatsAppDashboard() {
                 </div>
                 <CardDescription>
                   {en
-                    ? 'These notifications were created by the scheduler. Click "Send via WhatsApp" to open a pre-filled message.'
-                    : 'تم إنشاء هذه الإشعارات بواسطة المجدول. انقر "إرسال عبر واتساب" لفتح رسالة جاهزة.'}
+                    ? 'These notifications were created by the scheduler. Open a pre-filled WhatsApp message, review it, then confirm the send in WhatsApp.'
+                    : 'تم إنشاء هذه الإشعارات بواسطة المجدول. افتح رسالة واتساب جاهزة وراجعها ثم أكد الإرسال داخل واتساب.'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -743,7 +1084,7 @@ export default function WhatsAppDashboard() {
                             onClick={() => handleActionNotification(notification)}
                           >
                             <SiWhatsapp className="w-3.5 h-3.5 mr-1" />
-                            {en ? 'Send' : 'إرسال'}
+                            {en ? 'Open' : 'فتح'}
                           </Button>
                         )}
                         <Button

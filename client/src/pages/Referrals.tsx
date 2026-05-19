@@ -62,7 +62,7 @@ export default function Referrals() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Join BookKeeping AI',
+          title: 'Join Muhasib.ai',
           text: 'Get 20% off your first month with my referral link!',
           url: referralLink,
         });

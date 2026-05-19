@@ -7,6 +7,26 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Briefcase } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
+function safeNextPath(): string {
+  const params = new URLSearchParams(window.location.search);
+  const next = params.get('next');
+  if (!next || !next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) {
+    return '/dashboard';
+  }
+
+  try {
+    const parsed = new URL(next, 'https://muhasib.local');
+    if (parsed.origin !== 'https://muhasib.local') return '/dashboard';
+    const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    if (path === '/login' || path === '/register' || path === '/forgot-password' || path.startsWith('/reset-password')) {
+      return '/dashboard';
+    }
+    return path;
+  } catch {
+    return '/dashboard';
+  }
+}
+
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -24,14 +44,20 @@ export default function Login() {
 
     fetchCurrentUser()
       .then((user) => {
-        if (user) setLocation(user.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
+        if (user) {
+          const fallback = user.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard';
+          const next = safeNextPath();
+          setLocation(next === '/dashboard' ? fallback : next);
+        }
       })
       .catch(() => {});
   }, [setLocation, toast]);
 
   const handleSuccess = async (user: any) => {
     const currentUser = await establishAuthenticatedSession(user);
-    setLocation(currentUser?.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
+    const fallback = currentUser?.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard';
+    const next = safeNextPath();
+    setLocation(next === '/dashboard' ? fallback : next);
   };
 
   return (

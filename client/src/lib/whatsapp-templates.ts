@@ -31,7 +31,7 @@ export interface MessageTemplate {
 // ─── Helpers ──────────────────────────────────────────────
 
 // Normalize a UAE-leaning phone number into an E.164 digit string suitable
-// for the wa.me URL. Returns "" when the input cannot be reasonably normalized.
+// for WhatsApp Web draft URLs. Returns "" when the input cannot be reasonably normalized.
 export function formatPhoneForWhatsApp(phone: string): string {
   let cleaned = (phone || '').replace(/[^\d]/g, '');
   if (!cleaned) return '';
@@ -53,10 +53,16 @@ export function formatPhoneForWhatsApp(phone: string): string {
   return cleaned;
 }
 
-export function openWhatsApp(phone: string, message: string) {
+export function buildWhatsAppWebDraftUrl(phone: string, message: string): string {
   const formatted = formatPhoneForWhatsApp(phone);
   const encoded = encodeURIComponent(message);
-  window.open(`https://wa.me/${formatted}?text=${encoded}`, '_blank');
+  return `https://web.whatsapp.com/send?phone=${formatted}&text=${encoded}&app_absent=0`;
+}
+
+export function openWhatsApp(phone: string, message: string) {
+  const formatted = formatPhoneForWhatsApp(phone);
+  if (!formatted) return;
+  window.open(buildWhatsAppWebDraftUrl(formatted, message), '_blank', 'noopener,noreferrer');
 }
 
 // Prefer a contact's dedicated WhatsApp number, fall back to phone.

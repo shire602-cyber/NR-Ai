@@ -64,6 +64,8 @@ import { registerFirmCommsRoutes } from './routes/firm-comms.routes';
 import { registerFirmAnalyticsRoutes } from './routes/firm-analytics.routes';
 import { registerFirmCommandCenterRoutes } from './routes/firm-command-center.routes';
 import { registerFirmValueOpsRoutes } from './routes/firm-value-ops.routes';
+import { registerFirmGrowthRoutes } from './routes/firm-growth.routes';
+import { registerFirmVatWorkspaceRoutes } from './routes/firm-vat-workspace.routes';
 import { registerClientPortalRoutes } from './routes/client-portal.routes';
 import { registerDocumentChasingRoutes } from './routes/document-chasing.routes';
 
@@ -150,6 +152,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerFirmAnalyticsRoutes(app);
   registerFirmCommandCenterRoutes(app);
   registerFirmValueOpsRoutes(app);
+  registerFirmGrowthRoutes(app);
+  registerFirmVatWorkspaceRoutes(app);
 
   log.info('All route modules registered');
 

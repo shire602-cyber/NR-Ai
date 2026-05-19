@@ -42,7 +42,7 @@ import { downloadInvoicePDF } from '@/lib/pdf-invoice';
 const invoiceLineSchema = z.object({
   description: z.string().min(1, 'Description is required'),
   quantity: z.coerce.number().min(0.01, 'Quantity must be positive'),
-  unitPrice: z.coerce.number().min(0, 'Price must be positive'),
+  unitPrice: z.coerce.number().min(0.01, 'Price must be greater than 0'),
   vatRate: z.coerce.number().default(0.05),
 });
 
@@ -412,7 +412,7 @@ export default function Invoices() {
       const invoiceData = {
         ...data,
         companyId: selectedCompanyId!,
-        lines: fields.map(line => ({
+        lines: data.lines.map(line => ({
           description: line.description,
           quantity: Number(line.quantity),
           unitPrice: Number(line.unitPrice),
@@ -794,6 +794,7 @@ export default function Invoices() {
                                   step="0.01" 
                                   placeholder="Qty" 
                                   className="font-mono"
+                                  aria-label={`Line ${index + 1} quantity`}
                                   value={field.value ?? ''} 
                                   onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
                                   data-testid={`input-line-quantity-${index}`} 
@@ -815,6 +816,7 @@ export default function Invoices() {
                                   step="0.01" 
                                   placeholder="Price" 
                                   className="font-mono"
+                                  aria-label={`Line ${index + 1} unit price`}
                                   value={field.value ?? ''} 
                                   onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
                                   data-testid={`input-line-price-${index}`} 

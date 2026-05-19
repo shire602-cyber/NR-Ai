@@ -146,6 +146,18 @@ function routeName(location: string): string {
     .join(' ');
 }
 
+function pathnameOnly(location: string): string {
+  return location.split(/[?#]/)[0] || '/';
+}
+
+function loginRedirectForCurrentPath(): string {
+  const next = `${window.location.pathname}${window.location.search}`;
+  if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\') || next === '/login') {
+    return '/login';
+  }
+  return `/login?next=${encodeURIComponent(next)}`;
+}
+
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
 import { NotificationBell } from '@/components/NotificationBell';
@@ -209,9 +221,10 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
   const { isFirmContext } = useActiveCompany();
+  const pathname = pathnameOnly(location);
 
   useEffect(() => {
-    if (companyLoading || location === '/onboarding') return;
+    if (companyLoading || pathname === '/onboarding') return;
 
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
@@ -235,7 +248,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(REDIRECT_FLAG, '1');
       navigate('/onboarding');
     }
-  }, [company, hasNoCompanies, companyLoading, location, navigate, isFirmContext]);
+  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext]);
 
 
   const style = {
@@ -316,6 +329,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      <MobileNav />
       <OnboardingWizard />
       <CommandPaletteProvider />
       <GlobalShortcutsProvider />
@@ -324,27 +338,55 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
 }
 
 // Guard: client portal routes require userType 'client_portal' or 'client'
-function PortalRoute({ children }: { children: React.ReactNode }) {
+function AccessRedirect({
+  title,
+  description,
+  redirectTo,
+  actionLabel = 'Go to dashboard',
+}: {
+  title: string;
+  description: string;
+  redirectTo: string;
+  actionLabel?: string;
+}) {
   const [, navigate] = useLocation();
+
+  useEffect(() => {
+    navigate(redirectTo);
+  }, [navigate, redirectTo]);
+
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center p-6">
+      <div className="max-w-md text-center space-y-3">
+        <h1 className="text-xl font-semibold">{title}</h1>
+        <p className="text-sm text-muted-foreground">{description}</p>
+        <Button variant="outline" onClick={() => navigate(redirectTo)}>
+          {actionLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function PortalRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return null;
-  if (!user) { navigate('/login'); return null; }
+  if (!user) return <AccessRedirect title="Sign in required" description="Please sign in to open the client portal." redirectTo={loginRedirectForCurrentPath()} actionLabel="Sign in" />;
   if (user.userType !== 'client_portal' && !user.isAdmin) {
-    navigate('/dashboard'); return null;
+    return <AccessRedirect title="Client portal access required" description="This area is only available to invited client portal users." redirectTo="/dashboard" />;
   }
   return <>{children}</>;
 }
 
 // Guard: firm routes require firmRole (firm_owner or firm_admin) in JWT
 function FirmRoute({ children }: { children: React.ReactNode }) {
-  const [, navigate] = useLocation();
   const { data: user, isLoading } = useCurrentUser();
 
   if (isLoading) return null;
-  if (!user) { navigate('/login'); return null; }
+  if (!user) return <AccessRedirect title="Sign in required" description="Please sign in to open the firm workspace." redirectTo={loginRedirectForCurrentPath()} actionLabel="Sign in" />;
   if (user.firmRole !== 'firm_owner' && user.firmRole !== 'firm_admin') {
-    navigate('/dashboard'); return null;
+    return <AccessRedirect title="NRA firm access required" description="This workspace is available only to NRA firm owners and firm admins." redirectTo="/dashboard" />;
   }
   return <>{children}</>;
 }
@@ -352,27 +394,28 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
 function Router() {
   const [location, setLocation] = useLocation();
   const { data: user, isLoading: userLoading } = useCurrentUser();
+  const pathname = pathnameOnly(location);
   
   // Redirect authenticated users from landing to their home (portal or main dashboard)
   useEffect(() => {
-    if (location === '/' && user) {
+    if (pathname === '/' && user) {
       setLocation(user.userType === 'client_portal' ? '/client-portal/dashboard' : '/dashboard');
     }
-  }, [location, user, setLocation]);
+  }, [pathname, user, setLocation]);
   
   // Guard: authenticated users at root - wait for redirect
-  if (location === '/' && userLoading) {
+  if (pathname === '/' && userLoading) {
     return null;
   }
 
-  if (location === '/' && user) {
+  if (pathname === '/' && user) {
     return null;
   }
   
   // Landing page (public only).
   // `initial={false}` skips the entry fade so the page is visible immediately;
   // a stalled or throttled animation must never leave the root at opacity:0.
-  if (location === '/' && !user) {
+  if (pathname === '/' && !user) {
     return (
       <AnimatePresence mode="wait">
         <motion.div
@@ -391,7 +434,7 @@ function Router() {
   }
   
   // Client Portal routes — authenticated, portal layout
-  if (location.startsWith('/client-portal')) {
+  if (pathname.startsWith('/client-portal')) {
     return (
       <PortalRoute>
         <PortalLayout>
@@ -411,7 +454,7 @@ function Router() {
   }
 
   // Full-page protected route: onboarding wizard (no sidebar)
-  if (location === '/onboarding') {
+  if (pathname === '/onboarding') {
     return (
       <ProtectedRoute>
         <Suspense fallback={<PageLoader variant="form" />}>
@@ -423,17 +466,18 @@ function Router() {
 
   // Public routes (no sidebar)
   if (
-    location === '/login' ||
-    location === '/register' ||
-    location === '/forgot-password' ||
-    location === '/reset-password' ||
-    location === '/services' ||
-    location === '/pricing' ||
-    location === '/privacy' ||
-    location === '/terms' ||
-    location === '/cookies' ||
-    location.startsWith('/view/invoice/') ||
-    location.startsWith('/portal/')
+    pathname === '/login' ||
+    pathname === '/register' ||
+    pathname === '/auth/callback' ||
+    pathname === '/forgot-password' ||
+    pathname === '/reset-password' ||
+    pathname === '/services' ||
+    pathname === '/pricing' ||
+    pathname === '/privacy' ||
+    pathname === '/terms' ||
+    pathname === '/cookies' ||
+    pathname.startsWith('/view/invoice/') ||
+    pathname.startsWith('/portal/')
   ) {
     return (
       <AnimatePresence mode="wait">
@@ -595,7 +639,6 @@ export default function App() {
             <TooltipProvider>
               <Router />
               <PWAInstallPrompt />
-              <MobileNav />
               <Toaster />
             </TooltipProvider>
           </RTLProvider>

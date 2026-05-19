@@ -393,6 +393,70 @@ export type InsertFirmStaffAssignment = z.infer<typeof insertFirmStaffAssignment
 export type FirmStaffAssignment = typeof firmStaffAssignments.$inferSelect;
 
 // ===========================
+// Firm Growth Opportunities
+// ===========================
+// Internal revenue-ops opportunities surfaced to NRA bookkeepers. These records
+// are intentionally internal; action rows log scripts/notes and do not imply
+// a client message was delivered unless a real provider is added later.
+export const firmGrowthOpportunities = pgTable("firm_growth_opportunities", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").references(() => companies.id, { onDelete: "cascade" }),
+  prospectUserId: uuid("prospect_user_id").references(() => users.id, { onDelete: "set null" }),
+  sourceKey: text("source_key").notNull().unique(),
+  opportunityType: text("opportunity_type").notNull(), // service_ar | cleanup | advisory_pack | audit_pack | cfo_pack | saas_conversion | compliance_extra
+  sourceSignal: text("source_signal").notNull(),
+  title: text("title").notNull(),
+  reason: text("reason").notNull(),
+  estimatedValue: money("estimated_value").notNull().default(0),
+  confidence: real("confidence").notNull().default(0.5),
+  priority: text("priority").notNull().default("medium"), // critical | high | medium | low
+  status: text("status").notNull().default("open"), // open | accepted | snoozed | dismissed | completed
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  dueDate: timestamp("due_date"),
+  snoozedUntil: timestamp("snoozed_until"),
+  resolvedAt: timestamp("resolved_at"),
+  resolutionNote: text("resolution_note"),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_firm_growth_opportunities_company_id").on(table.companyId),
+  statusIdx: index("idx_firm_growth_opportunities_status").on(table.status),
+  priorityIdx: index("idx_firm_growth_opportunities_priority").on(table.priority),
+  ownerIdx: index("idx_firm_growth_opportunities_owner").on(table.ownerUserId),
+}));
+
+export const firmGrowthActions = pgTable("firm_growth_actions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  opportunityId: uuid("opportunity_id").notNull().references(() => firmGrowthOpportunities.id, { onDelete: "cascade" }),
+  actionType: text("action_type").notNull(), // accept | assign | snooze | dismiss | complete | note | script
+  actorUserId: uuid("actor_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  channel: text("channel").notNull().default("internal"),
+  deliveryState: text("delivery_state").notNull().default("logged"),
+  note: text("note"),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  opportunityIdIdx: index("idx_firm_growth_actions_opportunity_id").on(table.opportunityId),
+  actorIdx: index("idx_firm_growth_actions_actor").on(table.actorUserId),
+}));
+
+export const insertFirmGrowthOpportunitySchema = createInsertSchema(firmGrowthOpportunities).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertFirmGrowthActionSchema = createInsertSchema(firmGrowthActions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertFirmGrowthOpportunity = z.infer<typeof insertFirmGrowthOpportunitySchema>;
+export type FirmGrowthOpportunity = typeof firmGrowthOpportunities.$inferSelect;
+export type InsertFirmGrowthAction = z.infer<typeof insertFirmGrowthActionSchema>;
+export type FirmGrowthAction = typeof firmGrowthActions.$inferSelect;
+
+// ===========================
 // Chart of Accounts
 // ===========================
 export const accounts = pgTable("accounts", {
@@ -976,7 +1040,7 @@ export const whatsappMessages = pgTable("whatsapp_messages", {
   mediaUrl: text("media_url"),
   mediaId: text("media_id"),
   direction: text("direction").notNull().default("inbound"), // inbound | outbound
-  status: text("status").notNull().default("received"), // received | processing | processed | failed
+  status: text("status").notNull().default("received"), // received | logged | processing | processed | failed | delivered
   receiptId: uuid("receipt_id").references(() => receipts.id), // Link to created receipt
   errorMessage: text("error_message"),
   processedAt: timestamp("processed_at"),
@@ -992,6 +1056,79 @@ export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).
 
 export type InsertWhatsappMessage = z.infer<typeof insertWhatsappMessageSchema>;
 export type WhatsappMessage = typeof whatsappMessages.$inferSelect;
+
+// WhatsApp Web Bridge sessions created by the Chrome extension. These do not
+// prove delivery; they only show a staff browser can draft messages in
+// WhatsApp Web for human review.
+export const whatsappBridgeSessions = pgTable("whatsapp_bridge_sessions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  extensionId: text("extension_id").notNull(),
+  extensionVersion: text("extension_version"),
+  status: text("status").notNull().default("active"), // active | expired | revoked
+  userAgent: text("user_agent"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_whatsapp_bridge_sessions_company_id").on(table.companyId),
+  userIdIdx: index("idx_whatsapp_bridge_sessions_user_id").on(table.userId),
+  statusIdx: index("idx_whatsapp_bridge_sessions_status").on(table.status),
+}));
+
+export const insertWhatsappBridgeSessionSchema = createInsertSchema(whatsappBridgeSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertWhatsappBridgeSession = z.infer<typeof insertWhatsappBridgeSessionSchema>;
+export type WhatsappBridgeSession = typeof whatsappBridgeSessions.$inferSelect;
+
+// Audited WhatsApp work queue. Jobs can be drafted by the extension, logged by
+// the current wa.me/Desktop fallback, or later sent by an official provider.
+export const whatsappBridgeJobs = pgTable("whatsapp_bridge_jobs", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id").references(() => whatsappBridgeSessions.id, { onDelete: "set null" }),
+  whatsappMessageId: uuid("whatsapp_message_id").references(() => whatsappMessages.id, { onDelete: "set null" }),
+  provider: text("provider").notNull().default("whatsapp_web_extension"),
+  kind: text("kind").notNull().default("direct_message"),
+  recipientPhone: text("recipient_phone").notNull(),
+  normalizedRecipientPhone: text("normalized_recipient_phone").notNull(),
+  recipientName: text("recipient_name"),
+  messageBody: text("message_body").notNull(),
+  attachmentUrl: text("attachment_url"),
+  attachmentLabel: text("attachment_label"),
+  sourceType: text("source_type"),
+  sourceId: uuid("source_id"),
+  status: text("status").notNull().default("queued"), // queued | drafted | sent_unverified | failed | cancelled | expired
+  deliveryStatus: text("delivery_status").notNull().default("logged"), // logged | drafted | sent_unverified | failed
+  errorMessage: text("error_message"),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  draftedAt: timestamp("drafted_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_whatsapp_bridge_jobs_company_id").on(table.companyId),
+  createdByIdx: index("idx_whatsapp_bridge_jobs_created_by").on(table.createdBy),
+  statusIdx: index("idx_whatsapp_bridge_jobs_status").on(table.status),
+  recipientIdx: index("idx_whatsapp_bridge_jobs_recipient").on(table.normalizedRecipientPhone),
+  sourceIdx: index("idx_whatsapp_bridge_jobs_source").on(table.sourceType, table.sourceId),
+}));
+
+export const insertWhatsappBridgeJobSchema = createInsertSchema(whatsappBridgeJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertWhatsappBridgeJob = z.infer<typeof insertWhatsappBridgeJobSchema>;
+export type WhatsappBridgeJob = typeof whatsappBridgeJobs.$inferSelect;
 
 // ===========================
 // AI Anomaly Detection
@@ -1921,6 +2058,103 @@ export interface VatReturnAdjustment {
   userId: string;
   createdAt: string;       // ISO timestamp
 }
+
+// ===========================
+// Firm VAT Submission Workspace
+// ===========================
+// Bookkeeper-owned VAT workpapers. Rows are VAT evidence only; they do not post
+// accounting invoices, receipts, bills, or journals.
+export const vatWorkpapers = pgTable("vat_workpapers", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  dueDate: timestamp("due_date").notNull(),
+  status: text("status").notNull().default("draft"), // draft | in_review | ready | generated | filed | locked
+  reviewerUserId: uuid("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
+  generatedVatReturnId: uuid("generated_vat_return_id").references(() => vatReturns.id, { onDelete: "set null" }),
+  totalsSnapshot: jsonb("totals_snapshot").notNull().default(sql`'{}'::jsonb`),
+  notes: text("notes"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyPeriodUnique: unique("vat_workpapers_company_period_unique").on(table.companyId, table.periodStart, table.periodEnd),
+  companyIdIdx: index("idx_vat_workpapers_company_id").on(table.companyId),
+  statusIdx: index("idx_vat_workpapers_status").on(table.status),
+  dueDateIdx: index("idx_vat_workpapers_due_date").on(table.dueDate),
+}));
+
+export const vatWorkpaperRows = pgTable("vat_workpaper_rows", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  workpaperId: uuid("workpaper_id").notNull().references(() => vatWorkpapers.id, { onDelete: "cascade" }),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  rowCategory: text("row_category").notNull(), // standard_sale | tourist_refund | reverse_charge_output | zero_rated_sale | exempt_sale | import | import_adjustment | standard_expense | reverse_charge_input | manual_adjustment
+  vat201Box: text("vat201_box").notNull(),
+  invoiceNumber: text("invoice_number"),
+  documentDate: timestamp("document_date"),
+  counterpartyName: text("counterparty_name"),
+  counterpartyTrn: text("counterparty_trn"),
+  emirate: text("emirate"),
+  taxableAmount: money("taxable_amount").notNull().default(0),
+  vatAmount: money("vat_amount").notNull().default(0),
+  adjustmentAmount: money("adjustment_amount").notNull().default(0),
+  grossAmount: money("gross_amount").notNull().default(0),
+  status: text("status").notNull().default("draft"), // draft | approved | excluded
+  sourceMethod: text("source_method").notNull().default("manual"), // manual | ocr | import | generated
+  sourceDocumentType: text("source_document_type"),
+  sourceDocumentId: uuid("source_document_id"),
+  notes: text("notes"),
+  auditReason: text("audit_reason"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  createdBy: uuid("created_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  workpaperIdIdx: index("idx_vat_workpaper_rows_workpaper_id").on(table.workpaperId),
+  companyIdIdx: index("idx_vat_workpaper_rows_company_id").on(table.companyId),
+  statusIdx: index("idx_vat_workpaper_rows_status").on(table.status),
+  categoryIdx: index("idx_vat_workpaper_rows_category").on(table.rowCategory),
+}));
+
+export const vatWorkpaperAttachments = pgTable("vat_workpaper_attachments", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  workpaperId: uuid("workpaper_id").notNull().references(() => vatWorkpapers.id, { onDelete: "cascade" }),
+  rowId: uuid("row_id").references(() => vatWorkpaperRows.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  mimeType: text("mime_type").notNull(),
+  filePath: text("file_path"),
+  extractedText: text("extracted_text"),
+  extractionJson: jsonb("extraction_json").notNull().default(sql`'{}'::jsonb`),
+  uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  workpaperIdIdx: index("idx_vat_workpaper_attachments_workpaper_id").on(table.workpaperId),
+  rowIdIdx: index("idx_vat_workpaper_attachments_row_id").on(table.rowId),
+}));
+
+export const insertVatWorkpaperSchema = createInsertSchema(vatWorkpapers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertVatWorkpaperRowSchema = createInsertSchema(vatWorkpaperRows).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export const insertVatWorkpaperAttachmentSchema = createInsertSchema(vatWorkpaperAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertVatWorkpaper = z.infer<typeof insertVatWorkpaperSchema>;
+export type VatWorkpaper = typeof vatWorkpapers.$inferSelect;
+export type InsertVatWorkpaperRow = z.infer<typeof insertVatWorkpaperRowSchema>;
+export type VatWorkpaperRow = typeof vatWorkpaperRows.$inferSelect;
+export type InsertVatWorkpaperAttachment = z.infer<typeof insertVatWorkpaperAttachmentSchema>;
+export type VatWorkpaperAttachment = typeof vatWorkpaperAttachments.$inferSelect;
 
 // ===========================
 // Corporate Tax Returns (9% UAE CT)

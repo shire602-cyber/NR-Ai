@@ -118,8 +118,8 @@ export default function Integrations() {
       ? 'Sync transactions, invoices, and accounts with QuickBooks Online'
       : 'مزامنة المعاملات والفواتير والحسابات مع QuickBooks Online',
     whatsappDesc: locale === 'en'
-      ? 'Send messages, invoices and reminders via your personal WhatsApp'
-      : 'أرسل رسائل وفواتير وتذكيرات عبر واتساب الشخصي',
+      ? 'Prepare messages, invoices, and reminders for WhatsApp Desktop/Web'
+      : 'جهّز الرسائل والفواتير والتذكيرات لواتساب',
   };
 
   const { data: integrationStatus, isLoading: statusLoading } = useQuery<IntegrationsStatusResponse>({
@@ -386,8 +386,8 @@ export default function Integrations() {
               ) : (
                 <p className="text-sm text-muted-foreground">
                   {locale === 'en' 
-                    ? 'Google Sheets integration needs to be configured in Replit settings.'
-                    : 'يجب تكوين تكامل Google Sheets في إعدادات Replit.'}
+                    ? 'Google Sheets export is not configured in this environment. Add provider credentials before enabling export/import.'
+                    : 'لم يتم تكوين تصدير Google Sheets في هذه البيئة. أضف بيانات اعتماد المزود قبل تفعيل التصدير أو الاستيراد.'}
                 </p>
               )}
             </CardContent>
@@ -409,8 +409,8 @@ export default function Integrations() {
                 </div>
                 <CardDescription className="mt-1">
                   {locale === 'en'
-                    ? 'Send messages, invoices, and reminders via your personal WhatsApp'
-                    : 'أرسل رسائل وفواتير وتذكيرات عبر واتساب الشخصي'}
+                    ? 'Prepare messages, invoices, and reminders for WhatsApp Desktop/Web'
+                    : 'جهّز الرسائل والفواتير والتذكيرات لواتساب'}
                 </CardDescription>
               </div>
             </CardHeader>
@@ -418,8 +418,8 @@ export default function Integrations() {
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
                   {locale === 'en'
-                    ? 'No setup needed — messages open directly in your WhatsApp app.'
-                    : 'لا حاجة لإعداد — الرسائل تفتح مباشرة في تطبيق واتساب.'}
+                    ? 'Messages are prepared and recorded in the system. Provider delivery must be configured before treating them as sent.'
+                    : 'يتم تجهيز الرسائل وتسجيلها في النظام. يجب تكوين مزود الإرسال قبل اعتبارها مرسلة.'}
                 </p>
                 <Button
                   variant="default"

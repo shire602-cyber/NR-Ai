@@ -30,6 +30,11 @@ import {
   pickWhatsAppNumber,
   type MessageTemplate,
 } from '@/lib/whatsapp-templates';
+import {
+  draftWithWhatsAppBridge,
+  openWhatsAppWithLoggedFallback,
+  updateWhatsAppBridgeJobStatus,
+} from '@/lib/whatsapp-bridge';
 
 export interface WhatsAppComposerRecipient {
   name?: string | null;
@@ -104,7 +109,7 @@ export function WhatsAppComposer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const trimmed = phone.trim();
     if (!trimmed) {
       toast({
@@ -121,16 +126,57 @@ export function WhatsAppComposer({
       return;
     }
 
-    apiRequest('POST', '/api/integrations/whatsapp/log-message', {
-      to: trimmed,
-      message,
-    }).catch(() => {});
+    let bridgeJobId: string | undefined;
+    try {
+      const created = await apiRequest('POST', '/api/integrations/whatsapp/bridge/jobs', {
+        to: trimmed,
+        recipientName: recipient?.name || null,
+        message,
+        kind: defaultTemplateId === 'document_request' || templateId === 'document_request'
+          ? 'document_request'
+          : allowedCategories?.includes('invoice')
+            ? 'invoice'
+            : 'direct_message',
+      });
+      bridgeJobId = created?.job?.id;
+      if (!bridgeJobId) throw new Error('Bridge job was not created');
 
-    openWhatsApp(trimmed, message);
-    toast({ title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...' });
+      const draft = await draftWithWhatsAppBridge({
+        jobId: bridgeJobId,
+        phone: trimmed,
+        message,
+        recipientName: recipient?.name || null,
+      });
+
+      if (draft.ok) {
+        await updateWhatsAppBridgeJobStatus(bridgeJobId, 'drafted', 'drafted').catch(() => {});
+        toast({
+          title: en ? 'Draft opened in WhatsApp Web' : 'تم فتح المسودة في واتساب ويب',
+          description: en
+            ? 'Review the message in WhatsApp Web, then press send there.'
+            : 'راجع الرسالة في واتساب ويب ثم أرسلها من هناك.',
+        });
+      } else {
+        await openWhatsAppWithLoggedFallback(trimmed, message, bridgeJobId);
+        toast({
+          title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...',
+          description: en
+            ? 'Bridge extension was not detected; using Desktop/Web handoff.'
+            : 'لم يتم العثور على الإضافة؛ سيتم فتح واتساب مباشرة.',
+        });
+      }
+    } catch {
+      await apiRequest('POST', '/api/integrations/whatsapp/log-message', {
+        to: trimmed,
+        message,
+      }).catch(() => {});
+      openWhatsApp(trimmed, message);
+      toast({ title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...' });
+    }
 
     setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/bridge/status'] });
     }, 1000);
     onOpenChange(false);
   };
@@ -146,8 +192,8 @@ export function WhatsAppComposer({
           <DialogDescription>
             {description ||
               (en
-                ? 'Compose and send via your personal WhatsApp Desktop or Web. The message will be logged to your history.'
-                : 'اكتب وأرسل عبر واتساب الشخصي. ستُسجَّل الرسالة في السجل.')}
+                ? 'Compose a message for WhatsApp Desktop/Web. Muhasib logs the draft; delivery is confirmed inside WhatsApp.'
+                : 'اكتب رسالة لواتساب. يسجل محاسب المسودة؛ ويتم تأكيد التسليم داخل واتساب.')}
           </DialogDescription>
         </DialogHeader>
 

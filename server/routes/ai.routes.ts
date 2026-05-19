@@ -1524,13 +1524,13 @@ Company: ${company.name}`;
     let fullResponse = '';
     let conversationId: string | undefined;
     let isStreaming = false;
-    // Whitelist of models a client may request. Expensive models (gpt-4, gpt-4-turbo)
-    // are intentionally excluded — only cost-controlled models can be selected.
+    // Whitelist of models a client may request. Expensive models are intentionally
+    // excluded — only cost-controlled models can be selected.
     const ALLOWED_AI_MODELS = ['gpt-3.5-turbo', 'gpt-4o-mini'] as const;
     const validationSchema = z.object({
       message: z.string().min(1, 'Message is required').max(10000, 'Message is too long'),
       companyId: z.string().uuid('Invalid company ID format').optional(),
-      model: z.enum(ALLOWED_AI_MODELS).optional().default('gpt-3.5-turbo'),
+      model: z.enum(ALLOWED_AI_MODELS).optional().default('gpt-4o-mini'),
       systemPrompt: z.string().max(2000, 'System prompt too long').optional(),
       stream: z.boolean().optional().default(false),
     });

@@ -307,7 +307,7 @@ export function registerChasingRoutes(app: Express) {
             messageType: 'text',
             content: messageText.slice(0, 5000),
             direction: 'outbound',
-            status: 'sent',
+            status: 'logged',
           });
         } catch (e) {
           log.warn(`WhatsApp log failed for chase ${chase.id}: ${(e as Error).message}`);
