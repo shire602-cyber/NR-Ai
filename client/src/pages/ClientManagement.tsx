@@ -81,7 +81,7 @@ export default function ClientManagement() {
     });
   };
 
-  const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
+  const { data: clients = [], isLoading, error, refetch, isFetching } = useQuery<ClientWithStats[]>({
     queryKey: ['/api/admin/clients'],
   });
 
@@ -181,6 +181,35 @@ export default function ClientManagement() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold" data-testid="text-clients-title">Client Management</h1>
+          <p className="text-muted-foreground">Manage all your accounting firm's clients</p>
+        </div>
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardHeader>
+            <CardTitle className="text-destructive">Could not load clients</CardTitle>
+            <CardDescription>
+              {error instanceof Error ? error.message : 'The admin client list failed to load.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              variant="outline"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              data-testid="button-retry-clients"
+            >
+              {isFetching ? 'Retrying...' : 'Try again'}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }

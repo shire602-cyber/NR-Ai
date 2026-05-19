@@ -577,10 +577,10 @@ function Router() {
           
           {/* Admin Routes */}
           <Route path="/admin/dashboard" component={AdminDashboard} />
-          <Route path="/admin/clients" component={ClientManagement} />
-          <Route path="/admin/clients/:id" component={ClientDetails} />
           <Route path="/admin/clients/:id/documents" component={ClientDocuments} />
           <Route path="/admin/clients/:id/tasks" component={ClientTasks} />
+          <Route path="/admin/clients/:id" component={ClientDetails} />
+          <Route path="/admin/clients" component={ClientManagement} />
           <Route path="/admin/documents" component={AdminDocuments} />
           <Route path="/admin/invitations" component={UserInvitations} />
           <Route path="/admin/import" component={ClientImport} />

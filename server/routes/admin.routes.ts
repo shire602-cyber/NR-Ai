@@ -21,6 +21,18 @@ const logger = createLogger('admin-routes');
 // Helpers (migrated from monolith routes.ts)
 // =============================================
 
+async function safeAdminRows<T>(label: string, query: Promise<T[]>): Promise<T[]> {
+  try {
+    return await query;
+  } catch (error) {
+    logger.error(
+      { label, err: error instanceof Error ? error.message : String(error) },
+      'Admin optional aggregate failed',
+    );
+    return [];
+  }
+}
+
 /**
  * Seed Chart of Accounts for a newly created company.
  */
@@ -238,9 +250,9 @@ export function registerAdminRoutes(app: Express): void {
       const clientsWithStats = await Promise.all(
         companies.map(async (company) => {
           const [companyUsers, documents, invoices] = await Promise.all([
-            storage.getCompanyUsersByCompanyId(company.id),
-            storage.getDocuments(company.id),
-            storage.getInvoicesByCompanyId(company.id),
+            safeAdminRows(`admin client users:${company.id}`, storage.getCompanyUsersByCompanyId(company.id)),
+            safeAdminRows(`admin client documents:${company.id}`, storage.getDocuments(company.id)),
+            safeAdminRows(`admin client invoices:${company.id}`, storage.getInvoicesByCompanyId(company.id)),
           ]);
 
           return {
@@ -267,15 +279,24 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(404).json({ message: "Client not found" });
       }
 
-      const [companyUsers, documents, invoices, receipts, journalEntries, complianceTasks, clientNotes, activityLogs] = await Promise.all([
-        storage.getCompanyUserWithUser(clientId),
-        storage.getDocuments(clientId),
-        storage.getInvoicesByCompanyId(clientId),
-        storage.getReceiptsByCompanyId(clientId),
-        storage.getJournalEntriesByCompanyId(clientId),
-        storage.getComplianceTasks(clientId),
-        storage.getClientNotes(clientId),
-        storage.getActivityLogsByCompany(clientId, 50),
+      const [
+        companyUsers,
+        documents,
+        invoices,
+        receipts,
+        journalEntries,
+        complianceTasks,
+        clientNotes,
+        activityLogs,
+      ] = await Promise.all([
+        safeAdminRows(`admin client detail users:${clientId}`, storage.getCompanyUserWithUser(clientId)),
+        safeAdminRows(`admin client detail documents:${clientId}`, storage.getDocuments(clientId)),
+        safeAdminRows(`admin client detail invoices:${clientId}`, storage.getInvoicesByCompanyId(clientId)),
+        safeAdminRows(`admin client detail receipts:${clientId}`, storage.getReceiptsByCompanyId(clientId)),
+        safeAdminRows(`admin client detail journals:${clientId}`, storage.getJournalEntriesByCompanyId(clientId)),
+        safeAdminRows(`admin client detail compliance:${clientId}`, storage.getComplianceTasks(clientId)),
+        safeAdminRows(`admin client detail notes:${clientId}`, storage.getClientNotes(clientId)),
+        safeAdminRows(`admin client detail activity:${clientId}`, storage.getActivityLogsByCompany(clientId, 50)),
       ]);
 
       res.json({
