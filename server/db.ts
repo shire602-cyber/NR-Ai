@@ -366,6 +366,80 @@ export async function ensureCriticalSchema(): Promise<void> {
           UNIQUE("user_id", "company_id")
       )`,
     },
+    {
+      name: 'firm_staff_assignments.role',
+      sql: sql`ALTER TABLE "firm_staff_assignments" ADD COLUMN IF NOT EXISTS "role" text NOT NULL DEFAULT 'accountant'`,
+    },
+    {
+      name: 'firm_staff_assignments user index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_firm_staff_assignments_user_id" ON "firm_staff_assignments" ("user_id")`,
+    },
+    {
+      name: 'firm_staff_assignments company index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_firm_staff_assignments_company_id" ON "firm_staff_assignments" ("company_id")`,
+    },
+    // ── 0050: firm command center runtime tables ────────────────────────
+    // Earlier Railway databases can have migration 0050 marked as applied
+    // without these tables being physically present. Missing either one
+    // takes down /api/firm/command-center/dashboard and the dependent NRA
+    // firm screens with a generic 500.
+    {
+      name: 'firm_alerts table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "firm_alerts" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "firm_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "company_id" uuid REFERENCES "companies"("id") ON DELETE CASCADE,
+        "alert_type" text NOT NULL,
+        "severity" text NOT NULL DEFAULT 'info',
+        "message" text NOT NULL,
+        "metadata" text,
+        "is_read" boolean NOT NULL DEFAULT false,
+        "resolved_at" timestamp,
+        "created_at" timestamp NOT NULL DEFAULT now()
+      )`,
+    },
+    {
+      name: 'firm_alerts firm index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_firm_alerts_firm_id" ON "firm_alerts" ("firm_id")`,
+    },
+    {
+      name: 'firm_alerts company index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_firm_alerts_company_id" ON "firm_alerts" ("company_id")`,
+    },
+    {
+      name: 'firm_alerts severity index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_firm_alerts_severity" ON "firm_alerts" ("severity")`,
+    },
+    {
+      name: 'firm_alerts unread index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_firm_alerts_unread" ON "firm_alerts" ("firm_id", "is_read")`,
+    },
+    {
+      name: 'firm_metrics_cache table',
+      sql: sql`CREATE TABLE IF NOT EXISTS "firm_metrics_cache" (
+        "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        "firm_id" uuid NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+        "metric_type" text NOT NULL,
+        "metric_value" text NOT NULL,
+        "period_start" timestamp,
+        "period_end" timestamp,
+        "calculated_at" timestamp NOT NULL DEFAULT now()
+      )`,
+    },
+    {
+      name: 'firm_metrics_cache firm type index',
+      sql: sql`CREATE INDEX IF NOT EXISTS "idx_firm_metrics_cache_firm_type" ON "firm_metrics_cache" ("firm_id", "metric_type")`,
+    },
+    {
+      name: 'firm_metrics_cache firm type period unique index',
+      sql: sql`CREATE UNIQUE INDEX IF NOT EXISTS "firm_metrics_cache_firm_type_period_unique"
+        ON "firm_metrics_cache" (
+          "firm_id",
+          "metric_type",
+          COALESCE("period_start", 'epoch'::timestamp),
+          COALESCE("period_end", 'epoch'::timestamp)
+        )`,
+    },
     // ── 0021: client_communications + communication_templates ────────────
     {
       name: 'client_communications table',

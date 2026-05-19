@@ -59,6 +59,7 @@
     { "idx": 54, "version": "7", "when": 1770300000000, "tag": "0054_promote_shire602_firm_owner", "breakpoints": false },
     { "idx": 55, "version": "7", "when": 1770400000000, "tag": "0055_growth_ops_vat_workspace", "breakpoints": false },
     { "idx": 56, "version": "7", "when": 1770500000000, "tag": "0056_whatsapp_web_bridge", "breakpoints": false },
-    { "idx": 57, "version": "7", "when": 1770600000000, "tag": "0057_corporate_tax_workpaper", "breakpoints": false }
+    { "idx": 57, "version": "7", "when": 1770600000000, "tag": "0057_corporate_tax_workpaper", "breakpoints": false },
+    { "idx": 58, "version": "7", "when": 1770700000000, "tag": "0058_firm_command_center_schema_guard", "breakpoints": false }
   ]
 }
