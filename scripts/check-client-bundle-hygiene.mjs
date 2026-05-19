@@ -5,6 +5,7 @@ const root = process.cwd();
 const clientRoot = join(root, 'client', 'src');
 const viteConfig = readFileSync(join(root, 'vite.config.ts'), 'utf8');
 const dockerfile = readFileSync(join(root, 'Dockerfile'), 'utf8');
+const railwayConfig = JSON.parse(readFileSync(join(root, 'railway.json'), 'utf8'));
 const failures = [];
 
 const limitMatch = viteConfig.match(/chunkSizeWarningLimit:\s*(\d+)/);
@@ -16,6 +17,10 @@ if (!limitMatch) {
 
 if (/npm ci[^\n]*\|\|\s*npm install/.test(dockerfile)) {
   failures.push('Dockerfile must fail fast on npm ci; remove npm install fallbacks so lockfile drift breaks the build.');
+}
+
+if (railwayConfig?.deploy?.healthcheckPath !== '/api/version') {
+  failures.push('railway.json must health-check /api/version so deploy readiness is DB-free; keep DB checks on /health/ready.');
 }
 
 for (const file of walk(clientRoot)) {
