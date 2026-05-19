@@ -96,6 +96,7 @@ export interface RouteLimit {
   message: string;
   /** Routes where the limiter must NOT apply (e.g., GET-only views can be skipped). */
   skipMethods?: Array<'GET' | 'HEAD' | 'OPTIONS'>;
+  skip?: (req: Request) => boolean;
   keyGenerator?: (req: Request, res: Response) => string;
   /** Decrement the hit after successful responses. Useful for failed-login throttles. */
   skipSuccessfulRequests?: boolean;
@@ -118,6 +119,7 @@ export function buildLimiter(cfg: RouteLimit) {
     skipSuccessfulRequests: cfg.skipSuccessfulRequests ?? false,
     skip: (req) => {
       if (req.path === '/health' || req.path === '/health/live') return true;
+      if (cfg.skip?.(req)) return true;
       if (cfg.skipMethods?.includes(req.method as any)) return true;
       return false;
     },
@@ -186,15 +188,30 @@ export const limiterProfiles = {
     max: envInt('RL_AUTH_SESSION_MAX', 60),
     message: 'Too many session requests. Please try again shortly.',
   } as RouteLimit,
+  authSessionRead: {
+    windowMs: envInt('RL_AUTH_SESSION_READ_WINDOW_MS', 60_000),
+    max: envInt('RL_AUTH_SESSION_READ_MAX', 300),
+    message: 'Too many session checks. Please try again shortly.',
+  } as RouteLimit,
+  authProviderRead: {
+    windowMs: envInt('RL_AUTH_PROVIDER_READ_WINDOW_MS', 60_000),
+    max: envInt('RL_AUTH_PROVIDER_READ_MAX', 180),
+    message: 'Too many social login provider checks. Please try again shortly.',
+  } as RouteLimit,
   authOAuth: {
     windowMs: envInt('RL_AUTH_OAUTH_WINDOW_MS', 5 * 60_000),
     max: envInt('RL_AUTH_OAUTH_MAX', 30),
     message: 'Too many social login attempts. Please try again shortly.',
+    skip: (req: Request) => req.method === 'GET' && (req.originalUrl || req.url).split('?')[0] === '/api/auth/oauth/providers',
   } as RouteLimit,
   authOther: {
     windowMs: envInt('RL_AUTH_OTHER_WINDOW_MS', 60_000),
     max: envInt('RL_AUTH_OTHER_MAX', 30),
     message: 'Too many authentication requests. Please try again shortly.',
+    skip: (req: Request) => {
+      const path = (req.originalUrl || req.url).split('?')[0];
+      return req.method === 'GET' && (path === '/api/auth/me' || path === '/api/auth/oauth/providers');
+    },
   } as RouteLimit,
   ai: {
     windowMs: envInt('RL_AI_WINDOW_MS', 60_000),

@@ -100,4 +100,26 @@ describe('auth login rate limiting', () => {
       expect(secondLimited.json.details.retryAfterSeconds).toBeLessThan(firstLimited.json.details.retryAfterSeconds);
     });
   });
+
+  it('can exclude read-only auth routes from stricter route buckets', async () => {
+    const app = express();
+    app.use('/api/auth', buildLimiter({
+      windowMs: 60_000,
+      max: 1,
+      message: 'Limited',
+      skip: (req) => req.method === 'GET' && req.originalUrl === '/api/auth/me',
+    }));
+    app.get('/api/auth/me', (_req, res) => res.json({ ok: true }));
+    app.get('/api/auth/other', (_req, res) => res.json({ ok: true }));
+
+    await withServer(app, async (baseUrl) => {
+      for (let i = 0; i < 5; i++) {
+        const response = await fetch(`${baseUrl}/api/auth/me`);
+        expect(response.status).toBe(200);
+      }
+
+      expect((await fetch(`${baseUrl}/api/auth/other`)).status).toBe(200);
+      expect((await fetch(`${baseUrl}/api/auth/other`)).status).toBe(429);
+    });
+  });
 });
