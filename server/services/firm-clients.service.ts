@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { normalizeClientServices, type ClientServiceCode } from '@shared/client-services';
 
 /**
  * Firm-managed-client domain helpers.
@@ -22,6 +23,7 @@ export const importedClientSchema = z.object({
   vatPeriodStartMonth: z.number().int().min(1).max(12).optional(),
   fiscalYearStartMonth: z.number().int().min(1).max(12).optional(),
   corporateTaxId: z.string().optional().or(z.literal('')),
+  serviceScope: z.array(z.enum(['vat', 'bookkeeping', 'corporate_tax', 'accounting'])).optional(),
   registrationNumber: z.string().optional().or(z.literal('')),
   websiteUrl: z.string().optional().or(z.literal('')),
 });
@@ -323,6 +325,20 @@ export function normaliseVatCloseGroup(raw: string): number | undefined {
   return 1;
 }
 
+export function normaliseServiceScope(raw: string): ClientServiceCode[] | undefined {
+  if (!raw.trim()) return undefined;
+  const compact = raw.toLowerCase();
+  const services: ClientServiceCode[] = [];
+  if (/\bvat\b|tax return|vat return/.test(compact)) services.push('vat');
+  if (/bookkeep|monthly close|source document|receipt|bank recon/.test(compact)) services.push('bookkeeping');
+  if (/corporate tax|\bct\b|tax registration/.test(compact)) services.push('corporate_tax');
+  if (/accounting|trial balance|journal|ledger|management account/.test(compact)) services.push('accounting');
+  if (services.length === 0) return normalizeClientServices(raw, []).length > 0
+    ? normalizeClientServices(raw, [])
+    : undefined;
+  return normalizeClientServices(services);
+}
+
 /**
  * Map a free-form CSV/Excel row into our import shape. Returns an `error`
  * object instead of throwing when essential fields (the company name) are
@@ -356,6 +372,9 @@ export function mapImportRow(
       pick(row, 'fiscalYearStartMonth', 'Financial Year Start', 'Fiscal Year Start', 'FY Start', 'FY Start Month'),
     ),
     corporateTaxId: pick(row, 'corporateTaxId', 'Corporate Tax ID', 'Corporate Tax Registration', 'CT ID', 'CT Registration'),
+    serviceScope: normaliseServiceScope(
+      pick(row, 'serviceScope', 'Service Scope', 'Services', 'Services Included', 'Engagement Services'),
+    ),
     registrationNumber: pick(row, 'registrationNumber', 'Registration Number', 'registration_number'),
     websiteUrl: pick(row, 'websiteUrl', 'website', 'Website', 'URL', 'Web'),
   };

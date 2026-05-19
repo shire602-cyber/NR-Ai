@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,6 +20,13 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { format } from 'date-fns';
 import type { Company } from '@shared/schema';
+import {
+  CLIENT_SERVICE_OPTIONS,
+  DEFAULT_CLIENT_SERVICE_CODES,
+  serviceLabels,
+  type ClientServiceCode,
+  type ClientServicePlan,
+} from '@shared/client-services';
 import { useActiveCompany } from '@/components/ActiveCompanyProvider';
 
 interface AssignedStaff {
@@ -43,11 +51,12 @@ interface ClientStats {
 }
 
 interface ClientSummary {
-  company: Company;
+  company: Company & { serviceScope?: ClientServiceCode[]; servicePlan?: ClientServicePlan };
   stats: ClientStats;
   companyUsers: { id: string; role: string; user: { id: string; name: string; email: string } }[];
   recentInvoices: any[];
   recentReceipts: any[];
+  servicePlan?: ClientServicePlan;
 }
 
 interface StaffMember {
@@ -57,6 +66,8 @@ interface StaffMember {
   isAdmin: boolean;
   assignedClients: { companyId: string; companyName: string; role: string }[];
 }
+
+type ClientEditData = Partial<Company> & { serviceScope?: ClientServiceCode[] };
 
 function formatAed(amount: number) {
   return new Intl.NumberFormat('en-AE', {
@@ -95,6 +106,25 @@ function monthLabel(month: number | string | null | undefined) {
 function vatCloseGroupLabel(periodStartMonth: number | string | null | undefined) {
   return VAT_CLOSE_GROUPS.find(option => option.value === String(periodStartMonth || 1))?.label
     ?? 'Mar / Jun / Sep / Dec';
+}
+
+function activeServiceScope(
+  company: { serviceScope?: ClientServiceCode[] },
+  editData: ClientEditData,
+): ClientServiceCode[] {
+  return editData.serviceScope ?? company.serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES;
+}
+
+function ServiceBadges({ services }: { services: readonly ClientServiceCode[] }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {serviceLabels(services).map(label => (
+        <Badge key={label} variant="outline" className="text-[11px]">
+          {label}
+        </Badge>
+      ))}
+    </div>
+  );
 }
 
 function EditableField({
@@ -136,7 +166,7 @@ export default function ClientProfile() {
   const { toast } = useToast();
   const { setActiveClientCompany } = useActiveCompany();
   const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState<Partial<Company>>({});
+  const [editData, setEditData] = useState<ClientEditData>({});
   const [assignOpen, setAssignOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState('');
 
@@ -163,7 +193,7 @@ export default function ClientProfile() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: Partial<Company>) =>
+    mutationFn: (data: ClientEditData) =>
       apiRequest('PUT', `/api/firm/clients/${companyId}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
@@ -220,6 +250,7 @@ export default function ClientProfile() {
 
   const { company, stats } = summary;
   const current = { ...company, ...editData };
+  const serviceScope = activeServiceScope(company, editData);
 
   const handleEdit = () => {
     setEditData({});
@@ -355,6 +386,54 @@ export default function ClientProfile() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Shield className="w-4 h-4 text-primary" />
+            NR Service Scope
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {editing ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {CLIENT_SERVICE_OPTIONS.map(option => (
+                <label
+                  key={option.code}
+                  className="flex items-start gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm"
+                >
+                  <Checkbox
+                    checked={serviceScope.includes(option.code)}
+                    onCheckedChange={checked => {
+                      setEditData(data => {
+                        const existing = data.serviceScope ?? company.serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES;
+                        const next = checked
+                          ? Array.from(new Set([...existing, option.code]))
+                          : existing.filter(service => service !== option.code);
+                        return {
+                          ...data,
+                          serviceScope: next.length > 0 ? next : existing,
+                        };
+                      });
+                    }}
+                  />
+                  <span>
+                    <span className="font-medium block">{option.label}</span>
+                    <span className="text-xs text-muted-foreground">{option.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <ServiceBadges services={serviceScope} />
+              <p className="text-xs text-muted-foreground">
+                VAT, corporate tax, bookkeeping, and accounting queues use this scope so clients only appear in services NRA actually delivers.
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Company Info */}

@@ -4,6 +4,7 @@ import {
   validateImportedClient,
   normaliseEmirate,
   normaliseFiscalYearStartMonth,
+  normaliseServiceScope,
   normaliseVatCloseGroup,
   normaliseVatFiling,
   corporateTaxWindow,
@@ -81,6 +82,15 @@ describe('firm-clients.service: import mapping', () => {
         corporateTaxId: 'CT-1002345678',
       });
     });
+
+    it('maps engagement service scope columns for NR service classification', () => {
+      const result = mapImportRow({
+        'Company Name': 'Scoped Client LLC',
+        'Services Included': 'VAT, bookkeeping, corporate tax',
+      });
+      if ('error' in result) throw new Error('expected mapped row');
+      expect(result.serviceScope).toEqual(['vat', 'bookkeeping', 'corporate_tax']);
+    });
   });
 
   describe('normaliseEmirate', () => {
@@ -112,6 +122,21 @@ describe('firm-clients.service: import mapping', () => {
 
     it('drops unknown frequencies', () => {
       expect(normaliseVatFiling('weekly')).toBe('');
+    });
+  });
+
+  describe('normaliseServiceScope', () => {
+    it('detects the core NRA service lanes from bookkeeper-friendly text', () => {
+      expect(normaliseServiceScope('VAT returns + monthly close + corporate tax + trial balance review')).toEqual([
+        'vat',
+        'bookkeeping',
+        'corporate_tax',
+        'accounting',
+      ]);
+    });
+
+    it('returns undefined for blank service scope cells', () => {
+      expect(normaliseServiceScope('')).toBeUndefined();
     });
   });
 

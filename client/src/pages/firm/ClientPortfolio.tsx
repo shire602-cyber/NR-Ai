@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -31,6 +32,14 @@ import {
 } from '@/lib/vat-workpaper-grid';
 import { format } from 'date-fns';
 import type { Company } from '@shared/schema';
+import {
+  CLIENT_SERVICE_OPTIONS,
+  DEFAULT_CLIENT_SERVICE_CODES,
+  clientHasService,
+  serviceLabels,
+  type ClientServiceCode,
+  type ClientServicePlan,
+} from '@shared/client-services';
 import { useActiveCompany } from '@/components/ActiveCompanyProvider';
 
 interface ClientStats {
@@ -47,7 +56,10 @@ interface ClientStats {
   assignedStaff: { id: string; name: string; email: string; role: string }[];
 }
 
-type ClientWithStats = Company & ClientStats;
+type ClientWithStats = Company & ClientStats & {
+  serviceScope?: ClientServiceCode[];
+  servicePlan?: ClientServicePlan;
+};
 
 interface FirmOverview {
   totalClients: number;
@@ -70,6 +82,8 @@ interface BookkeeperClient {
   companyId: string;
   companyName: string;
   trn: string | null;
+  serviceScope: ClientServiceCode[];
+  servicePlan?: ClientServicePlan;
   assignedStaff: { id: string; name: string; email: string; role: string }[];
   priority: BookkeeperPriority;
   nextBestAction: string;
@@ -184,6 +198,14 @@ interface BookkeeperDashboard {
     interventionHigh?: number;
     interventionMedium?: number;
   };
+  serviceMatrix?: Array<{
+    code: ClientServiceCode;
+    label: string;
+    shortLabel: string;
+    clientCount: number;
+    critical: number;
+    attention: number;
+  }>;
   vatCohorts: BookkeeperVatCohort[];
   queues?: Record<BookkeeperQueueKey, BookkeeperQueueItem[]>;
   workload?: {
@@ -355,6 +377,40 @@ function PriorityBadge({ priority }: { priority: BookkeeperPriority | 'filed' })
   return <Badge className={priorityClass(priority)}>{priorityLabel(priority)}</Badge>;
 }
 
+function servicesForClient(client: Pick<BookkeeperClient, 'serviceScope'> | Pick<ClientWithStats, 'serviceScope'>): ClientServiceCode[] {
+  return client.serviceScope?.length ? client.serviceScope : DEFAULT_CLIENT_SERVICE_CODES;
+}
+
+function hasClientService(
+  client: Pick<BookkeeperClient, 'serviceScope'> | Pick<ClientWithStats, 'serviceScope'>,
+  service: ClientServiceCode,
+) {
+  return clientHasService(servicesForClient(client), service);
+}
+
+function ServiceScopeBadges({
+  services,
+  compact = false,
+}: {
+  services?: readonly ClientServiceCode[];
+  compact?: boolean;
+}) {
+  const activeServices = services?.length ? [...services] : DEFAULT_CLIENT_SERVICE_CODES;
+  const labels = compact ? serviceLabels(activeServices) : activeServices.map(service => (
+    CLIENT_SERVICE_OPTIONS.find(option => option.code === service)?.label ?? service
+  ));
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {labels.map(label => (
+        <Badge key={label} variant="outline" className="text-[11px]">
+          {label}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
 function interventionClass(level: BookkeeperInterventionLevel) {
   if (level === 'high') return 'bg-red-100 text-red-800 border-red-200';
   if (level === 'medium') return 'bg-amber-100 text-amber-800 border-amber-200';
@@ -414,7 +470,7 @@ function ownerPreview(names: string[]) {
 
 function primaryDeadline(client: BookkeeperClient) {
   const candidates = [
-    client.vat.status !== 'filed'
+    hasClientService(client, 'vat') && client.vat.status !== 'filed'
       ? {
           label: 'VAT',
           dueDate: client.vat.dueDate,
@@ -422,7 +478,7 @@ function primaryDeadline(client: BookkeeperClient) {
           metric: client.vat.payableTax !== null ? formatAed(client.vat.payableTax) : client.vat.cohortLabel,
         }
       : null,
-    client.corporateTax.status !== 'filed'
+    hasClientService(client, 'corporate_tax') && client.corporateTax.status !== 'filed'
       ? {
           label: 'CT',
           dueDate: client.corporateTax.dueDate,
@@ -433,8 +489,9 @@ function primaryDeadline(client: BookkeeperClient) {
   ].filter(Boolean) as Array<{ label: string; dueDate: string | null; daysTilDue: number | null; metric: string }>;
 
   candidates.sort((a, b) => (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999));
+  const fallbackLabel = hasClientService(client, 'bookkeeping') ? 'Close' : hasClientService(client, 'accounting') ? 'Accounting' : 'Profile';
   return candidates[0] ?? {
-    label: 'Close',
+    label: fallbackLabel,
     dueDate: client.vat.dueDate,
     daysTilDue: client.vat.daysTilDue,
     metric: `${client.bookkeeping.closeProgress}% close-ready`,
@@ -478,6 +535,7 @@ function OperationsBriefDialog({
   const lanes = client ? [
     {
       key: 'vat',
+      service: 'vat' as const,
       title: 'VAT',
       icon: Calendar,
       status: client.vat.status,
@@ -488,6 +546,7 @@ function OperationsBriefDialog({
     },
     {
       key: 'corporate-tax',
+      service: 'corporate_tax' as const,
       title: 'Corporate Tax',
       icon: Calculator,
       status: client.corporateTax.status,
@@ -498,6 +557,7 @@ function OperationsBriefDialog({
     },
     {
       key: 'bookkeeping',
+      service: 'bookkeeping' as const,
       title: 'Bookkeeping',
       icon: TrendingUp,
       status: client.bookkeeping.status,
@@ -508,6 +568,7 @@ function OperationsBriefDialog({
     },
     {
       key: 'accounting',
+      service: 'accounting' as const,
       title: 'Accounting',
       icon: CheckCircle2,
       status: client.accounting.status,
@@ -516,7 +577,7 @@ function OperationsBriefDialog({
       metric: client.accounting.trialBalanceBalanced ? 'Trial balance clean' : 'Trial balance variance',
       blockers: client.accounting.blockers,
     },
-  ] : [];
+  ].filter(lane => hasClientService(client, lane.service)) : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -547,6 +608,10 @@ function OperationsBriefDialog({
                 <p className="text-xs text-muted-foreground">Open AR</p>
                 <p className="text-sm font-medium mt-1">{formatAed(client.bookkeeping.openAr)}</p>
               </div>
+            </div>
+            <div className="rounded-md border bg-muted/20 p-3">
+              <p className="text-xs text-muted-foreground mb-2">NR services for this client</p>
+              <ServiceScopeBadges services={client.serviceScope} />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -696,6 +761,9 @@ function BookkeeperCommandCenter({
   }, [dashboardClients]);
   const serviceLaneForecast = useMemo(() => {
     const clients = dashboardClients;
+    const corporateTaxClients = clients.filter(client => hasClientService(client, 'corporate_tax'));
+    const bookkeepingClients = clients.filter(client => hasClientService(client, 'bookkeeping'));
+    const accountingClients = clients.filter(client => hasClientService(client, 'accounting'));
     const makeRow = (
       label: string,
       rowClients: BookkeeperClient[],
@@ -713,15 +781,15 @@ function BookkeeperCommandCenter({
     });
     const sortedByIntervention = (rowClients: BookkeeperClient[]) =>
       [...rowClients].sort((a, b) => clientIntervention(b).score - clientIntervention(a).score);
-    const ctOpen = clients.filter(client => client.corporateTax.status !== 'filed');
-    const bookkeepingBlocked = sortedByIntervention(clients.filter(client => client.bookkeeping.status === 'critical'));
-    const bookkeepingAttention = sortedByIntervention(clients.filter(client => client.bookkeeping.status === 'attention'));
-    const bookkeepingReady = clients
+    const ctOpen = corporateTaxClients.filter(client => client.corporateTax.status !== 'filed');
+    const bookkeepingBlocked = sortedByIntervention(bookkeepingClients.filter(client => client.bookkeeping.status === 'critical'));
+    const bookkeepingAttention = sortedByIntervention(bookkeepingClients.filter(client => client.bookkeeping.status === 'attention'));
+    const bookkeepingReady = bookkeepingClients
       .filter(client => client.bookkeeping.status === 'on_track' && client.bookkeeping.closeProgress >= 90)
       .sort((a, b) => b.bookkeeping.closeProgress - a.bookkeeping.closeProgress);
-    const accountingVariance = sortedByIntervention(clients.filter(client => client.accounting.status === 'critical'));
-    const accountingReview = sortedByIntervention(clients.filter(client => client.accounting.status === 'attention'));
-    const accountingClean = clients.filter(client => client.accounting.status === 'on_track');
+    const accountingVariance = sortedByIntervention(accountingClients.filter(client => client.accounting.status === 'critical'));
+    const accountingReview = sortedByIntervention(accountingClients.filter(client => client.accounting.status === 'attention'));
+    const accountingClean = accountingClients.filter(client => client.accounting.status === 'on_track');
 
     return [
       {
@@ -774,14 +842,14 @@ function BookkeeperCommandCenter({
     ];
   }, [dashboardClients, dashboard?.vatCohorts]);
   const ctClients = dashboardClients
-    .filter(client => client.corporateTax.status !== 'filed')
+    .filter(client => hasClientService(client, 'corporate_tax') && client.corporateTax.status !== 'filed')
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
     .slice(0, 4);
   const closeClients = dashboardClients
-    .filter(client => client.bookkeeping.status !== 'on_track')
+    .filter(client => hasClientService(client, 'bookkeeping') && client.bookkeeping.status !== 'on_track')
     .slice(0, 4);
   const accountingClients = dashboardClients
-    .filter(client => client.accounting.status !== 'on_track')
+    .filter(client => hasClientService(client, 'accounting') && client.accounting.status !== 'on_track')
     .slice(0, 4);
 
   return (
@@ -839,6 +907,43 @@ function BookkeeperCommandCenter({
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Target className="w-4 h-4 text-primary" />
+                Client Service Matrix
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Scope every client by service before planning VAT, corporate tax, bookkeeping, or accounting work.
+              </p>
+            </div>
+            <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {(dashboard?.serviceMatrix ?? CLIENT_SERVICE_OPTIONS.map(option => ({
+              code: option.code,
+              label: option.label,
+              shortLabel: option.shortLabel,
+              clientCount: 0,
+              critical: 0,
+              attention: 0,
+            }))).map(service => (
+              <div key={service.code} className="rounded-md border bg-muted/20 p-3">
+                <p className="text-sm font-medium">{service.label}</p>
+                <p className="text-2xl font-bold mt-1">{service.clientCount}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {service.critical} critical · {service.attention} attention
+                </p>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
@@ -1640,7 +1745,7 @@ function VatWorkspacePanel({
   const workpapers = data?.workpapers ?? [];
   const draftCount = workpapers.filter(workpaper => workpaper.status === 'draft' || workpaper.status === 'in_review').length;
   const dueClients = (dashboard?.clients ?? [])
-    .filter(client => client.vat.status !== 'filed')
+    .filter(client => hasClientService(client, 'vat') && client.vat.status !== 'filed')
     .sort((a, b) => (a.vat.daysTilDue ?? 99999) - (b.vat.daysTilDue ?? 99999))
     .slice(0, 6);
   const recentWorkpapers = workpapers.slice(0, 5);
@@ -2583,6 +2688,7 @@ interface AddClientFormData {
   vatPeriodStartMonth: string;
   fiscalYearStartMonth: string;
   corporateTaxId: string;
+  serviceScope: ClientServiceCode[];
 }
 
 const emptyForm: AddClientFormData = {
@@ -2598,6 +2704,7 @@ const emptyForm: AddClientFormData = {
   vatPeriodStartMonth: '1',
   fiscalYearStartMonth: '1',
   corporateTaxId: '',
+  serviceScope: [...DEFAULT_CLIENT_SERVICE_CODES],
 };
 
 type QuickFilter = 'all' | 'critical' | 'attention' | 'vat-due' | 'close-blocked' | 'unassigned' | 'no-docs';
@@ -2719,10 +2826,10 @@ export default function ClientPortfolio() {
           return ops ? ops.priority === 'attention' || ops.priority === 'critical' : clientNeedsAttention(c);
         case 'vat-due':
           return ops
-            ? ops.vat.status !== 'filed' && ops.vat.daysTilDue !== null && ops.vat.daysTilDue <= 28
-            : vatDueSoon(c);
+            ? hasClientService(ops, 'vat') && ops.vat.status !== 'filed' && ops.vat.daysTilDue !== null && ops.vat.daysTilDue <= 28
+            : hasClientService(c, 'vat') && vatDueSoon(c);
         case 'close-blocked':
-          return ops ? ops.bookkeeping.status !== 'on_track' : false;
+          return ops ? hasClientService(ops, 'bookkeeping') && ops.bookkeeping.status !== 'on_track' : false;
         case 'unassigned':
           return ops ? ops.assignedStaff.length === 0 : c.assignedStaff.length === 0;
         case 'no-docs':
@@ -2963,6 +3070,7 @@ export default function ClientPortfolio() {
                 <TableRow>
                   <TableHead>Client</TableHead>
                   <TableHead>Owner</TableHead>
+                  <TableHead>Services</TableHead>
                   <TableHead>Priority</TableHead>
                   <TableHead>VAT</TableHead>
                   <TableHead>Corporate Tax</TableHead>
@@ -2988,19 +3096,24 @@ export default function ClientPortfolio() {
                       <TableCell className="text-sm text-muted-foreground">
                         {ops ? ownerPreview(ops.assignedStaff.map(staff => staff.name)) : ownerPreview(client.assignedStaff.map(staff => staff.name))}
                       </TableCell>
+                      <TableCell>
+                        <ServiceScopeBadges services={ops?.serviceScope ?? client.serviceScope} compact />
+                      </TableCell>
                       <TableCell>{ops ? <PriorityBadge priority={ops.priority} /> : <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />}</TableCell>
                       <TableCell className="text-sm">
-                        {ops ? (
+                        {ops && hasClientService(ops, 'vat') ? (
                           <span>{formatDateShort(ops.vat.dueDate)} · {formatDays(ops.vat.daysTilDue)}</span>
                         ) : (
-                          <VatStatusBadge vatStatus={client.vatStatus} />
+                          <Badge variant="outline">Not scoped</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {ops ? `${formatDateShort(ops.corporateTax.dueDate)} · ${formatDays(ops.corporateTax.daysTilDue)}` : '—'}
+                        {ops && hasClientService(ops, 'corporate_tax')
+                          ? `${formatDateShort(ops.corporateTax.dueDate)} · ${formatDays(ops.corporateTax.daysTilDue)}`
+                          : 'Not scoped'}
                       </TableCell>
                       <TableCell>
-                        {ops ? (
+                        {ops && hasClientService(ops, 'bookkeeping') ? (
                           <div className="min-w-28">
                             <div className="flex items-center justify-between text-xs">
                               <span>{ops.bookkeeping.closeProgress}%</span>
@@ -3010,7 +3123,7 @@ export default function ClientPortfolio() {
                               <div className="h-full bg-primary" style={{ width: `${ops.bookkeeping.closeProgress}%` }} />
                             </div>
                           </div>
-                        ) : '—'}
+                        ) : 'Not scoped'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-between gap-2 min-w-64">
@@ -3021,9 +3134,11 @@ export default function ClientPortfolio() {
                                 Brief
                               </Button>
                             )}
-                            <Button size="sm" variant="outline" onClick={() => setVatWorkspaceClientId(client.id)}>
-                              VAT
-                            </Button>
+                            {(!ops || hasClientService(ops, 'vat')) && (
+                              <Button size="sm" variant="outline" onClick={() => setVatWorkspaceClientId(client.id)}>
+                                VAT
+                              </Button>
+                            )}
                             <Button size="sm" variant="outline" onClick={() => handleOpenBooks(client.id)} disabled={switchMutation.isPending}>
                               <BookOpen className="w-3.5 h-3.5 mr-1" />
                               Open
@@ -3059,6 +3174,9 @@ export default function ClientPortfolio() {
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : 'No TRN registered'}
                       </p>
+                      <div className="mt-2">
+                        <ServiceScopeBadges services={ops?.serviceScope ?? client.serviceScope} compact />
+                      </div>
                     </div>
                     {ops ? <PriorityBadge priority={ops.priority} /> : <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />}
                   </div>
@@ -3097,13 +3215,15 @@ export default function ClientPortfolio() {
                       <Calendar className="w-3.5 h-3.5" />
                       VAT Status
                     </span>
-                    {ops ? <PriorityBadge priority={ops.vat.status} /> : <VatStatusBadge vatStatus={client.vatStatus} />}
+                    {ops && hasClientService(ops, 'vat')
+                      ? <PriorityBadge priority={ops.vat.status} />
+                      : <Badge variant="outline">Not scoped</Badge>}
                   </div>
 
                   {ops && (
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <span>VAT {formatDays(ops.vat.daysTilDue)}</span>
-                      <span>CT {formatDays(ops.corporateTax.daysTilDue)}</span>
+                      <span>{hasClientService(ops, 'vat') ? `VAT ${formatDays(ops.vat.daysTilDue)}` : 'VAT not scoped'}</span>
+                      <span>{hasClientService(ops, 'corporate_tax') ? `CT ${formatDays(ops.corporateTax.daysTilDue)}` : 'CT not scoped'}</span>
                     </div>
                   )}
 
@@ -3136,13 +3256,15 @@ export default function ClientPortfolio() {
                         Brief
                       </Button>
                     )}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setVatWorkspaceClientId(client.id)}
-                    >
-                      VAT
-                    </Button>
+                    {(!ops || hasClientService(ops, 'vat')) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setVatWorkspaceClientId(client.id)}
+                      >
+                        VAT
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       className="flex-1"
@@ -3175,6 +3297,7 @@ export default function ClientPortfolio() {
             <TableHeader>
               <TableRow>
                 <TableHead>Client</TableHead>
+                <TableHead>Services</TableHead>
                 <TableHead>TRN</TableHead>
                 <TableHead>Outstanding AR</TableHead>
                 <TableHead>Invoices</TableHead>
@@ -3200,20 +3323,25 @@ export default function ClientPortfolio() {
                         </p>
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <ServiceScopeBadges services={ops?.serviceScope ?? client.serviceScope} compact />
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {client.trnVatNumber || '—'}
                     </TableCell>
                     <TableCell className="font-medium">{formatAed(client.outstandingAr)}</TableCell>
                     <TableCell>{client.invoiceCount}</TableCell>
                     <TableCell>
-                      {ops ? <PriorityBadge priority={ops.vat.status} /> : <VatStatusBadge vatStatus={client.vatStatus} />}
+                      {ops && hasClientService(ops, 'vat')
+                        ? <PriorityBadge priority={ops.vat.status} />
+                        : <Badge variant="outline">Not scoped</Badge>}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {ops
+                      {ops && hasClientService(ops, 'bookkeeping')
                         ? `${ops.bookkeeping.closeProgress}% close`
-                        : client.lastReceiptDate
+                        : !ops && client.lastReceiptDate
                           ? format(new Date(client.lastReceiptDate), 'MMM d, yyyy')
-                          : '—'}
+                          : 'Not scoped'}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
@@ -3230,9 +3358,11 @@ export default function ClientPortfolio() {
                             Brief
                           </Button>
                         )}
-                        <Button size="sm" variant="outline" onClick={() => setVatWorkspaceClientId(client.id)}>
-                          VAT
-                        </Button>
+                        {(!ops || hasClientService(ops, 'vat')) && (
+                          <Button size="sm" variant="outline" onClick={() => setVatWorkspaceClientId(client.id)}>
+                            VAT
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           onClick={() => handleOpenBooks(client.id)}
@@ -3272,6 +3402,41 @@ export default function ClientPortfolio() {
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="Al Majid Trading LLC"
               />
+            </div>
+            <div className="grid gap-2 rounded-md border bg-muted/20 p-3">
+              <div>
+                <Label>NR services for this client</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Choose only the services NRA is contracted to deliver for this client.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {CLIENT_SERVICE_OPTIONS.map(option => (
+                  <label
+                    key={option.code}
+                    className="flex items-start gap-2 rounded-md border bg-background px-3 py-2 text-sm"
+                  >
+                    <Checkbox
+                      checked={form.serviceScope.includes(option.code)}
+                      onCheckedChange={checked => {
+                        setForm(current => {
+                          const serviceScope = checked
+                            ? Array.from(new Set([...current.serviceScope, option.code]))
+                            : current.serviceScope.filter(service => service !== option.code);
+                          return {
+                            ...current,
+                            serviceScope: serviceScope.length > 0 ? serviceScope : current.serviceScope,
+                          };
+                        });
+                      }}
+                    />
+                    <span>
+                      <span className="font-medium block">{option.label}</span>
+                      <span className="text-xs text-muted-foreground">{option.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">

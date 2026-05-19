@@ -18,6 +18,14 @@ import {
   type VatCohort,
   type VatCohortKey,
 } from '../services/firm-clients.service';
+import {
+  CLIENT_SERVICE_OPTIONS,
+  DEFAULT_CLIENT_SERVICE_CODES,
+  engagementTypeForServices,
+  normalizeClientServices,
+  type ClientServiceCode,
+  type ClientServicePlan,
+} from '@shared/client-services';
 import { parseSpreadsheetBuffer } from '../utils/spreadsheet';
 import { db } from '../db';
 import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne, lte } from 'drizzle-orm';
@@ -32,6 +40,7 @@ import {
   bankTransactions,
   journalEntries,
   journalLines,
+  engagements,
 } from '../../shared/schema';
 
 const logger = createLogger('firm-routes');
@@ -409,7 +418,125 @@ function emptyBookkeeperDashboard() {
   };
 }
 
+type EngagementSummaryRow = {
+  id: string;
+  companyId: string;
+  engagementType: string;
+  status: string;
+  monthlyFee: unknown;
+  billingCycle: string | null;
+  servicesIncluded: string | null;
+};
+
+function moneyToNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function servicePlanFromEngagement(row: EngagementSummaryRow | undefined): ClientServicePlan {
+  if (!row) {
+    return {
+      engagementId: null,
+      engagementType: 'full_service',
+      servicesIncluded: [...DEFAULT_CLIENT_SERVICE_CODES],
+      source: 'default',
+      status: 'active',
+      monthlyFee: null,
+      billingCycle: 'monthly',
+    };
+  }
+
+  const servicesIncluded = normalizeClientServices(row.servicesIncluded);
+  return {
+    engagementId: row.id,
+    engagementType: row.engagementType || engagementTypeForServices(servicesIncluded),
+    servicesIncluded,
+    source: 'engagement',
+    status: row.status || 'active',
+    monthlyFee: moneyToNumber(row.monthlyFee),
+    billingCycle: row.billingCycle ?? 'monthly',
+  };
+}
+
+async function loadActiveServicePlans(companyIds: string[]): Promise<Map<string, ClientServicePlan>> {
+  const planMap = new Map<string, ClientServicePlan>();
+  if (companyIds.length === 0) return planMap;
+
+  const rows = (await db
+    .select({
+      id: engagements.id,
+      companyId: engagements.companyId,
+      engagementType: engagements.engagementType,
+      status: engagements.status,
+      monthlyFee: engagements.monthlyFee,
+      billingCycle: engagements.billingCycle,
+      servicesIncluded: engagements.servicesIncluded,
+    })
+    .from(engagements)
+    .where(and(inArray(engagements.companyId, companyIds), eq(engagements.status, 'active')))
+    .orderBy(desc(engagements.updatedAt), desc(engagements.createdAt))) as EngagementSummaryRow[];
+
+  for (const row of rows) {
+    if (!planMap.has(row.companyId)) {
+      planMap.set(row.companyId, servicePlanFromEngagement(row));
+    }
+  }
+
+  return planMap;
+}
+
+async function upsertClientServicePlan(
+  companyId: string,
+  userId: string,
+  services: readonly ClientServiceCode[],
+): Promise<ClientServicePlan> {
+  const normalizedServices = normalizeClientServices(services);
+  const servicePayload = JSON.stringify(normalizedServices);
+  const engagementType = engagementTypeForServices(normalizedServices);
+
+  const [existing] = await db
+    .select()
+    .from(engagements)
+    .where(and(eq(engagements.companyId, companyId), eq(engagements.status, 'active')))
+    .orderBy(desc(engagements.updatedAt), desc(engagements.createdAt))
+    .limit(1);
+
+  if (existing) {
+    const [updated] = await db
+      .update(engagements)
+      .set({
+        engagementType,
+        servicesIncluded: servicePayload,
+        accountManagerId: existing.accountManagerId ?? userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(engagements.id, existing.id))
+      .returning();
+    return servicePlanFromEngagement(updated as EngagementSummaryRow);
+  }
+
+  const [created] = await db
+    .insert(engagements)
+    .values({
+      companyId,
+      accountManagerId: userId,
+      engagementType,
+      status: 'active',
+      startDate: new Date(),
+      billingCycle: 'monthly',
+      servicesIncluded: servicePayload,
+      onboardingCompleted: true,
+      onboardingCompletedAt: new Date(),
+    })
+    .returning();
+
+  return servicePlanFromEngagement(created as EngagementSummaryRow);
+}
+
 // ─── Route registration ───────────────────────────────────────────────────────
+
+const clientServiceSchema = z.enum(['vat', 'bookkeeping', 'corporate_tax', 'accounting']);
 
 const createClientSchema = z.object({
   name: z.string().min(1),
@@ -427,6 +554,7 @@ const createClientSchema = z.object({
   fiscalYearStartMonth: z.coerce.number().int().min(1).max(12).optional(),
   taxRegistrationType: z.string().optional(),
   corporateTaxId: z.string().optional(),
+  serviceScope: z.array(clientServiceSchema).optional(),
 });
 
 const updateClientSchema = createClientSchema.partial();
@@ -467,10 +595,18 @@ export function registerFirmRoutes(app: Express): void {
           .where(and(eq(companies.companyType, 'client'), inArray(companies.id, accessibleIds)));
       }
 
+      const servicePlans = await loadActiveServicePlans(clientCompanies.map(company => company.id));
+
       const clientsWithStats = await Promise.all(
         clientCompanies.map(async company => {
           const stats = await getClientStats(company.id);
-          return { ...company, ...stats };
+          const servicePlan = servicePlans.get(company.id) ?? servicePlanFromEngagement(undefined);
+          return {
+            ...company,
+            ...stats,
+            serviceScope: servicePlan.servicesIncluded,
+            servicePlan,
+          };
         })
       );
 
@@ -499,7 +635,7 @@ export function registerFirmRoutes(app: Express): void {
         return res.status(400).json({ message: 'Company is not an NRA client' });
       }
 
-      const [stats, companyUserList, recentInvoices, recentReceipts] = await Promise.all([
+      const [stats, companyUserList, recentInvoices, recentReceipts, servicePlanMap] = await Promise.all([
         getClientStats(companyId),
         storage.getCompanyUserWithUser(companyId),
         db
@@ -514,14 +650,21 @@ export function registerFirmRoutes(app: Express): void {
           .where(eq(receipts.companyId, companyId))
           .orderBy(desc(receipts.createdAt))
           .limit(10),
+        loadActiveServicePlans([companyId]),
       ]);
+      const servicePlan = servicePlanMap.get(companyId) ?? servicePlanFromEngagement(undefined);
 
       res.json({
-        company,
+        company: {
+          ...company,
+          serviceScope: servicePlan.servicesIncluded,
+          servicePlan,
+        },
         stats,
         companyUsers: companyUserList,
         recentInvoices,
         recentReceipts,
+        servicePlan,
       });
     })
   );
@@ -532,32 +675,38 @@ export function registerFirmRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
       const validated = createClientSchema.parse(req.body);
+      const { serviceScope, ...companyInput } = validated;
 
-      const existing = await storage.getCompanyByName(validated.name);
+      const existing = await storage.getCompanyByName(companyInput.name);
       if (existing) {
         return res.status(400).json({ message: 'Company name already exists' });
       }
 
       const company = await storage.createCompany({
-        name: validated.name,
+        name: companyInput.name,
         baseCurrency: 'AED',
         locale: 'en',
         companyType: 'client',
-        trnVatNumber: validated.trnVatNumber,
-        legalStructure: validated.legalStructure,
-        industry: validated.industry,
-        registrationNumber: validated.registrationNumber,
-        businessAddress: validated.businessAddress,
-        contactPhone: validated.contactPhone,
-        contactEmail: validated.contactEmail || undefined,
-        websiteUrl: validated.websiteUrl,
-        emirate: validated.emirate || 'dubai',
-        vatFilingFrequency: validated.vatFilingFrequency || 'quarterly',
-        vatPeriodStartMonth: validated.vatPeriodStartMonth,
-        fiscalYearStartMonth: validated.fiscalYearStartMonth,
-        taxRegistrationType: validated.taxRegistrationType,
-        corporateTaxId: validated.corporateTaxId,
+        trnVatNumber: companyInput.trnVatNumber,
+        legalStructure: companyInput.legalStructure,
+        industry: companyInput.industry,
+        registrationNumber: companyInput.registrationNumber,
+        businessAddress: companyInput.businessAddress,
+        contactPhone: companyInput.contactPhone,
+        contactEmail: companyInput.contactEmail || undefined,
+        websiteUrl: companyInput.websiteUrl,
+        emirate: companyInput.emirate || 'dubai',
+        vatFilingFrequency: companyInput.vatFilingFrequency || 'quarterly',
+        vatPeriodStartMonth: companyInput.vatPeriodStartMonth,
+        fiscalYearStartMonth: companyInput.fiscalYearStartMonth,
+        taxRegistrationType: companyInput.taxRegistrationType,
+        corporateTaxId: companyInput.corporateTaxId,
       });
+      const servicePlan = await upsertClientServicePlan(
+        company.id,
+        userId,
+        serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES,
+      );
 
       await seedChartOfAccounts(company.id);
 
@@ -579,7 +728,11 @@ export function registerFirmRoutes(app: Express): void {
         description: `NRA firm created client: ${company.name}`,
       });
 
-      res.status(201).json(company);
+      res.status(201).json({
+        ...company,
+        serviceScope: servicePlan.servicesIncluded,
+        servicePlan,
+      });
     })
   );
 
@@ -590,6 +743,7 @@ export function registerFirmRoutes(app: Express): void {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
       const validated = updateClientSchema.parse(req.body);
+      const { serviceScope, ...companyPatch } = validated;
 
       const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
@@ -601,7 +755,12 @@ export function registerFirmRoutes(app: Express): void {
         return res.status(404).json({ message: 'Client not found' });
       }
 
-      const updated = await storage.updateCompany(companyId, validated as any);
+      const updated = Object.keys(companyPatch).length > 0
+        ? await storage.updateCompany(companyId, companyPatch as any)
+        : company;
+      const servicePlan = serviceScope !== undefined
+        ? await upsertClientServicePlan(companyId, userId, serviceScope)
+        : (await loadActiveServicePlans([companyId])).get(companyId) ?? servicePlanFromEngagement(undefined);
 
       await storage.createActivityLog({
         userId,
@@ -612,7 +771,11 @@ export function registerFirmRoutes(app: Express): void {
         description: `NRA firm updated client: ${updated.name}`,
       });
 
-      res.json(updated);
+      res.json({
+        ...updated,
+        serviceScope: servicePlan.servicesIncluded,
+        servicePlan,
+      });
     })
   );
 
@@ -792,6 +955,7 @@ export function registerFirmRoutes(app: Express): void {
 
       const clientIds = clientList.map(client => client.id);
       if (clientIds.length === 0) return res.json(emptyBookkeeperDashboard());
+      const servicePlans = await loadActiveServicePlans(clientIds);
 
       const now = new Date();
 
@@ -986,6 +1150,12 @@ export function registerFirmRoutes(app: Express): void {
       }
 
       const clients = clientList.map(company => {
+        const servicePlan = servicePlans.get(company.id) ?? servicePlanFromEngagement(undefined);
+        const services = servicePlan.servicesIncluded;
+        const hasVatService = services.includes('vat');
+        const hasCorporateTaxService = services.includes('corporate_tax');
+        const hasBookkeepingService = services.includes('bookkeeping');
+        const hasAccountingService = services.includes('accounting');
         const vatCohort = vatCohortFromPeriodStart(
           company.vatPeriodStartMonth,
           company.vatFilingFrequency,
@@ -1045,7 +1215,9 @@ export function registerFirmRoutes(app: Express): void {
         const vatFiled = latestVat
           && (latestVat.status === 'filed' || latestVat.status === 'submitted')
           && new Date(latestVat.periodEnd) >= plannedVat.periodEnd;
-        const vatPriority = vatFiled
+        const vatPriority = !hasVatService
+          ? 'on_track'
+          : vatFiled
           ? 'on_track'
           : maxPriority(
               priorityFromDueDays(vatDaysTilDue, 28, 0),
@@ -1063,7 +1235,9 @@ export function registerFirmRoutes(app: Express): void {
         if (discrepancy > 0.01) ctBlockers.push('Trial balance not balanced');
         if (unpostedReceiptCount > 0) ctBlockers.push('Expense receipts not posted');
         if (unreconciledBankCount > 0) ctBlockers.push('Bank reconciliation incomplete');
-        const ctPriority = ctFiled
+        const ctPriority = !hasCorporateTaxService
+          ? 'on_track'
+          : ctFiled
           ? 'on_track'
           : maxPriority(
               priorityFromDueDays(ctDaysTilDue, 90, 0),
@@ -1088,8 +1262,9 @@ export function registerFirmRoutes(app: Express): void {
               - (daysSinceActivity !== null && daysSinceActivity > 30 ? 15 : 0),
           ),
         );
-        const bookkeepingPriority: BookkeeperPriority =
-          noOperatingDocs || unreconciledBankCount > 25 || unpostedReceiptCount > 15
+        const bookkeepingPriority: BookkeeperPriority = !hasBookkeepingService
+          ? 'on_track'
+          : noOperatingDocs || unreconciledBankCount > 25 || unpostedReceiptCount > 15
             ? 'critical'
             : bookkeepingBlockers.length > 0
               ? 'attention'
@@ -1098,8 +1273,9 @@ export function registerFirmRoutes(app: Express): void {
         const accountingBlockers: string[] = [];
         if (discrepancy > 0.01) accountingBlockers.push(`Trial balance off by AED ${discrepancy.toFixed(2)}`);
         if (!trialBalance) accountingBlockers.push('No posted journals');
-        const accountingPriority: BookkeeperPriority =
-          discrepancy > 0.01 ? 'critical' : accountingBlockers.length > 0 ? 'attention' : 'on_track';
+        const accountingPriority: BookkeeperPriority = !hasAccountingService
+          ? 'on_track'
+          : discrepancy > 0.01 ? 'critical' : accountingBlockers.length > 0 ? 'attention' : 'on_track';
 
         const priority = maxPriority(vatPriority, ctPriority, bookkeepingPriority, accountingPriority);
         const nextBestAction =
@@ -1137,6 +1313,8 @@ export function registerFirmRoutes(app: Express): void {
           companyId: company.id,
           companyName: company.name,
           trn: company.trnVatNumber,
+          serviceScope: services,
+          servicePlan,
           assignedStaff: assignedStaff.map(staff => ({
             id: staff.id,
             name: staff.name,
@@ -1157,7 +1335,7 @@ export function registerFirmRoutes(app: Express): void {
             daysTilDue: vatDaysTilDue,
             status: vatFiled ? 'filed' : vatPriority,
             payableTax: latestVat ? Number(latestVat.payableTax ?? 0) : null,
-            blockers: vatBlockers,
+            blockers: hasVatService ? vatBlockers : [],
           },
           corporateTax: {
             periodStart: shortIso(ctWindow.periodStart),
@@ -1166,12 +1344,12 @@ export function registerFirmRoutes(app: Express): void {
             daysTilDue: ctDaysTilDue,
             status: ctFiled ? 'filed' : ctPriority,
             taxPayable: latestCorporateTax ? Number(latestCorporateTax.taxPayable ?? 0) : null,
-            blockers: ctBlockers,
+            blockers: hasCorporateTaxService ? ctBlockers : [],
           },
           bookkeeping: {
             closeProgress,
             status: bookkeepingPriority,
-            blockers: bookkeepingBlockers,
+            blockers: hasBookkeepingService ? bookkeepingBlockers : [],
             openAr,
             overdueInvoiceCount,
             missingCustomerTrnCount,
@@ -1183,7 +1361,7 @@ export function registerFirmRoutes(app: Express): void {
             status: accountingPriority,
             trialBalanceBalanced: discrepancy <= 0.01,
             discrepancy,
-            blockers: accountingBlockers,
+            blockers: hasAccountingService ? accountingBlockers : [],
           },
         };
       });
@@ -1194,17 +1372,23 @@ export function registerFirmRoutes(app: Express): void {
           if (client.priority === 'critical') acc.critical += 1;
           else if (client.priority === 'attention') acc.attention += 1;
           else acc.onTrack += 1;
-          if (client.vat.status !== 'filed' && client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28) {
+          if (
+            client.serviceScope.includes('vat')
+            && client.vat.status !== 'filed'
+            && client.vat.daysTilDue !== null
+            && client.vat.daysTilDue <= 28
+          ) {
             acc.vatDue28Days += 1;
           }
           if (
-            client.corporateTax.status !== 'filed'
+            client.serviceScope.includes('corporate_tax')
+            && client.corporateTax.status !== 'filed'
             && client.corporateTax.daysTilDue !== null
             && client.corporateTax.daysTilDue <= 90
           ) {
             acc.corporateTaxDue90Days += 1;
           }
-          if (client.bookkeeping.status !== 'on_track') acc.bookkeepingBlocked += 1;
+          if (client.serviceScope.includes('bookkeeping') && client.bookkeeping.status !== 'on_track') acc.bookkeepingBlocked += 1;
           if (client.intervention.level === 'high') acc.interventionHigh += 1;
           if (client.intervention.level === 'medium') acc.interventionMedium += 1;
           return acc;
@@ -1224,7 +1408,7 @@ export function registerFirmRoutes(app: Express): void {
 
       const cohortMap = new Map<VatCohortKey, VatCohort>();
       for (const cohort of STANDARD_VAT_COHORTS) cohortMap.set(cohort.key, cohort);
-      for (const client of clients) {
+      for (const client of clients.filter(client => client.serviceScope.includes('vat'))) {
         if (!cohortMap.has(client.vat.cohortKey as VatCohortKey)) {
           cohortMap.set(client.vat.cohortKey as VatCohortKey, {
             key: client.vat.cohortKey as VatCohortKey,
@@ -1237,7 +1421,7 @@ export function registerFirmRoutes(app: Express): void {
 
       const vatCohorts = Array.from(cohortMap.values()).map(cohort => {
         const cohortClients = clients
-          .filter(client => client.vat.cohortKey === cohort.key)
+          .filter(client => client.serviceScope.includes('vat') && client.vat.cohortKey === cohort.key)
           .sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority));
         return {
           key: cohort.key,
@@ -1267,7 +1451,7 @@ export function registerFirmRoutes(app: Express): void {
       const queues = {
         vat: sortBookkeeperQueue(
           clients
-            .filter(client => client.vat.status !== 'filed' && client.vat.status !== 'on_track')
+            .filter(client => client.serviceScope.includes('vat') && client.vat.status !== 'filed' && client.vat.status !== 'on_track')
             .map(client => ({
               companyId: client.companyId,
               companyName: client.companyName,
@@ -1282,7 +1466,7 @@ export function registerFirmRoutes(app: Express): void {
         ).slice(0, 12),
         corporateTax: sortBookkeeperQueue(
           clients
-            .filter(client => client.corporateTax.status !== 'filed' && client.corporateTax.status !== 'on_track')
+            .filter(client => client.serviceScope.includes('corporate_tax') && client.corporateTax.status !== 'filed' && client.corporateTax.status !== 'on_track')
             .map(client => ({
               companyId: client.companyId,
               companyName: client.companyName,
@@ -1297,7 +1481,7 @@ export function registerFirmRoutes(app: Express): void {
         ).slice(0, 12),
         bookkeeping: sortBookkeeperQueue(
           clients
-            .filter(client => client.bookkeeping.status !== 'on_track')
+            .filter(client => client.serviceScope.includes('bookkeeping') && client.bookkeeping.status !== 'on_track')
             .map(client => ({
               companyId: client.companyId,
               companyName: client.companyName,
@@ -1312,7 +1496,7 @@ export function registerFirmRoutes(app: Express): void {
         ).slice(0, 12),
         accounting: sortBookkeeperQueue(
           clients
-            .filter(client => client.accounting.status !== 'on_track')
+            .filter(client => client.serviceScope.includes('accounting') && client.accounting.status !== 'on_track')
             .map(client => ({
               companyId: client.companyId,
               companyName: client.companyName,
@@ -1363,17 +1547,23 @@ export function registerFirmRoutes(app: Express): void {
           entry.clientCount += 1;
           if (client.priority === 'critical') entry.critical += 1;
           if (client.priority === 'attention') entry.attention += 1;
-          if (client.vat.status !== 'filed' && client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28) {
+          if (
+            client.serviceScope.includes('vat')
+            && client.vat.status !== 'filed'
+            && client.vat.daysTilDue !== null
+            && client.vat.daysTilDue <= 28
+          ) {
             entry.vatDue28Days += 1;
           }
           if (
-            client.corporateTax.status !== 'filed'
+            client.serviceScope.includes('corporate_tax')
+            && client.corporateTax.status !== 'filed'
             && client.corporateTax.daysTilDue !== null
             && client.corporateTax.daysTilDue <= 90
           ) {
             entry.corporateTaxDue90Days += 1;
           }
-          if (client.bookkeeping.status !== 'on_track') entry.bookkeepingBlocked += 1;
+          if (client.serviceScope.includes('bookkeeping') && client.bookkeeping.status !== 'on_track') entry.bookkeepingBlocked += 1;
           entry.closeProgressTotal += client.bookkeeping.closeProgress;
           workloadMap.set(key, entry);
         }
@@ -1391,10 +1581,22 @@ export function registerFirmRoutes(app: Express): void {
         });
 
       const sortedClients = clients.sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority));
+      const serviceMatrix = CLIENT_SERVICE_OPTIONS.map(option => {
+        const serviceClients = clients.filter(client => client.serviceScope.includes(option.code));
+        return {
+          code: option.code,
+          label: option.label,
+          shortLabel: option.shortLabel,
+          clientCount: serviceClients.length,
+          critical: serviceClients.filter(client => client.priority === 'critical').length,
+          attention: serviceClients.filter(client => client.priority === 'attention').length,
+        };
+      });
 
       res.json({
         generatedAt: now.toISOString(),
         summary,
+        serviceMatrix,
         vatCohorts,
         queues,
         workload: {
@@ -1914,6 +2116,12 @@ export function registerFirmRoutes(app: Express): void {
             registrationNumber: validated.value.registrationNumber || undefined,
             websiteUrl: validated.value.websiteUrl || undefined,
           });
+
+          await upsertClientServicePlan(
+            company.id,
+            userId,
+            validated.value.serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES,
+          );
 
           await seedChartOfAccounts(company.id);
 
