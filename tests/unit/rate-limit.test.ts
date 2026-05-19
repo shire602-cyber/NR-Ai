@@ -122,4 +122,25 @@ describe('auth login rate limiting', () => {
       expect((await fetch(`${baseUrl}/api/auth/other`)).status).toBe(429);
     });
   });
+
+  it('can reserve stricter API buckets for mutating methods', async () => {
+    const app = express();
+    app.use('/api', buildLimiter({
+      windowMs: 60_000,
+      max: 1,
+      message: 'Limited',
+      skipMethods: ['GET', 'HEAD', 'OPTIONS'],
+    }));
+    app.get('/api/items', (_req, res) => res.json({ ok: true }));
+    app.post('/api/items', (_req, res) => res.json({ ok: true }));
+
+    await withServer(app, async (baseUrl) => {
+      for (let i = 0; i < 5; i++) {
+        expect((await fetch(`${baseUrl}/api/items`)).status).toBe(200);
+      }
+
+      expect((await fetch(`${baseUrl}/api/items`, { method: 'POST' })).status).toBe(200);
+      expect((await fetch(`${baseUrl}/api/items`, { method: 'POST' })).status).toBe(429);
+    });
+  });
 });

@@ -164,6 +164,7 @@ export const limiterProfiles = {
     windowMs: envInt('RL_API_WINDOW_MS', 60_000),
     max: envInt('RL_API_MAX', 100),
     message: 'Too many requests. Please try again later.',
+    skipMethods: ['GET', 'HEAD', 'OPTIONS'],
   } as RouteLimit,
   authLogin: {
     windowMs: envInt('RL_AUTH_LOGIN_WINDOW_MS', 60_000),

@@ -160,6 +160,7 @@ export function applyRateLimitMiddleware(app: Express): void {
   app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
   app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));
   app.use('/api/firm/bulk/ocr', buildLimiter(limiterProfiles.ai));
+  app.use('/api/', buildLimiter(limiterProfiles.read));
   app.use('/api/', buildLimiter(limiterProfiles.api));
 
   log.info('Rate-limit middleware applied');
