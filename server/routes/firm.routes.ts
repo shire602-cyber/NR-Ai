@@ -648,20 +648,55 @@ export function registerFirmRoutes(app: Express): void {
       }
 
       const [stats, companyUserList, recentInvoices, recentReceipts, servicePlanMap] = await Promise.all([
-        getClientStats(companyId),
-        storage.getCompanyUserWithUser(companyId),
-        db
-          .select()
-          .from(invoices)
-          .where(eq(invoices.companyId, companyId))
-          .orderBy(desc(invoices.createdAt))
-          .limit(10),
-        db
-          .select()
-          .from(receipts)
-          .where(eq(receipts.companyId, companyId))
-          .orderBy(desc(receipts.createdAt))
-          .limit(10),
+        getClientStats(companyId).catch(error => {
+          logger.error(
+            { companyId, err: error instanceof Error ? error.message : String(error) },
+            'Firm client summary stats failed',
+          );
+          return {
+            invoiceCount: 0,
+            invoiceTotal: 0,
+            outstandingAr: 0,
+            lastReceiptDate: null,
+            lastBankActivityDate: null,
+            vatStatus: null,
+            assignedStaff: [],
+          };
+        }),
+        safeFirmDashboardRows('client summary company users', storage.getCompanyUserWithUser(companyId)),
+        safeFirmDashboardRows(
+          'client summary recent invoices',
+          db
+            .select({
+              id: invoices.id,
+              number: invoices.number,
+              customerName: invoices.customerName,
+              date: invoices.date,
+              total: invoices.total,
+              status: invoices.status,
+              createdAt: invoices.createdAt,
+            })
+            .from(invoices)
+            .where(eq(invoices.companyId, companyId))
+            .orderBy(desc(invoices.createdAt))
+            .limit(10),
+        ),
+        safeFirmDashboardRows(
+          'client summary recent receipts',
+          db
+            .select({
+              id: receipts.id,
+              merchant: receipts.merchant,
+              date: receipts.date,
+              amount: receipts.amount,
+              vatAmount: receipts.vatAmount,
+              createdAt: receipts.createdAt,
+            })
+            .from(receipts)
+            .where(eq(receipts.companyId, companyId))
+            .orderBy(desc(receipts.createdAt))
+            .limit(10),
+        ),
         loadActiveServicePlans([companyId]),
       ]);
       const servicePlan = servicePlanMap.get(companyId) ?? servicePlanFromEngagement(undefined);
