@@ -561,7 +561,6 @@ function Router() {
           <Route path="/referrals" component={Referrals} />
           <Route path="/feedback" component={Feedback} />
           <Route path="/analytics" component={Analytics} />
-          <Route path="/admin" component={Admin} />
           <Route path="/bank-reconciliation" component={BankReconciliation} />
           <Route path="/vat-filing" component={VATFiling} />
           <Route path="/vat-autopilot" component={VATAutopilot} />
