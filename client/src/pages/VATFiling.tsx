@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { Link } from 'wouter';
 import { format, parseISO, startOfQuarter, endOfQuarter } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
 import VAT201Form from '@/components/VAT201Form';
@@ -27,7 +29,11 @@ import {
   FileCheck,
   Loader2,
   Eye,
-  Edit3
+  Edit3,
+  Upload,
+  ClipboardCheck,
+  Rows3,
+  ExternalLink
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 
@@ -127,10 +133,38 @@ const DEFAULT_VAT_DATA = {
   box10ReverseChargeAmount: 0, box10ReverseChargeVat: 0,
 };
 
+const vatWorkspaceRows = [
+  'Category',
+  'Invoice no.',
+  'Date',
+  'Customer/vendor',
+  'TRN',
+  'Emirate',
+  'Taxable',
+  'VAT',
+  'Gross',
+  'VAT 201 box',
+  'Evidence',
+];
+
+const vatWorkspaceCategories = [
+  'Standard sales by emirate',
+  'Tourist refunds',
+  'Reverse charge outputs',
+  'Zero-rated supplies',
+  'Exempt supplies',
+  'Imports',
+  'Import adjustments',
+  'Standard expenses',
+  'Reverse charge inputs',
+  'Manual adjustments',
+];
+
 export default function VATFiling() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { data: currentUser } = useCurrentUser();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -138,6 +172,8 @@ export default function VATFiling() {
   const [newPeriodStart, setNewPeriodStart] = useState('');
   const [newPeriodEnd, setNewPeriodEnd] = useState('');
   const [notes, setNotes] = useState('');
+
+  const hasFirmWorkspaceAccess = currentUser?.firmRole === 'firm_owner' || currentUser?.firmRole === 'firm_admin' || currentUser?.isAdmin === true;
   const [vatFormData, setVatFormData] = useState(DEFAULT_VAT_DATA);
 
   const { data: company } = useQuery<Company>({
@@ -544,8 +580,8 @@ export default function VATFiling() {
           </h1>
           <p className="text-muted-foreground">
             {locale === 'ar' 
-              ? 'إنشاء وتقديم إقرارات ضريبة القيمة المضافة وفقاً لمتطلبات الهيئة الاتحادية للضرائب'
-              : 'Generate and submit VAT returns compliant with FTA requirements'}
+              ? 'تحضير أرقام ضريبة القيمة المضافة الجاهزة للنسخ إلى بوابة الهيئة الاتحادية للضرائب'
+              : 'Prepare copy-ready VAT 201 figures for manual entry into the FTA portal'}
           </p>
         </div>
         <Button onClick={handleCreateReturn} data-testid="button-create-return">
@@ -553,6 +589,108 @@ export default function VATFiling() {
           {locale === 'ar' ? 'إنشاء إقرار' : 'Generate Return'}
         </Button>
       </div>
+
+      <Card className="border-primary/20 bg-primary/[0.03]">
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-1">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Rows3 className="h-5 w-5 text-primary" />
+                Bookkeeper VAT Submission Workspace
+              </CardTitle>
+              <CardDescription>
+                Excel-style VAT rows for invoices, bills, imports, reverse-charge entries, zero-rated/exempt sales, expenses, and manual adjustments.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {hasFirmWorkspaceAccess ? (
+                <Button asChild>
+                  <Link href="/firm/clients">
+                    Open client VAT workspaces
+                    <ExternalLink className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : (
+                <Badge variant="outline">Available in Client Operations</Badge>
+              )}
+              <Button variant="outline" onClick={handleCreateReturn}>
+                <Calculator className="h-4 w-4" />
+                Generate VAT 201
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="rounded-md border bg-background p-4">
+              <div className="flex items-center gap-2 font-medium">
+                <Rows3 className="h-4 w-4 text-primary" />
+                Enter rows
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Manual entry and spreadsheet paste for every VAT-relevant document line.
+              </p>
+            </div>
+            <div className="rounded-md border bg-background p-4">
+              <div className="flex items-center gap-2 font-medium">
+                <Upload className="h-4 w-4 text-primary" />
+                Review evidence
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Uploaded invoice OCR creates draft rows that stay excluded until approved.
+              </p>
+            </div>
+            <div className="rounded-md border bg-background p-4">
+              <div className="flex items-center gap-2 font-medium">
+                <ClipboardCheck className="h-4 w-4 text-primary" />
+                Copy FTA boxes
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Approved rows total into VAT 201 boxes for manual copy-paste into FTA.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-md border bg-background overflow-x-auto">
+            <div className="grid min-w-[960px] grid-cols-[1.5fr_repeat(10,minmax(84px,1fr))] border-b bg-muted/40 text-xs font-medium text-muted-foreground">
+              {vatWorkspaceRows.map((label) => (
+                <div key={label} className="border-r px-3 py-2 last:border-r-0">
+                  {label}
+                </div>
+              ))}
+            </div>
+            <div className="min-w-[960px] divide-y">
+              {vatWorkspaceCategories.slice(0, 4).map((category, index) => (
+                <div key={category} className="grid grid-cols-[1.5fr_repeat(10,minmax(84px,1fr))] text-sm">
+                  <div className="border-r px-3 py-3 font-medium">{category}</div>
+                  <div className="border-r px-3 py-3 text-muted-foreground">VAT-{index + 1001}</div>
+                  <div className="border-r px-3 py-3 text-muted-foreground">{format(new Date(), 'dd MMM yyyy')}</div>
+                  <div className="border-r px-3 py-3 text-muted-foreground">Customer / supplier</div>
+                  <div className="border-r px-3 py-3 text-muted-foreground">TRN</div>
+                  <div className="border-r px-3 py-3 text-muted-foreground">Dubai</div>
+                  <div className="border-r px-3 py-3 text-right font-mono">0.00</div>
+                  <div className="border-r px-3 py-3 text-right font-mono">0.00</div>
+                  <div className="border-r px-3 py-3 text-right font-mono">0.00</div>
+                  <div className="border-r px-3 py-3 text-muted-foreground">Box {index + 1}</div>
+                  <div className="px-3 py-3 text-muted-foreground">Attach</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {vatWorkspaceCategories.map((category) => (
+              <Badge key={category} variant="secondary" className="rounded-md">
+                {category}
+              </Badge>
+            ))}
+          </div>
+
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+            No FTA submission happens from Muhasib.ai. The workspace stores evidence, prepares totals, and supports reviewer approval before manual FTA entry.
+          </div>
+        </CardContent>
+      </Card>
 
       {!company?.trnVatNumber && (
         <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20">
