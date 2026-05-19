@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,7 +24,28 @@ import {
   Clock,
   Banknote,
   Trash2,
+  Plus,
+  RotateCcw,
 } from 'lucide-react';
+
+type CorporateTaxWorkpaperRowType = 'revenue' | 'expense';
+
+interface CorporateTaxWorkpaperRow {
+  id: string;
+  label: string;
+  type: CorporateTaxWorkpaperRowType;
+  amount: number;
+  notes?: string;
+}
+
+interface CorporateTaxWorkpaper {
+  source: 'manual_workpaper' | 'journal_calculation';
+  rows: CorporateTaxWorkpaperRow[];
+  totalRevenue: number;
+  totalExpenses: number;
+  profitOrLoss: number;
+  preparedAt: string;
+}
 
 interface CorporateTaxReturn {
   id: string;
@@ -40,6 +61,7 @@ interface CorporateTaxReturn {
   taxPayable: number;
   status: string;
   filedAt: string | null;
+  workpaper: CorporateTaxWorkpaper | null;
   notes: string | null;
   createdAt: string;
 }
@@ -70,6 +92,30 @@ const statusBadge = (status: string) => {
   }
 };
 
+const CT_EXEMPTION_THRESHOLD = 375000;
+const CT_TAX_RATE = 0.09;
+
+const defaultWorkpaperRows = (): CorporateTaxWorkpaperRow[] => [
+  { id: 'revenue', label: 'Revenue', type: 'revenue', amount: 0 },
+  { id: 'cogs', label: 'COGS', type: 'expense', amount: 0 },
+  { id: 'rent', label: 'Rent', type: 'expense', amount: 0 },
+  { id: 'transport', label: 'Transport', type: 'expense', amount: 0 },
+  { id: 'utility', label: 'Utility bill', type: 'expense', amount: 0 },
+  { id: 'telephone', label: 'Telephone', type: 'expense', amount: 0 },
+  { id: 'license', label: 'License', type: 'expense', amount: 0 },
+  { id: 'bank-charges', label: 'Bank service charges', type: 'expense', amount: 0 },
+  { id: 'professional-fees', label: 'Professional fees', type: 'expense', amount: 0 },
+  { id: 'food', label: 'Food', type: 'expense', amount: 0 },
+  { id: 'office-expenses', label: 'Office expenses', type: 'expense', amount: 0 },
+];
+
+const moneyInputValue = (amount: number) => (amount === 0 ? '' : String(amount));
+
+const parseMoneyInput = (value: string) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed * 100) / 100) : 0;
+};
+
 export default function CorporateTax() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -82,6 +128,7 @@ export default function CorporateTax() {
   const [deductions, setDeductions] = useState(0);
   const [calculation, setCalculation] = useState<CalculationResult | null>(null);
   const [notes, setNotes] = useState('');
+  const [workpaperRows, setWorkpaperRows] = useState<CorporateTaxWorkpaperRow[]>(() => defaultWorkpaperRows());
 
   // Detail dialog
   const [viewReturn, setViewReturn] = useState<CorporateTaxReturn | null>(null);
@@ -92,6 +139,48 @@ export default function CorporateTax() {
     queryKey: ['/api/companies', companyId, 'corporate-tax', 'returns'],
     enabled: !!companyId,
   });
+
+  const workpaperTotals = useMemo(() => {
+    const totalRevenue = workpaperRows
+      .filter((row) => row.type === 'revenue')
+      .reduce((sum, row) => sum + row.amount, 0);
+    const totalExpenses = workpaperRows
+      .filter((row) => row.type === 'expense')
+      .reduce((sum, row) => sum + row.amount, 0);
+    return {
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      totalExpenses: Math.round(totalExpenses * 100) / 100,
+      profitOrLoss: Math.round((totalRevenue - totalExpenses) * 100) / 100,
+    };
+  }, [workpaperRows]);
+
+  const hasManualWorkpaper = workpaperRows.some((row) => row.amount > 0 || row.notes?.trim());
+
+  const adjustedCalculation = (() => {
+    if (!calculation && !hasManualWorkpaper) return null;
+    const totalRevenue = hasManualWorkpaper ? workpaperTotals.totalRevenue : calculation?.totalRevenue ?? 0;
+    const totalExpenses = hasManualWorkpaper ? workpaperTotals.totalExpenses : calculation?.totalExpenses ?? 0;
+    const exemptionThreshold = calculation?.exemptionThreshold ?? CT_EXEMPTION_THRESHOLD;
+    const taxRate = calculation?.taxRate ?? CT_TAX_RATE;
+    const taxableIncome = totalRevenue - totalExpenses - deductions;
+    const taxableAmount = Math.max(0, taxableIncome - exemptionThreshold);
+    const taxPayable = Math.round(taxableAmount * taxRate * 100) / 100;
+
+    return {
+      periodStart: calculation?.periodStart ?? new Date(periodStart).toISOString(),
+      periodEnd: calculation?.periodEnd ?? new Date(periodEnd).toISOString(),
+      totalRevenue,
+      totalExpenses,
+      grossProfit: totalRevenue - totalExpenses,
+      totalDeductions: deductions,
+      taxableIncome,
+      exemptionThreshold,
+      taxableAmount,
+      taxRate,
+      taxPayable,
+      journalEntriesProcessed: calculation?.journalEntriesProcessed ?? 0,
+    };
+  })();
 
   // Calculate mutation
   const calculateMutation = useMutation({
@@ -116,22 +205,31 @@ export default function CorporateTax() {
   // Save as draft mutation
   const saveDraftMutation = useMutation({
     mutationFn: () => {
-      if (!calculation) throw new Error('No calculation to save');
-      const taxableIncome = calculation.totalRevenue - calculation.totalExpenses - deductions;
-      const taxableAmount = Math.max(0, taxableIncome - calculation.exemptionThreshold);
-      const taxPayable = Math.round(taxableAmount * calculation.taxRate * 100) / 100;
+      if (!adjustedCalculation) throw new Error('No corporate tax workpaper to save');
+      const taxableIncome = adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses - deductions;
+      const taxableAmount = Math.max(0, taxableIncome - adjustedCalculation.exemptionThreshold);
+      const taxPayable = Math.round(taxableAmount * adjustedCalculation.taxRate * 100) / 100;
+      const workpaper: CorporateTaxWorkpaper = {
+        source: hasManualWorkpaper ? 'manual_workpaper' : 'journal_calculation',
+        rows: workpaperRows.filter((row) => row.amount > 0 || row.notes?.trim()),
+        totalRevenue: adjustedCalculation.totalRevenue,
+        totalExpenses: adjustedCalculation.totalExpenses,
+        profitOrLoss: adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses,
+        preparedAt: new Date().toISOString(),
+      };
 
       return apiRequest('POST', `/api/companies/${companyId}/corporate-tax/returns`, {
         taxPeriodStart: new Date(periodStart).toISOString(),
         taxPeriodEnd: new Date(periodEnd).toISOString(),
-        totalRevenue: calculation.totalRevenue,
-        totalExpenses: calculation.totalExpenses,
+        totalRevenue: adjustedCalculation.totalRevenue,
+        totalExpenses: adjustedCalculation.totalExpenses,
         totalDeductions: deductions,
         taxableIncome: Math.round(taxableIncome * 100) / 100,
-        exemptionThreshold: calculation.exemptionThreshold,
-        taxRate: calculation.taxRate,
+        exemptionThreshold: adjustedCalculation.exemptionThreshold,
+        taxRate: adjustedCalculation.taxRate,
         taxPayable,
         status: 'draft',
+        workpaper,
         notes: notes || null,
       });
     },
@@ -144,6 +242,7 @@ export default function CorporateTax() {
       setCalculation(null);
       setNotes('');
       setDeductions(0);
+      setWorkpaperRows(defaultWorkpaperRows());
     },
     onError: (error: any) => {
       toast({
@@ -191,15 +290,25 @@ export default function CorporateTax() {
     },
   });
 
-  // Recalculate with user-provided deductions
-  const adjustedCalculation = calculation
-    ? (() => {
-        const taxableIncome = calculation.totalRevenue - calculation.totalExpenses - deductions;
-        const taxableAmount = Math.max(0, taxableIncome - calculation.exemptionThreshold);
-        const taxPayable = Math.round(taxableAmount * calculation.taxRate * 100) / 100;
-        return { ...calculation, totalDeductions: deductions, taxableIncome, taxableAmount, taxPayable };
-      })()
-    : null;
+  const updateWorkpaperRow = (id: string, patch: Partial<CorporateTaxWorkpaperRow>) => {
+    setWorkpaperRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  };
+
+  const addWorkpaperRow = (type: CorporateTaxWorkpaperRowType) => {
+    setWorkpaperRows((rows) => [
+      ...rows,
+      {
+        id: `${type}-${Date.now()}`,
+        label: type === 'revenue' ? 'Other revenue' : 'Other expense',
+        type,
+        amount: 0,
+      },
+    ]);
+  };
+
+  const removeWorkpaperRow = (id: string) => {
+    setWorkpaperRows((rows) => rows.filter((row) => row.id !== id));
+  };
 
   if (isLoadingCompany) {
     return (
@@ -234,6 +343,153 @@ export default function CorporateTax() {
           </div>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pre-submission Profit / Loss Workpaper</CardTitle>
+          <CardDescription>
+            Enter revenue and expense lines exactly like the Excel schedule used before filing. These rows support the draft return and do not mark anything as submitted.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="space-y-2">
+              <Label htmlFor="workpaperPeriodStart">Period Start</Label>
+              <Input
+                id="workpaperPeriodStart"
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="workpaperPeriodEnd">Period End</Label>
+              <Input
+                id="workpaperPeriodEnd"
+                type="date"
+                value={periodEnd}
+                onChange={(e) => setPeriodEnd(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => addWorkpaperRow('revenue')}>
+                <Plus className="w-4 h-4 mr-2" /> Revenue row
+              </Button>
+              <Button type="button" variant="outline" onClick={() => addWorkpaperRow('expense')}>
+                <Plus className="w-4 h-4 mr-2" /> Expense row
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => setWorkpaperRows(defaultWorkpaperRows())}>
+                <RotateCcw className="w-4 h-4 mr-2" /> Reset
+              </Button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="min-w-[260px] text-base font-bold">
+                    Year {new Date(periodEnd || periodStart).getFullYear() || currentYear}
+                  </TableHead>
+                  <TableHead className="min-w-[180px] text-right text-base font-bold">Expense</TableHead>
+                  <TableHead className="min-w-[180px] text-right text-base font-bold">Revenue</TableHead>
+                  <TableHead className="min-w-[220px]">Notes</TableHead>
+                  <TableHead className="w-[56px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {workpaperRows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <Input
+                        value={row.label}
+                        onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
+                        className="font-medium"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {row.type === 'expense' ? (
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="0.01"
+                          value={moneyInputValue(row.amount)}
+                          onChange={(e) => updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })}
+                          className="text-right"
+                          placeholder="0.00"
+                        />
+                      ) : (
+                        <div className="h-10 rounded-md border bg-muted/30" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {row.type === 'revenue' ? (
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          step="0.01"
+                          value={moneyInputValue(row.amount)}
+                          onChange={(e) => updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })}
+                          className="text-right"
+                          placeholder="0.00"
+                        />
+                      ) : (
+                        <div className="h-10 rounded-md border bg-muted/30" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        value={row.notes ?? ''}
+                        onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
+                        placeholder="Evidence or adjustment note"
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {workpaperRows.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeWorkpaperRow(row.id)}
+                          aria-label={`Remove ${row.label}`}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="bg-muted/40">
+                  <TableCell className="font-bold">Totals</TableCell>
+                  <TableCell className="text-right font-bold text-red-600">
+                    {formatCurrency(workpaperTotals.totalExpenses, 'AED', locale)}
+                  </TableCell>
+                  <TableCell className="text-right font-bold">
+                    {formatCurrency(workpaperTotals.totalRevenue, 'AED', locale)}
+                  </TableCell>
+                  <TableCell colSpan={2} />
+                </TableRow>
+                <TableRow>
+                  <TableCell className="font-bold">PROFIT / LOSS (Revenue - Expense)</TableCell>
+                  <TableCell />
+                  <TableCell className={`text-right font-bold ${workpaperTotals.profitOrLoss < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                    {workpaperTotals.profitOrLoss < 0
+                      ? `(${formatCurrency(Math.abs(workpaperTotals.profitOrLoss), 'AED', locale)})`
+                      : formatCurrency(workpaperTotals.profitOrLoss, 'AED', locale)}
+                  </TableCell>
+                  <TableCell colSpan={2} />
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            This is a corporate tax support schedule. It creates a draft return only; it does not submit to the FTA and it does not post accounting entries.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Calculator Card */}
       <Card>
@@ -337,7 +593,9 @@ export default function CorporateTax() {
               </div>
 
               <div className="text-xs text-muted-foreground">
-                Based on {adjustedCalculation.journalEntriesProcessed} posted journal entries in the selected period.
+                {calculation
+                  ? `Based on ${adjustedCalculation.journalEntriesProcessed} posted journal entries in the selected period.`
+                  : 'Based on the manual corporate tax workpaper rows above.'}
               </div>
 
               {/* Notes and Save */}
@@ -523,6 +781,36 @@ export default function CorporateTax() {
                   <p className="mt-1">{viewReturn.notes}</p>
                 </div>
               )}
+
+              {viewReturn.workpaper?.rows?.length ? (
+                <div className="pt-2 border-t">
+                  <span className="text-muted-foreground text-xs">Supporting workpaper:</span>
+                  <div className="mt-2 max-h-56 overflow-auto rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Line</TableHead>
+                          <TableHead className="text-right">Expense</TableHead>
+                          <TableHead className="text-right">Revenue</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {viewReturn.workpaper.rows.map((row) => (
+                          <TableRow key={row.id}>
+                            <TableCell>{row.label}</TableCell>
+                            <TableCell className="text-right">
+                              {row.type === 'expense' ? formatCurrency(row.amount, 'AED', locale) : '-'}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {row.type === 'revenue' ? formatCurrency(row.amount, 'AED', locale) : '-'}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
           <DialogFooter>

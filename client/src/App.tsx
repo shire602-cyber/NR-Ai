@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react';
+import { useCallback, useEffect, lazy, Suspense } from 'react';
 import { Switch, Route, useLocation, Link } from 'wouter';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -350,17 +350,23 @@ function AccessRedirect({
   actionLabel?: string;
 }) {
   const [, navigate] = useLocation();
+  const redirect = useCallback(() => {
+    navigate(redirectTo);
+    if (redirectTo.startsWith('/login')) {
+      window.location.replace(redirectTo);
+    }
+  }, [navigate, redirectTo]);
 
   useEffect(() => {
-    navigate(redirectTo);
-  }, [navigate, redirectTo]);
+    redirect();
+  }, [redirect]);
 
   return (
     <div className="min-h-[50vh] flex items-center justify-center p-6">
       <div className="max-w-md text-center space-y-3">
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="text-sm text-muted-foreground">{description}</p>
-        <Button variant="outline" onClick={() => navigate(redirectTo)}>
+        <Button variant="outline" onClick={redirect}>
           {actionLabel}
         </Button>
       </div>
