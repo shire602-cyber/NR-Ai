@@ -133,7 +133,10 @@ function PageLoader({ variant }: { variant?: 'list' | 'detail' | 'dashboard' | '
 function MinimalPageLoader() {
   return (
     <div className="flex items-center justify-center h-64" aria-busy="true">
-      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        Loading page...
+      </div>
     </div>
   );
 }
