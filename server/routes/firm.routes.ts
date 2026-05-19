@@ -418,6 +418,18 @@ function emptyBookkeeperDashboard() {
   };
 }
 
+async function safeFirmDashboardRows<T>(label: string, query: Promise<T[]>): Promise<T[]> {
+  try {
+    return await query;
+  } catch (error) {
+    logger.error(
+      { label, err: error instanceof Error ? error.message : String(error) },
+      'Firm bookkeeper dashboard optional aggregate failed',
+    );
+    return [];
+  }
+}
+
 type EngagementSummaryRow = {
   id: string;
   companyId: string;
@@ -1040,7 +1052,7 @@ export function registerFirmRoutes(app: Express): void {
         trialBalanceRows,
         staffRows,
       ] = await Promise.all([
-        db
+        safeFirmDashboardRows<VatRow>('latest VAT returns', db
           .select({
             companyId: vatReturns.companyId,
             periodStart: vatReturns.periodStart,
@@ -1058,8 +1070,8 @@ export function registerFirmRoutes(app: Express): void {
               eq(vatReturns.companyId, latestVatSub.companyId),
               eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
             ),
-          ) as Promise<VatRow[]>,
-        db
+          ) as Promise<VatRow[]>),
+        safeFirmDashboardRows<CorporateTaxRow>('latest corporate tax returns', db
           .select({
             companyId: corporateTaxReturns.companyId,
             taxPeriodStart: corporateTaxReturns.taxPeriodStart,
@@ -1075,8 +1087,8 @@ export function registerFirmRoutes(app: Express): void {
               eq(corporateTaxReturns.companyId, latestCorporateTaxSub.companyId),
               eq(corporateTaxReturns.taxPeriodEnd, latestCorporateTaxSub.maxPeriodEnd),
             ),
-          ) as Promise<CorporateTaxRow[]>,
-        db
+          ) as Promise<CorporateTaxRow[]>),
+        safeFirmDashboardRows<InvoiceOpsRow>('invoice operations aggregate', db
           .select({
             companyId: invoices.companyId,
             invoiceCount: count(),
@@ -1087,8 +1099,8 @@ export function registerFirmRoutes(app: Express): void {
           })
           .from(invoices)
           .where(inArray(invoices.companyId, clientIds))
-          .groupBy(invoices.companyId) as Promise<InvoiceOpsRow[]>,
-        db
+          .groupBy(invoices.companyId) as Promise<InvoiceOpsRow[]>),
+        safeFirmDashboardRows<ReceiptOpsRow>('receipt operations aggregate', db
           .select({
             companyId: receipts.companyId,
             receiptCount: count(),
@@ -1097,8 +1109,8 @@ export function registerFirmRoutes(app: Express): void {
           })
           .from(receipts)
           .where(inArray(receipts.companyId, clientIds))
-          .groupBy(receipts.companyId) as Promise<ReceiptOpsRow[]>,
-        db
+          .groupBy(receipts.companyId) as Promise<ReceiptOpsRow[]>),
+        safeFirmDashboardRows<BankOpsRow>('bank operations aggregate', db
           .select({
             companyId: bankTransactions.companyId,
             bankCount: count(),
@@ -1107,8 +1119,8 @@ export function registerFirmRoutes(app: Express): void {
           })
           .from(bankTransactions)
           .where(inArray(bankTransactions.companyId, clientIds))
-          .groupBy(bankTransactions.companyId) as Promise<BankOpsRow[]>,
-        db
+          .groupBy(bankTransactions.companyId) as Promise<BankOpsRow[]>),
+        safeFirmDashboardRows<TrialBalanceOpsRow>('trial balance aggregate', db
           .select({
             companyId: journalEntries.companyId,
             totalDebit: sum(journalLines.debit),
@@ -1118,8 +1130,8 @@ export function registerFirmRoutes(app: Express): void {
           .from(journalEntries)
           .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
           .where(and(inArray(journalEntries.companyId, clientIds), eq(journalEntries.status, 'posted')))
-          .groupBy(journalEntries.companyId) as Promise<TrialBalanceOpsRow[]>,
-        db
+          .groupBy(journalEntries.companyId) as Promise<TrialBalanceOpsRow[]>),
+        safeFirmDashboardRows<StaffAssignmentRow>('staff assignments aggregate', db
           .select({
             companyId: companyUsers.companyId,
             id: users.id,
@@ -1129,7 +1141,7 @@ export function registerFirmRoutes(app: Express): void {
           })
           .from(companyUsers)
           .innerJoin(users, eq(users.id, companyUsers.userId))
-          .where(and(inArray(companyUsers.companyId, clientIds), eq(users.isAdmin, true))) as Promise<StaffAssignmentRow[]>,
+          .where(and(inArray(companyUsers.companyId, clientIds), eq(users.isAdmin, true))) as Promise<StaffAssignmentRow[]>),
       ]);
 
       const vatMap = new Map<string, VatRow>(vatRows.map(row => [row.companyId, row]));

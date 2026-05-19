@@ -14,6 +14,7 @@ import {
 } from 'drizzle-orm';
 
 import { db } from '../db';
+import { createLogger } from '../config/logger';
 import {
   anomalyAlerts,
   bankTransactions,
@@ -32,6 +33,8 @@ import {
   taxReturnArchive,
   vatReturns,
 } from '../../shared/schema';
+
+const logger = createLogger('firm-value-ops-service');
 
 type Priority = 'critical' | 'high' | 'medium' | 'low';
 type ValueLane =
@@ -242,6 +245,18 @@ type CompanyRow = {
   corporateTaxId: string | null;
 };
 
+async function safeValueOpsRows<T>(label: string, query: Promise<T[]>): Promise<T[]> {
+  try {
+    return await query;
+  } catch (error) {
+    logger.error(
+      { label, err: error instanceof Error ? error.message : String(error) },
+      'Firm Value Ops optional aggregate failed',
+    );
+    return [];
+  }
+}
+
 function asNumber(value: unknown): number {
   if (value === null || value === undefined) return 0;
   const n = Number(value);
@@ -444,7 +459,9 @@ export async function buildFirmValueOps(
     invoiceCount90d: string | null;
     lastInvoiceAt: Date | null;
   };
-  const invoiceRows = (await db
+  const invoiceRows = await safeValueOpsRows<InvoiceAggRow>(
+    'invoice aggregate',
+    db
     .select({
       companyId: invoices.companyId,
       revenue90d: sql<string>`sum(case when ${invoices.status} = 'paid' and ${invoices.date} >= ${ninetyDaysAgo} then ${invoices.total} else 0 end)`,
@@ -456,7 +473,8 @@ export async function buildFirmValueOps(
     })
     .from(invoices)
     .where(inArray(invoices.companyId, companyIds))
-    .groupBy(invoices.companyId)) as InvoiceAggRow[];
+      .groupBy(invoices.companyId) as Promise<InvoiceAggRow[]>,
+  );
   const invoiceMap = new Map(invoiceRows.map((r) => [r.companyId, r]));
 
   type ReceiptAggRow = {
@@ -467,7 +485,9 @@ export async function buildFirmValueOps(
     receiptCount90d: string | null;
     lastReceiptAt: Date | null;
   };
-  const receiptRows = (await db
+  const receiptRows = await safeValueOpsRows<ReceiptAggRow>(
+    'receipt aggregate',
+    db
     .select({
       companyId: receipts.companyId,
       expenses90d: sql<string>`sum(case when ${receipts.createdAt} >= ${ninetyDaysAgo} then coalesce(${receipts.amount}, 0) + coalesce(${receipts.vatAmount}, 0) else 0 end)`,
@@ -478,7 +498,8 @@ export async function buildFirmValueOps(
     })
     .from(receipts)
     .where(inArray(receipts.companyId, companyIds))
-    .groupBy(receipts.companyId)) as ReceiptAggRow[];
+      .groupBy(receipts.companyId) as Promise<ReceiptAggRow[]>,
+  );
   const receiptMap = new Map(receiptRows.map((r) => [r.companyId, r]));
 
   type BankAggRow = {
@@ -488,7 +509,9 @@ export async function buildFirmValueOps(
     suggested: string | null;
     lastBankAt: Date | null;
   };
-  const bankRows = (await db
+  const bankRows = await safeValueOpsRows<BankAggRow>(
+    'bank aggregate',
+    db
     .select({
       companyId: bankTransactions.companyId,
       total: count(),
@@ -498,7 +521,8 @@ export async function buildFirmValueOps(
     })
     .from(bankTransactions)
     .where(inArray(bankTransactions.companyId, companyIds))
-    .groupBy(bankTransactions.companyId)) as BankAggRow[];
+      .groupBy(bankTransactions.companyId) as Promise<BankAggRow[]>,
+  );
   const bankMap = new Map(bankRows.map((r) => [r.companyId, r]));
 
   type RequirementAggRow = {
@@ -506,15 +530,18 @@ export async function buildFirmValueOps(
     missing: string | null;
     overdue: string | null;
   };
-  const requirementRows = (await db
-    .select({
-      companyId: documentRequirements.companyId,
-      missing: sql<string>`count(*) filter (where ${documentRequirements.status} in ('pending', 'requested', 'overdue'))`,
-      overdue: sql<string>`count(*) filter (where ${documentRequirements.status} = 'overdue' or ${documentRequirements.dueDate} < ${now})`,
-    })
-    .from(documentRequirements)
-    .where(inArray(documentRequirements.companyId, companyIds))
-    .groupBy(documentRequirements.companyId)) as RequirementAggRow[];
+  const requirementRows = await safeValueOpsRows<RequirementAggRow>(
+    'document requirement aggregate',
+    db
+      .select({
+        companyId: documentRequirements.companyId,
+        missing: sql<string>`count(*) filter (where ${documentRequirements.status} in ('pending', 'requested', 'overdue'))`,
+        overdue: sql<string>`count(*) filter (where ${documentRequirements.status} = 'overdue' or ${documentRequirements.dueDate} < ${now})`,
+      })
+      .from(documentRequirements)
+      .where(inArray(documentRequirements.companyId, companyIds))
+      .groupBy(documentRequirements.companyId) as Promise<RequirementAggRow[]>,
+  );
   const requirementMap = new Map(requirementRows.map((r) => [r.companyId, r]));
 
   type DocumentAggRow = {
@@ -525,18 +552,21 @@ export async function buildFirmValueOps(
     auditReports: string | null;
     tradeLicenses: string | null;
   };
-  const documentRows = (await db
-    .select({
-      companyId: documents.companyId,
-      total: count(),
-      bankStatements: sql<string>`count(*) filter (where ${documents.category} = 'bank_statement' and ${documents.isArchived} = false)`,
-      vatCertificates: sql<string>`count(*) filter (where ${documents.category} = 'tax_certificate' and ${documents.isArchived} = false)`,
-      auditReports: sql<string>`count(*) filter (where ${documents.category} = 'audit_report' and ${documents.isArchived} = false)`,
-      tradeLicenses: sql<string>`count(*) filter (where ${documents.category} = 'trade_license' and ${documents.isArchived} = false)`,
-    })
-    .from(documents)
-    .where(inArray(documents.companyId, companyIds))
-    .groupBy(documents.companyId)) as DocumentAggRow[];
+  const documentRows = await safeValueOpsRows<DocumentAggRow>(
+    'document aggregate',
+    db
+      .select({
+        companyId: documents.companyId,
+        total: count(),
+        bankStatements: sql<string>`count(*) filter (where ${documents.category} = 'bank_statement' and ${documents.isArchived} = false)`,
+        vatCertificates: sql<string>`count(*) filter (where ${documents.category} = 'tax_certificate' and ${documents.isArchived} = false)`,
+        auditReports: sql<string>`count(*) filter (where ${documents.category} = 'audit_report' and ${documents.isArchived} = false)`,
+        tradeLicenses: sql<string>`count(*) filter (where ${documents.category} = 'trade_license' and ${documents.isArchived} = false)`,
+      })
+      .from(documents)
+      .where(inArray(documents.companyId, companyIds))
+      .groupBy(documents.companyId) as Promise<DocumentAggRow[]>,
+  );
   const documentMap = new Map(documentRows.map((r) => [r.companyId, r]));
 
   type ComplianceAggRow = {
@@ -544,15 +574,18 @@ export async function buildFirmValueOps(
     openTasks: string | null;
     overdueTasks: string | null;
   };
-  const complianceRows = (await db
-    .select({
-      companyId: complianceTasks.companyId,
-      openTasks: sql<string>`count(*) filter (where ${complianceTasks.status} in ('pending', 'in_progress', 'overdue'))`,
-      overdueTasks: sql<string>`count(*) filter (where ${complianceTasks.status} = 'overdue' or ${complianceTasks.dueDate} < ${now})`,
-    })
-    .from(complianceTasks)
-    .where(inArray(complianceTasks.companyId, companyIds))
-    .groupBy(complianceTasks.companyId)) as ComplianceAggRow[];
+  const complianceRows = await safeValueOpsRows<ComplianceAggRow>(
+    'compliance task aggregate',
+    db
+      .select({
+        companyId: complianceTasks.companyId,
+        openTasks: sql<string>`count(*) filter (where ${complianceTasks.status} in ('pending', 'in_progress', 'overdue'))`,
+        overdueTasks: sql<string>`count(*) filter (where ${complianceTasks.status} = 'overdue' or ${complianceTasks.dueDate} < ${now})`,
+      })
+      .from(complianceTasks)
+      .where(inArray(complianceTasks.companyId, companyIds))
+      .groupBy(complianceTasks.companyId) as Promise<ComplianceAggRow[]>,
+  );
   const complianceMap = new Map(complianceRows.map((r) => [r.companyId, r]));
 
   type CalendarAggRow = {
@@ -560,15 +593,18 @@ export async function buildFirmValueOps(
     upcoming: string | null;
     overdue: string | null;
   };
-  const calendarRows = (await db
-    .select({
-      companyId: complianceCalendar.companyId,
-      upcoming: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'upcoming' and ${complianceCalendar.eventDate} <= ${new Date(now.getTime() + 30 * 86_400_000)})`,
-      overdue: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'overdue' or ${complianceCalendar.eventDate} < ${now})`,
-    })
-    .from(complianceCalendar)
-    .where(inArray(complianceCalendar.companyId, companyIds))
-    .groupBy(complianceCalendar.companyId)) as CalendarAggRow[];
+  const calendarRows = await safeValueOpsRows<CalendarAggRow>(
+    'compliance calendar aggregate',
+    db
+      .select({
+        companyId: complianceCalendar.companyId,
+        upcoming: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'upcoming' and ${complianceCalendar.eventDate} <= ${new Date(now.getTime() + 30 * 86_400_000)})`,
+        overdue: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'overdue' or ${complianceCalendar.eventDate} < ${now})`,
+      })
+      .from(complianceCalendar)
+      .where(inArray(complianceCalendar.companyId, companyIds))
+      .groupBy(complianceCalendar.companyId) as Promise<CalendarAggRow[]>,
+  );
   const calendarMap = new Map(calendarRows.map((r) => [r.companyId, r]));
 
   const latestVatSub = db
@@ -590,97 +626,118 @@ export async function buildFirmValueOps(
     periodEnd: Date;
     payableTax: number;
   };
-  const vatRows = (await db
-    .select({
-      companyId: vatReturns.companyId,
-      id: vatReturns.id,
-      status: vatReturns.status,
-      dueDate: vatReturns.dueDate,
-      periodStart: vatReturns.periodStart,
-      periodEnd: vatReturns.periodEnd,
-      payableTax: vatReturns.box14PayableTax,
-    })
-    .from(vatReturns)
-    .innerJoin(
-      latestVatSub,
-      and(
-        eq(vatReturns.companyId, latestVatSub.companyId),
-        eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
-      ),
-    )) as VatRow[];
+  const vatRows = await safeValueOpsRows<VatRow>(
+    'latest VAT aggregate',
+    db
+      .select({
+        companyId: vatReturns.companyId,
+        id: vatReturns.id,
+        status: vatReturns.status,
+        dueDate: vatReturns.dueDate,
+        periodStart: vatReturns.periodStart,
+        periodEnd: vatReturns.periodEnd,
+        payableTax: vatReturns.box14PayableTax,
+      })
+      .from(vatReturns)
+      .innerJoin(
+        latestVatSub,
+        and(
+          eq(vatReturns.companyId, latestVatSub.companyId),
+          eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
+        ),
+      ) as Promise<VatRow[]>,
+  );
   const vatMap = new Map(vatRows.map((r) => [r.companyId, r]));
 
   type ArchiveAggRow = { companyId: string; filedReturns: number; latestFiledAt: Date | null };
-  const archiveRows = (await db
-    .select({
-      companyId: taxReturnArchive.companyId,
-      filedReturns: count(),
-      latestFiledAt: max(taxReturnArchive.filingDate),
-    })
-    .from(taxReturnArchive)
-    .where(and(inArray(taxReturnArchive.companyId, companyIds), eq(taxReturnArchive.returnType, 'vat')))
-    .groupBy(taxReturnArchive.companyId)) as ArchiveAggRow[];
+  const archiveRows = await safeValueOpsRows<ArchiveAggRow>(
+    'tax return archive aggregate',
+    db
+      .select({
+        companyId: taxReturnArchive.companyId,
+        filedReturns: count(),
+        latestFiledAt: max(taxReturnArchive.filingDate),
+      })
+      .from(taxReturnArchive)
+      .where(and(inArray(taxReturnArchive.companyId, companyIds), eq(taxReturnArchive.returnType, 'vat')))
+      .groupBy(taxReturnArchive.companyId) as Promise<ArchiveAggRow[]>,
+  );
   const archiveMap = new Map(archiveRows.map((r) => [r.companyId, r]));
 
   type AnomalyAggRow = { companyId: string; open: number; critical: string | null };
-  const anomalyRows = (await db
-    .select({
-      companyId: anomalyAlerts.companyId,
-      open: count(),
-      critical: sql<string>`count(*) filter (where ${anomalyAlerts.severity} in ('high', 'critical'))`,
-    })
-    .from(anomalyAlerts)
-    .where(and(inArray(anomalyAlerts.companyId, companyIds), eq(anomalyAlerts.isResolved, false)))
-    .groupBy(anomalyAlerts.companyId)) as AnomalyAggRow[];
+  const anomalyRows = await safeValueOpsRows<AnomalyAggRow>(
+    'anomaly aggregate',
+    db
+      .select({
+        companyId: anomalyAlerts.companyId,
+        open: count(),
+        critical: sql<string>`count(*) filter (where ${anomalyAlerts.severity} in ('high', 'critical'))`,
+      })
+      .from(anomalyAlerts)
+      .where(and(inArray(anomalyAlerts.companyId, companyIds), eq(anomalyAlerts.isResolved, false)))
+      .groupBy(anomalyAlerts.companyId) as Promise<AnomalyAggRow[]>,
+  );
   const anomalyMap = new Map(anomalyRows.map((r) => [r.companyId, r]));
 
   type TrialBalanceRow = { companyId: string; debit: string | null; credit: string | null; lastJournalAt: Date | null };
-  const trialRows = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      debit: sum(journalLines.debit),
-      credit: sum(journalLines.credit),
-      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, 'posted')))
-    .groupBy(journalEntries.companyId)) as TrialBalanceRow[];
+  const trialRows = await safeValueOpsRows<TrialBalanceRow>(
+    'trial balance aggregate',
+    db
+      .select({
+        companyId: journalEntries.companyId,
+        debit: sum(journalLines.debit),
+        credit: sum(journalLines.credit),
+        lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
+      })
+      .from(journalEntries)
+      .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
+      .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, 'posted')))
+      .groupBy(journalEntries.companyId) as Promise<TrialBalanceRow[]>,
+  );
   const trialMap = new Map(trialRows.map((r) => [r.companyId, r]));
 
   type EngagementRow = { companyId: string; monthlyFee: number | null };
-  const engagementRows = (await db
-    .select({
-      companyId: engagements.companyId,
-      monthlyFee: sql<number | null>`max(${engagements.monthlyFee})`,
-    })
-    .from(engagements)
-    .where(and(inArray(engagements.companyId, companyIds), eq(engagements.status, 'active')))
-    .groupBy(engagements.companyId)) as EngagementRow[];
+  const engagementRows = await safeValueOpsRows<EngagementRow>(
+    'engagement aggregate',
+    db
+      .select({
+        companyId: engagements.companyId,
+        monthlyFee: sql<number | null>`max(${engagements.monthlyFee})`,
+      })
+      .from(engagements)
+      .where(and(inArray(engagements.companyId, companyIds), eq(engagements.status, 'active')))
+      .groupBy(engagements.companyId) as Promise<EngagementRow[]>,
+  );
   const engagementMap = new Map(engagementRows.map((r) => [r.companyId, r]));
 
   type ServiceArRow = { companyId: string; openAr: string | null; paidThisMonth: string | null };
-  const serviceArRows = (await db
-    .select({
-      companyId: serviceInvoices.companyId,
-      openAr: sql<string>`sum(case when ${serviceInvoices.status} in ('sent', 'overdue') then ${serviceInvoices.total} - coalesce(${serviceInvoices.paidAmount}, 0) else 0 end)`,
-      paidThisMonth: sql<string>`sum(case when ${serviceInvoices.status} = 'paid' and ${serviceInvoices.paidAt} >= ${monthStart} then ${serviceInvoices.total} else 0 end)`,
-    })
-    .from(serviceInvoices)
-    .where(inArray(serviceInvoices.companyId, companyIds))
-    .groupBy(serviceInvoices.companyId)) as ServiceArRow[];
+  const serviceArRows = await safeValueOpsRows<ServiceArRow>(
+    'service invoice AR aggregate',
+    db
+      .select({
+        companyId: serviceInvoices.companyId,
+        openAr: sql<string>`sum(case when ${serviceInvoices.status} in ('sent', 'overdue') then ${serviceInvoices.total} - coalesce(${serviceInvoices.paidAmount}, 0) else 0 end)`,
+        paidThisMonth: sql<string>`sum(case when ${serviceInvoices.status} = 'paid' and ${serviceInvoices.paidAt} >= ${monthStart} then ${serviceInvoices.total} else 0 end)`,
+      })
+      .from(serviceInvoices)
+      .where(inArray(serviceInvoices.companyId, companyIds))
+      .groupBy(serviceInvoices.companyId) as Promise<ServiceArRow[]>,
+  );
   const serviceArMap = new Map(serviceArRows.map((r) => [r.companyId, r]));
 
   type CommAggRow = { companyId: string; outbound30d: string | null; inbound30d: string | null };
-  const commRows = (await db
-    .select({
-      companyId: clientCommunications.companyId,
-      outbound30d: sql<string>`count(*) filter (where ${clientCommunications.direction} = 'outbound' and ${clientCommunications.sentAt} >= ${thirtyDaysAgo})`,
-      inbound30d: sql<string>`count(*) filter (where ${clientCommunications.direction} = 'inbound' and ${clientCommunications.sentAt} >= ${thirtyDaysAgo})`,
-    })
-    .from(clientCommunications)
-    .where(inArray(clientCommunications.companyId, companyIds))
-    .groupBy(clientCommunications.companyId)) as CommAggRow[];
+  const commRows = await safeValueOpsRows<CommAggRow>(
+    'client communication aggregate',
+    db
+      .select({
+        companyId: clientCommunications.companyId,
+        outbound30d: sql<string>`count(*) filter (where ${clientCommunications.direction} = 'outbound' and ${clientCommunications.sentAt} >= ${thirtyDaysAgo})`,
+        inbound30d: sql<string>`count(*) filter (where ${clientCommunications.direction} = 'inbound' and ${clientCommunications.sentAt} >= ${thirtyDaysAgo})`,
+      })
+      .from(clientCommunications)
+      .where(inArray(clientCommunications.companyId, companyIds))
+      .groupBy(clientCommunications.companyId) as Promise<CommAggRow[]>,
+  );
   const commMap = new Map(commRows.map((r) => [r.companyId, r]));
 
   const clients: ValueOpsClient[] = companyRows.map((company) => {
@@ -1380,20 +1437,23 @@ export async function buildFirmReviewQueue(
     matchStatus: string;
     matchConfidence: number | null;
   };
-  const bankRows = (await db
-    .select({
-      id: bankTransactions.id,
-      companyId: bankTransactions.companyId,
-      transactionDate: bankTransactions.transactionDate,
-      description: bankTransactions.description,
-      amount: bankTransactions.amount,
-      matchStatus: bankTransactions.matchStatus,
-      matchConfidence: bankTransactions.matchConfidence,
-    })
-    .from(bankTransactions)
-    .where(and(inArray(bankTransactions.companyId, companyIds), eq(bankTransactions.isReconciled, false)))
-    .orderBy(desc(bankTransactions.transactionDate))
-    .limit(80)) as BankReviewRow[];
+  const bankRows = await safeValueOpsRows<BankReviewRow>(
+    'review queue bank rows',
+    db
+      .select({
+        id: bankTransactions.id,
+        companyId: bankTransactions.companyId,
+        transactionDate: bankTransactions.transactionDate,
+        description: bankTransactions.description,
+        amount: bankTransactions.amount,
+        matchStatus: bankTransactions.matchStatus,
+        matchConfidence: bankTransactions.matchConfidence,
+      })
+      .from(bankTransactions)
+      .where(and(inArray(bankTransactions.companyId, companyIds), eq(bankTransactions.isReconciled, false)))
+      .orderBy(desc(bankTransactions.transactionDate))
+      .limit(80) as Promise<BankReviewRow[]>,
+  );
 
   type ReceiptReviewRow = {
     id: string;
@@ -1405,21 +1465,24 @@ export async function buildFirmReviewQueue(
     classifierMethod: string | null;
     createdAt: Date;
   };
-  const receiptRows = (await db
-    .select({
-      id: receipts.id,
-      companyId: receipts.companyId,
-      merchant: receipts.merchant,
-      date: receipts.date,
-      amount: receipts.amount,
-      vatAmount: receipts.vatAmount,
-      classifierMethod: receipts.classifierMethod,
-      createdAt: receipts.createdAt,
-    })
-    .from(receipts)
-    .where(and(inArray(receipts.companyId, companyIds), eq(receipts.posted, false)))
-    .orderBy(desc(receipts.createdAt))
-    .limit(80)) as ReceiptReviewRow[];
+  const receiptRows = await safeValueOpsRows<ReceiptReviewRow>(
+    'review queue receipt rows',
+    db
+      .select({
+        id: receipts.id,
+        companyId: receipts.companyId,
+        merchant: receipts.merchant,
+        date: receipts.date,
+        amount: receipts.amount,
+        vatAmount: receipts.vatAmount,
+        classifierMethod: receipts.classifierMethod,
+        createdAt: receipts.createdAt,
+      })
+      .from(receipts)
+      .where(and(inArray(receipts.companyId, companyIds), eq(receipts.posted, false)))
+      .orderBy(desc(receipts.createdAt))
+      .limit(80) as Promise<ReceiptReviewRow[]>,
+  );
 
   type AnomalyReviewRow = {
     id: string;
@@ -1432,22 +1495,25 @@ export async function buildFirmReviewQueue(
     aiConfidence: number | null;
     createdAt: Date;
   };
-  const anomalyRows = (await db
-    .select({
-      id: anomalyAlerts.id,
-      companyId: anomalyAlerts.companyId,
-      severity: anomalyAlerts.severity,
-      title: anomalyAlerts.title,
-      description: anomalyAlerts.description,
-      relatedEntityType: anomalyAlerts.relatedEntityType,
-      relatedEntityId: anomalyAlerts.relatedEntityId,
-      aiConfidence: anomalyAlerts.aiConfidence,
-      createdAt: anomalyAlerts.createdAt,
-    })
-    .from(anomalyAlerts)
-    .where(and(inArray(anomalyAlerts.companyId, companyIds), eq(anomalyAlerts.isResolved, false)))
-    .orderBy(desc(anomalyAlerts.createdAt))
-    .limit(80)) as AnomalyReviewRow[];
+  const anomalyRows = await safeValueOpsRows<AnomalyReviewRow>(
+    'review queue anomaly rows',
+    db
+      .select({
+        id: anomalyAlerts.id,
+        companyId: anomalyAlerts.companyId,
+        severity: anomalyAlerts.severity,
+        title: anomalyAlerts.title,
+        description: anomalyAlerts.description,
+        relatedEntityType: anomalyAlerts.relatedEntityType,
+        relatedEntityId: anomalyAlerts.relatedEntityId,
+        aiConfidence: anomalyAlerts.aiConfidence,
+        createdAt: anomalyAlerts.createdAt,
+      })
+      .from(anomalyAlerts)
+      .where(and(inArray(anomalyAlerts.companyId, companyIds), eq(anomalyAlerts.isResolved, false)))
+      .orderBy(desc(anomalyAlerts.createdAt))
+      .limit(80) as Promise<AnomalyReviewRow[]>,
+  );
 
   type VatReviewRow = {
     id: string;
@@ -1458,27 +1524,30 @@ export async function buildFirmReviewQueue(
     periodEnd: Date;
     payableTax: number;
   };
-  const vatRows = (await db
-    .select({
-      id: vatReturns.id,
-      companyId: vatReturns.companyId,
-      status: vatReturns.status,
-      dueDate: vatReturns.dueDate,
-      periodStart: vatReturns.periodStart,
-      periodEnd: vatReturns.periodEnd,
-      payableTax: vatReturns.box14PayableTax,
-    })
-    .from(vatReturns)
-    .where(
-      and(
-        inArray(vatReturns.companyId, companyIds),
-        ne(vatReturns.status, 'filed'),
-        ne(vatReturns.status, 'submitted'),
-        lte(vatReturns.dueDate, dueSoon),
-      ),
-    )
-    .orderBy(vatReturns.dueDate)
-    .limit(80)) as VatReviewRow[];
+  const vatRows = await safeValueOpsRows<VatReviewRow>(
+    'review queue VAT rows',
+    db
+      .select({
+        id: vatReturns.id,
+        companyId: vatReturns.companyId,
+        status: vatReturns.status,
+        dueDate: vatReturns.dueDate,
+        periodStart: vatReturns.periodStart,
+        periodEnd: vatReturns.periodEnd,
+        payableTax: vatReturns.box14PayableTax,
+      })
+      .from(vatReturns)
+      .where(
+        and(
+          inArray(vatReturns.companyId, companyIds),
+          ne(vatReturns.status, 'filed'),
+          ne(vatReturns.status, 'submitted'),
+          lte(vatReturns.dueDate, dueSoon),
+        ),
+      )
+      .orderBy(vatReturns.dueDate)
+      .limit(80) as Promise<VatReviewRow[]>,
+  );
 
   type DocumentReviewRow = {
     id: string;
@@ -1488,25 +1557,28 @@ export async function buildFirmReviewQueue(
     dueDate: Date;
     status: string;
   };
-  const documentRows = (await db
-    .select({
-      id: documentRequirements.id,
-      companyId: documentRequirements.companyId,
-      documentType: documentRequirements.documentType,
-      description: documentRequirements.description,
-      dueDate: documentRequirements.dueDate,
-      status: documentRequirements.status,
-    })
-    .from(documentRequirements)
-    .where(
-      and(
-        inArray(documentRequirements.companyId, companyIds),
-        inArray(documentRequirements.status, ['pending', 'requested', 'overdue']),
-        lte(documentRequirements.dueDate, dueSoon),
-      ),
-    )
-    .orderBy(documentRequirements.dueDate)
-    .limit(80)) as DocumentReviewRow[];
+  const documentRows = await safeValueOpsRows<DocumentReviewRow>(
+    'review queue document rows',
+    db
+      .select({
+        id: documentRequirements.id,
+        companyId: documentRequirements.companyId,
+        documentType: documentRequirements.documentType,
+        description: documentRequirements.description,
+        dueDate: documentRequirements.dueDate,
+        status: documentRequirements.status,
+      })
+      .from(documentRequirements)
+      .where(
+        and(
+          inArray(documentRequirements.companyId, companyIds),
+          inArray(documentRequirements.status, ['pending', 'requested', 'overdue']),
+          lte(documentRequirements.dueDate, dueSoon),
+        ),
+      )
+      .orderBy(documentRequirements.dueDate)
+      .limit(80) as Promise<DocumentReviewRow[]>,
+  );
 
   type TrialReviewRow = {
     companyId: string;
@@ -1514,17 +1586,20 @@ export async function buildFirmReviewQueue(
     credit: string | null;
     lastJournalAt: Date | null;
   };
-  const trialRows = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      debit: sum(journalLines.debit),
-      credit: sum(journalLines.credit),
-      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, 'posted')))
-    .groupBy(journalEntries.companyId)) as TrialReviewRow[];
+  const trialRows = await safeValueOpsRows<TrialReviewRow>(
+    'review queue trial balance rows',
+    db
+      .select({
+        companyId: journalEntries.companyId,
+        debit: sum(journalLines.debit),
+        credit: sum(journalLines.credit),
+        lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
+      })
+      .from(journalEntries)
+      .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
+      .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, 'posted')))
+      .groupBy(journalEntries.companyId) as Promise<TrialReviewRow[]>,
+  );
 
   const items: FirmReviewItem[] = [];
 
