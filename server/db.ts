@@ -854,6 +854,21 @@ export async function ensureCriticalSchema(): Promise<void> {
       name: 'whatsapp_bridge_jobs source index',
       sql: sql`CREATE INDEX IF NOT EXISTS "idx_whatsapp_bridge_jobs_source" ON "whatsapp_bridge_jobs" ("source_type", "source_id")`,
     },
+    // ── 0057: corporate tax manual workpaper support ───────────────────
+    // Production can contain drifted databases where the migration ledger is
+    // ahead of a specific table. Keep this guard non-fatal when the table is
+    // absent, but self-heal the column as soon as the table exists.
+    {
+      name: 'corporate_tax_returns.workpaper',
+      sql: sql`
+        DO $$
+        BEGIN
+          IF to_regclass('public.corporate_tax_returns') IS NOT NULL THEN
+            ALTER TABLE "corporate_tax_returns" ADD COLUMN IF NOT EXISTS "workpaper" jsonb;
+          END IF;
+        END $$
+      `,
+    },
   ];
 
   // Dev/test seed data was removed 2026-04-30. The previous block contained
