@@ -352,8 +352,28 @@ export async function ensureCriticalSchema(): Promise<void> {
     },
     // ── 0019/0020: firm_role + firm_staff_assignments ────────────────────
     {
+      name: 'users.is_admin',
+      sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "is_admin" boolean NOT NULL DEFAULT false`,
+    },
+    {
+      name: 'users.user_type',
+      sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "user_type" text NOT NULL DEFAULT 'customer'`,
+    },
+    {
       name: 'users.firm_role',
       sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "firm_role" text`,
+    },
+    {
+      name: 'users.phone',
+      sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "phone" text`,
+    },
+    {
+      name: 'users.avatar_url',
+      sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "avatar_url" text`,
+    },
+    {
+      name: 'users.last_login_at',
+      sql: sql`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "last_login_at" timestamp`,
     },
     {
       name: 'firm_staff_assignments table',
