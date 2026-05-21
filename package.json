@@ -21,6 +21,7 @@
     "audit:api-coverage:strict": "node scripts/check-frontend-api-coverage.mjs --strict",
     "audit:matrix": "node scripts/audit-matrix.mjs",
     "smoke:prod": "node scripts/production-smoke.mjs",
+    "verify:prod-deploy": "cross-env SMOKE_READ_ONLY=true node scripts/production-smoke.mjs",
     "security:verify-prod": "node scripts/verify-production-security.mjs",
     "check:api-contract": "node scripts/check-api-contract.mjs",
     "test:watch": "vitest",

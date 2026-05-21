@@ -35,6 +35,9 @@ const POOL_CONFIG = {
   statement_timeout: envInt('DB_STATEMENT_TIMEOUT_MS', 30_000),
 };
 
+const DB_READY_ATTEMPTS = envInt('DB_READY_ATTEMPTS', 24);
+const DB_READY_DELAY_MS = envInt('DB_READY_DELAY_MS', 5_000);
+
 let pool: any;
 let db: any;
 let _driver: 'neon' | 'pg' = 'pg';
@@ -74,6 +77,42 @@ function rowsFromResult<T extends QueryRow = QueryRow>(result: unknown): T[] {
 
 async function queryRows<T extends QueryRow = QueryRow>(query: ReturnType<typeof sql>): Promise<T[]> {
   return rowsFromResult<T>(await db.execute(query));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForDatabaseReady(context: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= DB_READY_ATTEMPTS; attempt++) {
+    const start = Date.now();
+    try {
+      await db.execute(sql`SELECT 1`);
+      log.info({ attempt, latencyMs: Date.now() - start, context }, 'Database connection ready');
+      return;
+    } catch (err: any) {
+      lastError = err;
+      log.warn(
+        {
+          attempt,
+          attempts: DB_READY_ATTEMPTS,
+          delayMs: DB_READY_DELAY_MS,
+          context,
+          err: err?.message,
+          code: err?.code,
+        },
+        'Database connection not ready; retrying',
+      );
+      if (attempt < DB_READY_ATTEMPTS) {
+        await sleep(DB_READY_DELAY_MS);
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Database was not ready for ${context}`);
 }
 
 async function tableExists(schemaName: string, tableName: string): Promise<boolean> {
@@ -159,6 +198,7 @@ async function baselineMigrationLedgerForExistingSchema(migrationsFolder: string
 export async function runMigrations(migrationsFolder: string): Promise<void> {
   log.info({ migrationsFolder, driver: _driver }, 'Running migrations');
   try {
+    await waitForDatabaseReady('migration');
     log.info('Checking migration ledger baseline');
     await baselineMigrationLedgerForExistingSchema(migrationsFolder);
     log.info({ driver: _driver }, 'Executing Drizzle migrations');
@@ -186,6 +226,8 @@ export async function runMigrations(migrationsFolder: string): Promise<void> {
  * been tracked-but-not-executed in the production database.
  */
 export async function ensureCriticalSchema(): Promise<void> {
+  await waitForDatabaseReady('schema guard');
+
   const schemaSteps: Array<{ name: string; sql: ReturnType<typeof sql> }> = [
     // ── 0003: invoice share token ────────────────────────────────────────
     {
@@ -233,6 +275,12 @@ export async function ensureCriticalSchema(): Promise<void> {
     {
       name: 'invoices.base_currency_amount',
       sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "base_currency_amount" REAL NOT NULL DEFAULT 0`,
+    },
+    // ── 0041: FTA PDF recipient address field ───────────────────────────
+    // Missing in production causes every Drizzle invoice select to fail.
+    {
+      name: 'invoices.customer_address',
+      sql: sql`ALTER TABLE "invoices" ADD COLUMN IF NOT EXISTS "customer_address" text`,
     },
     {
       name: 'receipts.exchange_rate',
