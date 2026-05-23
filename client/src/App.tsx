@@ -228,6 +228,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const { isFirmContext, clearActiveClientCompany } = useActiveCompany();
   const pathname = pathnameOnly(location);
   const shouldClearClientWorkspace = shouldClearClientWorkspaceForPath(pathname);
+  const isClearingClientWorkspace = shouldClearClientWorkspace && isFirmContext;
 
   useEffect(() => {
     // Firm routes are portfolio-wide; they must not inherit a client books context.
@@ -324,19 +325,23 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={location}
-                  initial={false}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.25, ease: 'easeOut' }}
-                >
-                  <SectionBoundary name={routeName(location)}>
-                    {children}
-                  </SectionBoundary>
-                </motion.div>
-              </AnimatePresence>
+              {isClearingClientWorkspace ? (
+                <MinimalPageLoader />
+              ) : (
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={location}
+                    initial={false}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.25, ease: 'easeOut' }}
+                  >
+                    <SectionBoundary name={routeName(location)}>
+                      {children}
+                    </SectionBoundary>
+                  </motion.div>
+                </AnimatePresence>
+              )}
               </RouteGuard>
             </div>
           </main>
