@@ -55,6 +55,7 @@ app.use(compression());
 // (OCR + receipts) accept base64 data URLs and need a larger limit.
 const largeJsonRoutes = [
   /^\/api\/ocr\//,
+  /^\/api\/export\//,
   /^\/api\/firm\/bulk\/ocr/,
   /^\/api\/companies\/[^/]+\/receipts$/,
   /^\/api\/companies\/[^/]+\/bank-statements\/import$/,

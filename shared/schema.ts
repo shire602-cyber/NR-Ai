@@ -2173,6 +2173,7 @@ export const corporateTaxReturns = pgTable("corporate_tax_returns", {
   taxPayable: money("tax_payable").notNull().default(0),
   status: text("status").notNull().default("draft"), // draft | filed | paid
   filedAt: timestamp("filed_at"),
+  workpaper: jsonb("workpaper"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => ({

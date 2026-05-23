@@ -21,8 +21,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import Tesseract from 'tesseract.js';
 import {
   Upload,
@@ -45,8 +43,6 @@ import {
   BarChart3,
   ChevronRight,
 } from 'lucide-react';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -80,6 +76,19 @@ interface BankAccount {
   currency: string;
   glAccountId: string | null;
   isActive: boolean;
+}
+
+let pdfJsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+
+function loadPdfJs(): Promise<typeof import('pdfjs-dist')> {
+  pdfJsPromise ??= Promise.all([
+    import('pdfjs-dist'),
+    import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+  ]).then(([pdfjsLib, worker]) => {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
+    return pdfjsLib;
+  });
+  return pdfJsPromise;
 }
 
 interface MatchSuggestion {
@@ -344,6 +353,7 @@ export default function BankReconciliation() {
       if (importFile.type === 'application/pdf') {
         // PDF → text → AI parse → import as JSON
         setProcessingStatus('Converting PDF pages...');
+        const pdfjsLib = await loadPdfJs();
         const arrayBuffer = await importFile.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const totalPages = Math.min(pdf.numPages, 10);

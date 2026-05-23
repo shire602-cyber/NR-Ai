@@ -2601,12 +2601,14 @@ const emptyForm: AddClientFormData = {
 };
 
 type QuickFilter = 'all' | 'critical' | 'attention' | 'vat-due' | 'close-blocked' | 'unassigned' | 'no-docs';
+type PortfolioSection = 'command' | 'vat' | 'revenue' | 'clients';
 
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { setActiveClientCompany } = useActiveCompany();
   const [view, setView] = useState<'card' | 'table'>('card');
+  const [portfolioSection, setPortfolioSection] = useState<PortfolioSection>('command');
   const [search, setSearch] = useState('');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [addOpen, setAddOpen] = useState(false);
@@ -2755,9 +2757,9 @@ export default function ClientPortfolio() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Portfolio</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Operations</h1>
           <p className="text-muted-foreground mt-1">
-            {clients.length} client{clients.length !== 1 ? 's' : ''} managed by NRA
+            Portfolio-wide queues for {clients.length} NRA client{clients.length !== 1 ? 's' : ''}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -2812,22 +2814,41 @@ export default function ClientPortfolio() {
         </Card>
       </div>
 
-      <BookkeeperCommandCenter
-        dashboard={bookkeeperDashboard}
-        onOpenBooks={handleOpenBooks}
-        onViewProfile={handleViewProfile}
-        onOpenBrief={setBriefClientId}
-        onManageStaff={() => navigate('/firm/staff')}
-      />
+      <Tabs
+        value={portfolioSection}
+        onValueChange={value => setPortfolioSection(value as PortfolioSection)}
+        className="space-y-4"
+      >
+        <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4">
+          <TabsTrigger value="command">Command</TabsTrigger>
+          <TabsTrigger value="vat">VAT Workspace</TabsTrigger>
+          <TabsTrigger value="revenue">Revenue</TabsTrigger>
+          <TabsTrigger value="clients">Clients</TabsTrigger>
+        </TabsList>
 
-      <RevenueGrowthPanel onOpenClient={handleViewProfile} />
+        <TabsContent value="command" className="space-y-4 mt-0">
+          <BookkeeperCommandCenter
+            dashboard={bookkeeperDashboard}
+            onOpenBooks={handleOpenBooks}
+            onViewProfile={handleViewProfile}
+            onOpenBrief={setBriefClientId}
+            onManageStaff={() => navigate('/firm/staff')}
+          />
+        </TabsContent>
 
-      <VatWorkspacePanel
-        dashboard={bookkeeperDashboard}
-        clients={clients}
-        onOpenWorkspace={setVatWorkspaceClientId}
-      />
+        <TabsContent value="vat" className="space-y-4 mt-0">
+          <VatWorkspacePanel
+            dashboard={bookkeeperDashboard}
+            clients={clients}
+            onOpenWorkspace={setVatWorkspaceClientId}
+          />
+        </TabsContent>
 
+        <TabsContent value="revenue" className="space-y-4 mt-0">
+          <RevenueGrowthPanel onOpenClient={handleViewProfile} />
+        </TabsContent>
+
+        <TabsContent value="clients" className="space-y-4 mt-0">
       {/* Quick filters */}
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -3253,6 +3274,8 @@ export default function ClientPortfolio() {
           </Table>
         </div>
       )}
+        </TabsContent>
+      </Tabs>
 
       {/* Add Client Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

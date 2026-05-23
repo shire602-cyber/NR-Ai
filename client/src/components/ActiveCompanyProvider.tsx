@@ -70,13 +70,13 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const clearActiveClientCompany = useCallback(() => {
-    clearActiveCompany();
+    setActiveId(null);
+    void clearActiveCompany();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('muhasib:active-company-changed', { detail: { companyId: null } }),
       );
     }
-    setActiveId(null);
   }, []);
 
   const value = useMemo<ActiveCompanyContextValue>(() => {

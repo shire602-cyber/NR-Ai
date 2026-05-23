@@ -16,7 +16,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
       const safeNext = next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\')
         ? next
         : '/dashboard';
-      setLocation(`/login?next=${encodeURIComponent(safeNext)}`);
+      const target = `/login?next=${encodeURIComponent(safeNext)}`;
+      setLocation(target);
+      if (`${window.location.pathname}${window.location.search}` !== target) {
+        window.location.replace(target);
+      }
     }
   }, [isLoading, user, setLocation]);
 

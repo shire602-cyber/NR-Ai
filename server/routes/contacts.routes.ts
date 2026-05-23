@@ -4,8 +4,46 @@ import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { createLogger } from '../config/logger';
+import { buildXlsxBufferFromRows, parseSpreadsheetBuffer } from '../utils/spreadsheet';
 
 const log = createLogger('contacts');
+
+const contactImportPreviewSchema = z.object({
+  fileName: z.string().min(1).max(180).regex(/\.(xlsx|csv)$/i, 'Only .xlsx and .csv files are supported'),
+  contentBase64: z.string().min(1),
+});
+
+const contactTemplateRows = [{
+  Name: 'Example Company LLC',
+  Email: 'contact@example.com',
+  Phone: '+971-50-123-4567',
+  TRN: '100123456700003',
+  Address: '123 Business Bay',
+  City: 'Dubai',
+  Country: 'UAE',
+}];
+
+function pickImportValue(row: Record<string, any>, keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      return String(value).trim();
+    }
+  }
+  return '';
+}
+
+function mapContactImportRow(row: Record<string, any>): Record<string, string> {
+  return {
+    name: pickImportValue(row, ['Name', 'name', 'Company Name', 'company_name']),
+    email: pickImportValue(row, ['Email', 'email', 'E-mail']),
+    phone: pickImportValue(row, ['Phone', 'phone', 'Phone Number', 'Mobile']),
+    trnNumber: pickImportValue(row, ['TRN', 'trn', 'TRN Number', 'Tax Registration Number']),
+    address: pickImportValue(row, ['Address', 'address']),
+    city: pickImportValue(row, ['City', 'city']),
+    country: pickImportValue(row, ['Country', 'country']) || 'UAE',
+  };
+}
 
 export function registerContactRoutes(app: Express) {
   // =====================================
@@ -48,6 +86,45 @@ export function registerContactRoutes(app: Express) {
 
     const contact = await storage.createCustomerContact(contactData);
     res.json(contact);
+  }));
+
+  app.get("/api/companies/:companyId/customer-contacts/import-template", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const buffer = await buildXlsxBufferFromRows(contactTemplateRows, 'Contacts', [25, 28, 18, 18, 28, 16, 16]);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=contact_import_template.xlsx');
+    res.send(buffer);
+  }));
+
+  app.post("/api/companies/:companyId/customer-contacts/import-preview", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = req.params;
+    const userId = (req as any).user.id;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const parsedBody = contactImportPreviewSchema.safeParse(req.body);
+    if (!parsedBody.success) {
+      return res.status(400).json({ message: parsedBody.error.issues[0]?.message || 'Invalid import file' });
+    }
+
+    const buffer = Buffer.from(parsedBody.data.contentBase64, 'base64');
+    if (buffer.byteLength > 5 * 1024 * 1024) {
+      return res.status(413).json({ message: 'Contact import file must be 5 MB or smaller' });
+    }
+
+    const parsed = await parseSpreadsheetBuffer(buffer, parsedBody.data.fileName);
+    const rows = parsed.rows.map(mapContactImportRow);
+    res.json({ rows, count: rows.length });
   }));
 
   // Bulk import customer contacts from Excel

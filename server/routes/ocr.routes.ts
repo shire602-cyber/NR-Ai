@@ -9,6 +9,7 @@ import { validate } from '../middleware/validate';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 import {
+  buildGenericWorkbook,
   buildOcrReceiptsWorkbook,
   buildExportFilename,
   type OcrExportRow,
@@ -247,6 +248,30 @@ Respond ONLY with valid JSON matching this exact structure:
       res.send(buffer);
     }),
   );
+
+  app.post(
+    "/api/export/excel",
+    authMiddleware,
+    validate({ body: genericExportSchema }),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { sheets, filename } = req.body as z.infer<typeof genericExportSchema>;
+      const buffer = await buildGenericWorkbook(sheets, {
+        title: filename ? filename.slice(0, 80) : 'Muhasib Export',
+      });
+      const safeName = filename
+        ? `${filename.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80)}.xlsx`
+        : buildExportFilename('muhasib-export');
+
+      res.setHeader(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+      res.setHeader('Content-Length', String(buffer.length));
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(buffer);
+    }),
+  );
 }
 
 // Schema for the in-flight OCR export. Strict enough to reject obvious junk
@@ -262,6 +287,21 @@ const ocrExportRowSchema = z.object({
 
 const ocrExportSchema = z.object({
   rows: z.array(ocrExportRowSchema).min(1, 'At least one row is required').max(5000),
+  filename: z.string().max(80).optional(),
+});
+
+const genericExportColumnSchema = z.object({
+  header: z.string().min(1).max(120),
+  key: z.string().min(1).max(120),
+  width: z.number().min(5).max(80).optional(),
+});
+
+const genericExportSchema = z.object({
+  sheets: z.array(z.object({
+    sheetName: z.string().max(80).optional(),
+    columns: z.array(genericExportColumnSchema).min(1).max(100),
+    rows: z.array(z.record(z.unknown())).max(5000),
+  })).min(1).max(10),
   filename: z.string().max(80).optional(),
 });
 

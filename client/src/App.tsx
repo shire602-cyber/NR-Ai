@@ -1,4 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react';
+import { useCallback, useEffect, lazy, Suspense } from 'react';
 import { Switch, Route, useLocation, Link } from 'wouter';
 import { queryClient } from './lib/queryClient';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -174,12 +174,14 @@ import { OnboardingWizard } from '@/components/Onboarding';
 import { CommandPaletteProvider } from '@/components/CommandPalette';
 import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
 import { SkipLink } from '@/components/SkipLink';
+import { shouldClearClientWorkspaceForPath } from '@/lib/workspaceRoutes';
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  const pathname = pathnameOnly(location);
 
-  if (!isFirmContext || !company) return null;
+  if (!isFirmContext || !company || shouldClearClientWorkspaceForPath(pathname)) return null;
 
   const goBackToFirm = () => {
     clearActiveClientCompany();
@@ -220,11 +222,19 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
-  const { isFirmContext } = useActiveCompany();
+  const { isFirmContext, clearActiveClientCompany } = useActiveCompany();
   const pathname = pathnameOnly(location);
+  const shouldClearClientWorkspace = shouldClearClientWorkspaceForPath(pathname);
+
+  useEffect(() => {
+    // Firm routes are portfolio-wide; they must not inherit a client books context.
+    if (!isFirmContext || !shouldClearClientWorkspace) return;
+    clearActiveClientCompany();
+  }, [clearActiveClientCompany, isFirmContext, shouldClearClientWorkspace]);
 
   useEffect(() => {
     if (companyLoading || pathname === '/onboarding') return;
+    if (shouldClearClientWorkspace) return;
 
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
@@ -248,7 +258,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(REDIRECT_FLAG, '1');
       navigate('/onboarding');
     }
-  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext]);
+  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext, shouldClearClientWorkspace]);
 
 
   const style = {
@@ -350,17 +360,23 @@ function AccessRedirect({
   actionLabel?: string;
 }) {
   const [, navigate] = useLocation();
+  const redirect = useCallback(() => {
+    navigate(redirectTo);
+    if (redirectTo.startsWith('/login')) {
+      window.location.replace(redirectTo);
+    }
+  }, [navigate, redirectTo]);
 
   useEffect(() => {
-    navigate(redirectTo);
-  }, [navigate, redirectTo]);
+    redirect();
+  }, [redirect]);
 
   return (
     <div className="min-h-[50vh] flex items-center justify-center p-6">
       <div className="max-w-md text-center space-y-3">
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="text-sm text-muted-foreground">{description}</p>
-        <Button variant="outline" onClick={() => navigate(redirectTo)}>
+        <Button variant="outline" onClick={redirect}>
           {actionLabel}
         </Button>
       </div>

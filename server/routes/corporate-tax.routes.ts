@@ -26,11 +26,17 @@ export function registerCorporateTaxRoutes(app: Express) {
 
   // Get a single corporate tax return
   app.get("/api/corporate-tax/returns/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
     const { id } = req.params;
 
     const taxReturn = await storage.getCorporateTaxReturn(id);
     if (!taxReturn) {
       return res.status(404).json({ message: 'Corporate tax return not found' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, taxReturn.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
     }
 
     res.json(taxReturn);
@@ -48,8 +54,9 @@ export function registerCorporateTaxRoutes(app: Express) {
 
     // CT returns settle tax against periodEnd — block creation when the
     // period is already locked, since the tax provision JE could not post.
-    if (req.body?.periodEnd) {
-      await assertPeriodNotLocked(companyId, req.body.periodEnd);
+    const periodEnd = req.body?.taxPeriodEnd ?? req.body?.periodEnd;
+    if (periodEnd) {
+      await assertPeriodNotLocked(companyId, periodEnd);
     }
 
     const taxReturn = await storage.createCorporateTaxReturn({
@@ -62,11 +69,22 @@ export function registerCorporateTaxRoutes(app: Express) {
 
   // Update a corporate tax return
   app.patch("/api/corporate-tax/returns/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
     const { id } = req.params;
 
     const existing = await storage.getCorporateTaxReturn(id);
     if (!existing) {
       return res.status(404).json({ message: 'Corporate tax return not found' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const periodEnd = req.body?.taxPeriodEnd ?? req.body?.periodEnd;
+    if (periodEnd) {
+      await assertPeriodNotLocked(existing.companyId, periodEnd);
     }
 
     const taxReturn = await storage.updateCorporateTaxReturn(id, req.body);

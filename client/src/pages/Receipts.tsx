@@ -30,10 +30,6 @@ import {
   ocrDataToExportRow,
 } from '@/lib/export';
 import Tesseract from 'tesseract.js';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
 import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet, ZoomIn, Brain, Bot, Zap } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 import { VirtualList } from '@/components/VirtualList';
@@ -78,6 +74,19 @@ const receiptSchema = z.object({
 });
 
 type ReceiptFormData = z.infer<typeof receiptSchema>;
+
+let pdfJsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+
+function loadPdfJs(): Promise<typeof import('pdfjs-dist')> {
+  pdfJsPromise ??= Promise.all([
+    import('pdfjs-dist'),
+    import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+  ]).then(([pdfjsLib, worker]) => {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
+    return pdfjsLib;
+  });
+  return pdfJsPromise;
+}
 
 // Fetches a saved receipt's image via the authenticated server route and
 // returns a blob URL the parent can show as a thumbnail or full preview.
@@ -467,6 +476,7 @@ export default function Receipts() {
   };
 
   const convertPdfToImage = async (file: File): Promise<{ blob: Blob; preview: string }> => {
+    const pdfjsLib = await loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const page = await pdf.getPage(1);
