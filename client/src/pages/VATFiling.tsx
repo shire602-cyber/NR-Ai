@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { lazy, Suspense, useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import { format, parseISO, startOfQuarter, endOfQuarter } from 'date-fns';
@@ -17,7 +17,7 @@ import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
-import VAT201Form from '@/components/VAT201Form';
+import { VatWorkpaperWorkspace } from '@/components/VatWorkpaperWorkspace';
 import { 
   FileText, 
   Download, 
@@ -35,7 +35,8 @@ import {
   Rows3,
   ExternalLink
 } from 'lucide-react';
-import jsPDF from 'jspdf';
+
+const VAT201Form = lazy(() => import('@/components/VAT201Form'));
 
 interface VATReturn {
   id: string;
@@ -112,6 +113,7 @@ interface Company {
   nameAr: string | null;
   trnVatNumber: string | null;
   vatFilingFrequency: string | null;
+  emirate?: string | null;
   address: string | null;
   phone: string | null;
 }
@@ -266,6 +268,9 @@ export default function VATFiling() {
       end: endOfQuarter(now),
     };
   }, []);
+  const currentPeriodStart = format(currentQuarter.start, 'yyyy-MM-dd');
+  const currentPeriodEnd = format(currentQuarter.end, 'yyyy-MM-dd');
+  const isFirmBookkeeper = currentUser?.firmRole === 'firm_owner' || currentUser?.firmRole === 'firm_admin';
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -396,7 +401,8 @@ export default function VATFiling() {
     submitMutation.mutate({ id: selectedReturn.id });
   };
 
-  const handleExportPDF = (vatReturn: VATReturn) => {
+  const handleExportPDF = async (vatReturn: VATReturn) => {
+    const { default: jsPDF } = await import('jspdf');
     const doc = new jsPDF('p', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 15;
@@ -712,6 +718,19 @@ export default function VATFiling() {
         </Card>
       )}
 
+      {isFirmBookkeeper && (
+        <VatWorkpaperWorkspace
+          companyId={companyId}
+          companyName={company?.name}
+          companyEmirate={company?.emirate}
+          defaultPeriodStart={currentPeriodStart}
+          defaultPeriodEnd={currentPeriodEnd}
+          onReturnGenerated={() => {
+            queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'vat-returns'] });
+          }}
+        />
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
@@ -924,6 +943,7 @@ export default function VATFiling() {
             </DialogDescription>
           </DialogHeader>
           {selectedReturn && company && (
+            <Suspense fallback={<Skeleton className="h-96 w-full" />}>
             <VAT201Form
               data={vatFormData}
               onChange={() => {}}
@@ -943,6 +963,7 @@ export default function VATFiling() {
               }}
               readOnly={true}
             />
+            </Suspense>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
@@ -970,6 +991,7 @@ export default function VATFiling() {
           </DialogHeader>
           {selectedReturn && company && (
             <>
+              <Suspense fallback={<Skeleton className="h-96 w-full" />}>
               <VAT201Form
                 data={vatFormData}
                 onChange={setVatFormData}
@@ -989,6 +1011,7 @@ export default function VATFiling() {
                 }}
                 readOnly={false}
               />
+              </Suspense>
               <div className="space-y-2">
                 <Label>{locale === 'ar' ? 'ملاحظات' : 'Notes'}</Label>
                 <Textarea

@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import { db } from '../db';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
@@ -310,12 +310,10 @@ export async function listVatWorkpapers(companyIds: string[], companyId?: string
     })
     .from(vatWorkpapers)
     .innerJoin(companies, eq(companies.id, vatWorkpapers.companyId))
-    .where(eq(companies.companyType, 'client'))
+    .where(and(eq(companies.companyType, 'client'), inArray(vatWorkpapers.companyId, scopedCompanyIds)))
     .orderBy(desc(vatWorkpapers.periodEnd), desc(vatWorkpapers.updatedAt));
 
-  return (rows as Array<{ companyId: string }>).filter((row: { companyId: string }) =>
-    scopedCompanyIds.includes(row.companyId),
-  );
+  return rows;
 }
 
 export async function getVatWorkpaperDetail(workpaperId: string) {

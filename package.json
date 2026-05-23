@@ -165,7 +165,9 @@
     "vitest": "^3.0.0"
   },
   "overrides": {
-    "ws": "8.20.1"
+    "ws": "8.20.1",
+    "qs": "6.15.2",
+    "uuid": "11.1.1"
   },
   "optionalDependencies": {
     "bufferutil": "^4.0.8"

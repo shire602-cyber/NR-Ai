@@ -177,12 +177,14 @@ import { OnboardingWizard } from '@/components/Onboarding';
 import { CommandPaletteProvider } from '@/components/CommandPalette';
 import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
 import { SkipLink } from '@/components/SkipLink';
+import { shouldClearClientWorkspaceForPath } from '@/lib/workspaceRoutes';
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+  const pathname = pathnameOnly(location);
 
-  if (!isFirmContext || !company) return null;
+  if (!isFirmContext || !company || shouldClearClientWorkspaceForPath(pathname)) return null;
 
   const goBackToFirm = () => {
     clearActiveClientCompany();
@@ -223,11 +225,19 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
-  const { isFirmContext } = useActiveCompany();
+  const { isFirmContext, clearActiveClientCompany } = useActiveCompany();
   const pathname = pathnameOnly(location);
+  const shouldClearClientWorkspace = shouldClearClientWorkspaceForPath(pathname);
+
+  useEffect(() => {
+    // Firm routes are portfolio-wide; they must not inherit a client books context.
+    if (!isFirmContext || !shouldClearClientWorkspace) return;
+    clearActiveClientCompany();
+  }, [clearActiveClientCompany, isFirmContext, shouldClearClientWorkspace]);
 
   useEffect(() => {
     if (companyLoading || pathname === '/onboarding') return;
+    if (shouldClearClientWorkspace) return;
 
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
@@ -251,7 +261,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(REDIRECT_FLAG, '1');
       navigate('/onboarding');
     }
-  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext]);
+  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext, shouldClearClientWorkspace]);
 
 
   const style = {

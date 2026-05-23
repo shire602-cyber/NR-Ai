@@ -53,7 +53,17 @@ export async function switchActiveCompany(companyId: string): Promise<void> {
   }
 }
 
-/** Clear the active company (e.g. on logout). */
-export function clearActiveCompany(): void {
+/**
+ * Clear the active company and drop cached tenant data. This mirrors
+ * `switchActiveCompany` so leaving a client workspace cannot leave stale
+ * client-scoped query results visible in a portfolio/global route.
+ */
+export async function clearActiveCompany(): Promise<void> {
+  const previous = getActiveCompanyId();
   setActiveCompanyIdRaw(null);
+  if (!previous) return;
+
+  await queryClient.cancelQueries();
+  queryClient.removeQueries();
+  await queryClient.invalidateQueries();
 }
