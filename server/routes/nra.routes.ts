@@ -1,11 +1,11 @@
-import { Router } from 'express';
-import type { Express } from 'express';
-import { authMiddleware } from '../middleware/auth';
-import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
-import { asyncHandler } from '../middleware/errorHandler';
-import { db } from '../db';
-import { companies } from '../../shared/schema';
 import { inArray } from 'drizzle-orm';
+import type { Express } from 'express';
+import { Router } from 'express';
+import { companies } from '../../shared/schema';
+import { db } from '../db';
+import { authMiddleware } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { getAccessibleCompanyIds,requireFirmRole } from '../middleware/rbac';
 
 const router = Router();
 

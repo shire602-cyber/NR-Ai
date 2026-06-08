@@ -1,16 +1,16 @@
-import { useEffect, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert,AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Brain, Sparkles, Activity, CheckCircle2, XCircle, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { Activity,AlertTriangle,Brain,CheckCircle2,ShieldCheck,Sparkles,XCircle } from 'lucide-react';
+import { useEffect,useState } from 'react';
 
 type ClassifierMethod = 'rule' | 'keyword' | 'statistical' | 'openai';
 type ClassifierMode = 'hybrid' | 'openai_only';

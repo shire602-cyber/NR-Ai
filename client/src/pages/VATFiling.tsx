@@ -1,35 +1,34 @@
-import { lazy, Suspense, useState, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { format, parseISO, startOfQuarter, endOfQuarter } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency } from '@/lib/format';
 import { VatWorkpaperWorkspace } from '@/components/VatWorkpaperWorkspace';
-import { 
-  FileText, 
-  Download, 
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  Calculator,
-  Send,
-  FileCheck,
-  Loader2,
-  Eye,
-  Edit3
+import { useToast } from '@/hooks/use-toast';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { formatCurrency } from '@/lib/format';
+import { useTranslation } from '@/lib/i18n';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { endOfQuarter,format,parseISO,startOfQuarter } from 'date-fns';
+import {
+AlertTriangle,
+Calculator,
+CheckCircle2,
+Clock,
+Download,
+Edit3,
+Eye,
+FileText,
+Loader2,
+Send
 } from 'lucide-react';
+import { lazy,Suspense,useMemo,useState } from 'react';
 
 const VAT201Form = lazy(() => import('@/components/VAT201Form'));
 
@@ -131,7 +130,7 @@ const DEFAULT_VAT_DATA = {
 };
 
 export default function VATFiling() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { data: currentUser } = useCurrentUser();

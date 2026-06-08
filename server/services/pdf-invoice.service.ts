@@ -1,6 +1,6 @@
-// @ts-ignore - pdfkit has no type declarations
+// @ts-expect-error - pdfkit has no type declarations.
 import PDFDocument from 'pdfkit';
-import type { Invoice, InvoiceLine, Company } from '../../shared/schema';
+import type { Company,Invoice,InvoiceLine } from '../../shared/schema';
 import { UAE_VAT_RATE } from '../constants';
 import { renderEInvoiceQrPng } from './einvoice-qr.service';
 

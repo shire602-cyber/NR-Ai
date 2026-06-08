@@ -1,8 +1,8 @@
-import type { Express, Request, Response } from 'express';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
+import type { Express,Request,Response } from 'express';
+import { authMiddleware,requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { applyReconcileMatches,autoReconcileTransactions } from '../services/auto-reconcile.service';
 import { storage } from '../storage';
-import { autoReconcileTransactions, applyReconcileMatches } from '../services/auto-reconcile.service';
 
 export function registerAutoReconcileRoutes(app: Express) {
   // =====================================

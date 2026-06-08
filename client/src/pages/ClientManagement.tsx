@@ -1,41 +1,34 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { 
-  Building2, 
-  Plus, 
-  Search,
-  MoreHorizontal,
-  Edit,
-  Trash2,
-  Eye,
-  FileText,
-  Users,
-  Receipt,
-  Calendar,
-  Mail,
-  Phone,
-  Globe,
-  MapPin,
-  Filter,
-  Download,
-  Upload
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
+import { DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuSeparator,DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Link } from 'wouter';
-import { format } from 'date-fns';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import type { Company } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import {
+Calendar,
+Edit,
+Eye,
+FileText,
+Filter,
+Mail,
+MoreHorizontal,
+Phone,
+Plus,
+Search,
+Trash2,
+Upload
+} from 'lucide-react';
+import { useState } from 'react';
+import { Link } from 'wouter';
 
 interface ClientWithStats extends Company {
   userCount: number;

@@ -1,27 +1,25 @@
-import type { Request, Response } from 'express';
-import { Router } from 'express';
-import type { Express } from 'express';
+import type { Express,Request,Response } from 'express';
 import OpenAI from 'openai';
 import { z } from 'zod';
 
-import { storage } from '../storage';
-import { authMiddleware, requireCompanyAccess, requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
+import { randomUUID } from 'crypto';
+import { categorizationRequestSchema } from '../../shared/schema';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
-import { categorizationRequestSchema } from '../../shared/schema';
-import {
-  classifyOcrReceipt,
-  runAutopilot,
-  recordClassificationFeedback,
-} from '../services/receipt-autopilot.service';
+import { authMiddleware,requireCompanyAccess,requireCustomer } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
 import { saveReceiptImage } from '../services/fileStorage';
-import { randomUUID } from 'crypto';
 import {
-  getModelStats,
-  getClassifierConfig,
-  setClassifierConfig,
+classifyOcrReceipt,
+recordClassificationFeedback,
+runAutopilot,
+} from '../services/receipt-autopilot.service';
+import {
+getClassifierConfig,
+getModelStats,
+setClassifierConfig,
 } from '../services/training-data.service';
+import { storage } from '../storage';
 
 const log = createLogger('ai');
 
@@ -536,7 +534,7 @@ Respond with a JSON object:
 
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      const _entries = await storage.getJournalEntriesByCompanyId(companyId);
 
       // Prepare transaction data for analysis
       const transactionData = {
@@ -745,7 +743,7 @@ Respond with JSON:
       const bankTransactions = await storage.getUnreconciledBankTransactions(companyId);
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      const _journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
 
       if (bankTransactions.length === 0) {
         return res.json({ matches: [], message: 'No unreconciled transactions' });
@@ -965,7 +963,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
 
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const receipts = await storage.getReceiptsByCompanyId(companyId);
-      const entries = await storage.getJournalEntriesByCompanyId(companyId);
+      const _entries = await storage.getJournalEntriesByCompanyId(companyId);
 
       // Calculate historical patterns
       const now = new Date();
@@ -1298,7 +1296,7 @@ Respond with JSON:
   // Main Natural Language Query Endpoint
   app.post("/api/ai/nl-gateway", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     try {
-      const { companyId, message, locale = 'en', context = {} } = req.body;
+      const { companyId, message, locale = 'en', context: _context = {} } = req.body;
       const userId = (req as any).user.id;
 
       if (!companyId || !message) {
@@ -1316,7 +1314,7 @@ Respond with JSON:
       }
 
       // Gather comprehensive financial context — parallel + single line fetch.
-      const [accounts, invoices, receipts, entries, allLines] = await Promise.all([
+      const [accounts, invoices, receipts, _entries, allLines] = await Promise.all([
         storage.getAccountsByCompanyId(companyId),
         storage.getInvoicesByCompanyId(companyId),
         storage.getReceiptsByCompanyId(companyId),
@@ -2013,7 +2011,7 @@ ${askGuidanceBlock}`;
   // Smart suggestions based on context
   app.post("/api/ai/smart-suggest", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     try {
-      const { companyId, context, fieldType, currentValue } = req.body;
+      const { companyId, context, fieldType, currentValue: _currentValue } = req.body;
       const userId = (req as any).user.id;
 
       if (!companyId || !context || !fieldType) {

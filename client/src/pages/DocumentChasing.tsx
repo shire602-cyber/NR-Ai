@@ -1,56 +1,56 @@
-import { useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { format, parseISO, differenceInDays } from 'date-fns';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { differenceInDays,format,parseISO } from 'date-fns';
 import {
-  AlertTriangle,
-  CalendarDays,
-  CheckCircle2,
-  FileText,
-  Plus,
-  Send,
-  Sparkles,
+AlertTriangle,
+CalendarDays,
+CheckCircle2,
+FileText,
+Plus,
+Send,
+Sparkles,
 } from 'lucide-react';
+import { useMemo,useState } from 'react';
 import { SiWhatsapp } from 'react-icons/si';
 
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+AlertDialog,
+AlertDialogAction,
+AlertDialogCancel,
+AlertDialogContent,
+AlertDialogDescription,
+AlertDialogFooter,
+AlertDialogHeader,
+AlertDialogTitle,
+AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+Dialog,
+DialogContent,
+DialogDescription,
+DialogFooter,
+DialogHeader,
+DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+Select,
+SelectContent,
+SelectItem,
+SelectTrigger,
+SelectValue,
 } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Checkbox } from '@/components/ui/checkbox';
-import { DOCUMENT_TYPES, COMPLIANCE_EVENT_TYPES } from '@shared/schema';
+import { useToast } from '@/hooks/use-toast';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { COMPLIANCE_EVENT_TYPES,DOCUMENT_TYPES } from '@shared/schema';
 
 // ── Types echoed from server response shape ───────────────────────────
 interface Requirement {
@@ -174,7 +174,7 @@ export default function DocumentChasing() {
     onError: (e: Error) => toast({ title: 'Failed', description: e.message, variant: 'destructive' }),
   });
 
-  const requirements = requirementsQuery.data ?? [];
+  const requirements = useMemo(() => requirementsQuery.data ?? [], [requirementsQuery.data]);
   const queue = queueQuery.data ?? [];
   const events = eventsQuery.data ?? [];
 

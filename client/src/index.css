@@ -293,7 +293,7 @@
     background-color: var(--elevate-2);
   }
 
-  .border.toggle-elevate::before {
+  [class~="border"].toggle-elevate::before {
     inset: -1px;
   }
 
@@ -327,11 +327,10 @@
     background-color: var(--elevate-2);
   }
 
-  .border.hover-elevate:not(.no-hover-interaction-elevate)::after,
-  .border.active-elevate:not(.no-active-interaction-elevate)::after,
-  .border.hover-elevate-2:not(.no-hover-interaction-elevate)::after,
-  .border.active-elevate-2:not(.no-active-interaction-elevate)::after,
-  .border.hover-elevate:not(.no-hover-interaction-elevate)::after {
+  [class~="border"].hover-elevate:not(.no-hover-interaction-elevate)::after,
+  [class~="border"].active-elevate:not(.no-active-interaction-elevate)::after,
+  [class~="border"].hover-elevate-2:not(.no-hover-interaction-elevate)::after,
+  [class~="border"].active-elevate-2:not(.no-active-interaction-elevate)::after {
     inset: -1px;
   }
 

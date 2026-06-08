@@ -1,12 +1,12 @@
-import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
-import { authMiddleware, requireCustomer } from "../middleware/auth";
-import { asyncHandler } from "../middleware/errorHandler";
-import { insertCompanySchema, companyPreferencesSchema } from "../../shared/schema";
+import type { Express,Request,Response } from "express";
 import { ZodError } from "zod";
-import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { companyPreferencesSchema,insertCompanySchema } from "../../shared/schema";
 import { createLogger } from '../config/logger';
 import { ensureCriticalSchema } from '../db';
+import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { authMiddleware,requireCustomer } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { storage } from "../storage";
 
 const log = createLogger('companies');
 

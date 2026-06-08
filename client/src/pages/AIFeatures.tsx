@@ -1,31 +1,49 @@
-import { useState, useEffect } from 'react';
-import { useLocation } from 'wouter';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Alert,AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency, formatDate } from '@/lib/format';
-import { 
-  Sparkles, AlertTriangle, TrendingUp, TrendingDown, 
-  Check, X, FileWarning, DollarSign, RefreshCw, 
-  Brain, Zap, ShieldAlert, LineChart, Upload,
-  Clock, ChevronRight, CheckCircle2, AlertCircle,
-  ArrowUpRight, ArrowDownRight, Target, Lightbulb
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { formatCurrency,formatDate } from '@/lib/format';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import {
+AlertCircle,
+AlertTriangle,
+ArrowDownRight,
+ArrowUpRight,
+Brain,
+Check,
+CheckCircle2,
+Clock,
+DollarSign,
+FileWarning,
+Lightbulb,
+LineChart,
+RefreshCw,
+ShieldAlert,
+Sparkles,
+Target,
+Upload,
+Zap
 } from 'lucide-react';
-import { 
-  ResponsiveContainer, LineChart as RechartsLineChart, Line, 
-  XAxis, YAxis, Tooltip, Legend, AreaChart, Area, BarChart, Bar
+import { useEffect,useState } from 'react';
+import {
+Area,
+AreaChart,
+Bar,
+BarChart,
+Legend,
+ResponsiveContainer,
+Tooltip,
+XAxis,YAxis
 } from 'recharts';
+import { useLocation } from 'wouter';
 
 type AnomalyAlert = {
   id: string;
@@ -65,7 +83,7 @@ export default function AIFeatures() {
     setMounted(true);
   }, []);
 
-  const { data: anomalyAlerts, isLoading: alertsLoading, refetch: refetchAlerts } = useQuery<AnomalyAlert[]>({
+  const { data: anomalyAlerts, isLoading: alertsLoading, refetch: _refetchAlerts } = useQuery<AnomalyAlert[]>({
     queryKey: ['/api/companies', companyId, 'anomaly-alerts'],
     enabled: !!companyId,
   });
@@ -99,7 +117,7 @@ export default function AIFeatures() {
     mutationFn: async () => {
       return apiRequest('POST', '/api/ai/forecast-cashflow', { companyId, forecastMonths: 3 });
     },
-    onSuccess: (data: any) => {
+    onSuccess: (_data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'forecasts'] });
       toast({
         title: 'Forecast Generated',
@@ -503,7 +521,7 @@ export default function AIFeatures() {
           ) : forecasts && forecasts.length > 0 ? (
             <>
               <div className="grid gap-6 md:grid-cols-3">
-                {forecasts.map((forecast, index) => (
+                {forecasts.map((forecast, _index) => (
                   <Card key={forecast.id} className="hover-elevate">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-lg flex items-center gap-2">

@@ -1,24 +1,23 @@
-import { Router } from 'express';
-import type { Express, Request, Response } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
+import { and,count,desc,eq,gte,inArray,lte,max,not,sum } from 'drizzle-orm';
+import type { Express,Request,Response } from 'express';
+import { Router } from 'express';
 import OpenAI from 'openai';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth';
-import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
-import { asyncHandler } from '../middleware/errorHandler';
-import { db } from '../db';
-import { eq, and, gte, lte, inArray, count, sum, max, not, desc } from 'drizzle-orm';
 import {
-  companies,
-  invoices,
-  invoiceLines,
-  receipts,
-  bankTransactions,
-  vatReturns,
+bankTransactions,
+companies,
+invoices,
+receipts,
+vatReturns
 } from '../../shared/schema';
 import { getEnv } from '../config/env';
+import { DEFAULT_CURRENCY,UAE_VAT_RATE } from '../constants';
+import { db } from '../db';
+import { authMiddleware } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { getAccessibleCompanyIds,requireFirmRole } from '../middleware/rbac';
 import { storage } from '../storage';
-import { UAE_VAT_RATE, DEFAULT_CURRENCY } from '../constants';
 
 const router = Router();
 router.use(authMiddleware);

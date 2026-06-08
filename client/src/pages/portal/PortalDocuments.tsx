@@ -1,9 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
-import { FolderOpen, FileText, FileImage, File, Loader2, CheckCircle2 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Card,CardContent } from '@/components/ui/card';
 import { apiRequest } from '@/lib/queryClient';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
+import { CheckCircle2,File,FileImage,FileText,FolderOpen,Loader2 } from 'lucide-react';
 
 const CATEGORY_LABELS: Record<string, string> = {
   trade_license: 'Trade License',

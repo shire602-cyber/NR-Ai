@@ -1,42 +1,37 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardFooter,CardHeader,CardTitle } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { 
-  Link2, 
-  Plug, 
-  RefreshCw, 
-  Check, 
-  X, 
-  AlertTriangle,
-  ExternalLink,
-  Settings,
-  ChevronRight,
-  Loader2,
-  CreditCard,
-  ShoppingBag,
-  Users,
-  Zap,
-  Clock,
-  ArrowRight,
-  Shield,
-  Database,
-  FileText
+import { useTranslation } from '@/lib/i18n';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import {
+AlertTriangle,
+Check,
+ChevronRight,
+Clock,
+CreditCard,
+Database,
+FileText,
+Link2,
+Loader2,
+Plug,
+RefreshCw,
+Settings,
+Shield,
+Zap
 } from 'lucide-react';
-import { SiStripe, SiShopify, SiSalesforce } from 'react-icons/si';
+import { useState } from 'react';
+import { SiSalesforce,SiShopify,SiStripe } from 'react-icons/si';
 
 interface EcommerceIntegration {
   id: string;
@@ -102,7 +97,7 @@ const PLATFORMS = [
 ];
 
 export default function IntegrationsHub() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const isRTL = locale === 'ar';
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
@@ -111,7 +106,7 @@ export default function IntegrationsHub() {
   const [configForm, setConfigForm] = useState<IntegrationConfig>({ platform: '' });
 
   // Fetch integrations
-  const { data: integrations, isLoading: integrationsLoading } = useQuery<EcommerceIntegration[]>({
+  const { data: integrations, isLoading: _integrationsLoading } = useQuery<EcommerceIntegration[]>({
     queryKey: ['/api/integrations/ecommerce', companyId],
     queryFn: () => {
       const params = new URLSearchParams({ companyId: companyId ?? '' });
@@ -167,7 +162,7 @@ export default function IntegrationsHub() {
   });
 
   // Toggle integration mutation
-  const toggleMutation = useMutation({
+  const _toggleMutation = useMutation({
     mutationFn: async ({ integrationId, isActive }: { integrationId: string; isActive: boolean }) => {
       return await apiRequest('PATCH', `/api/integrations/ecommerce/${integrationId}/toggle`, {
         isActive,

@@ -1,6 +1,6 @@
 import type { Request } from 'express';
-import { storage } from '../storage';
 import { createLogger } from '../config/logger';
+import { storage } from '../storage';
 
 const log = createLogger('audit');
 

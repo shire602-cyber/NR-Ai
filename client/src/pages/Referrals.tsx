@@ -1,28 +1,26 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest } from '@/lib/queryClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import type { Referral,ReferralCode } from '@shared/schema';
+import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { 
-  Gift, 
-  Users, 
-  Link2, 
-  Copy, 
-  Share2,
-  Trophy,
-  CheckCircle,
-  Clock,
-  DollarSign,
-  ArrowRight,
-  Sparkles
+import {
+CheckCircle,
+Clock,
+Copy,
+DollarSign,
+Gift,
+Link2,
+Share2,
+Sparkles,
+Trophy,
+Users
 } from 'lucide-react';
-import type { ReferralCode, Referral } from '@shared/schema';
+import { useState } from 'react';
 
 interface ReferralStats {
   code: string | null;
@@ -52,7 +50,7 @@ export default function Referrals() {
       setCopied(true);
       toast({ title: 'Link copied to clipboard!' });
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
+    } catch (_err) {
       toast({ title: 'Failed to copy', variant: 'destructive' });
     }
   };
@@ -66,7 +64,7 @@ export default function Referrals() {
           text: 'Get 20% off your first month with my referral link!',
           url: referralLink,
         });
-      } catch (err) {
+      } catch (_err) {
         copyToClipboard();
       }
     } else {

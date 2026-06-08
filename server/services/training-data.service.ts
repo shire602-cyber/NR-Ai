@@ -11,20 +11,20 @@
  * accuracy power the auto-failsafe that flips a company to `openai_only` mode.
  */
 
+import {
+type ClassifierConfig,
+type ClassifierMethod,
+DEFAULT_CLASSIFIER_CONFIG,
+} from '../../shared/schema';
+import { createLogger } from '../config/logger';
 import { pool } from '../db';
 import { storage } from '../storage';
 import {
-  type InternalClassifierModel,
-  type CompanyRuleSnapshot,
-  type TrainingExample,
-  STANDARD_CATEGORIES,
+type CompanyRuleSnapshot,
+type InternalClassifierModel,
+type TrainingExample,
+STANDARD_CATEGORIES,
 } from './receipt-classifier.service';
-import {
-  type ClassifierMethod,
-  type ClassifierConfig,
-  DEFAULT_CLASSIFIER_CONFIG,
-} from '../../shared/schema';
-import { createLogger } from '../config/logger';
 
 const log = createLogger('training-data');
 

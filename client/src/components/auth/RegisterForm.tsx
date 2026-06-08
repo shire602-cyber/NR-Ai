@@ -1,16 +1,16 @@
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardFooter,CardHeader,CardTitle } from '@/components/ui/card';
+import { Form,FormControl,FormDescription,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { useToast } from '@/hooks/use-toast';
+import { apiUrl } from '@/lib/api';
+import { useTranslation } from '@/lib/i18n';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { Link } from 'wouter';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { apiUrl } from '@/lib/api';
-import { UserPlus } from 'lucide-react';
+import { z } from 'zod';
 import { OAuthButtons } from './OAuthButtons';
 
 // TRN is optional at sign-up — many users register before they have one — but

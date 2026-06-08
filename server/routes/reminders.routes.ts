@@ -1,8 +1,27 @@
-import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
+import type { Express,Request,Response } from "express";
+import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { z } from "zod";
+import { storage } from "../storage";
+
+const reminderSettingSchema = z.object({
+  reminderType: z.enum(['invoice_overdue', 'invoice_due_soon', 'vat_deadline', 'payment_followup']),
+  isEnabled: z.boolean().default(true),
+  daysBeforeDue: z.number().min(0).max(90).optional(),
+  daysAfterDue: z.number().min(0).max(365).optional(),
+  repeatIntervalDays: z.number().min(1).max(30).optional(),
+  maxReminders: z.number().min(1).max(10).optional(),
+  sendEmail: z.boolean().optional(),
+  sendSms: z.boolean().optional(),
+  sendInApp: z.boolean().optional(),
+  sendWhatsapp: z.boolean().optional(),
+  emailSubject: z.string().max(200).optional(),
+  emailTemplate: z.string().max(5000).optional(),
+  smsTemplate: z.string().max(5000).optional(),
+  whatsappTemplate: z.string().max(5000).optional(),
+});
+
+const reminderSettingPatchSchema = reminderSettingSchema.partial().strict();
 
 export function registerReminderRoutes(app: Express) {
   // =====================================
@@ -33,25 +52,7 @@ export function registerReminderRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Validate input
-    const validationSchema = z.object({
-      reminderType: z.enum(['invoice_overdue', 'invoice_due_soon', 'vat_deadline', 'payment_followup']),
-      isEnabled: z.boolean().default(true),
-      daysBeforeDue: z.number().min(0).max(90).optional(),
-      daysAfterDue: z.number().min(0).max(365).optional(),
-      repeatIntervalDays: z.number().min(1).max(30).optional(),
-      maxReminders: z.number().min(1).max(10).optional(),
-      sendEmail: z.boolean().optional(),
-      sendSms: z.boolean().optional(),
-      sendInApp: z.boolean().optional(),
-      sendWhatsapp: z.boolean().optional(),
-      emailSubject: z.string().max(200).optional(),
-      emailTemplate: z.string().max(5000).optional(),
-      smsTemplate: z.string().max(5000).optional(),
-      whatsappTemplate: z.string().max(5000).optional(),
-    });
-
-    const validated = validationSchema.parse(req.body);
+    const validated = reminderSettingSchema.parse(req.body);
 
     const setting = await storage.createReminderSetting({
       ...validated,
@@ -63,7 +64,22 @@ export function registerReminderRoutes(app: Express) {
   // Update reminder setting
   app.patch("/api/reminder-settings/:id", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const setting = await storage.updateReminderSetting(id, req.body);
+    const userId = (req as any).user?.id;
+    const existing = await storage.getReminderSetting(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Reminder setting not found' });
+    }
+
+    const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const patch = reminderSettingPatchSchema.parse(req.body);
+    const setting = await storage.updateReminderSetting(existing.companyId, id, patch);
+    if (!setting) {
+      return res.status(404).json({ message: 'Reminder setting not found' });
+    }
     res.json(setting);
   }));
 
@@ -108,7 +124,7 @@ export function registerReminderRoutes(app: Express) {
     // VAT Return deadlines (based on filing frequency)
     if (company?.trnVatNumber) {
       const filingFrequency = company.vatFilingFrequency || 'Quarterly';
-      let nextDeadline = new Date();
+      const nextDeadline = new Date();
 
       if (filingFrequency === 'Monthly') {
         nextDeadline.setMonth(nextDeadline.getMonth() + 1);

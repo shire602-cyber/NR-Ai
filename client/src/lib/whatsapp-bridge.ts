@@ -1,5 +1,5 @@
 import { apiRequest } from './queryClient';
-import { formatPhoneForWhatsApp, openWhatsApp } from './whatsapp-templates';
+import { formatPhoneForWhatsApp,openWhatsApp } from './whatsapp-templates';
 
 const BRIDGE_REQUEST = 'NR_WHATSAPP_BRIDGE_REQUEST';
 const BRIDGE_RESPONSE = 'NR_WHATSAPP_BRIDGE_RESPONSE';

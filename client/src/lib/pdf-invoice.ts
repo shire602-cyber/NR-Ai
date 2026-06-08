@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import QRCode from 'qrcode';
-import { formatCurrency, formatDate } from './format';
+import { formatCurrency,formatDate } from './format';
 
 export interface InvoicePDFData {
   invoiceNumber: string;
@@ -49,11 +49,11 @@ export async function generateInvoicePDF(data: InvoicePDFData): Promise<jsPDF> {
   const isRTL = data.locale === 'ar';
 
   // Color scheme - professional UAE colors
-  const primaryColor = '#1E40AF'; // Blue
-  const secondaryColor = '#059669'; // Green
-  const textDark = '#1F2937';
-  const textLight = '#6B7280';
-  const borderColor = '#E5E7EB';
+  const _primaryColor = '#1E40AF'; // Blue
+  const _secondaryColor = '#059669'; // Green
+  const _textDark = '#1F2937';
+  const _textLight = '#6B7280';
+  const _borderColor = '#E5E7EB';
 
   let yPosition = margin;
 

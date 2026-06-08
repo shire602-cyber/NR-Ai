@@ -1,8 +1,8 @@
-import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
+import crypto from "crypto";
+import type { Express,Request,Response } from "express";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import crypto from "crypto";
+import { storage } from "../storage";
 
 export function registerBackupRoutes(app: Express) {
   // =====================================
@@ -21,7 +21,7 @@ export function registerBackupRoutes(app: Express) {
 
     const backupList = await storage.getBackupsByCompanyId(companyId);
     // Don't send the full data snapshot in the list
-    const sanitizedBackups = backupList.map(({ dataSnapshot, ...backup }) => backup);
+    const sanitizedBackups = backupList.map(({ dataSnapshot: _dataSnapshot, ...backup }) => backup);
     res.json(sanitizedBackups);
   }));
 
@@ -109,7 +109,7 @@ export function registerBackupRoutes(app: Express) {
       });
 
       // Return without the full data snapshot
-      const { dataSnapshot, ...sanitizedBackup } = backup;
+      const { dataSnapshot: _dataSnapshot, ...sanitizedBackup } = backup;
       res.status(201).json(sanitizedBackup);
     } catch (error: any) {
       // Mark as failed
@@ -136,7 +136,7 @@ export function registerBackupRoutes(app: Express) {
     }
 
     // Return without the full data snapshot for security
-    const { dataSnapshot, ...sanitizedBackup } = backup;
+    const { dataSnapshot: _dataSnapshot, ...sanitizedBackup } = backup;
     res.json(sanitizedBackup);
   }));
 

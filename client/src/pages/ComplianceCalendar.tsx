@@ -1,25 +1,24 @@
-import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, parseISO, isToday, isBefore, differenceInDays } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useTranslation } from '@/lib/i18n';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { 
-  ChevronLeft, 
-  ChevronRight, 
-  Calendar as CalendarIcon,
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  FileText,
-  Receipt,
-  Building2,
-  CreditCard
+import { useTranslation } from '@/lib/i18n';
+import { useQuery } from '@tanstack/react-query';
+import { addMonths,differenceInDays,eachDayOfInterval,endOfMonth,format,isBefore,isSameDay,isSameMonth,isToday,parseISO,startOfMonth,subMonths } from 'date-fns';
+import {
+AlertTriangle,
+Building2,
+CheckCircle2,
+ChevronLeft,
+ChevronRight,
+Clock,
+CreditCard,
+FileText,
+Receipt
 } from 'lucide-react';
+import { useMemo,useState } from 'react';
 
 interface ComplianceTask {
   id: string;
@@ -57,7 +56,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function ComplianceCalendar() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -197,7 +196,7 @@ export default function ComplianceCalendar() {
                 }
 
                 const events = getEventsForDate(day);
-                const hasEvents = events.length > 0;
+                const _hasEvents = events.length > 0;
                 const hasOverdue = events.some(e => e.status !== 'completed' && isBefore(e.date, new Date()));
                 const isSelected = selectedDate && isSameDay(day, selectedDate);
 

@@ -1,13 +1,13 @@
-import type { Request, Response, NextFunction } from 'express';
+import type { NextFunction,Request,Response } from 'express';
 import jwt from 'jsonwebtoken';
-import { storage } from '../storage';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
-import { isTokenBlacklisted } from '../services/auth-tokens.service';
 import {
-  ACCESS_TOKEN_TTL_SECONDS,
-  getAccessTokenFromRequest,
+ACCESS_TOKEN_TTL_SECONDS,
+getAccessTokenFromRequest,
 } from '../services/auth-cookies.service';
+import { isTokenBlacklisted } from '../services/auth-tokens.service';
+import { storage } from '../storage';
 
 const log = createLogger('auth');
 
@@ -221,7 +221,7 @@ export function requireCompanyAccess(
       return;
     }
 
-    const allowed = await storage.hasCompanyAccess(req.user.id, candidate);
+    const allowed = await storage.hasCompanyAccess(req.user.id, candidate, req.user.firmRole);
     if (!allowed) {
       log.warn(
         { userId: req.user.id, companyId: candidate, path: req.path },

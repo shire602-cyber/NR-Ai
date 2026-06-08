@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 
 import { validateEnv } from './config/env';
 import { createLogger } from './config/logger';
-import { runMigrations, ensureCriticalSchema, closePool } from './db';
+import { closePool,ensureCriticalSchema,runMigrations } from './db';
 
 validateEnv();
 

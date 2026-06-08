@@ -1,54 +1,43 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+Accordion,
+AccordionContent,
+AccordionItem,
+AccordionTrigger,
+} from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardFooter,CardHeader,CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+Table,
+TableBody,
+TableCell,
+TableHead,
+TableHeader,
+TableRow,
 } from '@/components/ui/table';
+import { ScrollReveal,StaggerContainer,StaggerItem,hoverLift } from '@/lib/animations';
+import { useI18n } from '@/lib/i18n';
+import { AnimatePresence,motion } from 'framer-motion';
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
-import { Link } from 'wouter';
-import {
-  Check,
-  Minus,
-  Zap,
-  Crown,
-  Rocket,
-  Building2,
-  ArrowRight,
-  Shield,
-  Globe,
-  MessageSquare,
-  Sparkles,
-  Star,
-  ChevronRight,
-  Phone,
-  Lock,
-  CreditCard,
-  Users,
-  Brain,
-  BarChart3,
-  Receipt,
-  FileText,
-  Calculator,
-  Briefcase,
-  TrendingUp,
-  Bot,
-  Gem,
+ArrowRight,
+Building2,
+Calculator,
+Check,
+Crown,
+Globe,
+Lock,
+Minus,
+Phone,
+Rocket,
+Shield,
+Sparkles,
+Star,
+TrendingUp,
+Zap
 } from 'lucide-react';
 import { useState } from 'react';
-import { useI18n } from '@/lib/i18n';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ScrollReveal, StaggerContainer, StaggerItem, hoverLift } from '@/lib/animations';
+import { Link } from 'wouter';
 
 // ── Pricing Data ───────────────────────────────────────────────────────
 

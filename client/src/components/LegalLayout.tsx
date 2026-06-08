@@ -1,8 +1,8 @@
-import { Link } from 'wouter';
-import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Mail, MapPin, Phone } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
+import { ArrowLeft,Mail,MapPin,Phone } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Link } from 'wouter';
 
 interface LegalLayoutProps {
   title: string;

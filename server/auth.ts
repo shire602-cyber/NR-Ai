@@ -1,6 +1,6 @@
+import bcrypt from 'bcryptjs';
 import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
-import bcrypt from 'bcryptjs';
 import { storage } from './storage';
 
 // Configure passport-local strategy

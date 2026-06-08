@@ -1,8 +1,11 @@
-import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
+import type { Express,Request,Response } from "express";
+import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { recordAudit } from "../services/audit.service";
+import { storage } from "../storage";
+
+const teamRoleSchema = z.enum(['owner', 'accountant', 'cfo', 'employee']);
 
 export function registerTeamRoutes(app: Express) {
   // =====================================
@@ -28,6 +31,7 @@ export function registerTeamRoutes(app: Express) {
     const userId = (req as any).user?.id;
     const { companyId } = req.params;
     const { email, role } = req.body;
+    const parsedRole = teamRoleSchema.default('employee').parse(role || 'employee');
 
     const userRole = await storage.getUserRole(companyId, userId);
     if (!userRole || userRole.role !== 'owner') {
@@ -55,7 +59,7 @@ export function registerTeamRoutes(app: Express) {
     const companyUser = await storage.createCompanyUser({
       companyId,
       userId: invitedUser.id,
-      role: role || 'employee',
+      role: parsedRole,
     });
 
     res.status(201).json(companyUser);
@@ -66,13 +70,17 @@ export function registerTeamRoutes(app: Express) {
     const userId = (req as any).user?.id;
     const { companyId, memberId } = req.params;
     const { role } = req.body;
+    const parsedRole = teamRoleSchema.parse(role);
 
     const userRole = await storage.getUserRole(companyId, userId);
     if (!userRole || userRole.role !== 'owner') {
       return res.status(403).json({ message: 'Only company owners can update roles' });
     }
 
-    const companyUser = await storage.updateCompanyUser(memberId, { role });
+    const companyUser = await storage.updateCompanyUser(memberId, companyId, { role: parsedRole });
+    if (!companyUser) {
+      return res.status(404).json({ message: 'Team member not found' });
+    }
 
     await recordAudit({
       userId,
@@ -98,7 +106,10 @@ export function registerTeamRoutes(app: Express) {
       return res.status(403).json({ message: 'Only company owners can remove team members' });
     }
 
-    await storage.deleteCompanyUser(memberId);
+    const deleted = await storage.deleteCompanyUser(memberId, companyId);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Team member not found' });
+    }
 
     await recordAudit({
       userId,

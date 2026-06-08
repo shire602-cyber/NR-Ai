@@ -1,28 +1,28 @@
-import { useQuery } from '@tanstack/react-query';
-import {
-  Building2,
-  Users,
-  UserPlus,
-  Clock,
-  FileText,
-  TrendingUp,
-  AlertCircle,
-  CheckCircle,
-  Mail,
-  Activity,
-  HeartPulse,
-  CalendarClock,
-  UserCog,
-  ArrowRight,
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Link } from 'wouter';
-import { format } from 'date-fns';
-import type { ActivityLog } from '@shared/schema';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import type { ActivityLog } from '@shared/schema';
+import { useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import {
+Activity,
+AlertCircle,
+ArrowRight,
+Building2,
+CalendarClock,
+CheckCircle,
+Clock,
+FileText,
+HeartPulse,
+Mail,
+TrendingUp,
+UserCog,
+UserPlus,
+Users,
+} from 'lucide-react';
+import { Link } from 'wouter';
 
 interface ClientHealth {
   companyId: string;

@@ -1,77 +1,71 @@
-import { useEffect, useState, type ComponentProps } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import {
+Dialog,
+DialogContent,
+DialogDescription,
+DialogHeader,
+DialogTitle,
+DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+Select,
+SelectContent,
+SelectItem,
+SelectTrigger,
+SelectValue,
+} from "@/components/ui/select";
+import { Switch } from '@/components/ui/switch';
+import {
+Tabs,
+TabsContent,
+TabsList,
+TabsTrigger,
+} from "@/components/ui/tabs";
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useI18n } from '@/lib/i18n';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import {
-  MessageCircle,
-  Clock,
-  Send,
-  Users,
-  Search,
-  ExternalLink,
-  Phone,
-  Receipt,
-  Bell,
-  Megaphone,
-  Settings2,
-  FileText,
-  CreditCard,
-  CalendarClock,
-  ChevronRight,
-  Plus,
-  Trash2,
-  AlertTriangle,
-  CheckCircle2,
-} from 'lucide-react';
-import { SiWhatsapp } from 'react-icons/si';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import type { WhatsappMessage, Invoice, CustomerContact, Notification } from '@shared/schema';
-import {
-  MESSAGE_TEMPLATES,
-  fillTemplate,
-  formatPhoneForWhatsApp,
-  openWhatsApp,
-  pickWhatsAppNumber,
-  type MessageTemplate,
-} from '@/lib/whatsapp-templates';
-import {
-  draftWithWhatsAppBridge,
-  openWhatsAppWithLoggedFallback,
-  pingWhatsAppBridge,
-  registerWhatsAppBridgeSession,
-  updateWhatsAppBridgeJobStatus,
-  type WhatsAppBridgePing,
+draftWithWhatsAppBridge,
+openWhatsAppWithLoggedFallback,
+pingWhatsAppBridge,
+registerWhatsAppBridgeSession,
+updateWhatsAppBridgeJobStatus,
+type WhatsAppBridgePing,
 } from '@/lib/whatsapp-bridge';
+import {
+MESSAGE_TEMPLATES,
+fillTemplate,
+formatPhoneForWhatsApp,
+openWhatsApp,
+pickWhatsAppNumber
+} from '@/lib/whatsapp-templates';
+import type { CustomerContact,Invoice,Notification,WhatsappMessage } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import {
+AlertTriangle,
+Bell,
+CheckCircle2,
+Clock,
+CreditCard,
+ExternalLink,
+FileText,
+Megaphone,
+MessageCircle,
+Phone,
+Receipt,
+Search,
+Send,
+Settings2,
+Users
+} from 'lucide-react';
+import { useEffect,useState,type ComponentProps } from 'react';
+import { SiWhatsapp } from 'react-icons/si';
 
 // ─── Rules ────────────────────────────────────────────────
 

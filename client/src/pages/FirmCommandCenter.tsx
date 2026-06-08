@@ -4,70 +4,70 @@
  * Executive dashboard for firm owners with key metrics, client health table,
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
-import { useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
-  Bell,
-  CheckCircle2,
-  DollarSign,
-  Mail,
-  RefreshCw,
-  Search,
-  TrendingUp,
-  Users,
-  Calculator,
-  FileSearch,
-  Building2,
-  Loader2,
-  Activity,
+Activity,
+AlertTriangle,
+ArrowDownRight,
+ArrowUpRight,
+Bell,
+Building2,
+Calculator,
+CheckCircle2,
+DollarSign,
+FileSearch,
+Loader2,
+Mail,
+RefreshCw,
+Search,
+TrendingUp,
+Users,
 } from 'lucide-react';
+import { useMemo,useState } from 'react';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  ResponsiveContainer,
-  Legend,
+Bar,
+BarChart,
+CartesianGrid,
+Legend,
+Tooltip as RechartsTooltip,
+ResponsiveContainer,
+XAxis,
+YAxis,
 } from 'recharts';
+import { useLocation } from 'wouter';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+AlertDialog,
+AlertDialogAction,
+AlertDialogCancel,
+AlertDialogContent,
+AlertDialogDescription,
+AlertDialogFooter,
+AlertDialogHeader,
+AlertDialogTitle,
+AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+Select,
+SelectContent,
+SelectItem,
+SelectTrigger,
+SelectValue,
 } from '@/components/ui/select';
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+Table,
+TableBody,
+TableCell,
+TableHead,
+TableHeader,
+TableRow,
+} from '@/components/ui/table';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -332,7 +332,7 @@ export default function FirmCommandCenter() {
 
   // ─── Derived data ──────────────────────────────────────────────────
   const summary = dashboardQuery.data?.summary;
-  const allClients = healthQuery.data ?? [];
+  const allClients = useMemo(() => healthQuery.data ?? [], [healthQuery.data]);
   const filteredClients = useMemo(
     () =>
       allClients.filter((c) =>

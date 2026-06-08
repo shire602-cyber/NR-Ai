@@ -1,5 +1,5 @@
-import rateLimit, { type Options } from 'express-rate-limit';
-import type { Request, Response } from 'express';
+import type { Request,Response } from 'express';
+import rateLimit,{ type Options } from 'express-rate-limit';
 import { createLogger } from '../config/logger';
 
 const log = createLogger('rate-limit');

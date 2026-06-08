@@ -1,25 +1,25 @@
-import { type Express, type Request, type Response } from 'express';
 import { randomUUID } from 'crypto';
-import { and, desc, eq, gt } from 'drizzle-orm';
+import { and,desc,eq,gt } from 'drizzle-orm';
+import { type Express,type Request,type Response } from 'express';
 import { z } from 'zod';
-import { storage } from '../storage';
+import {
+whatsappBridgeJobs,
+whatsappBridgeSessions,
+whatsappMessages,
+} from '../../shared/schema';
+import { createLogger } from '../config/logger';
 import { db } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { createLogger } from '../config/logger';
 import {
-  whatsappBridgeJobs,
-  whatsappBridgeSessions,
-  whatsappMessages,
-} from '../../shared/schema';
-import {
-  WHATSAPP_BRIDGE_PROVIDER,
-  bridgeStatusUpdateSchema,
-  cleanBridgeJobMetadata,
-  createBridgeJobSchema,
-  createBridgeSessionSchema,
-  normalizeWhatsAppBridgePhone,
+WHATSAPP_BRIDGE_PROVIDER,
+bridgeStatusUpdateSchema,
+cleanBridgeJobMetadata,
+createBridgeJobSchema,
+createBridgeSessionSchema,
+normalizeWhatsAppBridgePhone,
 } from '../services/whatsapp-bridge.service';
+import { storage } from '../storage';
 
 const log = createLogger('whatsapp');
 

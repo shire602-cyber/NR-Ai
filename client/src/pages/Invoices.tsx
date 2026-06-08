@@ -1,49 +1,70 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm, useFieldArray } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DateRangeFilter,type DateRange } from '@/components/DateRangeFilter';
+import { Alert,AlertDescription } from '@/components/ui/alert';
+import { AlertDialog,AlertDialogAction,AlertDialogCancel,AlertDialogContent,AlertDialogDescription,AlertDialogFooter,AlertDialogHeader,AlertDialogTitle,AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency, formatDate } from '@/lib/format';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
+import { DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Form,FormControl,FormDescription,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import { TableSkeleton } from '@/components/ui/loading-skeletons';
-import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from '@/lib/export';
-import { Plus, FileText, FileCode, CalendarIcon, Trash2, Download, Edit, Palette, Save, Info, XCircle, AlertCircle, FileSpreadsheet, Send, DollarSign, RefreshCw, RotateCcw } from 'lucide-react';
-import { SiGooglesheets, SiWhatsapp } from 'react-icons/si';
-import type { Invoice, Company, CustomerContact, InvoicePayment } from '@shared/schema';
-import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from '@/lib/whatsapp-templates';
+import { Popover,PopoverContent,PopoverTrigger } from '@/components/ui/popover';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { WhatsAppComposer } from '@/components/WhatsAppComposer';
-import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { exportToExcel,exportToGoogleSheets,prepareInvoicesForExport } from '@/lib/export';
+import { formatCurrency,formatDate } from '@/lib/format';
+import { useTranslation } from '@/lib/i18n';
 import { downloadInvoicePDF } from '@/lib/pdf-invoice';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { cn } from '@/lib/utils';
+import { MESSAGE_TEMPLATES,fillTemplate,pickWhatsAppNumber } from '@/lib/whatsapp-templates';
+import { zodResolver } from '@hookform/resolvers/zod';
+import type { CustomerContact,Invoice,InvoicePayment } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { endOfDay,format,isWithinInterval,parseISO,startOfDay } from 'date-fns';
+import { AlertCircle,CalendarIcon,DollarSign,Download,Edit,FileCode,FileSpreadsheet,FileText,Info,Palette,Plus,RefreshCw,RotateCcw,Save,Trash2,XCircle } from 'lucide-react';
+import { useEffect,useMemo,useRef,useState } from 'react';
+import { useFieldArray,useForm } from 'react-hook-form';
+import { SiGooglesheets,SiWhatsapp } from 'react-icons/si';
+import { z } from 'zod';
+
+const emirateOptions = [
+  { value: 'abu_dhabi', label: 'Abu Dhabi' },
+  { value: 'dubai', label: 'Dubai' },
+  { value: 'sharjah', label: 'Sharjah' },
+  { value: 'ajman', label: 'Ajman' },
+  { value: 'umm_al_quwain', label: 'Umm Al Quwain' },
+  { value: 'ras_al_khaimah', label: 'Ras Al Khaimah' },
+  { value: 'fujairah', label: 'Fujairah' },
+] as const;
+
+const emirateValueSchema = z.enum([
+  'abu_dhabi',
+  'dubai',
+  'sharjah',
+  'ajman',
+  'umm_al_quwain',
+  'ras_al_khaimah',
+  'fujairah',
+]);
 
 const invoiceLineSchema = z.object({
   description: z.string().min(1, 'Description is required'),
   quantity: z.coerce.number().min(0.01, 'Quantity must be positive'),
   unitPrice: z.coerce.number().min(0.01, 'Price must be greater than 0'),
   vatRate: z.coerce.number().default(0.05),
+  supplyEmirate: emirateValueSchema.default('dubai'),
 });
 
 const invoiceSchema = z.object({
@@ -130,6 +151,16 @@ export default function Invoices() {
     enabled: !!selectedCompanyId,
   });
 
+  const parsedCompanyEmirate = emirateValueSchema.safeParse(company?.emirate);
+  const defaultSupplyEmirate = parsedCompanyEmirate.success ? parsedCompanyEmirate.data : 'dubai';
+  const defaultInvoiceLine = () => ({
+    description: '',
+    quantity: 1,
+    unitPrice: 0,
+    vatRate: 0.05,
+    supplyEmirate: defaultSupplyEmirate,
+  });
+
   const form = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
     defaultValues: {
@@ -139,7 +170,7 @@ export default function Invoices() {
       customerTrn: '',
       date: new Date(),
       currency: 'AED',
-      lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      lines: [defaultInvoiceLine()],
     },
   });
 
@@ -173,7 +204,7 @@ export default function Invoices() {
         customerTrn: '',
         date: new Date(),
         currency: 'AED',
-        lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+        lines: [defaultInvoiceLine()],
       });
     },
     onError: (error: any) => {
@@ -203,7 +234,7 @@ export default function Invoices() {
         customerTrn: '',
         date: new Date(),
         currency: 'AED',
-        lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+        lines: [defaultInvoiceLine()],
       });
     },
     onError: (error: any) => {
@@ -382,7 +413,15 @@ export default function Invoices() {
         customerTrn: fullInvoice.customerTrn || '',
         date: new Date(fullInvoice.date),
         currency: fullInvoice.currency,
-        lines: fullInvoice.lines || [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+        lines: fullInvoice.lines?.map((line: any) => ({
+          description: line.description,
+          quantity: Number(line.quantity),
+          unitPrice: Number(line.unitPrice),
+          vatRate: Number(line.vatRate),
+          supplyEmirate: emirateValueSchema.safeParse(line.supplyEmirate).success
+            ? line.supplyEmirate
+            : defaultSupplyEmirate,
+        })) || [defaultInvoiceLine()],
       });
       setDialogOpen(true);
     } catch (error: any) {
@@ -402,7 +441,7 @@ export default function Invoices() {
       customerTrn: '',
       date: new Date(),
       currency: 'AED',
-      lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      lines: [defaultInvoiceLine()],
     });
     setEditingInvoice(null);
   };
@@ -417,12 +456,13 @@ export default function Invoices() {
           quantity: Number(line.quantity),
           unitPrice: Number(line.unitPrice),
           vatRate: Number(line.vatRate),
+          supplyEmirate: line.supplyEmirate || defaultSupplyEmirate,
         })),
       };
 
       // Proceed with save directly - similar check removed for better UX
       await performInvoiceSave(invoiceData, editingInvoice);
-    } catch (error) {
+    } catch (_error) {
       // Error is handled by mutation callbacks
     }
   };
@@ -653,7 +693,7 @@ export default function Invoices() {
               customerTrn: '',
               date: new Date(),
               currency: 'AED',
-              lines: [{ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+              lines: [defaultInvoiceLine()],
             });
           }
         }}>
@@ -759,7 +799,7 @@ export default function Invoices() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      onClick={() => append({ description: '', quantity: 1, unitPrice: 0, vatRate: 0.05 })}
+                      onClick={() => append(defaultInvoiceLine())}
                       data-testid="button-add-line"
                     >
                       <Plus className="w-4 h-4 mr-2" />
@@ -841,6 +881,30 @@ export default function Invoices() {
                                     <SelectItem value="0">0%</SelectItem>
                                     <SelectItem value="5">5%</SelectItem>
                                     <SelectItem value="10">10%</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <FormField
+                          control={form.control}
+                          name={`lines.${index}.supplyEmirate`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormControl>
+                                <Select value={field.value || defaultSupplyEmirate} onValueChange={field.onChange}>
+                                  <SelectTrigger data-testid={`select-line-emirate-${index}`} aria-label={`Line ${index + 1} supply emirate`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {emirateOptions.map((option) => (
+                                      <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
                                   </SelectContent>
                                 </Select>
                               </FormControl>

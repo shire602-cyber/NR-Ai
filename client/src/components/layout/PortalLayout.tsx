@@ -1,12 +1,17 @@
-import { useLocation, Link } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  LayoutDashboard, FileText, FolderOpen, BarChart2, MessageSquare, LogOut, Building2,
-} from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { apiRequest } from '@/lib/queryClient';
 import { removeToken } from '@/lib/auth';
+import { apiRequest } from '@/lib/queryClient';
+import { useQuery } from '@tanstack/react-query';
+import { AnimatePresence,motion } from 'framer-motion';
+import {
+BarChart2,
+Building2,
+FileText,FolderOpen,
+LayoutDashboard,
+LogOut,
+MessageSquare,
+} from 'lucide-react';
+import { Link,useLocation } from 'wouter';
 
 const NAV_ITEMS = [
   { label: 'Dashboard',   href: '/client-portal/dashboard',   icon: LayoutDashboard },

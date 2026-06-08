@@ -1,48 +1,46 @@
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Link } from 'wouter';
-import { 
-  FileText,
-  FileCheck,
-  FileX,
-  Calculator,
-  BookOpen,
-  Sparkles,
-  BarChart3,
-  Shield,
-  CheckCircle2,
-  ArrowRight,
-  Globe,
-  Users,
-  Building2,
-  Briefcase,
-  Store,
-  Home,
-  Rocket,
-  Phone,
-  MessageSquare,
-  Award,
-  Clock,
-  Handshake,
-  Languages,
-  TrendingUp,
-  Star,
-  Brain,
-  Zap,
-  ScanLine,
-  Bot,
-  LineChart,
-  Target,
-  Lightbulb,
-  Mic,
-  FileSearch,
-  Banknote,
-  AlertTriangle,
-  Workflow
-} from 'lucide-react';
-import { useState, useEffect } from 'react';
 import { useI18n } from '@/lib/i18n';
+import {
+AlertTriangle,
+ArrowRight,
+Award,
+BarChart3,
+BookOpen,
+Bot,
+Brain,
+Briefcase,
+Building2,
+Calculator,
+CheckCircle2,
+Clock,
+FileCheck,
+FileSearch,
+FileText,
+FileX,
+Globe,
+Handshake,
+Home,
+Languages,
+LineChart,
+MessageSquare,
+Mic,
+Phone,
+Rocket,
+ScanLine,
+Shield,
+Sparkles,
+Star,
+Store,
+Target,
+TrendingUp,
+Users,
+Workflow,
+Zap
+} from 'lucide-react';
+import { useEffect,useState } from 'react';
+import { Link } from 'wouter';
 
 export default function Services() {
   const [mounted, setMounted] = useState(false);

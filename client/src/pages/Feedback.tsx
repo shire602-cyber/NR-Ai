@@ -1,32 +1,32 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest } from '@/lib/queryClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { formatDistanceToNow } from 'date-fns';
-import { useLocation } from 'wouter';
-import { 
-  MessageSquare, 
-  Bug, 
-  Lightbulb, 
-  ThumbsUp, 
-  Star,
-  Send,
-  History,
-  CheckCircle,
-  Clock,
-  AlertCircle
-} from 'lucide-react';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import type { UserFeedback } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { formatDistanceToNow } from 'date-fns';
+import {
+AlertCircle,
+Bug,
+CheckCircle,
+Clock,
+History,
+Lightbulb,
+MessageSquare,
+Send,
+Star,
+ThumbsUp
+} from 'lucide-react';
+import { useState } from 'react';
+import { useLocation } from 'wouter';
 
 const FEEDBACK_TYPES = [
   { value: 'bug', label: 'Bug Report', icon: Bug, description: 'Report a problem or error' },

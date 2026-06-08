@@ -1,21 +1,20 @@
-import { useCallback, useEffect, lazy, Suspense } from 'react';
-import { Switch, Route, useLocation, Link } from 'wouter';
-import { queryClient } from './lib/queryClient';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { ErrorBoundary,SectionBoundary } from '@/components/ErrorBoundary';
+import { PageSkeleton } from '@/components/PageSkeleton';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { PortalLayout } from '@/components/layout/PortalLayout';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
-import { ErrorBoundary, SectionBoundary } from '@/components/ErrorBoundary';
-import { useI18n, useTranslation } from '@/lib/i18n';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { Button } from '@/components/ui/button';
-import { User, Building2, ArrowLeft } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2 } from 'lucide-react';
-import { PageSkeleton } from '@/components/PageSkeleton';
+import { SidebarProvider,SidebarTrigger } from '@/components/ui/sidebar';
+import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useI18n,useTranslation } from '@/lib/i18n';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { AnimatePresence,motion } from 'framer-motion';
+import { ArrowLeft,Building2,Loader2,User } from 'lucide-react';
+import { lazy,Suspense,useCallback,useEffect } from 'react';
+import { Link,Route,Switch,useLocation } from 'wouter';
+import { queryClient } from './lib/queryClient';
 
 // All pages lazy-loaded for route-level code splitting.
 // Layout shell (AppSidebar, ProtectedLayout) is NOT lazy — needed immediately.
@@ -161,20 +160,20 @@ function loginRedirectForCurrentPath(): string {
   return `/login?next=${encodeURIComponent(next)}`;
 }
 
-import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
+import { ActiveCompanyProvider,useActiveCompany } from '@/components/ActiveCompanyProvider';
 import { MobileNav } from '@/components/MobileNav';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
+import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
+import { RTLProvider } from '@/components/RTLProvider';
 import { RouteGuard } from '@/components/layout/RouteGuard';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { ActiveCompanyProvider, useActiveCompany } from '@/components/ActiveCompanyProvider';
-import { RTLProvider } from '@/components/RTLProvider';
-import '@/styles/rtl.css';
 import '@/styles/mobile.css';
+import '@/styles/rtl.css';
 
 // Components
-import { OnboardingWizard } from '@/components/Onboarding';
 import { CommandPaletteProvider } from '@/components/CommandPalette';
+import { OnboardingWizard } from '@/components/Onboarding';
 import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
 import { SkipLink } from '@/components/SkipLink';
 import { shouldClearClientWorkspaceForPath } from '@/lib/workspaceRoutes';
@@ -652,7 +651,7 @@ export default function App() {
   useEffect(() => {
     // Initialize locale settings
     setLocale(locale);
-  }, []);
+  }, [locale, setLocale]);
 
   return (
     <ErrorBoundary>

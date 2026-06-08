@@ -1,46 +1,65 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
-import {
-  Building2, Plus, Search, LayoutGrid, List,
-  ChevronRight, Users, Calendar,
-  BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
-  Calculator, CheckCircle2, Clock, FileText, TrendingUp,
-  UserCheck, Target, RefreshCw, Copy, ScanLine, Check, XCircle,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { useActiveCompany } from '@/components/ActiveCompanyProvider';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { apiUrl } from '@/lib/api';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import {
-  parseVatPasteRows,
-  vat201CopyGroups,
-  vatEmirates,
-  vatRowCategories,
-  vatRowCategoryLabel,
-  type VatRowCategory,
+parseVatPasteRows,
+vat201CopyGroups,
+vatEmirates,
+vatRowCategories,
+vatRowCategoryLabel,
+type VatRowCategory,
 } from '@/lib/vat-workpaper-grid';
-import { format } from 'date-fns';
-import type { Company } from '@shared/schema';
 import {
-  CLIENT_SERVICE_OPTIONS,
-  DEFAULT_CLIENT_SERVICE_CODES,
-  clientHasService,
-  serviceLabels,
-  type ClientServiceCode,
-  type ClientServicePlan,
+CLIENT_SERVICE_OPTIONS,
+DEFAULT_CLIENT_SERVICE_CODES,
+clientHasService,
+serviceLabels,
+type ClientServiceCode,
+type ClientServicePlan,
 } from '@shared/client-services';
-import { useActiveCompany } from '@/components/ActiveCompanyProvider';
+import type { Company } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import {
+AlertTriangle,
+BookOpen,
+Building2,
+Calculator,
+Calendar,
+Check,
+CheckCircle2,
+ChevronRight,
+Clock,
+Copy,
+FileText,
+FolderOpen,
+LayoutGrid,List,
+Plus,
+Receipt,
+RefreshCw,
+ScanLine,
+Search,
+Target,
+TrendingUp,
+Upload,
+UserCheck,
+Users,
+XCircle,
+} from 'lucide-react';
+import { useEffect,useMemo,useState } from 'react';
+import { useLocation } from 'wouter';
 
 interface ClientStats {
   invoiceCount: number;
@@ -1878,7 +1897,7 @@ function VatWorkspaceDialog({
     queryFn: () => apiRequest('GET', `/api/firm/vat-workpapers?companyId=${client?.id}`),
     enabled: open && !!client,
   });
-  const workpapers = workpapersQuery.data?.workpapers ?? [];
+  const workpapers = useMemo(() => workpapersQuery.data?.workpapers ?? [], [workpapersQuery.data?.workpapers]);
 
   useEffect(() => {
     if (!open) return;
@@ -2629,7 +2648,7 @@ function VatWorkspaceDialog({
   );
 }
 
-function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
+function _VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
   if (!vatStatus) return <Badge variant="outline">No VAT</Badge>;
   const due = new Date(vatStatus.dueDate);
   const now = new Date();

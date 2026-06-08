@@ -62,6 +62,8 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
+  DATABASE_SSL: z.string().optional(),
+  DATABASE_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).optional(),
 
   // === Email / SMTP (optional — features gracefully degrade if not set) ===
   SMTP_HOST: z.string().optional(),

@@ -16,23 +16,23 @@
  */
 
 import OpenAI from 'openai';
-import { storage } from '../storage';
-import { pool } from '../db';
+import type { Account } from '../../shared/schema';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
+import { pool } from '../db';
+import { storage } from '../storage';
 import { assertPeriodNotLocked } from './period-lock.service';
 import {
-  classifyReceipt,
-  type ClassificationResult,
-  type StandardCategory,
+classifyReceipt,
+type ClassificationResult,
+type StandardCategory,
 } from './receipt-classifier.service';
 import {
-  getModel,
-  getClassifierConfig,
-  invalidateModel,
-  applyAccuracyFailsafe,
+applyAccuracyFailsafe,
+getClassifierConfig,
+getModel,
+invalidateModel,
 } from './training-data.service';
-import type { Account } from '../../shared/schema';
 
 const log = createLogger('receipt-autopilot');
 
@@ -385,11 +385,9 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
     lines.push({ accountId: paymentAccountId, debit: 0, credit: total, description: merchantLabel });
   }
 
-  const entryNumber = await storage.generateEntryNumber(companyId, txnDate);
-  const entry = await storage.createJournalEntry(
+  const entry = await storage.createJournalEntryWithGeneratedNumber(
     {
       companyId,
-      entryNumber,
       date: txnDate,
       memo: `Receipt Autopilot: ${merchantLabel} (${classification.method}, ${(classification.confidence * 100).toFixed(0)}% conf)`,
       status: 'posted',

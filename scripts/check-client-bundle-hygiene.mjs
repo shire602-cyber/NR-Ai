@@ -6,6 +6,7 @@ const clientRoot = join(root, 'client', 'src');
 const viteConfig = readFileSync(join(root, 'vite.config.ts'), 'utf8');
 const dockerfile = readFileSync(join(root, 'Dockerfile'), 'utf8');
 const railwayConfig = JSON.parse(readFileSync(join(root, 'railway.json'), 'utf8'));
+const builtIndexPath = join(root, 'dist', 'public', 'index.html');
 const failures = [];
 
 const limitMatch = viteConfig.match(/chunkSizeWarningLimit:\s*(\d+)/);
@@ -21,6 +22,16 @@ if (/npm ci[^\n]*\|\|\s*npm install/.test(dockerfile)) {
 
 if (railwayConfig?.deploy?.healthcheckPath !== '/api/version') {
   failures.push('railway.json must health-check /api/version so deploy readiness is DB-free; keep DB checks on /health/ready.');
+}
+
+try {
+  const builtIndex = readFileSync(builtIndexPath, 'utf8');
+  const heavyPreloadPattern = /rel="modulepreload"[^>]+assets\/(?:vendor-pdf|vendor-pdfjs|vendor-html2canvas|generateCategoricalChart)-/;
+  if (heavyPreloadPattern.test(builtIndex)) {
+    failures.push('dist/public/index.html preloads heavy lazy PDF/chart chunks. Keep document/chart workflows on demand.');
+  }
+} catch {
+  // `npm run check` may run before `npm run build`; skip built-asset checks then.
 }
 
 for (const file of walk(clientRoot)) {

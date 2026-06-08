@@ -483,7 +483,6 @@ export async function generateClosingEntries(
   const periodLabel = `${periodStart} to ${periodEnd}`;
   const memo = `Closing entries for ${periodLabel}`;
   const periodEndDate = new Date(periodEnd);
-  const entryNumber = await storage.generateEntryNumber(companyId, periodEndDate);
 
   // Create entry + lines atomically via storage (validates balance & wraps in transaction)
   const journalLines = lines.map((line) => ({
@@ -493,10 +492,9 @@ export async function generateClosingEntries(
     description: `Closing entry - ${line.accountName}`,
   }));
 
-  const entry = await storage.createJournalEntry(
+  const entry = await storage.createJournalEntryWithGeneratedNumber(
     {
       companyId,
-      entryNumber,
       date: periodEndDate,
       memo,
       status: 'posted',

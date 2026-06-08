@@ -1,14 +1,14 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and,desc,eq,inArray,sql } from 'drizzle-orm';
 
-import { db } from '../db';
 import {
-  bankTransactions,
-  companies,
-  firmGrowthActions,
-  firmGrowthOpportunities,
-  invoices,
-  receipts,
+bankTransactions,
+companies,
+firmGrowthActions,
+firmGrowthOpportunities,
+invoices,
+receipts,
 } from '../../shared/schema';
+import { db } from '../db';
 
 export type GrowthOpportunityStatus = 'open' | 'accepted' | 'snoozed' | 'dismissed' | 'completed';
 export type GrowthOpportunityPriority = 'critical' | 'high' | 'medium' | 'low';

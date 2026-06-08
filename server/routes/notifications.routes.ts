@@ -1,8 +1,8 @@
-import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
+import type { Express,Request,Response } from "express";
+import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { z } from "zod";
+import { storage } from "../storage";
 
 export function registerNotificationRoutes(app: Express) {
   // =====================================
@@ -26,7 +26,11 @@ export function registerNotificationRoutes(app: Express) {
   // Mark notification as read
   app.patch("/api/notifications/:id/read", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const notification = await storage.markNotificationAsRead(id);
+    const userId = (req as any).user?.id;
+    const notification = await storage.markNotificationAsRead(userId, id);
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
     res.json(notification);
   }));
 
@@ -40,7 +44,11 @@ export function registerNotificationRoutes(app: Express) {
   // Dismiss notification
   app.patch("/api/notifications/:id/dismiss", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const notification = await storage.dismissNotification(id);
+    const userId = (req as any).user?.id;
+    const notification = await storage.dismissNotification(userId, id);
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
     res.json(notification);
   }));
 

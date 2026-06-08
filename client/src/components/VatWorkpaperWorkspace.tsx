@@ -1,25 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation,useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Calculator, Check, Copy, FileText, Plus, RefreshCw, Upload } from 'lucide-react';
+import { Calculator,Check,Copy,FileText,Plus,RefreshCw,Upload } from 'lucide-react';
+import { useEffect,useMemo,useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import {
-  parseVatPasteRows,
-  vat201CopyGroups,
-  vatEmirates,
-  vatRowCategories,
-  vatRowCategoryLabel,
-  type VatRowCategory,
+parseVatPasteRows,
+vat201CopyGroups,
+vatEmirates,
+vatRowCategories,
+vatRowCategoryLabel,
+type VatRowCategory,
 } from '@/lib/vat-workpaper-grid';
 
 interface VatWorkpaperSummary {
@@ -76,7 +76,7 @@ interface VatRowForm {
   auditReason: string;
 }
 
-function dateInput(date: Date | string | null | undefined) {
+function _dateInput(date: Date | string | null | undefined) {
   if (!date) return '';
   const parsed = date instanceof Date ? date : new Date(date);
   return Number.isNaN(parsed.getTime()) ? '' : format(parsed, 'yyyy-MM-dd');
@@ -178,7 +178,7 @@ export function VatWorkpaperWorkspace({
     enabled: !!companyId,
     retry: false,
   });
-  const workpapers = workpapersQuery.data?.workpapers ?? [];
+  const workpapers = useMemo(() => workpapersQuery.data?.workpapers ?? [], [workpapersQuery.data?.workpapers]);
 
   useEffect(() => {
     if (!selectedWorkpaperId && workpapers.length > 0) setSelectedWorkpaperId(workpapers[0].id);

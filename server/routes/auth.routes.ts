@@ -1,60 +1,58 @@
-import type { Request, Response } from 'express';
-import { Router } from 'express';
-import type { Express } from 'express';
 import bcrypt from 'bcryptjs';
-import { randomBytes, createHash } from 'crypto';
+import { createHash,randomBytes } from 'crypto';
+import type { Express,Request,Response } from 'express';
+import { Router } from 'express';
 import { z } from 'zod';
 
-import { storage } from '../storage';
-import { getEnv } from '../config/env';
+import { eq } from 'drizzle-orm';
+import { insertUserSchema,users } from '../../shared/schema';
 import {
-  generateToken,
-  authMiddleware,
+forgotPasswordSchema,
+resetPasswordSchema,
+loginSchema as sharedLoginSchema,
+trnSchema,
+} from '../../shared/validators';
+import { getEnv } from '../config/env';
+import { createLogger } from '../config/logger';
+import { db } from '../db';
+import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import {
+authMiddleware,
+generateToken,
 } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { insertUserSchema } from '../../shared/schema';
 import {
-  loginSchema as sharedLoginSchema,
-  forgotPasswordSchema,
-  resetPasswordSchema,
-  trnSchema,
-} from '../../shared/validators';
-import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
-import { createLogger } from '../config/logger';
+clearAuthCookies,
+getAccessTokenFromRequest,
+getRefreshTokenFromRequest,
+sessionMetaFromRequest,
+setAuthCookies,
+} from '../services/auth-cookies.service';
 import {
-  blacklistToken,
-  createRefreshSession,
-  rotateRefreshSession,
-  revokeRefreshSession,
-  createEmailVerificationToken,
-  consumeEmailVerificationToken,
+blacklistToken,
+consumeEmailVerificationToken,
+createEmailVerificationToken,
+createRefreshSession,
+revokeRefreshSession,
+rotateRefreshSession,
 } from '../services/auth-tokens.service';
 import {
-  clearAuthCookies,
-  getAccessTokenFromRequest,
-  getRefreshTokenFromRequest,
-  sessionMetaFromRequest,
-  setAuthCookies,
-} from '../services/auth-cookies.service';
-import { db } from '../db';
-import { users } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
-import {
-  consumeOAuthState,
-  createOAuthAuthorizationUrl,
-  exchangeOAuthCallback,
-  getAuthIdentity,
-  getOAuthProviderInfo,
-  getUserByNormalizedOAuthEmail,
-  isOAuthProviderId,
-  linkAuthIdentity,
-  markOAuthLogin,
-  oauthCallbackFailureUrl,
-  oauthCallbackSuccessUrl,
-  oauthRedirectUri,
-  type OAuthIdentityProfile,
+consumeOAuthState,
+createOAuthAuthorizationUrl,
+exchangeOAuthCallback,
+getAuthIdentity,
+getOAuthProviderInfo,
+getUserByNormalizedOAuthEmail,
+isOAuthProviderId,
+linkAuthIdentity,
+markOAuthLogin,
+oauthCallbackFailureUrl,
+oauthCallbackSuccessUrl,
+oauthRedirectUri,
+type OAuthIdentityProfile,
 } from '../services/oauth.service';
+import { storage } from '../storage';
 
 const log = createLogger('auth');
 
@@ -147,6 +145,58 @@ async function createOAuthCustomer(profile: OAuthIdentityProfile) {
   } as any);
 
   return user;
+}
+
+async function recordReferralSignupFromRegistration(input: {
+  code: string | undefined;
+  refereeUserId: string;
+  refereeEmail: string;
+}): Promise<void> {
+  const code = input.code?.trim();
+  if (!code) return;
+
+  const referralCode = await storage.getReferralCodeByCode(code);
+  if (!referralCode || !referralCode.isActive) return;
+  if (referralCode.expiresAt && new Date(referralCode.expiresAt) < new Date()) return;
+  if (referralCode.userId === input.refereeUserId) return;
+
+  const refereeEmail = input.refereeEmail.trim().toLowerCase();
+  const existing = await storage.getReferralByCodeAndEmail(referralCode.id, refereeEmail);
+  if (existing) {
+    if (!existing.refereeId || existing.status === 'pending') {
+      await storage.updateReferral(existing.id, {
+        refereeId: input.refereeUserId,
+        status: 'signed_up',
+      });
+    }
+    return;
+  }
+
+  await storage.createReferral({
+    referralCodeId: referralCode.id,
+    referrerId: referralCode.userId,
+    refereeId: input.refereeUserId,
+    refereeEmail,
+    status: 'signed_up',
+    signupSource: 'registration',
+    referrerRewardStatus: 'pending',
+    refereeRewardStatus: 'pending',
+    referrerRewardAmount: referralCode.referrerRewardValue,
+    refereeRewardAmount: referralCode.refereeRewardValue,
+  });
+
+  await storage.updateReferralCode(referralCode.id, {
+    totalReferrals: (referralCode.totalReferrals || 0) + 1,
+  });
+
+  await storage.createNotification({
+    userId: referralCode.userId,
+    type: 'referral',
+    title: 'New referral signup',
+    message: 'A new user signed up using your referral code.',
+    priority: 'normal',
+    actionUrl: '/referrals',
+  });
 }
 
 async function resolveOAuthUser(profile: OAuthIdentityProfile): Promise<{ user: any; mode: 'existing_identity' | 'linked_existing' | 'created_customer' }> {
@@ -244,6 +294,11 @@ export function registerAuthRoutes(app: Express): void {
         }
         trn = trnParse.data;
       }
+      const referralCodeFromBody = typeof (req.body as any)?.referralCode === 'string'
+        ? (req.body as any).referralCode
+        : typeof (req.body as any)?.referral === 'string'
+          ? (req.body as any).referral
+          : undefined;
 
       // Check if user exists. Return a generic message either way to prevent
       // email enumeration via differing 200/400 responses.
@@ -305,6 +360,16 @@ export function registerAuthRoutes(app: Express): void {
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
       });
+
+      try {
+        await recordReferralSignupFromRegistration({
+          code: referralCodeFromBody,
+          refereeUserId: user.id,
+          refereeEmail: user.email,
+        });
+      } catch (err) {
+        log.error({ err, userId: user.id }, 'Failed to record referral signup');
+      }
 
       // Issue email verification token. The token is logged for now —
       // when a transactional-email provider is wired up this should be
