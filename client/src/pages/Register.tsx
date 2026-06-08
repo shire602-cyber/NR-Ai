@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
-import { useLocation, Link } from 'wouter';
 import { RegisterForm } from '@/components/auth/RegisterForm';
+import { Button } from '@/components/ui/button';
 import { fetchCurrentUser } from '@/lib/auth';
 import { establishAuthenticatedSession } from '@/lib/authSession';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, Briefcase } from 'lucide-react';
+import { ArrowLeft,Briefcase } from 'lucide-react';
+import { useEffect } from 'react';
+import { Link,useLocation } from 'wouter';
 
 export default function Register() {
   const [, setLocation] = useLocation();

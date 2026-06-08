@@ -5,28 +5,29 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import compression from 'compression';
+import connectPgSimple from 'connect-pg-simple';
+import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
-import connectPgSimple from 'connect-pg-simple';
 import passport from 'passport';
-import compression from 'compression';
-import cookieParser from 'cookie-parser';
 
-import { validateEnv, isDevelopment } from './config/env';
+import './auth';
 import { authCookieBaseOptions } from './config/cookies';
+import { isDevelopment,validateEnv } from './config/env';
 import { createLogger } from './config/logger';
-import { applyRateLimitMiddleware, applySecurityMiddleware } from './middleware/security';
+import { buildPgPoolConfig,closePool,ensureCriticalSchema,getPoolStats,pingDb,runMigrations } from './db';
+import { adminMiddleware,authMiddleware } from './middleware/auth';
+import { csrfErrorHandler,csrfProtection,csrfTokenHandler } from './middleware/csrf';
+import { globalErrorHandler,notFoundHandler } from './middleware/errorHandler';
 import { requestId } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
-import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
-import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from './middleware/csrf';
-import { authMiddleware, adminMiddleware } from './middleware/auth';
+import { applyRateLimitMiddleware,applySecurityMiddleware } from './middleware/security';
 import { registerRoutes } from './routes';
-import { initSocketServer } from './services/socket.service';
-import { setupVite, serveStatic } from './vite';
 import { initScheduler } from './services/scheduler.service';
-import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from './db';
+import { initSocketServer } from './services/socket.service';
 import { installGracefulShutdown } from './shutdown';
+import { serveStatic,setupVite } from './vite';
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -81,7 +82,7 @@ const PgSession = connectPgSimple(session);
 app.use(
   session({
     store: new PgSession({
-      conString: env.DATABASE_URL,
+      conObject: buildPgPoolConfig(env.DATABASE_URL),
       tableName: 'session',
       createTableIfMissing: true,
     }),
@@ -98,7 +99,6 @@ app.use(
 // ─── Passport initialization ─────────────────────────────────
 app.use(passport.initialize());
 app.use(passport.session());
-import './auth';
 
 // ─── Request logging ─────────────────────────────────────────
 app.use(requestLogger);
@@ -119,10 +119,15 @@ app.get('/health/live', (_req, res) => {
 // Railway healthcheck endpoint. This stays DB-free so deploy readiness can
 // confirm the HTTP server is alive even while deeper dependencies recover.
 app.get('/api/version', (_req, res) => {
+  const railwayCommit = process.env.RAILWAY_GIT_COMMIT_SHA;
+  const commit = railwayCommit && railwayCommit !== 'local'
+    ? railwayCommit
+    : process.env.COMMIT_SHA || null;
+
   res.status(200).json({
     status: 'ok',
     version: process.env.APP_VERSION || '1.0.0',
-    commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || null,
+    commit,
     environment: env.NODE_ENV,
     uptime: process.uptime(),
   });

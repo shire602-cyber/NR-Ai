@@ -1,44 +1,44 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm, useFieldArray } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { format, parseISO, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
+import { DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuSeparator,DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Form,FormControl,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Popover,PopoverContent,PopoverTrigger } from '@/components/ui/popover';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency, formatDate } from '@/lib/format';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { formatCurrency,formatDate } from '@/lib/format';
+import { useTranslation } from '@/lib/i18n';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
 import {
-  Plus,
-  FileText,
-  CalendarIcon,
-  Trash2,
-  Edit,
-  MoreHorizontal,
-  CheckCircle,
-  DollarSign,
-  Clock,
-  AlertTriangle,
-  CreditCard,
-  BarChart3,
-  Receipt,
+AlertTriangle,
+BarChart3,
+CalendarIcon,
+CheckCircle,
+Clock,
+CreditCard,
+DollarSign,
+Edit,
+FileText,
+MoreHorizontal,
+Plus,
+Receipt,
+Trash2,
 } from 'lucide-react';
+import { useMemo,useState } from 'react';
+import { useFieldArray,useForm } from 'react-hook-form';
+import { z } from 'zod';
 
 // ===========================
 // Types
@@ -172,9 +172,9 @@ function getStatusBadge(status: string) {
 // ===========================
 
 export default function BillPay() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale: _locale } = useTranslation();
   const { toast } = useToast();
-  const { company, companyId } = useDefaultCompany();
+  const { company: _company, companyId } = useDefaultCompany();
 
   const [activeTab, setActiveTab] = useState('bills');
   const [billDialogOpen, setBillDialogOpen] = useState(false);
@@ -212,7 +212,7 @@ export default function BillPay() {
   });
 
   // Get all payments across bills
-  const allPayments = useMemo(() => {
+  const _allPayments = useMemo(() => {
     if (!bills || bills.length === 0) return [];
     // We'll collect payments from individual bill queries as they load
     return [];
@@ -967,7 +967,7 @@ export default function BillPay() {
                   </TableHeader>
                   <TableBody>
                     {filteredBills.map((bill) => {
-                      const remaining = Number(bill.total_amount) - Number(bill.amount_paid);
+                      const _remaining = Number(bill.total_amount) - Number(bill.amount_paid);
                       return (
                         <TableRow key={bill.id}>
                           <TableCell className="font-medium">{bill.vendor_name}</TableCell>

@@ -1,11 +1,10 @@
-import { Router, type Express, type Request, type Response } from 'express';
-import { storage } from '../storage';
-import { z } from 'zod';
-import * as googleSheets from '../integrations/googleSheets';
-import { authMiddleware, requireCompanyAccess, requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
+import { type Express,type Request,type Response } from 'express';
 import { insertWaitlistSchema } from '../../shared/schema';
 import { createLogger } from '../config/logger';
+import * as googleSheets from '../integrations/googleSheets';
+import { authMiddleware,requireCompanyAccess,requireCustomer } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { storage } from '../storage';
 
 const log = createLogger('integrations');
 
@@ -296,7 +295,7 @@ export function registerIntegrationRoutes(app: Express) {
     let createdCount = 0;
     for (const invoiceData of invoices) {
       try {
-        const invoice = await storage.createInvoice({
+        const _invoice = await storage.createInvoice({
           companyId,
           number: invoiceData.invoiceNumber,
           customerName: invoiceData.customerName,
@@ -358,7 +357,7 @@ export function registerIntegrationRoutes(app: Express) {
     let createdCount = 0;
     for (const expenseData of expenses) {
       try {
-        const receipt = await storage.createReceipt({
+        const _receipt = await storage.createReceipt({
           companyId,
           date: expenseData.date,
           merchant: expenseData.merchant,

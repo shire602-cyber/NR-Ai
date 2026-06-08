@@ -1,17 +1,17 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and,desc,eq,inArray } from 'drizzle-orm';
 
-import { db } from '../db';
-import { ConflictError, NotFoundError, ValidationError } from '../errors';
-import { assertPeriodNotLocked } from './period-lock.service';
 import {
-  companies,
-  vatReturns,
-  vatWorkpaperAttachments,
-  vatWorkpaperRows,
-  vatWorkpapers,
-  type VatWorkpaper,
-  type VatWorkpaperRow,
+companies,
+vatReturns,
+vatWorkpaperAttachments,
+vatWorkpaperRows,
+vatWorkpapers,
+type VatWorkpaper,
+type VatWorkpaperRow,
 } from '../../shared/schema';
+import { db } from '../db';
+import { ConflictError,NotFoundError,ValidationError } from '../errors';
+import { assertPeriodNotLocked } from './period-lock.service';
 
 export const VAT_WORKPAPER_CATEGORIES = [
   'standard_sale',
@@ -667,32 +667,39 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
     updatedAt: new Date(),
   };
 
-  let vatReturnId = workpaper.generatedVatReturnId;
-  let vatReturn;
-  if (vatReturnId) {
-    [vatReturn] = await db
-      .update(vatReturns)
-      .set(vatReturnPayload as any)
-      .where(eq(vatReturns.id, vatReturnId))
-      .returning();
-  } else {
-    [vatReturn] = await db
-      .insert(vatReturns)
-      .values(vatReturnPayload as any)
-      .returning();
-    vatReturnId = vatReturn.id;
-  }
+  const { vatReturn, updatedWorkpaper } = await db.transaction(async (tx: typeof db) => {
+    let vatReturnId = workpaper.generatedVatReturnId;
+    let savedVatReturn;
+    if (vatReturnId) {
+      [savedVatReturn] = await tx
+        .update(vatReturns)
+        .set(vatReturnPayload as any)
+        .where(eq(vatReturns.id, vatReturnId))
+        .returning();
+    } else {
+      [savedVatReturn] = await tx
+        .insert(vatReturns)
+        .values(vatReturnPayload as any)
+        .onConflictDoUpdate({
+          target: [vatReturns.companyId, vatReturns.periodStart, vatReturns.periodEnd],
+          set: vatReturnPayload as any,
+        })
+        .returning();
+      vatReturnId = savedVatReturn.id;
+    }
 
-  const [updatedWorkpaper] = await db
-    .update(vatWorkpapers)
-    .set({
-      status: 'generated',
-      generatedVatReturnId: vatReturnId,
-      totalsSnapshot: totals,
-      updatedAt: new Date(),
-    } as any)
-    .where(eq(vatWorkpapers.id, workpaperId))
-    .returning();
+    const [savedWorkpaper] = await tx
+      .update(vatWorkpapers)
+      .set({
+        status: 'generated',
+        generatedVatReturnId: vatReturnId,
+        totalsSnapshot: totals,
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(vatWorkpapers.id, workpaperId))
+      .returning();
+    return { vatReturn: savedVatReturn, updatedWorkpaper: savedWorkpaper };
+  });
 
   return { workpaper: updatedWorkpaper, vatReturn, totals };
 }

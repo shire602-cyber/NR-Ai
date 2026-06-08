@@ -1,7 +1,7 @@
-import { useEffect } from 'react';
-import { useLocation } from 'wouter';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
+import { useLocation } from 'wouter';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;

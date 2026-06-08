@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
-import { HelpCircle, Lightbulb, BookOpen, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Popover,PopoverContent,PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip,TooltipContent,TooltipTrigger } from '@/components/ui/tooltip';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { BookOpen,ChevronRight,HelpCircle,Lightbulb } from 'lucide-react';
+import { useState } from 'react';
 
 interface InlineHelpProps {
   title: string;

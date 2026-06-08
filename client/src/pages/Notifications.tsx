@@ -1,28 +1,25 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest } from '@/lib/queryClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import type { Notification,RegulatoryNews } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import { 
-  Bell, 
-  CheckCircle, 
-  XCircle, 
-  AlertTriangle, 
-  Clock, 
-  FileText,
-  Newspaper,
-  ChevronRight,
-  Check,
-  Trash2,
-  RefreshCw
+import {
+AlertTriangle,
+Bell,
+Check,
+CheckCircle,
+ChevronRight,
+Clock,
+Newspaper,
+XCircle
 } from 'lucide-react';
-import type { Notification, RegulatoryNews } from '@shared/schema';
+import { useState } from 'react';
 
 export default function Notifications() {
   const { toast } = useToast();

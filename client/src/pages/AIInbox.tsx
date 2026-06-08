@@ -1,55 +1,53 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader } from '@/components/ui/card';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+Dialog,
+DialogContent,
+DialogDescription,
+DialogFooter,
+DialogHeader,
+DialogTitle,
 } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
+import {
+Select,
+SelectContent,
+SelectItem,
+SelectTrigger,
+SelectValue,
+} from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+Table,
+TableBody,
+TableCell,
+TableHead,
+TableHeader,
+TableRow,
+} from '@/components/ui/table';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency, formatDate } from '@/lib/format';
+import { formatCurrency,formatDate } from '@/lib/format';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { useMutation,useQuery } from '@tanstack/react-query';
 import {
-  Brain,
-  Check,
-  X,
-  Pencil,
-  Loader2,
-  RefreshCw,
-  TrendingUp,
-  Zap,
-  Target,
-  Clock,
-  BookOpen,
-  CheckCircle2,
-  XCircle,
-  ArrowUpDown,
-  BarChart3,
+ArrowUpDown,
+BarChart3,
+BookOpen,
+Brain,
+Check,
+CheckCircle2,
+Clock,
+Loader2,
+Pencil,
+RefreshCw,
+Target,
+X,
+Zap
 } from 'lucide-react';
+import { useState } from 'react';
 
 // =============================================
 // Types
@@ -214,7 +212,7 @@ export default function AIInbox() {
         `/api/companies/${companyId}/ai-gl/queue/${itemId}/accept`
       );
     },
-    onSuccess: (_data: any, itemId: string) => {
+    onSuccess: (_data: any, _itemId: string) => {
       toast({ title: 'Accepted', description: 'Transaction posted to GL.' });
       invalidateAll();
     },

@@ -1,5 +1,5 @@
-import { isPeriodLocked } from './month-end.service';
 import { AppError } from '../middleware/errorHandler';
+import { isPeriodLocked } from './month-end.service';
 
 /**
  * Period lock guard for financial write paths.

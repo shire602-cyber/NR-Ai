@@ -1,8 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
-import { MessageSquare, Loader2 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card,CardContent } from '@/components/ui/card';
 import { apiRequest } from '@/lib/queryClient';
+import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
+import { Loader2,MessageSquare } from 'lucide-react';
 
 export default function PortalMessages() {
   const { data: messages = [], isLoading } = useQuery<any[]>({

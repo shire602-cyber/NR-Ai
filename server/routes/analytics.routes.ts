@@ -1,8 +1,14 @@
-import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
+import type { Express,Request,Response } from "express";
+import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { z } from "zod";
+import { storage } from "../storage";
+
+async function requestHasCompanyAccess(req: Request, companyId: string): Promise<boolean> {
+  const user = (req as any).user;
+  if (!user?.id) return false;
+  return storage.hasCompanyAccess(user.id, companyId, user.firmRole);
+}
 
 export function registerAnalyticsRoutes(app: Express) {
   // =====================================
@@ -11,16 +17,14 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Get cash flow forecasts
   app.get("/api/analytics/forecasts", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
-    const { companyId, period } = req.query;
+    const { companyId, period: _period } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
-    // Verify user access to company
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId as string);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied to this company' });
     }
 
@@ -31,23 +35,21 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Generate AI forecast
   app.post("/api/analytics/generate-forecast", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId, period } = req.body;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
-    // Verify access
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
     // Get historical data
     const invoices = await storage.getInvoicesByCompanyId(companyId);
     const receipts = await storage.getReceiptsByCompanyId(companyId);
-    const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
+    const _journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
 
     // Calculate monthly trends
     const monthlyData: { [key: string]: { inflow: number; outflow: number } } = {};
@@ -110,16 +112,14 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Get budget vs actual
   app.get("/api/analytics/budget-vs-actual", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId, year, month } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
-    // Verify access
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId as string);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -161,15 +161,14 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Get KPIs
   app.get("/api/analytics/kpis", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId as string);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -180,15 +179,14 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Get AI insights
   app.get("/api/analytics/insights", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId as string);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -252,15 +250,14 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Get e-commerce integrations
   app.get("/api/integrations/ecommerce", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId as string);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -270,15 +267,14 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Get e-commerce transactions (MUST be before :integrationId route)
   app.get("/api/integrations/ecommerce/transactions", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId } = req.query;
 
     if (!companyId) {
       return res.status(400).json({ message: 'Company ID required' });
     }
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId as string);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -288,16 +284,14 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Connect e-commerce integration
   app.post("/api/integrations/ecommerce/connect", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId, platform, apiKey, shopDomain, accessToken } = req.body;
 
     if (!companyId || !platform) {
       return res.status(400).json({ message: 'Company ID and platform required' });
     }
 
-    // Verify access
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -317,7 +311,6 @@ export function registerAnalyticsRoutes(app: Express) {
   // Sync e-commerce integration
   app.post("/api/integrations/ecommerce/:integrationId/sync", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { integrationId } = req.params;
-    const userId = (req as any).user?.id;
 
     // Verify integration exists and user has access
     const integration = await storage.getEcommerceIntegrationById(integrationId);
@@ -325,8 +318,8 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.status(404).json({ message: 'Integration not found' });
     }
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, integration.companyId);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -350,7 +343,6 @@ export function registerAnalyticsRoutes(app: Express) {
   // Toggle e-commerce integration
   app.patch("/api/integrations/ecommerce/:integrationId/toggle", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { integrationId } = req.params;
-    const userId = (req as any).user?.id;
     const { isActive } = req.body;
 
     const integration = await storage.getEcommerceIntegrationById(integrationId);
@@ -358,8 +350,8 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.status(404).json({ message: 'Integration not found' });
     }
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(integration.companyId);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, integration.companyId);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -408,7 +400,7 @@ export function registerAnalyticsRoutes(app: Express) {
 
   // Get analytics dashboard data
   app.get("/api/analytics/dashboard", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const { startDate, endDate } = req.query;
+    const { startDate: _startDate, endDate: _endDate } = req.query;
 
     // Get all events (in production, filter by date range)
     const events = await storage.getAnalyticsEvents();
@@ -461,11 +453,10 @@ export function registerAnalyticsRoutes(app: Express) {
   // GET /api/companies/:companyId/analytics/cash-forecast
   // Projects cash position at 30, 60, 90 days using historical averages + outstanding items
   app.get("/api/companies/:companyId/analytics/cash-forecast", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId } = req.params;
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -584,12 +575,11 @@ export function registerAnalyticsRoutes(app: Express) {
   // GET /api/companies/:companyId/analytics/profit-trend?months=12
   // Returns monthly revenue, expenses, and net profit for last N months
   app.get("/api/companies/:companyId/analytics/profit-trend", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId } = req.params;
     const monthCount = Math.min(Math.max(parseInt(req.query.months as string) || 12, 1), 36);
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -639,12 +629,11 @@ export function registerAnalyticsRoutes(app: Express) {
   // GET /api/companies/:companyId/analytics/top-customers?limit=10
   // Returns top customers by total invoiced amount
   app.get("/api/companies/:companyId/analytics/top-customers", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId } = req.params;
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
@@ -672,12 +661,11 @@ export function registerAnalyticsRoutes(app: Express) {
   // GET /api/companies/:companyId/analytics/top-suppliers?limit=10
   // Returns top suppliers by total receipt/expense amount
   app.get("/api/companies/:companyId/analytics/top-suppliers", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
     const { companyId } = req.params;
     const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 10, 1), 50);
 
-    const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-    if (!companyUsers.some(cu => cu.userId === userId)) {
+    const hasAccess = await requestHasCompanyAccess(req, companyId);
+    if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
 

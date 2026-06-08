@@ -1,5 +1,5 @@
-import { storage } from '../storage';
 import type { Account } from '../../shared/schema';
+import { storage } from '../storage';
 import { uaeDayOfWeek } from '../utils/date';
 
 type AnomalySeverity = 'critical' | 'warning' | 'info';
@@ -256,7 +256,7 @@ export async function detectAnomalies(companyId: string): Promise<AnomalyDetecti
     receiptsByVendor.get(vendorKey)!.push(receipt);
   }
 
-  for (const [vendor, vendorReceipts] of receiptsByVendor) {
+  for (const [_vendor, vendorReceipts] of receiptsByVendor) {
     if (vendorReceipts.length < 2) continue;
 
     // Sort by date

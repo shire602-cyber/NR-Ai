@@ -1,38 +1,38 @@
 import {
-  and,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  lt,
-  lte,
-  max,
-  ne,
-  sql,
-  sum,
+and,
+count,
+desc,
+eq,
+gte,
+inArray,
+lt,
+lte,
+max,
+ne,
+sql,
+sum,
 } from 'drizzle-orm';
 
-import { db } from '../db';
-import { createLogger } from '../config/logger';
 import {
-  anomalyAlerts,
-  bankTransactions,
-  clientCommunications,
-  companies,
-  complianceCalendar,
-  complianceTasks,
-  documentRequirements,
-  documents,
-  engagements,
-  invoices,
-  journalEntries,
-  journalLines,
-  receipts,
-  serviceInvoices,
-  taxReturnArchive,
-  vatReturns,
+anomalyAlerts,
+bankTransactions,
+clientCommunications,
+companies,
+complianceCalendar,
+complianceTasks,
+documentRequirements,
+documents,
+engagements,
+invoices,
+journalEntries,
+journalLines,
+receipts,
+serviceInvoices,
+taxReturnArchive,
+vatReturns,
 } from '../../shared/schema';
+import { createLogger } from '../config/logger';
+import { db } from '../db';
 
 const logger = createLogger('firm-value-ops-service');
 
@@ -769,7 +769,7 @@ export async function buildFirmValueOps(
     const anomalyCount = asNumber(anomaly?.open);
     const criticalAnomalies = asNumber(anomaly?.critical);
     const overdueTasks = asNumber(comp?.overdueTasks) + asNumber(cal?.overdue);
-    const upcomingCompliance = asNumber(cal?.upcoming);
+    const _upcomingCompliance = asNumber(cal?.upcoming);
     const daysToVatDue = daysUntil(vat?.dueDate, now);
     const vatOpen = vat ? vat.status !== 'filed' && vat.status !== 'submitted' : true;
     const vatOverdue = vatOpen && daysToVatDue !== null && daysToVatDue < 0;

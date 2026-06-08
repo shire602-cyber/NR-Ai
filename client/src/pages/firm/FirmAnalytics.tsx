@@ -1,30 +1,27 @@
+import { Badge } from '@/components/ui/badge';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
+import { useTranslation } from '@/lib/i18n';
 import { useQuery } from '@tanstack/react-query';
 import {
-  TrendingUp,
-  TrendingDown,
-  Users,
-  DollarSign,
-  BarChart2,
-  Heart,
-  AlertTriangle,
-  XCircle,
+AlertTriangle,
+BarChart2,
+DollarSign,
+TrendingDown,
+TrendingUp,
+Users
 } from 'lucide-react';
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
+Bar,
+BarChart,
+CartesianGrid,
+Cell,
+Pie,
+PieChart,
+ResponsiveContainer,
+Tooltip,
+XAxis,
+YAxis
 } from 'recharts';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { useTranslation } from '@/lib/i18n';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

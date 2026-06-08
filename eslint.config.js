@@ -58,16 +58,17 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
-      // React Compiler rules from eslint-plugin-react-hooks v6+ are
-      // optimization hints, not correctness bugs. Keep them visible as
-      // warnings so the build/lint gate stays green on Railway.
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/static-components": "warn",
-      "react-hooks/preserve-manual-memoization": "warn",
-      "react-hooks/use-memo": "warn",
-      "react-hooks/purity": "warn",
-      "react-hooks/refs": "warn",
+      "react-refresh/only-export-components": "off",
+      // This app is not compiled with React Compiler. Keep correctness rules
+      // such as rules-of-hooks and exhaustive-deps, but do not report compiler
+      // optimization hints as production-readiness warnings.
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/static-components": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/use-memo": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/incompatible-library": "off",
     },
   },
 
@@ -89,6 +90,13 @@ export default tseslint.config(
     files: ["client/public/**/*.js", "**/sw.js", "**/service-worker.js"],
     languageOptions: {
       globals: { ...globals.serviceworker, ...globals.browser },
+    },
+  },
+
+  {
+    files: ["extensions/whatsapp-bridge/**/*.js"],
+    languageOptions: {
+      globals: { ...globals.browser, chrome: "readonly" },
     },
   },
 

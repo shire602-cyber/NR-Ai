@@ -1,6 +1,6 @@
-import type { CookieOptions, Request, Response } from 'express';
-import { isProduction } from '../config/env';
+import type { CookieOptions,Request,Response } from 'express';
 import { authCookieBaseOptions } from '../config/cookies';
+import { isProduction } from '../config/env';
 
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const REFRESH_TOKEN_TTL_DAYS = 7;

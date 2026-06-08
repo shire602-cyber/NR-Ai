@@ -1,34 +1,30 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { 
-  Mail, 
-  Plus, 
-  Search,
-  MoreHorizontal,
-  RefreshCw,
-  XCircle,
-  CheckCircle,
-  Clock,
-  Trash2,
-  Send,
-  Building2,
-  Copy,
-  ExternalLink
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
+import { DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuSeparator,DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { format, formatDistanceToNow, isAfter } from 'date-fns';
-import type { Invitation, Company } from '@shared/schema';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import type { Company,Invitation } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { format,formatDistanceToNow,isAfter } from 'date-fns';
+import {
+Building2,
+Copy,
+Mail,
+MoreHorizontal,
+RefreshCw,
+Search,
+Send,
+Trash2,
+XCircle
+} from 'lucide-react';
+import { useState } from 'react';
 
 export default function UserInvitations() {
   const { toast } = useToast();

@@ -1,7 +1,7 @@
-import type { Express, Request, Response } from 'express';
+import type { Express,Request,Response } from 'express';
 import { z } from 'zod';
-import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
+import { asyncHandler } from '../middleware/errorHandler';
 
 const log = createLogger('client-error');
 

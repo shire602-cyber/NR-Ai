@@ -1,8 +1,9 @@
 // ✅ Must come first before any usage of process.env
 import 'dotenv/config';
 
-import { sql } from 'drizzle-orm';
 import * as schema from '@shared/schema';
+import { sql } from 'drizzle-orm';
+import type { PoolConfig } from 'pg';
 import { createLogger } from './config/logger';
 
 const log = createLogger('db');
@@ -35,6 +36,34 @@ const POOL_CONFIG = {
   statement_timeout: envInt('DB_STATEMENT_TIMEOUT_MS', 30_000),
 };
 
+export type PgSslConfig = false | { rejectUnauthorized: boolean };
+
+export function getPgSslConfig(): PgSslConfig | undefined {
+  const raw = process.env.DATABASE_SSL?.trim().toLowerCase();
+  if (!raw) return undefined;
+  if (['false', '0', 'off', 'no'].includes(raw)) return false;
+  if (['true', '1', 'on', 'yes', 'require'].includes(raw)) {
+    return {
+      rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED === 'true',
+    };
+  }
+
+  log.warn(
+    { value: process.env.DATABASE_SSL },
+    'Ignoring invalid DATABASE_SSL value; expected true/false'
+  );
+  return undefined;
+}
+
+export function buildPgPoolConfig(connectionString = DATABASE_URL): PoolConfig {
+  const ssl = getPgSslConfig();
+  return {
+    connectionString,
+    ...POOL_CONFIG,
+    ...(ssl === undefined ? {} : { ssl }),
+  };
+}
+
 const DB_READY_ATTEMPTS = envInt('DB_READY_ATTEMPTS', 24);
 const DB_READY_DELAY_MS = envInt('DB_READY_DELAY_MS', 5_000);
 
@@ -57,7 +86,7 @@ if (isNeon) {
   // Use standard pg driver for Railway/Docker/standard PostgreSQL
   const pg = await import('pg');
   const { drizzle: pgDrizzle } = await import('drizzle-orm/node-postgres');
-  pool = new pg.default.Pool({ connectionString: DATABASE_URL, ...POOL_CONFIG });
+  pool = new pg.default.Pool(buildPgPoolConfig(DATABASE_URL));
   // Prevent unhandled 'error' events from crashing the process
   pool.on('error', (err: Error) => {
     log.error({ err: err.message }, 'Unexpected pool client error');
@@ -1259,4 +1288,4 @@ export async function closePool(timeoutMs = 10_000): Promise<void> {
   ]);
 }
 
-export { pool, db };
+export { db,pool };

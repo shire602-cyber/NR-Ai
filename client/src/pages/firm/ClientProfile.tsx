@@ -1,33 +1,41 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useParams, useLocation } from 'wouter';
-import {
-  ArrowLeft, Building2, Phone, Mail, Globe, MapPin,
-  FileText, Receipt, Users, Calendar, Edit, Save, X,
-  BookOpen, ExternalLink, Shield, CheckCircle2, AlertCircle, Clock,
-  UserPlus, UserMinus,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { format } from 'date-fns';
-import type { Company } from '@shared/schema';
-import {
-  CLIENT_SERVICE_OPTIONS,
-  DEFAULT_CLIENT_SERVICE_CODES,
-  serviceLabels,
-  type ClientServiceCode,
-  type ClientServicePlan,
-} from '@shared/client-services';
 import { useActiveCompany } from '@/components/ActiveCompanyProvider';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog,DialogContent,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import {
+CLIENT_SERVICE_OPTIONS,
+DEFAULT_CLIENT_SERVICE_CODES,
+serviceLabels,
+type ClientServiceCode,
+type ClientServicePlan,
+} from '@shared/client-services';
+import type { Company } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import {
+AlertCircle,
+ArrowLeft,
+BookOpen,
+Building2,
+Edit,
+ExternalLink,
+FileText,
+Save,
+Shield,
+UserMinus,
+UserPlus,
+Users,
+X
+} from 'lucide-react';
+import { useState } from 'react';
+import { useLocation,useParams } from 'wouter';
 
 interface AssignedStaff {
   id: string;

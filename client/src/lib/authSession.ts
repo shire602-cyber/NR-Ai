@@ -1,5 +1,5 @@
 import { currentUserQueryKey } from '@/hooks/useCurrentUser';
-import { fetchCurrentUser, setStoredUser } from './auth';
+import { fetchCurrentUser,setStoredUser } from './auth';
 import { queryClient } from './queryClient';
 
 export async function establishAuthenticatedSession(authUser: any): Promise<any> {

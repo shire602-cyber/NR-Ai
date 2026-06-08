@@ -1,21 +1,21 @@
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardFooter,CardHeader,CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { Link } from 'wouter';
+import { StaggerContainer,StaggerItem,hoverLift } from '@/lib/animations';
+import { useI18n } from '@/lib/i18n';
+import { AnimatePresence,motion } from 'framer-motion';
 import {
-  Check,
-  Zap,
-  Crown,
-  Rocket,
-  Building2,
-  ArrowRight,
-  Star,
+ArrowRight,
+Building2,
+Check,
+Crown,
+Rocket,
+Star,
+Zap,
 } from 'lucide-react';
 import { useState } from 'react';
-import { useI18n } from '@/lib/i18n';
-import { motion, AnimatePresence } from 'framer-motion';
-import { StaggerContainer, StaggerItem, hoverLift } from '@/lib/animations';
+import { Link } from 'wouter';
 
 /**
  * PricingSummary -- Condensed 4-card pricing component

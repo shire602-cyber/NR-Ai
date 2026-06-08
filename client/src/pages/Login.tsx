@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
-import { useLocation, Link } from 'wouter';
 import { LoginForm } from '@/components/auth/LoginForm';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
 import { fetchCurrentUser } from '@/lib/auth';
 import { establishAuthenticatedSession } from '@/lib/authSession';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, Briefcase } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { ArrowLeft,Briefcase } from 'lucide-react';
+import { useEffect } from 'react';
+import { Link,useLocation } from 'wouter';
 
 function safeNextPath(): string {
   const params = new URLSearchParams(window.location.search);

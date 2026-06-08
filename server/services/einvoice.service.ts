@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { Invoice, InvoiceLine, Company } from '../../shared/schema';
+import type { Company,Invoice,InvoiceLine } from '../../shared/schema';
 import { UAE_VAT_RATE } from '../constants';
 
 /**
@@ -44,7 +44,7 @@ export function generateEInvoiceXML(
     .map((line, index) => {
       const lineExtension = line.quantity * line.unitPrice;
       const vatRate = line.vatRate ?? UAE_VAT_RATE;
-      const vatAmount = lineExtension * vatRate;
+      const _vatAmount = lineExtension * vatRate;
       const vatPercent = (vatRate * 100).toFixed(2);
 
       return `

@@ -1,7 +1,7 @@
-import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, index, customType, jsonb } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { boolean,customType,index,integer,jsonb,pgTable,real,text,timestamp,unique,uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { sql } from "drizzle-orm";
 
 // Monetary amount stored as NUMERIC(15,2) in Postgres for exact decimal arithmetic.
 // fromDriver rounds to 2 decimals so JS-side floating-point drift cannot accumulate
@@ -541,6 +541,16 @@ export const insertJournalEntrySchema = createInsertSchema(journalEntries).omit(
 export type InsertJournalEntry = z.infer<typeof insertJournalEntrySchema>;
 export type JournalEntry = typeof journalEntries.$inferSelect;
 
+export const journalEntryNumberSequences = pgTable("journal_entry_number_sequences", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  entryDate: text("entry_date").notNull(),
+  lastValue: integer("last_value").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyDateUnique: unique("journal_entry_number_sequences_company_date_unique").on(table.companyId, table.entryDate),
+}));
+
 // ===========================
 // Journal Lines
 // ===========================
@@ -665,6 +675,7 @@ export const invoiceLines = pgTable("invoice_lines", {
   unitPrice: money("unit_price").notNull(),
   vatRate: vatRateType("vat_rate").notNull().default(0.05), // UAE standard 5%
   vatSupplyType: text("vat_supply_type").default("standard_rated"), // standard_rated | zero_rated | exempt | out_of_scope
+  supplyEmirate: text("supply_emirate").default("dubai"), // UAE VAT 201 Box 1 emirate allocation
 }, (table) => ({
   invoiceIdIdx: index("idx_invoice_lines_invoice_id").on(table.invoiceId),
 }));
@@ -1675,7 +1686,9 @@ export const referrals = pgTable("referrals", {
   signupSource: text("signup_source"), // link | email | social
   createdAt: timestamp("created_at").defaultNow().notNull(),
   expiresAt: timestamp("expires_at"),
-});
+}, (table) => ({
+  codeEmailUnique: unique("referrals_code_email_unique").on(table.referralCodeId, table.refereeEmail),
+}));
 
 export const insertReferralSchema = createInsertSchema(referrals).omit({
   id: true,
@@ -1990,6 +2003,7 @@ export const vatReturns = pgTable("vat_returns", {
 }, (table) => ({
   companyIdIdx: index("idx_vat_returns_company_id").on(table.companyId),
   companyPeriodIdx: index("idx_vat_returns_company_period").on(table.companyId, table.periodStart),
+  companyPeriodUnique: unique("vat_returns_company_period_unique").on(table.companyId, table.periodStart, table.periodEnd),
 }));
 
 export const insertVatReturnSchema = createInsertSchema(vatReturns).omit({

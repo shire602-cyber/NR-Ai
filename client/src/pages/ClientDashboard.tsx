@@ -1,24 +1,24 @@
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Link } from 'wouter';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatDate } from '@/lib/format';
+import { formatPhoneForWhatsApp } from '@/lib/whatsapp-templates';
+import { useQuery } from '@tanstack/react-query';
 import {
-  FileText,
-  Upload,
-  ShieldCheck,
-  ListTodo,
-  Activity,
-  ArrowRight,
-  BarChart3,
-  FileArchive,
+Activity,
+ArrowRight,
+BarChart3,
+FileArchive,
+FileText,
+ListTodo,
+ShieldCheck,
+Upload,
 } from 'lucide-react';
 import { SiWhatsapp } from 'react-icons/si';
-import { formatPhoneForWhatsApp } from '@/lib/whatsapp-templates';
+import { Link } from 'wouter';
 
 export default function ClientDashboard() {
   const { data: user } = useCurrentUser();

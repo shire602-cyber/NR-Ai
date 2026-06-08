@@ -1,15 +1,15 @@
-import { useState } from 'react';
-import { Bell, CheckCheck, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
+DropdownMenu,
+DropdownMenuContent,
+DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useNotifications, type AppNotification } from '@/hooks/useNotifications';
-import { useLocation } from 'wouter';
+import { useNotifications,type AppNotification } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
+import { Bell,CheckCheck,X } from 'lucide-react';
+import { useState } from 'react';
+import { useLocation } from 'wouter';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();

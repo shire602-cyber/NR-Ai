@@ -1,8 +1,8 @@
 import OpenAI from 'openai';
-import { pool } from '../db';
-import { storage } from '../storage';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
+import { pool } from '../db';
+import { storage } from '../storage';
 import { assertPeriodNotLocked } from './period-lock.service';
 
 const log = createLogger('autonomous-gl');
@@ -31,41 +31,23 @@ async function withFeedbackTransaction<T>(work: (client: Queryable) => Promise<T
   }
 }
 
-function hashStringToInt(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  }
-  return h;
-}
-
 async function generateEntryNumberInTransaction(
   dbClient: Queryable,
   companyId: string,
   date: Date,
 ): Promise<string> {
-  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
-  const prefix = `JE-${dateStr}`;
-  const likePattern = `${prefix}-%`;
-  const counterStart = prefix.length + 2;
-
-  await dbClient.query('SELECT pg_advisory_xact_lock($1, $2)', [
-    hashStringToInt(companyId),
-    hashStringToInt(prefix),
-  ]);
-
-  const { rows } = await dbClient.query<{ max_seq: number | string | null }>(
-    `SELECT COALESCE(
-       MAX(CAST(SUBSTRING(entry_number FROM $3) AS INTEGER)),
-       0
-     ) AS max_seq
-     FROM journal_entries
-     WHERE company_id = $1
-       AND entry_number LIKE $2`,
-    [companyId, likePattern, counterStart],
+  const dateKey = date.toISOString().slice(0, 10);
+  const prefix = `JE-${dateKey.replace(/-/g, '')}`;
+  const { rows } = await dbClient.query<{ last_value: number | string }>(
+    `INSERT INTO journal_entry_number_sequences (company_id, entry_date, last_value)
+     VALUES ($1, $2, 1)
+     ON CONFLICT (company_id, entry_date)
+     DO UPDATE SET last_value = journal_entry_number_sequences.last_value + 1,
+                   updated_at = now()
+     RETURNING last_value`,
+    [companyId, dateKey],
   );
-  const maxSeq = Number(rows[0]?.max_seq ?? 0);
-  return `${prefix}-${String(maxSeq + 1).padStart(3, '0')}`;
+  return `${prefix}-${String(rows[0]?.last_value ?? 1).padStart(3, '0')}`;
 }
 
 // =============================================

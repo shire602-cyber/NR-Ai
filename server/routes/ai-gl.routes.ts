@@ -1,15 +1,15 @@
-import type { Express, Request, Response } from 'express';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { storage } from '../storage';
-import { pool } from '../db';
-import {
-  scanAndClassifyTransactions,
-  autoPostHighConfidence,
-  processUserFeedback,
-  getAIGLStats,
-} from '../services/autonomous-gl.service';
+import type { Express,Request,Response } from 'express';
 import { createLogger } from '../config/logger';
+import { pool } from '../db';
+import { authMiddleware,requireCustomer } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import {
+autoPostHighConfidence,
+getAIGLStats,
+processUserFeedback,
+scanAndClassifyTransactions,
+} from '../services/autonomous-gl.service';
+import { storage } from '../storage';
 
 const log = createLogger('ai-gl-routes');
 

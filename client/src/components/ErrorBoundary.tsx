@@ -1,9 +1,9 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, RefreshCw, Home } from 'lucide-react';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
 import { apiUrl } from '@/lib/api';
 import { withCsrfHeader } from '@/lib/csrf';
+import { AlertCircle,Home,RefreshCw } from 'lucide-react';
+import { Component,ErrorInfo,ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;

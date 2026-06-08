@@ -1,20 +1,20 @@
-import type { Express, Request, Response } from 'express';
+import { eq } from 'drizzle-orm';
+import type { Express,Request,Response } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
 
-import { authMiddleware } from '../middleware/auth';
-import { requireFirmAdmin } from '../middleware/rbac';
-import { asyncHandler } from '../middleware/errorHandler';
+import { firmGrowthOpportunities } from '../../shared/schema';
 import { createLogger } from '../config/logger';
 import { db } from '../db';
-import { firmGrowthOpportunities } from '../../shared/schema';
+import { authMiddleware } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { requireFirmAdmin } from '../middleware/rbac';
 import { recordAudit } from '../services/audit.service';
 import { resolveAccessibleClientIds } from '../services/firm-command-center.service';
 import {
-  listGrowthOpportunities,
-  refreshGrowthOpportunities,
-  updateGrowthOpportunity,
+listGrowthOpportunities,
+refreshGrowthOpportunities,
+updateGrowthOpportunity,
 } from '../services/firm-growth.service';
 
 const logger = createLogger('firm-growth-routes');

@@ -1,31 +1,31 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader } from '@/components/ui/card';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
+import { useTranslation } from '@/lib/i18n';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { useMutation,useQuery } from '@tanstack/react-query';
 import {
-  ShieldAlert,
-  AlertTriangle,
-  AlertCircle,
-  Info,
-  Scan,
-  X,
-  RefreshCw,
-  Clock,
-  DollarSign,
-  Copy,
-  CalendarOff,
-  Hash,
-  UserX,
-  TrendingUp,
+AlertCircle,
+AlertTriangle,
+CalendarOff,
+Clock,
+Copy,
+DollarSign,
+Hash,
+Info,
+RefreshCw,
+Scan,
+ShieldAlert,
+TrendingUp,
+UserX,
+X,
 } from 'lucide-react';
+import { useState } from 'react';
 
 type AnomalySeverity = 'critical' | 'warning' | 'info';
 
@@ -69,7 +69,7 @@ const typeIcons: Record<string, typeof Copy> = {
 };
 
 export default function AnomalyDetection() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [severityFilter, setSeverityFilter] = useState<string>('all');

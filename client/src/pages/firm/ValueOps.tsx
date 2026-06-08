@@ -1,45 +1,45 @@
-import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
 import {
-  AlertTriangle,
-  ArrowRight,
-  Banknote,
-  Bot,
-  BriefcaseBusiness,
-  CheckCircle2,
-  ClipboardCheck,
-  FileArchive,
-  FileText,
-  Gauge,
-  Landmark,
-  MessageCircle,
-  PackageOpen,
-  ShieldCheck,
-  Sparkles,
-  TrendingUp,
-  UploadCloud,
+AlertTriangle,
+ArrowRight,
+Banknote,
+Bot,
+BriefcaseBusiness,
+CheckCircle2,
+ClipboardCheck,
+FileArchive,
+FileText,
+Gauge,
+Landmark,
+MessageCircle,
+PackageOpen,
+ShieldCheck,
+Sparkles,
+TrendingUp,
+UploadCloud,
 } from 'lucide-react';
+import { useEffect,useMemo,useState } from 'react';
+import { useLocation } from 'wouter';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+Dialog,
+DialogContent,
+DialogHeader,
+DialogTitle,
 } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+Table,
+TableBody,
+TableCell,
+TableHead,
+TableHeader,
+TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '@/lib/queryClient';
 
 type Priority = 'critical' | 'high' | 'medium' | 'low';

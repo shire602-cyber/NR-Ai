@@ -56,4 +56,36 @@ if [[ $violations -gt 0 ]]; then
   exit 1
 fi
 
+ROOT_FOR_NODE="$ROOT" node <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const root = process.env.ROOT_FOR_NODE;
+const migrationDir = path.join(root, 'migrations');
+const journalPath = path.join(migrationDir, 'meta', '_journal.json');
+const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+
+const topLevelSqlTags = new Set(
+  fs.readdirSync(migrationDir)
+    .filter((name) => /^\d{4}_.+\.sql$/.test(name))
+    .map((name) => name.replace(/\.sql$/u, '')),
+);
+const journalTags = new Set(journal.entries.map((entry) => entry.tag));
+
+const unjournaled = [...topLevelSqlTags].filter((tag) => !journalTags.has(tag)).sort();
+const missingSql = [...journalTags].filter((tag) => !topLevelSqlTags.has(tag)).sort();
+
+if (unjournaled.length || missingSql.length) {
+  if (unjournaled.length) {
+    console.error('FAIL: top-level migration SQL files missing from migrations/meta/_journal.json:');
+    for (const tag of unjournaled) console.error(`  - ${tag}.sql`);
+  }
+  if (missingSql.length) {
+    console.error('FAIL: journal entries missing matching top-level migration SQL files:');
+    for (const tag of missingSql) console.error(`  - ${tag}.sql`);
+  }
+  process.exit(1);
+}
+NODE
+
 echo "check-migrations-no-secrets: OK (scanned ${#SCAN_PATHS[@]} dirs)"

@@ -1,7 +1,7 @@
-import { RequireUserType } from './RequireUserType';
-import { isCustomerOnlyRoute, isAdminOnlyRoute } from '@/lib/route-config';
-import { useLocation } from 'wouter';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { isAdminOnlyRoute,isCustomerOnlyRoute } from '@/lib/route-config';
+import { useLocation } from 'wouter';
+import { RequireUserType } from './RequireUserType';
 
 export function RouteGuard({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();

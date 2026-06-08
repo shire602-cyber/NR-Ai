@@ -1,41 +1,40 @@
-import type { Request, Response } from 'express';
+import type { Express,Request,Response } from 'express';
 import { Router } from 'express';
-import type { Express } from 'express';
 import { z } from 'zod';
 
-import { authMiddleware } from '../middleware/auth';
-import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
-import { asyncHandler } from '../middleware/errorHandler';
-import { db } from '../db';
 import {
-  companies,
-  users,
-  invoices,
-  vatReturns,
-  engagements,
-  serviceInvoices,
-  firmStaffAssignments,
-  firmLeads,
-  companyUsers,
-  receipts,
-} from '../../shared/schema';
-import {
-  eq,
-  and,
-  count,
-  sum,
-  max,
-  desc,
-  inArray,
-  isNull,
-  gte,
-  lt,
-  or,
-  ne,
-  sql,
-  notInArray,
+and,
+count,
+desc,
+eq,
+gte,
+inArray,
+isNull,
+lt,
+max,
+ne,
+notInArray,
+or,
+sql,
+sum,
 } from 'drizzle-orm';
+import {
+companies,
+companyUsers,
+engagements,
+firmLeads,
+firmStaffAssignments,
+invoices,
+receipts,
+serviceInvoices,
+users,
+vatReturns,
+} from '../../shared/schema';
 import { createLogger } from '../config/logger';
+import { db } from '../db';
+import { authMiddleware } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { getAccessibleCompanyIds,requireFirmRole } from '../middleware/rbac';
 
 const logger = createLogger('firm-analytics-routes');
 

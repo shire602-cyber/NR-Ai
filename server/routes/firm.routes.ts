@@ -1,47 +1,46 @@
-import type { Request, Response } from 'express';
+import type { Express,Request,Response } from 'express';
 import { Router } from 'express';
-import type { Express } from 'express';
 import { z } from 'zod';
 
-import { storage } from '../storage';
-import { authMiddleware } from '../middleware/auth';
-import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
-import { asyncHandler } from '../middleware/errorHandler';
-import { createLogger } from '../config/logger';
-import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import {
-  currentVatPeriodForCompany,
-  mapImportRow,
-  nextCorporateTaxFilingWindow,
-  validateImportedClient,
-  vatCohortFromPeriodStart,
-  type VatCohort,
-  type VatCohortKey,
-} from '../services/firm-clients.service';
-import {
-  CLIENT_SERVICE_OPTIONS,
-  DEFAULT_CLIENT_SERVICE_CODES,
-  engagementTypeForServices,
-  normalizeClientServices,
-  type ClientServiceCode,
-  type ClientServicePlan,
+CLIENT_SERVICE_OPTIONS,
+DEFAULT_CLIENT_SERVICE_CODES,
+engagementTypeForServices,
+normalizeClientServices,
+type ClientServiceCode,
+type ClientServicePlan,
 } from '@shared/client-services';
-import { parseSpreadsheetBuffer } from '../utils/spreadsheet';
-import { db } from '../db';
-import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne, lte } from 'drizzle-orm';
+import { and,count,desc,eq,inArray,lt,lte,max,ne,or,sql,sum } from 'drizzle-orm';
 import {
-  companies,
-  companyUsers,
-  users,
-  invoices,
-  receipts,
-  vatReturns,
-  corporateTaxReturns,
-  bankTransactions,
-  journalEntries,
-  journalLines,
-  engagements,
+bankTransactions,
+companies,
+companyUsers,
+corporateTaxReturns,
+engagements,
+invoices,
+journalEntries,
+journalLines,
+receipts,
+users,
+vatReturns,
 } from '../../shared/schema';
+import { createLogger } from '../config/logger';
+import { db } from '../db';
+import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import { authMiddleware } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { getAccessibleCompanyIds,requireFirmRole } from '../middleware/rbac';
+import {
+currentVatPeriodForCompany,
+mapImportRow,
+nextCorporateTaxFilingWindow,
+validateImportedClient,
+vatCohortFromPeriodStart,
+type VatCohort,
+type VatCohortKey,
+} from '../services/firm-clients.service';
+import { storage } from '../storage';
+import { parseSpreadsheetBuffer } from '../utils/spreadsheet';
 
 const logger = createLogger('firm-routes');
 

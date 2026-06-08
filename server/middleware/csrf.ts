@@ -1,9 +1,9 @@
 import { randomUUID } from 'crypto';
 import { doubleCsrf } from 'csrf-csrf';
-import type { Request, Response, NextFunction } from 'express';
-import { getEnv, isProduction } from '../config/env';
-import { createLogger } from '../config/logger';
+import type { NextFunction,Request,Response } from 'express';
 import { authCookieBaseOptions } from '../config/cookies';
+import { getEnv,isProduction } from '../config/env';
+import { createLogger } from '../config/logger';
 
 const log = createLogger('csrf');
 

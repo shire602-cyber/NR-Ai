@@ -1,7 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
-import { TrendingUp, TrendingDown, Minus, Loader2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import { apiRequest } from '@/lib/queryClient';
+import { useQuery } from '@tanstack/react-query';
+import { Loader2,Minus,TrendingDown,TrendingUp } from 'lucide-react';
 
 function formatAed(n: number) {
   return new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED', maximumFractionDigits: 0 }).format(n);

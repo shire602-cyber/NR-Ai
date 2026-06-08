@@ -1,40 +1,40 @@
-import { useEffect, useMemo, useState } from 'react';
-import { SiWhatsapp } from 'react-icons/si';
-import { Send } from 'lucide-react';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import {
+Dialog,
+DialogContent,
+DialogDescription,
+DialogFooter,
+DialogHeader,
+DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+Select,
+SelectContent,
+SelectItem,
+SelectTrigger,
+SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useI18n } from '@/lib/i18n';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import {
-  MESSAGE_TEMPLATES,
-  fillTemplate,
-  openWhatsApp,
-  pickWhatsAppNumber,
-  type MessageTemplate,
-} from '@/lib/whatsapp-templates';
-import {
-  draftWithWhatsAppBridge,
-  openWhatsAppWithLoggedFallback,
-  updateWhatsAppBridgeJobStatus,
+draftWithWhatsAppBridge,
+openWhatsAppWithLoggedFallback,
+updateWhatsAppBridgeJobStatus,
 } from '@/lib/whatsapp-bridge';
+import {
+MESSAGE_TEMPLATES,
+fillTemplate,
+openWhatsApp,
+pickWhatsAppNumber,
+type MessageTemplate,
+} from '@/lib/whatsapp-templates';
+import { Send } from 'lucide-react';
+import { useEffect,useMemo,useState } from 'react';
+import { SiWhatsapp } from 'react-icons/si';
 
 export interface WhatsAppComposerRecipient {
   name?: string | null;

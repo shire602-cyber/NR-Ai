@@ -4,6 +4,12 @@ import path from "path";
 import { visualizer } from "rollup-plugin-visualizer";
 
 const ANALYZE = process.env.ANALYZE === "1";
+const HEAVY_LAZY_PRELOAD_PREFIXES = [
+  "vendor-pdf",
+  "vendor-pdfjs",
+  "vendor-html2canvas",
+  "generateCategoricalChart",
+];
 
 export default defineConfig({
   plugins: [
@@ -34,6 +40,14 @@ export default defineConfig({
     // Heavy document workflows are split into isolated lazy chunks. Keep Vite's
     // warning budget tight so build logs catch new accidental eager imports.
     chunkSizeWarningLimit: 500,
+    modulePreload: {
+      resolveDependencies(_filename, deps, context) {
+        if (context.hostType !== "html") return deps;
+        return deps.filter(
+          (dep) => !HEAVY_LAZY_PRELOAD_PREFIXES.some((prefix) => dep.startsWith(`assets/${prefix}`)),
+        );
+      },
+    },
     cssCodeSplit: true,
     minify: "esbuild",
     target: "es2020",

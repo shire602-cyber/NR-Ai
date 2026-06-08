@@ -1,29 +1,29 @@
-import type { Express, Request, Response } from 'express';
+import type { Express,Request,Response } from 'express';
+import { Router } from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Router } from 'express';
 import { z } from 'zod';
 
+import { createLogger } from '../config/logger';
 import { ValidationError } from '../errors';
 import { authMiddleware } from '../middleware/auth';
-import { requireFirmAdmin } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
-import { createLogger } from '../config/logger';
+import { requireFirmAdmin } from '../middleware/rbac';
 import { recordAudit } from '../services/audit.service';
 import { resolveAccessibleClientIds } from '../services/firm-command-center.service';
 import {
-  addVatWorkpaperRow,
-  createVatWorkpaper,
-  generateVatReturnFromWorkpaper,
-  getVatWorkpaperDetail,
-  listVatWorkpapers,
-  recalculateVatWorkpaper,
-  scanVatWorkpaperEvidence,
-  updateVatWorkpaperRow,
-  updateVatWorkpaperStatus,
-  VAT_WORKPAPER_CATEGORIES,
-  type VatWorkpaperCategory,
+addVatWorkpaperRow,
+createVatWorkpaper,
+generateVatReturnFromWorkpaper,
+getVatWorkpaperDetail,
+listVatWorkpapers,
+recalculateVatWorkpaper,
+scanVatWorkpaperEvidence,
+updateVatWorkpaperRow,
+updateVatWorkpaperStatus,
+VAT_WORKPAPER_CATEGORIES,
+type VatWorkpaperCategory,
 } from '../services/firm-vat-workspace.service';
 
 const logger = createLogger('firm-vat-workspace-routes');

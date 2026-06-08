@@ -1,19 +1,19 @@
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
-import { useQuery } from '@tanstack/react-query';
-import type { Company } from '@shared/schema';
-import {
-  getActiveCompanyId,
-  switchActiveCompany,
-  clearActiveCompany,
+clearActiveCompany,
+getActiveCompanyId,
+switchActiveCompany,
 } from '@/lib/activeCompany';
+import type { Company } from '@shared/schema';
+import { useQuery } from '@tanstack/react-query';
+import {
+createContext,
+useCallback,
+useContext,
+useEffect,
+useMemo,
+useState,
+type ReactNode,
+} from 'react';
 
 interface ActiveCompanyContextValue {
   /** The currently active company (firm-managed client if switched, else first owned company). */

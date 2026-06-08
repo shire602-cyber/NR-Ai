@@ -1,44 +1,43 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DateRangeFilter,type DateRange } from '@/components/DateRangeFilter';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Form,FormControl,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { Skeleton } from '@/components/ui/skeleton';
 import { CardListSkeleton } from '@/components/ui/loading-skeletons';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useTranslation } from '@/lib/i18n';
+import { Progress } from '@/components/ui/progress';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { VirtualList } from '@/components/VirtualList';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
 import { apiUrl } from '@/lib/api';
 import { getAuthHeaders } from '@/lib/auth';
-import { clearCsrfToken, withCsrfHeader } from '@/lib/csrf';
-import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
+import { clearCsrfToken,withCsrfHeader } from '@/lib/csrf';
 import {
-  exportToExcel,
-  exportToGoogleSheets,
-  prepareReceiptsForExport,
-  downloadOcrExcel,
-  downloadReceiptsExcel,
-  ocrDataToExportRow,
+downloadOcrExcel,
+downloadReceiptsExcel,
+exportToExcel,
+exportToGoogleSheets,
+ocrDataToExportRow,
+prepareReceiptsForExport,
 } from '@/lib/export';
-import Tesseract from 'tesseract.js';
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet, ZoomIn, Brain, Bot, Zap } from 'lucide-react';
-import { SiGooglesheets } from 'react-icons/si';
-import { VirtualList } from '@/components/VirtualList';
 import { formatCurrency } from '@/lib/format';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { useForm } from 'react-hook-form';
+import { useTranslation } from '@/lib/i18n';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { endOfDay,format,isWithinInterval,parseISO,startOfDay } from 'date-fns';
+import { Bot,Brain,Camera,CheckCircle2,Download,Edit,FileSpreadsheet,FileText,Loader2,Sparkles,Trash2,Upload,X,XCircle,Zap,ZoomIn } from 'lucide-react';
+import { useCallback,useEffect,useMemo,useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { SiGooglesheets } from 'react-icons/si';
+import Tesseract from 'tesseract.js';
 import { z } from 'zod';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 
 interface ExtractedData {
   merchant?: string;
@@ -180,9 +179,9 @@ function isInternalClassifierMethod(value: unknown): value is InternalClassifier
 }
 
 export default function Receipts() {
-  const { t, locale } = useTranslation();
+  const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -244,7 +243,7 @@ export default function Receipts() {
   });
 
   // Save single receipt mutation
-  const saveReceiptMutation = useMutation({
+  const _saveReceiptMutation = useMutation({
     mutationFn: async (data: any) => {
       return apiRequest('POST', `/api/companies/${companyId}/receipts`, data);
     },
@@ -367,7 +366,7 @@ export default function Receipts() {
     },
   });
 
-  const checkSimilarMutation = useMutation({
+  const _checkSimilarMutation = useMutation({
     mutationFn: (data: any) => 
       apiRequest('POST', `/api/companies/${companyId}/receipts/check-similar`, data),
   });

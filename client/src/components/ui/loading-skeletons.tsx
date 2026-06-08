@@ -1,14 +1,14 @@
-import { cn } from '@/lib/utils';
+import { Card,CardContent,CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+Table,
+TableBody,
+TableCell,
+TableHead,
+TableHeader,
+TableRow,
 } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 
 interface TableSkeletonProps {
   rows?: number;

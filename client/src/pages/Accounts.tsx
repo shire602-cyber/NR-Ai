@@ -1,24 +1,24 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { AlertDialog,AlertDialogAction,AlertDialogCancel,AlertDialogContent,AlertDialogDescription,AlertDialogFooter,AlertDialogHeader,AlertDialogTitle,AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
+import { Form,FormControl,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, BookOpen, Search, Trash2, Edit } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n';
+import { apiRequest,queryClient } from '@/lib/queryClient';
+import { zodResolver } from '@hookform/resolvers/zod';
 import type { Account } from '@shared/schema';
+import { useMutation,useQuery } from '@tanstack/react-query';
+import { Edit,Plus,Search,Trash2 } from 'lucide-react';
+import { useEffect,useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
 
 const accountSchema = z.object({
   companyId: z.string().uuid(),
@@ -154,7 +154,7 @@ export default function Accounts() {
     (acc.nameAr && acc.nameAr.includes(searchTerm))
   );
 
-  const groupedAccounts = filteredAccounts?.reduce((acc, account) => {
+  const _groupedAccounts = filteredAccounts?.reduce((acc, account) => {
     if (!acc[account.type]) {
       acc[account.type] = [];
     }

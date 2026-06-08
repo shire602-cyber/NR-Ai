@@ -6,23 +6,23 @@
  * they have access to in a single view.
  */
 
-import type { Express, Request, Response } from 'express';
+import type { Express,Request,Response } from 'express';
 import { z } from 'zod';
-import { storage } from '../storage';
+import { pool } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { pool } from '../db';
 import {
-  calculateVatReturn,
-  upsertCalculatedPeriod,
-  listPeriodsForCompany,
-  addAdjustment,
-  updatePeriodStatus,
-  listDueDates,
-  computeDueDate,
-  isValidVat201BoxKey,
-  type VatPeriod,
+addAdjustment,
+calculateVatReturn,
+computeDueDate,
+isValidVat201BoxKey,
+listDueDates,
+listPeriodsForCompany,
+updatePeriodStatus,
+upsertCalculatedPeriod,
+type VatPeriod,
 } from '../services/vat-autopilot.service';
+import { storage } from '../storage';
 
 function userId(req: Request): string | undefined {
   return (req as any).user?.id;

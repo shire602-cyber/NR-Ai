@@ -1,25 +1,58 @@
-import { Router, type Express, type Request, type Response } from 'express';
-import { storage } from '../storage';
+import { and,eq,sql } from 'drizzle-orm';
+import { type Express,type Request,type Response } from 'express';
 import { z } from 'zod';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
+import {
+journalEntries as journalEntriesTable,
+journalEntryNumberSequences,
+journalLines as journalLinesTable,
+receipts as receiptsTable,
+type Account,
+type Receipt
+} from '../../shared/schema';
+import { createLogger } from '../config/logger';
+import { db } from '../db';
+import { authMiddleware,requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { insertInvoiceSchema, type Account, type Receipt } from '../../shared/schema';
-import { saveReceiptImage, deleteReceiptImage, resolveImagePath } from '../services/fileStorage';
-import { createAndEmitNotification } from '../services/socket.service';
-import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { recordAudit } from '../services/audit.service';
-import { createLogger } from '../config/logger';
-import { assertRetentionExpired } from '../services/retention.service';
 import {
-  buildOcrReceiptsWorkbook,
-  buildExportFilename,
-  receiptToExportRow,
+buildExportFilename,
+buildOcrReceiptsWorkbook,
+receiptToExportRow,
 } from '../services/excel-export.service';
-// @ts-ignore
+import { deleteReceiptImage,resolveImagePath,saveReceiptImage } from '../services/fileStorage';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { assertRetentionExpired } from '../services/retention.service';
+import { createAndEmitNotification } from '../services/socket.service';
+import { storage } from '../storage';
+// @ts-expect-error - pdfkit types are not available in this project.
 import PDFDocument from 'pdfkit';
 
 const log = createLogger('receipts');
+
+async function allocateJournalEntryNumberInTransaction(
+  companyId: string,
+  date: Date,
+  tx: typeof db,
+): Promise<string> {
+  const dateKey = date.toISOString().slice(0, 10);
+  const prefix = `JE-${dateKey.replace(/-/g, '')}`;
+  const [seq] = await tx
+    .insert(journalEntryNumberSequences)
+    .values({ companyId, entryDate: dateKey, lastValue: 1 })
+    .onConflictDoUpdate({
+      target: [
+        journalEntryNumberSequences.companyId,
+        journalEntryNumberSequences.entryDate,
+      ],
+      set: {
+        lastValue: sql`${journalEntryNumberSequences.lastValue} + 1`,
+        updatedAt: new Date(),
+      },
+    })
+    .returning({ lastValue: journalEntryNumberSequences.lastValue });
+  return `${prefix}-${String(seq.lastValue).padStart(3, '0')}`;
+}
 
 // Walk the user's companies and return the first match — storage.getReceipt is
 // tenant-scoped, so a hit here also proves the user has access.
@@ -405,15 +438,12 @@ export function registerReceiptRoutes(app: Express) {
       } else {
         entryDate = parsed;
       }
-    } catch (e) {
+    } catch (_e) {
       entryDate = new Date();
     }
 
     // Block posting receipts into a locked period.
     await assertPeriodNotLocked(receipt.companyId, entryDate);
-
-    // Generate entry number atomically via storage helper
-    const entryNumber = await storage.generateEntryNumber(receipt.companyId, entryDate);
 
     // Build journal lines. Three shapes:
     //  - Reverse-charge with VAT: 4-line entry. The vendor doesn't charge VAT,
@@ -508,32 +538,53 @@ export function registerReceiptRoutes(app: Express) {
       }, 0, totalAmountForeign));
     }
 
-    // Create journal entry with lines atomically (validates balance & wraps in transaction)
-    const entry = await storage.createJournalEntry(
-      {
-        companyId: receipt.companyId,
-        date: entryDate,
-        memo: `Receipt: ${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
-        entryNumber,
-        status: 'posted',
-        source: 'receipt',
-        sourceId: receipt.id,
-        createdBy: userId,
-        postedBy: userId,
-        postedAt: new Date(),
-      },
-      journalLineInputs
-    );
+    const debitTotal = journalLineInputs.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
+    const creditTotal = journalLineInputs.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
+    if (Math.abs(debitTotal - creditTotal) > 0.01) {
+      return res.status(500).json({ message: 'Receipt journal entry is unbalanced' });
+    }
 
-    // Update receipt with posting information
-    const updatedReceipt = await storage.updateReceipt(id, receipt.companyId, {
-      accountId,
-      paymentAccountId,
-      posted: true,
-      journalEntryId: entry.id,
+    const { updatedReceipt, entryId } = await db.transaction(async (tx: typeof db) => {
+      const entryNumber = await allocateJournalEntryNumberInTransaction(receipt.companyId, entryDate, tx);
+      const [entry] = await tx
+        .insert(journalEntriesTable)
+        .values({
+          companyId: receipt.companyId,
+          date: entryDate,
+          memo: `Receipt: ${receipt.merchant || 'Expense'} - ${receipt.category || 'General'}`,
+          entryNumber,
+          status: 'posted',
+          source: 'receipt',
+          sourceId: receipt.id,
+          createdBy: userId,
+          postedBy: userId,
+          postedAt: new Date(),
+        })
+        .returning();
+      for (const line of journalLineInputs) {
+        await tx.insert(journalLinesTable).values({ ...line, entryId: entry.id });
+      }
+      const [postedReceipt] = await tx
+        .update(receiptsTable)
+        .set({
+          accountId,
+          paymentAccountId,
+          posted: true,
+          journalEntryId: entry.id,
+        })
+        .where(and(
+          eq(receiptsTable.id, id),
+          eq(receiptsTable.companyId, receipt.companyId),
+          eq(receiptsTable.posted, false),
+        ))
+        .returning();
+      if (!postedReceipt) {
+        throw new Error('Receipt has already been posted');
+      }
+      return { updatedReceipt: postedReceipt, entryId: entry.id };
     });
 
-    log.info({ id, journalEntryId: entry.id }, 'Receipt posted successfully');
+    log.info({ id, journalEntryId: entryId }, 'Receipt posted successfully');
     res.json(updatedReceipt);
   }));
 

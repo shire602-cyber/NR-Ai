@@ -1,41 +1,41 @@
-import { Link } from 'wouter';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Card,CardContent,CardHeader } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import {
-  Scan,
-  FileCheck,
-  RefreshCw,
-  Globe,
-  Languages,
-  LayoutDashboard,
-  FileText,
-  Users,
-  CheckCircle2,
-  ArrowRight,
-  Building2,
-  Shield,
-  Award,
-  Phone,
-  Mail,
-  MapPin,
-  Check,
-  Zap,
-  ChevronRight,
-  Menu,
-  X,
-} from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  ScrollReveal,
-  StaggerContainer,
-  StaggerItem,
-  AnimatedNumber,
-  hoverLift,
+AnimatedNumber,
+hoverLift,
+ScrollReveal,
+StaggerContainer,
+StaggerItem,
 } from '@/lib/animations';
 import { useI18n } from '@/lib/i18n';
+import { AnimatePresence,motion } from 'framer-motion';
+import {
+ArrowRight,
+Award,
+Building2,
+Check,
+CheckCircle2,
+ChevronRight,
+FileCheck,
+FileText,
+Globe,
+Languages,
+LayoutDashboard,
+Mail,
+MapPin,
+Menu,
+Phone,
+RefreshCw,
+Scan,
+Shield,
+Users,
+X,
+Zap,
+} from 'lucide-react';
+import { useEffect,useState } from 'react';
+import { Link } from 'wouter';
 
 // ──────────────────────────────────────────────
 // Data
