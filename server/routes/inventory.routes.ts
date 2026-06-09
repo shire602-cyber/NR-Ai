@@ -195,8 +195,9 @@ export function registerInventoryRoutes(app: Express) {
         break;
     }
 
-    const newStock = product.currentStock + stockChange;
-    await storage.updateProduct(id, { currentStock: newStock });
+    // M10: atomic increment (current_stock + delta) so concurrent movements
+    // can't lose updates. `product.currentStock` was a stale read.
+    const newStock = await storage.adjustProductStock(id, stockChange);
 
     log.info({ productId: id, type, quantity, newStock }, 'Inventory movement recorded');
     res.json({ movement, newStock });

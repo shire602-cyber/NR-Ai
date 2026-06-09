@@ -1,5 +1,45 @@
 import { eq,sql } from 'drizzle-orm';
 import type { Express,Request,Response } from 'express';
+import { z } from 'zod';
+
+// M12: defense-in-depth validation for journal create/update bodies.
+// Storage will balance/validate too, but a clean 400 with a clear message is
+// much better than an unhandled 500 when `date` is missing/invalid.
+const journalLineSchema = z.object({
+  accountId: z.string().uuid('Each journal line needs a valid accountId'),
+  debit: z.coerce.number().finite().nonnegative().optional().default(0),
+  credit: z.coerce.number().finite().nonnegative().optional().default(0),
+  description: z.string().max(1000).optional().nullable(),
+});
+
+const journalCreateBodySchema = z.object({
+  date: z.union([
+    z.string().refine((v) => !Number.isNaN(Date.parse(v)), 'Invalid date'),
+    z.date(),
+  ]),
+  status: z.enum(['draft', 'posted']).optional().default('draft'),
+  description: z.string().max(1000).optional().nullable(),
+  memo: z.string().max(2000).optional().nullable(),
+  notes: z.string().max(4000).optional().nullable(),
+  source: z.string().max(64).optional().nullable(),
+  sourceId: z.string().uuid().optional().nullable(),
+  lines: z.array(journalLineSchema).min(2, 'Journal entry must have at least 2 lines'),
+  // NOTE: not .strict(): the existing client sends an extra `companyId` in the
+  // body, which the route reads from req.params. Pass through unknown keys so
+  // legitimate clients aren't broken; storage explicitly picks safe fields.
+});
+
+const journalUpdateBodySchema = z.object({
+  date: z.union([
+    z.string().refine((v) => !Number.isNaN(Date.parse(v)), 'Invalid date'),
+    z.date(),
+  ]).optional(),
+  status: z.enum(['draft', 'posted']).optional(),
+  description: z.string().max(1000).optional().nullable(),
+  memo: z.string().max(2000).optional().nullable(),
+  notes: z.string().max(4000).optional().nullable(),
+  lines: z.array(journalLineSchema).min(2, 'Journal entry must have at least 2 lines'),
+});
 import {
 journalEntries as journalEntriesTable,
 journalEntryNumberSequences,
@@ -99,7 +139,13 @@ export function registerJournalRoutes(app: Express) {
   app.post("/api/companies/:companyId/journal", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { companyId } = req.params;
     const userId = (req as any).user.id;
-    const { lines, date, status = 'draft', ...entryData } = req.body;
+    // M12: zod-validate the body so a missing/invalid date or malformed lines
+    // returns a clean 400 instead of an unhandled 500 in storage.
+    const bodyParsed = journalCreateBodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      return res.status(400).json({ message: bodyParsed.error.errors[0]?.message || 'Invalid journal body' });
+    }
+    const { lines, date, status = 'draft', ...entryData } = bodyParsed.data;
 
     // Check if user has access to this company
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
@@ -128,6 +174,14 @@ export function registerJournalRoutes(app: Express) {
 
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       return res.status(400).json({ message: `Debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)})` });
+    }
+
+    // SECURITY (H10): every line's accountId must belong to THIS company.
+    const companyAccountIds = new Set((await storage.getAccountsByCompanyId(companyId)).map((a) => a.id));
+    for (const line of lines) {
+      if (!line.accountId || !companyAccountIds.has(line.accountId)) {
+        return res.status(400).json({ message: 'Each journal line must reference an account belonging to this company' });
+      }
     }
 
     // Convert date string to Date object if it's a string
@@ -210,7 +264,12 @@ export function registerJournalRoutes(app: Express) {
   app.put("/api/journal/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
-    const { lines, date, description, memo, notes, status: requestedStatus } = req.body;
+    // M12: validate body (allows partial update — date optional).
+    const bodyParsed = journalUpdateBodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      return res.status(400).json({ message: bodyParsed.error.errors[0]?.message || 'Invalid journal body' });
+    }
+    const { lines, date, description, memo, notes, status: requestedStatus } = bodyParsed.data;
 
     // Tenant-scoped lookup also enforces access.
     const entry = await findJournalEntryForUser(userId, id);
@@ -255,6 +314,14 @@ export function registerJournalRoutes(app: Express) {
 
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       return res.status(400).json({ message: `Debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)})` });
+    }
+
+    // SECURITY (H10): every line's accountId must belong to THIS company.
+    const companyAccountIds = new Set((await storage.getAccountsByCompanyId(entry.companyId)).map((a) => a.id));
+    for (const line of lines) {
+      if (!line.accountId || !companyAccountIds.has(line.accountId)) {
+        return res.status(400).json({ message: 'Each journal line must reference an account belonging to this company' });
+      }
     }
 
     // Convert date string to Date object if it's a string

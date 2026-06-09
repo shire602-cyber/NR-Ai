@@ -37,7 +37,7 @@ function createOpenAIClient(): OpenAI | null {
     log.warn('OPENAI_API_KEY not set — AI features will be disabled');
     return null;
   }
-  return new OpenAI({ apiKey });
+  return new OpenAI({ apiKey, timeout: 60_000, maxRetries: 2 });
 }
 
 function getAIModel(): string {
@@ -181,7 +181,7 @@ Amount: ${validated.amount} ${validated.currency}`
       });
     } catch (error: any) {
       log.error({ err: error }, 'AI categorization error');
-      res.status(500).json({ message: error.message || 'AI categorization failed' });
+      res.status(500).json({ message: 'AI categorization failed' });
     }
   }));
 
@@ -251,7 +251,7 @@ If no valid transactions can be found, return { "transactions": [] }`
       res.json({ transactions: validTransactions });
     } catch (error: any) {
       log.error({ err: error }, 'AI bank statement parsing error');
-      res.status(500).json({ message: error.message || 'Failed to parse bank statement' });
+      res.status(500).json({ message: 'Failed to parse bank statement' });
     }
   }));
 
@@ -331,7 +331,7 @@ Keep your tone professional but friendly, like a trusted advisor.`
       });
     } catch (error: any) {
       log.error({ err: error }, 'AI CFO advice error');
-      res.status(500).json({ message: error.message || 'Failed to get AI advice' });
+      res.status(500).json({ message: 'Failed to get AI advice' });
     }
   }));
 
@@ -512,7 +512,7 @@ Respond with a JSON object:
       res.json({ classifications: allClassifications });
     } catch (error: any) {
       log.error({ err: error }, 'Batch categorization error');
-      res.status(500).json({ message: error.message || 'Batch categorization failed' });
+      res.status(500).json({ message: 'Batch categorization failed' });
     }
   }));
 
@@ -669,7 +669,7 @@ Respond with JSON:
       res.json(aiResponse);
     } catch (error: any) {
       log.error({ err: error }, 'Anomaly detection error');
-      res.status(500).json({ message: error.message || 'Anomaly detection failed' });
+      res.status(500).json({ message: 'Anomaly detection failed' });
     }
   }));
 
@@ -695,7 +695,8 @@ Respond with JSON:
 
       res.json(alerts);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -720,7 +721,8 @@ Respond with JSON:
       const resolvedAlert = await storage.resolveAnomalyAlert(id, userId, note);
       res.json(resolvedAlert);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -834,7 +836,7 @@ ${JSON.stringify(ledgerData, null, 2)}`
       res.json(aiResponse);
     } catch (error: any) {
       log.error({ err: error }, 'Reconciliation error');
-      res.status(500).json({ message: error.message || 'Reconciliation failed' });
+      res.status(500).json({ message: 'Reconciliation failed' });
     }
   }));
 
@@ -849,6 +851,11 @@ ${JSON.stringify(ledgerData, null, 2)}`
 
       if (!matchId || !matchType) {
         return res.status(400).json({ message: 'matchId and matchType are required' });
+      }
+      // M2: validate matchType; matchId ownership is enforced (company-scoped) in
+      // storage.reconcileBankTransaction.
+      if (!['journal', 'receipt', 'invoice'].includes(matchType)) {
+        return res.status(400).json({ message: 'Invalid matchType (must be journal, receipt, or invoice)' });
       }
 
       // Find the transaction within the user's accessible companies (tenant-scoped).
@@ -865,7 +872,8 @@ ${JSON.stringify(ledgerData, null, 2)}`
       const transaction = await storage.reconcileBankTransaction(id, txn.companyId, matchId, matchType);
       res.json(transaction);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -884,7 +892,8 @@ ${JSON.stringify(ledgerData, null, 2)}`
       const transactions = await storage.getBankTransactionsByCompanyId(companyId);
       res.json(transactions);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -905,7 +914,8 @@ ${JSON.stringify(ledgerData, null, 2)}`
       });
       res.json(transaction);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -941,7 +951,8 @@ ${JSON.stringify(ledgerData, null, 2)}`
 
       res.json({ imported: imported.length, transactions: imported });
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -1088,7 +1099,7 @@ Respond with JSON:
       });
     } catch (error: any) {
       log.error({ err: error }, 'Cash flow forecast error');
-      res.status(500).json({ message: error.message || 'Forecasting failed' });
+      res.status(500).json({ message: 'Forecasting failed' });
     }
   }));
 
@@ -1099,7 +1110,8 @@ Respond with JSON:
       const forecasts = await storage.getCashFlowForecastsByCompanyId(companyId);
       res.json(forecasts);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -1160,7 +1172,8 @@ Respond with JSON:
       const classification = await storage.getTransactionClassification(classificationId);
       res.json(classification);
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -1512,7 +1525,7 @@ Company: ${company.name}`;
       });
     } catch (error: any) {
       log.error({ err: error }, 'NL Gateway error');
-      res.status(500).json({ message: error.message || 'Failed to process query' });
+      res.status(500).json({ message: 'Failed to process query' });
     }
   }));
 
@@ -1744,12 +1757,12 @@ ${askGuidanceBlock}`;
       if (error.status) {
         const statusCode = error.status >= 400 && error.status < 600 ? error.status : 500;
         return res.status(statusCode).json({
-          message: error.message || 'OpenAI API error',
+          message: 'OpenAI API error',
           error: error.error?.message || error.message,
         });
       }
 
-      res.status(500).json({ message: error.message || 'Failed to process request' });
+      res.status(500).json({ message: 'Failed to process request' });
     }
   }));
 
@@ -1776,7 +1789,7 @@ ${askGuidanceBlock}`;
       res.json(conversations);
     } catch (error: any) {
       log.error({ err: error }, '/api/ask/history error');
-      res.status(500).json({ message: error.message || 'Failed to fetch history' });
+      res.status(500).json({ message: 'Failed to fetch history' });
     }
   }));
 
@@ -1828,7 +1841,8 @@ ${askGuidanceBlock}`;
         description: `${a.type.charAt(0).toUpperCase() + a.type.slice(1)} Account`,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -1885,7 +1899,8 @@ ${askGuidanceBlock}`;
         invoiceCount: c.count,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -1944,7 +1959,8 @@ ${askGuidanceBlock}`;
         lastAmount: m.lastAmount,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -2004,7 +2020,8 @@ ${askGuidanceBlock}`;
         usageCount: d.count,
       })));
     } catch (error: any) {
-      res.status(500).json({ message: error.message });
+      log.error({ err: error }, 'AI route error');
+      res.status(500).json({ message: 'AI request failed' });
     }
   }));
 
@@ -2154,7 +2171,7 @@ Respond with just the category name, nothing else.`;
       res.json({ suggestions });
     } catch (error: any) {
       log.error({ err: error }, 'Smart suggest error');
-      res.status(500).json({ message: error.message || 'Failed to generate suggestions' });
+      res.status(500).json({ message: 'Failed to generate suggestions' });
     }
   }));
 }

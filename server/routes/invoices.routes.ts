@@ -15,7 +15,7 @@ import { authMiddleware,requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { recordAudit } from '../services/audit.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
-import { hasSmtpConfig,sendInvoiceEmail,sendPaymentReminderEmail } from '../services/email.service';
+import { hasEmailProvider,sendInvoiceEmail,sendPaymentReminderEmail } from '../services/email.service';
 import { allocateInvoiceNumber,peekNextInvoiceNumber } from '../services/invoice-numbering.service';
 import { canTransition,isTerminal,isValidStatus } from '../services/invoice-state-machine';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
@@ -334,6 +334,11 @@ export function registerInvoiceRoutes(app: Express) {
         });
       }
 
+      // The AR debit MUST equal the sum of the credit legs (revenue + VAT) or the
+      // entry is unbalanced. FX rounding can make baseTotal differ from
+      // baseSubtotal + baseVatAmount by a cent, so derive the debit from the
+      // posted credit legs (H3).
+      const baseArDebit = Math.round((baseSubtotal + baseVatAmount) * 100) / 100;
       const journalLines: Array<{
         accountId: string;
         debit: number;
@@ -346,7 +351,7 @@ export function registerInvoiceRoutes(app: Express) {
       }> = [
         {
           accountId: accountsReceivable.id,
-          debit: baseTotal,
+          debit: baseArDebit,
           credit: 0,
           description: `Invoice ${insertedInvoice.number} - ${insertedInvoice.customerName}`,
           ...withForeignAmount(invoiceCurrency, exchangeRate, total, 0),
@@ -369,6 +374,17 @@ export function registerInvoiceRoutes(app: Express) {
         });
       }
 
+      // Defense-in-depth: never post an unbalanced entry (H3).
+      const drTotal = journalLines.reduce((s, l) => s + l.debit, 0);
+      const crTotal = journalLines.reduce((s, l) => s + l.credit, 0);
+      if (Math.abs(drTotal - crTotal) > 0.01) {
+        throw new Error(`Invoice ${insertedInvoice.number} journal entry unbalanced: debits ${drTotal.toFixed(2)} != credits ${crTotal.toFixed(2)}`);
+      }
+
+      // M4: tie the revenue JE's status to the invoice's status. A DRAFT invoice
+      // must NOT recognise revenue in the GL — it posts a draft JE that the
+      // /invoices/:id/post endpoint later promotes. Non-draft invoices post now.
+      const isDraftInvoice = insertedInvoice.status === 'draft';
       const postingEntryNumber = await allocateJournalEntryNumberInTransaction(companyId, invoiceDate, tx);
       const [entry] = await tx
         .insert(journalEntriesTable)
@@ -377,12 +393,12 @@ export function registerInvoiceRoutes(app: Express) {
           date: invoiceDate,
           memo: `Sales Invoice ${insertedInvoice.number} - ${insertedInvoice.customerName}`,
           entryNumber: postingEntryNumber,
-          status: 'posted',
+          status: isDraftInvoice ? 'draft' : 'posted',
           source: 'invoice',
           sourceId: insertedInvoice.id,
           createdBy: userId,
-          postedBy: userId,
-          postedAt: invoiceDate,
+          postedBy: isDraftInvoice ? null : userId,
+          postedAt: isDraftInvoice ? null : invoiceDate,
         })
         .returning();
       for (const line of journalLines) {
@@ -722,6 +738,16 @@ export function registerInvoiceRoutes(app: Express) {
       // doesn't keep recognising sales that were never realised. Without
       // this, a voided invoice would still inflate revenue and AR.
       if (status === 'void') {
+        // H4: voiding an invoice with recorded payments would leave the payment
+        // journal entry (Dr cash / Cr AR) un-reversed — corrupting cash and AR.
+        // Require the payment to be reversed or a credit note issued instead.
+        const paidTotal = await storage.getInvoicePaidTotal(id);
+        if (paidTotal > 0.005) {
+          return res.status(422).json({
+            message: 'Cannot void an invoice that has recorded payments. Reverse the payment or issue a credit note instead.',
+            code: 'INVOICE_HAS_PAYMENTS',
+          });
+        }
         const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
         const accountsReceivable = accounts.find(
           a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount,
@@ -1200,6 +1226,24 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(400).json({ message: 'Cannot create a credit note of a credit note' });
     }
 
+    // H5: prevent issuing more than one credit note for the same invoice —
+    // a second credit note would reverse revenue/VAT/AR a second time.
+    const existingCreditNote = await db
+      .select({ id: invoicesTable.id })
+      .from(invoicesTable)
+      .where(and(
+        eq(invoicesTable.companyId, companyId),
+        eq(invoicesTable.originalInvoiceId, invoiceId),
+        eq(invoicesTable.invoiceType, 'credit_note'),
+      ))
+      .limit(1);
+    if (existingCreditNote.length > 0) {
+      return res.status(409).json({
+        message: 'A credit note already exists for this invoice.',
+        code: 'CREDIT_NOTE_EXISTS',
+      });
+    }
+
     // Block credit note creation if today is in a locked period — the credit
     // note posts a reversing JE on `now`.
     await assertPeriodNotLocked(companyId, new Date());
@@ -1385,10 +1429,10 @@ export function registerInvoiceRoutes(app: Express) {
     }
     const { to, subject, message } = parsed.data;
 
-    if (!hasSmtpConfig()) {
+    if (!hasEmailProvider()) {
       return res.status(503).json({
-        message: 'Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.',
-        code: 'SMTP_NOT_CONFIGURED',
+        message: 'Email sending is not configured. Set RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS.',
+        code: 'EMAIL_NOT_CONFIGURED',
       });
     }
 
@@ -1439,10 +1483,10 @@ export function registerInvoiceRoutes(app: Express) {
     }
     const { to } = parsed.data;
 
-    if (!hasSmtpConfig()) {
+    if (!hasEmailProvider()) {
       return res.status(503).json({
-        message: 'Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.',
-        code: 'SMTP_NOT_CONFIGURED',
+        message: 'Email sending is not configured. Set RESEND_API_KEY or SMTP_HOST/SMTP_USER/SMTP_PASS.',
+        code: 'EMAIL_NOT_CONFIGURED',
       });
     }
 

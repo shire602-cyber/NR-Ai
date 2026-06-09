@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { removeToken } from '@/lib/auth';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence,motion } from 'framer-motion';
 import {
@@ -37,6 +37,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
       // Local logout should still complete if the network is unavailable.
     }
     removeToken();
+    // SECURITY (H12): drop all cached query data so the next user on a shared
+    // device can't see the previous tenant's portal data from the RQ cache.
+    queryClient.clear();
     navigate('/login');
   }
 

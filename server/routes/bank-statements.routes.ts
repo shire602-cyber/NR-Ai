@@ -354,6 +354,11 @@ export function registerBankStatementRoutes(app: Express) {
 
       const { nameEn, bankName, accountNumber, iban, currency, glAccountId } = req.body;
 
+      // M13: a client-supplied GL account must belong to this company.
+      if (glAccountId && !(await storage.getAccount(glAccountId, companyId))) {
+        return res.status(400).json({ message: 'glAccountId does not belong to this company' });
+      }
+
       const account = await storage.createBankAccount({
         companyId,
         nameEn,
@@ -391,6 +396,12 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       const { nameEn, bankName, accountNumber, iban, currency, glAccountId, isActive } = req.body;
+
+      // M13: a client-supplied GL account must belong to this company.
+      if (glAccountId && !(await storage.getAccount(glAccountId, companyId))) {
+        return res.status(400).json({ message: 'glAccountId does not belong to this company' });
+      }
+
       const updated = await storage.updateBankAccount(accountId, {
         ...(nameEn !== undefined && { nameEn }),
         ...(bankName !== undefined && { bankName }),
@@ -723,6 +734,13 @@ export function registerBankStatementRoutes(app: Express) {
         return res.status(400).json({
           message: 'Cannot create journal entry: bank transaction has no associated bank account (bankAccountId is null). Link the transaction to a bank account first.',
         });
+      }
+
+      // SECURITY (H11): the client-supplied counter-account must belong to this
+      // company — otherwise a posted journal line could reference another tenant.
+      const companyAccountIds = new Set((await storage.getAccountsByCompanyId(companyId)).map((a) => a.id));
+      if (!companyAccountIds.has(accountId)) {
+        return res.status(400).json({ message: 'Selected account does not belong to this company' });
       }
 
       // Block creating reconciliation journal entries into a locked period.
