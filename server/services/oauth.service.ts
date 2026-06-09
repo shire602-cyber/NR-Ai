@@ -344,6 +344,32 @@ function validateAudience(provider: OAuthProviderId, claims: Record<string, unkn
   if (!matches) throw new OAuthIdentityError('Unexpected OAuth audience');
 }
 
+/**
+ * Resolve the login email and whether it is provably verified.
+ *
+ * SECURITY (C1): only treat the address as verified when it comes from the
+ * dedicated `email` claim AND the provider asserts `email_verified`. Microsoft's
+ * `preferred_username`/`upn` fallbacks are NOT proof of email ownership, so they
+ * yield emailVerified=false — the caller must then refuse to auto-link them to a
+ * pre-existing account (prevents OAuth account takeover).
+ */
+export function deriveOAuthEmail(
+  provider: OAuthProviderId,
+  claims: Record<string, unknown>,
+): { email: string; emailVerified: boolean } {
+  const emailClaim = claimString(claims, 'email');
+  const rawEmail = emailClaim || claimString(claims, 'preferred_username') || claimString(claims, 'upn');
+  if (!rawEmail || !rawEmail.includes('@')) {
+    throw new OAuthIdentityError('OAuth provider did not return a usable email');
+  }
+  const providerAssertsVerified = claims.email_verified === true || claims.email_verified === 'true';
+  if (provider === 'google' && !providerAssertsVerified) {
+    throw new OAuthIdentityError('Google email is not verified');
+  }
+  const emailVerified = !!emailClaim && providerAssertsVerified;
+  return { email: normalizeOAuthEmail(rawEmail), emailVerified };
+}
+
 export async function exchangeOAuthCallback(
   provider: OAuthProviderId,
   currentUrl: URL,
@@ -367,20 +393,7 @@ export async function exchangeOAuthCallback(
   if (!issuer || !subject) throw new OAuthIdentityError('Missing issuer or subject');
   validateProviderIssuer(provider, issuer);
 
-  const rawEmail =
-    claimString(claims, 'email') ||
-    claimString(claims, 'preferred_username') ||
-    claimString(claims, 'upn');
-  if (!rawEmail || !rawEmail.includes('@')) {
-    throw new OAuthIdentityError('OAuth provider did not return a usable email');
-  }
-
-  const googleEmailVerified = claims.email_verified === true || claims.email_verified === 'true';
-  if (provider === 'google' && !googleEmailVerified) {
-    throw new OAuthIdentityError('Google email is not verified');
-  }
-
-  const email = normalizeOAuthEmail(rawEmail);
+  const { email, emailVerified } = deriveOAuthEmail(provider, claims);
   const name = claimString(claims, 'name') || email.split('@')[0] || 'Muhasib user';
   const picture = claimString(claims, 'picture');
 
@@ -389,7 +402,7 @@ export async function exchangeOAuthCallback(
     issuer,
     subject,
     email,
-    emailVerified: provider === 'google' ? true : true,
+    emailVerified,
     name,
     picture,
     claims,

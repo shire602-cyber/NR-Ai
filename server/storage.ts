@@ -760,6 +760,7 @@ export interface IStorage {
   getProduct(id: string): Promise<Product | undefined>;
   createProduct(data: InsertProduct): Promise<Product>;
   updateProduct(id: string, data: Partial<Product>): Promise<Product>;
+  adjustProductStock(id: string, delta: number): Promise<number>;
   deleteProduct(id: string): Promise<void>;
 
   // Inventory Movements
@@ -803,7 +804,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    // Email is case-insensitive (H2): look up by the normalized (lowercased) form.
+    const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim()));
     return user || undefined;
   }
 
@@ -812,6 +814,9 @@ export class DatabaseStorage implements IStorage {
       .insert(users)
       .values({
         ...insertUser,
+        // Store the canonical lowercased email so the unique constraint rejects
+        // case-variant duplicates (e.g. A@x.com vs a@x.com) (H2).
+        email: ((insertUser as any).email ?? '').toLowerCase().trim(),
         passwordHash: (insertUser as any).passwordHash || '',
       })
       .returning();
@@ -1986,6 +1991,16 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getBankTransactionById(id, companyId);
     if (!existing) {
       throw new Error('Bank transaction not found');
+    }
+
+    // M1: the matched record must belong to the SAME company — otherwise a
+    // client could link a bank transaction to another tenant's receipt/invoice/JE.
+    const matchedExists =
+      matchType === 'receipt' ? await this.getReceipt(matchedId, companyId)
+      : matchType === 'invoice' ? await this.getInvoice(matchedId, companyId)
+      : await this.getJournalEntry(matchedId, companyId);
+    if (!matchedExists) {
+      throw new Error('Matched record not found for this company');
     }
 
     const updateData: any = {
@@ -3653,9 +3668,33 @@ export class DatabaseStorage implements IStorage {
         e.code = 'INVALID_EXCHANGE_RATE';
         throw e;
       }
-      const baseAmount = invoiceCurrency === 'AED'
+      let baseAmount = invoiceCurrency === 'AED'
         ? amountD.toDecimalPlaces(2).toNumber()
         : amountD.times(exchangeRate).toDecimalPlaces(2).toNumber();
+
+      // M5: on the FINAL payment of a foreign-currency invoice, clear A/R to the
+      // EXACT remaining base (AED) balance. Per-payment FX rounding otherwise
+      // leaves a residual cent in Accounts Receivable even when fully settled.
+      const willClose = statusFromPayments(
+        lockedInvoice.status as InvoiceStatus,
+        Number(lockedInvoice.total),
+        previouslyPaidD.plus(amountD).toNumber(),
+      ) === 'paid';
+      if (willClose && invoiceCurrency !== 'AED') {
+        const baseTotal = Math.round(Number(lockedInvoice.total) * exchangeRate * 100) / 100;
+        const priorRes: any = await tx.execute(sql`
+          SELECT COALESCE(SUM(jl.credit), 0) AS prior_base
+          FROM journal_lines jl
+          JOIN journal_entries je ON je.id = jl.entry_id
+          WHERE je.company_id = ${input.companyId}
+            AND je.source = 'payment'
+            AND je.source_id = ${input.invoiceId}
+            AND jl.account_id = ${input.receivableAccountId}
+        `);
+        const priorBase = Number((priorRes.rows ?? priorRes)[0]?.prior_base ?? 0);
+        const remainingBase = Math.round((baseTotal - priorBase) * 100) / 100;
+        if (remainingBase > 0) baseAmount = remainingBase;
+      }
       const foreignFields = invoiceCurrency === 'AED'
         ? {}
         : {
@@ -3847,6 +3886,20 @@ export class DatabaseStorage implements IStorage {
       throw new Error('Product not found');
     }
     return product;
+  }
+
+  // M10: atomic stock adjustment — `current_stock + delta` in a single UPDATE so
+  // concurrent movements can't lose updates (read-then-write race).
+  async adjustProductStock(id: string, delta: number): Promise<number> {
+    const [product] = await db
+      .update(products)
+      .set({ currentStock: sql`${products.currentStock} + ${delta}` })
+      .where(eq(products.id, id))
+      .returning({ currentStock: products.currentStock });
+    if (!product) {
+      throw new Error('Product not found');
+    }
+    return product.currentStock as number;
   }
 
   async deleteProduct(id: string): Promise<void> {

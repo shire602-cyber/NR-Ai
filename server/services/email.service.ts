@@ -67,6 +67,43 @@ function getFromAddress(): string {
   return env.SMTP_FROM || env.SMTP_USER || 'noreply@muhasib.ai';
 }
 
+/**
+ * Provider-agnostic send for a PDF-attachment email (invoices, reminders).
+ * Prefers Resend, falls back to SMTP (H13: previously SMTP-only, so a
+ * Resend-only deployment could not send invoices). Throws if neither is set.
+ */
+async function dispatchEmailWithPdf(
+  to: string,
+  subject: string,
+  html: string,
+  pdfBuffer: Buffer,
+  filename: string,
+): Promise<void> {
+  if (hasResendConfig()) {
+    const env = getEnv();
+    const resend = new Resend(env.RESEND_API_KEY!);
+    await resend.emails.send({
+      from: getResendFrom(),
+      to,
+      subject,
+      html,
+      attachments: [{ filename, content: pdfBuffer.toString('base64') }],
+    });
+    return;
+  }
+  if (hasSmtpConfig()) {
+    await createTransporter().sendMail({
+      from: getFromAddress(),
+      to,
+      subject,
+      html,
+      attachments: [{ filename, content: pdfBuffer, contentType: 'application/pdf' }],
+    });
+    return;
+  }
+  throw new Error('No email provider configured — set RESEND_API_KEY or SMTP_HOST');
+}
+
 function getResendFrom(fromName?: string): string {
   try {
     const env = getEnv();
@@ -134,7 +171,6 @@ export async function sendInvoiceEmail(
   subject?: string,
   message?: string
 ): Promise<void> {
-  const transporter = createTransporter();
   const safeCompanyName = escapeHtml(company.name);
   const safeCustomerName = escapeHtml(invoice.customerName);
   const safeInvoiceNumber = escapeHtml(invoice.number);
@@ -221,19 +257,7 @@ export async function sendInvoiceEmail(
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
-    to,
-    subject: invoiceSubject,
-    html,
-    attachments: [
-      {
-        filename: `invoice-${invoice.number}.pdf`,
-        content: pdfBuffer,
-        contentType: 'application/pdf',
-      },
-    ],
-  });
+  await dispatchEmailWithPdf(to, invoiceSubject, html, pdfBuffer, `invoice-${invoice.number}.pdf`);
 }
 
 export async function sendPaymentReminderEmail(
@@ -243,7 +267,6 @@ export async function sendPaymentReminderEmail(
   pdfBuffer: Buffer,
   reminderNumber: number
 ): Promise<void> {
-  const transporter = createTransporter();
   const isOverdue = invoice.dueDate && new Date(invoice.dueDate) < new Date();
   const subject = isOverdue
     ? `Overdue Invoice Reminder: ${invoice.number} — ${formatCurrency(invoice.total, invoice.currency)}`
@@ -325,19 +348,7 @@ export async function sendPaymentReminderEmail(
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
-    to,
-    subject,
-    html,
-    attachments: [
-      {
-        filename: `invoice-${invoice.number}.pdf`,
-        content: pdfBuffer,
-        contentType: 'application/pdf',
-      },
-    ],
-  });
+  await dispatchEmailWithPdf(to, subject, html, pdfBuffer, `invoice-${invoice.number}.pdf`);
 }
 
 export async function sendGenericEmail(
@@ -427,6 +438,69 @@ export async function sendWelcomeEmail(to: string, name: string, companyName?: s
     subject: 'Welcome to Muhasib.ai',
     html,
   });
+}
+
+// ─── Auth transactional emails ────────────────────────────────
+
+function ctaEmailHtml(heading: string, intro: string, buttonLabel: string, url: string, footnote: string): string {
+  const safeUrl = escapeHtml(url);
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:32px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <tr><td style="background:#1E40AF;padding:24px 40px;">
+          <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:bold;">${escapeHtml(heading)}</h1>
+        </td></tr>
+        <tr><td style="padding:32px 40px;">
+          <p style="color:#374151;font-size:14px;line-height:1.7;margin:0 0 24px;">${escapeHtml(intro)}</p>
+          <p style="margin:0 0 24px;">
+            <a href="${safeUrl}" style="display:inline-block;background:#1E40AF;color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;padding:12px 24px;border-radius:6px;">${escapeHtml(buttonLabel)}</a>
+          </p>
+          <p style="color:#6B7280;font-size:12px;line-height:1.6;margin:0 0 8px;">If the button doesn't work, copy and paste this link into your browser:</p>
+          <p style="color:#1E40AF;font-size:12px;word-break:break-all;margin:0 0 24px;"><a href="${safeUrl}" style="color:#1E40AF;">${safeUrl}</a></p>
+          <p style="color:#9CA3AF;font-size:12px;line-height:1.6;margin:0;">${escapeHtml(footnote)}</p>
+        </td></tr>
+        <tr><td style="background:#F9FAFB;padding:16px 40px;border-top:1px solid #E5E7EB;">
+          <p style="color:#9CA3AF;font-size:11px;margin:0;text-align:center;">Muhasib.ai — Smart Accounting for UAE Businesses</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+/**
+ * Send a password-reset link. Delegates to the graceful sendEmail (Resend/SMTP
+ * with no-op fallback) so a missing provider or send failure never throws.
+ */
+export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<SendEmailResult> {
+  const html = ctaEmailHtml(
+    'Reset your password',
+    'We received a request to reset the password for your Muhasib.ai account. Click the button below to choose a new password.',
+    'Reset password',
+    resetUrl,
+    "This link expires in 1 hour. If you didn't request a password reset, you can safely ignore this email — your password will not change.",
+  );
+  const text = `Reset your Muhasib.ai password:\n${resetUrl}\n\nThis link expires in 1 hour. If you didn't request a reset, you can safely ignore this email.`;
+  return sendEmail(to, 'Reset your Muhasib.ai password', text, { fromName: 'Muhasib.ai', html });
+}
+
+/**
+ * Send an email-verification link. Delegates to the graceful sendEmail so a
+ * missing provider or send failure never throws.
+ */
+export async function sendVerificationEmail(to: string, verifyUrl: string): Promise<SendEmailResult> {
+  const html = ctaEmailHtml(
+    'Verify your email',
+    'Welcome to Muhasib.ai! Please confirm your email address to secure your account.',
+    'Verify email',
+    verifyUrl,
+    "If you didn't create a Muhasib.ai account, you can safely ignore this email.",
+  );
+  const text = `Verify your Muhasib.ai email address:\n${verifyUrl}`;
+  return sendEmail(to, 'Verify your Muhasib.ai email address', text, { fromName: 'Muhasib.ai', html });
 }
 
 /**

@@ -12,6 +12,7 @@ resetPasswordSchema,
 loginSchema as sharedLoginSchema,
 trnSchema,
 } from '../../shared/validators';
+import { BCRYPT_COST } from '../config/bcrypt';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 import { db } from '../db';
@@ -35,10 +36,14 @@ consumeEmailVerificationToken,
 createEmailVerificationToken,
 createRefreshSession,
 revokeRefreshSession,
+revokeUserRefreshSessions,
 rotateRefreshSession,
 } from '../services/auth-tokens.service';
+import { sendPasswordResetEmail, sendVerificationEmail } from '../services/email.service';
 import {
 consumeOAuthState,
+frontendBaseUrl,
+OAuthIdentityError,
 createOAuthAuthorizationUrl,
 exchangeOAuthCallback,
 getAuthIdentity,
@@ -101,7 +106,7 @@ function publicUser(user: any) {
 }
 
 async function createOAuthCustomer(profile: OAuthIdentityProfile) {
-  const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+  const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), BCRYPT_COST);
   const user = await storage.createUser({
     name: profile.name,
     email: profile.email,
@@ -210,6 +215,17 @@ async function resolveOAuthUser(profile: OAuthIdentityProfile): Promise<{ user: 
 
   const existingUser = await getUserByNormalizedOAuthEmail(profile.email);
   if (existingUser) {
+    // SECURITY (C1): never auto-link an OAuth identity to a pre-existing account
+    // (which may be password-based) unless the provider PROVABLY verified the
+    // email. Otherwise a provider that lets the user assert an arbitrary
+    // email/upn (e.g. a Microsoft account from any tenant) would take over the
+    // victim's existing account. Unverified users must connect the provider from
+    // an authenticated session (explicit linking), not via this login path.
+    if (!profile.emailVerified) {
+      throw new OAuthIdentityError(
+        'An account with this email already exists. Please sign in with your password, then connect this login provider from your account settings.',
+      );
+    }
     await linkAuthIdentity(existingUser.id, profile);
     await markOAuthLogin(existingUser.id, profile);
     return { user: await storage.getUser(existingUser.id) ?? existingUser, mode: 'linked_existing' };
@@ -311,7 +327,7 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       // Hash password
-      const passwordHash = await bcrypt.hash(validated.password, 10);
+      const passwordHash = await bcrypt.hash(validated.password, BCRYPT_COST);
 
       // SECURITY: Force userType to 'customer' - never trust client-supplied userType
       // Self-signup users can only be customers. Clients/admins must use invitation flow.
@@ -376,10 +392,15 @@ export function registerAuthRoutes(app: Express): void {
       // delivered via email instead.
       try {
         const verificationToken = await createEmailVerificationToken(user.id);
-        log.info(
-          { userId: user.id, email: user.email },
-          `Email verification pending — verify URL: /verify-email/${verificationToken}`,
-        );
+        try {
+          const verifyUrl = `${frontendBaseUrl()}/verify-email/${verificationToken}`;
+          const sendResult = await sendVerificationEmail(user.email, verifyUrl);
+          if (!sendResult.sent) {
+            log.warn({ userId: user.id, error: sendResult.error }, 'Verification email not sent');
+          }
+        } catch (err) {
+          log.error({ err, userId: user.id }, 'Verification email send failed');
+        }
       } catch (err) {
         log.error({ err, userId: user.id }, 'Failed to issue email verification token');
       }
@@ -570,15 +591,31 @@ export function registerAuthRoutes(app: Express): void {
       });
 
       const env = getEnv();
-      const appUrl = (env as any).APP_URL || (env as any).PUBLIC_URL || '';
-      const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+      let resetUrl: string | null = null;
+      try {
+        resetUrl = `${frontendBaseUrl()}/reset-password?token=${rawToken}`;
+      } catch (err) {
+        log.error({ err }, 'Cannot build password reset URL (FRONTEND_URL not configured)');
+      }
 
       log.info({ userId: user.id, email }, 'Password reset requested');
 
-      // TODO(email): wire to outbound email service when configured.
+      // Best-effort send. Never reveal send success/failure to the caller
+      // (prevents email enumeration) and never let a mail outage 500 the request.
+      if (resetUrl) {
+        try {
+          const sendResult = await sendPasswordResetEmail(email, resetUrl);
+          if (!sendResult.sent) {
+            log.warn({ userId: user.id, error: sendResult.error }, 'Password reset email not sent');
+          }
+        } catch (err) {
+          log.error({ err, userId: user.id }, 'Password reset email send threw');
+        }
+      }
+
       // In non-production, return the URL so QA can verify the flow.
-      const isProd = (env as any).NODE_ENV === 'production';
-      if (!isProd) {
+      const isProd = env.NODE_ENV === 'production';
+      if (!isProd && resetUrl) {
         return res.json({
           ...genericResponse,
           devResetUrl: resetUrl,
@@ -603,12 +640,16 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: 'This reset link is invalid or has expired. Please request a new one.' });
       }
 
-      const newHash = await bcrypt.hash(password, 10);
+      const newHash = await bcrypt.hash(password, BCRYPT_COST);
       await storage.updateUserPassword(record.userId, newHash);
       await storage.markPasswordResetTokenUsed(record.id);
       // Revoke any other outstanding reset tokens — one successful reset
       // invalidates the whole batch.
       await storage.deletePasswordResetTokensForUser(record.userId);
+      // SECURITY (H1): a reset is the canonical post-compromise recovery action —
+      // revoke ALL existing refresh sessions so a stolen token cannot outlive the
+      // reset (refresh sessions otherwise live 7 days).
+      await revokeUserRefreshSessions(record.userId);
 
       log.info({ userId: record.userId }, 'Password reset completed');
 
@@ -685,7 +726,7 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       // Create user with appropriate userType from invitation
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(password, BCRYPT_COST);
       const user = await storage.createUser({
         email: invitation.email,
         name,
@@ -806,10 +847,15 @@ export function registerAuthRoutes(app: Express): void {
       }
       try {
         const verificationToken = await createEmailVerificationToken(user.id);
-        log.info(
-          { userId: user.id, email: user.email },
-          `Verification re-issued — verify URL: /verify-email/${verificationToken}`,
-        );
+        try {
+          const verifyUrl = `${frontendBaseUrl()}/verify-email/${verificationToken}`;
+          const sendResult = await sendVerificationEmail(user.email, verifyUrl);
+          if (!sendResult.sent) {
+            log.warn({ userId: user.id, error: sendResult.error }, 'Verification email not sent');
+          }
+        } catch (err) {
+          log.error({ err, userId: user.id }, 'Verification email send failed');
+        }
       } catch (err) {
         log.error({ err, userId: user.id }, 'Failed to re-issue verification token');
       }
