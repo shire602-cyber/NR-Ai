@@ -7,6 +7,7 @@ const log = createLogger('shutdown');
 interface ShutdownDeps {
   httpServer: HttpServer | null;
   ioServer?: IoServer | null;
+  stopScheduler?: () => Promise<void>;
   closePool: () => Promise<void>;
 }
 
@@ -19,8 +20,9 @@ interface ShutdownDeps {
  * 2. Disconnect socket.io clients with a polite reason so the client can
  *    reconnect to the new instance instead of hanging.
  * 3. Wait for in-flight HTTP work, bounded by `httpDrainMs`.
- * 4. Drain the DB pool, bounded by `poolDrainMs`.
- * 5. Exit. Hard timeout at `hardExitMs` no matter what — orchestrators
+ * 4. Stop background schedulers and release any scheduler DB locks.
+ * 5. Drain the DB pool, bounded by `poolDrainMs`.
+ * 6. Exit. Hard timeout at `hardExitMs` no matter what — orchestrators
  *    will SIGKILL us anyway, but a clean exit code is friendlier.
  */
 export function installGracefulShutdown(
@@ -96,7 +98,18 @@ export function installGracefulShutdown(
       log.info({ remaining: inFlight }, 'In-flight drain finished');
     }
 
-    // Step 4: close the DB pool.
+    // Step 4: stop background schedulers and release DB advisory locks before
+    // draining the pool.
+    if (deps.stopScheduler) {
+      try {
+        log.info('Stopping background scheduler');
+        await deps.stopScheduler();
+      } catch (err) {
+        log.error({ err }, 'Error stopping background scheduler');
+      }
+    }
+
+    // Step 5: close the DB pool.
     try {
       log.info('Closing database pool');
       await Promise.race([

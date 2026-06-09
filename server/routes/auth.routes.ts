@@ -35,9 +35,11 @@ consumeEmailVerificationToken,
 createEmailVerificationToken,
 createRefreshSession,
 revokeRefreshSession,
+revokeUserRefreshSessions,
 rotateRefreshSession,
 } from '../services/auth-tokens.service';
 import {
+assertOAuthEmailVerifiedForAccountLink,
 consumeOAuthState,
 createOAuthAuthorizationUrl,
 exchangeOAuthCallback,
@@ -101,6 +103,8 @@ function publicUser(user: any) {
 }
 
 async function createOAuthCustomer(profile: OAuthIdentityProfile) {
+  assertOAuthEmailVerifiedForAccountLink(profile);
+
   const passwordHash = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
   const user = await storage.createUser({
     name: profile.name,
@@ -108,7 +112,7 @@ async function createOAuthCustomer(profile: OAuthIdentityProfile) {
     userType: 'customer',
     isAdmin: false,
     passwordHash,
-    emailVerified: true,
+    emailVerified: profile.emailVerified,
     avatarUrl: profile.picture,
   } as any);
 
@@ -210,6 +214,7 @@ async function resolveOAuthUser(profile: OAuthIdentityProfile): Promise<{ user: 
 
   const existingUser = await getUserByNormalizedOAuthEmail(profile.email);
   if (existingUser) {
+    assertOAuthEmailVerifiedForAccountLink(profile);
     await linkAuthIdentity(existingUser.id, profile);
     await markOAuthLogin(existingUser.id, profile);
     return { user: await storage.getUser(existingUser.id) ?? existingUser, mode: 'linked_existing' };
@@ -609,6 +614,8 @@ export function registerAuthRoutes(app: Express): void {
       // Revoke any other outstanding reset tokens — one successful reset
       // invalidates the whole batch.
       await storage.deletePasswordResetTokensForUser(record.userId);
+      await revokeUserRefreshSessions(record.userId);
+      clearAuthCookies(res);
 
       log.info({ userId: record.userId }, 'Password reset completed');
 

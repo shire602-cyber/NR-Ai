@@ -88,6 +88,12 @@ export function normalizeOAuthEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+export function assertOAuthEmailVerifiedForAccountLink(profile: Pick<OAuthIdentityProfile, 'emailVerified'>): void {
+  if (!profile.emailVerified) {
+    throw new OAuthIdentityError('OAuth provider email is not verified; refusing to link existing account');
+  }
+}
+
 function providerCredentials(provider: OAuthProviderId): { clientId?: string; clientSecret?: string } {
   const env = getEnv();
   if (provider === 'google') {
@@ -324,6 +330,10 @@ function claimString(claims: Record<string, unknown>, key: string): string | und
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
+function claimBoolean(claims: Record<string, unknown>, key: string): boolean {
+  return claims[key] === true || claims[key] === 'true';
+}
+
 function validateProviderIssuer(provider: OAuthProviderId, issuer: string): void {
   if (provider === 'google') {
     if (issuer !== PROVIDERS.google.issuer) {
@@ -344,6 +354,47 @@ function validateAudience(provider: OAuthProviderId, claims: Record<string, unkn
   if (!matches) throw new OAuthIdentityError('Unexpected OAuth audience');
 }
 
+export function oauthProfileFromClaims(
+  provider: OAuthProviderId,
+  claims: Record<string, unknown>,
+): OAuthIdentityProfile {
+  validateAudience(provider, claims);
+
+  const issuer = claimString(claims, 'iss');
+  const subject = claimString(claims, 'sub');
+  if (!issuer || !subject) throw new OAuthIdentityError('Missing issuer or subject');
+  validateProviderIssuer(provider, issuer);
+
+  const emailClaim = claimString(claims, 'email');
+  const rawEmail = provider === 'microsoft'
+    ? emailClaim || claimString(claims, 'preferred_username') || claimString(claims, 'upn')
+    : emailClaim;
+  if (!rawEmail || !rawEmail.includes('@')) {
+    throw new OAuthIdentityError('OAuth provider did not return a usable email');
+  }
+
+  const googleEmailVerified = claimBoolean(claims, 'email_verified');
+  if (provider === 'google' && !googleEmailVerified) {
+    throw new OAuthIdentityError('Google email is not verified');
+  }
+  const microsoftEmailVerified = Boolean(emailClaim && claimBoolean(claims, 'email_verified'));
+
+  const email = normalizeOAuthEmail(rawEmail);
+  const name = claimString(claims, 'name') || email.split('@')[0] || 'Muhasib user';
+  const picture = claimString(claims, 'picture');
+
+  return {
+    provider,
+    issuer,
+    subject,
+    email,
+    emailVerified: provider === 'google' ? true : microsoftEmailVerified,
+    name,
+    picture,
+    claims,
+  };
+}
+
 export async function exchangeOAuthCallback(
   provider: OAuthProviderId,
   currentUrl: URL,
@@ -360,40 +411,7 @@ export async function exchangeOAuthCallback(
   const claims = tokens.claims() as Record<string, unknown> | undefined;
   if (!claims) throw new OAuthIdentityError('Missing ID token claims');
 
-  validateAudience(provider, claims);
-
-  const issuer = claimString(claims, 'iss');
-  const subject = claimString(claims, 'sub');
-  if (!issuer || !subject) throw new OAuthIdentityError('Missing issuer or subject');
-  validateProviderIssuer(provider, issuer);
-
-  const rawEmail =
-    claimString(claims, 'email') ||
-    claimString(claims, 'preferred_username') ||
-    claimString(claims, 'upn');
-  if (!rawEmail || !rawEmail.includes('@')) {
-    throw new OAuthIdentityError('OAuth provider did not return a usable email');
-  }
-
-  const googleEmailVerified = claims.email_verified === true || claims.email_verified === 'true';
-  if (provider === 'google' && !googleEmailVerified) {
-    throw new OAuthIdentityError('Google email is not verified');
-  }
-
-  const email = normalizeOAuthEmail(rawEmail);
-  const name = claimString(claims, 'name') || email.split('@')[0] || 'Muhasib user';
-  const picture = claimString(claims, 'picture');
-
-  return {
-    provider,
-    issuer,
-    subject,
-    email,
-    emailVerified: provider === 'google' ? true : true,
-    name,
-    picture,
-    claims,
-  };
+  return oauthProfileFromClaims(provider, claims);
 }
 
 export async function getAuthIdentity(profile: OAuthIdentityProfile) {

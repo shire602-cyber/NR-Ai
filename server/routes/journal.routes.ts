@@ -52,6 +52,14 @@ async function findJournalEntryForUser(userId: string, entryId: string): Promise
   return undefined;
 }
 
+async function findInvalidJournalLineAccount(companyId: string, lines: any[]): Promise<string | null> {
+  const accountIds = Array.from(new Set(lines.map((line) => line?.accountId).filter(Boolean))) as string[];
+  if (accountIds.length === 0) return 'missing';
+  const accounts = await storage.getAccountsByCompanyId(companyId);
+  const ownedAccountIds = new Set(accounts.map((account) => account.id));
+  return accountIds.find((accountId) => !ownedAccountIds.has(accountId)) ?? null;
+}
+
 export function registerJournalRoutes(app: Express) {
   // =====================================
   // Journal Entry Routes
@@ -128,6 +136,15 @@ export function registerJournalRoutes(app: Express) {
 
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       return res.status(400).json({ message: `Debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)})` });
+    }
+
+    const invalidAccountId = await findInvalidJournalLineAccount(companyId, lines);
+    if (invalidAccountId) {
+      return res.status(400).json({
+        message: invalidAccountId === 'missing'
+          ? 'Every journal line must include an account'
+          : 'Every journal line account must belong to this company',
+      });
     }
 
     // Convert date string to Date object if it's a string
@@ -255,6 +272,15 @@ export function registerJournalRoutes(app: Express) {
 
     if (Math.abs(totalDebit - totalCredit) > 0.01) {
       return res.status(400).json({ message: `Debits (${totalDebit.toFixed(2)}) must equal credits (${totalCredit.toFixed(2)})` });
+    }
+
+    const invalidAccountId = await findInvalidJournalLineAccount(entry.companyId, lines);
+    if (invalidAccountId) {
+      return res.status(400).json({
+        message: invalidAccountId === 'missing'
+          ? 'Every journal line must include an account'
+          : 'Every journal line account must belong to this company',
+      });
     }
 
     // Convert date string to Date object if it's a string

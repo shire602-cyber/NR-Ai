@@ -3,6 +3,7 @@ import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 import { pool } from '../db';
 import { storage } from '../storage';
+import { openAiClientOptions } from './ai-client-options';
 import { assertPeriodNotLocked } from './period-lock.service';
 
 const log = createLogger('autonomous-gl');
@@ -136,7 +137,7 @@ function createOpenAIClient(): OpenAI | null {
     log.warn('OPENAI_API_KEY not set — autonomous GL AI features disabled');
     return null;
   }
-  return new OpenAI({ apiKey });
+  return new OpenAI(openAiClientOptions(apiKey));
 }
 
 // =============================================

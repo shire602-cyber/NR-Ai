@@ -716,10 +716,10 @@ export async function calculateVatReturn(
       `SELECT COALESCE(SUM(subtotal), 0) AS amount,
               COALESCE(SUM(vat_amount), 0) AS vat
        FROM vendor_bills
-       WHERE company_id = $1
-         AND reverse_charge = true
-         AND bill_date >= $2 AND bill_date <= $3
-         AND status NOT IN ('void','cancelled','draft')`,
+     WHERE company_id = $1
+       AND reverse_charge = true
+       AND bill_date >= $2 AND bill_date <= $3
+       AND status IN ('approved','partial','paid','overdue')`,
       [companyId, resolvedPeriod.start, resolvedPeriod.end],
     );
     billReverseChargeAmount = Number(billRes.rows[0]?.amount || 0);

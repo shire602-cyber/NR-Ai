@@ -63,6 +63,7 @@ interface VendorBill {
   attachment_url: string | null;
   approved_by: string | null;
   approved_at: string | null;
+  journal_entry_id: string | null;
   paid_at: string | null;
   created_at: string;
 }
@@ -85,6 +86,8 @@ interface BillPayment {
   payment_date: string;
   amount: string;
   payment_method: string;
+  payment_account_id: string | null;
+  journal_entry_id: string | null;
   reference: string | null;
   notes: string | null;
   created_at: string;
@@ -139,6 +142,7 @@ const paymentFormSchema = z.object({
   payment_date: z.date(),
   amount: z.coerce.number().min(0.01, 'Amount must be positive'),
   payment_method: z.string().default('bank_transfer'),
+  payment_account_id: z.string().uuid('Select a cash or bank account'),
   reference: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -299,6 +303,7 @@ export default function BillPay() {
       payment_date: new Date(),
       amount: 0,
       payment_method: 'bank_transfer',
+      payment_account_id: '',
       reference: '',
       notes: '',
     },
@@ -406,6 +411,7 @@ export default function BillPay() {
         payment_date: new Date(),
         amount: 0,
         payment_method: 'bank_transfer',
+        payment_account_id: '',
         reference: '',
         notes: '',
       });
@@ -470,6 +476,7 @@ export default function BillPay() {
       payment_date: new Date(),
       amount: Number(remaining.toFixed(2)),
       payment_method: 'bank_transfer',
+      payment_account_id: paymentAccounts[0]?.id || '',
       reference: '',
       notes: '',
     });
@@ -500,6 +507,20 @@ export default function BillPay() {
 
   // Expense account options
   const expenseAccounts = accounts.filter((a: any) => a.type === 'expense' || a.type === 'asset');
+  const paymentAccounts = accounts.filter((acc: any) => {
+    const name = (acc.nameEn || '').toLowerCase();
+    const nameAr = (acc.nameAr || '').toLowerCase();
+    return (
+      acc.type === 'asset' && (
+        name.includes('bank') ||
+        name.includes('cash') ||
+        name.includes('cheque') ||
+        nameAr.includes('بنك') ||
+        nameAr.includes('نقد') ||
+        nameAr.includes('شيك')
+      )
+    );
+  });
 
   // ===========================
   // Render
@@ -985,34 +1006,43 @@ export default function BillPay() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEditBill(bill)}>
-                                  <Edit className="w-4 h-4 mr-2" />
-                                  Edit
-                                </DropdownMenuItem>
                                 {bill.status === 'pending' && (
-                                  <DropdownMenuItem onClick={() => approveBillMutation.mutate(bill.id)}>
-                                    <CheckCircle className="w-4 h-4 mr-2" />
-                                    Approve
-                                  </DropdownMenuItem>
+                                  <>
+                                    <DropdownMenuItem onClick={() => handleEditBill(bill)}>
+                                      <Edit className="w-4 h-4 mr-2" />
+                                      Edit
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      disabled={(bill.currency || 'AED') !== 'AED'}
+                                      onClick={() => approveBillMutation.mutate(bill.id)}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      Approve
+                                    </DropdownMenuItem>
+                                  </>
                                 )}
-                                {bill.status !== 'paid' && (
+                                {['approved', 'partial', 'overdue'].includes(bill.status) && (
                                   <DropdownMenuItem onClick={() => handlePayBill(bill)}>
                                     <DollarSign className="w-4 h-4 mr-2" />
                                     Record Payment
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-red-600"
-                                  onClick={() => {
-                                    if (confirm('Are you sure you want to delete this bill?')) {
-                                      deleteBillMutation.mutate(bill.id);
-                                    }
-                                  }}
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
+                                {bill.status === 'pending' && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-red-600"
+                                      onClick={() => {
+                                        if (confirm('Are you sure you want to delete this bill?')) {
+                                          deleteBillMutation.mutate(bill.id);
+                                        }
+                                      }}
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      Delete
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </TableCell>
@@ -1237,6 +1267,11 @@ export default function BillPay() {
               )}
             </DialogDescription>
           </DialogHeader>
+          {payingBill && (payingBill.currency || 'AED') !== 'AED' && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+              Non-AED bill payments need FX support before they can post to the ledger.
+            </div>
+          )}
           <Form {...paymentForm}>
             <form onSubmit={paymentForm.handleSubmit(onPaymentSubmit)} className="space-y-4">
               <FormField
@@ -1302,9 +1337,37 @@ export default function BillPay() {
                         <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
                         <SelectItem value="cash">Cash</SelectItem>
                         <SelectItem value="cheque">Cheque</SelectItem>
-                        <SelectItem value="card">Card</SelectItem>
+                        <SelectItem value="credit_card">Credit Card</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
                       </SelectContent>
                     </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={paymentForm.control}
+                name="payment_account_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Payment Account</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select cash or bank account" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {paymentAccounts.map((account: any) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.code} - {account.nameEn}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {paymentAccounts.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Create a cash or bank account before recording bill payments.</p>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
@@ -1346,7 +1409,14 @@ export default function BillPay() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={recordPaymentMutation.isPending}>
+                <Button
+                  type="submit"
+                  disabled={
+                    recordPaymentMutation.isPending ||
+                    paymentAccounts.length === 0 ||
+                    (!!payingBill && (payingBill.currency || 'AED') !== 'AED')
+                  }
+                >
                   {recordPaymentMutation.isPending ? 'Recording...' : 'Record Payment'}
                 </Button>
               </DialogFooter>

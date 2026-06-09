@@ -7,6 +7,7 @@ import { createLogger } from '../config/logger';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
+import { anthropicClientOptions,openAiClientOptions } from '../services/ai-client-options';
 import {
 buildExportFilename,
 buildGenericWorkbook,
@@ -30,8 +31,8 @@ function initOCRClients() {
     env.OPENAI_API_KEY && !env.OPENAI_API_KEY.startsWith('sk-ant-')
       ? env.OPENAI_API_KEY
       : undefined;
-  const anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
-  const openai = !anthropic && openaiKey ? new OpenAI({ apiKey: openaiKey }) : null;
+  const anthropic = anthropicKey ? new Anthropic(anthropicClientOptions(anthropicKey)) : null;
+  const openai = !anthropic && openaiKey ? new OpenAI(openAiClientOptions(openaiKey)) : null;
   return { anthropic, openai };
 }
 

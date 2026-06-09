@@ -17,6 +17,7 @@ import { db } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { getAccessibleCompanyIds,requireFirmRole } from '../middleware/rbac';
+import { anthropicClientOptions,openAiClientOptions } from '../services/ai-client-options';
 import { storage } from '../storage';
 
 const router = Router();
@@ -55,9 +56,9 @@ function initOCRClients() {
     env.OPENAI_API_KEY && !env.OPENAI_API_KEY.startsWith('sk-ant-')
       ? env.OPENAI_API_KEY
       : undefined;
-  const anthropic = anthropicKey ? new Anthropic({ apiKey: anthropicKey }) : null;
+  const anthropic = anthropicKey ? new Anthropic(anthropicClientOptions(anthropicKey)) : null;
   const openai = !anthropic && openaiKey
-    ? new OpenAI({ apiKey: openaiKey, baseURL: 'https://api.openai.com/v1' })
+    ? new OpenAI(openAiClientOptions(openaiKey, { baseURL: 'https://api.openai.com/v1' }))
     : null;
   return { anthropic, openai };
 }

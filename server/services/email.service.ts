@@ -76,6 +76,70 @@ function getResendFrom(fromName?: string): string {
   return `${escapeHtml(name)} <noreply@muhasib.ai>`;
 }
 
+interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
+async function sendHtmlEmail(
+  to: string,
+  subject: string,
+  html: string,
+  options: {
+    fromName?: string;
+    text?: string;
+    attachments?: EmailAttachment[];
+  } = {},
+): Promise<SendEmailResult> {
+  let resendError: string | undefined;
+  if (hasResendConfig()) {
+    try {
+      const env = getEnv();
+      const resend = new Resend(env.RESEND_API_KEY!);
+      await resend.emails.send({
+        from: getResendFrom(options.fromName),
+        to,
+        subject,
+        html,
+        text: options.text,
+        attachments: options.attachments,
+      });
+      logger.info(`Email sent via Resend to ${to}: "${subject}"`);
+      return { sent: true, provider: 'resend' };
+    } catch (err: any) {
+      resendError = err?.message || 'Resend send failed';
+      logger.error(`Resend send failed: ${resendError}`);
+    }
+  }
+
+  if (hasSmtpConfig()) {
+    try {
+      const transporter = createTransporter();
+      await transporter.sendMail({
+        from: getFromAddress(),
+        to,
+        subject,
+        html,
+        text: options.text,
+        attachments: options.attachments,
+      });
+      logger.info(`Email sent via SMTP to ${to}: "${subject}"`);
+      return { sent: true, provider: 'smtp' };
+    } catch (err: any) {
+      logger.error(`SMTP send failed: ${err?.message}`);
+      return { sent: false, provider: 'smtp', error: err?.message };
+    }
+  }
+
+  logger.warn('No email provider configured (RESEND_API_KEY or SMTP_HOST) — email not sent');
+  return {
+    sent: false,
+    provider: resendError ? 'resend' : undefined,
+    error: resendError || 'No email provider configured — set RESEND_API_KEY or SMTP_HOST',
+  };
+}
+
 function formatCurrency(amount: number, currency = 'AED'): string {
   return `${currency} ${amount.toFixed(2)}`;
 }
@@ -134,7 +198,6 @@ export async function sendInvoiceEmail(
   subject?: string,
   message?: string
 ): Promise<void> {
-  const transporter = createTransporter();
   const safeCompanyName = escapeHtml(company.name);
   const safeCustomerName = escapeHtml(invoice.customerName);
   const safeInvoiceNumber = escapeHtml(invoice.number);
@@ -221,11 +284,8 @@ export async function sendInvoiceEmail(
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
-    to,
-    subject: invoiceSubject,
-    html,
+  const result = await sendHtmlEmail(to, invoiceSubject, html, {
+    fromName: company.name,
     attachments: [
       {
         filename: `invoice-${invoice.number}.pdf`,
@@ -234,6 +294,9 @@ export async function sendInvoiceEmail(
       },
     ],
   });
+  if (!result.sent) {
+    throw new Error(result.error || 'Invoice email could not be sent');
+  }
 }
 
 export async function sendPaymentReminderEmail(
@@ -243,7 +306,6 @@ export async function sendPaymentReminderEmail(
   pdfBuffer: Buffer,
   reminderNumber: number
 ): Promise<void> {
-  const transporter = createTransporter();
   const isOverdue = invoice.dueDate && new Date(invoice.dueDate) < new Date();
   const subject = isOverdue
     ? `Overdue Invoice Reminder: ${invoice.number} — ${formatCurrency(invoice.total, invoice.currency)}`
@@ -325,11 +387,8 @@ export async function sendPaymentReminderEmail(
 </body>
 </html>`;
 
-  await transporter.sendMail({
-    from: getFromAddress(),
-    to,
-    subject,
-    html,
+  const result = await sendHtmlEmail(to, subject, html, {
+    fromName: company.name,
     attachments: [
       {
         filename: `invoice-${invoice.number}.pdf`,
@@ -338,6 +397,9 @@ export async function sendPaymentReminderEmail(
       },
     ],
   });
+  if (!result.sent) {
+    throw new Error(result.error || 'Payment reminder email could not be sent');
+  }
 }
 
 export async function sendGenericEmail(

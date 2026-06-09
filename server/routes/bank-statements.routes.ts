@@ -6,6 +6,7 @@ import { authMiddleware,requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { autoReconcileTransactions,getSuggestionsForTransaction } from '../services/auto-reconcile.service';
+import { assertBalancedJournalLines } from '../services/journal-balance.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { createAndEmitNotification } from '../services/socket.service';
 import { storage } from '../storage';
@@ -724,9 +725,54 @@ export function registerBankStatementRoutes(app: Express) {
           message: 'Cannot create journal entry: bank transaction has no associated bank account (bankAccountId is null). Link the transaction to a bank account first.',
         });
       }
+      const [bankGlAccount, selectedAccount] = await Promise.all([
+        storage.getAccount(bankGlAccountId, companyId),
+        storage.getAccount(accountId, companyId),
+      ]);
+      if (!bankGlAccount) {
+        return res.status(400).json({
+          message: 'Cannot create journal entry: bank transaction GL account does not belong to this company.',
+        });
+      }
+      if (!selectedAccount) {
+        return res.status(400).json({
+          message: 'Cannot create journal entry: selected account does not belong to this company.',
+        });
+      }
 
       // Block creating reconciliation journal entries into a locked period.
       await assertPeriodNotLocked(companyId, txn.transactionDate);
+
+      // Reject zero / NaN / non-finite amounts so we never post a JE that
+      // looks balanced (0 = 0) but represents no real movement.
+      if (!Number.isFinite(absAmount) || absAmount <= 0) {
+        return res.status(400).json({ message: 'Bank transaction amount must be a positive number to post' });
+      }
+      // Dr X / Cr X self-cancels; reject same-account pairings so a JE with
+      // the bank's own GL account on BOTH legs can't sneak through the
+      // balance check.
+      if (accountId === bankGlAccountId) {
+        return res.status(400).json({ message: 'Counter-account must differ from the bank GL account' });
+      }
+
+      const bankRecLines = [
+        {
+          accountId: bankGlAccountId,
+          debit: isInflow ? absAmount : 0,
+          credit: isInflow ? 0 : absAmount,
+          description: txn.description,
+        },
+        {
+          accountId,
+          debit: isInflow ? 0 : absAmount,
+          credit: isInflow ? absAmount : 0,
+          description: txn.description,
+        },
+      ];
+      // Defense-in-depth: shared assertion so every posting path uses the
+      // SAME balance check (a hand-coded check at one site is one place to
+      // drift on rounding tolerance).
+      assertBalancedJournalLines(bankRecLines);
 
       const entry = await storage.createJournalEntryWithGeneratedNumber(
         {
@@ -740,20 +786,7 @@ export function registerBankStatementRoutes(app: Express) {
           postedBy: userId,
           postedAt: new Date(),
         },
-        [
-          {
-            accountId: bankGlAccountId,
-            debit: isInflow ? absAmount : 0,
-            credit: isInflow ? 0 : absAmount,
-            description: txn.description,
-          },
-          {
-            accountId,
-            debit: isInflow ? 0 : absAmount,
-            credit: isInflow ? absAmount : 0,
-            description: txn.description,
-          },
-        ]
+        bankRecLines,
       );
 
       // Mark transaction as matched to this journal entry

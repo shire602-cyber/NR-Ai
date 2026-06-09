@@ -15,8 +15,10 @@ import { authMiddleware,requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { recordAudit } from '../services/audit.service';
 import { generateEInvoiceXML } from '../services/einvoice.service';
-import { hasSmtpConfig,sendInvoiceEmail,sendPaymentReminderEmail } from '../services/email.service';
+import { hasEmailProvider,sendInvoiceEmail,sendPaymentReminderEmail } from '../services/email.service';
+import { positiveExchangeRate, toBaseCurrencyAmount, withForeignAmount } from '../services/fx.service';
 import { allocateInvoiceNumber,peekNextInvoiceNumber } from '../services/invoice-numbering.service';
+import { assertBalancedJournalLines } from '../services/journal-balance.service';
 import { canTransition,isTerminal,isValidStatus } from '../services/invoice-state-machine';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
@@ -75,38 +77,6 @@ function calculateInvoiceTotals(lines: InvoiceLineInput[]) {
     subtotal: subtotalD.toDecimalPlaces(2).toNumber(),
     vatAmount: vatAmountD.toDecimalPlaces(2).toNumber(),
     total: subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber(),
-  };
-}
-
-function positiveExchangeRate(rawRate: unknown): number {
-  const rate = Number(rawRate ?? 1);
-  if (!Number.isFinite(rate) || rate <= 0) {
-    throw new Error('Exchange rate must be a positive number');
-  }
-  return rate;
-}
-
-function toBaseCurrencyAmount(amount: number, currency: string, exchangeRate: number): number {
-  const amountD = new Decimal(amount || 0);
-  return (currency || 'AED') === 'AED'
-    ? amountD.toDecimalPlaces(2).toNumber()
-    : amountD.times(exchangeRate).toDecimalPlaces(2).toNumber();
-}
-
-function withForeignAmount(
-  currency: string,
-  exchangeRate: number,
-  foreignDebit: number,
-  foreignCredit: number,
-) {
-  if ((currency || 'AED') === 'AED') {
-    return { foreignDebit: 0, foreignCredit: 0, exchangeRate: 1 };
-  }
-  return {
-    foreignCurrency: currency,
-    foreignDebit,
-    foreignCredit,
-    exchangeRate,
   };
 }
 
@@ -368,6 +338,7 @@ export function registerInvoiceRoutes(app: Express) {
           ...withForeignAmount(invoiceCurrency, exchangeRate, 0, vatAmount),
         });
       }
+      assertBalancedJournalLines(journalLines);
 
       const postingEntryNumber = await allocateJournalEntryNumberInTransaction(companyId, invoiceDate, tx);
       const [entry] = await tx
@@ -742,11 +713,35 @@ export function registerInvoiceRoutes(app: Express) {
           id,
         );
         const originalEntry = existingEntries.find(e => e.status === 'posted');
+        // Posted payment JEs we might need to reverse.
+        const candidatePaymentEntries = (await storage.getJournalEntriesBySource(
+          invoice.companyId,
+          'payment',
+          id,
+        )).filter(e => e.status === 'posted');
+        // SECURITY/INTEGRITY: skip any payment JE that has ALREADY been reversed
+        // (e.g. a refund correction posted via /api/journal/:id/reverse). Without
+        // this, voiding such an invoice would post a second reversal and put cash
+        // into the bank that never actually flowed.
+        const alreadyReversed = await storage.getAlreadyReversedEntryIds(
+          invoice.companyId,
+          candidatePaymentEntries.map(e => e.id),
+        );
+        const paymentEntries = candidatePaymentEntries.filter(e => !alreadyReversed.has(e.id));
+        const paymentLines = paymentEntries.length > 0
+          ? await storage.getJournalLinesByEntryIds(paymentEntries.map(e => e.id))
+          : [];
+        const paymentLinesByEntryId = new Map<string, typeof paymentLines>();
+        for (const line of paymentLines) {
+          const bucket = paymentLinesByEntryId.get(line.entryId) ?? [];
+          bucket.push(line);
+          paymentLinesByEntryId.set(line.entryId, bucket);
+        }
         if (originalEntry && (!accountsReceivable || !salesRevenue || (Number(invoice.vatAmount) > 0 && !vatPayable))) {
           return res.status(500).json({ message: 'Required system accounts are missing for invoice reversal' });
         }
 
-        if (originalEntry && accountsReceivable && salesRevenue) {
+        if ((originalEntry && accountsReceivable && salesRevenue) || paymentEntries.length > 0) {
           const reversalDate = new Date();
           // Block reversal posting into a locked period — without this we
           // could flip status without writing the offsetting JE.
@@ -766,54 +761,94 @@ export function registerInvoiceRoutes(app: Express) {
             foreignDebit?: number;
             foreignCredit?: number;
             exchangeRate?: number;
-          }> = [
-            {
+          }> = [];
+          if (originalEntry && accountsReceivable && salesRevenue) {
+            reversalLines.push({
               accountId: salesRevenue.id,
               debit: baseSubtotal,
               credit: 0,
               description: `Reverse revenue - Void Invoice ${invoice.number}`,
               ...withForeignAmount(invoiceCurrency, exchangeRate, Number(invoice.subtotal), 0),
-            },
-          ];
-          if (Number(invoice.vatAmount) > 0 && vatPayable) {
-            reversalLines.push({
-              accountId: vatPayable.id,
-              debit: baseVatAmount,
-              credit: 0,
-              description: `Reverse VAT - Void Invoice ${invoice.number}`,
-              ...withForeignAmount(invoiceCurrency, exchangeRate, Number(invoice.vatAmount), 0),
             });
+            if (Number(invoice.vatAmount) > 0 && vatPayable) {
+              reversalLines.push({
+                accountId: vatPayable.id,
+                debit: baseVatAmount,
+                credit: 0,
+                description: `Reverse VAT - Void Invoice ${invoice.number}`,
+                ...withForeignAmount(invoiceCurrency, exchangeRate, Number(invoice.vatAmount), 0),
+              });
+            }
+            reversalLines.push({
+              accountId: accountsReceivable.id,
+              debit: 0,
+              credit: baseTotal,
+              description: `Reverse A/R - Void Invoice ${invoice.number}`,
+              ...withForeignAmount(invoiceCurrency, exchangeRate, 0, Number(invoice.total)),
+            });
+            assertBalancedJournalLines(reversalLines);
           }
-          reversalLines.push({
-            accountId: accountsReceivable.id,
-            debit: 0,
-            credit: baseTotal,
-            description: `Reverse A/R - Void Invoice ${invoice.number}`,
-            ...withForeignAmount(invoiceCurrency, exchangeRate, 0, Number(invoice.total)),
-          });
 
           let entryNumber = '';
           await db.transaction(async (tx: typeof db) => {
-            entryNumber = await allocateJournalEntryNumberInTransaction(invoice.companyId, reversalDate, tx);
-            const [entry] = await tx
-              .insert(journalEntriesTable)
-              .values({
-                companyId: invoice.companyId,
-                date: reversalDate,
-                memo: `Void Invoice ${invoice.number} - reversal of original posting`,
-                entryNumber,
-                status: 'posted',
-                source: 'invoice',
-                sourceId: id,
-                reversedEntryId: originalEntry.id,
-                reversalReason: 'Invoice voided',
-                createdBy: userId,
-                postedBy: userId,
-                postedAt: reversalDate,
-              } as any)
-              .returning();
-            for (const line of reversalLines) {
-              await tx.insert(journalLinesTable).values({ ...line, entryId: entry.id });
+            if (originalEntry && accountsReceivable && salesRevenue) {
+              entryNumber = await allocateJournalEntryNumberInTransaction(invoice.companyId, reversalDate, tx);
+              const [entry] = await tx
+                .insert(journalEntriesTable)
+                .values({
+                  companyId: invoice.companyId,
+                  date: reversalDate,
+                  memo: `Void Invoice ${invoice.number} - reversal of original posting`,
+                  entryNumber,
+                  status: 'posted',
+                  source: 'invoice',
+                  sourceId: id,
+                  reversedEntryId: originalEntry.id,
+                  reversalReason: 'Invoice voided',
+                  createdBy: userId,
+                  postedBy: userId,
+                  postedAt: reversalDate,
+                } as any)
+                .returning();
+              for (const line of reversalLines) {
+                await tx.insert(journalLinesTable).values({ ...line, entryId: entry.id });
+              }
+            }
+
+            for (const paymentEntry of paymentEntries) {
+              const sourceLines = paymentLinesByEntryId.get(paymentEntry.id) ?? [];
+              const paymentReversalLines = sourceLines.map((line: any) => ({
+                accountId: line.accountId,
+                debit: Number(line.credit) || 0,
+                credit: Number(line.debit) || 0,
+                description: `Reverse payment - Void Invoice ${invoice.number}`,
+                foreignCurrency: line.foreignCurrency || undefined,
+                foreignDebit: Number(line.foreignCredit) || 0,
+                foreignCredit: Number(line.foreignDebit) || 0,
+                exchangeRate: Number(line.exchangeRate) || 1,
+              }));
+              assertBalancedJournalLines(paymentReversalLines);
+              const paymentReversalEntryNumber = await allocateJournalEntryNumberInTransaction(invoice.companyId, reversalDate, tx);
+              const [paymentReversalEntry] = await tx
+                .insert(journalEntriesTable)
+                .values({
+                  companyId: invoice.companyId,
+                  date: reversalDate,
+                  memo: `Void Invoice ${invoice.number} - reversal of payment ${paymentEntry.entryNumber}`,
+                  entryNumber: paymentReversalEntryNumber,
+                  status: 'posted',
+                  source: 'reversal',
+                  sourceId: id,
+                  reversedEntryId: paymentEntry.id,
+                  reversalReason: 'Invoice voided',
+                  createdBy: userId,
+                  postedBy: userId,
+                  postedAt: reversalDate,
+                } as any)
+                .returning();
+              for (const line of paymentReversalLines) {
+                await tx.insert(journalLinesTable).values({ ...line, entryId: paymentReversalEntry.id });
+              }
             }
             await tx
               .update(invoicesTable)
@@ -823,7 +858,12 @@ export function registerInvoiceRoutes(app: Express) {
           statusUpdatedInTransaction = true;
 
           log.info(
-            { invoiceId: id, originalEntryId: originalEntry.id, entryNumber },
+            {
+              invoiceId: id,
+              originalEntryId: originalEntry?.id ?? null,
+              paymentEntryCount: paymentEntries.length,
+              entryNumber: entryNumber || null,
+            },
             'Void reversal journal entry created',
           );
         }
@@ -1200,6 +1240,23 @@ export function registerInvoiceRoutes(app: Express) {
       return res.status(400).json({ message: 'Cannot create a credit note of a credit note' });
     }
 
+    const [existingCreditNote] = await db
+      .select({ id: invoicesTable.id, number: invoicesTable.number })
+      .from(invoicesTable)
+      .where(and(
+        eq(invoicesTable.companyId, companyId),
+        eq(invoicesTable.originalInvoiceId, invoiceId),
+        eq(invoicesTable.invoiceType, 'credit_note'),
+        sql`${invoicesTable.status} <> 'void'`,
+      ))
+      .limit(1);
+    if (existingCreditNote) {
+      return res.status(409).json({
+        message: `Credit note ${existingCreditNote.number} already exists for this invoice`,
+        creditNoteId: existingCreditNote.id,
+      });
+    }
+
     // Block credit note creation if today is in a locked period — the credit
     // note posts a reversing JE on `now`.
     await assertPeriodNotLocked(companyId, new Date());
@@ -1295,6 +1352,7 @@ export function registerInvoiceRoutes(app: Express) {
         description: `Reduce A/R - ${number}`,
         ...withForeignAmount(originalCurrency, originalExchangeRate, 0, Number(original.total)),
       });
+      assertBalancedJournalLines(cnLines);
 
       const entryNumber = await allocateJournalEntryNumberInTransaction(companyId, now, tx);
       const [entry] = await tx
@@ -1385,10 +1443,10 @@ export function registerInvoiceRoutes(app: Express) {
     }
     const { to, subject, message } = parsed.data;
 
-    if (!hasSmtpConfig()) {
+    if (!hasEmailProvider()) {
       return res.status(503).json({
-        message: 'Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.',
-        code: 'SMTP_NOT_CONFIGURED',
+        message: 'Email sending is not configured. Please set RESEND_API_KEY or SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.',
+        code: 'EMAIL_NOT_CONFIGURED',
       });
     }
 
@@ -1439,10 +1497,10 @@ export function registerInvoiceRoutes(app: Express) {
     }
     const { to } = parsed.data;
 
-    if (!hasSmtpConfig()) {
+    if (!hasEmailProvider()) {
       return res.status(503).json({
-        message: 'Email sending is not configured. Please set SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.',
-        code: 'SMTP_NOT_CONFIGURED',
+        message: 'Email sending is not configured. Please set RESEND_API_KEY or SMTP_HOST, SMTP_USER, and SMTP_PASS environment variables.',
+        code: 'EMAIL_NOT_CONFIGURED',
       });
     }
 

@@ -215,6 +215,27 @@ function assertBalanced(lines: Array<{ debit?: number | null; credit?: number | 
   }
 }
 
+async function assertJournalLineAccountsBelongToCompany(
+  tx: typeof db,
+  companyId: string,
+  lines: Array<{ accountId?: string | null }>,
+): Promise<void> {
+  const accountIds = Array.from(new Set(lines.map((line) => line.accountId).filter(Boolean))) as string[];
+  if (accountIds.length === 0) {
+    throw new Error('Journal entry line account is required');
+  }
+
+  const ownedAccounts = await tx
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.companyId, companyId), inArray(accounts.id, accountIds)));
+  const ownedIds = new Set(ownedAccounts.map((account: { id: string }) => account.id));
+  const invalidAccountId = accountIds.find((accountId) => !ownedIds.has(accountId));
+  if (invalidAccountId) {
+    throw new Error(`Journal line account ${invalidAccountId} does not belong to company ${companyId}`);
+  }
+}
+
 async function allocateEntryNumberInTransaction(
   tx: typeof db,
   companyId: string,
@@ -803,15 +824,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    const normalizedEmail = email.trim().toLowerCase();
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(sql`lower(${users.email}) = ${normalizedEmail}`);
     return user || undefined;
   }
 
   async createUser(insertUser: InsertUser & { passwordHash?: string }): Promise<User> {
+    const normalizedEmail = insertUser.email.trim().toLowerCase();
     const [user] = await db
       .insert(users)
       .values({
         ...insertUser,
+        email: normalizedEmail,
         passwordHash: (insertUser as any).passwordHash || '',
       })
       .returning();
@@ -1338,6 +1365,7 @@ export class DatabaseStorage implements IStorage {
     assertBalanced(lines);
 
     return await db.transaction(async (tx: typeof db) => {
+      await assertJournalLineAccountsBelongToCompany(tx, insertEntry.companyId, lines);
       const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
       for (const line of lines) {
         await tx.insert(journalLines).values({ ...line, entryId: entry.id });
@@ -1356,6 +1384,7 @@ export class DatabaseStorage implements IStorage {
     assertBalanced(lines);
 
     return await db.transaction(async (tx: typeof db) => {
+      await assertJournalLineAccountsBelongToCompany(tx, insertEntry.companyId, lines);
       const entryDate = insertEntry.date instanceof Date
         ? insertEntry.date
         : new Date(insertEntry.date as any);
@@ -1395,6 +1424,7 @@ export class DatabaseStorage implements IStorage {
     assertBalanced(lines);
 
     return await db.transaction(async (tx: typeof db) => {
+      await assertJournalLineAccountsBelongToCompany(tx, companyId, lines);
       const [entry] = await tx
         .update(journalEntries)
         .set(data)
@@ -3542,6 +3572,34 @@ export class DatabaseStorage implements IStorage {
           eq(journalEntries.sourceId, sourceId),
         ),
       );
+  }
+
+  /**
+   * Return the IDs (from `entryIds`) that already have a reversal pointing at
+   * them, so callers can skip re-reversing them. Used by the invoice-void path
+   * to avoid double-reversing a payment JE that was already manually reversed.
+   */
+  async getAlreadyReversedEntryIds(
+    companyId: string,
+    entryIds: string[],
+  ): Promise<Set<string>> {
+    if (entryIds.length === 0) return new Set();
+    const rows = await db
+      .select({ reversedEntryId: journalEntries.reversedEntryId })
+      .from(journalEntries)
+      .where(
+        and(
+          eq(journalEntries.companyId, companyId),
+          eq(journalEntries.status, 'posted'),
+          isNotNull(journalEntries.reversedEntryId),
+          inArray(journalEntries.reversedEntryId, entryIds),
+        ),
+      );
+    return new Set(
+      rows
+        .map((r: { reversedEntryId: string | null }) => r.reversedEntryId)
+        .filter((id: string | null): id is string => !!id),
+    );
   }
 
   async recordInvoicePayment(input: {

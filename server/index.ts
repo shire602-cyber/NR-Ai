@@ -24,7 +24,7 @@ import { requestId } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
 import { applyRateLimitMiddleware,applySecurityMiddleware } from './middleware/security';
 import { registerRoutes } from './routes';
-import { initScheduler } from './services/scheduler.service';
+import { initScheduler,stopScheduler } from './services/scheduler.service';
 import { initSocketServer } from './services/socket.service';
 import { installGracefulShutdown } from './shutdown';
 import { serveStatic,setupVite } from './vite';
@@ -217,7 +217,7 @@ async function bootstrap() {
   ioServer = initSocketServer(server);
 
   // ─── Background scheduler (engagement automation) ─────
-  initScheduler();
+  await initScheduler();
 
   // ─── API 404 handler (before static/SPA fallback) ───────
   app.use('/api/*', notFoundHandler);
@@ -258,6 +258,7 @@ async function bootstrap() {
   const shutdown = installGracefulShutdown({
     httpServer,
     ioServer,
+    stopScheduler,
     closePool,
   });
   process.on('SIGTERM', () => { void shutdown('SIGTERM'); });

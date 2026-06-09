@@ -21,6 +21,7 @@ import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 import { pool } from '../db';
 import { storage } from '../storage';
+import { openAiClientOptions } from './ai-client-options';
 import { assertPeriodNotLocked } from './period-lock.service';
 import {
 classifyReceipt,
@@ -76,7 +77,7 @@ let _openai: OpenAI | null | undefined;
 function getOpenAI(): OpenAI | null {
   if (_openai !== undefined) return _openai;
   const key = getEnv().OPENAI_API_KEY;
-  _openai = key ? new OpenAI({ apiKey: key }) : null;
+  _openai = key ? new OpenAI(openAiClientOptions(key)) : null;
   return _openai;
 }
 

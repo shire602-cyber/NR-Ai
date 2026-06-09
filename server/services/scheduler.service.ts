@@ -7,13 +7,24 @@ recurringInvoices as recurringInvoicesTable,
 } from '../../shared/schema';
 import { createLogger } from '../config/logger';
 import { ACCOUNT_CODES,UAE_VAT_RATE } from '../constants';
-import { db } from '../db';
+import { db,pool } from '../db';
 import { storage } from '../storage';
 import { purgeExpiredAuthTokens } from './auth-tokens.service';
 import { allocateInvoiceNumber } from './invoice-numbering.service';
 import { assertPeriodNotLocked } from './period-lock.service';
 
 const log = createLogger('scheduler');
+const SCHEDULER_LOCK_NAMESPACE = 'muhasib.scheduler';
+const SCHEDULER_LOCK_NAME = 'engagement-automation-v1';
+
+type SchedulerLockClient = {
+  query: (text: string, params?: unknown[]) => Promise<{ rows?: Array<Record<string, unknown>> }>;
+  release: () => void;
+};
+
+let schedulerStarted = false;
+let schedulerLockClient: SchedulerLockClient | null = null;
+const scheduledTasks: Array<{ stop: () => void }> = [];
 
 /**
  * Background scheduler for the Client Engagement Automation Engine.
@@ -169,11 +180,45 @@ function buildWhatsAppLink(phone: string | undefined | null, message: string): s
 // Scheduler entry point
 // ---------------------------------------------------------------------------
 
-export function initScheduler() {
+async function acquireSchedulerLeadership(): Promise<boolean> {
+  if (schedulerLockClient) return true;
+
+  if (typeof pool.connect !== 'function') {
+    log.warn('Scheduler leadership requires a dedicated PostgreSQL client; skipping scheduler on this driver');
+    return false;
+  }
+
+  const client = await pool.connect() as SchedulerLockClient;
+  try {
+    const result = await client.query(
+      `SELECT pg_try_advisory_lock(hashtext($1), hashtext($2)) AS locked`,
+      [SCHEDULER_LOCK_NAMESPACE, SCHEDULER_LOCK_NAME],
+    );
+    const locked = result.rows?.[0]?.locked === true;
+    if (!locked) {
+      client.release();
+      log.info('Another instance owns the scheduler advisory lock; this replica will not run cron jobs');
+      return false;
+    }
+
+    schedulerLockClient = client;
+    log.info('Acquired scheduler advisory lock; this replica is scheduler leader');
+    return true;
+  } catch (err) {
+    client.release();
+    throw err;
+  }
+}
+
+export async function initScheduler(): Promise<boolean> {
+  if (schedulerStarted) return true;
   log.info('Initializing background scheduler...');
 
+  const isLeader = await acquireSchedulerLeadership();
+  if (!isLeader) return false;
+
   // Run every hour: scan for payment-related engagement triggers
-  cron.schedule('0 * * * *', async () => {
+  scheduledTasks.push(cron.schedule('0 * * * *', async () => {
     try {
       log.info('Running hourly payment reminder scan...');
       await scanPaymentReminders();
@@ -181,10 +226,10 @@ export function initScheduler() {
     } catch (err) {
       log.error({ err }, 'Scheduler error during payment reminder scan');
     }
-  });
+  }));
 
   // Run every 30 minutes: autonomous GL classification scan
-  cron.schedule('*/30 * * * *', async () => {
+  scheduledTasks.push(cron.schedule('*/30 * * * *', async () => {
     try {
       log.info('Running autonomous GL classification scan...');
       const { scanAndClassifyAllCompanies } = await import('../services/autonomous-gl.service');
@@ -198,10 +243,10 @@ export function initScheduler() {
         log.error({ err }, 'Scheduler error during autonomous GL scan');
       }
     }
-  });
+  }));
 
   // Run daily at 06:00 UTC: generate recurring invoices that are due
-  cron.schedule('0 6 * * *', async () => {
+  scheduledTasks.push(cron.schedule('0 6 * * *', async () => {
     try {
       log.info('Running daily recurring invoice generation...');
       await generateDueRecurringInvoices();
@@ -209,10 +254,10 @@ export function initScheduler() {
     } catch (err) {
       log.error({ err }, 'Scheduler error during recurring invoice generation');
     }
-  });
+  }));
 
   // Run hourly: sweep expired auth tokens (blacklist, password reset, email verify)
-  cron.schedule('15 * * * *', async () => {
+  scheduledTasks.push(cron.schedule('15 * * * *', async () => {
     try {
       const result = await purgeExpiredAuthTokens();
       if (result.blacklist + result.passwordReset + result.emailVerification > 0) {
@@ -221,9 +266,40 @@ export function initScheduler() {
     } catch (err) {
       log.error({ err }, 'Scheduler error during auth token sweep');
     }
-  });
+  }));
 
+  schedulerStarted = true;
   log.info('Scheduler initialized — payment scans hourly, GL scans every 30min, recurring invoices daily at 06:00 UTC, auth-token sweep hourly');
+  return true;
+}
+
+export async function stopScheduler(): Promise<void> {
+  if (scheduledTasks.length > 0) {
+    for (const task of scheduledTasks.splice(0)) {
+      try {
+        task.stop();
+      } catch (err) {
+        log.error({ err }, 'Failed to stop scheduled task');
+      }
+    }
+  }
+  schedulerStarted = false;
+
+  const client = schedulerLockClient;
+  schedulerLockClient = null;
+  if (!client) return;
+
+  try {
+    await client.query(
+      `SELECT pg_advisory_unlock(hashtext($1), hashtext($2))`,
+      [SCHEDULER_LOCK_NAMESPACE, SCHEDULER_LOCK_NAME],
+    );
+    log.info('Released scheduler advisory lock');
+  } catch (err) {
+    log.error({ err }, 'Failed to release scheduler advisory lock');
+  } finally {
+    client.release();
+  }
 }
 
 // ---------------------------------------------------------------------------

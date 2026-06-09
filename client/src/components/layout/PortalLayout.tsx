@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { removeToken } from '@/lib/auth';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest,queryClient } from '@/lib/queryClient';
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence,motion } from 'framer-motion';
 import {
@@ -37,6 +37,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
       // Local logout should still complete if the network is unavailable.
     }
     removeToken();
+    queryClient.clear();
     navigate('/login');
   }
 

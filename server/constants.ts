@@ -20,10 +20,12 @@ export const DEFAULT_CURRENCY = 'AED';
 export const ACCOUNT_CODES = {
   /** Accounts Receivable (current asset). */
   AR: '1040',
-  /** Accounts Payable (current liability). */
-  AP: '2020',
-  /** Output VAT payable (current liability). Same code as AP in default UAE COA. */
+  /** Accounts Payable (current liability). Matches `2010` in the default UAE COA. */
+  AP: '2010',
+  /** Output VAT payable (current liability). Matches `2020` in the default UAE COA. */
   VAT_OUTPUT: '2020',
+  /** Input VAT receivable (current asset). Matches `1050` in the default UAE COA. */
+  VAT_INPUT: '1050',
   /** Sales Revenue (income). */
   REVENUE: '4010',
   /** Service Revenue (alternate revenue account some firms use). */

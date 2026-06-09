@@ -21,6 +21,7 @@ buildOcrReceiptsWorkbook,
 receiptToExportRow,
 } from '../services/excel-export.service';
 import { deleteReceiptImage,resolveImagePath,saveReceiptImage } from '../services/fileStorage';
+import { assertBalancedJournalLines } from '../services/journal-balance.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { assertRetentionExpired } from '../services/retention.service';
 import { createAndEmitNotification } from '../services/socket.service';
@@ -538,9 +539,12 @@ export function registerReceiptRoutes(app: Express) {
       }, 0, totalAmountForeign));
     }
 
-    const debitTotal = journalLineInputs.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
-    const creditTotal = journalLineInputs.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
-    if (Math.abs(debitTotal - creditTotal) > 0.01) {
+    // Defense-in-depth: shared assertion (Decimal-summed) so the receipt path
+    // can't drift from the invoice / vendor-bill paths on rounding tolerance.
+    try {
+      assertBalancedJournalLines(journalLineInputs);
+    } catch (err) {
+      log.error({ err: (err as Error).message, receiptId: receipt.id }, 'Receipt JE failed balance check');
       return res.status(500).json({ message: 'Receipt journal entry is unbalanced' });
     }
 

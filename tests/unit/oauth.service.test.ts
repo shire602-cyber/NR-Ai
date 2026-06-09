@@ -8,13 +8,14 @@ vi.hoisted(() => {
   process.env.FRONTEND_URL = 'https://app.muhasib.test';
   process.env.OAUTH_GOOGLE_CLIENT_ID = 'google-client-id';
   process.env.OAUTH_GOOGLE_CLIENT_SECRET = 'google-client-secret';
-  delete process.env.OAUTH_MICROSOFT_CLIENT_ID;
-  delete process.env.OAUTH_MICROSOFT_CLIENT_SECRET;
+  process.env.OAUTH_MICROSOFT_CLIENT_ID = 'microsoft-client-id';
+  process.env.OAUTH_MICROSOFT_CLIENT_SECRET = 'microsoft-client-secret';
 });
 
 vi.mock('../../server/db', () => ({ db: {} }));
 
 import {
+  assertOAuthEmailVerifiedForAccountLink,
   decryptOAuthSecret,
   encryptOAuthSecret,
   getOAuthProviderInfo,
@@ -22,6 +23,8 @@ import {
   isOAuthProviderId,
   normalizeOAuthEmail,
   oauthCallbackSuccessUrl,
+  OAuthIdentityError,
+  oauthProfileFromClaims,
   sanitizeOAuthNextPath,
 } from '../../server/services/oauth.service';
 
@@ -35,7 +38,7 @@ describe('oauth service helpers', () => {
   it('reports provider configuration without exposing secrets', () => {
     expect(getOAuthProviderInfo()).toEqual([
       expect.objectContaining({ id: 'google', configured: true }),
-      expect.objectContaining({ id: 'microsoft', configured: false }),
+      expect.objectContaining({ id: 'microsoft', configured: true }),
     ]);
   });
 
@@ -72,5 +75,52 @@ describe('oauth service helpers', () => {
   it('hashes OAuth state deterministically', () => {
     expect(hashOAuthSecret('state-a')).toBe(hashOAuthSecret('state-a'));
     expect(hashOAuthSecret('state-a')).not.toBe(hashOAuthSecret('state-b'));
+  });
+
+  it('rejects Google profiles when the provider did not verify the email', () => {
+    expect(() => oauthProfileFromClaims('google', {
+      aud: 'google-client-id',
+      iss: 'https://accounts.google.com',
+      sub: 'google-subject',
+      email: 'owner@example.com',
+      email_verified: false,
+    })).toThrow(OAuthIdentityError);
+  });
+
+  it('does not treat Microsoft fallback usernames as verified email', () => {
+    const profile = oauthProfileFromClaims('microsoft', {
+      aud: 'microsoft-client-id',
+      iss: 'https://login.microsoftonline.com/tenant-123/v2.0',
+      sub: 'microsoft-subject',
+      preferred_username: 'Victim@Example.COM',
+      upn: 'victim@example.com',
+      email_verified: true,
+      name: 'Victim User',
+    });
+
+    expect(profile.email).toBe('victim@example.com');
+    expect(profile.emailVerified).toBe(false);
+  });
+
+  it('marks Microsoft email verified only when the email claim itself is verified', () => {
+    const profile = oauthProfileFromClaims('microsoft', {
+      aud: 'microsoft-client-id',
+      iss: 'https://login.microsoftonline.com/tenant-123/v2.0',
+      sub: 'microsoft-subject',
+      email: 'Owner@Example.COM',
+      preferred_username: 'different@example.com',
+      email_verified: 'true',
+      name: 'Owner User',
+    });
+
+    expect(profile.email).toBe('owner@example.com');
+    expect(profile.emailVerified).toBe(true);
+  });
+
+  it('requires verified provider email before linking an existing account by email', () => {
+    expect(() => assertOAuthEmailVerifiedForAccountLink({ emailVerified: false }))
+      .toThrow(OAuthIdentityError);
+    expect(() => assertOAuthEmailVerifiedForAccountLink({ emailVerified: true }))
+      .not.toThrow();
   });
 });
