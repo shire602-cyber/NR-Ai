@@ -7,6 +7,7 @@ import {
   isSafeFilename,
   isAllowedMimeType,
   validateUpload,
+  stripImmutableFields,
 } from '../../server/sanitize';
 
 describe('sanitizeText', () => {
@@ -93,6 +94,51 @@ describe('isAllowedMimeType', () => {
   it('rejects executables and html', () => {
     expect(isAllowedMimeType('application/x-msdownload')).toBe(false);
     expect(isAllowedMimeType('text/html')).toBe(false);
+  });
+});
+
+describe('stripImmutableFields', () => {
+  it('strips identity / tenant / audit fields by default (prevents cross-tenant row-move)', () => {
+    const out = stripImmutableFields({
+      id: 'evil',
+      companyId: 'other-tenant',
+      createdAt: '2020-01-01',
+      updatedAt: '2020-01-01',
+      nameEn: 'Cash',
+    });
+    expect(out).toEqual({ nameEn: 'Cash' });
+    expect(out).not.toHaveProperty('companyId');
+    expect(out).not.toHaveProperty('id');
+  });
+
+  it('strips caller-supplied extra protected fields (e.g. isSystemAccount)', () => {
+    const out = stripImmutableFields(
+      { nameEn: 'Cash', isSystemAccount: true, posted: true },
+      ['isSystemAccount', 'posted'],
+    );
+    expect(out).toEqual({ nameEn: 'Cash' });
+  });
+
+  it('keeps legitimate business fields untouched (including falsy values)', () => {
+    const out = stripImmutableFields({
+      nameEn: 'Sales',
+      isActive: false,
+      vatType: null,
+      amount: 0,
+    });
+    expect(out).toEqual({ nameEn: 'Sales', isActive: false, vatType: null, amount: 0 });
+  });
+
+  it('returns an empty object for null/undefined/non-object input', () => {
+    expect(stripImmutableFields(null as any)).toEqual({});
+    expect(stripImmutableFields(undefined as any)).toEqual({});
+  });
+
+  it('does not mutate the input object', () => {
+    const input = { id: 'x', companyId: 'y', nameEn: 'Z' };
+    const out = stripImmutableFields(input);
+    expect(input).toEqual({ id: 'x', companyId: 'y', nameEn: 'Z' });
+    expect(out).not.toBe(input);
   });
 });
 

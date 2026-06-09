@@ -31,6 +31,43 @@ export function sanitizeRichText(html: string): string {
 }
 
 /**
+ * Fields that must never be assignable from a client-supplied update body.
+ * `companyId` is the critical one — without stripping it, a tenant could move
+ * their own row into another company (cross-tenant write). `id`/`createdAt`/
+ * `updatedAt` are server-owned identity/audit columns.
+ */
+export const IMMUTABLE_UPDATE_FIELDS: readonly string[] = [
+  'id',
+  'companyId',
+  'createdAt',
+  'updatedAt',
+];
+
+/**
+ * Return a shallow copy of an update body with immutable/identity/tenant fields
+ * removed, plus any caller-specified `extra` protected fields (e.g. a table's
+ * `isSystemAccount` or a receipt's `posted` state flags). Defense against mass
+ * assignment on PUT/PATCH handlers that pass req.body straight to storage.
+ *
+ * Non-object input (null/undefined) yields an empty object. The input is never
+ * mutated.
+ */
+export function stripImmutableFields<T extends Record<string, unknown>>(
+  body: T,
+  extra: readonly string[] = [],
+): Partial<T> {
+  if (body == null || typeof body !== 'object' || Array.isArray(body)) {
+    return {};
+  }
+  const blocked = new Set<string>([...IMMUTABLE_UPDATE_FIELDS, ...extra]);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (!blocked.has(key)) out[key] = value;
+  }
+  return out as Partial<T>;
+}
+
+/**
  * Recursively walk a plain object and apply sanitizeText to every string.
  * Skips Buffers, Dates, and arrays-of-non-strings unchanged. Useful as a
  * defense-in-depth pass for endpoints that accept loose JSON.

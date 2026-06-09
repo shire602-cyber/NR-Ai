@@ -19,6 +19,13 @@ const envSchema = z.object({
   // === Server ===
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).default('5000'),
+  // bcrypt work factor for password hashing. Hard floor of 12 (OWASP guidance);
+  // capped at 15 to avoid accidentally DoS-ing the (single-threaded) hasher.
+  BCRYPT_COST: z
+    .string()
+    .transform(Number)
+    .pipe(z.number().int().min(12, 'BCRYPT_COST must be >= 12').max(15))
+    .default('12'),
   FRONTEND_URL: z.string().url().optional(),
   CORS_ORIGIN: z.string().optional(),
   AUTH_COOKIE_SAMESITE: sameSiteSchema,
