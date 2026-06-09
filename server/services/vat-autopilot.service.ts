@@ -94,6 +94,8 @@ export interface Vat201BoxValues {
   box3ReverseChargeAmount: number; box3ReverseChargeVat: number;
   box4ZeroRatedAmount: number;
   box5ExemptAmount: number;
+  box6ImportsAmount: number; box6ImportsVat: number;
+  box7ImportsAdjAmount: number; box7ImportsAdjVat: number;
   box8TotalAmount: number; box8TotalVat: number;
   box9ExpensesAmount: number; box9ExpensesVat: number;
   box10ReverseChargeAmount: number; box10ReverseChargeVat: number;
@@ -370,6 +372,40 @@ export function applyPartialExemption(inputVatGross: number, exemptRatio: number
  * the standard-rated sales — exports/zero-rated and exempt have their own
  * boxes regardless of emirate.
  */
+export type ImportAccumulator = {
+  importsAmount: number; importsVat: number;
+  importAdjAmount: number; importAdjVat: number;
+};
+
+/**
+ * Resolve the import taxable/VAT for a flagged purchase and add it to the right
+ * bucket. Customs import value can exceed the supplier subtotal (customs value +
+ * insurance + freight + duty + excise), so explicit AED overrides win; otherwise
+ * fall back to the document's own taxable/VAT (already AED-converted by the
+ * caller). `import_adjustment` rows may be negative (downward corrections).
+ */
+export function accumulateImportRow(
+  acc: ImportAccumulator,
+  row: {
+    vatImportRole: string | null;
+    fallbackAmountAed: number;
+    fallbackVatAed: number;
+    importTaxableAmountAed: number | null;
+    importVatAmountAed: number | null;
+  },
+): void {
+  if (row.vatImportRole !== 'import' && row.vatImportRole !== 'import_adjustment') return;
+  const amount = row.importTaxableAmountAed ?? row.fallbackAmountAed;
+  const vat = row.importVatAmountAed ?? row.fallbackVatAed;
+  if (row.vatImportRole === 'import') {
+    acc.importsAmount = round2(acc.importsAmount + amount);
+    acc.importsVat = round2(acc.importsVat + vat);
+  } else {
+    acc.importAdjAmount = round2(acc.importAdjAmount + amount);
+    acc.importAdjVat = round2(acc.importAdjVat + vat);
+  }
+}
+
 export function buildVat201Boxes(
   components: {
     standardRatedAmount: number;
@@ -382,6 +418,11 @@ export function buildVat201Boxes(
     reverseChargeVatRecoverable: number;
     totalExpenses: number;
     inputVatRecoverable: number;
+    importsAmount: number;
+    importsVat: number;
+    importAdjAmount: number;
+    importAdjVat: number;
+    importsVatRecoverable: number;
   },
   emirate: string,
 ): Vat201BoxValues {
@@ -397,11 +438,17 @@ export function buildVat201Boxes(
     box3ReverseChargeVat: round2(components.reverseChargeVat),
     box4ZeroRatedAmount: round2(components.zeroRatedAmount),
     box5ExemptAmount: round2(components.exemptAmount),
+    box6ImportsAmount: round2(components.importsAmount),
+    box6ImportsVat: round2(components.importsVat),
+    box7ImportsAdjAmount: round2(components.importAdjAmount),
+    box7ImportsAdjVat: round2(components.importAdjVat),
     box8TotalAmount: 0, box8TotalVat: 0,
     box9ExpensesAmount: round2(components.totalExpenses),
     box9ExpensesVat: round2(components.inputVatRecoverable),
-    box10ReverseChargeAmount: round2(components.reverseChargeAmount),
-    box10ReverseChargeVat: round2(components.reverseChargeVatRecoverable),
+    // Box 10 carries reverse-charge AND import recovery (FTA: VAT declared under
+    // Boxes 3, 6, 7 is recovered in Box 10 when recoverable).
+    box10ReverseChargeAmount: round2(components.reverseChargeAmount + components.importsAmount + components.importAdjAmount),
+    box10ReverseChargeVat: round2(components.reverseChargeVatRecoverable + components.importsVatRecoverable),
     box11TotalAmount: 0, box11TotalVat: 0,
     box12TotalDueTax: 0,
     box13RecoverableTax: 0,
@@ -459,10 +506,12 @@ export function buildVat201Boxes(
   }
 
   // Box 8 totals output side; Box 11 totals input side; Boxes 12-14 net it out.
-  boxes.box8TotalAmount = round2(stdAmt + components.zeroRatedAmount + components.exemptAmount + components.reverseChargeAmount);
-  boxes.box8TotalVat = round2(stdVat + components.reverseChargeVat);
-  boxes.box11TotalAmount = round2(components.totalExpenses + components.reverseChargeAmount);
-  boxes.box11TotalVat = round2(components.inputVatRecoverable + components.reverseChargeVatRecoverable);
+  // Imports/adjustments are DUE in Box 6/7 and recovered (recoverable portion)
+  // via Box 10 — never via Box 9 (standard-rated expenses only).
+  boxes.box8TotalAmount = round2(stdAmt + components.zeroRatedAmount + components.exemptAmount + components.reverseChargeAmount + components.importsAmount + components.importAdjAmount);
+  boxes.box8TotalVat = round2(stdVat + components.reverseChargeVat + components.importsVat + components.importAdjVat);
+  boxes.box11TotalAmount = round2(components.totalExpenses + components.reverseChargeAmount + components.importsAmount + components.importAdjAmount);
+  boxes.box11TotalVat = round2(components.inputVatRecoverable + components.reverseChargeVatRecoverable + components.importsVatRecoverable);
   boxes.box12TotalDueTax = boxes.box8TotalVat;
   boxes.box13RecoverableTax = boxes.box11TotalVat;
   boxes.box14PayableTax = round2(boxes.box12TotalDueTax - boxes.box13RecoverableTax);
@@ -527,6 +576,8 @@ export const VAT201_BOX_KEYS: ReadonlyArray<keyof Vat201BoxValues> = [
   'box3ReverseChargeAmount', 'box3ReverseChargeVat',
   'box4ZeroRatedAmount',
   'box5ExemptAmount',
+  'box6ImportsAmount', 'box6ImportsVat',
+  'box7ImportsAdjAmount', 'box7ImportsAdjVat',
   'box8TotalAmount', 'box8TotalVat',
   'box9ExpensesAmount', 'box9ExpensesVat',
   'box10ReverseChargeAmount', 'box10ReverseChargeVat',
@@ -556,13 +607,14 @@ export function applyAdjustments(boxes: Vat201BoxValues, adjustments: SavedAdjus
   next.box8TotalVat = round2(
     next.box1aAbuDhabiVat + next.box1bDubaiVat + next.box1cSharjahVat +
     next.box1dAjmanVat + next.box1eUmmAlQuwainVat + next.box1fRasAlKhaimahVat +
-    next.box1gFujairahVat + next.box3ReverseChargeVat,
+    next.box1gFujairahVat + next.box3ReverseChargeVat +
+    next.box6ImportsVat + next.box7ImportsAdjVat,
   );
   next.box8TotalAmount = round2(
     next.box1aAbuDhabiAmount + next.box1bDubaiAmount + next.box1cSharjahAmount +
     next.box1dAjmanAmount + next.box1eUmmAlQuwainAmount + next.box1fRasAlKhaimahAmount +
     next.box1gFujairahAmount + next.box4ZeroRatedAmount + next.box5ExemptAmount +
-    next.box3ReverseChargeAmount,
+    next.box3ReverseChargeAmount + next.box6ImportsAmount + next.box7ImportsAdjAmount,
   );
   next.box11TotalAmount = round2(next.box9ExpensesAmount + next.box10ReverseChargeAmount);
   next.box11TotalVat = round2(next.box9ExpensesVat + next.box10ReverseChargeVat);
@@ -673,6 +725,9 @@ export async function calculateVatReturn(
             COALESCE(amount, 0)::numeric AS amount,
             COALESCE(vat_amount, 0)::numeric AS vat_amount,
             reverse_charge,
+            vat_import_role,
+            import_taxable_amount_aed,
+            import_vat_amount_aed,
             currency,
             COALESCE(exchange_rate, 1)::numeric AS exchange_rate
      FROM receipts
@@ -687,6 +742,7 @@ export async function calculateVatReturn(
   let inputVatGross = 0;
   let receiptReverseChargeAmount = 0;
   let receiptReverseChargeVat = 0;
+  const importAcc: ImportAccumulator = { importsAmount: 0, importsVat: 0, importAdjAmount: 0, importAdjVat: 0 };
   for (const row of receiptRes.rows as Array<Record<string, unknown>>) {
     const amount = Number(row.amount) || 0;
     const vat = Number(row.vat_amount) || 0;
@@ -697,7 +753,18 @@ export async function calculateVatReturn(
     // recompute when the source currency isn't AED.
     const aedAmount = currency === 'AED' ? amount : convertToAed(amount, rate);
     const aedVat = currency === 'AED' ? vat : convertToAed(vat, rate);
-    if (row.reverse_charge) {
+    const importRole = (row.vat_import_role as string | null) ?? null;
+    if (importRole === 'import' || importRole === 'import_adjustment') {
+      // Imports are DUE in Box 6/7 and recovered via Box 10 — never Box 9. The
+      // customs-declared override (if entered) wins over the supplier subtotal.
+      accumulateImportRow(importAcc, {
+        vatImportRole: importRole,
+        fallbackAmountAed: aedAmount,
+        fallbackVatAed: aedVat,
+        importTaxableAmountAed: row.import_taxable_amount_aed == null ? null : Number(row.import_taxable_amount_aed),
+        importVatAmountAed: row.import_vat_amount_aed == null ? null : Number(row.import_vat_amount_aed),
+      });
+    } else if (row.reverse_charge) {
       receiptReverseChargeAmount += aedAmount;
       receiptReverseChargeVat += aedVat;
     } else {
@@ -718,8 +785,9 @@ export async function calculateVatReturn(
        FROM vendor_bills
        WHERE company_id = $1
          AND reverse_charge = true
+         AND COALESCE(vat_import_role, '') NOT IN ('import', 'import_adjustment')
          AND bill_date >= $2 AND bill_date <= $3
-         AND status NOT IN ('void','cancelled','draft')`,
+         AND status IN ('approved','partial','paid')`,
       [companyId, resolvedPeriod.start, resolvedPeriod.end],
     );
     billReverseChargeAmount = Number(billRes.rows[0]?.amount || 0);
@@ -729,14 +797,50 @@ export async function calculateVatReturn(
     if ((err as { code?: string })?.code !== '42P01') throw err;
   }
 
+  // Import-of-goods vendor bills (Box 6 imports / Box 7 adjustments). Override
+  // columns fall back to the bill subtotal/vat_amount. Same missing-table guard.
+  try {
+    const importBillRes = await pool.query(
+      // vendor_bills has no exchange_rate column, so a foreign-currency bill's
+      // subtotal/vat_amount are NOT AED. Only trust them as the import AED value
+      // when currency is AED; otherwise require the explicit *_aed override
+      // (capture-time validation rejects a non-AED import without one). 'posted'
+      // is excluded too — only approved bills (status 'approved'/'paid') count.
+      `SELECT
+         COALESCE(SUM(CASE WHEN vat_import_role = 'import'
+           THEN COALESCE(import_taxable_amount_aed, CASE WHEN COALESCE(currency,'AED') = 'AED' THEN subtotal ELSE 0 END) ELSE 0 END), 0) AS import_amount,
+         COALESCE(SUM(CASE WHEN vat_import_role = 'import'
+           THEN COALESCE(import_vat_amount_aed, CASE WHEN COALESCE(currency,'AED') = 'AED' THEN vat_amount ELSE 0 END) ELSE 0 END), 0) AS import_vat,
+         COALESCE(SUM(CASE WHEN vat_import_role = 'import_adjustment'
+           THEN COALESCE(import_taxable_amount_aed, CASE WHEN COALESCE(currency,'AED') = 'AED' THEN subtotal ELSE 0 END) ELSE 0 END), 0) AS adj_amount,
+         COALESCE(SUM(CASE WHEN vat_import_role = 'import_adjustment'
+           THEN COALESCE(import_vat_amount_aed, CASE WHEN COALESCE(currency,'AED') = 'AED' THEN vat_amount ELSE 0 END) ELSE 0 END), 0) AS adj_vat
+       FROM vendor_bills
+       WHERE company_id = $1
+         AND vat_import_role IN ('import', 'import_adjustment')
+         AND bill_date >= $2 AND bill_date <= $3
+         AND status IN ('approved','partial','paid')`,
+      [companyId, resolvedPeriod.start, resolvedPeriod.end],
+    );
+    const r = importBillRes.rows[0] || {};
+    importAcc.importsAmount = round2(importAcc.importsAmount + Number(r.import_amount || 0));
+    importAcc.importsVat = round2(importAcc.importsVat + Number(r.import_vat || 0));
+    importAcc.importAdjAmount = round2(importAcc.importAdjAmount + Number(r.adj_amount || 0));
+    importAcc.importAdjVat = round2(importAcc.importAdjVat + Number(r.adj_vat || 0));
+  } catch (err) {
+    if ((err as { code?: string })?.code !== '42P01') throw err;
+  }
+
   const reverseChargeAmount = receiptReverseChargeAmount + billReverseChargeAmount;
   const reverseChargeVat = receiptReverseChargeVat + billReverseChargeVat;
 
   const partialExemption = applyPartialExemption(inputVatGross, company.exemptSupplyRatio);
   const reverseChargePartial = applyPartialExemption(reverseChargeVat, company.exemptSupplyRatio);
+  const importVatTotal = round2(importAcc.importsVat + importAcc.importAdjVat);
+  const importPartial = applyPartialExemption(importVatTotal, company.exemptSupplyRatio);
 
-  const totalOutputVat = round2(sales.standardRatedVat + reverseChargeVat);
-  const totalInputVat = round2(partialExemption.recoverable + reverseChargePartial.recoverable);
+  const totalOutputVat = round2(sales.standardRatedVat + reverseChargeVat + importVatTotal);
+  const totalInputVat = round2(partialExemption.recoverable + reverseChargePartial.recoverable + importPartial.recoverable);
 
   const boxes: VatBoxBreakdown = {
     standardRatedSales: sales.standardRatedAmount,
@@ -779,8 +883,13 @@ export async function calculateVatReturn(
     else if (vatType === 'input') inputLedger += debit - credit;
   }
 
+  // M6: reconcile LIKE-FOR-LIKE against the GL. Only standard-rated sales output
+  // VAT posts to the output-VAT account, and the GL holds GROSS input VAT —
+  // partial-exemption apportionment and reverse-charge/import VAT are
+  // return-level constructs, not GL postings, so including them produced
+  // deterministic false discrepancies.
   const reconciliation = reconcile(
-    { outputVat: totalOutputVat, inputVat: totalInputVat },
+    { outputVat: round2(sales.standardRatedVat), inputVat: round2(inputVatGross) },
     { outputVat: outputLedger, inputVat: inputLedger },
   );
 
@@ -796,6 +905,11 @@ export async function calculateVatReturn(
       reverseChargeVatRecoverable: boxes.reverseChargeVatRecoverable,
       totalExpenses: boxes.totalExpenses,
       inputVatRecoverable: boxes.inputVatRecoverable,
+      importsAmount: round2(importAcc.importsAmount),
+      importsVat: round2(importAcc.importsVat),
+      importAdjAmount: round2(importAcc.importAdjAmount),
+      importAdjVat: round2(importAcc.importAdjVat),
+      importsVatRecoverable: importPartial.recoverable,
     },
     company.emirate,
   );

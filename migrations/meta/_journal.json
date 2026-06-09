@@ -63,6 +63,8 @@
     { "idx": 58, "version": "7", "when": 1770700000000, "tag": "0058_firm_command_center_schema_guard", "breakpoints": false },
     { "idx": 59, "version": "7", "when": 1770800000000, "tag": "0059_users_auth_schema_guard", "breakpoints": false },
     { "idx": 60, "version": "7", "when": 1770900000000, "tag": "0060_invoice_address_schema_guard", "breakpoints": false },
-    { "idx": 61, "version": "7", "when": 1771000000000, "tag": "0061_audit_remediation_foundation", "breakpoints": false }
+    { "idx": 61, "version": "7", "when": 1771000000000, "tag": "0061_audit_remediation_foundation", "breakpoints": false },
+    { "idx": 62, "version": "7", "when": 1771100000000, "tag": "0062_vat_import_of_goods", "breakpoints": false },
+    { "idx": 63, "version": "7", "when": 1771200000000, "tag": "0063_corporate_tax_unique_period", "breakpoints": false }
   ]
 }

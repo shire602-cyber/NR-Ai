@@ -37,10 +37,8 @@ function buildVatReturnPayload(
     box1gFujairahAdj: 0,
     box2TouristRefundAmount: 0,
     box2TouristRefundVat: 0,
-    box6ImportsAmount: 0,
-    box6ImportsVat: 0,
-    box7ImportsAdjAmount: 0,
-    box7ImportsAdjVat: 0,
+    // Box 6/7 (imports + adjustments) now flow from the computed `...vat201`
+    // spread above — no longer hardcoded. Box 2 tourist refund stays 0 (out of scope).
     box8TotalAdj: 0,
     box9ExpensesAdj: 0,
     box11TotalAdj: 0,

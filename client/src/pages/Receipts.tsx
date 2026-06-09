@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { CardListSkeleton } from '@/components/ui/loading-skeletons';
 import { Progress } from '@/components/ui/progress';
 import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { VirtualList } from '@/components/VirtualList';
 import { useToast } from '@/hooks/use-toast';
@@ -70,6 +71,18 @@ const receiptSchema = z.object({
   vatAmount: z.coerce.number().nullable(),
   category: z.string().nullable(),
   currency: z.string().default('AED'),
+  // VAT-201 Import of Goods (Box 6/7). Document-level. The backend validates
+  // the same rules (e.g. import_adjustment requires a justification) and the
+  // override AED amounts default to amount/vatAmount when omitted.
+  vatImportRole: z.enum(['', 'import', 'import_adjustment']).optional().default(''),
+  importTaxableAmountAed: z.coerce.number().optional(),
+  importVatAmountAed: z.coerce.number().optional(),
+  customsDeclarationNumber: z.string().optional(),
+  importEvidenceUrl: z.string().url().optional().or(z.literal('')),
+  importAdjustmentReason: z.string().optional(),
+}).refine((d) => !(d.vatImportRole === 'import_adjustment' && !d.importAdjustmentReason?.trim()), {
+  message: 'Import adjustments require a justification',
+  path: ['importAdjustmentReason'],
 });
 
 type ReceiptFormData = z.infer<typeof receiptSchema>;
@@ -215,6 +228,12 @@ export default function Receipts() {
       vatAmount: null,
       category: '',
       currency: 'AED',
+      vatImportRole: '',
+      importTaxableAmountAed: undefined,
+      importVatAmountAed: undefined,
+      customsDeclarationNumber: '',
+      importEvidenceUrl: '',
+      importAdjustmentReason: '',
     },
   });
 
@@ -317,6 +336,13 @@ export default function Receipts() {
         vatAmount: data.vatAmount,
         category: data.category,
         currency: data.currency,
+        // VAT import-of-goods passthrough (camelCase — receipts API uses Drizzle).
+        vatImportRole: data.vatImportRole || null,
+        importTaxableAmountAed: data.importTaxableAmountAed ?? null,
+        importVatAmountAed: data.importVatAmountAed ?? null,
+        customsDeclarationNumber: data.customsDeclarationNumber || null,
+        importEvidenceUrl: data.importEvidenceUrl || null,
+        importAdjustmentReason: data.importAdjustmentReason || null,
         status: 'pending',
       });
     },
@@ -2298,6 +2324,75 @@ export default function Receipts() {
                   </FormItem>
                 )}
               />
+
+              {/* VAT-201 Import of Goods (Box 6/7) — document-level */}
+              <div className="rounded-md border border-dashed border-gray-300 p-3 space-y-3" data-testid="receipt-import-section">
+                <div className="text-sm font-medium">VAT-201 Import of Goods <span className="text-xs text-gray-500 font-normal">(Box 6/7) — document-level</span></div>
+                <FormField
+                  control={manualExpenseForm.control}
+                  name="vatImportRole"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>This entire receipt is treated as…</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ''}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="No (regular expense)" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">No (regular expense)</SelectItem>
+                          <SelectItem value="import">Import of goods (Box 6)</SelectItem>
+                          <SelectItem value="import_adjustment">Import adjustment (Box 7)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-gray-500">Imports are excluded from Box 9 standard expenses. Use Box 7 only to correct customs-prepopulated values.</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {manualExpenseForm.watch('vatImportRole') ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField control={manualExpenseForm.control} name="importTaxableAmountAed" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Import taxable (AED)</FormLabel>
+                        <FormControl><Input type="number" step="0.01" {...field} value={field.value ?? ''} placeholder="From customs declaration" /></FormControl>
+                        <p className="text-[11px] text-gray-500">May exceed merchant total (customs value + freight + duty + excise).</p>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={manualExpenseForm.control} name="importVatAmountAed" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Import VAT (AED)</FormLabel>
+                        <FormControl><Input type="number" step="0.01" {...field} value={field.value ?? ''} placeholder="Self-assessed import VAT" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={manualExpenseForm.control} name="customsDeclarationNumber" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Customs declaration #</FormLabel>
+                        <FormControl><Input {...field} value={field.value ?? ''} placeholder="CUS-…" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={manualExpenseForm.control} name="importEvidenceUrl" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Evidence URL</FormLabel>
+                        <FormControl><Input {...field} value={field.value ?? ''} placeholder="https://…" /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    {manualExpenseForm.watch('vatImportRole') === 'import_adjustment' ? (
+                      <FormField control={manualExpenseForm.control} name="importAdjustmentReason" render={({ field }) => (
+                        <FormItem className="col-span-2">
+                          <FormLabel>Justification <span className="text-xs text-red-600">(required)</span></FormLabel>
+                          <FormControl><Textarea {...field} value={field.value ?? ''} rows={2} placeholder="Why is this adjustment needed?" /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
               <div className="flex gap-3 pt-4">
                 <Button type="button" variant="outline" onClick={() => setManualExpenseDialogOpen(false)} className="flex-1">
                   Cancel

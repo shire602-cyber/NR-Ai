@@ -771,6 +771,16 @@ export const receipts = pgTable("receipts", {
   // 'rule' | 'keyword' | 'statistical' | 'openai'. Surfaced as the Internal vs. AI badge.
   classifierMethod: text("classifier_method"),
   reverseCharge: boolean("reverse_charge").default(false).notNull(), // FTA reverse-charge: buyer self-assesses VAT
+  // VAT-201 Import of Goods (Box 6/7). Document-level role: when set, the whole
+  // receipt is treated as an import / import adjustment and is EXCLUDED from the
+  // Box 9 standard-expense pool. Override fields default to amount/vat_amount.
+  vatImportRole: text("vat_import_role"), // null | 'import' | 'import_adjustment'
+  importTaxableAmountAed: money("import_taxable_amount_aed"),
+  importVatAmountAed: money("import_vat_amount_aed"),
+  customsDeclarationNumber: text("customs_declaration_number"),
+  importDate: timestamp("import_date"),
+  importEvidenceUrl: text("import_evidence_url"),
+  importAdjustmentReason: text("import_adjustment_reason"),
   journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id), // Link to created journal entry
   imageData: text("image_data"),
   imagePath: text("image_path"),

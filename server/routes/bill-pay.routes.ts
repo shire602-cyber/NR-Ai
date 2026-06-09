@@ -7,9 +7,18 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { assertRetentionExpired } from '../services/retention.service';
+import { buildReceiptImportFields, ImportValidationError, type ReceiptImportFields } from './receipts.routes';
 import { storage } from '../storage';
 
 const log = createLogger('bill-pay');
+
+/**
+ * VAT import-of-goods fields for a vendor bill. Same validation/normalization as
+ * receipts (Box 6 imports / Box 7 adjustments; import_adjustment needs a reason).
+ */
+export function buildBillImportFields(body: Record<string, any>): ReceiptImportFields {
+  return buildReceiptImportFields(body);
+}
 
 // =====================================
 // Zod schemas
@@ -39,7 +48,17 @@ const billCreateSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
   attachment_url: z.string().url().optional().nullable(),
   reverse_charge: z.boolean().optional(),
+  vat_import_role: z.enum(['import', 'import_adjustment']).optional().nullable(),
+  import_taxable_amount_aed: z.number().optional().nullable(),
+  import_vat_amount_aed: z.number().optional().nullable(),
+  customs_declaration_number: z.string().max(128).optional().nullable(),
+  import_date: billIsoDate.optional().nullable(),
+  import_evidence_url: z.string().url().optional().nullable(),
+  import_adjustment_reason: z.string().max(2000).optional().nullable(),
   line_items: z.array(billLineItemSchema).min(1, 'At least one line item is required'),
+}).refine((d) => !(d.reverse_charge === true && d.vat_import_role), {
+  message: 'A bill cannot be both reverse-charge and an import of goods — they map to different VAT-201 boxes.',
+  path: ['vat_import_role'],
 });
 
 const billUpdateSchema = z.object({
@@ -52,6 +71,13 @@ const billUpdateSchema = z.object({
   category: z.string().max(64).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   attachment_url: z.string().url().optional().nullable(),
+  vat_import_role: z.enum(['import', 'import_adjustment']).optional().nullable(),
+  import_taxable_amount_aed: z.number().optional().nullable(),
+  import_vat_amount_aed: z.number().optional().nullable(),
+  customs_declaration_number: z.string().max(128).optional().nullable(),
+  import_date: billIsoDate.optional().nullable(),
+  import_evidence_url: z.string().url().optional().nullable(),
+  import_adjustment_reason: z.string().max(2000).optional().nullable(),
   line_items: z.array(billLineItemSchema).min(1).optional(),
 });
 
@@ -93,6 +119,12 @@ export function registerBillPayRoutes(app: Express) {
     }
 
     const { status, vendor, dateFrom, dateTo } = req.query;
+    // Opt-in pagination: only paginate when the client supplies ?limit= (existing
+    // UI fetches all rows). Cap at 200 to keep responses bounded when used.
+    const limitRaw = req.query.limit !== undefined ? parseInt(String(req.query.limit), 10) : NaN;
+    const offsetRaw = req.query.offset !== undefined ? parseInt(String(req.query.offset), 10) : NaN;
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : null;
+    const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
 
     let query = `
       SELECT * FROM vendor_bills
@@ -126,6 +158,10 @@ export function registerBillPayRoutes(app: Express) {
     }
 
     query += ` ORDER BY bill_date DESC`;
+    if (limit !== null) {
+      query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+    }
 
     const result = await pool.query(query, params);
 
@@ -208,6 +244,29 @@ export function registerBillPayRoutes(app: Express) {
       reverse_charge,
     } = req.body;
 
+    // Validate/normalize VAT import-of-goods fields (Box 6/7).
+    let imp: ReceiptImportFields;
+    try {
+      imp = buildBillImportFields({
+        vatImportRole: req.body.vat_import_role,
+        importTaxableAmountAed: req.body.import_taxable_amount_aed,
+        importVatAmountAed: req.body.import_vat_amount_aed,
+        customsDeclarationNumber: req.body.customs_declaration_number,
+        importDate: req.body.import_date,
+        importEvidenceUrl: req.body.import_evidence_url,
+        importAdjustmentReason: req.body.import_adjustment_reason,
+      });
+    } catch (e) {
+      if (e instanceof ImportValidationError) return res.status(400).json({ message: e.message });
+      throw e;
+    }
+    // vendor_bills carry no exchange_rate, so a foreign-currency subtotal can't be
+    // converted to the AED import value the VAT-201 needs (H16). Require the
+    // explicit AED customs amount for any non-AED import.
+    if (imp.vatImportRole && currency && currency !== 'AED' && imp.importTaxableAmountAed == null) {
+      return res.status(400).json({ message: 'A non-AED import bill requires the AED customs taxable amount (import_taxable_amount_aed).' });
+    }
+
     // Bills post a JE on the bill_date once approved — refuse to even draft
     // one inside a closed period.
     await assertPeriodNotLocked(companyId, bill_date);
@@ -236,52 +295,52 @@ export function registerBillPayRoutes(app: Express) {
     // and output legs net to zero).
     const totalAmount = billReverseCharge ? subtotal : subtotal + vatAmount;
 
-    const billResult = await pool.query(
-      `INSERT INTO vendor_bills (
-        company_id, vendor_name, vendor_trn, bill_number, bill_date, due_date,
-        currency, subtotal, vat_amount, total_amount, amount_paid, status,
-        category, notes, attachment_url, reverse_charge
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-      RETURNING *`,
-      [
-        companyId,
-        vendor_name,
-        vendor_trn || null,
-        bill_number || null,
-        bill_date,
-        due_date || null,
-        currency || 'AED',
-        subtotal.toFixed(2),
-        vatAmount.toFixed(2),
-        totalAmount.toFixed(2),
-        '0.00',
-        'pending',
-        category || null,
-        notes || null,
-        attachment_url || null,
-        billReverseCharge,
-      ]
-    );
-
-    const bill = billResult.rows[0];
-
-    // Create line items
-    for (const line of line_items) {
-      const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-      await pool.query(
-        `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    // Atomic create (low-severity finding): bill header + line items in one
+    // transaction so a failed line insert can't leave an orphan bill behind.
+    const client = await pool.connect();
+    let bill: any;
+    try {
+      await client.query('BEGIN');
+      const billResult = await client.query(
+        `INSERT INTO vendor_bills (
+          company_id, vendor_name, vendor_trn, bill_number, bill_date, due_date,
+          currency, subtotal, vat_amount, total_amount, amount_paid, status,
+          category, notes, attachment_url, reverse_charge,
+          vat_import_role, import_taxable_amount_aed, import_vat_amount_aed,
+          customs_declaration_number, import_date, import_evidence_url, import_adjustment_reason
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        RETURNING *`,
         [
-          bill.id,
-          line.description,
-          Number(line.quantity) || 1,
-          Number(line.unit_price),
-          resolveVatRatePercent(line.vat_rate),
-          lineAmount.toFixed(2),
-          line.account_id || null,
-          billReverseCharge,
+          companyId, vendor_name, vendor_trn || null, bill_number || null, bill_date,
+          due_date || null, currency || 'AED', subtotal.toFixed(2), vatAmount.toFixed(2),
+          totalAmount.toFixed(2), '0.00', 'pending', category || null, notes || null,
+          attachment_url || null, billReverseCharge,
+          imp.vatImportRole,
+          imp.importTaxableAmountAed == null ? null : imp.importTaxableAmountAed.toFixed(2),
+          imp.importVatAmountAed == null ? null : imp.importVatAmountAed.toFixed(2),
+          imp.customsDeclarationNumber, imp.importDate, imp.importEvidenceUrl, imp.importAdjustmentReason,
         ]
       );
+      bill = billResult.rows[0];
+
+      for (const line of line_items) {
+        const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
+        await client.query(
+          `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            bill.id, line.description, Number(line.quantity) || 1, Number(line.unit_price),
+            resolveVatRatePercent(line.vat_rate), lineAmount.toFixed(2), line.account_id || null,
+            billReverseCharge,
+          ]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
     }
 
     log.info({ billId: bill.id, companyId }, 'Vendor bill created');
@@ -351,6 +410,36 @@ export function registerBillPayRoutes(app: Express) {
     addUpdate('category', category);
     addUpdate('notes', notes);
     addUpdate('attachment_url', attachment_url);
+
+    // VAT import-of-goods fields — only when the client is setting them.
+    if ('vat_import_role' in req.body) {
+      let imp: ReceiptImportFields;
+      try {
+        imp = buildBillImportFields({
+          vatImportRole: req.body.vat_import_role,
+          importTaxableAmountAed: req.body.import_taxable_amount_aed,
+          importVatAmountAed: req.body.import_vat_amount_aed,
+          customsDeclarationNumber: req.body.customs_declaration_number,
+          importDate: req.body.import_date,
+          importEvidenceUrl: req.body.import_evidence_url,
+          importAdjustmentReason: req.body.import_adjustment_reason,
+        });
+      } catch (e) {
+        if (e instanceof ImportValidationError) return res.status(400).json({ message: e.message });
+        throw e;
+      }
+      const effectiveCurrency = currency ?? bill.currency;
+      if (imp.vatImportRole && effectiveCurrency && effectiveCurrency !== 'AED' && imp.importTaxableAmountAed == null) {
+        return res.status(400).json({ message: 'A non-AED import bill requires the AED customs taxable amount (import_taxable_amount_aed).' });
+      }
+      addUpdate('vat_import_role', imp.vatImportRole);
+      addUpdate('import_taxable_amount_aed', imp.importTaxableAmountAed == null ? null : imp.importTaxableAmountAed.toFixed(2));
+      addUpdate('import_vat_amount_aed', imp.importVatAmountAed == null ? null : imp.importVatAmountAed.toFixed(2));
+      addUpdate('customs_declaration_number', imp.customsDeclarationNumber);
+      addUpdate('import_date', imp.importDate);
+      addUpdate('import_evidence_url', imp.importEvidenceUrl);
+      addUpdate('import_adjustment_reason', imp.importAdjustmentReason);
+    }
 
     // If line_items provided, recalculate totals
     if (line_items && Array.isArray(line_items) && line_items.length > 0) {
@@ -509,48 +598,58 @@ export function registerBillPayRoutes(app: Express) {
     // Recording a payment posts a cash JE on payment_date — block if locked.
     await assertPeriodNotLocked(bill.company_id, payment_date);
 
-    const currentPaid = Number(bill.amount_paid) || 0;
-    const totalAmount = Number(bill.total_amount) || 0;
-    const remainingBalance = totalAmount - currentPaid;
-
-    if (paymentAmount > remainingBalance + 0.01) {
-      return res.status(400).json({
-        message: `Payment amount (${paymentAmount.toFixed(2)}) exceeds remaining balance (${remainingBalance.toFixed(2)})`,
-      });
-    }
-
-    // Record the payment
-    const paymentResult = await pool.query(
-      `INSERT INTO bill_payments (bill_id, payment_date, amount, payment_method, reference, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [
-        id,
-        payment_date,
-        paymentAmount.toFixed(2),
-        payment_method || 'bank_transfer',
-        reference || null,
-        notes || null,
-      ]
-    );
-
-    // Update bill amount_paid and status
-    const newAmountPaid = currentPaid + paymentAmount;
+    // H8: lock the bill row and re-read amount_paid INSIDE a transaction so two
+    // concurrent payments can't both read the same balance and lose an update.
+    // The earlier `bill` read is stale by here, so we must re-read under the lock.
+    const client = await pool.connect();
+    let paymentResult: { rows: any[] };
+    let newAmountPaid: number;
     let newStatus: string;
+    let totalAmount: number;
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query(
+        'SELECT amount_paid, total_amount FROM vendor_bills WHERE id = $1 FOR UPDATE',
+        [id],
+      );
+      if (locked.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Bill not found' });
+      }
+      const currentPaid = Number(locked.rows[0].amount_paid) || 0;
+      totalAmount = Number(locked.rows[0].total_amount) || 0;
+      const remainingBalance = Math.round((totalAmount - currentPaid) * 100) / 100;
 
-    if (newAmountPaid >= totalAmount - 0.01) {
-      newStatus = 'paid';
-    } else {
-      newStatus = 'partial';
+      if (paymentAmount > remainingBalance + 0.01) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          message: `Payment amount (${paymentAmount.toFixed(2)}) exceeds remaining balance (${remainingBalance.toFixed(2)})`,
+        });
+      }
+
+      paymentResult = await client.query(
+        `INSERT INTO bill_payments (bill_id, payment_date, amount, payment_method, reference, notes)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING *`,
+        [id, payment_date, paymentAmount.toFixed(2), payment_method || 'bank_transfer', reference || null, notes || null],
+      );
+
+      newAmountPaid = Math.round((currentPaid + paymentAmount) * 100) / 100;
+      newStatus = newAmountPaid >= totalAmount - 0.01 ? 'paid' : 'partial';
+
+      await client.query(
+        `UPDATE vendor_bills
+         SET amount_paid = $1, status = $2, paid_at = ${newStatus === 'paid' ? 'NOW()' : 'paid_at'}
+         WHERE id = $3`,
+        [newAmountPaid.toFixed(2), newStatus, id],
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
     }
-
-    const _paidAt = newStatus === 'paid' ? 'NOW()' : 'paid_at';
-    await pool.query(
-      `UPDATE vendor_bills
-       SET amount_paid = $1, status = $2, paid_at = ${newStatus === 'paid' ? 'NOW()' : 'paid_at'}
-       WHERE id = $3`,
-      [newAmountPaid.toFixed(2), newStatus, id]
-    );
 
     log.info({ billId: id, paymentId: paymentResult.rows[0].id, amount: paymentAmount, newStatus }, 'Bill payment recorded');
     res.json({

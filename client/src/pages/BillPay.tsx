@@ -133,6 +133,18 @@ const billFormSchema = z.object({
   category: z.string().optional(),
   notes: z.string().optional(),
   line_items: z.array(billLineSchema).min(1, 'At least one line item is required'),
+  // VAT-201 Import of Goods (Box 6/7). Document-level: the WHOLE bill is treated
+  // as an import / import adjustment and is excluded from Box 9. AED override
+  // fields are required for non-AED imports (backend rejects without them).
+  vat_import_role: z.enum(['', 'import', 'import_adjustment']).optional().default(''),
+  import_taxable_amount_aed: z.coerce.number().optional(),
+  import_vat_amount_aed: z.coerce.number().optional(),
+  customs_declaration_number: z.string().optional(),
+  import_evidence_url: z.string().url().optional().or(z.literal('')),
+  import_adjustment_reason: z.string().optional(),
+}).refine((d) => !(d.vat_import_role === 'import_adjustment' && !d.import_adjustment_reason?.trim()), {
+  message: 'Import adjustments require a justification',
+  path: ['import_adjustment_reason'],
 });
 
 const paymentFormSchema = z.object({
@@ -280,6 +292,12 @@ export default function BillPay() {
       currency: 'AED',
       category: '',
       notes: '',
+      vat_import_role: '',
+      import_taxable_amount_aed: undefined,
+      import_vat_amount_aed: undefined,
+      customs_declaration_number: '',
+      import_evidence_url: '',
+      import_adjustment_reason: '',
       line_items: [{ description: '', quantity: 1, unit_price: 0, vat_rate: 5, account_id: '' }],
     },
   });
@@ -321,6 +339,14 @@ export default function BillPay() {
         ...data,
         bill_date: data.bill_date.toISOString(),
         due_date: data.due_date ? data.due_date.toISOString() : null,
+        // VAT import-of-goods (Box 6/7): coerce empties to null so the backend
+        // enum doesn't see ''. Drop the role entirely when 'No' is selected.
+        vat_import_role: data.vat_import_role || null,
+        import_taxable_amount_aed: data.import_taxable_amount_aed ?? null,
+        import_vat_amount_aed: data.import_vat_amount_aed ?? null,
+        customs_declaration_number: data.customs_declaration_number || null,
+        import_evidence_url: data.import_evidence_url || null,
+        import_adjustment_reason: data.import_adjustment_reason || null,
         line_items: data.line_items.map(l => ({
           ...l,
           account_id: l.account_id || null,
@@ -345,6 +371,14 @@ export default function BillPay() {
         ...data,
         bill_date: data.bill_date.toISOString(),
         due_date: data.due_date ? data.due_date.toISOString() : null,
+        // VAT import-of-goods (Box 6/7): coerce empties to null so the backend
+        // enum doesn't see ''. Drop the role entirely when 'No' is selected.
+        vat_import_role: data.vat_import_role || null,
+        import_taxable_amount_aed: data.import_taxable_amount_aed ?? null,
+        import_vat_amount_aed: data.import_vat_amount_aed ?? null,
+        customs_declaration_number: data.customs_declaration_number || null,
+        import_evidence_url: data.import_evidence_url || null,
+        import_adjustment_reason: data.import_adjustment_reason || null,
         line_items: data.line_items.map(l => ({
           ...l,
           account_id: l.account_id || null,
@@ -429,6 +463,12 @@ export default function BillPay() {
       currency: 'AED',
       category: '',
       notes: '',
+      vat_import_role: '',
+      import_taxable_amount_aed: undefined,
+      import_vat_amount_aed: undefined,
+      customs_declaration_number: '',
+      import_evidence_url: '',
+      import_adjustment_reason: '',
       line_items: [{ description: '', quantity: 1, unit_price: 0, vat_rate: 5, account_id: '' }],
     });
     setEditingBill(null);
@@ -908,6 +948,74 @@ export default function BillPay() {
                             </FormItem>
                           )}
                         />
+
+                        {/* VAT-201 Import of Goods (Box 6/7) */}
+                        <div className="rounded-md border border-dashed border-gray-300 p-3 space-y-3" data-testid="bill-import-section">
+                          <div className="text-sm font-medium">VAT-201 Import of Goods <span className="text-xs text-gray-500 font-normal">(Box 6/7) — document-level</span></div>
+                          <FormField
+                            control={billForm.control}
+                            name="vat_import_role"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>This entire bill is treated as…</FormLabel>
+                                <Select onValueChange={field.onChange} value={field.value || ''}>
+                                  <FormControl>
+                                    <SelectTrigger><SelectValue placeholder="No (regular purchase)" /></SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="">No (regular purchase)</SelectItem>
+                                    <SelectItem value="import">Import of goods (Box 6)</SelectItem>
+                                    <SelectItem value="import_adjustment">Import adjustment (Box 7)</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <p className="text-xs text-gray-500">Imports are excluded from Box 9 standard expenses. Use Box 7 only to correct customs-prepopulated values.</p>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          {billForm.watch('vat_import_role') ? (
+                            <div className="grid grid-cols-2 gap-3">
+                              <FormField control={billForm.control} name="import_taxable_amount_aed" render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Import taxable (AED)</FormLabel>
+                                  <FormControl><Input type="number" step="0.01" {...field} value={field.value ?? ''} placeholder="From customs declaration" /></FormControl>
+                                  <p className="text-[11px] text-gray-500">May exceed supplier subtotal (customs value + freight + duty + excise). Required for non-AED bills.</p>
+                                  <FormMessage />
+                                </FormItem>
+                              )} />
+                              <FormField control={billForm.control} name="import_vat_amount_aed" render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Import VAT (AED)</FormLabel>
+                                  <FormControl><Input type="number" step="0.01" {...field} value={field.value ?? ''} placeholder="Self-assessed import VAT" /></FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )} />
+                              <FormField control={billForm.control} name="customs_declaration_number" render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Customs declaration #</FormLabel>
+                                  <FormControl><Input {...field} placeholder="CUS-…" /></FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )} />
+                              <FormField control={billForm.control} name="import_evidence_url" render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>Evidence URL</FormLabel>
+                                  <FormControl><Input {...field} placeholder="https://…" /></FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )} />
+                              {billForm.watch('vat_import_role') === 'import_adjustment' ? (
+                                <FormField control={billForm.control} name="import_adjustment_reason" render={({ field }) => (
+                                  <FormItem className="col-span-2">
+                                    <FormLabel>Justification <span className="text-xs text-red-600">(required)</span></FormLabel>
+                                    <FormControl><Textarea {...field} rows={2} placeholder="Why is this adjustment needed?" /></FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )} />
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
 
                         <div className="flex justify-end gap-2">
                           <Button

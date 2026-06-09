@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { pool } from '../db';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 import {
 addAdjustment,
 calculateVatReturn,
@@ -120,6 +121,8 @@ export function registerVATAutopilotRoutes(app: Express) {
       const persist = query.data.persist !== 'false';
       let periodId: string | null = null;
       if (persist) {
+        // M8: don't write a VAT snapshot into a closed accounting period.
+        await assertPeriodNotLocked(companyId, calc.period.end);
         periodId = await upsertCalculatedPeriod(calc);
       }
       res.json({ ...calc, periodId });

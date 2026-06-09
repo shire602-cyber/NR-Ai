@@ -414,6 +414,9 @@ describe('buildVat201Boxes', () => {
     reverseChargeVatRecoverable: 0,
     totalExpenses: 500,
     inputVatRecoverable: 25,
+    importsAmount: 0, importsVat: 0,
+    importAdjAmount: 0, importAdjVat: 0,
+    importsVatRecoverable: 0,
   };
 
   it('routes standard-rated sales to Box 1b for Dubai', () => {
@@ -520,6 +523,9 @@ describe('buildVat201Boxes', () => {
       zeroRatedAmount: 0, exemptAmount: 0,
       reverseChargeAmount: 0, reverseChargeVat: 0, reverseChargeVatRecoverable: 0,
       totalExpenses: 0, inputVatRecoverable: 0,
+      importsAmount: 0, importsVat: 0,
+      importAdjAmount: 0, importAdjVat: 0,
+      importsVatRecoverable: 0,
     };
     const b = buildVat201Boxes(empty, 'dubai');
     expect(b.box8TotalAmount).toBe(0);
@@ -604,6 +610,8 @@ describe('applyAdjustments', () => {
       box3ReverseChargeAmount: 0, box3ReverseChargeVat: 0,
       box4ZeroRatedAmount: 200,
       box5ExemptAmount: 100,
+      box6ImportsAmount: 0, box6ImportsVat: 0,
+      box7ImportsAdjAmount: 0, box7ImportsAdjVat: 0,
       box8TotalAmount: 1300, box8TotalVat: 50,
       box9ExpensesAmount: 500, box9ExpensesVat: 25,
       box10ReverseChargeAmount: 0, box10ReverseChargeVat: 0,
@@ -754,6 +762,8 @@ describe('applyAdjustments security', () => {
       box3ReverseChargeAmount: 0, box3ReverseChargeVat: 0,
       box4ZeroRatedAmount: 200,
       box5ExemptAmount: 100,
+      box6ImportsAmount: 0, box6ImportsVat: 0,
+      box7ImportsAdjAmount: 0, box7ImportsAdjVat: 0,
       box8TotalAmount: 1300, box8TotalVat: 50,
       box9ExpensesAmount: 500, box9ExpensesVat: 25,
       box10ReverseChargeAmount: 0, box10ReverseChargeVat: 0,
