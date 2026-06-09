@@ -7,7 +7,7 @@ recurringInvoices as recurringInvoicesTable,
 } from '../../shared/schema';
 import { createLogger } from '../config/logger';
 import { ACCOUNT_CODES,UAE_VAT_RATE } from '../constants';
-import { db } from '../db';
+import { db, pool } from '../db';
 import { storage } from '../storage';
 import { purgeExpiredAuthTokens } from './auth-tokens.service';
 import { allocateInvoiceNumber } from './invoice-numbering.service';
@@ -169,7 +169,28 @@ function buildWhatsAppLink(phone: string | undefined | null, message: string): s
 // Scheduler entry point
 // ---------------------------------------------------------------------------
 
-export function initScheduler() {
+export async function initScheduler() {
+  // M16: leader election. With >1 replica, every instance would otherwise run
+  // the crons and send duplicate reminders. Hold a session-level pg advisory
+  // lock for this process's lifetime; if another instance already holds it,
+  // skip cron registration on this replica (the in-memory per-run dedup is then
+  // sufficient because only the single leader runs the scans).
+  try {
+    const lockClient = await pool.connect();
+    const SCHEDULER_LOCK_KEY = 0x56415453; // arbitrary app-wide constant
+    const lockRes = await lockClient.query('SELECT pg_try_advisory_lock($1) AS locked', [SCHEDULER_LOCK_KEY]);
+    if (!lockRes.rows[0]?.locked) {
+      lockClient.release();
+      log.info('Scheduler lock held by another instance — skipping cron registration on this replica');
+      return;
+    }
+    // Intentionally NOT released: keeping the session open holds the advisory
+    // lock for the process lifetime (auto-released if the connection drops).
+  } catch (err) {
+    log.error({ err }, 'Could not acquire scheduler advisory lock — skipping cron registration');
+    return;
+  }
+
   log.info('Initializing background scheduler...');
 
   // Run every hour: scan for payment-related engagement triggers

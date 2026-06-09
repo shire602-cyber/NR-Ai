@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useTranslation } from '@/lib/i18n';
 import { apiRequest,queryClient } from '@/lib/queryClient';
+import { safeHttpUrl } from '@/lib/safeUrl';
 import { useMutation,useQuery } from '@tanstack/react-query';
 import { differenceInDays,format,parseISO } from 'date-fns';
 import {
@@ -391,7 +392,7 @@ export default function DocumentVault() {
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => window.open(doc.fileUrl, '_blank')}
+                              onClick={() => { const u = safeHttpUrl(doc.fileUrl); if (u) window.open(u, '_blank', 'noopener,noreferrer'); }}
                               data-testid={`button-view-${doc.id}`}
                             >
                               <Eye className="w-4 h-4" />

@@ -10,6 +10,22 @@ async function requestHasCompanyAccess(req: Request, companyId: string): Promise
   return storage.hasCompanyAccess(user.id, companyId, user.firmRole);
 }
 
+/**
+ * M15: never return credential columns to the client. Project only safe metadata
+ * + boolean flags so the UI can show "API key configured" without leaking it.
+ */
+function sanitizeEcommerceIntegration(i: any): Record<string, unknown> | null {
+  if (!i) return null;
+  return {
+    id: i.id, companyId: i.companyId, platform: i.platform, isActive: i.isActive,
+    shopDomain: i.shopDomain, syncStatus: i.syncStatus, lastSyncAt: i.lastSyncAt,
+    syncError: i.syncError, tokenExpiresAt: i.tokenExpiresAt,
+    createdAt: i.createdAt, updatedAt: i.updatedAt,
+    hasAccessToken: !!i.accessToken, hasApiKey: !!i.apiKey,
+    hasRefreshToken: !!i.refreshToken, hasWebhookSecret: !!i.webhookSecret,
+  };
+}
+
 export function registerAnalyticsRoutes(app: Express) {
   // =====================================
   // Advanced Analytics Routes
@@ -262,7 +278,8 @@ export function registerAnalyticsRoutes(app: Express) {
     }
 
     const integrations = await storage.getEcommerceIntegrations(companyId as string);
-    res.json(integrations || []);
+    // M15: never return credential columns to the client.
+    res.json((integrations || []).map(sanitizeEcommerceIntegration));
   }));
 
   // Get e-commerce transactions (MUST be before :integrationId route)
@@ -305,7 +322,7 @@ export function registerAnalyticsRoutes(app: Express) {
       syncStatus: 'never',
     });
 
-    res.json(integration);
+    res.json(sanitizeEcommerceIntegration(integration));
   }));
 
   // Sync e-commerce integration
@@ -323,21 +340,18 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Update sync status
+    // M14: a real platform connector is not implemented. Don't fake 'success'
+    // (which misleads the UI into showing imported data that never arrived).
+    // Record an honest 'failed' state and return 501 Not Implemented.
     await storage.updateEcommerceIntegration(integrationId, {
-      syncStatus: 'syncing',
+      syncStatus: 'failed',
+      syncError: 'Sync not implemented yet — no platform connector wired',
       lastSyncAt: new Date(),
     });
-
-    // In a real implementation, this would fetch data from the platform
-    // For now, we'll simulate a successful sync
-    setTimeout(async () => {
-      await storage.updateEcommerceIntegration(integrationId, {
-        syncStatus: 'success',
-      });
-    }, 2000);
-
-    res.json({ message: 'Sync started' });
+    return res.status(501).json({
+      message: 'E-commerce sync is not implemented yet for this platform.',
+      code: 'SYNC_NOT_IMPLEMENTED',
+    });
   }));
 
   // Toggle e-commerce integration

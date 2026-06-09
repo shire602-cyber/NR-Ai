@@ -4,6 +4,7 @@ import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { useTranslation } from '@/lib/i18n';
+import { safeHttpUrl } from '@/lib/safeUrl';
 import { useQuery } from '@tanstack/react-query';
 import { format,parseISO } from 'date-fns';
 import {
@@ -210,7 +211,7 @@ export default function UAENewsFeed() {
                           <Button
                             size="icon"
                             variant="ghost"
-                            onClick={() => window.open(item.sourceUrl!, '_blank')}
+                            onClick={() => { const u = safeHttpUrl(item.sourceUrl); if (u) window.open(u, '_blank', 'noopener,noreferrer'); }}
                             data-testid={`button-open-${item.id}`}
                           >
                             <ExternalLink className="w-4 h-4" />

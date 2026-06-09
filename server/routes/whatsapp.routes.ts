@@ -51,9 +51,13 @@ function sessionExpiry(): Date {
 }
 
 function personalWhatsAppStatusPayload() {
+  // No real WhatsApp Business provider is wired — messages are only PREPARED via
+  // WhatsApp Web links and logged for history. Reflect that honestly so the UI
+  // doesn't claim "connected/confirmed delivery". `connected:false` matches the
+  // bridge-status endpoint's truthfulness (only it can report a real session).
   return {
-    connected: true,
-    configured: true,
+    connected: false,
+    configured: false,
     mode: 'personal',
     deliveryMode: 'personal_link',
     deliveryStatus: 'logged_only',
@@ -174,8 +178,9 @@ export function registerWhatsAppRoutes(app: Express) {
 
   // Personal WhatsApp links need no provider setup, but delivery is confirmed inside WhatsApp.
   app.get("/api/integrations/whatsapp/config", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+    // Honest config: no real provider is configured (personal-link mode only).
     res.json({
-      configured: true,
+      configured: false,
       isActive: true,
       mode: 'personal',
       deliveryMode: 'personal_link',

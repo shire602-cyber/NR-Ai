@@ -73,27 +73,37 @@ export async function getGoogleSheetsClient(): Promise<sheets_v4.Sheets> {
   return google.sheets({ version: 'v4', auth });
 }
 
+// Cache the connection result for 5 minutes so repeated status polls don't hit
+// Google on every request.
+let cachedConnection: { value: boolean; expiresAt: number } | null = null;
+
 export async function isGoogleSheetsConnected(): Promise<boolean> {
-  try {
-    const sheets = await getGoogleSheetsClient();
-    // Make a lightweight call to verify the credentials are valid.
-    await sheets.spreadsheets.create({
-      requestBody: { properties: { title: '__connection_test__' } },
-      fields: 'spreadsheetId',
-    }).then(async (res) => {
-      // Clean up the test spreadsheet silently.
-      const auth = getAuthClient();
-      if ('authorize' in auth) await (auth as JWT).authorize();
-      const drive = google.drive({ version: 'v3', auth });
-      if (res.data.spreadsheetId) {
-        await drive.files.delete({ fileId: res.data.spreadsheetId }).catch(() => {});
-      }
-    });
-    return true;
-  } catch (err) {
-    log.warn({ err: (err as Error).message }, 'Connection check failed');
-    return false;
+  // Previously this CREATED and then DELETED a real spreadsheet on EVERY status
+  // call — bad for quota and unsafe if cleanup failed. Replace with a cheap,
+  // non-destructive credential check.
+  const now = Date.now();
+  if (cachedConnection && cachedConnection.expiresAt > now) {
+    return cachedConnection.value;
   }
+  let ok = false;
+  try {
+    const auth = getAuthClient();
+    if ('authorize' in auth) {
+      // Service-account JWT: authorize() validates the private key + scopes.
+      await (auth as JWT).authorize();
+      ok = true;
+    } else {
+      // OAuth2 client: refreshing an access token proves the refresh token
+      // still works, without touching any spreadsheet.
+      const token = await (auth as any).getAccessToken();
+      ok = !!token?.token;
+    }
+  } catch (err) {
+    log.warn({ err: (err as Error).message }, 'Google Sheets credential check failed');
+    ok = false;
+  }
+  cachedConnection = { value: ok, expiresAt: now + 5 * 60 * 1000 };
+  return ok;
 }
 
 // ---------------------------------------------------------------------------
