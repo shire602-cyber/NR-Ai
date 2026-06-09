@@ -24,11 +24,57 @@ import { deleteReceiptImage,resolveImagePath,saveReceiptImage } from '../service
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { assertRetentionExpired } from '../services/retention.service';
 import { createAndEmitNotification } from '../services/socket.service';
+import { stripImmutableFields } from '../sanitize';
 import { storage } from '../storage';
 // @ts-expect-error - pdfkit types are not available in this project.
 import PDFDocument from 'pdfkit';
 
 const log = createLogger('receipts');
+
+export class ImportValidationError extends Error {}
+
+export interface ReceiptImportFields {
+  vatImportRole: string | null;
+  importTaxableAmountAed: number | null;
+  importVatAmountAed: number | null;
+  customsDeclarationNumber: string | null;
+  importDate: Date | null;
+  importEvidenceUrl: string | null;
+  importAdjustmentReason: string | null;
+}
+
+const IMPORT_ROLES = new Set(['import', 'import_adjustment']);
+
+/**
+ * Validate + normalize the VAT import-of-goods fields from a receipt/bill body.
+ * Returns all-null when no role is set. Throws ImportValidationError on an
+ * invalid role or a missing justification for an import_adjustment.
+ */
+export function buildReceiptImportFields(body: Record<string, any>): ReceiptImportFields {
+  const role = body.vatImportRole ?? null;
+  if (role === null || role === undefined) {
+    return {
+      vatImportRole: null, importTaxableAmountAed: null, importVatAmountAed: null,
+      customsDeclarationNumber: null, importDate: null, importEvidenceUrl: null, importAdjustmentReason: null,
+    };
+  }
+  if (!IMPORT_ROLES.has(role)) {
+    throw new ImportValidationError(`Invalid vatImportRole: ${role}`);
+  }
+  if (role === 'import_adjustment' && !String(body.importAdjustmentReason ?? '').trim()) {
+    throw new ImportValidationError('import_adjustment requires importAdjustmentReason');
+  }
+  const num = (v: unknown) => (v === null || v === undefined || v === '' ? null : Number(v));
+  return {
+    vatImportRole: role,
+    importTaxableAmountAed: num(body.importTaxableAmountAed),
+    importVatAmountAed: num(body.importVatAmountAed),
+    customsDeclarationNumber: body.customsDeclarationNumber ?? null,
+    importDate: body.importDate ? new Date(body.importDate) : null,
+    importEvidenceUrl: body.importEvidenceUrl ?? null,
+    importAdjustmentReason: body.importAdjustmentReason ?? null,
+  };
+}
 
 async function allocateJournalEntryNumberInTransaction(
   companyId: string,
@@ -202,6 +248,15 @@ export function registerReceiptRoutes(app: Express) {
 
     const { imageData, ...receiptData } = req.body;
 
+    // Validate/normalize VAT import-of-goods fields (Box 6/7).
+    let importFields;
+    try {
+      importFields = buildReceiptImportFields(receiptData);
+    } catch (e) {
+      if (e instanceof ImportValidationError) return res.status(400).json({ message: e.message });
+      throw e;
+    }
+
     // Block receipt creation in a locked period — receipts are eventually
     // posted as journal entries dated on receipt.date.
     if (receiptData.date) {
@@ -238,6 +293,7 @@ export function registerReceiptRoutes(app: Express) {
 
     const receipt = await storage.createReceipt({
       ...receiptData,
+      ...importFields,
       companyId,
       uploadedBy: userId,
       imagePath: imagePath ?? null,
@@ -286,7 +342,33 @@ export function registerReceiptRoutes(app: Express) {
     if (!before) {
       return res.status(404).json({ message: 'Receipt not found' });
     }
-    const updatedReceipt = await storage.updateReceipt(id, before.companyId, req.body);
+    // Strip identity/tenant fields and posting-state flags so a client cannot
+    // move the receipt to another company or fake its posted/journal linkage.
+    // Validate/normalize import-of-goods fields only when the client is setting them,
+    // so a normal edit (or a blocked-only body) still hits the empty-patch guard.
+    let importPatch: Record<string, unknown> = {};
+    if ('vatImportRole' in req.body) {
+      try {
+        importPatch = buildReceiptImportFields(req.body) as unknown as Record<string, unknown>;
+      } catch (e) {
+        if (e instanceof ImportValidationError) return res.status(400).json({ message: e.message });
+        throw e;
+      }
+    }
+    const patch = { ...stripImmutableFields(req.body, ['posted', 'journalEntryId']), ...importPatch };
+    if (Object.keys(patch).length === 0) {
+      // Body carried only immutable/blocked fields — nothing to update; no-op
+      // (avoids Drizzle "No values to set" → 500 on an empty .set()).
+      return res.json(before);
+    }
+    // Cross-tenant guard: a client-supplied account must belong to this company.
+    for (const key of ['accountId', 'paymentAccountId'] as const) {
+      const v = (patch as Record<string, unknown>)[key];
+      if (typeof v === 'string' && v && !(await storage.getAccount(v, before.companyId))) {
+        return res.status(400).json({ message: `Invalid ${key}: account does not belong to this company` });
+      }
+    }
+    const updatedReceipt = await storage.updateReceipt(id, before.companyId, patch);
     await recordAudit({
       userId,
       companyId: updatedReceipt.companyId,

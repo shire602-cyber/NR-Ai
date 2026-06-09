@@ -3,6 +3,7 @@ import { UAE_CT_EXEMPTION_THRESHOLD } from '../constants';
 import { authMiddleware,requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { stripImmutableFields } from '../sanitize';
 import { storage } from '../storage';
 
 export function registerCorporateTaxRoutes(app: Express) {
@@ -59,10 +60,22 @@ export function registerCorporateTaxRoutes(app: Express) {
       await assertPeriodNotLocked(companyId, periodEnd);
     }
 
-    const taxReturn = await storage.createCorporateTaxReturn({
-      ...req.body,
-      companyId,
-    });
+    let taxReturn;
+    try {
+      taxReturn = await storage.createCorporateTaxReturn({
+        ...req.body,
+        companyId,
+      });
+    } catch (err: any) {
+      // M9: one CT return per company/period (unique index in migration 0063).
+      if (err?.code === '23505') {
+        return res.status(409).json({
+          message: 'A corporate tax return already exists for this period.',
+          code: 'CT_RETURN_EXISTS',
+        });
+      }
+      throw err;
+    }
 
     res.status(201).json(taxReturn);
   }));
@@ -87,7 +100,12 @@ export function registerCorporateTaxRoutes(app: Express) {
       await assertPeriodNotLocked(existing.companyId, periodEnd);
     }
 
-    const taxReturn = await storage.updateCorporateTaxReturn(id, req.body);
+    const patch = stripImmutableFields(req.body);
+    if (Object.keys(patch).length === 0) {
+      // Only immutable/blocked fields supplied — no-op (avoids empty .set() 500).
+      return res.json(existing);
+    }
+    const taxReturn = await storage.updateCorporateTaxReturn(id, patch);
     res.json(taxReturn);
   }));
 

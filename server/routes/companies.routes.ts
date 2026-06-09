@@ -6,6 +6,7 @@ import { ensureCriticalSchema } from '../db';
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { authMiddleware,requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { stripImmutableFields } from "../sanitize";
 import { storage } from "../storage";
 
 const log = createLogger('companies');
@@ -220,7 +221,9 @@ export function registerCompanyRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const updateData = { ...req.body };
+    // Strip identity/tenant/access-discriminator fields so a customer cannot
+    // mass-assign companyType (access model), soft-delete flags, or move the row.
+    const updateData: Record<string, any> = { ...stripImmutableFields(req.body, ['companyType', 'isActive', 'deletedAt']) };
     if (updateData.taxRegistrationDate) {
       if (typeof updateData.taxRegistrationDate === 'string') {
         updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
@@ -255,8 +258,9 @@ export function registerCompanyRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    // Prepare update data with proper type conversions
-    const updateData = { ...req.body };
+    // Prepare update data with proper type conversions. Strip identity/tenant/
+    // access-discriminator fields to block mass assignment (companyType, soft-delete).
+    const updateData: Record<string, any> = { ...stripImmutableFields(req.body, ['companyType', 'isActive', 'deletedAt']) };
 
     // Convert taxRegistrationDate to Date if it exists and is not already a Date
     if (updateData.taxRegistrationDate) {

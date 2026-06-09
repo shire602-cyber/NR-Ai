@@ -2,6 +2,7 @@ import type { Express,Request,Response } from "express";
 import { insertAccountSchema,type Account } from "../../shared/schema";
 import { authMiddleware,requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { stripImmutableFields } from "../sanitize";
 import { recordAudit } from "../services/audit.service";
 import { storage } from "../storage";
 
@@ -80,7 +81,12 @@ export function registerAccountRoutes(app: Express) {
     // Block account type changes once the account has any journal lines.
     // Switching e.g. an asset to an income account would silently invert all
     // historical balances on every report.
-    if (req.body?.type !== undefined && req.body.type !== account.type) {
+    // Strip identity/tenant/protected fields so a client cannot move the account
+    // to another company (companyId), forge timestamps, or self-promote it to a
+    // system account via mass assignment.
+    const patch = stripImmutableFields(req.body, ['isSystemAccount']);
+
+    if (patch.type !== undefined && patch.type !== account.type) {
       const hasTransactions = await storage.accountHasTransactions(id);
       if (hasTransactions) {
         return res.status(422).json({
@@ -89,12 +95,15 @@ export function registerAccountRoutes(app: Express) {
       }
     }
 
-    const updatedAccount = await storage.updateAccount(id, account.companyId, req.body);
+    const updatedAccount = await storage.updateAccount(id, account.companyId, {
+      ...patch,
+      updatedAt: new Date(),
+    });
 
     // Account-type changes are especially sensitive — they re-classify how
     // every existing balance rolls into the trial balance / financial
     // statements — so log them with extra emphasis.
-    const typeChanged = req.body.type && req.body.type !== account.type;
+    const typeChanged = patch.type && patch.type !== account.type;
     await recordAudit({
       userId,
       companyId: account.companyId,
@@ -182,7 +191,19 @@ export function registerAccountRoutes(app: Express) {
       });
     }
 
-    await storage.deleteAccount(id, account.companyId);
+    try {
+      await storage.deleteAccount(id, account.companyId);
+    } catch (err: any) {
+      // L1: the journal-lines check above doesn't cover receipts / bank accounts /
+      // payments that also FK this account — translate the DB FK violation (23503)
+      // into a clear 409 instead of an unhandled 500.
+      if (err?.code === '23503') {
+        return res.status(409).json({
+          message: 'Cannot delete this account because other records (receipts, bank accounts, or payments) still reference it. Archive it instead.',
+        });
+      }
+      throw err;
+    }
     res.json({ message: 'Account deleted successfully' });
   }));
 

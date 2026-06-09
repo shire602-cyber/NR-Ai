@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createLogger } from '../config/logger';
 import { authMiddleware,requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { stripImmutableFields } from '../sanitize';
 import { storage } from '../storage';
 import { buildXlsxBufferFromRows,parseSpreadsheetBuffer } from '../utils/spreadsheet';
 
@@ -271,7 +272,7 @@ export function registerContactRoutes(app: Express) {
       return res.status(404).json({ message: 'Contact not found' });
     }
 
-    const contact = await storage.updateCustomerContact(id, req.body);
+    const contact = await storage.updateCustomerContact(id, stripImmutableFields(req.body));
     res.json(contact);
   }));
 
