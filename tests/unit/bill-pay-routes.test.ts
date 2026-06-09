@@ -124,6 +124,54 @@ describe('bill-pay route accounting writes', () => {
     expect(mocks.client.release).toHaveBeenCalledOnce();
   });
 
+  it('creates a foreign-currency bill with exchange rate and line-rounded AED base total', async () => {
+    mocks.client.query.mockImplementation(async (sql: string) => {
+      if (sql === 'BEGIN' || sql === 'COMMIT') return { rows: [] };
+      if (sql.includes('INSERT INTO vendor_bills')) {
+        return { rows: [{ id: 'bill-1', company_id: 'company-1' }] };
+      }
+      if (sql.includes('INSERT INTO bill_line_items')) return { rows: [] };
+      throw new Error(`unexpected query: ${sql}`);
+    });
+
+    const res = await requestJson(appWithRoutes(), 'POST', '/api/companies/company-1/bills', {
+      vendor_name: 'US Supplier',
+      vendor_trn: '123456789012345',
+      bill_date: '2026-06-01',
+      currency: 'usd',
+      exchange_rate: 3.6725,
+      line_items: [
+        { description: 'Line 1', quantity: 1, unit_price: 0.01, vat_rate: 0 },
+        { description: 'Line 2', quantity: 1, unit_price: 0.01, vat_rate: 0 },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    const billInsertCall = mocks.client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO vendor_bills'));
+    expect(billInsertCall?.[1]?.slice(6, 12)).toEqual([
+      'USD',
+      3.6725,
+      '0.08',
+      '0.02',
+      '0.00',
+      '0.02',
+    ]);
+  });
+
+  it('rejects foreign-currency bill create without an exchange rate', async () => {
+    const res = await requestJson(appWithRoutes(), 'POST', '/api/companies/company-1/bills', {
+      vendor_name: 'US Supplier',
+      vendor_trn: '123456789012345',
+      bill_date: '2026-06-01',
+      currency: 'USD',
+      line_items: [{ description: 'Goods', quantity: 1, unit_price: 100, vat_rate: 5 }],
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/exchange rate/i);
+    expect(mocks.connect).not.toHaveBeenCalled();
+  });
+
   it('rolls back vendor bill create if a line insert fails', async () => {
     mocks.client.query.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return { rows: [] };
@@ -155,6 +203,8 @@ describe('bill-pay route accounting writes', () => {
         reverse_charge: true,
         status: 'pending',
         journal_entry_id: null,
+        exchange_rate: '1',
+        total_amount: '100.00',
       }],
     });
     mocks.client.query.mockImplementation(async (sql: string, params?: unknown[]) => {
@@ -176,7 +226,7 @@ describe('bill-pay route accounting writes', () => {
 
     expect(res.status).toBe(200);
     const updateCall = mocks.client.query.mock.calls.find((call) => String(call[0]).includes('UPDATE vendor_bills'));
-    expect(updateCall?.[1]).toEqual(['100.00', '5.00', '100.00', 'bill-1']);
+    expect(updateCall?.[1]).toEqual(['100.00', '5.00', '100.00', '100.00', 'bill-1']);
     const lineInsertCall = mocks.client.query.mock.calls.find((call) => String(call[0]).includes('INSERT INTO bill_line_items'));
     expect(lineInsertCall?.[1]?.at(-1)).toBe(true);
   });
@@ -190,6 +240,7 @@ describe('bill-pay route accounting writes', () => {
         bill_number: 'B-1',
         bill_date: '2026-06-01',
         currency: 'AED',
+        exchange_rate: '1',
         status: 'pending',
         vat_amount: '5.00',
         reverse_charge: false,
@@ -197,8 +248,22 @@ describe('bill-pay route accounting writes', () => {
     });
     mocks.client.query.mockImplementation(async (sql: string) => {
       if (sql === 'BEGIN' || sql === 'COMMIT') return { rows: [] };
-      if (sql.includes('SELECT status, journal_entry_id FROM vendor_bills')) {
-        return { rows: [{ status: 'pending', journal_entry_id: null }] };
+      if (sql.includes('SELECT * FROM vendor_bills')) {
+        return {
+          rows: [{
+            id: 'bill-1',
+            company_id: 'company-1',
+            vendor_name: 'Supplier',
+            bill_number: 'B-1',
+            bill_date: '2026-06-01',
+            currency: 'AED',
+            exchange_rate: '1',
+            status: 'pending',
+            vat_amount: '5.00',
+            reverse_charge: false,
+            journal_entry_id: null,
+          }],
+        };
       }
       if (sql.includes('SELECT * FROM bill_line_items')) {
         return { rows: [{ account_id: 'expense-1', amount: '100.00', description: 'Goods' }] };
@@ -230,9 +295,9 @@ describe('bill-pay route accounting writes', () => {
     ]);
     const journalLineCalls = mocks.client.query.mock.calls.filter((call) => String(call[0]).includes('INSERT INTO journal_lines'));
     expect(journalLineCalls.map((call) => call[1])).toEqual([
-      ['je-1', 'expense-1', 100, 0, 'Goods'],
-      ['je-1', 'vat-input-1', 5, 0, 'Vendor bill B-1 - input VAT'],
-      ['je-1', 'ap-1', 0, 105, 'Vendor bill B-1 - accounts payable'],
+      ['je-1', 'expense-1', 100, 0, 'Goods', null, 0, 0, 1],
+      ['je-1', 'vat-input-1', 5, 0, 'Vendor bill B-1 - input VAT', null, 0, 0, 1],
+      ['je-1', 'ap-1', 0, 105, 'Vendor bill B-1 - accounts payable', null, 0, 0, 1],
     ]);
     expect(mocks.client.query).toHaveBeenCalledWith('COMMIT');
   });

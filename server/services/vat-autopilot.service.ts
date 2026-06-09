@@ -713,17 +713,25 @@ export async function calculateVatReturn(
   let billReverseChargeVat = 0;
   try {
     const billRes = await pool.query(
-      `SELECT COALESCE(SUM(subtotal), 0) AS amount,
-              COALESCE(SUM(vat_amount), 0) AS vat
+      `SELECT subtotal,
+              vat_amount,
+              currency,
+              COALESCE(exchange_rate, 1)::numeric AS exchange_rate
        FROM vendor_bills
      WHERE company_id = $1
        AND reverse_charge = true
        AND bill_date >= $2 AND bill_date <= $3
-       AND status IN ('approved','partial','paid','overdue')`,
+      AND status IN ('approved','partial','paid','overdue')`,
       [companyId, resolvedPeriod.start, resolvedPeriod.end],
     );
-    billReverseChargeAmount = Number(billRes.rows[0]?.amount || 0);
-    billReverseChargeVat = Number(billRes.rows[0]?.vat || 0);
+    for (const row of billRes.rows as Array<Record<string, unknown>>) {
+      const amount = Number(row.subtotal) || 0;
+      const vat = Number(row.vat_amount) || 0;
+      const rate = Number(row.exchange_rate) || 1;
+      const currency = String(row.currency || 'AED');
+      billReverseChargeAmount += currency === 'AED' ? amount : convertToAed(amount, rate);
+      billReverseChargeVat += currency === 'AED' ? vat : convertToAed(vat, rate);
+    }
   } catch (err) {
     // PG SQLSTATE 42P01 = undefined_table. Anything else is a real error.
     if ((err as { code?: string })?.code !== '42P01') throw err;

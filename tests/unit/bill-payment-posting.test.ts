@@ -32,6 +32,48 @@ describe('buildBillPaymentJournalLines', () => {
     expect(() => assertBalancedJournalLines(lines)).not.toThrow();
   });
 
+  it('posts foreign-currency payments in AED and preserves original currency amounts', () => {
+    const lines = buildBillPaymentJournalLines({
+      apAccountId: 'ap-id',
+      paymentAccountId: 'cash-id',
+      amount: 100,
+      description: 'USD bill payment',
+      currency: 'USD',
+      exchangeRate: 3.6725,
+    });
+
+    expect(lines[0]).toMatchObject({
+      accountId: 'ap-id',
+      debit: 367.25,
+      credit: 0,
+      foreignCurrency: 'USD',
+      foreignDebit: 100,
+      foreignCredit: 0,
+      exchangeRate: 3.6725,
+    });
+    expect(lines[1]).toMatchObject({
+      accountId: 'cash-id',
+      debit: 0,
+      credit: 367.25,
+      foreignCurrency: 'USD',
+      foreignDebit: 0,
+      foreignCredit: 100,
+      exchangeRate: 3.6725,
+    });
+    expect(() => assertBalancedJournalLines(lines)).not.toThrow();
+  });
+
+  it('rejects bad foreign-currency exchange rates', () => {
+    expect(() => buildBillPaymentJournalLines({
+      apAccountId: 'a',
+      paymentAccountId: 'b',
+      amount: 100,
+      description: 'X',
+      currency: 'USD',
+      exchangeRate: 0,
+    })).toThrow(/exchange rate/i);
+  });
+
   it('rejects non-positive amounts (would post a zero-movement JE that "balances" at 0=0)', () => {
     expect(() => buildBillPaymentJournalLines({
       apAccountId: 'a', paymentAccountId: 'b', amount: 0, description: 'X',

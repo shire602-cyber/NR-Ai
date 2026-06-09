@@ -53,6 +53,8 @@ interface VendorBill {
   bill_date: string;
   due_date: string | null;
   currency: string;
+  exchange_rate: string;
+  base_currency_amount: string;
   subtotal: string;
   vat_amount: string;
   total_amount: string;
@@ -133,6 +135,7 @@ const billFormSchema = z.object({
   bill_date: z.date(),
   due_date: z.date().optional(),
   currency: z.string().default('AED'),
+  exchange_rate: z.coerce.number().positive('Exchange rate must be positive').default(1),
   category: z.string().optional(),
   notes: z.string().optional(),
   line_items: z.array(billLineSchema).min(1, 'At least one line item is required'),
@@ -237,6 +240,7 @@ export default function BillPay() {
             ...p,
             vendor_name: bill.vendor_name,
             bill_number: bill.bill_number,
+            currency: bill.currency || 'AED',
           }));
         } catch {
           return [];
@@ -282,6 +286,7 @@ export default function BillPay() {
       bill_date: new Date(),
       due_date: undefined,
       currency: 'AED',
+      exchange_rate: 1,
       category: '',
       notes: '',
       line_items: [{ description: '', quantity: 1, unit_price: 0, vat_rate: 5, account_id: '' }],
@@ -324,6 +329,8 @@ export default function BillPay() {
     mutationFn: (data: BillFormData) => {
       const payload = {
         ...data,
+        currency: data.currency.toUpperCase(),
+        exchange_rate: data.currency.toUpperCase() === 'AED' ? 1 : data.exchange_rate,
         bill_date: data.bill_date.toISOString(),
         due_date: data.due_date ? data.due_date.toISOString() : null,
         line_items: data.line_items.map(l => ({
@@ -348,6 +355,8 @@ export default function BillPay() {
     mutationFn: ({ id, data }: { id: string; data: BillFormData }) => {
       const payload = {
         ...data,
+        currency: data.currency.toUpperCase(),
+        exchange_rate: data.currency.toUpperCase() === 'AED' ? 1 : data.exchange_rate,
         bill_date: data.bill_date.toISOString(),
         due_date: data.due_date ? data.due_date.toISOString() : null,
         line_items: data.line_items.map(l => ({
@@ -403,7 +412,7 @@ export default function BillPay() {
       invalidateBills();
       toast({
         title: 'Payment recorded',
-        description: `Payment recorded. Bill status: ${result.bill_status}. Remaining: ${formatCurrency(result.remaining, 'AED')}`,
+        description: `Payment recorded. Bill status: ${result.bill_status}. Remaining: ${formatCurrency(result.remaining, payingBill?.currency || 'AED')}`,
       });
       setPaymentDialogOpen(false);
       setPayingBill(null);
@@ -433,6 +442,7 @@ export default function BillPay() {
       bill_date: new Date(),
       due_date: undefined,
       currency: 'AED',
+      exchange_rate: 1,
       category: '',
       notes: '',
       line_items: [{ description: '', quantity: 1, unit_price: 0, vat_rate: 5, account_id: '' }],
@@ -451,6 +461,7 @@ export default function BillPay() {
         bill_date: new Date(detail.bill_date),
         due_date: detail.due_date ? new Date(detail.due_date) : undefined,
         currency: detail.currency || 'AED',
+        exchange_rate: Number(detail.exchange_rate || 1),
         category: detail.category || '',
         notes: detail.notes || '',
         line_items: detail.line_items.length > 0
@@ -498,12 +509,16 @@ export default function BillPay() {
 
   // Watch line items for live total calculation
   const watchLines = billForm.watch('line_items');
+  const watchCurrency = billForm.watch('currency') || 'AED';
+  const watchExchangeRate = Number(billForm.watch('exchange_rate') || 1);
+  const effectiveWatchExchangeRate = Number.isFinite(watchExchangeRate) && watchExchangeRate > 0 ? watchExchangeRate : 1;
   const subtotal = watchLines.reduce((sum, line) => sum + ((Number(line.quantity) || 0) * (Number(line.unit_price) || 0)), 0);
   const vatAmount = watchLines.reduce((sum, line) => {
     const lineAmount = (Number(line.quantity) || 0) * (Number(line.unit_price) || 0);
     return sum + lineAmount * ((Number(line.vat_rate) || 0) / 100);
   }, 0);
   const totalAmount = subtotal + vatAmount;
+  const baseTotalAmount = watchCurrency === 'AED' ? totalAmount : totalAmount * effectiveWatchExchangeRate;
 
   // Expense account options
   const expenseAccounts = accounts.filter((a: any) => a.type === 'expense' || a.type === 'asset');
@@ -761,7 +776,15 @@ export default function BillPay() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel>Currency</FormLabel>
-                                <Select value={field.value} onValueChange={field.onChange}>
+                                <Select
+                                  value={field.value}
+                                  onValueChange={(value) => {
+                                    field.onChange(value);
+                                    if (value === 'AED') {
+                                      billForm.setValue('exchange_rate', 1);
+                                    }
+                                  }}
+                                >
                                   <FormControl>
                                     <SelectTrigger>
                                       <SelectValue />
@@ -780,6 +803,25 @@ export default function BillPay() {
                             )}
                           />
                         </div>
+                        <FormField
+                          control={billForm.control}
+                          name="exchange_rate"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>AED Exchange Rate</FormLabel>
+                              <FormControl>
+                                <Input
+                                  {...field}
+                                  type="number"
+                                  step="0.000001"
+                                  min="0.000001"
+                                  disabled={watchCurrency === 'AED'}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
                         {/* Line Items */}
                         <div className="space-y-3">
@@ -878,7 +920,7 @@ export default function BillPay() {
                                 <span className="text-sm font-medium">
                                   {formatCurrency(
                                     (Number(watchLines[index]?.quantity) || 0) * (Number(watchLines[index]?.unit_price) || 0),
-                                    'AED'
+                                    watchCurrency
                                   )}
                                 </span>
                                 {lineFields.length > 1 && (
@@ -901,16 +943,22 @@ export default function BillPay() {
                             <div className="w-64 space-y-1 text-sm">
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Subtotal:</span>
-                                <span>{formatCurrency(subtotal, 'AED')}</span>
+                                <span>{formatCurrency(subtotal, watchCurrency)}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">VAT:</span>
-                                <span>{formatCurrency(vatAmount, 'AED')}</span>
+                                <span>{formatCurrency(vatAmount, watchCurrency)}</span>
                               </div>
                               <div className="flex justify-between font-semibold border-t pt-1">
                                 <span>Total:</span>
-                                <span>{formatCurrency(totalAmount, 'AED')}</span>
+                                <span>{formatCurrency(totalAmount, watchCurrency)}</span>
                               </div>
+                              {watchCurrency !== 'AED' && (
+                                <div className="flex justify-between text-muted-foreground">
+                                  <span>AED Total:</span>
+                                  <span>{formatCurrency(baseTotalAmount, 'AED')}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1012,10 +1060,7 @@ export default function BillPay() {
                                       <Edit className="w-4 h-4 mr-2" />
                                       Edit
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      disabled={(bill.currency || 'AED') !== 'AED'}
-                                      onClick={() => approveBillMutation.mutate(bill.id)}
-                                    >
+                                    <DropdownMenuItem onClick={() => approveBillMutation.mutate(bill.id)}>
                                       <CheckCircle className="w-4 h-4 mr-2" />
                                       Approve
                                     </DropdownMenuItem>
@@ -1091,7 +1136,7 @@ export default function BillPay() {
                         <TableCell>{formatDate(payment.payment_date)}</TableCell>
                         <TableCell className="font-medium">{payment.vendor_name}</TableCell>
                         <TableCell className="font-mono text-sm">{payment.bill_number || '-'}</TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(Number(payment.amount), 'AED')}</TableCell>
+                        <TableCell className="text-right font-medium">{formatCurrency(Number(payment.amount), payment.currency || 'AED')}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className="capitalize">
                             {(payment.payment_method || 'bank_transfer').replace(/_/g, ' ')}
@@ -1267,11 +1312,6 @@ export default function BillPay() {
               )}
             </DialogDescription>
           </DialogHeader>
-          {payingBill && (payingBill.currency || 'AED') !== 'AED' && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-              Non-AED bill payments need FX support before they can post to the ledger.
-            </div>
-          )}
           <Form {...paymentForm}>
             <form onSubmit={paymentForm.handleSubmit(onPaymentSubmit)} className="space-y-4">
               <FormField
@@ -1413,8 +1453,7 @@ export default function BillPay() {
                   type="submit"
                   disabled={
                     recordPaymentMutation.isPending ||
-                    paymentAccounts.length === 0 ||
-                    (!!payingBill && (payingBill.currency || 'AED') !== 'AED')
+                    paymentAccounts.length === 0
                   }
                 >
                   {recordPaymentMutation.isPending ? 'Recording...' : 'Record Payment'}

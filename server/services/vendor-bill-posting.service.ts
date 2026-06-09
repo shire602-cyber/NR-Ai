@@ -1,4 +1,9 @@
-import { round2 } from './fx.service';
+import {
+  positiveExchangeRate,
+  round2,
+  toBaseCurrencyAmount,
+  withForeignAmount,
+} from './fx.service';
 
 export interface VendorBillExpenseLine {
   accountId: string;
@@ -11,6 +16,10 @@ export interface VendorBillApprovalLine {
   debit: number;
   credit: number;
   description: string;
+  foreignCurrency?: string;
+  foreignDebit?: number;
+  foreignCredit?: number;
+  exchangeRate?: number;
 }
 
 export interface BuildVendorBillApprovalJournalLinesInput {
@@ -21,6 +30,36 @@ export interface BuildVendorBillApprovalJournalLinesInput {
   vatAmount: number;
   reverseCharge: boolean;
   description: string;
+  currency?: string;
+  exchangeRate?: number;
+}
+
+export interface CalculateVendorBillBaseAmountInput {
+  expenseAmounts: number[];
+  vatAmount: number;
+  reverseCharge: boolean;
+  currency?: string;
+  exchangeRate?: number;
+}
+
+export function calculateVendorBillBaseAmount(
+  input: CalculateVendorBillBaseAmountInput,
+): number {
+  const currency = (input.currency || 'AED').toUpperCase();
+  const exchangeRate = currency === 'AED' ? 1 : positiveExchangeRate(input.exchangeRate);
+  const baseExpenseTotal = round2(input.expenseAmounts.reduce((sum, rawAmount) => {
+    const amount = round2(rawAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new Error('Vendor bill line amounts must be zero or positive');
+    }
+    return sum + toBaseCurrencyAmount(amount, currency, exchangeRate);
+  }, 0));
+  const vatAmount = round2(input.vatAmount);
+  if (!Number.isFinite(vatAmount) || vatAmount < 0) {
+    throw new Error('Vendor bill VAT amount must be zero or positive');
+  }
+  const baseVatAmount = toBaseCurrencyAmount(vatAmount, currency, exchangeRate);
+  return input.reverseCharge ? baseExpenseTotal : round2(baseExpenseTotal + baseVatAmount);
 }
 
 /**
@@ -44,6 +83,9 @@ export function buildVendorBillApprovalJournalLines(
     throw new Error('Vendor bill approval requires at least one expense line');
   }
 
+  const currency = (input.currency || 'AED').toUpperCase();
+  const exchangeRate = currency === 'AED' ? 1 : positiveExchangeRate(input.exchangeRate);
+
   const expenseLines = input.expenseLines.map((line) => {
     const amount = round2(line.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -51,17 +93,20 @@ export function buildVendorBillApprovalJournalLines(
     }
     return {
       accountId: line.accountId,
-      debit: amount,
+      debit: toBaseCurrencyAmount(amount, currency, exchangeRate),
       credit: 0,
       description: line.description,
+      ...withForeignAmount(currency, exchangeRate, amount, 0),
     };
   });
 
   const subtotal = round2(expenseLines.reduce((sum, line) => sum + line.debit, 0));
+  const foreignSubtotal = round2(input.expenseLines.reduce((sum, line) => sum + round2(line.amount), 0));
   const vatAmount = round2(input.vatAmount);
   if (!Number.isFinite(vatAmount) || vatAmount < 0) {
     throw new Error('Vendor bill VAT amount must be zero or positive');
   }
+  const baseVatAmount = toBaseCurrencyAmount(vatAmount, currency, exchangeRate);
 
   const lines: VendorBillApprovalLine[] = [...expenseLines];
 
@@ -71,17 +116,22 @@ export function buildVendorBillApprovalJournalLines(
     }
     lines.push({
       accountId: input.inputVatAccountId,
-      debit: vatAmount,
+      debit: baseVatAmount,
       credit: 0,
       description: `${input.description} - input VAT`,
+      ...withForeignAmount(currency, exchangeRate, vatAmount, 0),
     });
   }
 
+  const foreignApCredit = input.reverseCharge
+    ? foreignSubtotal
+    : round2(foreignSubtotal + vatAmount);
   lines.push({
     accountId: input.apAccountId,
     debit: 0,
-    credit: input.reverseCharge ? subtotal : round2(subtotal + vatAmount),
+    credit: input.reverseCharge ? subtotal : round2(subtotal + baseVatAmount),
     description: `${input.description} - accounts payable`,
+    ...withForeignAmount(currency, exchangeRate, 0, foreignApCredit),
   });
 
   if (input.reverseCharge && vatAmount > 0) {
@@ -91,8 +141,9 @@ export function buildVendorBillApprovalJournalLines(
     lines.push({
       accountId: input.outputVatAccountId,
       debit: 0,
-      credit: vatAmount,
+      credit: baseVatAmount,
       description: `${input.description} - reverse-charge output VAT`,
+      ...withForeignAmount(currency, exchangeRate, 0, vatAmount),
     });
   }
 

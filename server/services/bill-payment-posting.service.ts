@@ -1,4 +1,9 @@
-import { round2 } from './fx.service';
+import {
+  positiveExchangeRate,
+  round2,
+  toBaseCurrencyAmount,
+  withForeignAmount,
+} from './fx.service';
 
 /**
  * Pure helper: build the journal lines for a vendor-bill payment.
@@ -18,6 +23,10 @@ export interface BillPaymentJournalLine {
   debit: number;
   credit: number;
   description: string;
+  foreignCurrency?: string;
+  foreignDebit?: number;
+  foreignCredit?: number;
+  exchangeRate?: number;
 }
 
 export interface BuildBillPaymentJournalLinesInput {
@@ -25,6 +34,8 @@ export interface BuildBillPaymentJournalLinesInput {
   paymentAccountId: string;
   amount: number;
   description: string;
+  currency?: string;
+  exchangeRate?: number;
 }
 
 export function buildBillPaymentJournalLines(
@@ -38,19 +49,24 @@ export function buildBillPaymentJournalLines(
       'Bill payment AP and cash accounts must be different accounts',
     );
   }
-  const amt = round2(input.amount);
+  const currency = (input.currency || 'AED').toUpperCase();
+  const exchangeRate = currency === 'AED' ? 1 : positiveExchangeRate(input.exchangeRate);
+  const foreignAmount = round2(input.amount);
+  const baseAmount = toBaseCurrencyAmount(foreignAmount, currency, exchangeRate);
   return [
     {
       accountId: input.apAccountId,
-      debit: amt,
+      debit: baseAmount,
       credit: 0,
       description: input.description,
+      ...withForeignAmount(currency, exchangeRate, foreignAmount, 0),
     },
     {
       accountId: input.paymentAccountId,
       debit: 0,
-      credit: amt,
+      credit: baseAmount,
       description: input.description,
+      ...withForeignAmount(currency, exchangeRate, 0, foreignAmount),
     },
   ];
 }

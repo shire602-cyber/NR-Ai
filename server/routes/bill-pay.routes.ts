@@ -8,10 +8,14 @@ import { authMiddleware,requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { buildBillPaymentJournalLines } from '../services/bill-payment-posting.service';
+import { positiveExchangeRate, toBaseCurrencyAmount } from '../services/fx.service';
 import { assertBalancedJournalLines } from '../services/journal-balance.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { assertRetentionExpired } from '../services/retention.service';
-import { buildVendorBillApprovalJournalLines } from '../services/vendor-bill-posting.service';
+import {
+  buildVendorBillApprovalJournalLines,
+  calculateVendorBillBaseAmount,
+} from '../services/vendor-bill-posting.service';
 import { storage } from '../storage';
 
 const log = createLogger('bill-pay');
@@ -40,6 +44,7 @@ const billCreateSchema = z.object({
   bill_date: billIsoDate,
   due_date: billIsoDate.optional().nullable(),
   currency: z.string().length(3).optional(),
+  exchange_rate: z.union([z.number(), z.string()]).optional().nullable(),
   category: z.string().max(64).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   attachment_url: z.string().url().optional().nullable(),
@@ -54,6 +59,7 @@ const billUpdateSchema = z.object({
   bill_date: billIsoDate.optional(),
   due_date: billIsoDate.optional().nullable(),
   currency: z.string().length(3).optional(),
+  exchange_rate: z.union([z.number(), z.string()]).optional().nullable(),
   category: z.string().max(64).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
   attachment_url: z.string().url().optional().nullable(),
@@ -85,6 +91,30 @@ function resolveVatRatePercent(raw: unknown): number {
   return Number.isFinite(n) ? n : 5;
 }
 
+function normalizeCurrency(raw: unknown): string {
+  const currency = String(raw || 'AED').trim().toUpperCase();
+  return currency || 'AED';
+}
+
+function resolveVendorBillExchangeRate(
+  currency: string,
+  rawRate: unknown,
+  fallbackRate?: unknown,
+): { rate: number; error?: undefined } | { rate?: undefined; error: string } {
+  if (currency === 'AED') return { rate: 1 };
+  const candidate = rawRate !== undefined && rawRate !== null && rawRate !== ''
+    ? rawRate
+    : fallbackRate;
+  if (candidate === undefined || candidate === null || candidate === '') {
+    return { error: 'Exchange rate to AED is required for non-AED vendor bills' };
+  }
+  try {
+    return { rate: positiveExchangeRate(candidate) };
+  } catch {
+    return { error: 'Exchange rate must be a positive number' };
+  }
+}
+
 async function allocateJournalEntryNumberRaw(
   client: { query: (text: string, params?: unknown[]) => Promise<{ rows: any[] }> },
   companyId: string,
@@ -102,6 +132,42 @@ async function allocateJournalEntryNumberRaw(
     [companyId, dateKey],
   );
   return `${prefix}-${String(seqResult.rows[0].last_value).padStart(3, '0')}`;
+}
+
+async function insertJournalLinesRaw(
+  client: { query: (text: string, params?: unknown[]) => Promise<unknown> },
+  entryId: string,
+  lines: Array<{
+    accountId: string;
+    debit: number;
+    credit: number;
+    description: string;
+    foreignCurrency?: string;
+    foreignDebit?: number;
+    foreignCredit?: number;
+    exchangeRate?: number;
+  }>,
+): Promise<void> {
+  for (const line of lines) {
+    await client.query(
+      `INSERT INTO journal_lines (
+         entry_id, account_id, debit, credit, description,
+         foreign_currency, foreign_debit, foreign_credit, exchange_rate
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        entryId,
+        line.accountId,
+        line.debit,
+        line.credit,
+        line.description,
+        line.foreignCurrency || null,
+        line.foreignDebit || 0,
+        line.foreignCredit || 0,
+        line.exchangeRate || 1,
+      ],
+    );
+  }
 }
 
 export function registerBillPayRoutes(app: Express) {
@@ -228,6 +294,7 @@ export function registerBillPayRoutes(app: Express) {
       bill_date,
       due_date,
       currency,
+      exchange_rate,
       category,
       notes,
       attachment_url,
@@ -250,18 +317,33 @@ export function registerBillPayRoutes(app: Express) {
     // Calculate totals from line items
     let subtotal = 0;
     let vatAmount = 0;
+    const lineAmounts: number[] = [];
 
     for (const line of line_items) {
       const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
       const lineVat = lineAmount * (resolveVatRatePercent(line.vat_rate) / 100);
       subtotal += lineAmount;
       vatAmount += lineVat;
+      lineAmounts.push(lineAmount);
     }
 
     // For reverse-charge bills the vendor does not charge VAT — the cash payable
     // is just the subtotal. The VAT is still tracked for the VAT return (input
     // and output legs net to zero).
     const totalAmount = billReverseCharge ? subtotal : subtotal + vatAmount;
+    const billCurrency = normalizeCurrency(currency);
+    const rateResult = resolveVendorBillExchangeRate(billCurrency, exchange_rate);
+    if (rateResult.error) {
+      return res.status(400).json({ message: rateResult.error });
+    }
+    const exchangeRate = rateResult.rate ?? 1;
+    const baseCurrencyAmount = calculateVendorBillBaseAmount({
+      expenseAmounts: lineAmounts,
+      vatAmount,
+      reverseCharge: billReverseCharge,
+      currency: billCurrency,
+      exchangeRate,
+    });
 
     const client = await pool.connect();
     let bill: any;
@@ -270,9 +352,10 @@ export function registerBillPayRoutes(app: Express) {
       const billResult = await client.query(
         `INSERT INTO vendor_bills (
           company_id, vendor_name, vendor_trn, bill_number, bill_date, due_date,
-          currency, subtotal, vat_amount, total_amount, amount_paid, status,
+          currency, exchange_rate, base_currency_amount,
+          subtotal, vat_amount, total_amount, amount_paid, status,
           category, notes, attachment_url, reverse_charge
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         RETURNING *`,
         [
           companyId,
@@ -281,7 +364,9 @@ export function registerBillPayRoutes(app: Express) {
           bill_number || null,
           bill_date,
           due_date || null,
-          currency || 'AED',
+          billCurrency,
+          exchangeRate,
+          baseCurrencyAmount.toFixed(2),
           subtotal.toFixed(2),
           vatAmount.toFixed(2),
           totalAmount.toFixed(2),
@@ -359,6 +444,7 @@ export function registerBillPayRoutes(app: Express) {
       bill_date,
       due_date,
       currency,
+      exchange_rate,
       category,
       notes,
       attachment_url,
@@ -390,28 +476,62 @@ export function registerBillPayRoutes(app: Express) {
     addUpdate('bill_number', bill_number);
     addUpdate('bill_date', bill_date);
     addUpdate('due_date', due_date);
-    addUpdate('currency', currency);
+    const effectiveCurrency = currency !== undefined
+      ? normalizeCurrency(currency)
+      : normalizeCurrency(bill.currency);
+    const rateResult = resolveVendorBillExchangeRate(effectiveCurrency, exchange_rate, bill.exchange_rate);
+    if (rateResult.error) {
+      return res.status(400).json({ message: rateResult.error });
+    }
+    const effectiveExchangeRate = rateResult.rate ?? 1;
+
+    if (currency !== undefined) addUpdate('currency', effectiveCurrency);
+    if (currency !== undefined || exchange_rate !== undefined) {
+      addUpdate('exchange_rate', effectiveExchangeRate);
+    }
     addUpdate('category', category);
     addUpdate('notes', notes);
     addUpdate('attachment_url', attachment_url);
 
+    let effectiveTotalAmount = Number(bill.total_amount || 0);
+    let effectiveVatAmount = Number(bill.vat_amount || 0);
+    let effectiveLineAmounts: number[] | null = null;
     // If line_items provided, recalculate totals
     if (line_items && Array.isArray(line_items) && line_items.length > 0) {
       let subtotal = 0;
       let vatAmount = 0;
+      effectiveLineAmounts = [];
 
       for (const line of line_items) {
         const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
         const lineVat = lineAmount * (resolveVatRatePercent(line.vat_rate) / 100);
         subtotal += lineAmount;
         vatAmount += lineVat;
+        effectiveLineAmounts.push(lineAmount);
       }
 
       const totalAmount = bill.reverse_charge ? subtotal : subtotal + vatAmount;
+      effectiveTotalAmount = totalAmount;
+      effectiveVatAmount = vatAmount;
 
       addUpdate('subtotal', subtotal.toFixed(2));
       addUpdate('vat_amount', vatAmount.toFixed(2));
       addUpdate('total_amount', totalAmount.toFixed(2));
+    }
+    if (line_items || currency !== undefined || exchange_rate !== undefined) {
+      const baseCurrencyAmount = effectiveLineAmounts
+        ? calculateVendorBillBaseAmount({
+          expenseAmounts: effectiveLineAmounts,
+          vatAmount: effectiveVatAmount,
+          reverseCharge: Boolean(bill.reverse_charge),
+          currency: effectiveCurrency,
+          exchangeRate: effectiveExchangeRate,
+        })
+        : toBaseCurrencyAmount(effectiveTotalAmount, effectiveCurrency, effectiveExchangeRate);
+      addUpdate(
+        'base_currency_amount',
+        baseCurrencyAmount.toFixed(2),
+      );
     }
 
     if (updates.length === 0 && !line_items) {
@@ -569,14 +689,6 @@ export function registerBillPayRoutes(app: Express) {
       return res.status(400).json({ message: 'Only pending bills can be approved' });
     }
 
-    const billCurrency = (bill.currency as string) || 'AED';
-    if (billCurrency !== 'AED') {
-      return res.status(400).json({
-        message: `Approving non-AED bills (currency: ${billCurrency}) is not yet supported because vendor bills do not store an exchange rate.`,
-        code: 'BILL_APPROVAL_FX_UNSUPPORTED',
-      });
-    }
-
     // Approval triggers the AP journal entry on bill_date — block if locked.
     await assertPeriodNotLocked(bill.company_id, bill.bill_date);
 
@@ -606,7 +718,7 @@ export function registerBillPayRoutes(app: Express) {
     try {
       await client.query('BEGIN');
       const lockedBillResult = await client.query(
-        'SELECT status, journal_entry_id FROM vendor_bills WHERE id = $1 AND company_id = $2 FOR UPDATE',
+        'SELECT * FROM vendor_bills WHERE id = $1 AND company_id = $2 FOR UPDATE',
         [id, bill.company_id],
       );
       const lockedBill = lockedBillResult.rows[0];
@@ -618,6 +730,16 @@ export function registerBillPayRoutes(app: Express) {
         await client.query('ROLLBACK');
         return res.status(409).json({ message: 'Bill has already been approved or posted' });
       }
+      const approvalCurrency = normalizeCurrency(lockedBill.currency);
+      const approvalRateResult = resolveVendorBillExchangeRate(
+        approvalCurrency,
+        lockedBill.exchange_rate,
+      );
+      if (approvalRateResult.error) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: approvalRateResult.error });
+      }
+      const approvalExchangeRate = approvalRateResult.rate;
 
       const linesResult = await client.query(
         'SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at ASC',
@@ -642,7 +764,7 @@ export function registerBillPayRoutes(app: Express) {
         expenseLines.push({
           accountId: line.account_id,
           amount: Number(line.amount),
-          description: line.description || `Vendor bill ${bill.bill_number || id.slice(0, 8)}`,
+          description: line.description || `Vendor bill ${lockedBill.bill_number || id.slice(0, 8)}`,
         });
       }
 
@@ -651,13 +773,15 @@ export function registerBillPayRoutes(app: Express) {
         apAccountId: apAccount.id,
         inputVatAccountId: inputVatAccount?.id,
         outputVatAccountId: outputVatAccount?.id,
-        vatAmount: Number(bill.vat_amount || 0),
-        reverseCharge: Boolean(bill.reverse_charge),
-        description: `Vendor bill ${bill.bill_number || id.slice(0, 8)}`,
+        vatAmount: Number(lockedBill.vat_amount || 0),
+        reverseCharge: Boolean(lockedBill.reverse_charge),
+        description: `Vendor bill ${lockedBill.bill_number || id.slice(0, 8)}`,
+        currency: approvalCurrency,
+        exchangeRate: approvalExchangeRate,
       });
       assertBalancedJournalLines(journalLines);
 
-      const entryNumber = await allocateJournalEntryNumberRaw(client, bill.company_id, bill.bill_date);
+      const entryNumber = await allocateJournalEntryNumberRaw(client, lockedBill.company_id, lockedBill.bill_date);
       const entryInsert = await client.query(
         `INSERT INTO journal_entries (
            company_id, date, memo, entry_number, status, source, source_id,
@@ -665,22 +789,16 @@ export function registerBillPayRoutes(app: Express) {
          ) VALUES ($1, $2, $3, $4, 'posted', 'vendor_bill', $5, $6, $6, NOW())
          RETURNING id`,
         [
-          bill.company_id,
-          bill.bill_date,
-          `Vendor bill approved - ${bill.vendor_name || 'vendor'} (${bill.bill_number || id.slice(0, 8)})`,
+          lockedBill.company_id,
+          lockedBill.bill_date,
+          `Vendor bill approved - ${lockedBill.vendor_name || 'vendor'} (${lockedBill.bill_number || id.slice(0, 8)})`,
           entryNumber,
           id,
           userId,
         ],
       );
       const journalEntryId = entryInsert.rows[0].id as string;
-      for (const line of journalLines) {
-        await client.query(
-          `INSERT INTO journal_lines (entry_id, account_id, debit, credit, description)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [journalEntryId, line.accountId, line.debit, line.credit, line.description],
-        );
-      }
+      await insertJournalLinesRaw(client, journalEntryId, journalLines);
 
       const updateResult = await client.query(
         `UPDATE vendor_bills
@@ -720,17 +838,6 @@ export function registerBillPayRoutes(app: Express) {
       return res.status(404).json({ message: 'Bill not found' });
     }
     const billCompanyId = billCompanyResult.rows[0].company_id as string;
-    const billCurrency = (billCompanyResult.rows[0].currency as string) || 'AED';
-    // FX on bill payments is not yet wired (vendor_bills has no exchange_rate
-    // column and bill_payments has no foreign-amount tracking). Reject non-AED
-    // bills with a clear message rather than silently posting at the wrong AED
-    // amount.
-    if (billCurrency !== 'AED') {
-      return res.status(400).json({
-        message: `Recording payments for non-AED bills (currency: ${billCurrency}) is not yet supported. Contact support to record this payment.`,
-        code: 'BILL_PAYMENT_FX_UNSUPPORTED',
-      });
-    }
     const hasAccess = await storage.hasCompanyAccess(userId, billCompanyId);
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -774,13 +881,16 @@ export function registerBillPayRoutes(app: Express) {
         await client.query('ROLLBACK');
         return res.status(409).json({ message: 'Bill company changed while recording payment; retry the payment' });
       }
-      if (((bill.currency as string) || 'AED') !== 'AED') {
+      const billCurrency = normalizeCurrency(bill.currency);
+      const paymentRateResult = resolveVendorBillExchangeRate(
+        billCurrency,
+        bill.exchange_rate,
+      );
+      if (paymentRateResult.error) {
         await client.query('ROLLBACK');
-        return res.status(400).json({
-          message: `Recording payments for non-AED bills (currency: ${bill.currency}) is not yet supported. Contact support to record this payment.`,
-          code: 'BILL_PAYMENT_FX_UNSUPPORTED',
-        });
+        return res.status(400).json({ message: paymentRateResult.error });
       }
+      const paymentExchangeRate = paymentRateResult.rate;
       if (!['approved', 'partial', 'overdue'].includes(bill.status)) {
         await client.query('ROLLBACK');
         return res.status(400).json({ message: 'Bill must be approved before recording payment' });
@@ -821,6 +931,8 @@ export function registerBillPayRoutes(app: Express) {
         paymentAccountId: paymentAccount.id,
         amount: paymentAmount.toNumber(),
         description: `Bill payment - ${bill.vendor_name || 'vendor'} (${bill.bill_number || bill.id.slice(0, 8)})`,
+        currency: billCurrency,
+        exchangeRate: paymentExchangeRate,
       });
       assertBalancedJournalLines(journalLines);
 
@@ -841,13 +953,7 @@ export function registerBillPayRoutes(app: Express) {
         ],
       );
       const journalEntryId = entryInsert.rows[0].id as string;
-      for (const line of journalLines) {
-        await client.query(
-          `INSERT INTO journal_lines (entry_id, account_id, debit, credit, description)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [journalEntryId, line.accountId, line.debit, line.credit, line.description],
-        );
-      }
+      await insertJournalLinesRaw(client, journalEntryId, journalLines);
 
       // Now record the payment row (with back-references to the JE + accounts).
       const paymentResult = await client.query(
@@ -914,16 +1020,16 @@ export function registerBillPayRoutes(app: Express) {
     const result = await pool.query(
       `SELECT
         COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'pending'), 0) AS pending_total,
+        COALESCE(SUM(base_currency_amount) FILTER (WHERE status = 'pending'), 0) AS pending_total,
         COUNT(*) FILTER (WHERE status = 'approved') AS approved_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'approved'), 0) AS approved_total,
+        COALESCE(SUM(base_currency_amount) FILTER (WHERE status = 'approved'), 0) AS approved_total,
         COUNT(*) FILTER (WHERE status = 'partial') AS partial_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'partial'), 0) AS partial_total,
-        COALESCE(SUM(amount_paid) FILTER (WHERE status = 'partial'), 0) AS partial_paid,
+        COALESCE(SUM(base_currency_amount) FILTER (WHERE status = 'partial'), 0) AS partial_total,
+        COALESCE(SUM(amount_paid * exchange_rate) FILTER (WHERE status = 'partial'), 0) AS partial_paid,
         COUNT(*) FILTER (WHERE status = 'paid') AS paid_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS paid_total,
+        COALESCE(SUM(base_currency_amount) FILTER (WHERE status = 'paid'), 0) AS paid_total,
         COUNT(*) FILTER (WHERE due_date < NOW() AND status NOT IN ('paid')) AS overdue_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (WHERE due_date < NOW() AND status NOT IN ('paid')), 0) AS overdue_total
+        COALESCE(SUM(base_currency_amount - (amount_paid * exchange_rate)) FILTER (WHERE due_date < NOW() AND status NOT IN ('paid')), 0) AS overdue_total
       FROM vendor_bills
       WHERE company_id = $1`,
       [companyId]
@@ -952,31 +1058,31 @@ export function registerBillPayRoutes(app: Express) {
 
     const result = await pool.query(
       `SELECT
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
+        COALESCE(SUM(base_currency_amount - (amount_paid * exchange_rate)) FILTER (
           WHERE due_date >= NOW() OR due_date IS NULL
         ), 0) AS current_amount,
         COUNT(*) FILTER (
           WHERE due_date >= NOW() OR due_date IS NULL
         ) AS current_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
+        COALESCE(SUM(base_currency_amount - (amount_paid * exchange_rate)) FILTER (
           WHERE due_date < NOW() AND due_date >= NOW() - INTERVAL '30 days'
         ), 0) AS days_1_30_amount,
         COUNT(*) FILTER (
           WHERE due_date < NOW() AND due_date >= NOW() - INTERVAL '30 days'
         ) AS days_1_30_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
+        COALESCE(SUM(base_currency_amount - (amount_paid * exchange_rate)) FILTER (
           WHERE due_date < NOW() - INTERVAL '30 days' AND due_date >= NOW() - INTERVAL '60 days'
         ), 0) AS days_31_60_amount,
         COUNT(*) FILTER (
           WHERE due_date < NOW() - INTERVAL '30 days' AND due_date >= NOW() - INTERVAL '60 days'
         ) AS days_31_60_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
+        COALESCE(SUM(base_currency_amount - (amount_paid * exchange_rate)) FILTER (
           WHERE due_date < NOW() - INTERVAL '60 days' AND due_date >= NOW() - INTERVAL '90 days'
         ), 0) AS days_61_90_amount,
         COUNT(*) FILTER (
           WHERE due_date < NOW() - INTERVAL '60 days' AND due_date >= NOW() - INTERVAL '90 days'
         ) AS days_61_90_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
+        COALESCE(SUM(base_currency_amount - (amount_paid * exchange_rate)) FILTER (
           WHERE due_date < NOW() - INTERVAL '90 days'
         ), 0) AS days_90_plus_amount,
         COUNT(*) FILTER (
