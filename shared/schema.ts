@@ -732,6 +732,61 @@ export type InsertQuoteLine = z.infer<typeof insertQuoteLineSchema>;
 export type QuoteLine = typeof quoteLines.$inferSelect;
 
 // ===========================
+// Credit Notes (FTA-compliant corrections to issued invoices)
+// ===========================
+export const creditNotes = pgTable("credit_notes", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  number: text("number").notNull(),
+  customerName: text("customer_name").notNull(),
+  customerTrn: text("customer_trn"),
+  invoiceId: uuid("invoice_id").references(() => invoices.id, { onDelete: "set null" }),
+  invoiceNumber: text("invoice_number"),
+  date: timestamp("date").notNull(),
+  currency: text("currency").notNull().default("AED"),
+  subtotal: money("subtotal").notNull().default(0),
+  vatAmount: money("vat_amount").notNull().default(0),
+  total: money("total").notNull().default(0),
+  status: text("status").notNull().default("draft"), // draft | issued | void
+  reason: text("reason"),
+  journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyNumberUnique: unique("credit_notes_company_number_unique").on(table.companyId, table.number),
+  companyIdIdx: index("idx_credit_notes_company_id").on(table.companyId),
+  companyStatusIdx: index("idx_credit_notes_company_status").on(table.companyId, table.status),
+}));
+
+export const insertCreditNoteSchema = createInsertSchema(creditNotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCreditNote = z.infer<typeof insertCreditNoteSchema>;
+export type CreditNote = typeof creditNotes.$inferSelect;
+
+export const creditNoteLines = pgTable("credit_note_lines", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  creditNoteId: uuid("credit_note_id").notNull().references(() => creditNotes.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: real("quantity").notNull(),
+  unitPrice: money("unit_price").notNull(),
+  vatRate: vatRateType("vat_rate").notNull().default(0.05),
+  vatSupplyType: text("vat_supply_type").default("standard_rated"),
+}, (table) => ({
+  creditNoteIdIdx: index("idx_credit_note_lines_credit_note_id").on(table.creditNoteId),
+}));
+
+export const insertCreditNoteLineSchema = createInsertSchema(creditNoteLines).omit({
+  id: true,
+});
+
+export type InsertCreditNoteLine = z.infer<typeof insertCreditNoteLineSchema>;
+export type CreditNoteLine = typeof creditNoteLines.$inferSelect;
+
+// ===========================
 // Invoice Payments
 // ===========================
 export const invoicePayments = pgTable("invoice_payments", {

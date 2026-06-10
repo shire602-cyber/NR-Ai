@@ -414,6 +414,13 @@
       "when": 1770800000000,
       "tag": "0059_quotes",
       "breakpoints": false
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1770900000000,
+      "tag": "0060_credit_notes",
+      "breakpoints": false
     }
   ]
 }
