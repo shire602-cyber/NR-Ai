@@ -110,6 +110,11 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
 export function OnboardingWizard() {
   const [, setLocation] = useLocation();
   const [showWizard, setShowWizard] = useState(false);
+  // The /api/onboarding query refetches on focus and after unrelated
+  // mutations. Auto-open must fire at most once per mount or the wizard
+  // re-opens over the app every refetch, and its overlay swallows every
+  // click — the user can see the sidebar but nothing responds.
+  const [hasAutoShown, setHasAutoShown] = useState(false);
 
   const { data: onboarding, isLoading } = useQuery<UserOnboarding>({
     queryKey: ['/api/onboarding'],
@@ -181,10 +186,11 @@ export function OnboardingWizard() {
   });
 
   useEffect(() => {
-    if (onboarding && !onboarding.isOnboardingComplete && onboarding.showTour) {
+    if (!hasAutoShown && onboarding && !onboarding.isOnboardingComplete && onboarding.showTour) {
       setShowWizard(true);
+      setHasAutoShown(true);
     }
-  }, [onboarding]);
+  }, [onboarding, hasAutoShown]);
 
   const handleStepAction = (step: OnboardingStep) => {
     completeMutation.mutate(step.key);
@@ -213,7 +219,15 @@ export function OnboardingWizard() {
   const Icon = nextStep.icon;
 
   return (
-    <Dialog open={showWizard} onOpenChange={setShowWizard}>
+    <Dialog
+      open={showWizard}
+      onOpenChange={(open) => {
+        setShowWizard(open);
+        // Closing by any means (X, Esc, outside click) is a dismissal —
+        // persist it so the tour doesn't ambush the user again next load.
+        if (!open) skipMutation.mutate();
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center">
