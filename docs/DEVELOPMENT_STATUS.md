@@ -100,6 +100,25 @@ The loop is closed in all directions:
   (Settings → Source: repo NR-Ai, branch main, auto-deploy on) — backend
   deploys fine after PR #1 merge.
 
+## Reliability program (the goal: most reliable accounting app, period)
+
+- **Browser E2E in CI** (`npm run e2e`, tests/e2e/full-crawl.mjs): every PR
+  crawls all ~67 workspace routes in headless Chromium against a real
+  Postgres — JS errors, error screens, blank pages, redirects, and 4xx/5xx
+  API responses fail the build. Plus a real double-entry journal flow.
+  Extend, never bypass. Tolerated-API list in the script must stay short.
+- **Quarantined features to rehabilitate** (tsconfig excludes = broken
+  server modules, pages intentionally unrouted): quotes, credit-notes,
+  purchase-orders, employees (duplicate of payroll's — reconcile), 
+  cost-centers, financial-statements, reconciliation-rules, invoice-templates,
+  api-keys, bank, billing/stripe, webhooks, push. Rehab = fix compile,
+  register routes, route the page, add an E2E flow, remove from excludes.
+- **Account-type test matrix**: extend the crawl to run as customer,
+  firm_admin (assigned/unassigned), client portal user — each sees the
+  right nav and no dead screens.
+- **Flow-test backlog**: invoice create→send→PDF, receipt upload→OCR draft,
+  VAT workpaper pull→approve→export, bank CSV import→reconcile, payroll run.
+
 ## Where to go next (priority order)
 
 1. **Verify Railway deploys are healthy** after the PR #1 merge; fix boot

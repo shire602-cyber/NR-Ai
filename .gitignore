@@ -39,3 +39,4 @@ coverage
 .replit
 replit.md
 *.nix
+tests/e2e/.artifacts/
