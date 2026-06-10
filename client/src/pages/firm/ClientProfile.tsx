@@ -182,9 +182,10 @@ export default function ClientProfile() {
     },
   });
 
-  const { data: summary, isLoading } = useQuery<ClientSummary>({
+  const { data: summary, isLoading, error: summaryError } = useQuery<ClientSummary>({
     queryKey: [`/api/firm/clients/${companyId}/summary`],
     enabled: !!companyId,
+    retry: 1,
   });
 
   const { data: firmStaff = [] } = useQuery<StaffMember[]>({
@@ -237,10 +238,21 @@ export default function ClientProfile() {
   }
 
   if (!summary) {
+    // Surface the server's actual reason — access denied, not-a-client, and
+    // genuinely-missing are different problems with different fixes.
+    const message =
+      (summaryError as any)?.message || 'Client not found';
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
-        <p className="font-medium">Client not found</p>
+        <p className="font-medium">{message}</p>
+        <p className="text-sm text-muted-foreground mt-1 max-w-md">
+          {message.toLowerCase().includes('access')
+            ? 'Your account does not have this client assigned. A firm owner can assign you from the client profile.'
+            : message.toLowerCase().includes('not an nra client')
+              ? 'This company exists but is not marked as a firm-managed client.'
+              : 'The link may be outdated, or the client was removed.'}
+        </p>
         <Button variant="ghost" onClick={() => navigate('/firm/clients')}>
           Back to portfolio
         </Button>

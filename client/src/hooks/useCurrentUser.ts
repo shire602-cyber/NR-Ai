@@ -8,6 +8,10 @@ export function useCurrentUser() {
     queryKey: currentUserQueryKey,
     queryFn: fetchCurrentUser,
     staleTime: 60_000,
-    retry: false,
+    // fetchCurrentUser resolves null for a real 401 (after a refresh
+    // attempt), so any thrown error here is transient — rate limiting,
+    // network, 5xx. Retry those instead of treating them as logged-out.
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 5000),
   });
 }

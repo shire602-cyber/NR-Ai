@@ -169,9 +169,11 @@ export const limiterProfiles = {
     message: 'AI rate limit exceeded. Please try again later.',
   } as RouteLimit,
   read: {
-    // Relaxed for GET-heavy dashboards: 5x the api budget.
+    // Relaxed for GET-heavy dashboards: each page view fires 8-15 GETs and
+    // shared office IPs multiply that, so the ceiling must stay far above
+    // legitimate navigation while still capping abuse.
     windowMs: envInt('RL_READ_WINDOW_MS', 60_000),
-    max: envInt('RL_READ_MAX', 500),
+    max: envInt('RL_READ_MAX', 1200),
     message: 'Too many requests. Please try again later.',
   } as RouteLimit,
 };
