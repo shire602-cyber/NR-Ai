@@ -8,6 +8,14 @@ import { createLogger } from '../config/logger';
 
 const logger = createLogger('purchase-orders-routes');
 
+// Client payloads carry ISO strings; Drizzle timestamp columns want Dates.
+function normalizePoDates<T extends { date?: unknown; expectedDeliveryDate?: unknown }>(data: T): T {
+  const out: any = { ...data };
+  if (out.date) out.date = new Date(out.date);
+  if (out.expectedDeliveryDate) out.expectedDeliveryDate = new Date(out.expectedDeliveryDate);
+  return out;
+}
+
 export function registerPurchaseOrderRoutes(app: Express) {
   // =====================================
   // Purchase Order Routes
@@ -59,7 +67,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const po = await storage.createPurchaseOrder({ ...poData, companyId });
+      const po = await storage.createPurchaseOrder(normalizePoDates({ ...poData, companyId }));
 
       if (lines && Array.isArray(lines)) {
         for (const line of lines) {
@@ -92,7 +100,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
       return res.status(400).json({ message: 'Cannot update a received purchase order' });
     }
 
-    const updated = await storage.updatePurchaseOrder(id, updateData);
+    const updated = await storage.updatePurchaseOrder(id, normalizePoDates(updateData));
 
     if (lines && Array.isArray(lines)) {
       await storage.deletePurchaseOrderLinesByPurchaseOrderId(id);
