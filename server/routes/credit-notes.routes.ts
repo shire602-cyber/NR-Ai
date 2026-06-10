@@ -4,9 +4,17 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { requireFeature } from '../middleware/featureGate';
 import { storage } from '../storage';
 import { generateCreditNotePDF } from '../services/pdf-credit-note.service';
+import { ACCOUNT_CODES } from '../constants';
 import { createLogger } from '../config/logger';
 
 const logger = createLogger('credit-notes-routes');
+
+// Client payloads carry ISO strings; Drizzle timestamp columns want Dates.
+function normalizeCreditNoteDates<T extends { date?: unknown }>(data: T): T {
+  const out: any = { ...data };
+  if (out.date) out.date = new Date(out.date);
+  return out;
+}
 
 export function registerCreditNoteRoutes(app: Express) {
   // =====================================
@@ -59,7 +67,7 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const creditNote = await storage.createCreditNote({ ...creditNoteData, companyId });
+      const creditNote = await storage.createCreditNote(normalizeCreditNoteDates({ ...creditNoteData, companyId }));
 
       if (lines && Array.isArray(lines)) {
         for (const line of lines) {
@@ -92,7 +100,7 @@ export function registerCreditNoteRoutes(app: Express) {
       return res.status(400).json({ message: 'Cannot update an issued or voided credit note' });
     }
 
-    const updated = await storage.updateCreditNote(id, updateData);
+    const updated = await storage.updateCreditNote(id, normalizeCreditNoteDates(updateData));
 
     if (lines && Array.isArray(lines)) {
       await storage.deleteCreditNoteLinesByCreditNoteId(id);
@@ -152,10 +160,20 @@ export function registerCreditNoteRoutes(app: Express) {
     }
 
     // Create reversing journal entry
+    // Look up by stable account CODE first (see server/constants.ts); the
+    // default UAE chart has no account literally named 'Sales Revenue', so
+    // name-only lookups would 500 for every company on the seeded chart.
     const accounts = await storage.getAccountsByCompanyId(creditNote.companyId);
-    const accountsReceivable = accounts.find(a => a.nameEn === 'Accounts Receivable');
-    const salesRevenue = accounts.find(a => a.nameEn === 'Sales Revenue');
-    const vatPayable = accounts.find(a => a.nameEn === 'VAT Payable');
+    const byCode = (code: string) => accounts.find(a => (a as any).code === code);
+    const accountsReceivable =
+      byCode(ACCOUNT_CODES.AR) ?? accounts.find(a => a.nameEn === 'Accounts Receivable');
+    const salesRevenue =
+      byCode(ACCOUNT_CODES.REVENUE) ??
+      byCode(ACCOUNT_CODES.REVENUE_ALT) ??
+      accounts.find(a => ['Sales Revenue', 'Product Sales', 'Service Revenue'].includes(a.nameEn));
+    const vatPayable =
+      byCode(ACCOUNT_CODES.VAT_OUTPUT) ??
+      accounts.find(a => a.nameEn === 'VAT Payable' || a.nameEn === 'VAT Payable (Output VAT)');
 
     if (!accountsReceivable || !salesRevenue) {
       return res.status(500).json({ message: 'Required accounts not found (Accounts Receivable, Sales Revenue)' });

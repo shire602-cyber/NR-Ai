@@ -34,7 +34,7 @@ async function makeEntryNumberAllocator(
   const likePattern = prefix + '-%';
 
   const result = await client.query(
-    `SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM $1) AS INTEGER)), 0) AS max_seq
+    `SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM $1::int) AS INTEGER)), 0) AS max_seq
        FROM journal_entries
       WHERE company_id = $2 AND entry_number LIKE $3`,
     [counterStart, companyId, likePattern],

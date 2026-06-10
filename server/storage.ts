@@ -9,6 +9,8 @@ import type {
   InvoiceLine, InsertInvoiceLine,
   Quote, InsertQuote,
   QuoteLine, InsertQuoteLine,
+  CreditNote, InsertCreditNote,
+  CreditNoteLine, InsertCreditNoteLine,
   Receipt, InsertReceipt,
   CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
@@ -77,6 +79,8 @@ import {
   invoiceLines,
   quotes,
   quoteLines,
+  creditNotes,
+  creditNoteLines,
   receipts,
   customerContacts,
   waitlist,
@@ -1325,6 +1329,11 @@ export class DatabaseStorage implements IStorage {
     // SUBSTRING position 13 (1-based) per Postgres semantics.
     const counterStart = prefix.length + 2;
 
+    // NOTE: the ::int cast on the position parameter is load-bearing. Bound
+    // parameters arrive as text, and SUBSTRING(x FROM <text>) is the REGEX
+    // form — it returned NULL for every row, so MAX was always 0 and every
+    // entry was numbered -001 (the second entry of a day then failed the
+    // unique constraint).
     // Atomic next-number generation. Two-pronged defence:
     // 1) Per-(company, date) advisory lock serialises concurrent generators in
     //    the same Postgres session pool, so they don't both compute MAX+1.
@@ -1341,7 +1350,7 @@ export class DatabaseStorage implements IStorage {
     try {
       const result: any = await db.execute(sql`
         SELECT COALESCE(
-          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}) AS INTEGER)),
+          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
           0
         ) AS max_seq
         FROM journal_entries
@@ -2146,6 +2155,83 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteLinesByQuoteId(quoteId: string): Promise<void> {
     await db.delete(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+  }
+
+  // Credit notes
+  async getCreditNotesByCompanyId(companyId: string): Promise<CreditNote[]> {
+    return await db
+      .select()
+      .from(creditNotes)
+      .where(eq(creditNotes.companyId, companyId))
+      .orderBy(desc(creditNotes.createdAt));
+  }
+
+  async getCreditNote(id: string): Promise<CreditNote | undefined> {
+    const [note] = await db.select().from(creditNotes).where(eq(creditNotes.id, id)).limit(1);
+    return note;
+  }
+
+  async createCreditNote(data: InsertCreditNote): Promise<CreditNote> {
+    const [note] = await db.insert(creditNotes).values(data).returning();
+    return note;
+  }
+
+  async updateCreditNote(id: string, data: Partial<InsertCreditNote>): Promise<CreditNote | undefined> {
+    const [note] = await db
+      .update(creditNotes)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(creditNotes.id, id))
+      .returning();
+    return note;
+  }
+
+  async deleteCreditNote(id: string): Promise<void> {
+    await db.delete(creditNotes).where(eq(creditNotes.id, id));
+  }
+
+  async getCreditNoteLinesByCreditNoteId(creditNoteId: string): Promise<CreditNoteLine[]> {
+    return await db.select().from(creditNoteLines).where(eq(creditNoteLines.creditNoteId, creditNoteId));
+  }
+
+  async createCreditNoteLine(data: InsertCreditNoteLine): Promise<CreditNoteLine> {
+    const [line] = await db.insert(creditNoteLines).values(data).returning();
+    return line;
+  }
+
+  async deleteCreditNoteLinesByCreditNoteId(creditNoteId: string): Promise<void> {
+    await db.delete(creditNoteLines).where(eq(creditNoteLines.creditNoteId, creditNoteId));
+  }
+
+  /**
+   * Creates a journal entry plus balanced lines in one call: generates the
+   * entry number atomically, then delegates to createJournalEntry (which
+   * validates balance and wraps everything in a transaction). Used by
+   * document flows (credit notes, etc.) that post entries as a side effect.
+   */
+  async createJournalEntryWithLines(
+    companyId: string,
+    date: Date,
+    entryData: Partial<InsertJournalEntry> & { createdBy: string; postedBy?: string | null },
+    lines: Array<Omit<InsertJournalLine, 'entryId'>>,
+  ): Promise<{ entry: JournalEntry }> {
+    const entryNumber = await this.generateEntryNumber(companyId, date);
+    const isPosting = (entryData.status ?? 'posted') === 'posted';
+    const entry = await this.createJournalEntry(
+      {
+        ...entryData,
+        companyId,
+        date,
+        entryNumber,
+        status: isPosting ? 'posted' : 'draft',
+        source: entryData.source || 'manual',
+        sourceId: entryData.sourceId || null,
+        createdBy: entryData.createdBy,
+        postedBy: isPosting ? (entryData.postedBy ?? entryData.createdBy) : null,
+        postedAt: isPosting ? new Date() : null,
+      } as InsertJournalEntry & { postedAt?: Date | null },
+      lines,
+    );
+    return { entry };
   }
 
   // Budgets
@@ -3560,7 +3646,7 @@ export class DatabaseStorage implements IStorage {
       const counterStart = prefix.length + 2;
       const numResult: any = await tx.execute(sql`
         SELECT COALESCE(
-          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}) AS INTEGER)),
+          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
           0
         ) AS max_seq
         FROM journal_entries
