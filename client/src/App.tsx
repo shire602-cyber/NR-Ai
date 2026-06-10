@@ -93,6 +93,7 @@ const Inventory = lazy(() => import('@/pages/Inventory'));
 const Quotes = lazy(() => import('@/pages/Quotes'));
 const CreditNotes = lazy(() => import('@/pages/CreditNotes'));
 const PurchaseOrders = lazy(() => import('@/pages/PurchaseOrders'));
+const CostCenters = lazy(() => import('@/pages/CostCenters'));
 const ExchangeRates = lazy(() => import('@/pages/ExchangeRates'));
 const RecurringInvoices = lazy(() => import('@/pages/RecurringInvoices'));
 const PaymentChasing = lazy(() => import('@/pages/PaymentChasing'));
@@ -557,6 +558,7 @@ function Router() {
           <Route path="/quotes" component={Quotes} />
           <Route path="/credit-notes" component={CreditNotes} />
           <Route path="/purchase-orders" component={PurchaseOrders} />
+          <Route path="/cost-centers" component={CostCenters} />
           <Route path="/exchange-rates" component={ExchangeRates} />
           <Route path="/payroll" component={Payroll} />
           <Route path="/bill-pay" component={BillPay} />

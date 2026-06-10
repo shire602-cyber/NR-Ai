@@ -58,6 +58,7 @@ import { registerComplianceDashboardRoutes } from './routes/compliance-dashboard
 import { registerQuoteRoutes } from './routes/quotes.routes';
 import { registerCreditNoteRoutes } from './routes/credit-notes.routes';
 import { registerPurchaseOrderRoutes } from './routes/purchase-orders.routes';
+import { registerCostCenterRoutes } from './routes/cost-centers.routes';
 import { registerAdminHealthRoutes } from './routes/admin-health.routes';
 import { registerBankStatementRoutes } from './routes/bank-statements.routes';
 import { registerExchangeRateRoutes } from './routes/exchange-rates.routes';
@@ -116,6 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerQuoteRoutes(app);
   registerCreditNoteRoutes(app);
   registerPurchaseOrderRoutes(app);
+  registerCostCenterRoutes(app);
 
   // ─── Reporting & Analytics ──────────────────────────────
   registerDashboardRoutes(app);

@@ -11,7 +11,6 @@
     "server/routes/api-keys.routes.ts",
     "server/routes/bank.routes.ts",
     "server/routes/billing.routes.ts",
-    "server/routes/cost-centers.routes.ts",
     "server/routes/document-versions.routes.ts",
     "server/routes/employees.routes.ts",
     "server/routes/financial-statements.routes.ts",
