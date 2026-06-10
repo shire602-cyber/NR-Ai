@@ -14,6 +14,7 @@ import type {
   PurchaseOrder, InsertPurchaseOrder,
   PurchaseOrderLine, InsertPurchaseOrderLine,
   CostCenter, InsertCostCenter,
+  ReconciliationRule, InsertReconciliationRule,
   Receipt, InsertReceipt,
   CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
@@ -87,6 +88,7 @@ import {
   purchaseOrders,
   purchaseOrderLines,
   costCenters,
+  reconciliationRules,
   receipts,
   customerContacts,
   waitlist,
@@ -2161,6 +2163,49 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteLinesByQuoteId(quoteId: string): Promise<void> {
     await db.delete(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+  }
+
+  // Reconciliation rules
+  async getReconciliationRulesByCompanyId(companyId: string): Promise<ReconciliationRule[]> {
+    return await db
+      .select()
+      .from(reconciliationRules)
+      .where(eq(reconciliationRules.companyId, companyId))
+      .orderBy(desc(reconciliationRules.priority), reconciliationRules.createdAt);
+  }
+
+  async getReconciliationRule(id: string): Promise<ReconciliationRule | undefined> {
+    const [rule] = await db
+      .select()
+      .from(reconciliationRules)
+      .where(eq(reconciliationRules.id, id))
+      .limit(1);
+    return rule;
+  }
+
+  async createReconciliationRule(data: InsertReconciliationRule): Promise<ReconciliationRule> {
+    const [rule] = await db.insert(reconciliationRules).values(data).returning();
+    return rule;
+  }
+
+  async updateReconciliationRule(id: string, data: Partial<InsertReconciliationRule>): Promise<ReconciliationRule | undefined> {
+    const [rule] = await db
+      .update(reconciliationRules)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(reconciliationRules.id, id))
+      .returning();
+    return rule;
+  }
+
+  async deleteReconciliationRule(id: string): Promise<void> {
+    await db.delete(reconciliationRules).where(eq(reconciliationRules.id, id));
+  }
+
+  async incrementRuleAppliedCount(id: string): Promise<void> {
+    await db
+      .update(reconciliationRules)
+      .set({ timesApplied: sql`${reconciliationRules.timesApplied} + 1`, updatedAt: new Date() })
+      .where(eq(reconciliationRules.id, id));
   }
 
   // Cost centers

@@ -868,6 +868,36 @@ export type InsertCostCenter = z.infer<typeof insertCostCenterSchema>;
 export type CostCenter = typeof costCenters.$inferSelect;
 
 // ===========================
+// Reconciliation Rules (auto-categorize bank transactions)
+// ===========================
+export const reconciliationRules = pgTable("reconciliation_rules", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  matchField: text("match_field").notNull().default("description"), // description | reference | amount
+  matchType: text("match_type").notNull().default("contains"), // contains | equals | starts_with | regex
+  matchValue: text("match_value").notNull(),
+  category: text("category"),
+  memo: text("memo"),
+  priority: integer("priority").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  timesApplied: integer("times_applied").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_reconciliation_rules_company_id").on(table.companyId),
+}));
+
+export const insertReconciliationRuleSchema = createInsertSchema(reconciliationRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertReconciliationRule = z.infer<typeof insertReconciliationRuleSchema>;
+export type ReconciliationRule = typeof reconciliationRules.$inferSelect;
+
+// ===========================
 // Invoice Payments
 // ===========================
 export const invoicePayments = pgTable("invoice_payments", {
