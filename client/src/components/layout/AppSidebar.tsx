@@ -430,7 +430,9 @@ export function AppSidebar() {
         )}
 
         {/* ── Customer / admin — 7 collapsible accordion groups ── */}
-        {(userType === 'customer' || userType === 'admin') && (
+        {/* Default for every non-portal account type: an unknown or mistyped
+            userType must never strand the owner with an empty sidebar. */}
+        {userType !== 'client' && (
           <>
             <div className="px-3 pt-4 pb-1.5 text-[10px] uppercase tracking-[0.14em] text-sidebar-foreground/45 font-semibold">
               Overview
