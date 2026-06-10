@@ -425,6 +425,88 @@ async function main() {
     await fail('statements-rules-flow', { crash: e.message.slice(0, 150) });
   }
 
+  // ── 10. Account-type matrix: every kind of account must work ──────────────
+  // (a) 'client' userType: flat workspace sidebar — dashboard, documents,
+  //     reports must render with no admin/firm assumptions leaking in.
+  // (b) 'client_portal' userType: the separate portal layout.
+  async function crawlAs(label, userType, matrixRoutes) {
+    const mCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const mPage = await mCtx.newPage();
+    let mErrors = [];
+    let mApi = [];
+    mPage.on('pageerror', (e) => mErrors.push(`JS: ${e.message.slice(0, 200)}`));
+    mPage.on('response', (r) => {
+      const url = r.url();
+      if (!url.includes('/api/') || r.status() < 400 || r.status() === 401 || r.status() === 403) return;
+      const cleanPath = url.replace(BASE, '').split('?')[0];
+      if (TOLERATED_API.some((re) => re.test(cleanPath))) return;
+      mApi.push(`${r.request().method()} ${cleanPath} -> ${r.status()}`);
+    });
+
+    const mEmail = `e2e-${label}+${Date.now()}@test.local`;
+    const mReg = await mPage.request.post(`${BASE}/api/auth/register`, {
+      data: { email: mEmail, password: 'Password123!', name: `E2E ${label}`, companyName: `${label} Co LLC` },
+    });
+    if (mReg.status() >= 300) {
+      await fail(`${label} register`, { detail: `status ${mReg.status()}` });
+      await mCtx.close();
+      return;
+    }
+    // Complete onboarding via express so the dashboard doesn't redirect.
+    await mPage.goto(`${BASE}/dashboard`);
+    await mPage.waitForTimeout(2500);
+    if (mPage.url().includes('onboarding')) {
+      const express = mPage.locator('[data-testid="onboarding-express"]');
+      if (await express.count()) {
+        await express.click();
+        await mPage.waitForTimeout(3500);
+      }
+    }
+    const mDb = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await mDb.connect();
+    await mDb.query(`UPDATE users SET user_type = $1, email_verified = true WHERE email = $2`, [userType, mEmail]);
+    await mDb.end();
+
+    for (const route of matrixRoutes) {
+      mErrors = [];
+      mApi = [];
+      try {
+        await mPage.goto(`${BASE}${route}`, { timeout: 45000 });
+        await mPage.waitForTimeout(1500);
+        const finalUrl = mPage.url().replace(BASE, '');
+        const mainText = await mPage.locator('main').innerText().catch(() => '');
+        const bodyText = mainText || (await mPage.locator('body').innerText().catch(() => ''));
+        const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
+        const blank = bodyText.trim().length < 40;
+        if (mErrors.length || mApi.length || failText || blank) {
+          failures.push({
+            name: `${label} route ${route}`,
+            finalUrl: finalUrl !== route ? finalUrl : undefined,
+            failText,
+            blank: blank || undefined,
+            js: mErrors.slice(0, 3),
+            api: [...new Set(mApi)].slice(0, 5),
+          });
+          try {
+            await mPage.screenshot({ path: path.join(SHOT_DIR, `${label}_${route.replace(/[^a-z0-9-]+/gi, '_')}.png`) });
+          } catch { /* page gone */ }
+        }
+      } catch (e) {
+        failures.push({ name: `${label} route ${route}`, crash: e.message.slice(0, 150) });
+      }
+    }
+    await mCtx.close();
+  }
+
+  await crawlAs('client-type', 'client', [
+    '/dashboard', '/document-vault', '/tax-return-archive', '/compliance-calendar',
+    '/task-center', '/news-feed', '/reports',
+  ]);
+  await crawlAs('portal', 'client_portal', [
+    '/client-portal/dashboard', '/client-portal/invoices', '/client-portal/documents',
+    '/client-portal/statements', '/client-portal/messages',
+  ]);
+
   await browser.close();
 
   // ── Report ─────────────────────────────────────────────────────────────────
