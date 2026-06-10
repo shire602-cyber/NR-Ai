@@ -25,7 +25,7 @@ const AuthCallback = lazy(() => import('@/pages/AuthCallback'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const LandingPage = lazy(() => import('@/pages/LandingPage'));
+const LandingPage = lazy(() => import('@/pages/Landing'));
 const Services = lazy(() => import('@/pages/Services'));
 const Pricing = lazy(() => import('@/pages/Pricing'));
 const PublicInvoiceView = lazy(() => import('@/pages/PublicInvoiceView'));
