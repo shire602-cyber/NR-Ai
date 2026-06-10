@@ -1,8 +1,8 @@
-import type { Express,Request,Response } from 'express';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import type { Express, Request, Response } from 'express';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { detectAnomalies } from '../services/anomaly-detection.service';
 import { storage } from '../storage';
+import { detectAnomalies } from '../services/anomaly-detection.service';
 
 const severityMap: Record<string, 'low' | 'medium' | 'high' | 'critical'> = {
   info: 'low',

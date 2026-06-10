@@ -1,9 +1,8 @@
+import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { AlertCircle, RefreshCw, Home } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
-import { withCsrfHeader } from '@/lib/csrf';
-import { AlertCircle,Home,RefreshCw } from 'lucide-react';
-import { Component,ErrorInfo,ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
@@ -24,7 +23,7 @@ async function reportToServer(error: Error, info: ErrorInfo, name?: string) {
   try {
     await fetch(apiUrl('/api/client-errors'), {
       method: 'POST',
-      headers: await withCsrfHeader('POST', { 'Content-Type': 'application/json' }),
+      headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         message: error.message,

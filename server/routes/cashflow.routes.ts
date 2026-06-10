@@ -1,8 +1,8 @@
-import type { Express,Request,Response } from 'express';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import type { Express, Request, Response } from 'express';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { generateCashFlowForecast,getCashFlowHistory } from '../services/cashflow-forecast.service';
 import { storage } from '../storage';
+import { generateCashFlowForecast, getCashFlowHistory } from '../services/cashflow-forecast.service';
 
 export function registerCashFlowRoutes(app: Express) {
   // =====================================

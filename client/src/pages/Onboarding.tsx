@@ -1,37 +1,37 @@
-import { Badge } from '@/components/ui/badge';
+import { useState, useEffect } from 'react';
+import { useLocation, Link } from 'wouter';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient, apiRequest, ApiError } from '@/lib/queryClient';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { ApiError,apiRequest,queryClient } from '@/lib/queryClient';
-import type { Company } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { AnimatePresence,motion } from 'framer-motion';
-import {
-AlertCircle,
-ArrowLeft,
-ArrowRight,
-BarChart3,
-BookOpen,
-Briefcase,
-Building2,
-CheckCircle2,
-ChevronRight,
-FileText,
-Landmark,
-LayoutDashboard,
-Receipt,
-RefreshCw,
-Sparkles,
-Users,
-} from 'lucide-react';
-import { useEffect,useState } from 'react';
-import { Link,useLocation } from 'wouter';
 import { z } from 'zod';
+import {
+  Sparkles,
+  Building2,
+  BookOpen,
+  Landmark,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+  ArrowRight,
+  ArrowLeft,
+  LayoutDashboard,
+  Receipt,
+  BarChart3,
+  Users,
+  Briefcase,
+  ChevronRight,
+  RefreshCw,
+} from 'lucide-react';
+import type { Company } from '@shared/schema';
 
 const UAE_BANKS = [
   'Emirates NBD',
@@ -78,14 +78,11 @@ const STORAGE_KEY = (companyId: string) => `onboarding_step_${companyId}`;
 export default function Onboarding() {
   const { data: user, isLoading } = useCurrentUser();
   if (isLoading) return null;
-  const role = {
-    firmRole: user?.firmRole ?? null,
-    userType: user?.userType ?? 'customer',
-  };
+
   // Firm owners and firm admins manage clients, not their own books — they
   // get a different onboarding tailored around staff and client setup.
-  if (role.firmRole === 'firm_owner' || role.firmRole === 'firm_admin') {
-    return <FirmOnboarding firmRole={role.firmRole} />;
+  if (user?.firmRole === 'firm_owner' || user?.firmRole === 'firm_admin') {
+    return <FirmOnboarding firmRole={user.firmRole} />;
   }
   return <CustomerOnboarding />;
 }
@@ -137,13 +134,13 @@ function CustomerOnboarding() {
         setCurrentStep(saved as Step);
       }
     }
-  }, [company]);
+  }, [company?.id]);
 
   useEffect(() => {
     if (company) {
       localStorage.setItem(STORAGE_KEY(company.id), currentStep);
     }
-  }, [currentStep, company]);
+  }, [currentStep, company?.id]);
 
   const { data: accountsData } = useQuery<{ id: string; nameEn: string; type: string }[]>({
     queryKey: [`/api/companies/${company?.id}/accounts`],
@@ -334,6 +331,36 @@ function CustomerOnboarding() {
     }
   }
 
+  // Express setup: one screen → company created (chart of accounts auto-seeds
+  // server-side) → onboarding marked complete → straight to the dashboard.
+  const [expressSaving, setExpressSaving] = useState(false);
+
+  async function handleExpressSetup(data: { name: string; emirate: string; trnVatNumber: string }) {
+    setExpressSaving(true);
+    try {
+      const payload = { ...companyForm, ...data };
+      let target = company;
+      if (target) {
+        await saveCompanyMutation.mutateAsync(payload);
+      } else {
+        target = await createCompanyMutation.mutateAsync(payload);
+      }
+      await apiRequest('POST', `/api/companies/${target.id}/onboarding/complete`, {});
+      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      localStorage.removeItem(STORAGE_KEY(target.id));
+      toast({
+        title: 'Your books are ready',
+        description: 'UAE chart of accounts seeded — create your first invoice whenever you like.',
+      });
+      setLocation('/dashboard');
+    } catch (err) {
+      const message = (err as ApiError)?.message ?? 'Please try again.';
+      toast({ title: 'Express setup failed', description: message, variant: 'destructive' });
+    } finally {
+      setExpressSaving(false);
+    }
+  }
+
   async function handleBankNext() {
     if (bankForm.nameEn && bankForm.bankName) {
       await createBankMutation.mutateAsync(bankForm);
@@ -440,7 +467,12 @@ function CustomerOnboarding() {
               transition={{ duration: 0.25, ease: 'easeOut' }}
             >
               {currentStep === 'welcome' && (
-                <WelcomeStep companyName={company?.name} onNext={goNext} />
+                <WelcomeStep
+                  companyName={company?.name}
+                  onNext={goNext}
+                  onExpress={handleExpressSetup}
+                  expressSaving={expressSaving}
+                />
               )}
               {currentStep === 'company' && (
                 <CompanyStep
@@ -504,50 +536,142 @@ function CustomerOnboarding() {
 
 // ─── Step: Welcome ──────────────────────────────────────────────────────────
 
-function WelcomeStep({ companyName, onNext }: { companyName?: string; onNext: () => void }) {
+function WelcomeStep({
+  companyName,
+  onNext,
+  onExpress,
+  expressSaving,
+}: {
+  companyName?: string;
+  onNext: () => void;
+  onExpress: (data: { name: string; emirate: string; trnVatNumber: string }) => Promise<void>;
+  expressSaving: boolean;
+}) {
+  const [name, setName] = useState(companyName ?? '');
+  const [emirate, setEmirate] = useState('dubai');
+  const [trn, setTrn] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleExpress() {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError('Company name is required');
+      return;
+    }
+    if (trn.trim() && !/^[0-9]{15}$/.test(trn.trim())) {
+      setError('UAE TRN must be exactly 15 digits');
+      return;
+    }
+    setError(null);
+    await onExpress({ name: trimmed, emirate, trnVatNumber: trn.trim() });
+  }
+
   return (
     <div className="text-center space-y-8">
-      <div className="flex justify-center">
-        <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center shadow-lg">
-          <Sparkles className="w-10 h-10 text-white" />
-        </div>
-      </div>
-
       <div className="space-y-3">
         <Badge variant="secondary" className="px-3 py-1">
           Welcome to Muhasib.ai
         </Badge>
-        <h1 className="text-3xl font-bold tracking-tight">
-          {companyName ? `Hello, ${companyName}!` : "Let's get you set up"}
+        <h1 className="font-display text-[34px] md:text-[40px] leading-[1.05] tracking-tight">
+          {companyName ? `Hello, ${companyName}.` : 'Books ready in 90 seconds.'}
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
-          UAE-compliant accounting, VAT filing, and AI-powered insights — all in one place.
-          This quick setup takes about 3 minutes.
+          Your company name is all we need — the UAE chart of accounts, VAT setup, and
+          invoicing are configured automatically.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
-        {[
-          { icon: Building2, title: 'Company Profile', desc: 'Add your TRN and business details' },
-          { icon: BookOpen, title: 'Chart of Accounts', desc: 'UAE-standard accounts pre-configured' },
-          { icon: Landmark, title: 'Bank Account', desc: 'Connect for easy reconciliation' },
-        ].map(({ icon: Icon, title, desc }) => (
-          <Card key={title} className="border border-border/50">
-            <CardContent className="p-4 space-y-2">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Icon className="w-5 h-5 text-primary" />
-              </div>
-              <p className="font-medium text-sm">{title}</p>
-              <p className="text-xs text-muted-foreground">{desc}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {/* Express setup — the 90-second path */}
+      <Card className="max-w-md mx-auto text-left border-accent/30 shadow-lg">
+        <CardContent className="p-5 space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="express-name">Company name</Label>
+            <Input
+              id="express-name"
+              value={name}
+              onChange={(e) => { setName(e.target.value); setError(null); }}
+              placeholder="e.g. Pearl Trading LLC"
+              disabled={expressSaving}
+              data-testid="express-company-name"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Emirate</Label>
+              <Select value={emirate} onValueChange={setEmirate} disabled={expressSaving}>
+                <SelectTrigger data-testid="express-emirate">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {UAE_EMIRATES.map((e) => (
+                    <SelectItem key={e.value} value={e.value}>{e.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="express-trn">TRN <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input
+                id="express-trn"
+                value={trn}
+                onChange={(e) => { setTrn(e.target.value); setError(null); }}
+                placeholder="15 digits"
+                inputMode="numeric"
+                maxLength={15}
+                disabled={expressSaving}
+                data-testid="express-trn"
+              />
+            </div>
+          </div>
+          {error && (
+            <p role="alert" className="text-sm text-destructive flex items-center gap-1.5">
+              <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+            </p>
+          )}
+          <Button
+            size="lg"
+            className="w-full gap-2"
+            onClick={handleExpress}
+            disabled={expressSaving}
+            data-testid="onboarding-express"
+          >
+            {expressSaving ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Setting up your books…</>
+            ) : (
+              <><Sparkles className="w-4 h-4" /> Set up my books now</>
+            )}
+          </Button>
+          <p className="text-[11.5px] text-muted-foreground text-center leading-relaxed">
+            Seeds a UAE-standard chart of accounts with VAT input/output accounts.
+            You can add bank details and your TRN any time in Settings.
+          </p>
+        </CardContent>
+      </Card>
 
-      <Button size="lg" onClick={onNext} className="gap-2 px-8" data-testid="onboarding-start">
-        Get Started
-        <ArrowRight className="w-4 h-4" />
-      </Button>
+      <div className="space-y-4">
+        <Button variant="ghost" onClick={onNext} className="gap-2 text-muted-foreground hover:text-foreground" data-testid="onboarding-start">
+          Prefer the guided tour? Take the 3-minute setup
+          <ArrowRight className="w-4 h-4" />
+        </Button>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left">
+          {[
+            { icon: Building2, title: 'Company Profile', desc: 'Add your TRN and business details' },
+            { icon: BookOpen, title: 'Chart of Accounts', desc: 'UAE-standard accounts pre-configured' },
+            { icon: Landmark, title: 'Bank Account', desc: 'Connect for easy reconciliation' },
+          ].map(({ icon: Icon, title, desc }) => (
+            <Card key={title} className="border border-border/50">
+              <CardContent className="p-4 space-y-2">
+                <div className="w-9 h-9 rounded-lg bg-accent/10 flex items-center justify-center">
+                  <Icon className="w-5 h-5 text-accent" />
+                </div>
+                <p className="font-medium text-sm">{title}</p>
+                <p className="text-xs text-muted-foreground">{desc}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

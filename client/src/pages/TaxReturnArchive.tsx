@@ -1,35 +1,38 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { format,parseISO } from 'date-fns';
-import {
-AlertCircle,
-Building2,
-Calendar,
-CheckCircle2,
-Clock,
-Download,
-Eye,
-FileText,
-Loader2,
-Plus,
-Receipt,
-Search
+import { 
+  FileText, 
+  Download, 
+  Search, 
+  Calendar,
+  Loader2,
+  Plus,
+  Eye,
+  Filter,
+  Receipt,
+  Building2,
+  CheckCircle2,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
-import { useState } from 'react';
 
 interface TaxReturn {
   id: string;
@@ -56,7 +59,7 @@ const RETURN_TYPES = [
 ];
 
 export default function TaxReturnArchive() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState('');
@@ -177,22 +180,19 @@ export default function TaxReturnArchive() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            {locale === 'ar' ? 'أرشيف الإقرارات الضريبية' : 'Tax Return Archive'}
-          </h1>
-          <p className="text-muted-foreground">
-            {locale === 'ar' 
-              ? 'عرض جميع الإقرارات الضريبية المقدمة للهيئة الاتحادية للضرائب'
-              : 'View all tax returns filed with the Federal Tax Authority'}
-          </p>
-        </div>
-        <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-return">
-          <Plus className="w-4 h-4 mr-2" />
-          {locale === 'ar' ? 'إضافة إقرار' : 'Add Return'}
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Compliance"
+        title={locale === 'ar' ? 'أرشيف الإقرارات الضريبية' : 'Tax Return Archive'}
+        description={locale === 'ar'
+          ? 'عرض جميع الإقرارات الضريبية المقدمة للهيئة الاتحادية للضرائب'
+          : 'View all tax returns filed with the Federal Tax Authority'}
+        actions={
+          <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-return">
+            <Plus className="w-4 h-4 mr-2" />
+            {locale === 'ar' ? 'إضافة إقرار' : 'Add Return'}
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>

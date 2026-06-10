@@ -13,6 +13,6 @@
     "healthcheckPath": "/api/version",
     "healthcheckTimeout": 300,
     "preDeployCommand": "node dist/migrate.js",
-    "startCommand": "node dist/index.js"
+    "startCommand": "node --enable-source-maps dist/index.js"
   }
 }

@@ -1,45 +1,54 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import {
-Dialog,
-DialogContent,
-DialogDescription,
-DialogHeader,
-DialogTitle,
-DialogTrigger
-} from "@/components/ui/dialog";
-import {
-Select,
-SelectContent,
-SelectItem,
-SelectTrigger,
-SelectValue,
-} from "@/components/ui/select";
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useI18n } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import type { IntegrationSync } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import {
-Calculator,
-Check,
-Clock,
-Download,
-ExternalLink,
-FileSpreadsheet,
-History,
-Link2,
-Loader2,
-Sheet,
-Upload,
-Wallet,
-X,
-Zap
+import { 
+  Sheet, 
+  FileSpreadsheet, 
+  Download, 
+  Upload, 
+  Check, 
+  X, 
+  Loader2, 
+  ExternalLink,
+  Clock,
+  MessageSquare,
+  Calculator,
+  Wallet,
+  RefreshCw,
+  Zap,
+  Link2,
+  History,
+  Settings,
+  Power
 } from 'lucide-react';
-import { useState } from 'react';
-import { SiGoogle,SiQuickbooks,SiWhatsapp } from 'react-icons/si';
+import { SiGoogle, SiWhatsapp, SiQuickbooks } from 'react-icons/si';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { IntegrationSync } from '@shared/schema';
 
 interface IntegrationStatus {
   connected: boolean;
@@ -114,7 +123,7 @@ export default function Integrations() {
       : 'جهّز الرسائل والفواتير والتذكيرات لواتساب',
   };
 
-  const { data: integrationStatus, isLoading: _statusLoading } = useQuery<IntegrationsStatusResponse>({
+  const { data: integrationStatus, isLoading: statusLoading } = useQuery<IntegrationsStatusResponse>({
     queryKey: ['/api/integrations/status'],
   });
 
@@ -207,11 +216,13 @@ export default function Integrations() {
 
   return (
     <div className={`container max-w-6xl mx-auto py-8 px-4 ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2" data-testid="integrations-title">{t.title}</h1>
-        <p className="text-muted-foreground" data-testid="integrations-subtitle">{t.subtitle}</p>
-      </div>
+      <PageHeader
+        eyebrow="Settings"
+        title={t.title}
+        testId="integrations-title"
+        description={<span data-testid="integrations-subtitle">{t.subtitle}</span>}
+        className="mb-8"
+      />
 
       {/* Available Integrations */}
       <div className="mb-10">

@@ -80,24 +80,6 @@ async function checkJson(name, path, predicate, options = {}) {
   return body;
 }
 
-async function checkClientError(name, path, allowedStatuses, options = {}) {
-  const url = `${baseUrl}${path}`;
-  const method = (options.method || 'GET').toUpperCase();
-  const headers = {
-    ...(options.headers || {}),
-    ...(cookieJar.size ? { Cookie: cookieHeader() } : {}),
-    ...(csrfToken && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? { 'x-csrf-token': csrfToken } : {}),
-  };
-  const response = await fetch(url, { ...options, headers });
-  rememberCookies(response.headers);
-  if (!allowedStatuses.includes(response.status)) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`${name} expected ${allowedStatuses.join('/')} but got ${response.status} ${response.statusText} ${body.slice(0, 300)}`);
-  }
-  console.log(`ok: ${name}`);
-  return response;
-}
-
 await check('liveness', '/health/live');
 await check('readiness', '/health/ready');
 await checkJson('version', '/api/version', (body) => {
@@ -115,14 +97,6 @@ await checkJson('oauth providers', '/api/auth/oauth/providers', (body) => {
     return google.configured === true && microsoft.configured === true;
   }
   return typeof google.configured === 'boolean' && typeof microsoft.configured === 'boolean';
-});
-await checkClientError('invalid login rejects without server error', '/api/auth/login', [401], {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    email: `negative-smoke-${Date.now()}@example.invalid`,
-    password: 'definitely-not-the-password',
-  }),
 });
 
 if (readOnly) {

@@ -1,48 +1,64 @@
-import { CompanySwitcher } from '@/components/CompanySwitcher';
-import { useRTL } from '@/components/RTLProvider';
+import { useState, useEffect, useMemo } from 'react';
 import {
-Sidebar,
-SidebarContent,
-SidebarFooter,
-SidebarHeader,
-SidebarMenu,
-SidebarMenuButton,
-SidebarMenuItem,
-SidebarMenuSub,
-SidebarMenuSubButton,
-SidebarMenuSubItem,
-} from '@/components/ui/sidebar';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { removeToken } from '@/lib/auth';
-import { useI18n,useTranslation } from '@/lib/i18n';
-import { apiRequest } from '@/lib/queryClient';
-import { cn } from '@/lib/utils';
-import { useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence,motion } from 'framer-motion';
-import type { LucideIcon } from 'lucide-react';
-import {
-Banknote,
-BarChart3,
-BookMarked,
-Briefcase,
-CalendarDays,
-ChevronDown,
-ClipboardList,
-FileStack,
-FolderArchive,
-Languages,
-LayoutDashboard,
-ListTodo,
-LogOut,
-Newspaper,
-Settings,
-Shield,
-ShoppingCart,
-TrendingUp,
-Wallet
+  LayoutDashboard,
+  TrendingUp,
+  ShoppingCart,
+  BookMarked,
+  BarChart3,
+  Banknote,
+  Settings,
+  Briefcase,
+  Shield,
+  ChevronDown,
+  Languages,
+  LogOut,
+  FolderArchive,
+  FileStack,
+  CalendarDays,
+  ListTodo,
+  Newspaper,
+  Building2,
+  UserPlus,
+  FileUp,
+  History,
+  Database,
+  CreditCard,
+  Landmark,
+  PieChart,
+  ClipboardList,
+  ShieldAlert,
+  Zap,
+  Brain,
+  CalendarCheck,
+  LineChart,
+  Kanban,
+  Users,
+  Activity,
 } from 'lucide-react';
-import { useEffect,useMemo,useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { useLocation } from 'wouter';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+} from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
+import { useTranslation, useI18n } from '@/lib/i18n';
+import { useRTL } from '@/components/RTLProvider';
+import { removeToken } from '@/lib/auth';
+import { apiRequest } from '@/lib/queryClient';
+import { useQueryClient } from '@tanstack/react-query';
+import { CompanySwitcher } from '@/components/CompanySwitcher';
+import { BrandMark } from '@/components/BrandMark';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -244,7 +260,7 @@ export function AppSidebar() {
       setExpandedGroup(group);
       try { localStorage.setItem(SIDEBAR_LS_KEY, group); } catch { /* ignore */ }
     }
-  }, [location, allGroups, expandedGroup]);
+  }, [location, allGroups]);
 
   const toggleGroup = (key: string) => {
     setExpandedGroup(prev => {
@@ -367,8 +383,8 @@ export function AppSidebar() {
       >
         <SidebarHeader className="px-3 pt-4 pb-3 border-b border-sidebar-border/60 space-y-3">
           <div className="flex items-center gap-2.5">
-            <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-sidebar-primary to-sidebar-primary/70 flex items-center justify-center shrink-0 shadow-sm ring-1 ring-sidebar-primary/30">
-              <Wallet className="w-4 h-4 text-sidebar-primary-foreground" strokeWidth={2.25} />
+            <div className="relative shrink-0">
+              <BrandMark size="md" />
               <span aria-hidden className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sidebar-primary ring-2 ring-sidebar animate-pulse-dot" />
             </div>
             <div className="min-w-0">
@@ -429,8 +445,8 @@ export function AppSidebar() {
           </>
         )}
 
-        {/* ── Customer / admin — 7 collapsible accordion groups ── */}
-        {/* Default for every non-portal account type: an unknown or mistyped
+        {/* ── Customer / admin — 7 collapsible accordion groups ──
+            Default for every non-portal account type: an unknown or mistyped
             userType must never strand the owner with an empty sidebar. */}
         {userType !== 'client' && (
           <>

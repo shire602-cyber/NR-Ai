@@ -1,10 +1,10 @@
-import { useToast } from '@/hooks/use-toast';
+import { useEffect } from 'react';
+import { useLocation } from 'wouter';
+import { Loader2 } from 'lucide-react';
 import { currentUserQueryKey } from '@/hooks/useCurrentUser';
 import { fetchCurrentUser } from '@/lib/auth';
 import { queryClient } from '@/lib/queryClient';
-import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
-import { useLocation } from 'wouter';
+import { useToast } from '@/hooks/use-toast';
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {

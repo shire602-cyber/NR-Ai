@@ -1,5 +1,5 @@
-import { motion,useAnimation,useInView,Variants } from 'framer-motion';
-import { ReactNode,useEffect,useRef,useState } from 'react';
+import { motion, useInView, useAnimation, Variants } from 'framer-motion';
+import { useEffect, useRef, useState, ReactNode } from 'react';
 
 // Reusable animation variants.
 //

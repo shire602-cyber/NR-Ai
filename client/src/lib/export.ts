@@ -1,7 +1,7 @@
+import { apiRequest } from './queryClient';
 import { apiUrl } from './api';
 import { getAuthHeaders } from './auth';
 import { withCsrfHeader } from './csrf';
-import { apiRequest } from './queryClient';
 
 // Shape of one row in the OCR-format Excel export. Matches the server-side
 // schema in `server/services/excel-export.service.ts` so the request body and
@@ -210,7 +210,7 @@ export function formatCurrencyForExport(amount: number | null | undefined, curre
   return `${currency} ${amount.toFixed(2)}`;
 }
 
-export function prepareInvoicesForExport(invoices: any[], _locale: string = 'en'): ExportData {
+export function prepareInvoicesForExport(invoices: any[], locale: string = 'en'): ExportData {
   return {
     sheetName: 'Invoices',
     columns: [
@@ -236,7 +236,7 @@ export function prepareInvoicesForExport(invoices: any[], _locale: string = 'en'
   };
 }
 
-export function prepareReceiptsForExport(receipts: any[], _locale: string = 'en'): ExportData {
+export function prepareReceiptsForExport(receipts: any[], locale: string = 'en'): ExportData {
   return {
     sheetName: 'Expenses',
     columns: [

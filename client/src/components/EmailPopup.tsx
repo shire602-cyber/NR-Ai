@@ -1,11 +1,12 @@
+import { useState } from 'react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Gift, Sparkles, X } from 'lucide-react';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
-import { Gift,Sparkles,X } from 'lucide-react';
-import { useState } from 'react';
 
 interface EmailPopupProps {
   open: boolean;
@@ -33,7 +34,16 @@ export function EmailPopup({ open, onClose, locale = 'en' }: EmailPopupProps) {
     setLoading(true);
     
     try {
-      await apiRequest('POST', '/api/waitlist', { email, source: 'popup' });
+      const response = await fetch(apiUrl('/api/waitlist'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, source: 'popup' }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error?.message);
+      }
 
       toast({
         title: locale === 'en' ? 'Success!' : 'نجح!',

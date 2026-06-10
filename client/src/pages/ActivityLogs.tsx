@@ -1,31 +1,33 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
-import type { ActivityLog,Company,User as UserType } from '@shared/schema';
-import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import {
-Activity,
-Building2,
-Download,
-Edit,
-Eye,
-FileText,
-LogIn,
-LogOut,
-Mail,
-Plus,
-Receipt,
-Search,
-Settings,
-Trash2,
-User
-} from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { 
+  Activity, 
+  Search,
+  Filter,
+  User,
+  Building2,
+  FileText,
+  Receipt,
+  Settings,
+  Mail,
+  Trash2,
+  Edit,
+  Plus,
+  Eye,
+  LogIn,
+  LogOut,
+  Download
+} from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { format } from 'date-fns';
+import type { ActivityLog, User as UserType, Company } from '@shared/schema';
 
 export default function ActivityLogs() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -118,16 +120,18 @@ export default function ActivityLogs() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold" data-testid="text-logs-title">Activity Logs</h1>
-          <p className="text-muted-foreground">Complete audit trail of all system activities</p>
-        </div>
-        <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
-          <Download className="w-4 h-4 mr-2" />
-          Export Logs
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Admin"
+        title="Activity Logs"
+        testId="text-logs-title"
+        description="Complete audit trail of all system activities"
+        actions={
+          <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
+            <Download className="w-4 h-4 mr-2" />
+            Export Logs
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>

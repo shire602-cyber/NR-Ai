@@ -1,17 +1,17 @@
-import type { Express,Request,Response } from 'express';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import type { Express, Request, Response } from 'express';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { storage } from '../storage';
 import {
-aiValidation,
-generateClosingEntries,
-getCloseChecklist,
-getCloseHistory,
-listLockedPeriods,
-lockPeriod,
-unlockPeriod,
+  getCloseChecklist,
+  generateClosingEntries,
+  lockPeriod,
+  unlockPeriod,
+  listLockedPeriods,
+  aiValidation,
+  getCloseHistory,
 } from '../services/month-end.service';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
-import { storage } from '../storage';
 
 /**
  * Derive periodStart and periodEnd from a YYYY-MM query parameter.

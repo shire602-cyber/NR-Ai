@@ -5,29 +5,27 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-import compression from 'compression';
-import connectPgSimple from 'connect-pg-simple';
-import cookieParser from 'cookie-parser';
 import express from 'express';
 import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
 import passport from 'passport';
+import compression from 'compression';
+import cookieParser from 'cookie-parser';
 
-import './auth';
+import { validateEnv, isDevelopment } from './config/env';
 import { authCookieBaseOptions } from './config/cookies';
-import { isDevelopment,validateEnv } from './config/env';
 import { createLogger } from './config/logger';
-import { buildPgPoolConfig,closePool,ensureCriticalSchema,getPoolStats,pingDb,runMigrations } from './db';
-import { adminMiddleware,authMiddleware } from './middleware/auth';
-import { csrfErrorHandler,csrfProtection,csrfTokenHandler } from './middleware/csrf';
-import { globalErrorHandler,notFoundHandler } from './middleware/errorHandler';
+import { applySecurityMiddleware } from './middleware/security';
 import { requestId } from './middleware/requestId';
 import { requestLogger } from './middleware/requestLogger';
-import { applyRateLimitMiddleware,applySecurityMiddleware } from './middleware/security';
+import { globalErrorHandler, notFoundHandler } from './middleware/errorHandler';
+import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from './middleware/csrf';
 import { registerRoutes } from './routes';
-import { initScheduler } from './services/scheduler.service';
 import { initSocketServer } from './services/socket.service';
+import { setupVite, serveStatic } from './vite';
+import { initScheduler } from './services/scheduler.service';
+import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from './db';
 import { installGracefulShutdown } from './shutdown';
-import { serveStatic,setupVite } from './vite';
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -71,9 +69,6 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
-// ─── Rate limiting after body parsing so auth login keys can include email ──
-applyRateLimitMiddleware(app);
-
 // ─── Cookie parser (must run before CSRF + session) ─────────
 app.use(cookieParser(env.SESSION_SECRET));
 
@@ -82,7 +77,7 @@ const PgSession = connectPgSimple(session);
 app.use(
   session({
     store: new PgSession({
-      conObject: buildPgPoolConfig(env.DATABASE_URL),
+      conString: env.DATABASE_URL,
       tableName: 'session',
       createTableIfMissing: true,
     }),
@@ -99,6 +94,7 @@ app.use(
 // ─── Passport initialization ─────────────────────────────────
 app.use(passport.initialize());
 app.use(passport.session());
+import './auth';
 
 // ─── Request logging ─────────────────────────────────────────
 app.use(requestLogger);
@@ -107,7 +103,7 @@ app.use(requestLogger);
 app.get('/api/csrf-token', csrfTokenHandler);
 
 // ─── CSRF protection on state-changing requests ─────────────
-// Skips legacy Bearer-auth requests and a small allowlist (login/register).
+// Skips Bearer-auth requests and a small allowlist (login/register/portal).
 app.use(csrfProtection);
 
 // ─── Health check (before auth, always accessible) ───────────
@@ -116,25 +112,20 @@ app.get('/health/live', (_req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
 
-// Railway healthcheck endpoint. This stays DB-free so deploy readiness can
-// confirm the HTTP server is alive even while deeper dependencies recover.
+// Railway healthcheck endpoint. This must stay DB-free so deploy readiness is
+// about whether the HTTP server is alive, not whether downstream services are.
 app.get('/api/version', (_req, res) => {
-  const railwayCommit = process.env.RAILWAY_GIT_COMMIT_SHA;
-  const commit = railwayCommit && railwayCommit !== 'local'
-    ? railwayCommit
-    : process.env.COMMIT_SHA || null;
-
   res.status(200).json({
     status: 'ok',
     version: process.env.APP_VERSION || '1.0.0',
-    commit,
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || null,
     environment: env.NODE_ENV,
     uptime: process.uptime(),
   });
 });
 
 // Readiness probe — process is up and can reach the database. Minimal details
-// only; full internals stay behind the admin-only /health endpoint.
+// only; full internals stay behind authenticated operational routes.
 app.get('/health/ready', async (_req, res) => {
   const ping = await pingDb();
   res.status(ping.ok ? 200 : 503).json({
@@ -146,8 +137,8 @@ app.get('/health/ready', async (_req, res) => {
   });
 });
 
-// Detailed readiness/full health — admin-only because it reports internals.
-app.get('/health', authMiddleware, adminMiddleware, async (_req, res) => {
+// Readiness/full health — depends on DB. Reports pool + memory + version.
+app.get('/health', async (_req, res) => {
   const ping = await pingDb();
   const status = ping.ok ? 'ok' : 'degraded';
   const mem = process.memoryUsage();

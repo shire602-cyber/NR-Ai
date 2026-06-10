@@ -1,20 +1,24 @@
-import { Badge } from '@/components/ui/badge';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
-import { useQuery } from '@tanstack/react-query';
-import { formatDistanceToNow } from 'date-fns';
-import {
-Activity,
-AlertTriangle,
-BarChart3,
-Eye,
-MousePointer,
-PieChart as PieChartIcon
-} from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
 import { useState } from 'react';
-import { Bar,BarChart,CartesianGrid,Cell,Pie,PieChart,ResponsiveContainer,Tooltip,XAxis,YAxis } from 'recharts';
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { formatDistanceToNow } from 'date-fns';
+import { 
+  BarChart3, 
+  PieChart as PieChartIcon, 
+  TrendingUp,
+  Eye,
+  MousePointer,
+  AlertTriangle,
+  Activity,
+  Users,
+  Clock
+} from 'lucide-react';
 
 interface AnalyticsDashboard {
   summary: {
@@ -73,12 +77,11 @@ export default function Analytics() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold" data-testid="text-page-title">Usage Analytics</h1>
-        <p className="text-muted-foreground">
-          Monitor feature engagement and user activity
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Insights"
+        title="Usage Analytics"
+        description="Monitor feature engagement and user activity"
+      />
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         <Card>

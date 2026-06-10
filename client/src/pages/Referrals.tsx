@@ -1,26 +1,29 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import type { Referral,ReferralCode } from '@shared/schema';
-import { useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import {
-CheckCircle,
-Clock,
-Copy,
-DollarSign,
-Gift,
-Link2,
-Share2,
-Sparkles,
-Trophy,
-Users
+import { 
+  Gift, 
+  Users, 
+  Link2, 
+  Copy, 
+  Share2,
+  Trophy,
+  CheckCircle,
+  Clock,
+  DollarSign,
+  ArrowRight,
+  Sparkles
 } from 'lucide-react';
-import { useState } from 'react';
+import type { ReferralCode, Referral } from '@shared/schema';
 
 interface ReferralStats {
   code: string | null;
@@ -50,7 +53,7 @@ export default function Referrals() {
       setCopied(true);
       toast({ title: 'Link copied to clipboard!' });
       setTimeout(() => setCopied(false), 2000);
-    } catch (_err) {
+    } catch (err) {
       toast({ title: 'Failed to copy', variant: 'destructive' });
     }
   };
@@ -64,7 +67,7 @@ export default function Referrals() {
           text: 'Get 20% off your first month with my referral link!',
           url: referralLink,
         });
-      } catch (_err) {
+      } catch (err) {
         copyToClipboard();
       }
     } else {
@@ -91,12 +94,11 @@ export default function Referrals() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold" data-testid="text-page-title">Referral Program</h1>
-        <p className="text-muted-foreground">
-          Invite friends and earn rewards when they sign up
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Workspace"
+        title="Referral Program"
+        description="Invite friends and earn rewards when they sign up"
+      />
 
       {isLoading ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">

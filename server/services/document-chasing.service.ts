@@ -6,21 +6,21 @@
 // so they can be unit-tested in isolation; the DB-bound helpers at the
 // bottom drive the routes layer.
 
-import {
-CHASE_LEVELS,
-complianceCalendar,
-documentChases,
-documentRequirements,
-type ChaseChannel,
-type ChaseLevel,
-type ComplianceEvent,
-type ComplianceEventType,
-type DocumentChase,
-type DocumentRequirement,
-type DocumentType,
-} from '@shared/schema';
-import { and,asc,desc,eq,gte,lte,ne,sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, ne, sql } from 'drizzle-orm';
 import { db } from '../db';
+import {
+  documentRequirements,
+  documentChases,
+  complianceCalendar,
+  type DocumentRequirement,
+  type DocumentChase,
+  type ComplianceEvent,
+  type DocumentType,
+  type ChaseLevel,
+  type ChaseChannel,
+  type ComplianceEventType,
+  CHASE_LEVELS,
+} from '@shared/schema';
 
 // ──────────────────────────────────────────────────────────────────────
 // Pure logic (no DB) — exercised by tests/unit/document-chasing.test.ts

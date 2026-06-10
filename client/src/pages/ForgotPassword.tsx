@@ -1,30 +1,29 @@
-import { Button } from '@/components/ui/button';
-import {
-Card,
-CardContent,
-CardDescription,
-CardFooter,
-CardHeader,
-CardTitle,
-} from '@/components/ui/card';
-import {
-Form,
-FormControl,
-FormField,
-FormItem,
-FormLabel,
-FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
-import { apiUrl } from '@/lib/api';
-import { withCsrfHeader } from '@/lib/csrf';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft,Briefcase,CheckCircle2,Mail } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'wouter';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Link } from 'wouter';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
+import { apiUrl } from '@/lib/api';
+import { ArrowLeft, Briefcase, CheckCircle2, Mail } from 'lucide-react';
 
 const forgotSchema = z.object({
   email: z.string().email('Please enter a valid email'),
@@ -48,8 +47,7 @@ export default function ForgotPassword() {
     try {
       const res = await fetch(apiUrl('/api/auth/forgot-password'), {
         method: 'POST',
-        credentials: 'include',
-        headers: await withCsrfHeader('POST', { 'Content-Type': 'application/json' }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       if (!res.ok) {

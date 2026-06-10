@@ -1,32 +1,33 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import type { UserFeedback } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
 import { formatDistanceToNow } from 'date-fns';
-import {
-AlertCircle,
-Bug,
-CheckCircle,
-Clock,
-History,
-Lightbulb,
-MessageSquare,
-Send,
-Star,
-ThumbsUp
-} from 'lucide-react';
-import { useState } from 'react';
 import { useLocation } from 'wouter';
+import { 
+  MessageSquare, 
+  Bug, 
+  Lightbulb, 
+  ThumbsUp, 
+  Star,
+  Send,
+  History,
+  CheckCircle,
+  Clock,
+  AlertCircle
+} from 'lucide-react';
+import type { UserFeedback } from '@shared/schema';
 
 const FEEDBACK_TYPES = [
   { value: 'bug', label: 'Bug Report', icon: Bug, description: 'Report a problem or error' },
@@ -112,12 +113,11 @@ export default function Feedback() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold" data-testid="text-page-title">Feedback</h1>
-        <p className="text-muted-foreground">
-          Help us improve by sharing your thoughts and suggestions
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Workspace"
+        title="Feedback"
+        description="Help us improve by sharing your thoughts and suggestions"
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>

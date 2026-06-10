@@ -1,36 +1,38 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { formatDistanceToNow, format } from 'date-fns';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import type { ReminderLog,ReminderSetting } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import {
-AlertTriangle,
-Bell,
-CheckCircle,
-Clock,
-History,
-Mail,
-MessageSquare,
-Plus,
-Settings,
-XCircle
+import { 
+  Bell, 
+  Clock, 
+  Mail, 
+  MessageSquare,
+  Settings,
+  History,
+  Plus,
+  CheckCircle,
+  XCircle,
+  Send,
+  AlertTriangle
 } from 'lucide-react';
-import { useState } from 'react';
 import { SiWhatsapp } from 'react-icons/si';
-import { useLocation } from 'wouter';
+import type { ReminderSetting, ReminderLog } from '@shared/schema';
 
 const REMINDER_TYPES = [
   { value: 'invoice_overdue', label: 'Invoice Overdue', description: 'Send when invoice is past due date' },
@@ -145,20 +147,18 @@ export default function Reminders() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-page-title">Payment Reminders</h1>
-          <p className="text-muted-foreground">
-            Configure automated reminders for invoices and deadlines
-          </p>
-        </div>
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-create-reminder">
-              <Plus className="w-4 h-4 mr-2" />
-              Create Reminder
-            </Button>
-          </DialogTrigger>
+      <PageHeader
+        eyebrow="Operations"
+        title="Payment Reminders"
+        description="Configure automated reminders for invoices and deadlines"
+        actions={
+          <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-reminder">
+            <Plus className="w-4 h-4 mr-2" />
+            Create Reminder
+          </Button>
+        }
+      />
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Create Reminder Setting</DialogTitle>
@@ -327,7 +327,6 @@ export default function Reminders() {
             </div>
           </DialogContent>
         </Dialog>
-      </div>
 
       <Tabs defaultValue="settings">
         <TabsList>

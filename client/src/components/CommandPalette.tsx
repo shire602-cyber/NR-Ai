@@ -1,33 +1,34 @@
-import {
-CommandDialog,
-CommandEmpty,
-CommandGroup,
-CommandInput,
-CommandItem,
-CommandList,
-CommandSeparator,
-CommandShortcut,
-} from '@/components/ui/command';
-import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
-import {
-BarChart3,
-BookMarked,
-Briefcase,
-Building2,
-CreditCard,
-FileSpreadsheet,
-FileText,
-Home,
-Plus,
-Receipt,
-Settings,
-ShoppingBag,
-Sparkles,
-Users,
-Wallet
-} from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+  CommandShortcut,
+} from '@/components/ui/command';
+import {
+  Home,
+  FileText,
+  Receipt,
+  BookMarked,
+  Users,
+  BarChart3,
+  Wallet,
+  CreditCard,
+  Briefcase,
+  ShoppingBag,
+  Building2,
+  FileSpreadsheet,
+  Settings,
+  Plus,
+  Search,
+  Sparkles,
+} from 'lucide-react';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 
 interface PaletteItem {
   id: string;
@@ -117,8 +118,21 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
  * Provider that owns the command palette state and exposes Ctrl/Cmd+K to open
  * it. Place this once at the app root inside an authenticated layout.
  */
+const OPEN_EVENT = 'muhasib:command-palette';
+
+/** Open the command palette from anywhere (e.g. the header search button). */
+export function openCommandPalette() {
+  window.dispatchEvent(new CustomEvent(OPEN_EVENT));
+}
+
 export function CommandPaletteProvider() {
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpen = () => setOpen(true);
+    window.addEventListener(OPEN_EVENT, handleOpen);
+    return () => window.removeEventListener(OPEN_EVENT, handleOpen);
+  }, []);
 
   useKeyboardShortcuts([
     {

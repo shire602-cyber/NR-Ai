@@ -1,9 +1,9 @@
 import { randomUUID } from 'crypto';
 import { doubleCsrf } from 'csrf-csrf';
-import type { NextFunction,Request,Response } from 'express';
-import { authCookieBaseOptions } from '../config/cookies';
-import { getEnv,isProduction } from '../config/env';
+import type { Request, Response, NextFunction } from 'express';
+import { getEnv, isProduction } from '../config/env';
 import { createLogger } from '../config/logger';
+import { authCookieBaseOptions } from '../config/cookies';
 
 const log = createLogger('csrf');
 
@@ -16,6 +16,7 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/auth\/refresh-token$/,
   /^\/api\/auth\/forgot-password$/,
   /^\/api\/auth\/reset-password$/,
+  /^\/api\/portal\//,
 ];
 
 function hasBearerAuth(req: Request): boolean {

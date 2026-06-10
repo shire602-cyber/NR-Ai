@@ -1,28 +1,29 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState, useCallback } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { 
+  Upload, 
+  FileSpreadsheet, 
+  Download, 
+  CheckCircle2, 
+  XCircle, 
+  AlertCircle,
+  Loader2,
+  Mail,
+  Building2,
+  Users
+} from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { apiUrl } from '@/lib/api';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation } from '@tanstack/react-query';
-import {
-AlertCircle,
-Building2,
-CheckCircle2,
-Download,
-FileSpreadsheet,
-Loader2,
-Mail,
-Upload,
-Users,
-XCircle
-} from 'lucide-react';
-import { useCallback,useState } from 'react';
 
 interface PreviewData {
   fileName: string;
@@ -89,9 +90,9 @@ export default function ClientImport() {
 
   const handleFileSelect = useCallback((selectedFile: File) => {
     if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
-      toast({
-        variant: 'destructive',
-        title: 'Invalid file type',
+      toast({ 
+        variant: 'destructive', 
+        title: 'Invalid file type', 
         description: 'Please upload an Excel file (.xlsx) or CSV file'
       });
       return;
@@ -166,16 +167,18 @@ export default function ClientImport() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-import-title">Import Clients</h1>
-          <p className="text-muted-foreground">Bulk import client companies from Excel spreadsheets</p>
-        </div>
-        <Button variant="outline" onClick={downloadTemplate} data-testid="button-download-template">
-          <Download className="w-4 h-4 mr-2" />
-          Download Template
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Admin"
+        title="Import Clients"
+        testId="text-import-title"
+        description="Bulk import client companies from Excel spreadsheets"
+        actions={
+          <Button variant="outline" onClick={downloadTemplate} data-testid="button-download-template">
+            <Download className="w-4 h-4 mr-2" />
+            Download Template
+          </Button>
+        }
+      />
 
       {!importResults ? (
         <>

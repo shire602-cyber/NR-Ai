@@ -1,13 +1,13 @@
-import { and,eq,gte,inArray,lte } from "drizzle-orm";
-import type { Express,Request,Response } from "express";
-import type { Account,Invoice,InvoiceLine,JournalLine,Receipt } from "../../shared/schema";
-import { accounts,invoiceLines,invoices,journalEntries,journalLines,receipts } from "../../shared/schema";
-import { UAE_VAT_RATE } from "../constants";
-import { db } from "../db";
+import type { Express, Request, Response } from "express";
+import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { storage } from "../storage";
-import { uaeDayEnd,uaeDayStart } from "../utils/date";
+import { db } from "../db";
+import { eq, and, gte, lte, inArray, type SQL } from "drizzle-orm";
+import { journalEntries, journalLines, accounts, invoices, invoiceLines, receipts } from "../../shared/schema";
+import type { Account, JournalLine, Invoice, InvoiceLine, Receipt } from "../../shared/schema";
+import { uaeDayStart, uaeDayEnd } from "../utils/date";
+import { UAE_VAT_RATE } from "../constants";
 
 // Cash/bank account predicate — see dashboard.routes.ts for rationale.
 function isCashOrBankAccount(a: { code?: string | null; nameEn: string; subType?: string | null }): boolean {
@@ -115,7 +115,7 @@ export function registerReportRoutes(app: Express) {
     }
 
     const cashFlowData: any[] = [];
-    const currentDate = new Date(startDate);
+    let currentDate = new Date(startDate);
 
     while (currentDate <= now) {
       let periodEnd: Date;

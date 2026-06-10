@@ -15,8 +15,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { UAE_VAT_RATE } from '../constants';
 import { pool } from '../db';
+import { UAE_VAT_RATE } from '../constants';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -220,7 +220,7 @@ export function listRecentPeriods(
   referenceDate: Date = new Date(),
 ): VatPeriod[] {
   const periods: VatPeriod[] = [];
-  const _stepMonths = frequency === 'monthly' ? 1 : QUARTER_LENGTH_MONTHS;
+  const stepMonths = frequency === 'monthly' ? 1 : QUARTER_LENGTH_MONTHS;
   let cursor = referenceDate;
   for (let i = 0; i < count; i++) {
     const period = detectPeriod(frequency, periodStartMonth, cursor);
@@ -262,15 +262,12 @@ export function convertToAed(amount: number, rate: number): number {
   return round2(amount * rate);
 }
 
-export interface InvoiceLineForVat {
+interface InvoiceLineForVat {
   quantity: number;
   unitPrice: number;
   vatRate: number | null;
   vatSupplyType?: 'standard_rated' | 'zero_rated' | 'exempt' | 'out_of_scope' | null;
-  supplyEmirate?: string | null;
 }
-
-export type EmirateVatBreakdown = Record<string, { amount: number; vat: number }>;
 
 /**
  * Aggregate invoice lines into the FTA supply-type buckets used by the VAT 201
@@ -320,33 +317,6 @@ export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
   };
 }
 
-export function aggregateStandardRatedSalesByEmirate(
-  lines: InvoiceLineForVat[],
-  defaultEmirate = 'dubai',
-): EmirateVatBreakdown {
-  const byEmirate: EmirateVatBreakdown = {};
-  for (const line of lines) {
-    const lineAmount = (line.quantity || 0) * (line.unitPrice || 0);
-    const rate = line.vatRate ?? UAE_VAT_RATE;
-    const supply = line.vatSupplyType || 'standard_rated';
-    if (supply === 'out_of_scope' || supply === 'exempt' || supply === 'zero_rated' || rate === 0) {
-      continue;
-    }
-    const emirate = line.supplyEmirate || defaultEmirate || 'dubai';
-    const current = byEmirate[emirate] || { amount: 0, vat: 0 };
-    current.amount += lineAmount;
-    current.vat += lineAmount * rate;
-    byEmirate[emirate] = current;
-  }
-  for (const emirate of Object.keys(byEmirate)) {
-    byEmirate[emirate] = {
-      amount: round2(byEmirate[emirate].amount),
-      vat: round2(byEmirate[emirate].vat),
-    };
-  }
-  return byEmirate;
-}
-
 /**
  * Apply FTA Article 55 partial-exemption apportionment to an input VAT figure.
  * `exemptRatio` is the fraction of supplies that are exempt (0..1). Returns a
@@ -374,7 +344,6 @@ export function buildVat201Boxes(
   components: {
     standardRatedAmount: number;
     standardRatedVat: number;
-    standardRatedByEmirate?: EmirateVatBreakdown;
     zeroRatedAmount: number;
     exemptAmount: number;
     reverseChargeAmount: number;
@@ -408,54 +377,38 @@ export function buildVat201Boxes(
     box14PayableTax: 0,
   };
 
-  const addStandardRated = (targetEmirate: string, amount: number, vat: number) => {
-    const stdAmtForEmirate = round2(amount);
-    const stdVatForEmirate = round2(vat);
-    switch (targetEmirate) {
-      case 'abu_dhabi':
-        boxes.box1aAbuDhabiAmount = round2(boxes.box1aAbuDhabiAmount + stdAmtForEmirate);
-        boxes.box1aAbuDhabiVat = round2(boxes.box1aAbuDhabiVat + stdVatForEmirate);
-        break;
-      case 'sharjah':
-        boxes.box1cSharjahAmount = round2(boxes.box1cSharjahAmount + stdAmtForEmirate);
-        boxes.box1cSharjahVat = round2(boxes.box1cSharjahVat + stdVatForEmirate);
-        break;
-      case 'ajman':
-        boxes.box1dAjmanAmount = round2(boxes.box1dAjmanAmount + stdAmtForEmirate);
-        boxes.box1dAjmanVat = round2(boxes.box1dAjmanVat + stdVatForEmirate);
-        break;
-      case 'umm_al_quwain':
-        boxes.box1eUmmAlQuwainAmount = round2(boxes.box1eUmmAlQuwainAmount + stdAmtForEmirate);
-        boxes.box1eUmmAlQuwainVat = round2(boxes.box1eUmmAlQuwainVat + stdVatForEmirate);
-        break;
-      case 'ras_al_khaimah':
-        boxes.box1fRasAlKhaimahAmount = round2(boxes.box1fRasAlKhaimahAmount + stdAmtForEmirate);
-        boxes.box1fRasAlKhaimahVat = round2(boxes.box1fRasAlKhaimahVat + stdVatForEmirate);
-        break;
-      case 'fujairah':
-        boxes.box1gFujairahAmount = round2(boxes.box1gFujairahAmount + stdAmtForEmirate);
-        boxes.box1gFujairahVat = round2(boxes.box1gFujairahVat + stdVatForEmirate);
-        break;
-      case 'dubai':
-      default:
-        boxes.box1bDubaiAmount = round2(boxes.box1bDubaiAmount + stdAmtForEmirate);
-        boxes.box1bDubaiVat = round2(boxes.box1bDubaiVat + stdVatForEmirate);
-        break;
-    }
-  };
-
-  let stdAmt = round2(components.standardRatedAmount);
-  let stdVat = round2(components.standardRatedVat);
-  if (components.standardRatedByEmirate) {
-    stdAmt = 0;
-    stdVat = 0;
-    for (const [lineEmirate, totals] of Object.entries(components.standardRatedByEmirate)) {
-      addStandardRated(lineEmirate, totals.amount, totals.vat);
-      stdAmt = round2(stdAmt + totals.amount);
-      stdVat = round2(stdVat + totals.vat);
-    }
-  } else {
-    addStandardRated(emirate, stdAmt, stdVat);
+  const stdAmt = round2(components.standardRatedAmount);
+  const stdVat = round2(components.standardRatedVat);
+  switch (emirate) {
+    case 'abu_dhabi':
+      boxes.box1aAbuDhabiAmount = stdAmt;
+      boxes.box1aAbuDhabiVat = stdVat;
+      break;
+    case 'sharjah':
+      boxes.box1cSharjahAmount = stdAmt;
+      boxes.box1cSharjahVat = stdVat;
+      break;
+    case 'ajman':
+      boxes.box1dAjmanAmount = stdAmt;
+      boxes.box1dAjmanVat = stdVat;
+      break;
+    case 'umm_al_quwain':
+      boxes.box1eUmmAlQuwainAmount = stdAmt;
+      boxes.box1eUmmAlQuwainVat = stdVat;
+      break;
+    case 'ras_al_khaimah':
+      boxes.box1fRasAlKhaimahAmount = stdAmt;
+      boxes.box1fRasAlKhaimahVat = stdVat;
+      break;
+    case 'fujairah':
+      boxes.box1gFujairahAmount = stdAmt;
+      boxes.box1gFujairahVat = stdVat;
+      break;
+    case 'dubai':
+    default:
+      boxes.box1bDubaiAmount = stdAmt;
+      boxes.box1bDubaiVat = stdVat;
+      break;
   }
 
   // Box 8 totals output side; Box 11 totals input side; Boxes 12-14 net it out.
@@ -642,14 +595,13 @@ export async function calculateVatReturn(
             il.unit_price::numeric AS unit_price,
             il.vat_rate::numeric AS vat_rate,
             il.vat_supply_type AS vat_supply_type,
-            COALESCE(il.supply_emirate, $4) AS supply_emirate,
             i.id AS invoice_id
      FROM invoice_lines il
      JOIN invoices i ON i.id = il.invoice_id
      WHERE i.company_id = $1
        AND i.date >= $2 AND i.date <= $3
        AND i.status NOT IN ('void','draft','cancelled')`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end, company.emirate],
+    [companyId, resolvedPeriod.start, resolvedPeriod.end],
   );
 
   const invoiceIdSet = new Set<string>();
@@ -660,11 +612,9 @@ export async function calculateVatReturn(
       unitPrice: Number(row.unit_price) || 0,
       vatRate: row.vat_rate === null ? null : Number(row.vat_rate),
       vatSupplyType: row.vat_supply_type as InvoiceLineForVat['vatSupplyType'],
-      supplyEmirate: (row.supply_emirate as string | null) ?? company.emirate,
     };
   });
   const sales = aggregateInvoiceLines(lines);
-  const standardRatedByEmirate = aggregateStandardRatedSalesByEmirate(lines, company.emirate);
 
   // ── Purchases side ────────────────────────────────────────────────────────
   // Posted receipts only — drafts cannot support input VAT recovery.
@@ -788,7 +738,6 @@ export async function calculateVatReturn(
     {
       standardRatedAmount: sales.standardRatedAmount,
       standardRatedVat: sales.standardRatedVat,
-      standardRatedByEmirate,
       zeroRatedAmount: sales.zeroRatedAmount,
       exemptAmount: sales.exemptAmount,
       reverseChargeAmount: boxes.reverseChargeAmount,

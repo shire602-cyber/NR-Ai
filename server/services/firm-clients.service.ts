@@ -1,5 +1,5 @@
-import { normalizeClientServices,type ClientServiceCode } from '@shared/client-services';
 import { z } from 'zod';
+import { normalizeClientServices, type ClientServiceCode } from '@shared/client-services';
 
 /**
  * Firm-managed-client domain helpers.

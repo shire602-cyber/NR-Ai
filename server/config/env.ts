@@ -38,7 +38,7 @@ const envSchema = z.object({
   SUPPORT_CONTACT_NAME: z.string().optional(),
   SUPPORT_CONTACT_PHONE: z.string().optional(),
 
-  // === AI / Anthropic (used for OCR vision if set; also accepted via OPENAI_API_KEY with sk-ant- prefix) ===
+  // === AI / Anthropic (used for OCR vision if set) ===
   ANTHROPIC_API_KEY: z.string().optional(),
 
   // === Google Sheets Integration ===
@@ -49,21 +49,38 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_REFRESH_TOKEN: z.string().optional(),
 
+  // === Stripe Billing ===
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRICE_STARTER_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_STARTER_YEARLY: z.string().optional(),
+  STRIPE_PRICE_PROFESSIONAL_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_PROFESSIONAL_YEARLY: z.string().optional(),
+  STRIPE_PRICE_ENTERPRISE_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_ENTERPRISE_YEARLY: z.string().optional(),
+
+  // === Web Push (VAPID) ===
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().optional(),
+
+  // === Open Banking (Wio Bank) ===
+  WIO_CLIENT_ID: z.string().optional(),
+  WIO_CLIENT_SECRET: z.string().optional(),
+  WIO_API_BASE_URL: z.string().optional(),
+
+  // === Open Banking (Lean Technologies aggregator) ===
+  LEAN_APP_TOKEN: z.string().optional(),
+  LEAN_API_BASE_URL: z.string().optional(),
+
   // === Logging ===
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 
   // === Database / migrations ===
-  // Default OFF in production: migrations should run in the deploy release
-  // phase (`npm run db:migrate`), not on every app boot. Multi-replica boot
-  // races on DDL, and a failing migration on boot takes down ALL instances
-  // with no rollback story. Set AUTO_MIGRATE_ON_BOOT=true explicitly only in
-  // dev/test or single-instance environments.
   AUTO_MIGRATE_ON_BOOT: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
-  DATABASE_SSL: z.string().optional(),
-  DATABASE_SSL_REJECT_UNAUTHORIZED: z.enum(['true', 'false']).optional(),
 
   // === Email / SMTP (optional — features gracefully degrade if not set) ===
   SMTP_HOST: z.string().optional(),
@@ -75,6 +92,13 @@ const envSchema = z.object({
   // === Email / Resend (preferred over SMTP when set) ===
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().optional(),
+
+  // === Session store ===
+  // When set, Express sessions are persisted in Redis so they survive
+  // deploys and can be shared across replicas. When unset, the server
+  // falls back to an in-process MemoryStore (fine for single-instance
+  // development, sessions are lost on every restart in production).
+  REDIS_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -5,16 +5,16 @@
  * SIF file generation, and gratuity calculation.
  */
 
-import type { Express,Request,Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { createLogger } from '../config/logger';
-import { db } from '../db';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { recordAudit } from '../services/audit.service';
-import { assertPeriodNotLocked } from '../services/period-lock.service';
-import { generateSIFFile } from '../services/wps-sif.service';
 import { storage } from '../storage';
+import { db } from '../db';
+import { generateSIFFile } from '../services/wps-sif.service';
+import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { recordAudit } from '../services/audit.service';
 
 const log = createLogger('payroll');
 
@@ -963,11 +963,13 @@ export function registerPayrollRoutes(app: Express) {
       });
     }
 
-    const journalEntry = await storage.createJournalEntryWithGeneratedNumber(
+    const entryNumber = await storage.generateEntryNumber(run.company_id, periodEndDate);
+    const journalEntry = await storage.createJournalEntry(
       {
         companyId: run.company_id,
         date: periodEndDate,
         memo: `Payroll ${periodLabel} - ${items.length} employee(s)`,
+        entryNumber,
         status: 'posted',
         source: 'system',
         sourceId: id,
@@ -1001,7 +1003,7 @@ export function registerPayrollRoutes(app: Express) {
       after: {
         status: 'approved',
         journalEntryId: journalEntry.id,
-        entryNumber: journalEntry.entryNumber,
+        entryNumber,
         grossComp, netPay, pensionEmployee, pensionEmployer,
         gratuityAccrual, generalDeductions,
       },
@@ -1013,7 +1015,7 @@ export function registerPayrollRoutes(app: Express) {
         payrollRunId: id,
         approvedBy: userId,
         journalEntryId: journalEntry.id,
-        entryNumber: journalEntry.entryNumber,
+        entryNumber,
         grossComp,
         netPay,
       },

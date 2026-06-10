@@ -1,7 +1,7 @@
-import { useToast } from '@/hooks/use-toast';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useEffect } from 'react';
 import { useLocation } from 'wouter';
+import { useToast } from '@/hooks/use-toast';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface Props {
   allowedTypes: string[];

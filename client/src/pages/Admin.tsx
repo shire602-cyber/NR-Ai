@@ -1,45 +1,51 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { 
+  Settings, 
+  Users, 
+  DollarSign, 
+  Shield, 
+  Activity,
+  Database,
+  Bell,
+  Plug,
+  Save,
+  Plus,
+  Trash2,
+  Edit2,
+  ToggleLeft,
+  ToggleRight,
+  RefreshCw,
+  Search,
+  Download,
+  BarChart3,
+  TrendingUp,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Clock,
+  FileText,
+  Building2,
+  CreditCard,
+  Loader2
+} from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardFooter,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import type { AdminSetting,AuditLog,Company,SubscriptionPlan,User } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import {
-Activity,
-AlertTriangle,
-BarChart3,
-Bell,
-Building2,
-CheckCircle,
-CreditCard,
-Database,
-DollarSign,
-Download,
-Edit2,
-FileText,
-Loader2,
-Plug,
-Plus,
-RefreshCw,
-Save,
-Search,
-Settings,
-Shield,
-Trash2,
-Users
-} from 'lucide-react';
-import { useEffect,useState } from 'react';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import type { AdminSetting, SubscriptionPlan, User, Company, AuditLog } from '@shared/schema';
 
 export default function Admin() {
   const { toast } = useToast();
@@ -47,7 +53,7 @@ export default function Admin() {
   const [searchTerm, setSearchTerm] = useState('');
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [newPlanDialogOpen, setNewPlanDialogOpen] = useState(false);
-  const [_editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
+  const [editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   
@@ -141,7 +147,7 @@ export default function Admin() {
   });
 
   // Mutations
-  const _updateSettingMutation = useMutation({
+  const updateSettingMutation = useMutation({
     mutationFn: async (setting: { key: string; value: string }) => {
       return apiRequest('PUT', '/api/admin/settings', setting);
     },
@@ -272,7 +278,7 @@ export default function Admin() {
   );
 
   // Group settings by category
-  const _settingsByCategory = settings.reduce((acc, setting) => {
+  const settingsByCategory = settings.reduce((acc, setting) => {
     if (!acc[setting.category]) {
       acc[setting.category] = [];
     }
@@ -282,22 +288,24 @@ export default function Admin() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Manage platform settings, users, and subscriptions</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" data-testid="button-export-data">
-            <Download className="w-4 h-4 mr-2" />
-            Export Data
-          </Button>
-          <Button variant="outline" size="sm" data-testid="button-refresh">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Admin"
+        title="Admin Dashboard"
+        testId="text-admin-title"
+        description="Manage platform settings, users, and subscriptions"
+        actions={
+          <>
+            <Button variant="outline" size="sm" data-testid="button-export-data">
+              <Download className="w-4 h-4 mr-2" />
+              Export Data
+            </Button>
+            <Button variant="outline" size="sm" data-testid="button-refresh">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid grid-cols-6 w-full max-w-4xl">

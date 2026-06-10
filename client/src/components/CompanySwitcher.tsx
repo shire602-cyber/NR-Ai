@@ -1,18 +1,18 @@
-import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import type { Company } from '@shared/schema';
+import { Building2, Check, ChevronsUpDown } from 'lucide-react';
 import {
-DropdownMenu,
-DropdownMenuContent,
-DropdownMenuItem,
-DropdownMenuLabel,
-DropdownMenuSeparator,
-DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { switchActiveCompany } from '@/lib/activeCompany';
-import type { Company } from '@shared/schema';
-import { useQuery } from '@tanstack/react-query';
-import { Building2,Check,ChevronsUpDown } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 /**
  * Switch which company the rest of the UI is scoped to. Hidden when the

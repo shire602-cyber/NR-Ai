@@ -1,40 +1,26 @@
+import { Router, type Express, type Request, type Response } from 'express';
 import crypto from 'crypto';
 import Decimal from 'decimal.js';
-import { and,eq,sql } from 'drizzle-orm';
-import { type Express,type Request,type Response } from 'express';
-import { z } from 'zod';
-import {
-invoiceLines as invoiceLinesTable,invoices as invoicesTable,journalEntries as journalEntriesTable,
-journalEntryNumberSequences,
-journalLines as journalLinesTable,type Invoice
-} from '../../shared/schema';
-import { createLogger } from '../config/logger';
-import { ACCOUNT_CODES,UAE_VAT_RATE } from '../constants';
-import { db } from '../db';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { recordAudit } from '../services/audit.service';
-import { generateEInvoiceXML } from '../services/einvoice.service';
-import { hasSmtpConfig,sendInvoiceEmail,sendPaymentReminderEmail } from '../services/email.service';
-import { allocateInvoiceNumber,peekNextInvoiceNumber } from '../services/invoice-numbering.service';
-import { canTransition,isTerminal,isValidStatus } from '../services/invoice-state-machine';
-import { generateInvoicePDF } from '../services/pdf-invoice.service';
-import { assertPeriodNotLocked } from '../services/period-lock.service';
-import { assertRetentionExpired } from '../services/retention.service';
-import { createAndEmitNotification } from '../services/socket.service';
 import { storage } from '../storage';
+import { z } from 'zod';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { insertInvoiceSchema, type Invoice } from '../../shared/schema';
+import { generateInvoicePDF } from '../services/pdf-invoice.service';
+import { generateEInvoiceXML } from '../services/einvoice.service';
+import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
+import { createAndEmitNotification } from '../services/socket.service';
+import { db } from '../db';
+import { invoices as invoicesTable, invoiceLines as invoiceLinesTable } from '../../shared/schema';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { canTransition, isTerminal, isValidStatus } from '../services/invoice-state-machine';
+import { recordAudit } from '../services/audit.service';
+import { createLogger } from '../config/logger';
+import { UAE_VAT_RATE, ACCOUNT_CODES } from '../constants';
+import { allocateInvoiceNumber, peekNextInvoiceNumber } from '../services/invoice-numbering.service';
+import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('invoices');
-
-const emirateSchema = z.enum([
-  'abu_dhabi',
-  'dubai',
-  'sharjah',
-  'ajman',
-  'umm_al_quwain',
-  'ras_al_khaimah',
-  'fujairah',
-]);
 
 // Walk the user's companies to find the invoice. Storage queries are
 // tenant-scoped, so a hit also proves the user has access.
@@ -52,7 +38,6 @@ const invoiceLineInputSchema = z.object({
   quantity: z.coerce.number().finite().positive('Line quantity must be greater than 0'),
   unitPrice: z.coerce.number().finite().positive('Line unit price must be greater than 0'),
   vatRate: z.coerce.number().finite().min(0).max(1).default(UAE_VAT_RATE),
-  supplyEmirate: emirateSchema.optional(),
 });
 
 const invoiceLinesInputSchema = z.array(invoiceLineInputSchema).min(1, 'At least one invoice line is required');
@@ -76,62 +61,6 @@ function calculateInvoiceTotals(lines: InvoiceLineInput[]) {
     vatAmount: vatAmountD.toDecimalPlaces(2).toNumber(),
     total: subtotalD.plus(vatAmountD).toDecimalPlaces(2).toNumber(),
   };
-}
-
-function positiveExchangeRate(rawRate: unknown): number {
-  const rate = Number(rawRate ?? 1);
-  if (!Number.isFinite(rate) || rate <= 0) {
-    throw new Error('Exchange rate must be a positive number');
-  }
-  return rate;
-}
-
-function toBaseCurrencyAmount(amount: number, currency: string, exchangeRate: number): number {
-  const amountD = new Decimal(amount || 0);
-  return (currency || 'AED') === 'AED'
-    ? amountD.toDecimalPlaces(2).toNumber()
-    : amountD.times(exchangeRate).toDecimalPlaces(2).toNumber();
-}
-
-function withForeignAmount(
-  currency: string,
-  exchangeRate: number,
-  foreignDebit: number,
-  foreignCredit: number,
-) {
-  if ((currency || 'AED') === 'AED') {
-    return { foreignDebit: 0, foreignCredit: 0, exchangeRate: 1 };
-  }
-  return {
-    foreignCurrency: currency,
-    foreignDebit,
-    foreignCredit,
-    exchangeRate,
-  };
-}
-
-async function allocateJournalEntryNumberInTransaction(
-  companyId: string,
-  date: Date,
-  tx: typeof db,
-): Promise<string> {
-  const dateKey = date.toISOString().slice(0, 10);
-  const prefix = `JE-${dateKey.replace(/-/g, '')}`;
-  const [seq] = await tx
-    .insert(journalEntryNumberSequences)
-    .values({ companyId, entryDate: dateKey, lastValue: 1 })
-    .onConflictDoUpdate({
-      target: [
-        journalEntryNumberSequences.companyId,
-        journalEntryNumberSequences.entryDate,
-      ],
-      set: {
-        lastValue: sql`${journalEntryNumberSequences.lastValue} + 1`,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ lastValue: journalEntryNumberSequences.lastValue });
-  return `${prefix}-${String(seq.lastValue).padStart(3, '0')}`;
 }
 
 export function registerInvoiceRoutes(app: Express) {
@@ -255,25 +184,10 @@ export function registerInvoiceRoutes(app: Express) {
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    const company = await storage.getCompany(companyId);
-    if (!company) {
-      return res.status(404).json({ message: 'Company not found' });
-    }
-    const defaultSupplyEmirate = company.emirate || 'dubai';
 
     // Calculate totals using decimal.js to avoid binary-float drift on
     // NUMERIC(15,2) columns. Sums are kept as Decimal until the very end.
     const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
-    const invoiceCurrency = (invoiceData.currency || 'AED').toString();
-    let exchangeRate: number;
-    try {
-      exchangeRate = positiveExchangeRate(invoiceData.exchangeRate ?? 1);
-    } catch (err: any) {
-      return res.status(400).json({ message: err.message, code: 'INVALID_EXCHANGE_RATE' });
-    }
-    const baseSubtotal = toBaseCurrencyAmount(subtotal, invoiceCurrency, exchangeRate);
-    const baseVatAmount = toBaseCurrencyAmount(vatAmount, invoiceCurrency, exchangeRate);
-    const baseTotal = toBaseCurrencyAmount(total, invoiceCurrency, exchangeRate);
 
     // Convert date string to Date object if it's a string
     const invoiceDate = typeof date === 'string' ? new Date(date) : date;
@@ -281,21 +195,12 @@ export function registerInvoiceRoutes(app: Express) {
     // Block invoice creation in a locked period — invoice creation immediately
     // posts a revenue-recognition journal entry on this date.
     await assertPeriodNotLocked(companyId, invoiceDate);
-    const accounts = await storage.getAccountsByCompanyId(companyId);
-    const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
-    const salesRevenue = accounts.find(
-      a => a.isSystemAccount && a.type === 'income' && (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
-    );
-    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT);
-    if (!accountsReceivable || !salesRevenue || (vatAmount > 0 && !vatPayable)) {
-      return res.status(500).json({ message: 'Required system accounts are missing for invoice posting' });
-    }
 
     // FTA requires sequential, gap-free invoice numbering. We MUST allocate
     // and insert the invoice in a single transaction — otherwise a failed
     // insert after a successful allocation burns the number permanently and
     // the next allocation produces a gap (FTA Article 78 violation).
-    const { invoice, entryNumber } = await db.transaction(async (tx: typeof db) => {
+    const { allocatedNumber, invoice } = await db.transaction(async (tx: typeof db) => {
       const number = await allocateInvoiceNumber(companyId, 'invoice', invoiceDate, tx);
 
       log.info({
@@ -317,9 +222,6 @@ export function registerInvoiceRoutes(app: Express) {
           number,
           date: invoiceDate,
           companyId,
-          currency: invoiceCurrency,
-          exchangeRate,
-          baseCurrencyAmount: baseTotal,
           subtotal,
           vatAmount,
           total,
@@ -330,69 +232,68 @@ export function registerInvoiceRoutes(app: Express) {
         await tx.insert(invoiceLinesTable).values({
           invoiceId: insertedInvoice.id,
           ...line,
-          supplyEmirate: line.supplyEmirate || defaultSupplyEmirate,
         });
       }
 
-      const journalLines: Array<{
-        accountId: string;
-        debit: number;
-        credit: number;
-        description: string;
-        foreignCurrency?: string;
-        foreignDebit?: number;
-        foreignCredit?: number;
-        exchangeRate?: number;
-      }> = [
+      return { allocatedNumber: number, invoice: insertedInvoice };
+    });
+
+    // Revenue recognition: create journal entry immediately when invoice is raised
+    const accounts = await storage.getAccountsByCompanyId(companyId);
+    // Look up by code/type to avoid fragile name-string matching
+    const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
+    const salesRevenue = accounts.find(
+      a => a.isSystemAccount && a.type === 'income' && (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
+    );
+    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT);
+
+    if (accountsReceivable && salesRevenue) {
+      // Generate entry number atomically via storage helper
+      const entryNumber = await storage.generateEntryNumber(companyId, invoiceDate);
+
+      const journalLines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [
         {
           accountId: accountsReceivable.id,
-          debit: baseTotal,
+          debit: total,
           credit: 0,
-          description: `Invoice ${insertedInvoice.number} - ${insertedInvoice.customerName}`,
-          ...withForeignAmount(invoiceCurrency, exchangeRate, total, 0),
+          description: `Invoice ${invoice.number} - ${invoice.customerName}`,
         },
         {
           accountId: salesRevenue.id,
           debit: 0,
-          credit: baseSubtotal,
-          description: `Sales revenue - Invoice ${insertedInvoice.number}`,
-          ...withForeignAmount(invoiceCurrency, exchangeRate, 0, subtotal),
+          credit: subtotal,
+          description: `Sales revenue - Invoice ${invoice.number}`,
         },
       ];
       if (vatAmount > 0 && vatPayable) {
         journalLines.push({
           accountId: vatPayable.id,
           debit: 0,
-          credit: baseVatAmount,
-          description: `VAT output - Invoice ${insertedInvoice.number}`,
-          ...withForeignAmount(invoiceCurrency, exchangeRate, 0, vatAmount),
+          credit: vatAmount,
+          description: `VAT output - Invoice ${invoice.number}`,
         });
       }
 
-      const postingEntryNumber = await allocateJournalEntryNumberInTransaction(companyId, invoiceDate, tx);
-      const [entry] = await tx
-        .insert(journalEntriesTable)
-        .values({
+      await storage.createJournalEntry(
+        {
           companyId: companyId,
           date: invoiceDate,
-          memo: `Sales Invoice ${insertedInvoice.number} - ${insertedInvoice.customerName}`,
-          entryNumber: postingEntryNumber,
+          memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
+          entryNumber,
           status: 'posted',
           source: 'invoice',
-          sourceId: insertedInvoice.id,
+          sourceId: invoice.id,
           createdBy: userId,
           postedBy: userId,
           postedAt: invoiceDate,
-        })
-        .returning();
-      for (const line of journalLines) {
-        await tx.insert(journalLinesTable).values({ ...line, entryId: entry.id });
-      }
+        },
+        journalLines
+      );
 
-      return { invoice: insertedInvoice, entryNumber: postingEntryNumber };
-    });
-
-    log.info({ entryNumber, invoiceId: invoice.id }, 'Revenue recognition journal entry created');
+      log.info({ entryNumber, invoiceId: invoice.id }, 'Revenue recognition journal entry created');
+    } else {
+      log.warn('Could not create revenue recognition entry - missing accounts');
+    }
 
     log.info({ invoiceId: invoice.id }, 'Invoice created successfully');
 
@@ -439,11 +340,6 @@ export function registerInvoiceRoutes(app: Express) {
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
-    const company = await storage.getCompany(invoice.companyId);
-    if (!company) {
-      return res.status(404).json({ message: 'Company not found' });
-    }
-    const _defaultSupplyEmirate = company.emirate || 'dubai';
 
     // Get all draft entries for this invoice
     const entries = await storage.getJournalEntriesByCompanyId(invoice.companyId);
@@ -481,11 +377,6 @@ export function registerInvoiceRoutes(app: Express) {
     if (!invoice) {
       return res.status(404).json({ message: 'Invoice not found' });
     }
-    const company = await storage.getCompany(invoice.companyId);
-    if (!company) {
-      return res.status(404).json({ message: 'Company not found' });
-    }
-    const defaultSupplyEmirate = company.emirate || 'dubai';
 
     if (isTerminal(invoice.status)) {
       return res.status(422).json({
@@ -496,14 +387,6 @@ export function registerInvoiceRoutes(app: Express) {
 
     // Recompute totals from lines using decimal.js for precise money math.
     const { subtotal, vatAmount, total } = calculateInvoiceTotals(parsedLines);
-    const invoiceCurrency = (invoiceData.currency || invoice.currency || 'AED').toString();
-    let exchangeRate: number;
-    try {
-      exchangeRate = positiveExchangeRate(invoiceData.exchangeRate ?? invoice.exchangeRate ?? 1);
-    } catch (err: any) {
-      return res.status(400).json({ message: err.message, code: 'INVALID_EXCHANGE_RATE' });
-    }
-    const baseTotal = toBaseCurrencyAmount(total, invoiceCurrency, exchangeRate);
 
     // If a posted journal entry exists for this invoice and the amount is
     // changing, refuse. The user must void & reissue (or issue a credit
@@ -536,36 +419,22 @@ export function registerInvoiceRoutes(app: Express) {
       await assertPeriodNotLocked(invoice.companyId, invoiceDate);
     }
 
-    const updatedInvoice = await db.transaction(async (tx: typeof db) => {
-      const [updated] = await tx
-        .update(invoicesTable)
-        .set({
-          ...invoiceData,
-          date: invoiceDate,
-          currency: invoiceCurrency,
-          exchangeRate,
-          baseCurrencyAmount: baseTotal,
-          subtotal,
-          vatAmount,
-          total,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(invoicesTable.id, id), eq(invoicesTable.companyId, invoice.companyId)))
-        .returning();
-      if (!updated) {
-        throw new Error('Invoice not found');
-      }
-
-      await tx.delete(invoiceLinesTable).where(eq(invoiceLinesTable.invoiceId, id));
-      for (const line of parsedLines) {
-        await tx.insert(invoiceLinesTable).values({
-          invoiceId: id,
-          ...line,
-          supplyEmirate: line.supplyEmirate || defaultSupplyEmirate,
-        });
-      }
-      return updated;
+    // Update invoice
+    const updatedInvoice = await storage.updateInvoice(id, invoice.companyId, {
+      ...invoiceData,
+      date: invoiceDate,
+      subtotal,
+      vatAmount,
+      total,
     });
+
+    await storage.deleteInvoiceLinesByInvoiceId(id);
+    for (const line of parsedLines) {
+      await storage.createInvoiceLine({
+        invoiceId: id,
+        ...line,
+      });
+    }
 
     await recordAudit({
       userId,
@@ -717,7 +586,6 @@ export function registerInvoiceRoutes(app: Express) {
         throw err;
       }
     } else if (oldStatus !== status) {
-      let statusUpdatedInTransaction = false;
       // Void must reverse the original revenue-recognition JE so the GL
       // doesn't keep recognising sales that were never realised. Without
       // this, a voided invoice would still inflate revenue and AR.
@@ -742,85 +610,63 @@ export function registerInvoiceRoutes(app: Express) {
           id,
         );
         const originalEntry = existingEntries.find(e => e.status === 'posted');
-        if (originalEntry && (!accountsReceivable || !salesRevenue || (Number(invoice.vatAmount) > 0 && !vatPayable))) {
-          return res.status(500).json({ message: 'Required system accounts are missing for invoice reversal' });
-        }
 
         if (originalEntry && accountsReceivable && salesRevenue) {
           const reversalDate = new Date();
           // Block reversal posting into a locked period — without this we
           // could flip status without writing the offsetting JE.
           await assertPeriodNotLocked(invoice.companyId, reversalDate);
-          const invoiceCurrency = invoice.currency || 'AED';
-          const exchangeRate = positiveExchangeRate(invoice.exchangeRate || 1);
-          const baseSubtotal = toBaseCurrencyAmount(Number(invoice.subtotal), invoiceCurrency, exchangeRate);
-          const baseVatAmount = toBaseCurrencyAmount(Number(invoice.vatAmount), invoiceCurrency, exchangeRate);
-          const baseTotal = toBaseCurrencyAmount(Number(invoice.total), invoiceCurrency, exchangeRate);
+
+          const entryNumber = await storage.generateEntryNumber(
+            invoice.companyId,
+            reversalDate,
+          );
 
           const reversalLines: Array<{
             accountId: string;
             debit: number;
             credit: number;
             description: string;
-            foreignCurrency?: string;
-            foreignDebit?: number;
-            foreignCredit?: number;
-            exchangeRate?: number;
           }> = [
             {
               accountId: salesRevenue.id,
-              debit: baseSubtotal,
+              debit: Number(invoice.subtotal),
               credit: 0,
               description: `Reverse revenue - Void Invoice ${invoice.number}`,
-              ...withForeignAmount(invoiceCurrency, exchangeRate, Number(invoice.subtotal), 0),
             },
           ];
           if (Number(invoice.vatAmount) > 0 && vatPayable) {
             reversalLines.push({
               accountId: vatPayable.id,
-              debit: baseVatAmount,
+              debit: Number(invoice.vatAmount),
               credit: 0,
               description: `Reverse VAT - Void Invoice ${invoice.number}`,
-              ...withForeignAmount(invoiceCurrency, exchangeRate, Number(invoice.vatAmount), 0),
             });
           }
           reversalLines.push({
             accountId: accountsReceivable.id,
             debit: 0,
-            credit: baseTotal,
+            credit: Number(invoice.total),
             description: `Reverse A/R - Void Invoice ${invoice.number}`,
-            ...withForeignAmount(invoiceCurrency, exchangeRate, 0, Number(invoice.total)),
           });
 
-          let entryNumber = '';
-          await db.transaction(async (tx: typeof db) => {
-            entryNumber = await allocateJournalEntryNumberInTransaction(invoice.companyId, reversalDate, tx);
-            const [entry] = await tx
-              .insert(journalEntriesTable)
-              .values({
-                companyId: invoice.companyId,
-                date: reversalDate,
-                memo: `Void Invoice ${invoice.number} - reversal of original posting`,
-                entryNumber,
-                status: 'posted',
-                source: 'invoice',
-                sourceId: id,
-                reversedEntryId: originalEntry.id,
-                reversalReason: 'Invoice voided',
-                createdBy: userId,
-                postedBy: userId,
-                postedAt: reversalDate,
-              } as any)
-              .returning();
-            for (const line of reversalLines) {
-              await tx.insert(journalLinesTable).values({ ...line, entryId: entry.id });
-            }
-            await tx
-              .update(invoicesTable)
-              .set({ status })
-              .where(eq(invoicesTable.id, id));
-          });
-          statusUpdatedInTransaction = true;
+          await storage.createJournalEntry(
+            {
+              companyId: invoice.companyId,
+              date: reversalDate,
+              memo: `Void Invoice ${invoice.number} - reversal of original posting`,
+              entryNumber,
+              status: 'posted',
+              source: 'invoice',
+              sourceId: id,
+              reversedEntryId: originalEntry.id,
+              reversalReason: 'Invoice voided',
+              createdBy: userId,
+              postedBy: userId,
+              postedAt: reversalDate,
+            } as any,
+            reversalLines,
+          );
 
           log.info(
             { invoiceId: id, originalEntryId: originalEntry.id, entryNumber },
@@ -829,9 +675,7 @@ export function registerInvoiceRoutes(app: Express) {
         }
       }
 
-      if (!statusUpdatedInTransaction) {
-        await storage.updateInvoiceStatus(id, invoice.companyId, status);
-      }
+      await storage.updateInvoiceStatus(id, invoice.companyId, status);
     }
 
     const updatedInvoice = await storage.getInvoice(id, invoice.companyId);
@@ -1016,7 +860,6 @@ export function registerInvoiceRoutes(app: Express) {
         unitPrice: l.unitPrice,
         vatRate: l.vatRate,
         vatSupplyType: l.vatSupplyType,
-        supplyEmirate: l.supplyEmirate,
       })),
       company: {
         name: company.name,
@@ -1205,29 +1048,12 @@ export function registerInvoiceRoutes(app: Express) {
     await assertPeriodNotLocked(companyId, new Date());
 
     const originalLines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
-    const company = await storage.getCompany(companyId);
-    const defaultSupplyEmirate = company?.emirate || 'dubai';
-    const originalCurrency = original.currency || 'AED';
-    const originalExchangeRate = positiveExchangeRate(original.exchangeRate || 1);
-    const baseOriginalSubtotal = toBaseCurrencyAmount(Number(original.subtotal), originalCurrency, originalExchangeRate);
-    const baseOriginalVatAmount = toBaseCurrencyAmount(Number(original.vatAmount), originalCurrency, originalExchangeRate);
-    const baseOriginalTotal = toBaseCurrencyAmount(Number(original.total), originalCurrency, originalExchangeRate);
-    const accounts = await storage.getAccountsByCompanyId(companyId);
-    const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
-    const salesRevenue = accounts.find(a => a.isSystemAccount && a.type === 'income' && (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT));
-    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT);
-    if (!accountsReceivable || !salesRevenue || (Number(original.vatAmount) > 0 && !vatPayable)) {
-      return res.status(500).json({ message: 'Required system accounts are missing for credit-note posting' });
-    }
-    const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
-    const originalEntry = allEntries.find(e => e.sourceId === invoiceId && e.source === 'invoice');
 
     // Allocate credit-note number AND insert the credit note + its lines in
     // a single transaction so a failed insert rolls back the sequence
     // increment (otherwise FTA-required gap-free numbering breaks).
-    const now = new Date();
-    const { cnNumber, creditNote, entryNumber } = await db.transaction(async (tx: typeof db) => {
-      const number = await allocateInvoiceNumber(companyId, 'credit_note', now, tx);
+    const { cnNumber, creditNote } = await db.transaction(async (tx: typeof db) => {
+      const number = await allocateInvoiceNumber(companyId, 'credit_note', new Date(), tx);
 
       const [insertedCreditNote] = await tx
         .insert(invoicesTable)
@@ -1236,10 +1062,8 @@ export function registerInvoiceRoutes(app: Express) {
           number,
           customerName: original.customerName,
           customerTrn: original.customerTrn || undefined,
-          date: now,
+          date: new Date(),
           currency: original.currency,
-          exchangeRate: originalExchangeRate,
-          baseCurrencyAmount: -baseOriginalTotal,
           subtotal: -original.subtotal,
           vatAmount: -original.vatAmount,
           total: -original.total,
@@ -1257,70 +1081,67 @@ export function registerInvoiceRoutes(app: Express) {
           unitPrice: line.unitPrice,
           vatRate: line.vatRate,
           vatSupplyType: line.vatSupplyType || undefined,
-          supplyEmirate: line.supplyEmirate || defaultSupplyEmirate,
         } as any);
       }
 
-      const cnLines: Array<{
-        accountId: string;
-        debit: number;
-        credit: number;
-        description: string;
-        foreignCurrency?: string;
-        foreignDebit?: number;
-        foreignCredit?: number;
-        exchangeRate?: number;
-      }> = [
+      return { cnNumber: number, creditNote: insertedCreditNote };
+    });
+
+    // Reverse journal entry: Debit Sales Revenue + VAT, Credit Accounts Receivable
+    const accounts = await storage.getAccountsByCompanyId(companyId);
+    const accountsReceivable = accounts.find(a => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
+    const salesRevenue = accounts.find(a => a.isSystemAccount && a.type === 'income' && (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT));
+    const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT);
+
+    if (accountsReceivable && salesRevenue) {
+      const now = new Date();
+      const entryNumber = await storage.generateEntryNumber(companyId, now);
+
+      // Find the original invoice's journal entry to reverse
+      const allEntries = await storage.getJournalEntriesByCompanyId(companyId);
+      const originalEntry = allEntries.find(e => e.sourceId === invoiceId && e.source === 'invoice');
+
+      const cnLines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [
         {
           accountId: salesRevenue.id,
-          debit: baseOriginalSubtotal,
+          debit: original.subtotal,
           credit: 0,
-          description: `Reverse revenue - ${number}`,
-          ...withForeignAmount(originalCurrency, originalExchangeRate, Number(original.subtotal), 0),
+          description: `Reverse revenue - ${cnNumber}`,
         },
       ];
       if (original.vatAmount > 0 && vatPayable) {
         cnLines.push({
           accountId: vatPayable.id,
-          debit: baseOriginalVatAmount,
+          debit: original.vatAmount,
           credit: 0,
-          description: `Reverse VAT - ${number}`,
-          ...withForeignAmount(originalCurrency, originalExchangeRate, Number(original.vatAmount), 0),
+          description: `Reverse VAT - ${cnNumber}`,
         });
       }
       cnLines.push({
         accountId: accountsReceivable.id,
         debit: 0,
-        credit: baseOriginalTotal,
-        description: `Reduce A/R - ${number}`,
-        ...withForeignAmount(originalCurrency, originalExchangeRate, 0, Number(original.total)),
+        credit: original.total,
+        description: `Reduce A/R - ${cnNumber}`,
       });
 
-      const entryNumber = await allocateJournalEntryNumberInTransaction(companyId, now, tx);
-      const [entry] = await tx
-        .insert(journalEntriesTable)
-        .values({
+      await storage.createJournalEntry(
+        {
           companyId,
           date: now,
-          memo: `Credit Note ${number} - reversal of Invoice ${original.number}`,
+          memo: `Credit Note ${cnNumber} - reversal of Invoice ${original.number}`,
           entryNumber,
           status: 'posted',
           source: 'invoice',
-          sourceId: insertedCreditNote.id,
+          sourceId: creditNote.id,
           reversedEntryId: originalEntry?.id || null,
           reversalReason: 'Credit note issued',
           createdBy: userId,
           postedBy: userId,
           postedAt: now,
-        } as any)
-        .returning();
-      for (const line of cnLines) {
-        await tx.insert(journalLinesTable).values({ ...line, entryId: entry.id });
-      }
-
-      return { cnNumber: number, creditNote: insertedCreditNote, entryNumber };
-    });
-    log.info({ creditNoteId: creditNote.id, entryNumber }, 'Credit-note reversal journal entry created');
+        } as any,
+        cnLines
+      );
+    }
 
     await recordAudit({
       userId,

@@ -1,40 +1,53 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { format, parseISO, subMonths, startOfMonth, endOfMonth, subQuarters, startOfQuarter, endOfQuarter, subYears, startOfYear, endOfYear, differenceInDays } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Separator } from '@/components/ui/separator';
+import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
-import { useQuery } from '@tanstack/react-query';
-import { endOfMonth,endOfQuarter,endOfYear,format,startOfMonth,startOfQuarter,startOfYear,subMonths,subQuarters,subYears } from 'date-fns';
-import jsPDF from 'jspdf';
-import {
-ArrowDown,
-ArrowRightLeft,
-ArrowUp,
-Clock,
-Download,
-TrendingUp
-} from 'lucide-react';
-import { useMemo,useState } from 'react';
-import {
-Area,
-AreaChart,
-Bar,
-BarChart,
-CartesianGrid,
-Legend,
-Line,
-ResponsiveContainer,
-Tooltip,
-XAxis,
-YAxis
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area
 } from 'recharts';
+import { 
+  Download, 
+  TrendingUp, 
+  TrendingDown,
+  Calendar,
+  Clock,
+  AlertTriangle,
+  ArrowUp,
+  ArrowDown,
+  DollarSign,
+  Users,
+  FileText,
+  RefreshCw,
+  ArrowRightLeft
+} from 'lucide-react';
+import jsPDF from 'jspdf';
 
 interface CashFlowData {
   period: string;
@@ -68,14 +81,14 @@ interface PeriodComparison {
   changePercent: number;
 }
 
-const _COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
 export default function AdvancedReports() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [selectedPeriod, setSelectedPeriod] = useState('quarter');
-  const [_comparisonPeriod, _setComparisonPeriod] = useState('previous');
+  const [comparisonPeriod, setComparisonPeriod] = useState('previous');
   const [activeTab, setActiveTab] = useState('cashflow');
 
   const periodDates = useMemo(() => {
@@ -196,18 +209,13 @@ export default function AdvancedReports() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            {locale === 'ar' ? 'التقارير المتقدمة' : 'Advanced Financial Reports'}
-          </h1>
-          <p className="text-muted-foreground">
-            {locale === 'ar' 
-              ? 'تحليلات مالية متقدمة ومقارنات الفترات'
-              : 'Advanced analytics, cash flow analysis, and period comparisons'}
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
+      <PageHeader
+        eyebrow="Insights"
+        title={locale === 'ar' ? 'التقارير المتقدمة' : 'Advanced Financial Reports'}
+        description={locale === 'ar'
+          ? 'تحليلات مالية متقدمة ومقارنات الفترات'
+          : 'Advanced analytics, cash flow analysis, and period comparisons'}
+        actions={
           <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
             <SelectTrigger className="w-32" data-testid="select-period">
               <SelectValue />
@@ -218,8 +226,8 @@ export default function AdvancedReports() {
               <SelectItem value="year">{locale === 'ar' ? 'سنوي' : 'Yearly'}</SelectItem>
             </SelectContent>
           </Select>
-        </div>
-      </div>
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-3">

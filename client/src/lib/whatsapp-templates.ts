@@ -1,18 +1,19 @@
 import {
-BarChart3,
-Bell,
-BookOpen,
-CalendarClock,
-CheckCircle2,
-ClipboardCheck,
-CreditCard,
-FileText,
-FolderOpen,
-Megaphone,
-MessageSquare,
-PartyPopper,
-Receipt,
-UserPlus
+  Receipt,
+  FileText,
+  CreditCard,
+  CalendarClock,
+  Bell,
+  Megaphone,
+  UserPlus,
+  FolderOpen,
+  CheckCircle2,
+  BookOpen,
+  ClipboardCheck,
+  BarChart3,
+  Star,
+  MessageSquare,
+  PartyPopper,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────

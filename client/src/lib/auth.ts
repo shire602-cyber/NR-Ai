@@ -1,14 +1,9 @@
 import { apiUrl } from './api';
-import { clearCsrfToken,withCsrfHeader } from './csrf';
-import { clearAllCaches,clearPwaSessionMarker,rotatePwaSessionMarker } from './pwa';
+import { clearCsrfToken, withCsrfHeader } from './csrf';
+import { clearAllCaches, clearPwaSessionMarker, rotatePwaSessionMarker } from './pwa';
 
-// Authentication utilities
-const TOKEN_KEY = ['auth', 'token'].join('_');
-const USER_KEY = ['auth', 'user'].join('_');
-// Same key as activeCompany.ts — kept inline to avoid an import cycle
-// (activeCompany imports queryClient → which is loaded for unauth pages too).
-// Cleared on logout so the next user in this browser does not silently inherit
-// the previous user's switched workspace.
+const TOKEN_KEY = 'auth_token';
+const USER_KEY = 'auth_user';
 const ACTIVE_COMPANY_KEY = 'muhasib_active_company_id';
 
 export function getToken(): string | null {
@@ -22,17 +17,12 @@ export function setToken(token: string): void {
 }
 
 export function removeToken(): void {
-  // Remove legacy bearer-token state left by pre-cookie builds.
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
-  // Drop tenant context too — the next user signing in on this device
-  // should not inherit the previous user's selected company.
   localStorage.removeItem(ACTIVE_COMPANY_KEY);
   clearCsrfToken();
   clearPwaSessionMarker();
   void clearAllCaches();
-  // Same-tab listeners (e.g. ActiveCompanyProvider) won't see the removal
-  // above via the native 'storage' event, which only fires across tabs.
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('auth:logout'));
   }

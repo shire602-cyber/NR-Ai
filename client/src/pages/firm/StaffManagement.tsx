@@ -1,22 +1,20 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import type { Company } from '@shared/schema';
-import { useQuery } from '@tanstack/react-query';
-import {
-ChevronDown,ChevronRight,
-ExternalLink,
-Mail,
-Search,
-Shield,
-Users
-} from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
 import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
+import {
+  Users, ChevronDown, ChevronRight, Building2,
+  UserPlus, UserMinus, CheckSquare, Square, Shield,
+  Search, Mail, ExternalLink,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import type { Company } from '@shared/schema';
 
 interface StaffMember {
   id: string;
@@ -146,15 +144,11 @@ export default function StaffManagement() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Staff Management</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage NRA staff assignments across client companies
-          </p>
-        </div>
-        {pendingChanges.size > 0 && (
+      <PageHeader
+        eyebrow="Firm"
+        title="Staff Management"
+        description="Manage NRA staff assignments across client companies"
+        actions={pendingChanges.size > 0 && (
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
               {pendingChanges.size} pending change{pendingChanges.size !== 1 ? 's' : ''}
@@ -171,7 +165,7 @@ export default function StaffManagement() {
             </Button>
           </div>
         )}
-      </div>
+      />
 
       {/* Search */}
       <div className="relative w-full sm:max-w-sm">

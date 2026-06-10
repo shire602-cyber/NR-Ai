@@ -1,34 +1,29 @@
-import { Badge } from '@/components/ui/badge';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
-Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-Select,SelectContent,SelectItem,SelectTrigger,SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-Table,TableBody,TableCell,TableHead,TableHeader,TableRow,
-} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency } from '@/lib/format';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
 import {
-AlertTriangle,
-Calculator,
-CheckCircle2,Clock,FileText,
-Loader2,
-RefreshCw,Send,
-XCircle,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { formatCurrency } from '@/lib/format';
+import {
+  Calculator, AlertTriangle, CheckCircle2, Clock, FileText, RefreshCw, Send, Loader2, XCircle,
 } from 'lucide-react';
-import { useMemo,useState } from 'react';
 
 // ─── Types matching the server's VAT autopilot service ───────────────────────
 

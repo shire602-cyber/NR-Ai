@@ -1,17 +1,17 @@
-import { eq,sql } from 'drizzle-orm';
 import cron from 'node-cron';
+import { sql, eq } from 'drizzle-orm';
+import { storage } from '../storage';
+import { db } from '../db';
 import {
-invoiceLines as invoiceLinesTable,
-invoices as invoicesTable,
-recurringInvoices as recurringInvoicesTable,
+  invoices as invoicesTable,
+  invoiceLines as invoiceLinesTable,
+  recurringInvoices as recurringInvoicesTable,
 } from '../../shared/schema';
 import { createLogger } from '../config/logger';
-import { ACCOUNT_CODES,UAE_VAT_RATE } from '../constants';
-import { db } from '../db';
-import { storage } from '../storage';
-import { purgeExpiredAuthTokens } from './auth-tokens.service';
-import { allocateInvoiceNumber } from './invoice-numbering.service';
 import { assertPeriodNotLocked } from './period-lock.service';
+import { allocateInvoiceNumber } from './invoice-numbering.service';
+import { UAE_VAT_RATE, ACCOUNT_CODES } from '../constants';
+import { purgeExpiredAuthTokens } from './auth-tokens.service';
 
 const log = createLogger('scheduler');
 
@@ -681,6 +681,7 @@ async function generateDueRecurringInvoices() {
         const vatPayable = accounts.find(a => a.isVatAccount && a.vatType === 'output' && a.code === ACCOUNT_CODES.VAT_OUTPUT);
 
         if (accountsReceivable && salesRevenue) {
+          const entryNumber = await storage.generateEntryNumber(template.companyId, invoiceDate);
           const lines: Array<{
             accountId: string;
             debit: number;
@@ -708,11 +709,12 @@ async function generateDueRecurringInvoices() {
               description: `Recurring VAT ${invoice.number}`,
             });
           }
-          await storage.createJournalEntryWithGeneratedNumber(
+          await storage.createJournalEntry(
             {
               companyId: template.companyId,
               date: invoiceDate,
               memo: `Recurring sales invoice ${invoice.number} - ${template.customerName}`,
+              entryNumber,
               status: 'posted',
               source: 'invoice',
               sourceId: invoice.id,

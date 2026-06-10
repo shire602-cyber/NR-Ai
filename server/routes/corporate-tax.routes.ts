@@ -1,9 +1,9 @@
-import type { Express,Request,Response } from 'express';
-import { UAE_CT_EXEMPTION_THRESHOLD } from '../constants';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import type { Express, Request, Response } from 'express';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { storage } from '../storage';
+import { UAE_CT_EXEMPTION_THRESHOLD } from '../constants';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 export function registerCorporateTaxRoutes(app: Express) {
   // =====================================

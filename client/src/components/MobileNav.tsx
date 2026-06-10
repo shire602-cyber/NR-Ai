@@ -1,13 +1,13 @@
+import { useLocation } from 'wouter';
 import { motion } from 'framer-motion';
 import {
-BarChart3,
-Camera,
-FileText,
-LayoutDashboard,
-MoreHorizontal,
+  LayoutDashboard,
+  FileText,
+  Camera,
+  BarChart3,
+  MoreHorizontal,
 } from 'lucide-react';
-import { useCallback,useState } from 'react';
-import { useLocation } from 'wouter';
+import { useState, useCallback } from 'react';
 
 interface NavItem {
   label: string;

@@ -1,30 +1,38 @@
-import type { Express,Request,Response } from 'express';
-import { Router } from 'express';
+import type { Express, Request, Response } from 'express';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { Router } from 'express';
 import { z } from 'zod';
 
-import { createLogger } from '../config/logger';
 import { ValidationError } from '../errors';
 import { authMiddleware } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
 import { requireFirmAdmin } from '../middleware/rbac';
+import { asyncHandler } from '../middleware/errorHandler';
+import { createLogger } from '../config/logger';
 import { recordAudit } from '../services/audit.service';
 import { resolveAccessibleClientIds } from '../services/firm-command-center.service';
 import {
-addVatWorkpaperRow,
-createVatWorkpaper,
-generateVatReturnFromWorkpaper,
-getVatWorkpaperDetail,
-listVatWorkpapers,
-recalculateVatWorkpaper,
-scanVatWorkpaperEvidence,
-updateVatWorkpaperRow,
-updateVatWorkpaperStatus,
-VAT_WORKPAPER_CATEGORIES,
-type VatWorkpaperCategory,
+  addVatWorkpaperRow,
+  addVatWorkpaperRowsBulk,
+  createVatWorkpaper,
+  pullVatWorkpaperRowsFromBooks,
+  generateVatReturnFromWorkpaper,
+  getVatWorkpaperDetail,
+  listVatWorkpapers,
+  recalculateVatWorkpaper,
+  scanVatWorkpaperEvidence,
+  updateVatWorkpaperRow,
+  updateVatWorkpaperStatus,
+  VAT_WORKPAPER_CATEGORIES,
+  type VatWorkpaperCategory,
 } from '../services/firm-vat-workspace.service';
+import {
+  buildVatWorkpaperTemplateWorkbook,
+  buildVatWorkpaperWorkbook,
+  parseVatWorkbookRows,
+  vatWorkpaperExportFilename,
+} from '../services/vat-workpaper-export.service';
 
 const logger = createLogger('firm-vat-workspace-routes');
 
@@ -79,6 +87,15 @@ const scanSchema = z.object({
     status: z.enum(['draft']).optional(),
     sourceMethod: z.enum(['ocr']).optional(),
   }),
+});
+
+const VAT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+const VAT_IMPORT_MAX_ROWS = 2000;
+
+const importFileSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  fileDataBase64: z.string().min(1).max(15_000_000),
+  defaultEmirate: z.string().trim().max(40).optional(),
 });
 
 const statusSchema = z.object({
@@ -221,6 +238,17 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
     }),
   );
 
+  // Registered before '/:id' so the literal path wins over the uuid matcher.
+  router.get(
+    '/template',
+    asyncHandler(async (_req: Request, res: Response) => {
+      const buffer = await buildVatWorkpaperTemplateWorkbook();
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename="muhasib-vat-workpaper-template.xlsx"');
+      res.send(buffer);
+    }),
+  );
+
   router.get(
     '/:id',
     asyncHandler(async (req: Request, res: Response) => {
@@ -333,6 +361,119 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       }
 
       res.download(absolutePath, attachment.fileName);
+    }),
+  );
+
+  // Populate the workpaper from the client's books: issued invoices (split
+  // standard / zero-rated / exempt) and posted receipts land as draft rows
+  // for review. Idempotent — already-pulled documents are skipped.
+  router.post(
+    '/:id/pull-from-books',
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = uuidParamSchema.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ message: 'Invalid VAT workpaper id' });
+      const detail = await requireWorkpaperAccess(req, res, parsed.data.id);
+      if (!detail) return;
+
+      const result = await pullVatWorkpaperRowsFromBooks(parsed.data.id, (req as any).user.id);
+
+      await recordAudit({
+        userId: (req as any).user?.id,
+        companyId: detail.workpaper.companyId,
+        action: 'firm_vat_workpaper_pull_from_books',
+        entityType: 'vat_workpaper',
+        entityId: detail.workpaper.id,
+        after: result,
+        req,
+      });
+
+      res.json(result);
+    }),
+  );
+
+  // Import a filled .xlsx workpaper (the downloadable template or any sheet
+  // with recognisable headers). Same parsing rules as the paste box.
+  router.post(
+    '/:id/import-file',
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = uuidParamSchema.safeParse(req.params);
+      if (!parsedParams.success) return res.status(400).json({ message: 'Invalid VAT workpaper id' });
+      const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
+      if (!detail) return;
+
+      const parsed = importFileSchema.parse(req.body);
+      if (!/\.xlsx$/i.test(parsed.fileName)) {
+        return res.status(400).json({ message: 'Only .xlsx workbooks are supported' });
+      }
+
+      let buffer: Buffer;
+      try {
+        buffer = Buffer.from(parsed.fileDataBase64, 'base64');
+      } catch {
+        return res.status(400).json({ message: 'Workbook payload is not valid base64' });
+      }
+      if (buffer.length === 0 || buffer.length > VAT_IMPORT_MAX_BYTES) {
+        return res.status(400).json({ message: 'Workbook must be between 1 byte and 10 MB' });
+      }
+
+      let rows;
+      try {
+        rows = await parseVatWorkbookRows(buffer, parsed.defaultEmirate || 'dubai');
+      } catch {
+        return res.status(400).json({ message: 'Could not read the workbook — is it a valid .xlsx file?' });
+      }
+      if (rows.length === 0) {
+        return res.status(400).json({ message: 'No VAT rows recognised in the workbook' });
+      }
+      if (rows.length > VAT_IMPORT_MAX_ROWS) {
+        return res.status(400).json({ message: `Workbook has too many rows (max ${VAT_IMPORT_MAX_ROWS})` });
+      }
+
+      const created = await addVatWorkpaperRowsBulk(
+        parsedParams.data.id,
+        (req as any).user.id,
+        rows.map((row) => ({ ...row, auditReason: 'Imported from Excel file' })),
+      );
+
+      await recordAudit({
+        userId: (req as any).user?.id,
+        companyId: detail.workpaper.companyId,
+        action: 'firm_vat_workpaper_import_file',
+        entityType: 'vat_workpaper',
+        entityId: detail.workpaper.id,
+        after: { fileName: parsed.fileName, created: created.length },
+        req,
+      });
+
+      res.status(201).json({ created: created.length });
+    }),
+  );
+
+  // Downloadable Excel copy of the workpaper — the grid the accountant used
+  // to keep in a standalone spreadsheet, plus a copy-ready VAT 201 sheet.
+  router.get(
+    '/:id/export',
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = uuidParamSchema.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ message: 'Invalid VAT workpaper id' });
+      const detail = await requireWorkpaperAccess(req, res, parsed.data.id);
+      if (!detail) return;
+
+      const buffer = await buildVatWorkpaperWorkbook(detail);
+      const filename = vatWorkpaperExportFilename(detail);
+
+      await recordAudit({
+        userId: (req as any).user?.id,
+        companyId: detail.workpaper.companyId,
+        action: 'firm_vat_workpaper_export',
+        entityType: 'vat_workpaper',
+        entityId: detail.workpaper.id,
+        req,
+      });
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(buffer);
     }),
   );
 

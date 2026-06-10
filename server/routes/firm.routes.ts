@@ -1,46 +1,47 @@
-import type { Express,Request,Response } from 'express';
+import type { Request, Response } from 'express';
 import { Router } from 'express';
+import type { Express } from 'express';
 import { z } from 'zod';
 
-import {
-CLIENT_SERVICE_OPTIONS,
-DEFAULT_CLIENT_SERVICE_CODES,
-engagementTypeForServices,
-normalizeClientServices,
-type ClientServiceCode,
-type ClientServicePlan,
-} from '@shared/client-services';
-import { and,count,desc,eq,inArray,lt,lte,max,ne,or,sql,sum } from 'drizzle-orm';
-import {
-bankTransactions,
-companies,
-companyUsers,
-corporateTaxReturns,
-engagements,
-invoices,
-journalEntries,
-journalLines,
-receipts,
-users,
-vatReturns,
-} from '../../shared/schema';
-import { createLogger } from '../config/logger';
-import { db } from '../db';
-import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
-import { authMiddleware } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { getAccessibleCompanyIds,requireFirmRole } from '../middleware/rbac';
-import {
-currentVatPeriodForCompany,
-mapImportRow,
-nextCorporateTaxFilingWindow,
-validateImportedClient,
-vatCohortFromPeriodStart,
-type VatCohort,
-type VatCohortKey,
-} from '../services/firm-clients.service';
 import { storage } from '../storage';
-import { parseSpreadsheetBuffer } from '../utils/spreadsheet';
+import { authMiddleware } from '../middleware/auth';
+import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
+import { asyncHandler } from '../middleware/errorHandler';
+import { createLogger } from '../config/logger';
+import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import {
+  currentVatPeriodForCompany,
+  mapImportRow,
+  nextCorporateTaxFilingWindow,
+  validateImportedClient,
+  vatCohortFromPeriodStart,
+  type VatCohort,
+  type VatCohortKey,
+} from '../services/firm-clients.service';
+import {
+  CLIENT_SERVICE_OPTIONS,
+  DEFAULT_CLIENT_SERVICE_CODES,
+  engagementTypeForServices,
+  normalizeClientServices,
+  type ClientServiceCode,
+  type ClientServicePlan,
+} from '@shared/client-services';
+import { parseSpreadsheet } from '../services/spreadsheet.service';
+import { db } from '../db';
+import { eq, and, count, sum, max, or, desc, inArray, sql, lt, ne, lte } from 'drizzle-orm';
+import {
+  companies,
+  companyUsers,
+  users,
+  invoices,
+  receipts,
+  vatReturns,
+  corporateTaxReturns,
+  bankTransactions,
+  journalEntries,
+  journalLines,
+  engagements,
+} from '../../shared/schema';
 
 const logger = createLogger('firm-routes');
 
@@ -417,18 +418,6 @@ function emptyBookkeeperDashboard() {
   };
 }
 
-async function safeFirmDashboardRows<T>(label: string, query: Promise<T[]>): Promise<T[]> {
-  try {
-    return await query;
-  } catch (error) {
-    logger.error(
-      { label, err: error instanceof Error ? error.message : String(error) },
-      'Firm bookkeeper dashboard optional aggregate failed',
-    );
-    return [];
-  }
-}
-
 type EngagementSummaryRow = {
   id: string;
   companyId: string;
@@ -647,55 +636,20 @@ export function registerFirmRoutes(app: Express): void {
       }
 
       const [stats, companyUserList, recentInvoices, recentReceipts, servicePlanMap] = await Promise.all([
-        getClientStats(companyId).catch(error => {
-          logger.error(
-            { companyId, err: error instanceof Error ? error.message : String(error) },
-            'Firm client summary stats failed',
-          );
-          return {
-            invoiceCount: 0,
-            invoiceTotal: 0,
-            outstandingAr: 0,
-            lastReceiptDate: null,
-            lastBankActivityDate: null,
-            vatStatus: null,
-            assignedStaff: [],
-          };
-        }),
-        safeFirmDashboardRows('client summary company users', storage.getCompanyUserWithUser(companyId)),
-        safeFirmDashboardRows(
-          'client summary recent invoices',
-          db
-            .select({
-              id: invoices.id,
-              number: invoices.number,
-              customerName: invoices.customerName,
-              date: invoices.date,
-              total: invoices.total,
-              status: invoices.status,
-              createdAt: invoices.createdAt,
-            })
-            .from(invoices)
-            .where(eq(invoices.companyId, companyId))
-            .orderBy(desc(invoices.createdAt))
-            .limit(10),
-        ),
-        safeFirmDashboardRows(
-          'client summary recent receipts',
-          db
-            .select({
-              id: receipts.id,
-              merchant: receipts.merchant,
-              date: receipts.date,
-              amount: receipts.amount,
-              vatAmount: receipts.vatAmount,
-              createdAt: receipts.createdAt,
-            })
-            .from(receipts)
-            .where(eq(receipts.companyId, companyId))
-            .orderBy(desc(receipts.createdAt))
-            .limit(10),
-        ),
+        getClientStats(companyId),
+        storage.getCompanyUserWithUser(companyId),
+        db
+          .select()
+          .from(invoices)
+          .where(eq(invoices.companyId, companyId))
+          .orderBy(desc(invoices.createdAt))
+          .limit(10),
+        db
+          .select()
+          .from(receipts)
+          .where(eq(receipts.companyId, companyId))
+          .orderBy(desc(receipts.createdAt))
+          .limit(10),
         loadActiveServicePlans([companyId]),
       ]);
       const servicePlan = servicePlanMap.get(companyId) ?? servicePlanFromEngagement(undefined);
@@ -1086,7 +1040,7 @@ export function registerFirmRoutes(app: Express): void {
         trialBalanceRows,
         staffRows,
       ] = await Promise.all([
-        safeFirmDashboardRows<VatRow>('latest VAT returns', db
+        db
           .select({
             companyId: vatReturns.companyId,
             periodStart: vatReturns.periodStart,
@@ -1104,8 +1058,8 @@ export function registerFirmRoutes(app: Express): void {
               eq(vatReturns.companyId, latestVatSub.companyId),
               eq(vatReturns.periodEnd, latestVatSub.maxPeriodEnd),
             ),
-          ) as Promise<VatRow[]>),
-        safeFirmDashboardRows<CorporateTaxRow>('latest corporate tax returns', db
+          ) as Promise<VatRow[]>,
+        db
           .select({
             companyId: corporateTaxReturns.companyId,
             taxPeriodStart: corporateTaxReturns.taxPeriodStart,
@@ -1121,8 +1075,8 @@ export function registerFirmRoutes(app: Express): void {
               eq(corporateTaxReturns.companyId, latestCorporateTaxSub.companyId),
               eq(corporateTaxReturns.taxPeriodEnd, latestCorporateTaxSub.maxPeriodEnd),
             ),
-          ) as Promise<CorporateTaxRow[]>),
-        safeFirmDashboardRows<InvoiceOpsRow>('invoice operations aggregate', db
+          ) as Promise<CorporateTaxRow[]>,
+        db
           .select({
             companyId: invoices.companyId,
             invoiceCount: count(),
@@ -1133,8 +1087,8 @@ export function registerFirmRoutes(app: Express): void {
           })
           .from(invoices)
           .where(inArray(invoices.companyId, clientIds))
-          .groupBy(invoices.companyId) as Promise<InvoiceOpsRow[]>),
-        safeFirmDashboardRows<ReceiptOpsRow>('receipt operations aggregate', db
+          .groupBy(invoices.companyId) as Promise<InvoiceOpsRow[]>,
+        db
           .select({
             companyId: receipts.companyId,
             receiptCount: count(),
@@ -1143,8 +1097,8 @@ export function registerFirmRoutes(app: Express): void {
           })
           .from(receipts)
           .where(inArray(receipts.companyId, clientIds))
-          .groupBy(receipts.companyId) as Promise<ReceiptOpsRow[]>),
-        safeFirmDashboardRows<BankOpsRow>('bank operations aggregate', db
+          .groupBy(receipts.companyId) as Promise<ReceiptOpsRow[]>,
+        db
           .select({
             companyId: bankTransactions.companyId,
             bankCount: count(),
@@ -1153,8 +1107,8 @@ export function registerFirmRoutes(app: Express): void {
           })
           .from(bankTransactions)
           .where(inArray(bankTransactions.companyId, clientIds))
-          .groupBy(bankTransactions.companyId) as Promise<BankOpsRow[]>),
-        safeFirmDashboardRows<TrialBalanceOpsRow>('trial balance aggregate', db
+          .groupBy(bankTransactions.companyId) as Promise<BankOpsRow[]>,
+        db
           .select({
             companyId: journalEntries.companyId,
             totalDebit: sum(journalLines.debit),
@@ -1164,8 +1118,8 @@ export function registerFirmRoutes(app: Express): void {
           .from(journalEntries)
           .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
           .where(and(inArray(journalEntries.companyId, clientIds), eq(journalEntries.status, 'posted')))
-          .groupBy(journalEntries.companyId) as Promise<TrialBalanceOpsRow[]>),
-        safeFirmDashboardRows<StaffAssignmentRow>('staff assignments aggregate', db
+          .groupBy(journalEntries.companyId) as Promise<TrialBalanceOpsRow[]>,
+        db
           .select({
             companyId: companyUsers.companyId,
             id: users.id,
@@ -1175,7 +1129,7 @@ export function registerFirmRoutes(app: Express): void {
           })
           .from(companyUsers)
           .innerJoin(users, eq(users.id, companyUsers.userId))
-          .where(and(inArray(companyUsers.companyId, clientIds), eq(users.isAdmin, true))) as Promise<StaffAssignmentRow[]>),
+          .where(and(inArray(companyUsers.companyId, clientIds), eq(users.isAdmin, true))) as Promise<StaffAssignmentRow[]>,
       ]);
 
       const vatMap = new Map<string, VatRow>(vatRows.map(row => [row.companyId, row]));
@@ -2090,7 +2044,7 @@ export function registerFirmRoutes(app: Express): void {
       if (req.body?.fileData) {
         try {
           const buffer = Buffer.from(req.body.fileData, 'base64');
-          rows = (await parseSpreadsheetBuffer(buffer, req.body.fileName)).rows;
+          rows = (await parseSpreadsheet(buffer, req.body.fileName)).rows as Record<string, any>[];
         } catch (err: any) {
           return res.status(400).json({ message: `Could not parse file: ${err.message}` });
         }

@@ -1,7 +1,7 @@
-import { isOnline,onConnectivityChange } from '@/lib/pwa';
+import { useEffect, useState } from 'react';
+import { Wifi, WifiOff, CloudOff } from 'lucide-react';
+import { isOnline, onConnectivityChange } from '@/lib/pwa';
 import { cn } from '@/lib/utils';
-import { CloudOff,Wifi,WifiOff } from 'lucide-react';
-import { useEffect,useState } from 'react';
 
 interface OfflineIndicatorProps {
   className?: string;

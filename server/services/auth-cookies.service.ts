@@ -1,8 +1,8 @@
-import type { CookieOptions,Request,Response } from 'express';
-import { authCookieBaseOptions } from '../config/cookies';
+import type { CookieOptions, Request, Response } from 'express';
 import { isProduction } from '../config/env';
+import { authCookieBaseOptions } from '../config/cookies';
 
-export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
+export const ACCESS_TOKEN_TTL_SECONDS = 24 * 60 * 60;
 export const REFRESH_TOKEN_TTL_DAYS = 7;
 
 export function accessCookieName(): string {
@@ -13,6 +13,17 @@ export function refreshCookieName(): string {
   return isProduction() ? '__Host-muhasib-refresh' : 'muhasib-refresh';
 }
 
+function parseCookieHeader(header: string | undefined): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!header) return result;
+  for (const part of header.split(';')) {
+    const [rawName, ...rawValue] = part.trim().split('=');
+    if (!rawName || rawValue.length === 0) continue;
+    result[rawName] = decodeURIComponent(rawValue.join('='));
+  }
+  return result;
+}
+
 function baseCookieOptions(): CookieOptions {
   return authCookieBaseOptions();
 }
@@ -21,7 +32,6 @@ export function setAuthCookies(
   res: Response,
   accessToken: string,
   refreshToken: string,
-  refreshExpiresAt: Date,
 ): void {
   res.cookie(accessCookieName(), accessToken, {
     ...baseCookieOptions(),
@@ -30,7 +40,7 @@ export function setAuthCookies(
 
   res.cookie(refreshCookieName(), refreshToken, {
     ...baseCookieOptions(),
-    maxAge: Math.max(0, refreshExpiresAt.getTime() - Date.now()),
+    maxAge: REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000,
   });
 }
 
@@ -40,23 +50,13 @@ export function clearAuthCookies(res: Response): void {
 }
 
 export function getAccessTokenFromRequest(req: Request): string | null {
-  const name = accessCookieName();
-  const token = req.cookies?.[name] ?? req.signedCookies?.[name];
+  const cookies = parseCookieHeader(req.headers.cookie);
+  const token = cookies[accessCookieName()];
   return typeof token === 'string' && token ? token : null;
 }
 
 export function getRefreshTokenFromRequest(req: Request): string | null {
-  const name = refreshCookieName();
-  const token = req.cookies?.[name] ?? req.signedCookies?.[name];
+  const cookies = parseCookieHeader(req.headers.cookie);
+  const token = cookies[refreshCookieName()];
   return typeof token === 'string' && token ? token : null;
-}
-
-export function sessionMetaFromRequest(req: Request): {
-  userAgent: string | null;
-  ipAddress: string | null;
-} {
-  return {
-    userAgent: req.get('user-agent') ?? null,
-    ipAddress: req.ip ?? null,
-  };
 }

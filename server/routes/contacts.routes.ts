@@ -1,10 +1,10 @@
-import type { Express,Request,Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { createLogger } from '../config/logger';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
-import { buildXlsxBufferFromRows,parseSpreadsheetBuffer } from '../utils/spreadsheet';
+import { createLogger } from '../config/logger';
+import { createSpreadsheetBuffer, parseSpreadsheet } from '../services/spreadsheet.service';
 
 const log = createLogger('contacts');
 
@@ -12,6 +12,16 @@ const contactImportPreviewSchema = z.object({
   fileName: z.string().min(1).max(180).regex(/\.(xlsx|csv)$/i, 'Only .xlsx and .csv files are supported'),
   contentBase64: z.string().min(1),
 });
+
+const contactTemplateColumns = [
+  { header: 'Name', key: 'Name', width: 25 },
+  { header: 'Email', key: 'Email', width: 28 },
+  { header: 'Phone', key: 'Phone', width: 18 },
+  { header: 'TRN', key: 'TRN', width: 18 },
+  { header: 'Address', key: 'Address', width: 28 },
+  { header: 'City', key: 'City', width: 16 },
+  { header: 'Country', key: 'Country', width: 16 },
+];
 
 const contactTemplateRows = [{
   Name: 'Example Company LLC',
@@ -97,7 +107,11 @@ export function registerContactRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const buffer = await buildXlsxBufferFromRows(contactTemplateRows, 'Contacts', [25, 28, 18, 18, 28, 16, 16]);
+    const buffer = await createSpreadsheetBuffer({
+      sheetName: 'Contacts',
+      columns: contactTemplateColumns,
+      rows: contactTemplateRows,
+    });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename=contact_import_template.xlsx');
     res.send(buffer);
@@ -122,8 +136,8 @@ export function registerContactRoutes(app: Express) {
       return res.status(413).json({ message: 'Contact import file must be 5 MB or smaller' });
     }
 
-    const parsed = await parseSpreadsheetBuffer(buffer, parsedBody.data.fileName);
-    const rows = parsed.rows.map(mapContactImportRow);
+    const parsed = await parseSpreadsheet(buffer, parsedBody.data.fileName);
+    const rows = parsed.rows.map((row) => mapContactImportRow(row));
     res.json({ rows, count: rows.length });
   }));
 

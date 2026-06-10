@@ -1,4 +1,4 @@
-import { useEffect,useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 export interface ShortcutBinding {
   /** A combo string: lowercase keys joined with '+'. Modifiers: mod (Ctrl/Cmd), shift, alt. */

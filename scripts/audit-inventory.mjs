@@ -17,11 +17,8 @@ function walk(relDir, predicate = () => true) {
   const results = [];
   for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
     const relPath = path.join(relDir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...walk(relPath, predicate));
-    } else if (predicate(relPath)) {
-      results.push(relPath.replaceAll(path.sep, '/'));
-    }
+    if (entry.isDirectory()) results.push(...walk(relPath, predicate));
+    else if (predicate(relPath)) results.push(relPath.replaceAll(path.sep, '/'));
   }
   return results.sort();
 }
@@ -60,9 +57,7 @@ const frontendRoutes = unique(extractMatches(appSource, /<Route\s+path=["']([^"'
 const registeredRouteModules = unique(
   extractMatches(routeSource, /from ['"]\.\/routes\/([^'"]+)\.routes['"]/g),
 );
-const routeModules = serverRouteFiles.map((file) =>
-  path.basename(file).replace(/\.routes\.ts$/, ''),
-);
+const routeModules = serverRouteFiles.map((file) => path.basename(file).replace(/\.routes\.ts$/, ''));
 
 const serverRoutes = [];
 for (const file of serverRouteFiles) {
@@ -92,9 +87,7 @@ for (const file of clientFiles) {
 
 const envVars = unique(extractMatches(read('server/config/env.ts'), /\b([A-Z][A-Z0-9_]+):\s*z\./g));
 const backgroundJobs = unique(
-  serviceFiles
-    .filter((file) => /scheduler|cron|notification|socket|webhook|chasing|autopilot/i.test(file))
-    .map((file) => file),
+  serviceFiles.filter((file) => /scheduler|cron|notification|socket|webhook|chasing|autopilot/i.test(file)),
 );
 const integrations = unique(
   [
@@ -154,9 +147,7 @@ console.log(`Generated: ${inventory.generatedAt}`);
 console.log('');
 console.log('| Metric | Count |');
 console.log('| --- | ---: |');
-for (const [key, value] of Object.entries(inventory.counts)) {
-  console.log(`| ${key} | ${value} |`);
-}
+for (const [key, value] of Object.entries(inventory.counts)) console.log(`| ${key} | ${value} |`);
 
 if (summaryOnly) process.exit(inventory.unregisteredRouteModules.length ? 1 : 0);
 

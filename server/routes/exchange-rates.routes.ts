@@ -1,10 +1,10 @@
-import { and,desc,eq,lte } from "drizzle-orm";
-import type { Express,Request,Response } from "express";
-import type { ExchangeRate,FxGainsLossesReport,Invoice,Receipt,UnrealizedFxGainLoss } from "../../shared/schema";
-import { exchangeRates,invoices,receipts } from "../../shared/schema";
-import { db } from "../db";
+import type { Express, Request, Response } from "express";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { db } from "../db";
+import { eq, and, desc, lte } from "drizzle-orm";
+import { exchangeRates, invoices, receipts } from "../../shared/schema";
+import type { UnrealizedFxGainLoss, FxGainsLossesReport, ExchangeRate, Invoice, Receipt } from "../../shared/schema";
 import { storage } from "../storage";
 
 export type ExchangeRateSource = 'manual' | 'api' | 'fta';
@@ -91,7 +91,147 @@ export function toBaseCurrency(
   return foreignAmount * rateToBase;
 }
 
+function toCompanyRateResponse(row: ExchangeRate, companyId: string) {
+  return {
+    ...row,
+    companyId,
+    fromCurrency: row.targetCurrency,
+    toCurrency: row.baseCurrency,
+    effectiveDate: row.date,
+  };
+}
+
 export function registerExchangeRateRoutes(app: Express) {
+  // Compatibility routes for the frontend multi-currency settings page. Rates
+  // are currently global reference data, but company access is still checked so
+  // only authenticated users tied to the company can manage them from the UI.
+  app.get(
+    "/api/companies/:companyId/exchange-rates",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const rows = await db
+        .select()
+        .from(exchangeRates)
+        .orderBy(desc(exchangeRates.date));
+
+      res.json(rows.map((row: ExchangeRate) => toCompanyRateResponse(row, companyId)));
+    }),
+  );
+
+  app.post(
+    "/api/companies/:companyId/exchange-rates",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+      const { fromCurrency, toCurrency, rate, effectiveDate } = req.body as {
+        fromCurrency?: string;
+        toCurrency?: string;
+        rate?: number;
+        effectiveDate?: string;
+      };
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (!fromCurrency || !toCurrency || rate === undefined || rate === null) {
+        return res.status(400).json({ message: "fromCurrency, toCurrency, and rate are required" });
+      }
+      if (fromCurrency === toCurrency) {
+        return res.status(400).json({ message: "Currencies must be different" });
+      }
+      if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+        return res.status(400).json({ message: "rate must be a positive number" });
+      }
+
+      const [created] = await db
+        .insert(exchangeRates)
+        .values({
+          baseCurrency: toCurrency,
+          targetCurrency: fromCurrency,
+          rate,
+          date: effectiveDate ? new Date(effectiveDate) : new Date(),
+          source: "manual",
+        })
+        .returning();
+
+      res.status(201).json(toCompanyRateResponse(created, companyId));
+    }),
+  );
+
+  app.get(
+    "/api/companies/:companyId/exchange-rates/convert",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const { companyId } = req.params;
+      const { from, to, amount } = req.query as {
+        from?: string;
+        to?: string;
+        amount?: string;
+      };
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (!from || !to || !amount) {
+        return res.status(400).json({ message: "from, to, and amount are required" });
+      }
+
+      const numericAmount = Number(amount);
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return res.status(400).json({ message: "amount must be a positive number" });
+      }
+
+      if (from === to) {
+        return res.json({
+          from,
+          to,
+          amount: numericAmount,
+          convertedAmount: numericAmount,
+          rate: 1,
+          effectiveDate: new Date().toISOString(),
+        });
+      }
+
+      const direct = await getLatestRateDetailed(from, to, undefined, { preferFta: false });
+      if (direct) {
+        return res.json({
+          from,
+          to,
+          amount: numericAmount,
+          convertedAmount: numericAmount * direct.rate,
+          rate: direct.rate,
+          effectiveDate: direct.date,
+        });
+      }
+
+      const reverse = await getLatestRateDetailed(to, from, undefined, { preferFta: false });
+      if (reverse) {
+        return res.json({
+          from,
+          to,
+          amount: numericAmount,
+          convertedAmount: numericAmount / reverse.rate,
+          rate: 1 / reverse.rate,
+          effectiveDate: reverse.date,
+        });
+      }
+
+      return res.status(404).json({ message: `No exchange rate found for ${from}/${to}` });
+    }),
+  );
+
   // ─────────────────────────────────────────────
   // GET /api/exchange-rates
   // Query: ?base=AED&target=USD&asOf=2025-01-01

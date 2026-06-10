@@ -4,70 +4,71 @@
  * Executive dashboard for firm owners with key metrics, client health table,
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
-import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query';
-import {
-Activity,
-AlertTriangle,
-ArrowDownRight,
-ArrowUpRight,
-Bell,
-Building2,
-Calculator,
-CheckCircle2,
-DollarSign,
-FileSearch,
-Loader2,
-Mail,
-RefreshCw,
-Search,
-TrendingUp,
-Users,
-} from 'lucide-react';
-import { useMemo,useState } from 'react';
-import {
-Bar,
-BarChart,
-CartesianGrid,
-Legend,
-Tooltip as RechartsTooltip,
-ResponsiveContainer,
-XAxis,
-YAxis,
-} from 'recharts';
+import { PageHeader } from '@/components/ui/page-header';
+import { useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
-
 import {
-AlertDialog,
-AlertDialogAction,
-AlertDialogCancel,
-AlertDialogContent,
-AlertDialogDescription,
-AlertDialogFooter,
-AlertDialogHeader,
-AlertDialogTitle,
-AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  Bell,
+  CheckCircle2,
+  DollarSign,
+  Mail,
+  RefreshCw,
+  Search,
+  TrendingUp,
+  Users,
+  Calculator,
+  FileSearch,
+  Building2,
+  Loader2,
+  Activity,
+} from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
+
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
-Select,
-SelectContent,
-SelectItem,
-SelectTrigger,
-SelectValue,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import {
-Table,
-TableBody,
-TableCell,
-TableHead,
-TableHeader,
-TableRow,
-} from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 
@@ -332,7 +333,7 @@ export default function FirmCommandCenter() {
 
   // ─── Derived data ──────────────────────────────────────────────────
   const summary = dashboardQuery.data?.summary;
-  const allClients = useMemo(() => healthQuery.data ?? [], [healthQuery.data]);
+  const allClients = healthQuery.data ?? [];
   const filteredClients = useMemo(
     () =>
       allClients.filter((c) =>
@@ -405,29 +406,27 @@ export default function FirmCommandCenter() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight" data-testid="page-title">
-            Firm Command Center
-          </h1>
-          <p className="text-muted-foreground">
-            Bird's-eye view across all clients with actionable insights and batch operations.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => refreshAlerts.mutate()}
-          disabled={refreshAlerts.isPending}
-          data-testid="button-refresh-alerts"
-        >
-          {refreshAlerts.isPending ? (
-            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4 mr-2" />
-          )}
-          Refresh alerts
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Firm"
+        title="Firm Command Center"
+        testId="page-title"
+        description="Bird's-eye view across all clients with actionable insights and batch operations."
+        actions={
+          <Button
+            variant="outline"
+            onClick={() => refreshAlerts.mutate()}
+            disabled={refreshAlerts.isPending}
+            data-testid="button-refresh-alerts"
+          >
+            {refreshAlerts.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 mr-2" />
+            )}
+            Refresh alerts
+          </Button>
+        }
+      />
 
       {/* Metrics row */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">

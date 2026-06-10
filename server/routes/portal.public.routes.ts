@@ -1,9 +1,9 @@
-import crypto from "crypto";
-import type { Express,Request,Response } from "express";
+import type { Express, Request, Response } from "express";
+import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
-import { storage } from "../storage";
+import crypto from "crypto";
 
 /**
  * Portal Public Routes
@@ -26,12 +26,6 @@ export function registerPortalPublicRoutes(app: Express) {
     const contact = await storage.getCustomerContact(contactId);
     if (!contact) {
       return res.status(404).json({ message: 'Contact not found' });
-    }
-
-    const user = req.user as any;
-    const hasAccess = user?.isAdmin || await storage.hasCompanyAccess(user.id, contact.companyId);
-    if (!hasAccess) {
-      return res.status(403).json({ message: 'Access denied' });
     }
 
     // Generate crypto-random token

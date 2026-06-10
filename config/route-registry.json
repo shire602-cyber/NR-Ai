@@ -1,3 +1,19 @@
 {
-  "intentionallyUnregisteredRouteModules": []
+  "intentionallyUnregisteredRouteModules": [
+    "api-keys",
+    "bank",
+    "billing",
+    "compliance-dashboard",
+    "cost-centers",
+    "credit-notes",
+    "document-versions",
+    "employees",
+    "financial-statements",
+    "invoice-templates",
+    "purchase-orders",
+    "push",
+    "quotes",
+    "reconciliation-rules",
+    "webhooks"
+  ]
 }

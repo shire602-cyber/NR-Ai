@@ -1,18 +1,18 @@
+import { useParams } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import {
-Table,
-TableBody,
-TableCell,
-TableHead,
-TableHeader,
-TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
+import { Download, FileText, AlertCircle, Clock, Loader2, Receipt, DollarSign, FileCheck } from 'lucide-react';
 import { apiUrl } from '@/lib/api';
-import { useQuery } from '@tanstack/react-query';
-import { AlertCircle,Clock,DollarSign,Download,FileCheck,FileText,Loader2,Receipt } from 'lucide-react';
-import { useParams } from 'wouter';
 
 interface PortalInfo {
   customerName: string;
@@ -105,7 +105,7 @@ export default function CustomerPortal() {
     retry: false,
   });
 
-  const handleDownloadPDF = (invoiceId: string, _invoiceNumber: string) => {
+  const handleDownloadPDF = (invoiceId: string, invoiceNumber: string) => {
     window.open(apiUrl(`/api/portal/${token}/invoices/${invoiceId}/pdf`), '_blank');
   };
 

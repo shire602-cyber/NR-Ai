@@ -1,20 +1,21 @@
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
-import { Form,FormControl,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { Plus, Building2, CheckCircle2 } from 'lucide-react';
 import type { Company } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { Building2,CheckCircle2,Plus } from 'lucide-react';
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
 const companySchema = z.object({
   name: z.string().min(2, 'Company name must be at least 2 characters'),
@@ -68,18 +69,18 @@ export default function Companies() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold mb-2">{t.companies}</h1>
-          <p className="text-muted-foreground">Manage your companies and switch between them</p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-create-company">
-              <Plus className="w-4 h-4 mr-2" />
-              {t.createCompany}
-            </Button>
-          </DialogTrigger>
+      <PageHeader
+        eyebrow="Workspace"
+        title={t.companies}
+        description="Manage your companies and switch between them"
+        actions={
+          <Button onClick={() => setDialogOpen(true)} data-testid="button-create-company">
+            <Plus className="w-4 h-4 mr-2" />
+            {t.createCompany}
+          </Button>
+        }
+      />
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{t.createCompany}</DialogTitle>
@@ -157,7 +158,6 @@ export default function Companies() {
             </Form>
           </DialogContent>
         </Dialog>
-      </div>
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -1,20 +1,16 @@
-import { Badge } from '@/components/ui/badge';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
-import { useTranslation } from '@/lib/i18n';
-import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import {
-Activity,AlertTriangle,
-Building2,
-Calendar,
-CheckCircle2,
-ChevronDown,ChevronsUpDown,
-ChevronUp,
-XCircle,
-} from 'lucide-react';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
+import {
+  Activity, AlertTriangle, CheckCircle2, XCircle,
+  ChevronUp, ChevronDown, ChevronsUpDown, Calendar,
+  Building2,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { format } from 'date-fns';
+import { useTranslation } from '@/lib/i18n';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 

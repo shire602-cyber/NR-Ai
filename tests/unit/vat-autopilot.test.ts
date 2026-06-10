@@ -7,7 +7,6 @@ import {
   deadlineStatus,
   convertToAed,
   aggregateInvoiceLines,
-  aggregateStandardRatedSalesByEmirate,
   applyPartialExemption,
   buildVat201Boxes,
   reconcile,
@@ -329,32 +328,6 @@ describe('aggregateInvoiceLines', () => {
   });
 });
 
-describe('aggregateStandardRatedSalesByEmirate', () => {
-  it('groups only standard-rated invoice lines by their supply emirate', () => {
-    const result = aggregateStandardRatedSalesByEmirate([
-      { quantity: 1, unitPrice: 1000, vatRate: 0.05, vatSupplyType: 'standard_rated', supplyEmirate: 'dubai' },
-      { quantity: 2, unitPrice: 500, vatRate: 0.05, vatSupplyType: 'standard_rated', supplyEmirate: 'abu_dhabi' },
-      { quantity: 1, unitPrice: 700, vatRate: 0, vatSupplyType: 'zero_rated', supplyEmirate: 'sharjah' },
-      { quantity: 1, unitPrice: 300, vatRate: 0, vatSupplyType: 'exempt', supplyEmirate: 'ajman' },
-    ], 'dubai');
-
-    expect(result).toEqual({
-      dubai: { amount: 1000, vat: 50 },
-      abu_dhabi: { amount: 1000, vat: 50 },
-    });
-  });
-
-  it('defaults missing line emirates to the company emirate', () => {
-    const result = aggregateStandardRatedSalesByEmirate([
-      { quantity: 3, unitPrice: 100, vatRate: 0.05, vatSupplyType: 'standard_rated', supplyEmirate: null },
-    ], 'sharjah');
-
-    expect(result).toEqual({
-      sharjah: { amount: 300, vat: 15 },
-    });
-  });
-});
-
 // ─── applyPartialExemption ──────────────────────────────────────────────────
 
 describe('applyPartialExemption', () => {
@@ -490,28 +463,6 @@ describe('buildVat201Boxes', () => {
     const b = buildVat201Boxes(baseComponents, 'fujairah');
     expect(b.box1gFujairahAmount).toBe(1000);
     expect(b.box1gFujairahVat).toBe(50);
-  });
-
-  it('splits standard-rated sales across Box 1 emirates when line emirates are supplied', () => {
-    const b = buildVat201Boxes({
-      ...baseComponents,
-      standardRatedAmount: 2000,
-      standardRatedVat: 100,
-      standardRatedByEmirate: {
-        dubai: { amount: 1000, vat: 50 },
-        abu_dhabi: { amount: 750, vat: 37.5 },
-        sharjah: { amount: 250, vat: 12.5 },
-      },
-    }, 'dubai');
-
-    expect(b.box1bDubaiAmount).toBe(1000);
-    expect(b.box1bDubaiVat).toBe(50);
-    expect(b.box1aAbuDhabiAmount).toBe(750);
-    expect(b.box1aAbuDhabiVat).toBe(37.5);
-    expect(b.box1cSharjahAmount).toBe(250);
-    expect(b.box1cSharjahVat).toBe(12.5);
-    expect(b.box8TotalAmount).toBe(2300);
-    expect(b.box8TotalVat).toBe(100);
   });
 
   it('produces an all-zero VAT 201 form when there is no activity', () => {

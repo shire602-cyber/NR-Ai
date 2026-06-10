@@ -1,21 +1,22 @@
-import { Alert,AlertDescription } from '@/components/ui/alert';
+import { PageHeader } from '@/components/ui/page-header';
+import { useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Form,FormControl,FormDescription,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { FileText, Save, Info } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { Company } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { FileText,Info,Save } from 'lucide-react';
-import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
 
 const invoiceSettingsSchema = z.object({
   invoiceShowLogo: z.boolean().default(true),
@@ -111,12 +112,11 @@ export default function InvoiceSettings() {
 
   return (
     <div className="space-y-8 max-w-3xl">
-      <div>
-        <h1 className="text-3xl font-semibold mb-2">Invoice Settings</h1>
-        <p className="text-muted-foreground">
-          Customize how your invoices appear to customers
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Settings"
+        title="Invoice Settings"
+        description="Customize how your invoices appear to customers"
+      />
 
       {isVATRegistered && (
         <Alert>

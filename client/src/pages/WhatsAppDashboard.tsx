@@ -1,71 +1,77 @@
-import { Badge } from '@/components/ui/badge';
+import { useEffect, useState, type ComponentProps } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import {
-Dialog,
-DialogContent,
-DialogDescription,
-DialogHeader,
-DialogTitle,
-DialogTrigger,
-} from "@/components/ui/dialog";
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-Select,
-SelectContent,
-SelectItem,
-SelectTrigger,
-SelectValue,
-} from "@/components/ui/select";
-import { Switch } from '@/components/ui/switch';
-import {
-Tabs,
-TabsContent,
-TabsList,
-TabsTrigger,
-} from "@/components/ui/tabs";
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useI18n } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
 import {
-draftWithWhatsAppBridge,
-openWhatsAppWithLoggedFallback,
-pingWhatsAppBridge,
-registerWhatsAppBridgeSession,
-updateWhatsAppBridgeJobStatus,
-type WhatsAppBridgePing,
-} from '@/lib/whatsapp-bridge';
-import {
-MESSAGE_TEMPLATES,
-fillTemplate,
-formatPhoneForWhatsApp,
-openWhatsApp,
-pickWhatsAppNumber
-} from '@/lib/whatsapp-templates';
-import type { CustomerContact,Invoice,Notification,WhatsappMessage } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import {
-AlertTriangle,
-Bell,
-CheckCircle2,
-Clock,
-CreditCard,
-ExternalLink,
-FileText,
-Megaphone,
-MessageCircle,
-Phone,
-Receipt,
-Search,
-Send,
-Settings2,
-Users
+  MessageCircle,
+  Clock,
+  Send,
+  Users,
+  Search,
+  ExternalLink,
+  Phone,
+  Receipt,
+  Bell,
+  Megaphone,
+  Settings2,
+  FileText,
+  CreditCard,
+  CalendarClock,
+  ChevronRight,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
-import { useEffect,useState,type ComponentProps } from 'react';
 import { SiWhatsapp } from 'react-icons/si';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import type { WhatsappMessage, Invoice, CustomerContact, Notification } from '@shared/schema';
+import {
+  MESSAGE_TEMPLATES,
+  fillTemplate,
+  formatPhoneForWhatsApp,
+  openWhatsApp,
+  pickWhatsAppNumber,
+  type MessageTemplate,
+} from '@/lib/whatsapp-templates';
+import {
+  draftWithWhatsAppBridge,
+  openWhatsAppWithLoggedFallback,
+  pingWhatsAppBridge,
+  registerWhatsAppBridgeSession,
+  updateWhatsAppBridgeJobStatus,
+  type WhatsAppBridgePing,
+} from '@/lib/whatsapp-bridge';
 
 // ─── Rules ────────────────────────────────────────────────
 
@@ -166,28 +172,6 @@ export default function WhatsAppDashboard() {
 
   const { data: bridgeStatus, refetch: refetchBridgeStatus } = useQuery<WhatsAppBridgeStatus>({
     queryKey: ['/api/integrations/whatsapp/bridge/status'],
-  });
-
-  const confirmSentMutation = useMutation({
-    mutationFn: (messageId: string) => apiRequest('PATCH', `/api/integrations/whatsapp/messages/${messageId}/status`, {
-      status: 'sent_unverified',
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/bridge/status'] });
-      toast({
-        title: en ? 'Marked as sent' : 'تم التأكيد كمرسل',
-        description: en
-          ? 'The message is marked sent-unverified because WhatsApp Web confirmed the human send, not Muhasib delivery tracking.'
-          : 'تم وضع علامة مرسل غير مؤكد لأن الإرسال تم من واتساب ويب.',
-      });
-    },
-    onError: () => {
-      toast({
-        title: en ? 'Could not update WhatsApp status' : 'تعذر تحديث حالة واتساب',
-        variant: 'destructive',
-      });
-    },
   });
 
   // Notifications for pending actions
@@ -293,13 +277,6 @@ export default function WhatsAppDashboard() {
     }
 
     return { label: en ? 'Sent' : 'مرسل', variant: 'info' };
-  };
-
-  const canConfirmSent = (msg: WhatsappMessage) => {
-    const status = (msg.status || '').toLowerCase();
-    return msg.direction === 'outbound'
-      && msg.from === 'whatsapp_web_bridge'
-      && ['queued', 'drafted', 'logged'].includes(status);
   };
 
   const logAndOpen = async (phone: string, message: string, options: WhatsAppDispatchOptions = {}) => {
@@ -935,24 +912,11 @@ export default function WhatsAppDashboard() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {canConfirmSent(msg) && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => confirmSentMutation.mutate(msg.id)}
-                                disabled={confirmSentMutation.isPending}
-                              >
-                                <CheckCircle2 className="w-4 h-4 mr-1" />
-                                {en ? 'Confirm sent' : 'تأكيد الإرسال'}
-                              </Button>
-                            )}
-                            {msg.to && (
-                              <Button variant="ghost" size="sm" className="text-green-600" onClick={() => openWhatsApp(msg.to!, '')}>
-                                <ExternalLink className="w-4 h-4" />
-                              </Button>
-                            )}
-                          </div>
+                          {msg.to && (
+                            <Button variant="ghost" size="sm" className="text-green-600 shrink-0" onClick={() => openWhatsApp(msg.to!, '')}>
+                              <ExternalLink className="w-4 h-4" />
+                            </Button>
+                          )}
                         </div>
                       </CardContent>
                     </Card>

@@ -1,8 +1,8 @@
+import { useEffect, useState } from 'react';
+import { FcGoogle } from 'react-icons/fc';
+import { FaMicrosoft } from 'react-icons/fa';
 import { Button } from '@/components/ui/button';
 import { apiUrl } from '@/lib/api';
-import { useEffect,useState } from 'react';
-import { FaMicrosoft } from 'react-icons/fa';
-import { FcGoogle } from 'react-icons/fc';
 
 type OAuthProvider = 'google' | 'microsoft';
 type OAuthProviderInfo = {

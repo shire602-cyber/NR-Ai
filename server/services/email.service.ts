@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import { Resend } from 'resend';
-import type { Company,Invoice } from '../../shared/schema';
+import type { Invoice, Company } from '../../shared/schema';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
 

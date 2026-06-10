@@ -1,206 +1,154 @@
-import type {
-Account,
-ActivityLog,
-AdminSetting,
-AiConversation,
-AnalyticsEvent,
-AnomalyAlert,
-AuditLog,
-Backup,
-BankAccount,
-BankTransaction,
-Budget,
-CashFlowForecast,
-ChaseConfig,
-ChaseTemplate,
-ClientNote,
-Company,
-CompanyUser,
-ComplianceTask,
-CorporateTaxReturn,
-CustomerContact,
-Document,
-EcommerceIntegration,
-EcommerceTransaction,
-Engagement,
-FeatureUsageMetric,
-FinancialKpi,
-FtaEmail,
-HelpTip,
-InsertAccount,
-InsertActivityLog,
-InsertAdminSetting,
-InsertAiConversation,
-InsertAnalyticsEvent,
-InsertAnomalyAlert,
-InsertAuditLog,
-InsertBackup,
-InsertBankAccount,
-InsertBankTransaction,
-InsertBudget,
-InsertCashFlowForecast,
-InsertChaseConfig,
-InsertChaseTemplate,
-InsertClientNote,
-InsertCompany,
-InsertCompanyUser,
-InsertComplianceTask,
-InsertCorporateTaxReturn,
-InsertCustomerContact,
-InsertDocument,
-InsertEcommerceIntegration,
-InsertEcommerceTransaction,
-InsertEngagement,
-InsertFeatureUsageMetric,
-InsertFinancialKpi,
-InsertFtaEmail,
-InsertHelpTip,
-InsertIntegrationSync,
-InsertInventoryMovement,
-InsertInvitation,
-InsertInvoice,
-InsertInvoiceLine,
-InsertInvoicePayment,
-InsertJournalEntry,
-InsertJournalLine,
-InsertMessage,
-InsertNewsItem,
-InsertNotification,
-InsertPaymentChase,
-InsertProduct,
-InsertReceipt,
-InsertRecurringInvoice,
-InsertReferral,
-InsertReferralCode,
-InsertRegulatoryNews,
-InsertReminderLog,
-InsertReminderSetting,
-InsertServiceInvoice,
-InsertServiceInvoiceLine,
-InsertSubscription,
-InsertSubscriptionPlan,
-InsertTaxReturnArchive,
-InsertTransactionClassification,
-InsertUser,
-InsertUserFeedback,
-InsertUserOnboarding,
-InsertUserSubscription,
-InsertVatReturn,
-InsertWaitlist,
-InsertWhatsappConfig,
-InsertWhatsappMessage,
-IntegrationSync,
-InventoryMovement,
-Invitation,
-Invoice,
-InvoiceLine,
-InvoicePayment,
-JournalEntry,
-JournalLine,
-Message,
-NewsItem,
-Notification,
-PaymentChase,
-Product,
-Receipt,
-RecurringInvoice,
-Referral,
-ReferralCode,
-RegulatoryNews,
-ReminderLog,
-ReminderSetting,
-ServiceInvoice,
-ServiceInvoiceLine,
-Subscription,
-SubscriptionPlan,
-TaxReturnArchive,
-TransactionClassification,
-User,
-UserFeedback,
-UserOnboarding,
-UserSubscription,
-VatReturn,
-Waitlist,
-WhatsappConfig,
-WhatsappMessage
+import type { 
+  User, InsertUser,
+  Company, InsertCompany,
+  CompanyUser, InsertCompanyUser,
+  Account, InsertAccount,
+  JournalEntry, InsertJournalEntry,
+  JournalLine, InsertJournalLine,
+  Invoice, InsertInvoice,
+  InvoiceLine, InsertInvoiceLine,
+  Receipt, InsertReceipt,
+  CustomerContact, InsertCustomerContact,
+  Waitlist, InsertWaitlist,
+  IntegrationSync, InsertIntegrationSync,
+  WhatsappConfig, InsertWhatsappConfig,
+  WhatsappMessage, InsertWhatsappMessage,
+  AnomalyAlert, InsertAnomalyAlert,
+  BankTransaction, InsertBankTransaction,
+  CashFlowForecast, InsertCashFlowForecast,
+  TransactionClassification, InsertTransactionClassification,
+  Budget, InsertBudget,
+  EcommerceIntegration, InsertEcommerceIntegration,
+  EcommerceTransaction, InsertEcommerceTransaction,
+  FinancialKpi, InsertFinancialKpi,
+  Notification, InsertNotification,
+  RegulatoryNews, InsertRegulatoryNews,
+  ReminderSetting, InsertReminderSetting,
+  ReminderLog, InsertReminderLog,
+  UserOnboarding, InsertUserOnboarding,
+  HelpTip, InsertHelpTip,
+  ReferralCode, InsertReferralCode,
+  Referral, InsertReferral,
+  UserFeedback, InsertUserFeedback,
+  AnalyticsEvent, InsertAnalyticsEvent,
+  FeatureUsageMetric, InsertFeatureUsageMetric,
+  AdminSetting, InsertAdminSetting,
+  SubscriptionPlan, InsertSubscriptionPlan,
+  UserSubscription, InsertUserSubscription,
+  AuditLog, InsertAuditLog,
+  VatReturn, InsertVatReturn,
+  Document, InsertDocument,
+  TaxReturnArchive, InsertTaxReturnArchive,
+  ComplianceTask, InsertComplianceTask,
+  Message, InsertMessage,
+  NewsItem, InsertNewsItem,
+  Invitation, InsertInvitation,
+  ActivityLog, InsertActivityLog,
+  ClientNote, InsertClientNote,
+  Engagement, InsertEngagement,
+  ServiceInvoice, InsertServiceInvoice,
+  ServiceInvoiceLine, InsertServiceInvoiceLine,
+  FtaEmail, InsertFtaEmail,
+  Subscription, InsertSubscription,
+  Backup, InsertBackup,
+  AiConversation, InsertAiConversation,
+  RecurringInvoice, InsertRecurringInvoice,
+  CorporateTaxReturn, InsertCorporateTaxReturn,
+  Product, InsertProduct,
+  InventoryMovement, InsertInventoryMovement,
+  BankAccount, InsertBankAccount,
+  InvoicePayment, InsertInvoicePayment,
+  PaymentChase, InsertPaymentChase,
+  ChaseTemplate, InsertChaseTemplate,
+  ChaseConfig, InsertChaseConfig
 } from "@shared/schema";
 import {
-accounts,
-activityLogs,
-adminSettings,
-aiConversations,
-analyticsEvents,
-anomalyAlerts,
-auditLogs,
-backups,
-bankAccounts,
-bankTransactions,
-budgets,
-cashFlowForecasts,
-chaseConfigs,
-chaseTemplates,
-clientNotes,
-companies,
-companyUsers,
-complianceTasks,
-corporateTaxReturns,
-customerContacts,
-documents,
-ecommerceIntegrations,
-ecommerceTransactions,
-engagements,
-featureUsageMetrics,
-financialKpis,
-firmStaffAssignments,
-ftaEmails,
-helpTips,
-integrationSyncs,
-inventoryMovements,
-invitations,
-invoiceLines,
-invoicePayments,
-invoices,
-journalEntries,
-journalEntryNumberSequences,
-journalLines,
-messages,
-newsItems,
-notifications,
-passwordResetTokens,
-paymentChases,
-products,
-receipts,
-recurringInvoices,
-referralCodes,
-referrals,
-regulatoryNews,
-reminderLogs,
-reminderSettings,
-serviceInvoiceLines,
-serviceInvoices,
-subscriptionPlans,
-subscriptions,
-taxReturnArchive,
-transactionClassifications,
-userFeedback,
-userOnboarding,
-users,
-userSubscriptions,
-vatReturns,
-waitlist,
-whatsappConfigs,
-whatsappMessages
+  passwordResetTokens,
+  users,
+  companies,
+  companyUsers,
+  firmStaffAssignments,
+  accounts,
+  journalEntries,
+  journalLines,
+  invoices,
+  invoiceLines,
+  receipts,
+  customerContacts,
+  waitlist,
+  integrationSyncs,
+  whatsappConfigs,
+  whatsappMessages,
+  anomalyAlerts,
+  bankAccounts,
+  bankTransactions,
+  cashFlowForecasts,
+  transactionClassifications,
+  budgets,
+  ecommerceIntegrations,
+  ecommerceTransactions,
+  financialKpis,
+  notifications,
+  regulatoryNews,
+  reminderSettings,
+  reminderLogs,
+  userOnboarding,
+  helpTips,
+  referralCodes,
+  referrals,
+  userFeedback,
+  analyticsEvents,
+  featureUsageMetrics,
+  adminSettings,
+  subscriptionPlans,
+  userSubscriptions,
+  auditLogs,
+  vatReturns,
+  documents,
+  taxReturnArchive,
+  complianceTasks,
+  messages,
+  newsItems,
+  invitations,
+  activityLogs,
+  clientNotes,
+  engagements,
+  serviceInvoices,
+  serviceInvoiceLines,
+  ftaEmails,
+  subscriptions,
+  backups,
+  aiConversations,
+  recurringInvoices,
+  corporateTaxReturns,
+  products,
+  inventoryMovements,
+  invoicePayments,
+  paymentChases,
+  chaseTemplates,
+  chaseConfigs
 } from "@shared/schema";
-import Decimal from "decimal.js";
-import { and,desc,eq,gt,gte,inArray,isNotNull,isNull,lt,lte,or,sql } from "drizzle-orm";
-import { ACCOUNT_CODES } from "./constants";
 import { db } from "./db";
-import { isTerminal,statusFromPayments,type InvoiceStatus } from "./services/invoice-state-machine";
+import { eq, and, desc, lt, lte, gt, gte, isNull, isNotNull, or, sql, inArray } from "drizzle-orm";
+import Decimal from "decimal.js";
+import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
+import { ACCOUNT_CODES } from "./constants";
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
 // runaway invoice/journal volume can pull tens of MB into memory. Pages that
 // truly need the full dataset (PDF export, GL ledger) pass an explicit limit.
 const DEFAULT_LIST_LIMIT = 1000;
+
+// Stable 32-bit hash of a string, used to derive Postgres advisory-lock keys.
+// Postgres advisory locks accept (int4, int4); pg_advisory_lock(bigint) would
+// also work but the two-int form makes the namespace more obvious.
+function hashStringToInt(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
 
 // Tolerance for float-rounding drift. Anything beyond this is a real imbalance.
 const JOURNAL_BALANCE_TOLERANCE = 0.01;
@@ -213,30 +161,6 @@ function assertBalanced(lines: Array<{ debit?: number | null; credit?: number | 
       `Journal entry is unbalanced: debits ${totalDebit.toFixed(2)} ≠ credits ${totalCredit.toFixed(2)}`
     );
   }
-}
-
-async function allocateEntryNumberInTransaction(
-  tx: typeof db,
-  companyId: string,
-  date: Date,
-): Promise<string> {
-  const dateKey = date.toISOString().slice(0, 10);
-  const prefix = `JE-${dateKey.replace(/-/g, '')}`;
-  const [row] = await tx
-    .insert(journalEntryNumberSequences)
-    .values({ companyId, entryDate: dateKey, lastValue: 1 })
-    .onConflictDoUpdate({
-      target: [
-        journalEntryNumberSequences.companyId,
-        journalEntryNumberSequences.entryDate,
-      ],
-      set: {
-        lastValue: sql`${journalEntryNumberSequences.lastValue} + 1`,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ lastValue: journalEntryNumberSequences.lastValue });
-  return `${prefix}-${String(row.lastValue).padStart(3, '0')}`;
 }
 
 export interface IStorage {
@@ -340,7 +264,6 @@ export interface IStorage {
     companyId: string,
   ): Promise<Array<{ entry: JournalEntry; lines: JournalLine[] }>>;
   createJournalEntry(entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null }, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
-  createJournalEntryWithGeneratedNumber(entry: Omit<InsertJournalEntry, 'entryNumber'> & { entryNumber?: string | null; postedAt?: Date | null; updatedAt?: Date | null }, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
   updateJournalEntry(id: string, companyId: string, data: Partial<JournalEntry>): Promise<JournalEntry>;
   updateJournalEntryWithLines(id: string, companyId: string, data: Partial<JournalEntry>, lines: Array<Omit<InsertJournalLine, 'entryId'>>): Promise<JournalEntry>;
   deleteJournalEntry(id: string, companyId: string): Promise<void>;
@@ -485,9 +408,9 @@ export interface IStorage {
   getNotificationsByUserId(userId: string): Promise<Notification[]>;
   getUnreadNotificationCount(userId: string): Promise<number>;
   createNotification(notification: InsertNotification): Promise<Notification>;
-  markNotificationAsRead(userId: string, id: string): Promise<Notification | undefined>;
+  markNotificationAsRead(id: string): Promise<Notification>;
   markAllNotificationsAsRead(userId: string): Promise<void>;
-  dismissNotification(userId: string, id: string): Promise<Notification | undefined>;
+  dismissNotification(id: string): Promise<Notification>;
   
   // Regulatory News
   getRegulatoryNews(): Promise<RegulatoryNews[]>;
@@ -495,9 +418,8 @@ export interface IStorage {
   
   // Reminder Settings
   getReminderSettingsByCompanyId(companyId: string): Promise<ReminderSetting[]>;
-  getReminderSetting(id: string): Promise<ReminderSetting | undefined>;
   createReminderSetting(setting: InsertReminderSetting): Promise<ReminderSetting>;
-  updateReminderSetting(companyId: string, id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting | undefined>;
+  updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting>;
   
   // Reminder Logs
   getReminderLogsByCompanyId(companyId: string): Promise<ReminderLog[]>;
@@ -522,7 +444,6 @@ export interface IStorage {
   
   // Referrals
   getReferralsByReferrerId(referrerId: string): Promise<Referral[]>;
-  getReferralByCodeAndEmail(referralCodeId: string, refereeEmail: string): Promise<Referral | undefined>;
   createReferral(referral: InsertReferral): Promise<Referral>;
   updateReferral(id: string, data: Partial<InsertReferral>): Promise<Referral>;
   
@@ -575,8 +496,8 @@ export interface IStorage {
   updateCorporateTaxReturn(id: string, data: Partial<CorporateTaxReturn>): Promise<CorporateTaxReturn>;
 
   // Team Management
-  updateCompanyUser(id: string, companyId: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser | undefined>;
-  deleteCompanyUser(id: string, companyId: string): Promise<boolean>;
+  updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser>;
+  deleteCompanyUser(id: string): Promise<void>;
   getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]>;
 
   // Admin Stats
@@ -585,10 +506,10 @@ export interface IStorage {
 
   // Document Vault
   getDocuments(companyId: string): Promise<Document[]>;
-  getDocument(id: string, companyId?: string): Promise<Document | undefined>;
+  getDocument(id: string): Promise<Document | undefined>;
   createDocument(document: InsertDocument): Promise<Document>;
-  updateDocument(id: string, companyId: string, data: Partial<InsertDocument>): Promise<Document | undefined>;
-  deleteDocument(id: string, companyId: string): Promise<boolean>;
+  updateDocument(id: string, data: Partial<InsertDocument>): Promise<Document>;
+  deleteDocument(id: string): Promise<void>;
 
   // Tax Return Archive
   getTaxReturnArchive(companyId: string): Promise<TaxReturnArchive[]>;
@@ -597,10 +518,10 @@ export interface IStorage {
 
   // Compliance Tasks
   getComplianceTasks(companyId: string): Promise<ComplianceTask[]>;
-  getComplianceTask(id: string, companyId?: string): Promise<ComplianceTask | undefined>;
+  getComplianceTask(id: string): Promise<ComplianceTask | undefined>;
   createComplianceTask(task: InsertComplianceTask): Promise<ComplianceTask>;
-  updateComplianceTask(id: string, companyId: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask | undefined>;
-  deleteComplianceTask(id: string, companyId: string): Promise<boolean>;
+  updateComplianceTask(id: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask>;
+  deleteComplianceTask(id: string): Promise<void>;
 
   // Messages
   getMessages(companyId: string): Promise<Message[]>;
@@ -1346,31 +1267,6 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async createJournalEntryWithGeneratedNumber(
-    insertEntry: Omit<InsertJournalEntry, 'entryNumber'> & { entryNumber?: string | null; postedAt?: Date | null; updatedAt?: Date | null },
-    lines: Array<Omit<InsertJournalLine, 'entryId'>>
-  ): Promise<JournalEntry> {
-    if (!Array.isArray(lines) || lines.length === 0) {
-      throw new Error('Journal entry must have at least one line');
-    }
-    assertBalanced(lines);
-
-    return await db.transaction(async (tx: typeof db) => {
-      const entryDate = insertEntry.date instanceof Date
-        ? insertEntry.date
-        : new Date(insertEntry.date as any);
-      const entryNumber = await allocateEntryNumberInTransaction(tx, insertEntry.companyId, entryDate);
-      const [entry] = await tx
-        .insert(journalEntries)
-        .values({ ...insertEntry, date: entryDate, entryNumber })
-        .returning();
-      for (const line of lines) {
-        await tx.insert(journalLines).values({ ...line, entryId: entry.id });
-      }
-      return entry;
-    });
-  }
-
   async updateJournalEntry(id: string, companyId: string, data: Partial<JournalEntry>): Promise<JournalEntry> {
     const [entry] = await db
       .update(journalEntries)
@@ -1418,7 +1314,43 @@ export class DatabaseStorage implements IStorage {
   }
 
   async generateEntryNumber(companyId: string, date: Date): Promise<string> {
-    return allocateEntryNumberInTransaction(db, companyId, date);
+    const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+    const prefix = `JE-${dateStr}`;
+    const likePattern = prefix + '-%';
+    // Trim 'JE-' (3) + 'YYYYMMDD' (8) + '-' (1) → 12, so the counter starts at
+    // SUBSTRING position 13 (1-based) per Postgres semantics.
+    const counterStart = prefix.length + 2;
+
+    // Atomic next-number generation. Two-pronged defence:
+    // 1) Per-(company, date) advisory lock serialises concurrent generators in
+    //    the same Postgres session pool, so they don't both compute MAX+1.
+    // 2) The unique constraint (company_id, entry_number) is the final safety
+    //    net. If we still collide (different DB instances / restored backups /
+    //    bug), the insert will fail and the caller can retry.
+    //
+    // The advisory lock is session-scoped here (not _xact_) because the caller
+    // typically generates the number, then runs createJournalEntry which opens
+    // its own transaction. We release at function exit.
+    const lockKey1 = hashStringToInt(companyId);
+    const lockKey2 = hashStringToInt(prefix);
+    await db.execute(sql`SELECT pg_advisory_lock(${lockKey1}, ${lockKey2})`);
+    try {
+      const result: any = await db.execute(sql`
+        SELECT COALESCE(
+          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}) AS INTEGER)),
+          0
+        ) AS max_seq
+        FROM journal_entries
+        WHERE company_id = ${companyId}
+          AND entry_number LIKE ${likePattern}
+      `);
+      const rows = (result.rows ?? result) as Array<{ max_seq: number | string | null }>;
+      const maxSeq = Number(rows[0]?.max_seq ?? 0);
+      const nextNumber = maxSeq + 1;
+      return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+    } finally {
+      await db.execute(sql`SELECT pg_advisory_unlock(${lockKey1}, ${lockKey2})`).catch(() => {});
+    }
   }
 
   // Journal Lines
@@ -1998,8 +1930,6 @@ export class DatabaseStorage implements IStorage {
     } else {
       updateData.matchedInvoiceId = matchedId;
     }
-    let journalEntryToCreate: (Omit<InsertJournalEntry, 'entryNumber'> & { postedAt?: Date | null }) | null = null;
-    let journalLinesToCreate: Array<Omit<InsertJournalLine, 'entryId'>> | null = null;
 
     // Reconciliation must produce a journal entry: previously this method only
     // flipped flags on the bank transaction, leaving the books out of step
@@ -2042,66 +1972,45 @@ export class DatabaseStorage implements IStorage {
           const txnDate = existing.transactionDate instanceof Date
             ? existing.transactionDate
             : new Date(existing.transactionDate);
-          journalEntryToCreate = {
-            companyId: existing.companyId,
-            date: txnDate,
-            memo: `Bank reconciliation: ${existing.description}`.slice(0, 500),
-            status: 'posted',
-            source: 'bank_reconciliation',
-            sourceId: existing.id,
-            createdBy,
-            postedBy: createdBy,
-            postedAt: new Date(),
-          };
-          journalLinesToCreate = [
+          const entryNumber = await this.generateEntryNumber(existing.companyId, txnDate);
+
+          const newEntry = await this.createJournalEntry(
             {
-              accountId: existing.bankAccountId,
-              debit: isInflow ? absAmount : 0,
-              credit: isInflow ? 0 : absAmount,
-              description: existing.description,
+              companyId: existing.companyId,
+              entryNumber,
+              date: txnDate,
+              memo: `Bank reconciliation: ${existing.description}`.slice(0, 500),
+              status: 'posted',
+              source: 'bank_reconciliation',
+              sourceId: existing.id,
+              createdBy,
+              postedBy: createdBy,
+              postedAt: new Date(),
             },
-            {
-              accountId: contraAccount.id,
-              debit: isInflow ? 0 : absAmount,
-              credit: isInflow ? absAmount : 0,
-              description: existing.description,
-            },
-          ];
+            [
+              {
+                accountId: existing.bankAccountId,
+                debit: isInflow ? absAmount : 0,
+                credit: isInflow ? 0 : absAmount,
+                description: existing.description,
+              },
+              {
+                accountId: contraAccount.id,
+                debit: isInflow ? 0 : absAmount,
+                credit: isInflow ? absAmount : 0,
+                description: existing.description,
+              },
+            ],
+          );
+          updateData.matchedJournalEntryId = newEntry.id;
         }
       }
-    }
-
-    if (journalEntryToCreate && journalLinesToCreate) {
-      assertBalanced(journalLinesToCreate);
-      return await db.transaction(async (tx: typeof db) => {
-        const entryDate = journalEntryToCreate.date instanceof Date
-          ? journalEntryToCreate.date
-          : new Date(journalEntryToCreate.date as any);
-        const entryNumber = await allocateEntryNumberInTransaction(tx, journalEntryToCreate.companyId, entryDate);
-        const [newEntry] = await tx
-          .insert(journalEntries)
-          .values({ ...journalEntryToCreate, date: entryDate, entryNumber })
-          .returning();
-        for (const line of journalLinesToCreate) {
-          await tx.insert(journalLines).values({ ...line, entryId: newEntry.id });
-        }
-        updateData.matchedJournalEntryId = newEntry.id;
-        const [transaction] = await tx
-          .update(bankTransactions)
-          .set(updateData)
-          .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)))
-          .returning();
-        if (!transaction) {
-          throw new Error('Bank transaction not found');
-        }
-        return transaction;
-      });
     }
 
     const [transaction] = await db
       .update(bankTransactions)
       .set(updateData)
-      .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)))
+      .where(eq(bankTransactions.id, id))
       .returning();
     if (!transaction) {
       throw new Error('Bank transaction not found');
@@ -2350,13 +2259,13 @@ export class DatabaseStorage implements IStorage {
     return notification;
   }
 
-  async markNotificationAsRead(userId: string, id: string): Promise<Notification | undefined> {
+  async markNotificationAsRead(id: string): Promise<Notification> {
     const [notification] = await db
       .update(notifications)
       .set({ isRead: true, readAt: new Date() })
-      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .where(eq(notifications.id, id))
       .returning();
-    return notification || undefined;
+    return notification;
   }
 
   async markAllNotificationsAsRead(userId: string): Promise<void> {
@@ -2366,13 +2275,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(notifications.userId, userId));
   }
 
-  async dismissNotification(userId: string, id: string): Promise<Notification | undefined> {
+  async dismissNotification(id: string): Promise<Notification> {
     const [notification] = await db
       .update(notifications)
       .set({ isDismissed: true })
-      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
+      .where(eq(notifications.id, id))
       .returning();
-    return notification || undefined;
+    return notification;
   }
 
   // Regulatory News
@@ -2400,14 +2309,6 @@ export class DatabaseStorage implements IStorage {
       .where(eq(reminderSettings.companyId, companyId));
   }
 
-  async getReminderSetting(id: string): Promise<ReminderSetting | undefined> {
-    const [setting] = await db
-      .select()
-      .from(reminderSettings)
-      .where(eq(reminderSettings.id, id));
-    return setting || undefined;
-  }
-
   async createReminderSetting(insertSetting: InsertReminderSetting): Promise<ReminderSetting> {
     const [setting] = await db
       .insert(reminderSettings)
@@ -2416,13 +2317,13 @@ export class DatabaseStorage implements IStorage {
     return setting;
   }
 
-  async updateReminderSetting(companyId: string, id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting | undefined> {
+  async updateReminderSetting(id: string, data: Partial<InsertReminderSetting>): Promise<ReminderSetting> {
     const [setting] = await db
       .update(reminderSettings)
       .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(reminderSettings.id, id), eq(reminderSettings.companyId, companyId)))
+      .where(eq(reminderSettings.id, id))
       .returning();
-    return setting || undefined;
+    return setting;
   }
 
   // Reminder Logs
@@ -2546,17 +2447,6 @@ export class DatabaseStorage implements IStorage {
       .from(referrals)
       .where(eq(referrals.referrerId, referrerId))
       .orderBy(desc(referrals.createdAt));
-  }
-
-  async getReferralByCodeAndEmail(referralCodeId: string, refereeEmail: string): Promise<Referral | undefined> {
-    const [referral] = await db
-      .select()
-      .from(referrals)
-      .where(and(
-        eq(referrals.referralCodeId, referralCodeId),
-        eq(referrals.refereeEmail, refereeEmail.trim().toLowerCase()),
-      ));
-    return referral || undefined;
   }
 
   async createReferral(insertReferral: InsertReferral): Promise<Referral> {
@@ -2830,21 +2720,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Team Management
-  async updateCompanyUser(id: string, companyId: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser | undefined> {
+  async updateCompanyUser(id: string, data: Partial<InsertCompanyUser>): Promise<CompanyUser> {
     const [companyUser] = await db
       .update(companyUsers)
       .set(data)
-      .where(and(eq(companyUsers.id, id), eq(companyUsers.companyId, companyId)))
+      .where(eq(companyUsers.id, id))
       .returning();
-    return companyUser || undefined;
+    return companyUser;
   }
 
-  async deleteCompanyUser(id: string, companyId: string): Promise<boolean> {
-    const deleted = await db
-      .delete(companyUsers)
-      .where(and(eq(companyUsers.id, id), eq(companyUsers.companyId, companyId)))
-      .returning({ id: companyUsers.id });
-    return deleted.length > 0;
+  async deleteCompanyUser(id: string): Promise<void> {
+    await db.delete(companyUsers).where(eq(companyUsers.id, id));
   }
 
   async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {
@@ -2869,11 +2755,8 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(documents.createdAt));
   }
 
-  async getDocument(id: string, companyId?: string): Promise<Document | undefined> {
-    const predicates = companyId
-      ? and(eq(documents.id, id), eq(documents.companyId, companyId))
-      : eq(documents.id, id);
-    const [document] = await db.select().from(documents).where(predicates);
+  async getDocument(id: string): Promise<Document | undefined> {
+    const [document] = await db.select().from(documents).where(eq(documents.id, id));
     return document || undefined;
   }
 
@@ -2885,21 +2768,17 @@ export class DatabaseStorage implements IStorage {
     return document;
   }
 
-  async updateDocument(id: string, companyId: string, data: Partial<InsertDocument>): Promise<Document | undefined> {
+  async updateDocument(id: string, data: Partial<InsertDocument>): Promise<Document> {
     const [document] = await db
       .update(documents)
       .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(documents.id, id), eq(documents.companyId, companyId)))
+      .where(eq(documents.id, id))
       .returning();
-    return document || undefined;
+    return document;
   }
 
-  async deleteDocument(id: string, companyId: string): Promise<boolean> {
-    const deleted = await db
-      .delete(documents)
-      .where(and(eq(documents.id, id), eq(documents.companyId, companyId)))
-      .returning({ id: documents.id });
-    return deleted.length > 0;
+  async deleteDocument(id: string): Promise<void> {
+    await db.delete(documents).where(eq(documents.id, id));
   }
 
   // Tax Return Archive
@@ -2933,11 +2812,8 @@ export class DatabaseStorage implements IStorage {
       .orderBy(complianceTasks.dueDate);
   }
 
-  async getComplianceTask(id: string, companyId?: string): Promise<ComplianceTask | undefined> {
-    const predicates = companyId
-      ? and(eq(complianceTasks.id, id), eq(complianceTasks.companyId, companyId))
-      : eq(complianceTasks.id, id);
-    const [task] = await db.select().from(complianceTasks).where(predicates);
+  async getComplianceTask(id: string): Promise<ComplianceTask | undefined> {
+    const [task] = await db.select().from(complianceTasks).where(eq(complianceTasks.id, id));
     return task || undefined;
   }
 
@@ -2949,21 +2825,17 @@ export class DatabaseStorage implements IStorage {
     return task;
   }
 
-  async updateComplianceTask(id: string, companyId: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask | undefined> {
+  async updateComplianceTask(id: string, data: Partial<InsertComplianceTask>): Promise<ComplianceTask> {
     const [task] = await db
       .update(complianceTasks)
       .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(complianceTasks.id, id), eq(complianceTasks.companyId, companyId)))
+      .where(eq(complianceTasks.id, id))
       .returning();
-    return task || undefined;
+    return task;
   }
 
-  async deleteComplianceTask(id: string, companyId: string): Promise<boolean> {
-    const deleted = await db
-      .delete(complianceTasks)
-      .where(and(eq(complianceTasks.id, id), eq(complianceTasks.companyId, companyId)))
-      .returning({ id: complianceTasks.id });
-    return deleted.length > 0;
+  async deleteComplianceTask(id: string): Promise<void> {
+    await db.delete(complianceTasks).where(eq(complianceTasks.id, id));
   }
 
   // Messages
@@ -3565,7 +3437,7 @@ export class DatabaseStorage implements IStorage {
     return await db.transaction(async (tx: typeof db) => {
       // Lock the invoice row. Concurrent payment writers will queue here.
       const lockResult: any = await tx.execute(sql`
-        SELECT id, company_id, currency, exchange_rate, total, status
+        SELECT id, company_id, currency, total, status
         FROM invoices
         WHERE id = ${input.invoiceId}
         FOR UPDATE
@@ -3574,7 +3446,6 @@ export class DatabaseStorage implements IStorage {
         id: string;
         company_id: string;
         currency: string;
-        exchange_rate: number | string;
         total: number;
         status: string;
       }>;
@@ -3629,39 +3500,27 @@ export class DatabaseStorage implements IStorage {
         throw e;
       }
 
-      const dateKey = input.date.toISOString().slice(0, 10);
-      const prefix = `JE-${dateKey.replace(/-/g, '')}`;
-      const [seq] = await tx
-        .insert(journalEntryNumberSequences)
-        .values({ companyId: input.companyId, entryDate: dateKey, lastValue: 1 })
-        .onConflictDoUpdate({
-          target: [
-            journalEntryNumberSequences.companyId,
-            journalEntryNumberSequences.entryDate,
-          ],
-          set: {
-            lastValue: sql`${journalEntryNumberSequences.lastValue} + 1`,
-            updatedAt: new Date(),
-          },
-        })
-        .returning({ lastValue: journalEntryNumberSequences.lastValue });
-      const entryNumber = `${prefix}-${String(seq.lastValue).padStart(3, '0')}`;
-      const invoiceCurrency = lockedInvoice.currency || 'AED';
-      const exchangeRate = Number(lockedInvoice.exchange_rate) || 1;
-      if (exchangeRate <= 0) {
-        const e: any = new Error(`Invalid exchange rate for invoice ${input.invoiceId}`);
-        e.code = 'INVALID_EXCHANGE_RATE';
-        throw e;
-      }
-      const baseAmount = invoiceCurrency === 'AED'
-        ? amountD.toDecimalPlaces(2).toNumber()
-        : amountD.times(exchangeRate).toDecimalPlaces(2).toNumber();
-      const foreignFields = invoiceCurrency === 'AED'
-        ? {}
-        : {
-          foreignCurrency: invoiceCurrency,
-          exchangeRate,
-        };
+      // Generate JE number — uses session advisory lock so concurrent calls
+      // serialise. The session is the same as this transaction's connection,
+      // so the lock will be released at commit.
+      const dateStr = input.date.toISOString().slice(0, 10).replace(/-/g, '');
+      const prefix = `JE-${dateStr}`;
+      const lockKey1 = hashStringToInt(input.companyId);
+      const lockKey2 = hashStringToInt(prefix);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
+      const counterStart = prefix.length + 2;
+      const numResult: any = await tx.execute(sql`
+        SELECT COALESCE(
+          MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}) AS INTEGER)),
+          0
+        ) AS max_seq
+        FROM journal_entries
+        WHERE company_id = ${input.companyId}
+          AND entry_number LIKE ${prefix + '-%'}
+      `);
+      const numRows = (numResult.rows ?? numResult) as Array<{ max_seq: number | string | null }>;
+      const nextNumber = Number(numRows[0]?.max_seq ?? 0) + 1;
+      const entryNumber = `${prefix}-${String(nextNumber).padStart(3, '0')}`;
 
       // Insert journal entry + balanced lines.
       const [entry] = await tx
@@ -3682,22 +3541,16 @@ export class DatabaseStorage implements IStorage {
       await tx.insert(journalLines).values({
         entryId: entry.id,
         accountId: input.paymentAccountId,
-        debit: baseAmount,
+        debit: input.amount,
         credit: 0,
         description: `Payment received - Invoice ${input.invoiceId}`,
-        ...foreignFields,
-        foreignDebit: invoiceCurrency === 'AED' ? 0 : input.amount,
-        foreignCredit: 0,
       });
       await tx.insert(journalLines).values({
         entryId: entry.id,
         accountId: input.receivableAccountId,
         debit: 0,
-        credit: baseAmount,
+        credit: input.amount,
         description: `Clear A/R - Invoice ${input.invoiceId}`,
-        ...foreignFields,
-        foreignDebit: 0,
-        foreignCredit: invoiceCurrency === 'AED' ? 0 : input.amount,
       });
 
       // Record the payment row.

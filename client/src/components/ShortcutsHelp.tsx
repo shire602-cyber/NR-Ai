@@ -1,13 +1,13 @@
-import {
-Dialog,
-DialogContent,
-DialogDescription,
-DialogHeader,
-DialogTitle,
-} from '@/components/ui/dialog';
-import { formatCombo,useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useState } from 'react';
 import { useLocation } from 'wouter';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useKeyboardShortcuts, formatCombo } from '@/hooks/useKeyboardShortcuts';
 
 const SHORTCUTS = [
   {

@@ -1,5 +1,5 @@
 import type { CookieOptions } from 'express';
-import { getEnv,isProduction } from './env';
+import { getEnv, isProduction } from './env';
 
 type SameSiteMode = Exclude<CookieOptions['sameSite'], boolean | undefined>;
 
@@ -7,8 +7,8 @@ export function authCookieSameSite(): SameSiteMode {
   const configured = getEnv().AUTH_COOKIE_SAMESITE;
   if (configured) return configured;
 
-  // Production frontend/backend run as separate deployments, so auth cookies
-  // must be eligible for credentialed cross-origin API requests.
+  // The frontend and backend are deployed separately in production, so the
+  // API must allow credentialed cross-origin requests to carry auth cookies.
   return isProduction() ? 'none' : 'lax';
 }
 

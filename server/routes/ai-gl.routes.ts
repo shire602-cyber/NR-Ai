@@ -1,15 +1,15 @@
-import type { Express,Request,Response } from 'express';
-import { createLogger } from '../config/logger';
-import { pool } from '../db';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import type { Express, Request, Response } from 'express';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import {
-autoPostHighConfidence,
-getAIGLStats,
-processUserFeedback,
-scanAndClassifyTransactions,
-} from '../services/autonomous-gl.service';
 import { storage } from '../storage';
+import { pool } from '../db';
+import {
+  scanAndClassifyTransactions,
+  autoPostHighConfidence,
+  processUserFeedback,
+  getAIGLStats,
+} from '../services/autonomous-gl.service';
+import { createLogger } from '../config/logger';
 
 const log = createLogger('ai-gl-routes');
 
@@ -83,7 +83,7 @@ export function registerAIGLRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const result = await processUserFeedback(companyId, id, 'accept', userId);
+      const result = await processUserFeedback(id, 'accept', userId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }
@@ -112,7 +112,7 @@ export function registerAIGLRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const result = await processUserFeedback(companyId, id, 'reject', userId);
+      const result = await processUserFeedback(id, 'reject', userId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }
@@ -147,7 +147,7 @@ export function registerAIGLRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const result = await processUserFeedback(companyId, id, 'correct', userId, accountId);
+      const result = await processUserFeedback(id, 'correct', userId, accountId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }

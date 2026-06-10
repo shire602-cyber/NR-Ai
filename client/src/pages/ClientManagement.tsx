@@ -1,34 +1,42 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { 
+  Building2, 
+  Plus, 
+  Search,
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  Eye,
+  FileText,
+  Users,
+  Receipt,
+  Calendar,
+  Mail,
+  Phone,
+  Globe,
+  MapPin,
+  Filter,
+  Download,
+  Upload
+} from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
-import { DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuSeparator,DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import type { Company } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import {
-Calendar,
-Edit,
-Eye,
-FileText,
-Filter,
-Mail,
-MoreHorizontal,
-Phone,
-Plus,
-Search,
-Trash2,
-Upload
-} from 'lucide-react';
-import { useState } from 'react';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Link } from 'wouter';
+import { format } from 'date-fns';
+import type { Company } from '@shared/schema';
 
 interface ClientWithStats extends Company {
   userCount: number;
@@ -74,7 +82,7 @@ export default function ClientManagement() {
     });
   };
 
-  const { data: clients = [], isLoading, error, refetch, isFetching } = useQuery<ClientWithStats[]>({
+  const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
     queryKey: ['/api/admin/clients'],
   });
 
@@ -178,56 +186,29 @@ export default function ClientManagement() {
     );
   }
 
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-clients-title">Client Management</h1>
-          <p className="text-muted-foreground">Manage all your accounting firm's clients</p>
-        </div>
-        <Card className="border-destructive/40 bg-destructive/5">
-          <CardHeader>
-            <CardTitle className="text-destructive">Could not load clients</CardTitle>
-            <CardDescription>
-              {error instanceof Error ? error.message : 'The admin client list failed to load.'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button
-              variant="outline"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              data-testid="button-retry-clients"
-            >
-              {isFetching ? 'Retrying...' : 'Try again'}
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-clients-title">Client Management</h1>
-          <p className="text-muted-foreground">Manage all your accounting firm's clients</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href="/admin/import">
-            <Button variant="outline" data-testid="button-import-clients">
-              <Upload className="w-4 h-4 mr-2" />
-              Import from Excel
-            </Button>
-          </Link>
-          <Dialog open={addClientOpen} onOpenChange={(open) => { setAddClientOpen(open); if (!open) resetForm(); }}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-add-client">
-                <Plus className="w-4 h-4 mr-2" />
-                Add Client
+      <PageHeader
+        eyebrow="Admin"
+        title="Client Management"
+        testId="text-clients-title"
+        description="Manage all your accounting firm's clients"
+        actions={
+          <>
+            <Link href="/admin/import">
+              <Button variant="outline" data-testid="button-import-clients">
+                <Upload className="w-4 h-4 mr-2" />
+                Import from Excel
               </Button>
-            </DialogTrigger>
+            </Link>
+            <Button onClick={() => setAddClientOpen(true)} data-testid="button-add-client">
+              <Plus className="w-4 h-4 mr-2" />
+              Add Client
+            </Button>
+          </>
+        }
+      />
+      <Dialog open={addClientOpen} onOpenChange={(open) => { setAddClientOpen(open); if (!open) resetForm(); }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Add New Client</DialogTitle>
@@ -373,8 +354,6 @@ export default function ClientManagement() {
             </form>
           </DialogContent>
           </Dialog>
-        </div>
-      </div>
 
       <Card>
         <CardHeader>

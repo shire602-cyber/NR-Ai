@@ -1,5 +1,5 @@
-import { LegalLayout } from '@/components/LegalLayout';
 import { useEffect } from 'react';
+import { LegalLayout } from '@/components/LegalLayout';
 
 export default function CookiePolicy() {
   useEffect(() => {

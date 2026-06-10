@@ -1,30 +1,32 @@
-import { Badge } from '@/components/ui/badge';
-import { Card,CardContent,CardHeader } from '@/components/ui/card';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { 
+  History as HistoryIcon, 
+  Search,
+  User,
+  Building2,
+  FileText,
+  Receipt,
+  Settings,
+  Trash2,
+  Edit,
+  Plus,
+  Eye,
+  Database,
+  RefreshCw
+} from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { format } from 'date-fns';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiUrl } from '@/lib/api';
 import type { ActivityLog } from '@shared/schema';
-import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import {
-Building2,
-Database,
-Edit,
-Eye,
-FileText,
-History as HistoryIcon,
-Plus,
-Receipt,
-RefreshCw,
-Search,
-Settings,
-Trash2,
-User
-} from 'lucide-react';
-import { useState } from 'react';
 
 export default function History() {
   const { companyId } = useDefaultCompany();
@@ -109,12 +111,12 @@ export default function History() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-history-title">Activity History</h1>
-          <p className="text-muted-foreground">Track all changes made to your financial records</p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Workspace"
+        title="Activity History"
+        testId="text-history-title"
+        description="Track all changes made to your financial records"
+      />
 
       <Card>
         <CardHeader>

@@ -1,38 +1,43 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { format, parseISO, differenceInDays, isBefore } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
-import {
-DropdownMenu,
-DropdownMenuContent,
-DropdownMenuItem,
-DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { differenceInDays,format,isBefore,parseISO } from 'date-fns';
-import {
-AlertTriangle,
-Calendar,
-CheckCircle2,
-Clock,
-ListTodo,
-Loader2,
-MoreHorizontal,
-Plus,
-Search,
-Trash2
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { 
+  Plus, 
+  Search, 
+  CheckCircle2, 
+  Clock, 
+  AlertTriangle,
+  Calendar,
+  Loader2,
+  Filter,
+  ListTodo,
+  ArrowUpDown,
+  MoreHorizontal,
+  Trash2,
+  Edit
 } from 'lucide-react';
-import { useState } from 'react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface ComplianceTask {
   id: string;
@@ -69,7 +74,7 @@ const PRIORITIES = [
 ];
 
 export default function TaskCenter() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState('');
@@ -217,22 +222,19 @@ export default function TaskCenter() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            {locale === 'ar' ? 'مركز المهام' : 'Task Center'}
-          </h1>
-          <p className="text-muted-foreground">
-            {locale === 'ar' 
-              ? 'إدارة مهام الامتثال والتذكيرات'
-              : 'Manage compliance tasks and reminders'}
-          </p>
-        </div>
-        <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
-          <Plus className="w-4 h-4 mr-2" />
-          {locale === 'ar' ? 'مهمة جديدة' : 'New Task'}
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Compliance"
+        title={locale === 'ar' ? 'مركز المهام' : 'Task Center'}
+        description={locale === 'ar'
+          ? 'إدارة مهام الامتثال والتذكيرات'
+          : 'Manage compliance tasks and reminders'}
+        actions={
+          <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
+            <Plus className="w-4 h-4 mr-2" />
+            {locale === 'ar' ? 'مهمة جديدة' : 'New Task'}
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>

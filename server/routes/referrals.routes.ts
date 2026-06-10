@@ -1,17 +1,21 @@
-import { Router,type Express,type Request,type Response } from "express";
+import { Router, type Express, type Request, type Response } from "express";
+import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { storage } from "../storage";
+import { z } from "zod";
 
 export function registerReferralRoutes(app: Express) {
   const router = Router();
+
+  // Protect every referral endpoint at the router level.
+  router.use(authMiddleware);
 
   // =====================================
   // REFERRAL SYSTEM
   // =====================================
 
   // Get user's referral code
-  router.get("/my-code", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  router.get("/my-code", asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     let referralCode = await storage.getReferralCodeByUserId(userId);
 
@@ -36,7 +40,7 @@ export function registerReferralRoutes(app: Express) {
   }));
 
   // Get referral stats
-  router.get("/stats", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
+  router.get("/stats", asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user?.id;
     const referralCode = await storage.getReferralCodeByUserId(userId);
     const referrals = await storage.getReferralsByReferrerId(userId);
@@ -73,13 +77,52 @@ export function registerReferralRoutes(app: Express) {
     });
   }));
 
-  // Signup tracking now happens from /api/auth/register after account creation,
-  // so public callers cannot forge arbitrary referee emails.
-  router.post("/track-signup", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-    res.status(410).json({
-      message: 'Referral signup tracking is handled during registration.',
-      code: 'REFERRAL_TRACKING_MOVED',
+  // Track referral signup
+  router.post("/track-signup", asyncHandler(async (req: Request, res: Response) => {
+    // Validate input
+    const validationSchema = z.object({
+      code: z.string().min(1, 'Referral code is required'),
+      refereeEmail: z.string().email('Invalid email address'),
+      source: z.string().optional(),
     });
+
+    const validated = validationSchema.parse(req.body);
+    const { code, refereeEmail, source } = validated;
+
+    const referralCode = await storage.getReferralCodeByCode(code);
+    if (!referralCode || !referralCode.isActive) {
+      return res.status(400).json({ message: 'Invalid referral code' });
+    }
+
+    // Create referral record
+    const referral = await storage.createReferral({
+      referralCodeId: referralCode.id,
+      referrerId: referralCode.userId,
+      refereeEmail,
+      status: 'pending',
+      signupSource: source || 'link',
+      referrerRewardStatus: 'pending',
+      refereeRewardStatus: 'pending',
+      referrerRewardAmount: referralCode.referrerRewardValue,
+      refereeRewardAmount: referralCode.refereeRewardValue,
+    });
+
+    // Update referral code stats
+    await storage.updateReferralCode(referralCode.id, {
+      totalReferrals: (referralCode.totalReferrals || 0) + 1,
+    });
+
+    // Notify referrer
+    await storage.createNotification({
+      userId: referralCode.userId,
+      type: 'referral',
+      title: 'New Referral Signup!',
+      message: `Someone signed up using your referral code. They'll need to complete a qualifying action for you to earn your reward.`,
+      priority: 'normal',
+      actionUrl: '/referrals',
+    });
+
+    res.json(referral);
   }));
 
   // Mount under /api/referral so the router-level authMiddleware does not

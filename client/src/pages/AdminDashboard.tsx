@@ -1,28 +1,27 @@
+import { PageHeader } from '@/components/ui/page-header';
+import { useQuery } from '@tanstack/react-query';
+import {
+  Building2,
+  Users,
+  UserPlus,
+  Clock,
+  FileText,
+  TrendingUp,
+  AlertCircle,
+  CheckCircle,
+  Mail,
+  Activity,
+  HeartPulse,
+  CalendarClock,
+  UserCog
+} from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import type { ActivityLog } from '@shared/schema';
-import { useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import {
-Activity,
-AlertCircle,
-ArrowRight,
-Building2,
-CalendarClock,
-CheckCircle,
-Clock,
-FileText,
-HeartPulse,
-Mail,
-TrendingUp,
-UserCog,
-UserPlus,
-Users,
-} from 'lucide-react';
 import { Link } from 'wouter';
+import { format } from 'date-fns';
+import type { ActivityLog } from '@shared/schema';
 
 interface ClientHealth {
   companyId: string;
@@ -52,7 +51,6 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
-  const { data: currentUser } = useCurrentUser();
   const { data: stats, isLoading } = useQuery<AdminStats>({
     queryKey: ['/api/admin/stats'],
   });
@@ -72,8 +70,6 @@ export default function AdminDashboard() {
   const { data: adminUsers = [] } = useQuery<any[]>({
     queryKey: ['/api/admin/users'],
   });
-  const hasFirmOpsAccess =
-    currentUser?.firmRole === 'firm_owner' || currentUser?.firmRole === 'firm_admin';
 
   if (isLoading) {
     return (
@@ -85,59 +81,28 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Manage your accounting firm's clients and system</p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/admin/clients">
-            <Button variant="outline" data-testid="button-view-clients">
-              <Building2 className="w-4 h-4 mr-2" />
-              View All Clients
-            </Button>
-          </Link>
-          <Link href="/admin/invitations">
-            <Button data-testid="button-invite-client">
-              <UserPlus className="w-4 h-4 mr-2" />
-              Invite Client
-            </Button>
-          </Link>
-        </div>
-      </div>
-
-      <Card className="border-primary/20 bg-primary/5">
-        <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-          <div>
-            <CardTitle className="text-lg">Client Operations Cockpit</CardTitle>
-            <CardDescription>
-              VAT close cohorts, corporate tax lanes, bookkeeping close blockers, staff capacity, and client action queues live in the NRA client area.
-            </CardDescription>
-          </div>
-          <Badge variant={hasFirmOpsAccess ? 'default' : 'outline'}>
-            {hasFirmOpsAccess ? 'Available' : 'Firm role required'}
-          </Badge>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            {hasFirmOpsAccess
-              ? 'Open Client Operations to review VAT, corporate tax, accounting, and bookkeeping categorisations across managed clients.'
-              : 'This account is an admin account, but it does not have firm_owner or firm_admin access, so the cockpit is hidden by design.'}
-          </p>
-          {hasFirmOpsAccess ? (
-            <Link href="/firm/clients">
-              <Button data-testid="button-open-client-operations">
-                Open Client Operations
-                <ArrowRight className="ml-2 h-4 w-4" />
+      <PageHeader
+        eyebrow="Admin"
+        title="Admin Dashboard"
+        testId="text-admin-title"
+        description="Manage your accounting firm's clients and system"
+        actions={
+          <>
+            <Link href="/admin/clients">
+              <Button variant="outline" data-testid="button-view-clients">
+                <Building2 className="w-4 h-4 mr-2" />
+                View All Clients
               </Button>
             </Link>
-          ) : (
-            <Button variant="outline" disabled data-testid="button-client-operations-locked">
-              Assign firm role to unlock
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+            <Link href="/admin/invitations">
+              <Button data-testid="button-invite-client">
+                <UserPlus className="w-4 h-4 mr-2" />
+                Invite Client
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>

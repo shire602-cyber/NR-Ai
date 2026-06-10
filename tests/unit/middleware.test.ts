@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, _beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response, NextFunction } from 'express';
 import {
   AppError,
