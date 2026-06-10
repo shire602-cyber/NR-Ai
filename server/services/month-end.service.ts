@@ -228,10 +228,21 @@ export async function getCloseChecklist(
   );
 
   if (fixedAssetsCheck.rows[0].exists) {
+    // Legacy databases may predate the depreciation_posted column; fall back
+    // to status-only detection rather than failing the whole checklist.
+    const depColCheck = await pool.query(
+      `SELECT EXISTS (
+         SELECT FROM information_schema.columns
+         WHERE table_name = 'fixed_assets' AND column_name = 'depreciation_posted'
+       ) AS exists`
+    );
+    const postedFilter = depColCheck.rows[0].exists
+      ? `(depreciation_posted = true OR status = 'fully_depreciated')`
+      : `status = 'fully_depreciated'`;
     const depResult = await pool.query(
       `SELECT
          COUNT(*) AS total,
-         COUNT(*) FILTER (WHERE depreciation_posted = true OR status = 'fully_depreciated') AS posted
+         COUNT(*) FILTER (WHERE ${postedFilter}) AS posted
        FROM fixed_assets
        WHERE company_id = $1
          AND purchase_date <= $2::date

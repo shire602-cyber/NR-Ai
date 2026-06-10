@@ -96,11 +96,11 @@ export function registerComplianceDashboardRoutes(app: Express) {
       // Check how many have at least one version tracked
       let withVersions = 0;
       for (const inv of invoices) {
-        const count = await storage.getDocumentVersionCount(companyId, 'invoice', inv.id);
+        const count = (await (storage as any).getDocumentVersionCount?.(companyId, 'invoice', inv.id)) ?? 0;
         if (count > 0) withVersions++;
       }
       for (const rec of receipts) {
-        const count = await storage.getDocumentVersionCount(companyId, 'receipt', rec.id);
+        const count = (await (storage as any).getDocumentVersionCount?.(companyId, 'receipt', rec.id)) ?? 0;
         if (count > 0) withVersions++;
       }
       documentCompleteness.withVersionHistory = withVersions;
@@ -153,7 +153,7 @@ export function registerComplianceDashboardRoutes(app: Express) {
 
     // 20pts: Bank reconciliation (check if reconciliation rules exist as proxy)
     try {
-      const rules = await storage.getReconciliationRulesByCompanyId(companyId);
+      const rules = (await (storage as any).getReconciliationRulesByCompanyId?.(companyId)) ?? [];
       if (rules.length > 0) {
         auditScore += 20;
       } else {

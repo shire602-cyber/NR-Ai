@@ -121,7 +121,24 @@ export function applySecurityMiddleware(app: Express): void {
   app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
   app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));
   app.use('/api/firm/bulk/ocr', buildLimiter(limiterProfiles.ai));
-  app.use('/api/', buildLimiter(limiterProfiles.api));
+  // Two-tier general limiter: an active dashboard fires a dozen GETs per
+  // page, so reads get a generous dedicated budget while mutations keep the
+  // stricter cap. A single tier throttled normal navigation, 429'd
+  // /api/auth/me, and the client then treated the user as logged out.
+  app.use(
+    '/api/',
+    buildLimiter({
+      ...limiterProfiles.read,
+      skipIf: (req) => !['GET', 'HEAD', 'OPTIONS'].includes(req.method),
+    }),
+  );
+  app.use(
+    '/api/',
+    buildLimiter({
+      ...limiterProfiles.api,
+      skipMethods: ['GET', 'HEAD', 'OPTIONS'],
+    }),
+  );
 
   // ─── Request Size Limits ──────────────────────────────────
   // Hard ceiling: image-upload routes allow up to 10MB; the per-route

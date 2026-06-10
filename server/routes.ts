@@ -54,6 +54,7 @@ import { registerAnomalyRoutes } from './routes/anomaly.routes';
 import { registerAutoReconcileRoutes } from './routes/auto-reconcile.routes';
 import { registerAIGLRoutes } from './routes/ai-gl.routes';
 import { registerMonthEndRoutes } from './routes/month-end.routes';
+import { registerComplianceDashboardRoutes } from './routes/compliance-dashboard.routes';
 import { registerAdminHealthRoutes } from './routes/admin-health.routes';
 import { registerBankStatementRoutes } from './routes/bank-statements.routes';
 import { registerExchangeRateRoutes } from './routes/exchange-rates.routes';
@@ -108,6 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ─── Month-End & Close ────────────────────────────────
   registerMonthEndRoutes(app);
+  registerComplianceDashboardRoutes(app);
 
   // ─── Reporting & Analytics ──────────────────────────────
   registerDashboardRoutes(app);

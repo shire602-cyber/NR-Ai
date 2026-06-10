@@ -68,24 +68,40 @@ const FEATURE_MIN_TIER: Record<string, string> = {
 export function useSubscription() {
   const { companyId } = useDefaultCompany();
 
-  const { data: subData, isLoading: subLoading } = useQuery<SubscriptionData>({
+  const { data: subData, isLoading: subLoading, isError: subError } = useQuery<SubscriptionData>({
     queryKey: ["/api/companies", companyId, "billing", "subscription"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/billing/subscription`),
+    // 404 = billing module not deployed in this environment; resolve null
+    // instead of erroring so the UI fails open without retry noise.
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/subscription`).catch((err: any) => {
+        if (err?.status === 404) return null;
+        throw err;
+      }),
     enabled: !!companyId,
     staleTime: 30000,
+    retry: 1,
   });
 
   const { data: usageData, isLoading: usageLoading } = useQuery<UsageData>({
     queryKey: ["/api/companies", companyId, "billing", "usage"],
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/billing/usage`),
+    queryFn: () =>
+      apiRequest("GET", `/api/companies/${companyId}/billing/usage`).catch((err: any) => {
+        if (err?.status === 404) return null;
+        throw err;
+      }),
     enabled: !!companyId,
     staleTime: 30000,
   });
 
+  // No billing system deployed (endpoint missing/erroring) means features
+  // must fail OPEN — a paywall with a dead upgrade button is worse than no
+  // paywall. Gates only apply once the API reports a real plan.
+  const billingUnavailable = (subError || subData === null) && !subData;
   const tierName = subData?.subscription?.planId || "free";
-  const isFreeTier = tierName === "free";
+  const isFreeTier = !billingUnavailable && tierName === "free";
 
   function canAccess(feature: string): boolean {
+    if (billingUnavailable) return true;
     const features = TIER_FEATURES[tierName] || TIER_FEATURES.free;
     return !!features[feature];
   }
