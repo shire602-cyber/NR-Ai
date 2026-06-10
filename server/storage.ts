@@ -7,6 +7,8 @@ import type {
   JournalLine, InsertJournalLine,
   Invoice, InsertInvoice,
   InvoiceLine, InsertInvoiceLine,
+  Quote, InsertQuote,
+  QuoteLine, InsertQuoteLine,
   Receipt, InsertReceipt,
   CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
@@ -73,6 +75,8 @@ import {
   journalLines,
   invoices,
   invoiceLines,
+  quotes,
+  quoteLines,
   receipts,
   customerContacts,
   waitlist,
@@ -2097,6 +2101,51 @@ export class DatabaseStorage implements IStorage {
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
       .where(eq(journalEntries.companyId, companyId));
+  }
+
+  // Quotes
+  async getQuotesByCompanyId(companyId: string): Promise<Quote[]> {
+    return await db
+      .select()
+      .from(quotes)
+      .where(eq(quotes.companyId, companyId))
+      .orderBy(desc(quotes.createdAt));
+  }
+
+  async getQuote(id: string): Promise<Quote | undefined> {
+    const [quote] = await db.select().from(quotes).where(eq(quotes.id, id)).limit(1);
+    return quote;
+  }
+
+  async createQuote(data: InsertQuote): Promise<Quote> {
+    const [quote] = await db.insert(quotes).values(data).returning();
+    return quote;
+  }
+
+  async updateQuote(id: string, data: Partial<InsertQuote>): Promise<Quote | undefined> {
+    const [quote] = await db
+      .update(quotes)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(quotes.id, id))
+      .returning();
+    return quote;
+  }
+
+  async deleteQuote(id: string): Promise<void> {
+    await db.delete(quotes).where(eq(quotes.id, id));
+  }
+
+  async getQuoteLinesByQuoteId(quoteId: string): Promise<QuoteLine[]> {
+    return await db.select().from(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+  }
+
+  async createQuoteLine(data: InsertQuoteLine): Promise<QuoteLine> {
+    const [line] = await db.insert(quoteLines).values(data).returning();
+    return line;
+  }
+
+  async deleteQuoteLinesByQuoteId(quoteId: string): Promise<void> {
+    await db.delete(quoteLines).where(eq(quoteLines.quoteId, quoteId));
   }
 
   // Budgets

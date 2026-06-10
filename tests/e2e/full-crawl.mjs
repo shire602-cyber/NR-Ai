@@ -34,7 +34,7 @@ const ROUTES = [
   '/expense-claims', '/inventory', '/integrations', '/integrations-hub', '/whatsapp',
   '/document-chasing', '/notifications', '/reminders', '/company-profile',
   '/settings/company', '/team', '/document-vault', '/month-end', '/backup-restore',
-  '/history', '/exchange-rates', '/task-center', '/news-feed',
+  '/history', '/exchange-rates', '/quotes', '/task-center', '/news-feed',
   '/admin/dashboard', '/admin/clients', '/admin/invitations', '/admin/import',
   '/admin/activity-logs', '/admin/users', '/admin',
   '/firm/command-center', '/firm/clients', '/firm/staff', '/firm/health',
@@ -201,6 +201,55 @@ async function main() {
     }
   } catch (e) {
     await fail('journal-flow', { crash: e.message.slice(0, 150) });
+  }
+
+  // ── 5. Quote lifecycle: create → renders in UI → converts to invoice ──────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const quoteNumber = `Q-${Date.now()}`;
+    const quoteRes = await page.request.post(`${BASE}/api/companies/${companyId}/quotes`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: {
+        number: quoteNumber,
+        customerName: 'Quote Customer LLC',
+        date: new Date().toISOString(),
+        currency: 'AED',
+        subtotal: 1000,
+        vatAmount: 50,
+        total: 1050,
+        status: 'sent',
+        lines: [
+          { description: 'Consulting services', quantity: 2, unitPrice: 500, vatRate: 0.05 },
+        ],
+      },
+    });
+    if (quoteRes.status() !== 201) {
+      await fail('quote-flow create', { detail: `status ${quoteRes.status()}: ${(await quoteRes.text()).slice(0, 200)}` });
+    } else {
+      const quote = await quoteRes.json();
+      routeErrors = [];
+      apiFailures = [];
+      await page.goto(`${BASE}/quotes`);
+      await page.waitForTimeout(2500);
+      const quotesText = await page.locator('main').innerText().catch(() => '');
+      if (!quotesText.includes(quoteNumber)) {
+        await fail('quote-flow render', { detail: 'created quote not visible in quotes UI' });
+      }
+      const convertRes = await page.request.post(`${BASE}/api/quotes/${quote.id}/convert-to-invoice`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+      });
+      if (convertRes.status() >= 300) {
+        await fail('quote-flow convert', { detail: `status ${convertRes.status()}: ${(await convertRes.text()).slice(0, 200)}` });
+      } else {
+        const detail = await (await page.request.get(`${BASE}/api/quotes/${quote.id}`)).json();
+        if (detail?.status !== 'converted' || !detail?.convertedInvoiceId) {
+          await fail('quote-flow status', { detail: `expected converted, got ${detail?.status}` });
+        }
+      }
+    }
+  } catch (e) {
+    await fail('quote-flow', { crash: e.message.slice(0, 150) });
   }
 
   await browser.close();

@@ -677,6 +677,61 @@ export type InsertInvoiceLine = z.infer<typeof insertInvoiceLineSchema>;
 export type InvoiceLine = typeof invoiceLines.$inferSelect;
 
 // ===========================
+// Quotes (estimates / proposals — convertible to invoices)
+// ===========================
+export const quotes = pgTable("quotes", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  number: text("number").notNull(),
+  customerName: text("customer_name").notNull(),
+  customerTrn: text("customer_trn"),
+  contactId: uuid("contact_id").references((): any => customerContacts.id, { onDelete: "set null" }),
+  date: timestamp("date").notNull(),
+  expiryDate: timestamp("expiry_date"),
+  currency: text("currency").notNull().default("AED"),
+  subtotal: money("subtotal").notNull().default(0),
+  vatAmount: money("vat_amount").notNull().default(0),
+  total: money("total").notNull().default(0),
+  status: text("status").notNull().default("draft"), // draft | sent | accepted | declined | expired | converted
+  convertedInvoiceId: uuid("converted_invoice_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyNumberUnique: unique("quotes_company_number_unique").on(table.companyId, table.number),
+  companyIdIdx: index("idx_quotes_company_id").on(table.companyId),
+  companyStatusIdx: index("idx_quotes_company_status").on(table.companyId, table.status),
+}));
+
+export const insertQuoteSchema = createInsertSchema(quotes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertQuote = z.infer<typeof insertQuoteSchema>;
+export type Quote = typeof quotes.$inferSelect;
+
+export const quoteLines = pgTable("quote_lines", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: uuid("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: real("quantity").notNull(),
+  unitPrice: money("unit_price").notNull(),
+  vatRate: vatRateType("vat_rate").notNull().default(0.05),
+  vatSupplyType: text("vat_supply_type").default("standard_rated"),
+}, (table) => ({
+  quoteIdIdx: index("idx_quote_lines_quote_id").on(table.quoteId),
+}));
+
+export const insertQuoteLineSchema = createInsertSchema(quoteLines).omit({
+  id: true,
+});
+
+export type InsertQuoteLine = z.infer<typeof insertQuoteLineSchema>;
+export type QuoteLine = typeof quoteLines.$inferSelect;
+
+// ===========================
 // Invoice Payments
 // ===========================
 export const invoicePayments = pgTable("invoice_payments", {

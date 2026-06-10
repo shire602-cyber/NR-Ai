@@ -152,23 +152,22 @@ async function getRequestSubscription(req: Request): Promise<any | null> {
  * Middleware: Require a specific feature to be available on the current tier.
  * Returns 403 with structured error if feature is locked.
  */
+// Tier enforcement is explicitly opt-in. Companies get a 'free' subscription
+// row at signup, but until the billing module (plans, checkout, upgrades) is
+// actually deployed there is no way to leave the free tier — enforcing it
+// would paywall features behind a dead upgrade button. Set
+// BILLING_ENFORCEMENT=true when billing ships.
+const billingEnforced = () => process.env.BILLING_ENFORCEMENT === 'true';
+
 export function requireFeature(feature: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!billingEnforced()) {
+      next();
+      return;
+    }
     const subscription = await getRequestSubscription(req);
 
     if (!subscription) {
-      // No subscription found — treat as free tier
-      const allowed = TIER_FEATURES.free[feature];
-      if (!allowed) {
-        res.status(403).json({
-          message: 'Upgrade required to access this feature',
-          code: 'TIER_LOCKED',
-          feature,
-          currentTier: 'free',
-          requiredTier: FEATURE_MIN_TIER[feature] || 'starter',
-        });
-        return;
-      }
       next();
       return;
     }
@@ -196,6 +195,10 @@ export function requireFeature(feature: string) {
  */
 export function requireTier(minimumTier: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!billingEnforced()) {
+      next();
+      return;
+    }
     const subscription = await getRequestSubscription(req);
     const currentTier = subscription?.planId || 'free';
 
@@ -222,6 +225,10 @@ export function requireTier(minimumTier: string) {
  */
 export function checkUsageLimit(resource: 'invoices' | 'receipts' | 'aiCredits') {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!billingEnforced()) {
+      next();
+      return;
+    }
     const subscription = await getRequestSubscription(req);
     const planId = subscription?.planId || 'free';
     const limits = TIER_LIMITS[planId] || TIER_LIMITS.free;
@@ -272,11 +279,11 @@ export function checkUsageLimit(resource: 'invoices' | 'receipts' | 'aiCredits')
           const doIncrement = async () => {
             try {
               if (resource === 'invoices') {
-                await storage.incrementInvoiceCount(companyId);
+                await (storage as any).incrementInvoiceCount?.(companyId);
               } else if (resource === 'receipts') {
-                await storage.incrementReceiptCount(companyId);
+                await (storage as any).incrementReceiptCount?.(companyId);
               } else if (resource === 'aiCredits') {
-                await storage.decrementAiCredits(companyId);
+                await (storage as any).decrementAiCredits?.(companyId);
               }
             } catch (error) {
               log.error({ error, companyId, resource }, 'Failed to increment usage counter');

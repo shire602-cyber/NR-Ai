@@ -8,6 +8,14 @@ import { createLogger } from '../config/logger';
 
 const logger = createLogger('quotes-routes');
 
+// Client payloads carry ISO strings; Drizzle timestamp columns want Dates.
+function normalizeQuoteDates<T extends { date?: unknown; expiryDate?: unknown }>(data: T): T {
+  const out: any = { ...data };
+  if (out.date) out.date = new Date(out.date);
+  if (out.expiryDate) out.expiryDate = new Date(out.expiryDate);
+  return out;
+}
+
 export function registerQuoteRoutes(app: Express) {
   // =====================================
   // Quote Routes
@@ -59,7 +67,7 @@ export function registerQuoteRoutes(app: Express) {
         return res.status(403).json({ message: 'Access denied' });
       }
 
-      const quote = await storage.createQuote({ ...quoteData, companyId });
+      const quote = await storage.createQuote(normalizeQuoteDates({ ...quoteData, companyId }));
 
       if (lines && Array.isArray(lines)) {
         for (const line of lines) {
@@ -87,7 +95,7 @@ export function registerQuoteRoutes(app: Express) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    const updated = await storage.updateQuote(id, updateData);
+    const updated = await storage.updateQuote(id, normalizeQuoteDates(updateData));
 
     if (lines && Array.isArray(lines)) {
       await storage.deleteQuoteLinesByQuoteId(quote.id);
@@ -153,7 +161,6 @@ export function registerQuoteRoutes(app: Express) {
       vatAmount: quote.vatAmount,
       total: quote.total,
       status: 'draft',
-      quoteId: quote.id,
     });
 
     // Copy lines to invoice

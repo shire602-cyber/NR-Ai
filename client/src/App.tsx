@@ -90,6 +90,7 @@ const DocumentVault = lazy(() => import('@/pages/DocumentVault'));
 const BillPay = lazy(() => import('@/pages/BillPay'));
 const ExpenseClaims = lazy(() => import('@/pages/ExpenseClaims'));
 const Inventory = lazy(() => import('@/pages/Inventory'));
+const Quotes = lazy(() => import('@/pages/Quotes'));
 const ExchangeRates = lazy(() => import('@/pages/ExchangeRates'));
 const RecurringInvoices = lazy(() => import('@/pages/RecurringInvoices'));
 const PaymentChasing = lazy(() => import('@/pages/PaymentChasing'));
@@ -551,6 +552,7 @@ function Router() {
           <Route path="/receipt-autopilot" component={ReceiptAutopilot} />
           <Route path="/contacts" component={CustomerContacts} />
           <Route path="/inventory" component={Inventory} />
+          <Route path="/quotes" component={Quotes} />
           <Route path="/exchange-rates" component={ExchangeRates} />
           <Route path="/payroll" component={Payroll} />
           <Route path="/bill-pay" component={BillPay} />
