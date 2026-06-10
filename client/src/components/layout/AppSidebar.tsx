@@ -83,6 +83,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     icon: TrendingUp,
     items: [
       { titleKey: 'invoices', url: '/invoices' },
+      { titleKey: 'quotes', url: '/quotes' },
       { titleKey: 'recurringInvoices', url: '/recurring-invoices' },
       { titleKey: 'paymentChasing', url: '/payment-chasing' },
       { titleKey: 'contacts', url: '/contacts' },
