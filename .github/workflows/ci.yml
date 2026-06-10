@@ -42,3 +42,71 @@ jobs:
           DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
           SESSION_SECRET: ci_session_secret_that_is_long_enough_for_validation
         run: npm run build
+
+  e2e:
+    name: Browser E2E · full route crawl
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: muhasib
+          POSTGRES_PASSWORD: muhasib
+          POSTGRES_DB: muhasib
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U muhasib"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://muhasib:muhasib@127.0.0.1:5432/muhasib
+      SESSION_SECRET: ci_session_secret_that_is_long_enough_for_validation
+      JWT_SECRET: ci_jwt_secret_that_is_long_enough_for_validation_x
+      NODE_ENV: development
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit
+
+      - name: Install Chromium
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Run migrations
+        run: npx tsx server/migrate.ts
+
+      - name: Start server
+        run: |
+          npm run dev > /tmp/server.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:5000/health/ready > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          echo "Server failed to become ready"; tail -50 /tmp/server.log; exit 1
+
+      - name: Browser E2E
+        run: npm run e2e
+
+      - name: Server log on failure
+        if: failure()
+        run: tail -100 /tmp/server.log || true
+
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-screenshots
+          path: tests/e2e/.artifacts/
+          if-no-files-found: ignore
