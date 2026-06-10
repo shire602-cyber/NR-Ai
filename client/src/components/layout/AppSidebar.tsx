@@ -98,6 +98,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: 'receipts', url: '/receipts' },
       { titleKey: 'receiptAutopilot', url: '/receipt-autopilot' },
       { titleKey: 'billPay', url: '/bill-pay' },
+      { titleKey: 'purchaseOrders', url: '/purchase-orders' },
       { titleKey: 'expenseClaims', url: '/expense-claims' },
       { titleKey: 'inventory', url: '/inventory' },
     ],

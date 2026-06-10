@@ -421,6 +421,13 @@
       "when": 1770900000000,
       "tag": "0060_credit_notes",
       "breakpoints": false
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1771000000000,
+      "tag": "0061_purchase_orders",
+      "breakpoints": false
     }
   ]
 }

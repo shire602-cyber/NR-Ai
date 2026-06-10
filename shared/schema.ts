@@ -787,6 +787,59 @@ export type InsertCreditNoteLine = z.infer<typeof insertCreditNoteLineSchema>;
 export type CreditNoteLine = typeof creditNoteLines.$inferSelect;
 
 // ===========================
+// Purchase Orders
+// ===========================
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  number: text("number").notNull(),
+  vendorName: text("vendor_name").notNull(),
+  vendorTrn: text("vendor_trn"),
+  date: timestamp("date").notNull(),
+  expectedDeliveryDate: timestamp("expected_delivery_date"),
+  currency: text("currency").notNull().default("AED"),
+  subtotal: money("subtotal").notNull().default(0),
+  vatAmount: money("vat_amount").notNull().default(0),
+  total: money("total").notNull().default(0),
+  status: text("status").notNull().default("draft"), // draft | sent | approved | received | cancelled
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyNumberUnique: unique("purchase_orders_company_number_unique").on(table.companyId, table.number),
+  companyIdIdx: index("idx_purchase_orders_company_id").on(table.companyId),
+  companyStatusIdx: index("idx_purchase_orders_company_status").on(table.companyId, table.status),
+}));
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+export const purchaseOrderLines = pgTable("purchase_order_lines", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  purchaseOrderId: uuid("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  quantity: real("quantity").notNull(),
+  unitPrice: money("unit_price").notNull(),
+  vatRate: vatRateType("vat_rate").notNull().default(0.05),
+  vatSupplyType: text("vat_supply_type").default("standard_rated"),
+}, (table) => ({
+  purchaseOrderIdIdx: index("idx_purchase_order_lines_po_id").on(table.purchaseOrderId),
+}));
+
+export const insertPurchaseOrderLineSchema = createInsertSchema(purchaseOrderLines).omit({
+  id: true,
+});
+
+export type InsertPurchaseOrderLine = z.infer<typeof insertPurchaseOrderLineSchema>;
+export type PurchaseOrderLine = typeof purchaseOrderLines.$inferSelect;
+
+// ===========================
 // Invoice Payments
 // ===========================
 export const invoicePayments = pgTable("invoice_payments", {

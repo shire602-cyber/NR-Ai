@@ -34,7 +34,7 @@ const ROUTES = [
   '/expense-claims', '/inventory', '/integrations', '/integrations-hub', '/whatsapp',
   '/document-chasing', '/notifications', '/reminders', '/company-profile',
   '/settings/company', '/team', '/document-vault', '/month-end', '/backup-restore',
-  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/task-center', '/news-feed',
+  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/task-center', '/news-feed',
   '/admin/dashboard', '/admin/clients', '/admin/invitations', '/admin/import',
   '/admin/activity-logs', '/admin/users', '/admin',
   '/firm/command-center', '/firm/clients', '/firm/staff', '/firm/health',
@@ -300,6 +300,58 @@ async function main() {
     }
   } catch (e) {
     await fail('credit-note-flow', { crash: e.message.slice(0, 150) });
+  }
+
+  // ── 7. Purchase order lifecycle: create → renders → send → approve →
+  //       receive ───────────────────────────────────────────────────────────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const poNumber = `PO-${Date.now()}`;
+    const poRes = await page.request.post(`${BASE}/api/companies/${companyId}/purchase-orders`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: {
+        number: poNumber,
+        vendorName: 'Supplier Trading FZE',
+        date: new Date().toISOString(),
+        expectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+        currency: 'AED',
+        subtotal: 500,
+        vatAmount: 25,
+        total: 525,
+        lines: [
+          { description: 'Office supplies', quantity: 5, unitPrice: 100, vatRate: 0.05 },
+        ],
+      },
+    });
+    if (poRes.status() !== 201) {
+      await fail('po-flow create', { detail: `status ${poRes.status()}: ${(await poRes.text()).slice(0, 200)}` });
+    } else {
+      const po = await poRes.json();
+      routeErrors = [];
+      apiFailures = [];
+      await page.goto(`${BASE}/purchase-orders`);
+      await page.waitForTimeout(2500);
+      const poText = await page.locator('main').innerText().catch(() => '');
+      if (!poText.includes(poNumber)) {
+        await fail('po-flow render', { detail: 'created purchase order not visible in UI' });
+      }
+      for (const step of ['send', 'approve', 'receive']) {
+        const stepRes = await page.request.post(`${BASE}/api/purchase-orders/${po.id}/${step}`, {
+          headers: { 'x-csrf-token': csrfToken ?? '' },
+        });
+        if (stepRes.status() >= 300) {
+          await fail(`po-flow ${step}`, { detail: `status ${stepRes.status()}: ${(await stepRes.text()).slice(0, 200)}` });
+          break;
+        }
+      }
+      const detail = await (await page.request.get(`${BASE}/api/purchase-orders/${po.id}`)).json();
+      if (detail?.status !== 'received') {
+        await fail('po-flow status', { detail: `expected received, got ${detail?.status}` });
+      }
+    }
+  } catch (e) {
+    await fail('po-flow', { crash: e.message.slice(0, 150) });
   }
 
   await browser.close();
