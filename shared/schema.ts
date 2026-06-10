@@ -548,6 +548,7 @@ export const journalLines = pgTable("journal_lines", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   entryId: uuid("entry_id").notNull().references(() => journalEntries.id, { onDelete: "cascade" }),
   accountId: uuid("account_id").notNull().references(() => accounts.id),
+  costCenterId: uuid("cost_center_id"), // optional departmental allocation (cost_centers.id)
   debit: money("debit").notNull().default(0),   // Always in base currency (AED)
   credit: money("credit").notNull().default(0), // Always in base currency (AED)
   description: text("description"), // Line-level description
@@ -838,6 +839,33 @@ export const insertPurchaseOrderLineSchema = createInsertSchema(purchaseOrderLin
 
 export type InsertPurchaseOrderLine = z.infer<typeof insertPurchaseOrderLineSchema>;
 export type PurchaseOrderLine = typeof purchaseOrderLines.$inferSelect;
+
+// ===========================
+// Cost Centers (departmental P&L allocation on journal lines)
+// ===========================
+export const costCenters = pgTable("cost_centers", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  parentId: uuid("parent_id"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyCodeUnique: unique("cost_centers_company_code_unique").on(table.companyId, table.code),
+  companyIdIdx: index("idx_cost_centers_company_id").on(table.companyId),
+}));
+
+export const insertCostCenterSchema = createInsertSchema(costCenters).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertCostCenter = z.infer<typeof insertCostCenterSchema>;
+export type CostCenter = typeof costCenters.$inferSelect;
 
 // ===========================
 // Invoice Payments

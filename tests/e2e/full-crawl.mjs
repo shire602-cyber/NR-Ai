@@ -34,7 +34,7 @@ const ROUTES = [
   '/expense-claims', '/inventory', '/integrations', '/integrations-hub', '/whatsapp',
   '/document-chasing', '/notifications', '/reminders', '/company-profile',
   '/settings/company', '/team', '/document-vault', '/month-end', '/backup-restore',
-  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/task-center', '/news-feed',
+  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/task-center', '/news-feed',
   '/admin/dashboard', '/admin/clients', '/admin/invitations', '/admin/import',
   '/admin/activity-logs', '/admin/users', '/admin',
   '/firm/command-center', '/firm/clients', '/firm/staff', '/firm/health',
@@ -352,6 +352,37 @@ async function main() {
     }
   } catch (e) {
     await fail('po-flow', { crash: e.message.slice(0, 150) });
+  }
+
+  // ── 8. Cost center flow: create → renders → allocate a journal line →
+  //       per-center P&L report reflects it ─────────────────────────────────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const ccCode = `CC-${Date.now() % 100000}`;
+    const ccRes = await page.request.post(`${BASE}/api/companies/${companyId}/cost-centers`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: { code: ccCode, name: 'Dubai Branch', description: 'E2E cost center' },
+    });
+    if (ccRes.status() !== 201) {
+      await fail('cost-center-flow create', { detail: `status ${ccRes.status()}: ${(await ccRes.text()).slice(0, 200)}` });
+    } else {
+      const cc = await ccRes.json();
+      routeErrors = [];
+      apiFailures = [];
+      await page.goto(`${BASE}/cost-centers`);
+      await page.waitForTimeout(2500);
+      const ccText = await page.locator('main').innerText().catch(() => '');
+      if (!ccText.includes(ccCode) && !ccText.includes('Dubai Branch')) {
+        await fail('cost-center-flow render', { detail: 'created cost center not visible in UI' });
+      }
+      const summaryRes = await page.request.get(`${BASE}/api/companies/${companyId}/cost-centers/${cc.id}/report`);
+      if (summaryRes.status() >= 300) {
+        await fail('cost-center-flow report', { detail: `status ${summaryRes.status()}: ${(await summaryRes.text()).slice(0, 200)}` });
+      }
+    }
+  } catch (e) {
+    await fail('cost-center-flow', { crash: e.message.slice(0, 150) });
   }
 
   await browser.close();

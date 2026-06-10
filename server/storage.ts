@@ -13,6 +13,7 @@ import type {
   CreditNoteLine, InsertCreditNoteLine,
   PurchaseOrder, InsertPurchaseOrder,
   PurchaseOrderLine, InsertPurchaseOrderLine,
+  CostCenter, InsertCostCenter,
   Receipt, InsertReceipt,
   CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
@@ -85,6 +86,7 @@ import {
   creditNoteLines,
   purchaseOrders,
   purchaseOrderLines,
+  costCenters,
   receipts,
   customerContacts,
   waitlist,
@@ -2159,6 +2161,38 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteLinesByQuoteId(quoteId: string): Promise<void> {
     await db.delete(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+  }
+
+  // Cost centers
+  async getCostCentersByCompanyId(companyId: string): Promise<CostCenter[]> {
+    return await db
+      .select()
+      .from(costCenters)
+      .where(eq(costCenters.companyId, companyId))
+      .orderBy(costCenters.code);
+  }
+
+  async getCostCenter(id: string): Promise<CostCenter | undefined> {
+    const [center] = await db.select().from(costCenters).where(eq(costCenters.id, id)).limit(1);
+    return center;
+  }
+
+  async createCostCenter(data: InsertCostCenter): Promise<CostCenter> {
+    const [center] = await db.insert(costCenters).values(data).returning();
+    return center;
+  }
+
+  async updateCostCenter(id: string, data: Partial<InsertCostCenter>): Promise<CostCenter | undefined> {
+    const [center] = await db
+      .update(costCenters)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(costCenters.id, id))
+      .returning();
+    return center;
+  }
+
+  async deleteCostCenter(id: string): Promise<void> {
+    await db.delete(costCenters).where(eq(costCenters.id, id));
   }
 
   // Purchase orders
