@@ -21,7 +21,7 @@ export async function saveReceiptImage(base64Data: string, filename: string): Pr
   await ensureDir();
   const raw = base64Data.replace(/^data:image\/\w+;base64,/, '');
   const buffer = Buffer.from(raw, 'base64');
-  const safeName = filename.replace(/[^a-z0-9_.-]/gi, '_');
+  const safeName = filename.replace(/[^a-z0-9_\-\.]/gi, '_');
   const absPath = path.join(receiptsDir, safeName);
   await fs.writeFile(absPath, buffer);
   return `receipts/${safeName}`;

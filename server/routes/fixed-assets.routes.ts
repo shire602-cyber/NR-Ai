@@ -1,33 +1,49 @@
-import type { Express,Request,Response } from 'express';
-import { createLogger } from '../config/logger';
+import type { Express, Request, Response } from 'express';
 import { pool } from '../db';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { assertPeriodNotLocked } from '../services/period-lock.service';
 import { storage } from '../storage';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { createLogger } from '../config/logger';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
 
 const log = createLogger('fixed-assets');
 
-// Allocate JE-YYYYMMDD-NNN from the shared sequence table on the caller's
-// transaction connection. The UPSERT row lock serializes concurrent allocators.
+// Same advisory-lock hash function used by storage.generateEntryNumber so
+// concurrent batch runs serialise on the same key. Keeps tx-scoped JE
+// numbering collision-free without piggy-backing on the storage layer.
+function hashStringToInt(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
+// Allocate the next entry number from a per-(company, date) counter held
+// in-memory for the duration of a transaction. Caller must hold an advisory
+// xact lock for the same (company, date) so a parallel transaction can't
+// recompute the same MAX. Returns a closure that produces JE-YYYYMMDD-NNN.
 async function makeEntryNumberAllocator(
   client: any,
   companyId: string,
   date: Date,
-): Promise<() => Promise<string>> {
-  return async () => {
-    const dateKey = date.toISOString().slice(0, 10);
-    const prefix = `JE-${dateKey.replace(/-/g, '')}`;
-    const result = await client.query(
-      `INSERT INTO journal_entry_number_sequences (company_id, entry_date, last_value)
-       VALUES ($1, $2, 1)
-       ON CONFLICT (company_id, entry_date)
-       DO UPDATE SET last_value = journal_entry_number_sequences.last_value + 1,
-                     updated_at = now()
-       RETURNING last_value`,
-      [companyId, dateKey],
-    );
-    return `${prefix}-${String(result.rows[0].last_value).padStart(3, '0')}`;
+): Promise<() => string> {
+  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const prefix = `JE-${dateStr}`;
+  const counterStart = prefix.length + 2; // 1-based SUBSTRING start position
+  const likePattern = prefix + '-%';
+
+  const result = await client.query(
+    `SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM $1) AS INTEGER)), 0) AS max_seq
+       FROM journal_entries
+      WHERE company_id = $2 AND entry_number LIKE $3`,
+    [counterStart, companyId, likePattern],
+  );
+  let nextSeq = Number(result.rows[0]?.max_seq ?? 0) + 1;
+  return () => {
+    const num = `${prefix}-${String(nextSeq).padStart(3, '0')}`;
+    nextSeq++;
+    return num;
   };
 }
 
@@ -371,11 +387,13 @@ export function registerFixedAssetRoutes(app: Express) {
         }
 
         const entryDate = new Date(purchaseDate);
-        const je = await storage.createJournalEntryWithGeneratedNumber(
+        const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
+        const je = await storage.createJournalEntry(
           {
             companyId,
             date: entryDate,
             memo: `Capitalization: ${assetName}`,
+            entryNumber,
             status: 'posted',
             source: 'system',
             sourceId: asset.id,
@@ -637,15 +655,17 @@ export function registerFixedAssetRoutes(app: Express) {
         throw new Error('Depreciation system accounts (5100/1240) not found');
       }
 
+      const entryNumber = await storage.generateEntryNumber(asset.company_id, entryDate);
       const memoSuffix = calc.prorationFactor < 1
         ? ` (${reqMonth}/${reqYear}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%)`
         : ` (${reqMonth}/${reqYear})`;
 
-      const je = await storage.createJournalEntryWithGeneratedNumber(
+      const je = await storage.createJournalEntry(
         {
           companyId: asset.company_id,
           date: entryDate,
           memo: `Depreciation: ${asset.asset_name}${memoSuffix}`,
+          entryNumber,
           status: 'posted',
           source: 'system',
           sourceId: id,
@@ -747,9 +767,17 @@ export function registerFixedAssetRoutes(app: Express) {
     // acquisition, fully-depreciated, non-depreciable) are NOT failures and
     // do not roll back the rest.
     const client = await pool.connect();
-    const results: any[] = [];
+    let results: any[] = [];
     try {
       await client.query('BEGIN');
+
+      // Per-(company, JE date) advisory xact lock — auto-released on
+      // COMMIT/ROLLBACK. Serialises concurrent batch runs so our in-memory
+      // entry-number counter stays collision-free.
+      const lockKey1 = hashStringToInt(companyId);
+      const dateStr = targetEntryDate.toISOString().slice(0, 10).replace(/-/g, '');
+      const lockKey2 = hashStringToInt(`JE-${dateStr}`);
+      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [lockKey1, lockKey2]);
 
       const allocateEntryNumber = await makeEntryNumberAllocator(client, companyId, targetEntryDate);
 
@@ -855,7 +883,7 @@ export function registerFixedAssetRoutes(app: Express) {
           client,
           {
             companyId,
-            entryNumber: await allocateEntryNumber(),
+            entryNumber: allocateEntryNumber(),
             date: targetEntryDate,
             memo: `Depreciation: ${asset.asset_name}${memoSuffix}`,
             status: 'posted',
@@ -1013,6 +1041,19 @@ export function registerFixedAssetRoutes(app: Express) {
         return res.status(400).json({ message: 'Asset is already disposed' });
       }
 
+      // Per-(company, JE date) advisory xact lock for the entry-number
+      // allocator. Catch-up + disposal share the disposal-month numbering;
+      // catch-up months in earlier periods get their own per-period locks.
+      const lockKey1 = hashStringToInt(asset.company_id);
+      const lockedDates = new Set<string>();
+      const lockDate = async (d: Date) => {
+        const key = d.toISOString().slice(0, 10);
+        if (lockedDates.has(key)) return;
+        const lockKey2 = hashStringToInt(`JE-${key.replace(/-/g, '')}`);
+        await client.query('SELECT pg_advisory_xact_lock($1, $2)', [lockKey1, lockKey2]);
+        lockedDates.add(key);
+      };
+
       // -------------------- CATCH-UP DEPRECIATION ---------------------
       // Post depreciation for any month from the acquisition month through
       // the month BEFORE disposal that hasn't already been booked. Skip the
@@ -1096,6 +1137,7 @@ export function registerFixedAssetRoutes(app: Express) {
           }
           const scheduleId = claim.rows[0].id;
 
+          await lockDate(entryDate);
           const allocate = await makeEntryNumberAllocator(client, workingAsset.company_id, entryDate);
           const memoSuffix = calc.prorationFactor < 1
             ? ` (${period.month}/${period.year}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%, catch-up)`
@@ -1105,7 +1147,7 @@ export function registerFixedAssetRoutes(app: Express) {
             client,
             {
               companyId: workingAsset.company_id,
-              entryNumber: await allocate(),
+              entryNumber: allocate(),
               date: entryDate,
               memo: `Depreciation: ${workingAsset.asset_name}${memoSuffix}`,
               status: 'posted',
@@ -1182,12 +1224,13 @@ export function registerFixedAssetRoutes(app: Express) {
         lines.push({ accountId: gainAccount!.id, debit: 0, credit: round2(gainLoss), description: `Gain on disposal of ${workingAsset.asset_name}` });
       }
 
+      await lockDate(dispDate);
       const allocateDispNum = await makeEntryNumberAllocator(client, workingAsset.company_id, dispDate);
       const disposalJe = await insertJournalEntryTx(
         client,
         {
           companyId: workingAsset.company_id,
-          entryNumber: await allocateDispNum(),
+          entryNumber: allocateDispNum(),
           date: dispDate,
           memo: `Disposal: ${workingAsset.asset_name}`,
           status: 'posted',

@@ -1,7 +1,7 @@
-import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import type { LucideIcon } from 'lucide-react';
 import * as React from 'react';
+import type { LucideIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 
 export interface EmptyStateAction {
   label: string;
@@ -51,23 +51,25 @@ export function EmptyState({
       {Icon && (
         <div
           className={cn(
-            'rounded-full bg-muted/50 flex items-center justify-center mb-4',
-            compact ? 'w-12 h-12' : 'w-16 h-16',
+            'relative rounded-xl bg-muted/60 ring-1 ring-border flex items-center justify-center mb-4',
+            compact ? 'w-11 h-11' : 'w-14 h-14',
           )}
           aria-hidden="true"
         >
           <Icon
             className={cn(
-              'text-muted-foreground/60',
-              compact ? 'w-6 h-6' : 'w-8 h-8',
+              'text-muted-foreground/70',
+              compact ? 'w-5 h-5' : 'w-6 h-6',
             )}
+            strokeWidth={1.5}
           />
+          <span className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-accent/15 ring-1 ring-accent/30" />
         </div>
       )}
       <h3
         className={cn(
-          'font-semibold text-foreground',
-          compact ? 'text-base' : 'text-lg',
+          'font-semibold tracking-tight text-foreground',
+          compact ? 'text-[15px]' : 'text-[17px]',
         )}
       >
         {title}
@@ -75,8 +77,8 @@ export function EmptyState({
       {description && (
         <p
           className={cn(
-            'text-muted-foreground mt-1 max-w-md',
-            compact ? 'text-xs' : 'text-sm',
+            'text-muted-foreground mt-1.5 max-w-md leading-relaxed',
+            compact ? 'text-xs' : 'text-[13px]',
           )}
         >
           {description}

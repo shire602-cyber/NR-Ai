@@ -1,14 +1,14 @@
-import {
-Toast,
-ToastClose,
-ToastDescription,
-ToastProvider,
-ToastTitle,
-ToastViewport,
-} from "@/components/ui/toast"
+import { CheckCircle2, AlertTriangle, AlertCircle, Info } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import {
+  Toast,
+  ToastClose,
+  ToastDescription,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+} from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
-import { AlertCircle,AlertTriangle,CheckCircle2,Info } from "lucide-react"
 
 const VARIANT_ICON = {
   default: Info,

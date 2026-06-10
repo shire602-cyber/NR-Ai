@@ -1,65 +1,46 @@
-import { useActiveCompany } from '@/components/ActiveCompanyProvider';
-import { Badge } from '@/components/ui/badge';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
+import {
+  Building2, Plus, Search, LayoutGrid, List,
+  ChevronRight, Users, Calendar,
+  BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
+  Calculator, CheckCircle2, Clock, FileText, TrendingUp,
+  UserCheck, Target, RefreshCw, Copy, ScanLine, Check, XCircle, Download,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { apiUrl } from '@/lib/api';
-import { apiRequest,queryClient } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import {
-parseVatPasteRows,
-vat201CopyGroups,
-vatEmirates,
-vatRowCategories,
-vatRowCategoryLabel,
-type VatRowCategory,
+  parseVatPasteRows,
+  vat201CopyGroups,
+  vatEmirates,
+  vatRowCategories,
+  vatRowCategoryLabel,
+  type VatRowCategory,
 } from '@/lib/vat-workpaper-grid';
-import {
-CLIENT_SERVICE_OPTIONS,
-DEFAULT_CLIENT_SERVICE_CODES,
-clientHasService,
-serviceLabels,
-type ClientServiceCode,
-type ClientServicePlan,
-} from '@shared/client-services';
-import type { Company } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
+import type { Company } from '@shared/schema';
 import {
-AlertTriangle,
-BookOpen,
-Building2,
-Calculator,
-Calendar,
-Check,
-CheckCircle2,
-ChevronRight,
-Clock,
-Copy,
-FileText,
-FolderOpen,
-LayoutGrid,List,
-Plus,
-Receipt,
-RefreshCw,
-ScanLine,
-Search,
-Target,
-TrendingUp,
-Upload,
-UserCheck,
-Users,
-XCircle,
-} from 'lucide-react';
-import { useEffect,useMemo,useState } from 'react';
-import { useLocation } from 'wouter';
+  CLIENT_SERVICE_OPTIONS,
+  DEFAULT_CLIENT_SERVICE_CODES,
+  clientHasService,
+  serviceLabels,
+  type ClientServiceCode,
+  type ClientServicePlan,
+} from '@shared/client-services';
+import { useActiveCompany } from '@/components/ActiveCompanyProvider';
 
 interface ClientStats {
   invoiceCount: number;
@@ -1897,7 +1878,7 @@ function VatWorkspaceDialog({
     queryFn: () => apiRequest('GET', `/api/firm/vat-workpapers?companyId=${client?.id}`),
     enabled: open && !!client,
   });
-  const workpapers = useMemo(() => workpapersQuery.data?.workpapers ?? [], [workpapersQuery.data?.workpapers]);
+  const workpapers = workpapersQuery.data?.workpapers ?? [];
 
   useEffect(() => {
     if (!open) return;
@@ -2143,6 +2124,94 @@ function VatWorkspaceDialog({
     }
   };
 
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const pullFromBooksMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/pull-from-books`),
+    onSuccess: (result: { created: number }) => {
+      invalidateWorkspace();
+      toast({
+        title: result.created > 0 ? `${result.created} draft rows pulled from books` : 'Books already up to date',
+        description:
+          result.created > 0
+            ? 'Issued invoices and posted receipts for the period are in as drafts — review and approve.'
+            : 'Every document in this period is already on the workpaper.',
+      });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not pull from books', description: e?.message }),
+  });
+
+  const importFileMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const fileDataBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+        reader.onerror = () => reject(new Error('Could not read the file'));
+        reader.readAsDataURL(file);
+      });
+      return apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/import-file`, {
+        fileName: file.name,
+        fileDataBase64,
+        defaultEmirate: rowForm.emirate,
+      });
+    },
+    onSuccess: (result: { created: number }) => {
+      invalidateWorkspace();
+      toast({ title: `${result.created} rows imported from Excel` });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not import workbook', description: e?.message }),
+  });
+
+  const downloadTemplate = async () => {
+    try {
+      const response = await fetch(apiUrl('/api/firm/vat-workpapers/template'), { credentials: 'include' });
+      if (!response.ok) throw new Error(await response.text());
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'muhasib-vat-workpaper-template.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Could not download template', description: error?.message });
+    }
+  };
+
+  const [exportingWorkbook, setExportingWorkbook] = useState(false);
+  const downloadWorkbook = async () => {
+    if (!selectedWorkpaperId) return;
+    setExportingWorkbook(true);
+    try {
+      const response = await fetch(apiUrl(`/api/firm/vat-workpapers/${selectedWorkpaperId}/export`), {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') ?? '';
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'vat-workpaper.xlsx';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      toast({
+        title: 'Workpaper exported',
+        description: 'Excel copy saved — grid plus copy-ready VAT 201 sheet.',
+      });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Could not export workpaper', description: error?.message });
+    } finally {
+      setExportingWorkbook(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[96vw] w-[96vw] max-h-[92vh] overflow-y-auto">
@@ -2191,6 +2260,24 @@ function VatWorkspaceDialog({
               </Button>
               <Button variant="outline" onClick={() => recalculateMutation.mutate()} disabled={!selectedWorkpaperId || recalculateMutation.isPending}>
                 <RefreshCw className="w-4 h-4" />
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => void downloadWorkbook()}
+                disabled={!selectedWorkpaperId || exportingWorkbook}
+                data-testid="button-export-workpaper"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {exportingWorkbook ? 'Exporting…' : 'Excel'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => pullFromBooksMutation.mutate()}
+                disabled={!selectedWorkpaperId || pullFromBooksMutation.isPending}
+                data-testid="button-pull-from-books"
+              >
+                <BookOpen className="w-4 h-4 mr-2" />
+                {pullFromBooksMutation.isPending ? 'Pulling…' : 'Pull from books'}
               </Button>
             </div>
           </div>
@@ -2450,14 +2537,47 @@ function VatWorkspaceDialog({
                             {pastePreviewRows.length > 3 ? ` · +${pastePreviewRows.length - 3} more` : ''}
                           </div>
                         )}
-                        <Button
-                          size="sm"
-                          onClick={() => importRowsMutation.mutate()}
-                          disabled={!selectedWorkpaperId || pastePreviewRows.length === 0 || importRowsMutation.isPending}
-                        >
-                          <Upload className="w-4 h-4 mr-2" />
-                          Add pasted rows
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => importRowsMutation.mutate()}
+                            disabled={!selectedWorkpaperId || pastePreviewRows.length === 0 || importRowsMutation.isPending}
+                          >
+                            <Upload className="w-4 h-4 mr-2" />
+                            Add pasted rows
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => void downloadTemplate()}
+                            data-testid="button-vat-template"
+                          >
+                            <Download className="w-4 h-4 mr-2" />
+                            Excel template
+                          </Button>
+                          <input
+                            ref={importFileInputRef}
+                            type="file"
+                            accept=".xlsx"
+                            className="hidden"
+                            data-testid="input-vat-import-file"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) importFileMutation.mutate(file);
+                              e.target.value = '';
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => importFileInputRef.current?.click()}
+                            disabled={!selectedWorkpaperId || importFileMutation.isPending}
+                            data-testid="button-vat-import-file"
+                          >
+                            <Upload className="w-4 h-4 mr-2" />
+                            {importFileMutation.isPending ? 'Importing…' : 'Import .xlsx'}
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -2648,7 +2768,7 @@ function VatWorkspaceDialog({
   );
 }
 
-function _VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
+function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
   if (!vatStatus) return <Badge variant="outline">No VAT</Badge>;
   const due = new Date(vatStatus.dueDate);
   const now = new Date();
@@ -2727,14 +2847,12 @@ const emptyForm: AddClientFormData = {
 };
 
 type QuickFilter = 'all' | 'critical' | 'attention' | 'vat-due' | 'close-blocked' | 'unassigned' | 'no-docs';
-type PortfolioSection = 'command' | 'vat' | 'revenue' | 'clients';
 
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { setActiveClientCompany } = useActiveCompany();
   const [view, setView] = useState<'card' | 'table'>('card');
-  const [portfolioSection, setPortfolioSection] = useState<PortfolioSection>('command');
   const [search, setSearch] = useState('');
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
   const [addOpen, setAddOpen] = useState(false);
@@ -2883,9 +3001,9 @@ export default function ClientPortfolio() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Operations</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Portfolio</h1>
           <p className="text-muted-foreground mt-1">
-            Portfolio-wide queues for {clients.length} NRA client{clients.length !== 1 ? 's' : ''}
+            {clients.length} client{clients.length !== 1 ? 's' : ''} managed by NRA
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -2940,41 +3058,22 @@ export default function ClientPortfolio() {
         </Card>
       </div>
 
-      <Tabs
-        value={portfolioSection}
-        onValueChange={value => setPortfolioSection(value as PortfolioSection)}
-        className="space-y-4"
-      >
-        <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4">
-          <TabsTrigger value="command">Command</TabsTrigger>
-          <TabsTrigger value="vat">VAT Workspace</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="clients">Clients</TabsTrigger>
-        </TabsList>
+      <BookkeeperCommandCenter
+        dashboard={bookkeeperDashboard}
+        onOpenBooks={handleOpenBooks}
+        onViewProfile={handleViewProfile}
+        onOpenBrief={setBriefClientId}
+        onManageStaff={() => navigate('/firm/staff')}
+      />
 
-        <TabsContent value="command" className="space-y-4 mt-0">
-          <BookkeeperCommandCenter
-            dashboard={bookkeeperDashboard}
-            onOpenBooks={handleOpenBooks}
-            onViewProfile={handleViewProfile}
-            onOpenBrief={setBriefClientId}
-            onManageStaff={() => navigate('/firm/staff')}
-          />
-        </TabsContent>
+      <RevenueGrowthPanel onOpenClient={handleViewProfile} />
 
-        <TabsContent value="vat" className="space-y-4 mt-0">
-          <VatWorkspacePanel
-            dashboard={bookkeeperDashboard}
-            clients={clients}
-            onOpenWorkspace={setVatWorkspaceClientId}
-          />
-        </TabsContent>
+      <VatWorkspacePanel
+        dashboard={bookkeeperDashboard}
+        clients={clients}
+        onOpenWorkspace={setVatWorkspaceClientId}
+      />
 
-        <TabsContent value="revenue" className="space-y-4 mt-0">
-          <RevenueGrowthPanel onOpenClient={handleViewProfile} />
-        </TabsContent>
-
-        <TabsContent value="clients" className="space-y-4 mt-0">
       {/* Quick filters */}
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -3423,8 +3522,6 @@ export default function ClientPortfolio() {
           </Table>
         </div>
       )}
-        </TabsContent>
-      </Tabs>
 
       {/* Add Client Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

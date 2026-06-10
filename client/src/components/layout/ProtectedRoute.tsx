@@ -1,7 +1,6 @@
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { useLocation } from 'wouter';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -25,23 +24,8 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     }
   }, [isLoading, user, setLocation]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6" aria-busy="true">
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          Checking your session...
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <div className="text-sm text-muted-foreground">Redirecting to sign in...</div>
-      </div>
-    );
+  if (isLoading || !user) {
+    return null;
   }
 
   return <>{children}</>;

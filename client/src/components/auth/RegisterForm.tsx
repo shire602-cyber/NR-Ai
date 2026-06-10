@@ -1,16 +1,16 @@
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardFooter,CardHeader,CardTitle } from '@/components/ui/card';
-import { Form,FormControl,FormDescription,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
-import { apiUrl } from '@/lib/api';
-import { useTranslation } from '@/lib/i18n';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'wouter';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Link } from 'wouter';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from '@/lib/i18n';
+import { apiUrl } from '@/lib/api';
+import { UserPlus } from 'lucide-react';
 import { OAuthButtons } from './OAuthButtons';
 
 // TRN is optional at sign-up — many users register before they have one — but
@@ -91,9 +91,11 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
   };
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-semibold">{t.register}</CardTitle>
+    <Card className="w-full max-w-md border-border/60 shadow-xl">
+      <CardHeader className="space-y-1.5">
+        <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
+          Start your books<span className="text-accent">.</span>
+        </CardTitle>
         <CardDescription>
           Create your account to start managing your books
         </CardDescription>

@@ -1,8 +1,8 @@
-import { QueryClient,QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { getAuthHeaders, refreshSession } from "./auth";
 import { apiUrl } from "./api";
-import { getAuthHeaders,refreshSession } from "./auth";
-import { clearCsrfToken,withCsrfHeader } from "./csrf";
-import { isOnline,queueForSync } from "./pwa";
+import { withCsrfHeader, clearCsrfToken } from "./csrf";
+import { isOnline, queueForSync } from "./pwa";
 
 /** Error that carries the HTTP status code — used to decide retry behaviour. */
 export class ApiError extends Error {
@@ -122,7 +122,8 @@ export async function apiRequest(
   }
 
   // A CSRF token can expire or be dropped during a deploy/cookie rotation.
-  // Refetch once and replay the mutation so form saves recover without a reload.
+  // Refetch once and replay the mutation so onboarding and other form saves
+  // recover without making the user refresh the whole app.
   if (await isCsrfInvalidResponse(res)) {
     clearCsrfToken();
     const retryHeaders = await withCsrfHeader(method, { ...headers });

@@ -1,34 +1,25 @@
-import crypto from 'crypto';
-import type { Express,Request,Response } from 'express';
+import type { Request, Response } from 'express';
 import { Router } from 'express';
+import type { Express } from 'express';
+import bcrypt from 'bcryptjs';
+import { z } from 'zod';
+import crypto from 'crypto';
 
-import { and,desc,eq,gte,lte } from 'drizzle-orm';
-import { activityLogs } from '../../shared/schema';
-import { createLogger } from '../config/logger';
-import { db } from '../db';
-import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
-import { adminMiddleware,authMiddleware } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
-import { buildXlsxBufferFromRows,parseSpreadsheetBuffer } from '../utils/spreadsheet';
+import { authMiddleware, adminMiddleware } from '../middleware/auth';
+import { asyncHandler } from '../middleware/errorHandler';
+import { createLogger } from '../config/logger';
+import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import { db } from '../db';
+import { eq, and, desc, gte, lte, like } from 'drizzle-orm';
+import { activityLogs } from '../../shared/schema';
+import { createSpreadsheetBuffer, parseSpreadsheet } from '../services/spreadsheet.service';
 
 const logger = createLogger('admin-routes');
 
 // =============================================
 // Helpers (migrated from monolith routes.ts)
 // =============================================
-
-async function safeAdminRows<T>(label: string, query: Promise<T[]>): Promise<T[]> {
-  try {
-    return await query;
-  } catch (error) {
-    logger.error(
-      { label, err: error instanceof Error ? error.message : String(error) },
-      'Admin optional aggregate failed',
-    );
-    return [];
-  }
-}
 
 /**
  * Seed Chart of Accounts for a newly created company.
@@ -247,9 +238,9 @@ export function registerAdminRoutes(app: Express): void {
       const clientsWithStats = await Promise.all(
         companies.map(async (company) => {
           const [companyUsers, documents, invoices] = await Promise.all([
-            safeAdminRows(`admin client users:${company.id}`, storage.getCompanyUsersByCompanyId(company.id)),
-            safeAdminRows(`admin client documents:${company.id}`, storage.getDocuments(company.id)),
-            safeAdminRows(`admin client invoices:${company.id}`, storage.getInvoicesByCompanyId(company.id)),
+            storage.getCompanyUsersByCompanyId(company.id),
+            storage.getDocuments(company.id),
+            storage.getInvoicesByCompanyId(company.id),
           ]);
 
           return {
@@ -276,24 +267,15 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(404).json({ message: "Client not found" });
       }
 
-      const [
-        companyUsers,
-        documents,
-        invoices,
-        receipts,
-        journalEntries,
-        complianceTasks,
-        clientNotes,
-        activityLogs,
-      ] = await Promise.all([
-        safeAdminRows(`admin client detail users:${clientId}`, storage.getCompanyUserWithUser(clientId)),
-        safeAdminRows(`admin client detail documents:${clientId}`, storage.getDocuments(clientId)),
-        safeAdminRows(`admin client detail invoices:${clientId}`, storage.getInvoicesByCompanyId(clientId)),
-        safeAdminRows(`admin client detail receipts:${clientId}`, storage.getReceiptsByCompanyId(clientId)),
-        safeAdminRows(`admin client detail journals:${clientId}`, storage.getJournalEntriesByCompanyId(clientId)),
-        safeAdminRows(`admin client detail compliance:${clientId}`, storage.getComplianceTasks(clientId)),
-        safeAdminRows(`admin client detail notes:${clientId}`, storage.getClientNotes(clientId)),
-        safeAdminRows(`admin client detail activity:${clientId}`, storage.getActivityLogsByCompany(clientId, 50)),
+      const [companyUsers, documents, invoices, receipts, journalEntries, complianceTasks, clientNotes, activityLogs] = await Promise.all([
+        storage.getCompanyUserWithUser(clientId),
+        storage.getDocuments(clientId),
+        storage.getInvoicesByCompanyId(clientId),
+        storage.getReceiptsByCompanyId(clientId),
+        storage.getJournalEntriesByCompanyId(clientId),
+        storage.getComplianceTasks(clientId),
+        storage.getClientNotes(clientId),
+        storage.getActivityLogsByCompany(clientId, 50),
       ]);
 
       res.json({
@@ -413,7 +395,7 @@ export function registerAdminRoutes(app: Express): void {
       const users = await storage.getAllUsers();
 
       // Return users without password hashes
-      const safeUsers = users.map(({ passwordHash: _passwordHash, ...user }) => user);
+      const safeUsers = users.map(({ passwordHash, ...user }) => user);
       res.json(safeUsers);
     })
   );
@@ -442,7 +424,7 @@ export function registerAdminRoutes(app: Express): void {
         metadata: JSON.stringify({ changes: Object.keys(updates) }),
       });
 
-      const { passwordHash: _passwordHash, ...safeUser } = user;
+      const { passwordHash, ...safeUser } = user;
       res.json(safeUser);
     })
   );
@@ -682,7 +664,7 @@ export function registerAdminRoutes(app: Express): void {
   router.post(
     '/admin/import/clients',
     asyncHandler(async (req: Request, res: Response) => {
-      const { data, createInvitations, sendEmails: _sendEmails } = req.body;
+      const { data, createInvitations, sendEmails } = req.body;
 
       if (!data || !Array.isArray(data)) {
         return res.status(400).json({ message: "Invalid data format. Expected array of client records." });
@@ -749,7 +731,7 @@ export function registerAdminRoutes(app: Express): void {
               const expiresAt = new Date();
               expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
-              const _invitation = await storage.createInvitation({
+              const invitation = await storage.createInvitation({
                 email: row.email.trim(),
                 companyId: company.id,
                 role: 'client',
@@ -798,11 +780,12 @@ export function registerAdminRoutes(app: Express): void {
 
       let parsed;
       try {
-        parsed = await parseSpreadsheetBuffer(buffer, fileName);
+        parsed = await parseSpreadsheet(buffer, fileName);
       } catch (err: any) {
         return res.status(400).json({ message: `Could not parse file: ${err.message}` });
       }
-      const { sheetName, headers, rows: jsonData } = parsed;
+      const jsonData = parsed.rows;
+      const headers = parsed.headers;
 
       // Map data to expected format based on column headers
       const mappedData = jsonData.map((row: any) => {
@@ -855,7 +838,7 @@ export function registerAdminRoutes(app: Express): void {
 
       res.json({
         fileName,
-        sheetName,
+        sheetName: parsed.sheetName,
         headers,
         totalRows: jsonData.length,
         preview: mappedData.slice(0, 10), // First 10 rows for preview
@@ -892,11 +875,20 @@ export function registerAdminRoutes(app: Express): void {
         },
       ];
 
-      const buffer = await buildXlsxBufferFromRows(
-        sampleData,
-        'Clients',
-        [25, 25, 18, 18, 30, 15, 20, 18],
-      );
+      const buffer = await createSpreadsheetBuffer({
+        sheetName: 'Clients',
+        columns: [
+          { header: 'Company Name', key: 'Company Name', width: 25 },
+          { header: 'Email', key: 'Email', width: 25 },
+          { header: 'Phone', key: 'Phone', width: 18 },
+          { header: 'TRN', key: 'TRN', width: 18 },
+          { header: 'Address', key: 'Address', width: 30 },
+          { header: 'Industry', key: 'Industry', width: 15 },
+          { header: 'Website', key: 'Website', width: 20 },
+          { header: 'Legal Structure', key: 'Legal Structure', width: 18 },
+        ],
+        rows: sampleData,
+      });
 
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', 'attachment; filename=client_import_template.xlsx');

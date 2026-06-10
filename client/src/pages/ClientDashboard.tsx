@@ -1,27 +1,27 @@
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { Link } from 'wouter';
+import { getStoredUser } from '@/lib/auth';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatDate } from '@/lib/format';
-import { formatPhoneForWhatsApp } from '@/lib/whatsapp-templates';
-import { useQuery } from '@tanstack/react-query';
 import {
-Activity,
-ArrowRight,
-BarChart3,
-FileArchive,
-FileText,
-ListTodo,
-ShieldCheck,
-Upload,
+  FileText,
+  Upload,
+  ShieldCheck,
+  ListTodo,
+  Activity,
+  ArrowRight,
+  BarChart3,
+  FileArchive,
 } from 'lucide-react';
 import { SiWhatsapp } from 'react-icons/si';
-import { Link } from 'wouter';
+import { formatPhoneForWhatsApp } from '@/lib/whatsapp-templates';
 
 export default function ClientDashboard() {
-  const { data: user } = useCurrentUser();
+  const user = getStoredUser();
   const userName = user?.name || user?.email || 'Client';
   const { company, companyId } = useDefaultCompany();
   const contactPhone = company?.contactPhone?.trim() || '';

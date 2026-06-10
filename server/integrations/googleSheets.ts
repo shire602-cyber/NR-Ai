@@ -3,11 +3,11 @@
 //   1. Google Service Account (GOOGLE_SERVICE_ACCOUNT_EMAIL + GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY)
 //   2. OAuth2 with refresh token (GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET + GOOGLE_REFRESH_TOKEN)
 
-import type { JWT,OAuth2Client } from 'google-auth-library';
-import { google,sheets_v4 } from 'googleapis';
+import { google, sheets_v4 } from 'googleapis';
+import type { JWT, OAuth2Client } from 'google-auth-library';
 import { createLogger } from '../config/logger';
 
-const log = createLogger('google-sheets');
+const logger = createLogger('google-sheets');
 
 // ---------------------------------------------------------------------------
 // Authentication helpers
@@ -91,7 +91,7 @@ export async function isGoogleSheetsConnected(): Promise<boolean> {
     });
     return true;
   } catch (err) {
-    log.warn({ err: (err as Error).message }, 'Connection check failed');
+    logger.warn({ err: (err as Error).message }, 'Google Sheets connection check failed');
     return false;
   }
 }
@@ -142,7 +142,7 @@ export async function exportToSheet(
   } catch (error: any) {
     // Sheet might already exist, that's fine
     if (!error.message?.includes('already exists')) {
-      log.info('Note: Sheet may already exist');
+      logger.info({ err: error.message }, 'Google Sheets sheet may already exist');
     }
   }
 
@@ -479,8 +479,8 @@ export async function importExpensesFromSheet(
           if (dateStr.includes('/')) {
             const parts = dateStr.split('/');
             if (parts.length === 3) {
-              const day = parseInt(parts[0], 10);
-              const month = parseInt(parts[1], 10);
+              let day = parseInt(parts[0], 10);
+              let month = parseInt(parts[1], 10);
               let year = parseInt(parts[2], 10);
 
               // Handle 2-digit year
@@ -500,7 +500,7 @@ export async function importExpensesFromSheet(
           if (parsedDate && !isNaN(parsedDate.getTime())) {
             date = parsedDate.toISOString().split('T')[0];
           }
-        } catch (_e) {
+        } catch (e) {
           // Fall back to today's date
         }
       }

@@ -4,12 +4,6 @@ import path from "path";
 import { visualizer } from "rollup-plugin-visualizer";
 
 const ANALYZE = process.env.ANALYZE === "1";
-const HEAVY_LAZY_PRELOAD_PREFIXES = [
-  "vendor-pdf",
-  "vendor-pdfjs",
-  "vendor-html2canvas",
-  "generateCategoricalChart",
-];
 
 export default defineConfig({
   plugins: [
@@ -29,7 +23,6 @@ export default defineConfig({
       "@shared": path.resolve(__dirname, "shared"),
       "@assets": path.resolve(__dirname, "attached_assets"),
     },
-    // Dedupe React so we never end up with two copies in different chunks.
     dedupe: ["react", "react-dom"],
   },
   root: path.resolve(__dirname, "client"),
@@ -40,14 +33,6 @@ export default defineConfig({
     // Heavy document workflows are split into isolated lazy chunks. Keep Vite's
     // warning budget tight so build logs catch new accidental eager imports.
     chunkSizeWarningLimit: 500,
-    modulePreload: {
-      resolveDependencies(_filename, deps, context) {
-        if (context.hostType !== "html") return deps;
-        return deps.filter(
-          (dep) => !HEAVY_LAZY_PRELOAD_PREFIXES.some((prefix) => dep.startsWith(`assets/${prefix}`)),
-        );
-      },
-    },
     cssCodeSplit: true,
     minify: "esbuild",
     target: "es2020",
@@ -55,15 +40,10 @@ export default defineConfig({
       output: {
         manualChunks: (id) => {
           if (!id.includes("node_modules")) return undefined;
-          // Heavy vendor libs deserve dedicated chunks so route bundles stay small.
           if (id.includes("jspdf") || id.includes("qrcode")) return "vendor-pdf";
           if (id.includes("pdfjs-dist/build/pdf.worker")) return "vendor-pdf-worker";
           if (id.includes("pdfjs-dist") || id.includes("pdf.worker")) return "vendor-pdfjs";
           if (id.includes("html2canvas")) return "vendor-html2canvas";
-          // recharts + d3-* are NOT manually grouped: bundling them together
-          // produces a TDZ error ("Cannot access 'P' before initialization")
-          // due to circular module init order after esbuild minification.
-          // Let Vite's default chunking preserve the import-order-correct grouping.
           if (id.includes("framer-motion")) return "vendor-motion";
           if (id.includes("@radix-ui")) return "vendor-radix";
           if (id.includes("react-day-picker") || id.includes("date-fns")) return "vendor-dates";

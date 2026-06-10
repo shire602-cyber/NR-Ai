@@ -1,26 +1,26 @@
-import { Badge } from '@/components/ui/badge';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import type { UserOnboarding } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import {
-ArrowRight,
-BarChart3,
-Bell,
-BookOpen,
-Bot,
-Building2,
-CheckCircle,
-FileText,
-Receipt,
-Sparkles,
-X
-} from 'lucide-react';
-import { useEffect,useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import { useLocation } from 'wouter';
+import { 
+  Sparkles, 
+  Building2, 
+  BookOpen, 
+  FileText, 
+  Receipt, 
+  BarChart3, 
+  Bot, 
+  Bell,
+  CheckCircle,
+  ArrowRight,
+  X
+} from 'lucide-react';
+import type { UserOnboarding } from '@shared/schema';
 
 interface OnboardingStep {
   key: string;

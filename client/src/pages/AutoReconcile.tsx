@@ -1,31 +1,32 @@
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation } from '@tanstack/react-query';
-import { format,parseISO } from 'date-fns';
 import {
-AlertTriangle,
-ArrowRightLeft,
-BookOpen,
-Check,
-CheckCircle2,
-ChevronRight,
-FileText,
-Link2,
-Loader2,
-Receipt,
-Sparkles,
-Unlink,
-XCircle,
+  Sparkles,
+  Link2,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  ArrowRightLeft,
+  FileText,
+  Receipt,
+  BookOpen,
+  AlertTriangle,
+  Check,
+  Unlink,
+  ChevronRight,
 } from 'lucide-react';
-import { useState } from 'react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 

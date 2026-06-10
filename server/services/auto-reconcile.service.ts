@@ -1,6 +1,6 @@
-import type { BankTransaction,Invoice,JournalEntry,Receipt } from '../../shared/schema';
-import { ACCOUNT_CODES } from '../constants';
 import { storage } from '../storage';
+import type { BankTransaction, JournalEntry, JournalLine, Invoice, Receipt, Account } from '../../shared/schema';
+import { ACCOUNT_CODES } from '../constants';
 
 export interface ReconcileMatch {
   bankTransactionId: string;

@@ -1,6 +1,6 @@
-import { cn } from '@/lib/utils';
+import { useRef, ReactNode, CSSProperties } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { CSSProperties,ReactNode,useRef } from 'react';
+import { cn } from '@/lib/utils';
 
 interface VirtualListProps<T> {
   items: T[];

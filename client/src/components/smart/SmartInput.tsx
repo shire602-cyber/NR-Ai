@@ -1,16 +1,17 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Command,CommandEmpty,CommandGroup,CommandInput,CommandItem,CommandList } from '@/components/ui/command';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input';
-import { Popover,PopoverContent,PopoverTrigger } from '@/components/ui/popover';
-import { Tooltip,TooltipContent,TooltipTrigger } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Loader2, HelpCircle, Sparkles, Check } from 'lucide-react';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { apiUrl } from '@/lib/api';
 import { useTranslation } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
-import { useQuery } from '@tanstack/react-query';
-import { Check,HelpCircle,Loader2,Sparkles } from 'lucide-react';
-import { useCallback,useEffect,useRef,useState } from 'react';
+import { getAuthHeaders } from '@/lib/auth';
 
 interface SmartInputProps {
   value: string;
@@ -96,6 +97,7 @@ export function SmartInput({
         params.set('type', accountType);
       }
       const res = await fetch(apiUrl(`${endpointMap[type]}?${params}`), {
+        headers: getAuthHeaders(),
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch suggestions');
@@ -342,6 +344,7 @@ export function SmartAccountSelect({
         params.set('type', accountType);
       }
       const res = await fetch(apiUrl(`/api/autocomplete/accounts?${params}`), {
+        headers: getAuthHeaders(),
         credentials: 'include',
       });
       if (!res.ok) throw new Error('Failed to fetch accounts');

@@ -1,24 +1,26 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useTranslation } from '@/lib/i18n';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { addMonths,differenceInDays,eachDayOfInterval,endOfMonth,format,isBefore,isSameDay,isSameMonth,isToday,parseISO,startOfMonth,subMonths } from 'date-fns';
-import {
-AlertTriangle,
-Building2,
-CheckCircle2,
-ChevronLeft,
-ChevronRight,
-Clock,
-CreditCard,
-FileText,
-Receipt
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, parseISO, isToday, isBefore, differenceInDays } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Calendar as CalendarIcon,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Receipt,
+  Building2,
+  CreditCard
 } from 'lucide-react';
-import { useMemo,useState } from 'react';
 
 interface ComplianceTask {
   id: string;
@@ -56,7 +58,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function ComplianceCalendar() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -152,16 +154,13 @@ export default function ComplianceCalendar() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" data-testid="text-page-title">
-          {locale === 'ar' ? 'تقويم الامتثال' : 'Compliance Calendar'}
-        </h1>
-        <p className="text-muted-foreground">
-          {locale === 'ar' 
-            ? 'عرض جميع المواعيد النهائية للضرائب والامتثال'
-            : 'View all tax and compliance deadlines'}
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Compliance"
+        title={locale === 'ar' ? 'تقويم الامتثال' : 'Compliance Calendar'}
+        description={locale === 'ar'
+          ? 'عرض جميع المواعيد النهائية للضرائب والامتثال'
+          : 'View all tax and compliance deadlines'}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
@@ -196,7 +195,7 @@ export default function ComplianceCalendar() {
                 }
 
                 const events = getEventsForDate(day);
-                const _hasEvents = events.length > 0;
+                const hasEvents = events.length > 0;
                 const hasOverdue = events.some(e => e.status !== 'completed' && isBefore(e.date, new Date()));
                 const isSelected = selectedDate && isSameDay(day, selectedDate);
 

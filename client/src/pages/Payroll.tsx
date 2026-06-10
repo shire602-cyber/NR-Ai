@@ -1,66 +1,66 @@
-import { AlertDialog,AlertDialogAction,AlertDialogCancel,AlertDialogContent,AlertDialogDescription,AlertDialogFooter,AlertDialogHeader,AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import {
-Dialog,
-DialogContent,
-DialogDescription,
-DialogHeader,
-DialogTitle,
-} from '@/components/ui/dialog';
-import {
-Form,
-FormControl,
-FormField,
-FormItem,
-FormLabel,
-FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import {
-Select,
-SelectContent,
-SelectItem,
-SelectTrigger,
-SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import {
-Table,
-TableBody,
-TableCell,
-TableHead,
-TableHeader,
-TableRow,
-} from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiUrl } from '@/lib/api';
-import { getAuthHeaders } from '@/lib/auth';
-import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation,useQuery } from '@tanstack/react-query';
+import { z } from 'zod';
 import { format } from 'date-fns';
 import {
-Banknote,
-Calculator,
-CheckCircle,
-ChevronLeft,
-Download,
-Edit,
-Eye,
-FileText,
-Plus,
-Trash2,
-Users,
+  Users,
+  Plus,
+  Edit,
+  Trash2,
+  Calculator,
+  CheckCircle,
+  Download,
+  FileText,
+  Banknote,
+  ChevronLeft,
+  Eye,
 } from 'lucide-react';
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { z } from 'zod';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Separator } from '@/components/ui/separator';
+import { useTranslation } from '@/lib/i18n';
+import { useToast } from '@/hooks/use-toast';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { formatCurrency } from '@/lib/format';
+import { getAuthHeaders } from '@/lib/auth';
+import { apiUrl } from '@/lib/api';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -497,7 +497,6 @@ export default function Payroll() {
     try {
       const response = await fetch(apiUrl(`/api/payroll-runs/${runId}/generate-sif`), {
         headers: getAuthHeaders(),
-        credentials: 'include',
       });
       if (!response.ok) {
         const err = await response.json();

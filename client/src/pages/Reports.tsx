@@ -1,25 +1,26 @@
-import { DateRangeFilter,type DateRange } from '@/components/DateRangeFilter';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Table,TableBody,TableCell,TableRow } from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import {
-exportToExcel,
-exportToGoogleSheets,
-prepareBalanceSheetForExport,
-prepareProfitLossForExport,
-prepareVATSummaryForExport,
-} from '@/lib/export';
-import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { DollarSign,Download,FileSpreadsheet,TrendingDown,TrendingUp } from 'lucide-react';
-import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { PageHeader } from '@/components/ui/page-header';
+import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { useToast } from '@/hooks/use-toast';
+import { formatCurrency } from '@/lib/format';
+import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
+import { 
+  exportToExcel, 
+  exportToGoogleSheets,
+  prepareProfitLossForExport,
+  prepareBalanceSheetForExport,
+  prepareVATSummaryForExport,
+} from '@/lib/export';
+import { Download, TrendingUp, TrendingDown, DollarSign, FileSpreadsheet, FileText } from 'lucide-react';
 import { SiGooglesheets } from 'react-icons/si';
 
 interface AccountLineItem {
@@ -148,30 +149,31 @@ export default function Reports() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-3xl font-semibold mb-2">{t.reports}</h1>
-          <p className="text-muted-foreground">Financial reports and VAT summaries</p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" disabled={isExporting} data-testid="button-export">
-              <Download className="w-4 h-4 mr-2" />
-              {isExporting ? 'Exporting...' : t.export}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Export to Excel
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
-              <SiGooglesheets className="w-4 h-4 mr-2" />
-              Export to Google Sheets
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      <PageHeader
+        eyebrow="Insights"
+        title={t.reports}
+        description="Financial reports and VAT summaries"
+        actions={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={isExporting} data-testid="button-export">
+                <Download className="w-4 h-4 mr-2" />
+                {isExporting ? 'Exporting...' : t.export}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Export to Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
+                <SiGooglesheets className="w-4 h-4 mr-2" />
+                Export to Google Sheets
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
 
       <Card>
         <CardContent className="pt-6">

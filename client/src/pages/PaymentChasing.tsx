@@ -1,33 +1,34 @@
-import { Alert,AlertDescription } from '@/components/ui/alert';
-import {
-AlertDialog,
-AlertDialogAction,
-AlertDialogCancel,
-AlertDialogContent,
-AlertDialogDescription,
-AlertDialogFooter,
-AlertDialogHeader,
-AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useMemo, useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { queryClient, apiRequest } from '@/lib/queryClient';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { AlertCircle,AlertTriangle,Ban,BarChart3,CheckCircle2,Clock,FileText,Inbox,Send,Settings as SettingsIcon } from 'lucide-react';
-import { useMemo,useState } from 'react';
+import { Send, Inbox, BarChart3, Settings as SettingsIcon, FileText, Clock, AlertTriangle, CheckCircle2, Ban, AlertCircle } from 'lucide-react';
 import { SiWhatsapp } from 'react-icons/si';
 
 // Threshold above which "Chase all" requires explicit confirmation. Picked to
@@ -324,7 +325,7 @@ export default function PaymentChasing() {
   });
 
   // ── Derived ────────────────────────────────────────────────────────────
-  const overdue = useMemo(() => overdueQuery.data?.rows ?? [], [overdueQuery.data?.rows]);
+  const overdue = overdueQuery.data?.rows ?? [];
   const buckets: Record<AgingBucket, number> =
     overdueQuery.data?.buckets ?? { '1-7': 0, '8-30': 0, '31-60': 0, '60+': 0 };
   const totalOutstanding = overdueQuery.data?.totalOutstanding ?? 0;
@@ -359,26 +360,27 @@ export default function PaymentChasing() {
 
   return (
     <div className="container mx-auto py-6 space-y-6" data-testid="payment-chasing-page">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Payment Chasing Autopilot</h1>
-          <p className="text-muted-foreground">Automated reminders for overdue invoices with smart escalation</p>
-        </div>
-        <Button
-          onClick={() => {
-            if (queue.length > BULK_CONFIRM_THRESHOLD) {
-              setBulkConfirmOpen(true);
-            } else {
-              bulkSend.mutate();
-            }
-          }}
-          disabled={queue.length === 0 || bulkSend.isPending}
-          data-testid="button-chase-all"
-        >
-          <Send className="mr-2 h-4 w-4" />
-          {bulkSend.isPending ? `Sending ${queue.length}…` : `Chase all (${queue.length})`}
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Sales"
+        title="Payment Chasing Autopilot"
+        description="Automated reminders for overdue invoices with smart escalation"
+        actions={
+          <Button
+            onClick={() => {
+              if (queue.length > BULK_CONFIRM_THRESHOLD) {
+                setBulkConfirmOpen(true);
+              } else {
+                bulkSend.mutate();
+              }
+            }}
+            disabled={queue.length === 0 || bulkSend.isPending}
+            data-testid="button-chase-all"
+          >
+            <Send className="mr-2 h-4 w-4" />
+            {bulkSend.isPending ? `Sending ${queue.length}…` : `Chase all (${queue.length})`}
+          </Button>
+        }
+      />
 
       {/* Aging buckets */}
       <div className="grid gap-4 md:grid-cols-4">

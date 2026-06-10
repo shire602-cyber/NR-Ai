@@ -1,31 +1,33 @@
-import { Badge } from '@/components/ui/badge';
+import { useState, useRef, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
 import { apiRequest } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import {
-Bot,
-ChevronRight,
-DollarSign,
-FileText,
-Lightbulb,
-Loader2,
-MessageCircle,
-Receipt,
-Send,
-Sparkles,
-TrendingDown,
-TrendingUp,
-User
+import { 
+  MessageCircle, 
+  Send, 
+  Sparkles, 
+  TrendingUp, 
+  TrendingDown,
+  DollarSign, 
+  FileText, 
+  Loader2,
+  Receipt,
+  Lightbulb,
+  HelpCircle,
+  ChevronRight,
+  Bot,
+  User
 } from 'lucide-react';
-import { useEffect,useRef,useState } from 'react';
 
 interface Message {
   id: string;

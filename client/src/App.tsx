@@ -1,20 +1,21 @@
-import { ErrorBoundary,SectionBoundary } from '@/components/ErrorBoundary';
-import { PageSkeleton } from '@/components/PageSkeleton';
+import { useCallback, useEffect, lazy, Suspense } from 'react';
+import { Switch, Route, useLocation, Link } from 'wouter';
+import { queryClient } from './lib/queryClient';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from '@/components/ui/toaster';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/layout/AppSidebar';
 import { PortalLayout } from '@/components/layout/PortalLayout';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
-import { Button } from '@/components/ui/button';
-import { SidebarProvider,SidebarTrigger } from '@/components/ui/sidebar';
-import { Toaster } from '@/components/ui/toaster';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { ErrorBoundary, SectionBoundary } from '@/components/ErrorBoundary';
+import { useI18n, useTranslation } from '@/lib/i18n';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useI18n,useTranslation } from '@/lib/i18n';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { AnimatePresence,motion } from 'framer-motion';
-import { ArrowLeft,Building2,Loader2,User } from 'lucide-react';
-import { lazy,Suspense,useCallback,useEffect } from 'react';
-import { Link,Route,Switch,useLocation } from 'wouter';
-import { queryClient } from './lib/queryClient';
+import { Button } from '@/components/ui/button';
+import { User, Building2, ArrowLeft, Search } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Loader2 } from 'lucide-react';
+import { PageSkeleton } from '@/components/PageSkeleton';
 
 // All pages lazy-loaded for route-level code splitting.
 // Layout shell (AppSidebar, ProtectedLayout) is NOT lazy — needed immediately.
@@ -132,10 +133,7 @@ function PageLoader({ variant }: { variant?: 'list' | 'detail' | 'dashboard' | '
 function MinimalPageLoader() {
   return (
     <div className="flex items-center justify-center h-64" aria-busy="true">
-      <div className="flex items-center gap-3 text-sm text-muted-foreground">
-        <Loader2 className="w-5 h-5 animate-spin" />
-        Loading page...
-      </div>
+      <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
     </div>
   );
 }
@@ -160,30 +158,28 @@ function loginRedirectForCurrentPath(): string {
   return `/login?next=${encodeURIComponent(next)}`;
 }
 
-import { ActiveCompanyProvider,useActiveCompany } from '@/components/ActiveCompanyProvider';
+import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
 import { MobileNav } from '@/components/MobileNav';
 import { NotificationBell } from '@/components/NotificationBell';
 import { OfflineIndicator } from '@/components/OfflineIndicator';
-import { PWAInstallPrompt } from '@/components/PWAInstallPrompt';
-import { RTLProvider } from '@/components/RTLProvider';
 import { RouteGuard } from '@/components/layout/RouteGuard';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import '@/styles/mobile.css';
+import { ActiveCompanyProvider, useActiveCompany } from '@/components/ActiveCompanyProvider';
+import { RTLProvider } from '@/components/RTLProvider';
 import '@/styles/rtl.css';
+import '@/styles/mobile.css';
 
 // Components
-import { CommandPaletteProvider } from '@/components/CommandPalette';
 import { OnboardingWizard } from '@/components/Onboarding';
+import { CommandPaletteProvider, openCommandPalette } from '@/components/CommandPalette';
 import { GlobalShortcutsProvider } from '@/components/ShortcutsHelp';
 import { SkipLink } from '@/components/SkipLink';
-import { shouldClearClientWorkspaceForPath } from '@/lib/workspaceRoutes';
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
-  const [location, navigate] = useLocation();
-  const pathname = pathnameOnly(location);
+  const [, navigate] = useLocation();
 
-  if (!isFirmContext || !company || shouldClearClientWorkspaceForPath(pathname)) return null;
+  if (!isFirmContext || !company) return null;
 
   const goBackToFirm = () => {
     clearActiveClientCompany();
@@ -224,20 +220,11 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
-  const { isFirmContext, clearActiveClientCompany } = useActiveCompany();
+  const { isFirmContext } = useActiveCompany();
   const pathname = pathnameOnly(location);
-  const shouldClearClientWorkspace = shouldClearClientWorkspaceForPath(pathname);
-  const isClearingClientWorkspace = shouldClearClientWorkspace && isFirmContext;
-
-  useEffect(() => {
-    // Firm routes are portfolio-wide; they must not inherit a client books context.
-    if (!isFirmContext || !shouldClearClientWorkspace) return;
-    clearActiveClientCompany();
-  }, [clearActiveClientCompany, isFirmContext, shouldClearClientWorkspace]);
 
   useEffect(() => {
     if (companyLoading || pathname === '/onboarding') return;
-    if (shouldClearClientWorkspace) return;
 
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
@@ -261,7 +248,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       sessionStorage.setItem(REDIRECT_FLAG, '1');
       navigate('/onboarding');
     }
-  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext, shouldClearClientWorkspace]);
+  }, [company, hasNoCompanies, companyLoading, pathname, navigate, isFirmContext]);
 
 
   const style = {
@@ -299,6 +286,19 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openCommandPalette}
+                data-testid="button-command-palette"
+                aria-label="Search and commands"
+                className="hidden md:flex items-center gap-2 h-8 ps-3 pe-2 rounded-full border border-border/70 bg-card/50 text-muted-foreground hover:text-foreground hover:bg-card hover:border-border transition-colors"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span className="text-[12.5px] font-medium pe-4">Search</span>
+                <kbd className="inline-flex items-center gap-0.5 rounded border border-border/70 bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
+                  ⌘K
+                </kbd>
+              </button>
               <OfflineIndicator />
               <NotificationBell />
               <Link href="/company-profile">
@@ -324,23 +324,19 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="mx-auto w-full max-w-[1480px] px-4 md:px-8 py-6 md:py-10">
               <RouteGuard>
-              {isClearingClientWorkspace ? (
-                <MinimalPageLoader />
-              ) : (
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={location}
-                    initial={false}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.25, ease: 'easeOut' }}
-                  >
-                    <SectionBoundary name={routeName(location)}>
-                      {children}
-                    </SectionBoundary>
-                  </motion.div>
-                </AnimatePresence>
-              )}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={location}
+                  initial={false}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                >
+                  <SectionBoundary name={routeName(location)}>
+                    {children}
+                  </SectionBoundary>
+                </motion.div>
+              </AnimatePresence>
               </RouteGuard>
             </div>
           </main>
@@ -394,7 +390,7 @@ function AccessRedirect({
 function PortalRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
 
-  if (isLoading) return <MinimalPageLoader />;
+  if (isLoading) return null;
   if (!user) return <AccessRedirect title="Sign in required" description="Please sign in to open the client portal." redirectTo={loginRedirectForCurrentPath()} actionLabel="Sign in" />;
   if (user.userType !== 'client_portal' && !user.isAdmin) {
     return <AccessRedirect title="Client portal access required" description="This area is only available to invited client portal users." redirectTo="/dashboard" />;
@@ -406,7 +402,7 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
 function FirmRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
 
-  if (isLoading) return <MinimalPageLoader />;
+  if (isLoading) return null;
   if (!user) return <AccessRedirect title="Sign in required" description="Please sign in to open the firm workspace." redirectTo={loginRedirectForCurrentPath()} actionLabel="Sign in" />;
   if (user.firmRole !== 'firm_owner' && user.firmRole !== 'firm_admin') {
     return <AccessRedirect title="NRA firm access required" description="This workspace is available only to NRA firm owners and firm admins." redirectTo="/dashboard" />;
@@ -578,6 +574,7 @@ function Router() {
           <Route path="/referrals" component={Referrals} />
           <Route path="/feedback" component={Feedback} />
           <Route path="/analytics" component={Analytics} />
+          <Route path="/admin" component={Admin} />
           <Route path="/bank-reconciliation" component={BankReconciliation} />
           <Route path="/vat-filing" component={VATFiling} />
           <Route path="/vat-autopilot" component={VATAutopilot} />
@@ -594,10 +591,10 @@ function Router() {
           
           {/* Admin Routes */}
           <Route path="/admin/dashboard" component={AdminDashboard} />
+          <Route path="/admin/clients" component={ClientManagement} />
+          <Route path="/admin/clients/:id" component={ClientDetails} />
           <Route path="/admin/clients/:id/documents" component={ClientDocuments} />
           <Route path="/admin/clients/:id/tasks" component={ClientTasks} />
-          <Route path="/admin/clients/:id" component={ClientDetails} />
-          <Route path="/admin/clients" component={ClientManagement} />
           <Route path="/admin/documents" component={AdminDocuments} />
           <Route path="/admin/invitations" component={UserInvitations} />
           <Route path="/admin/import" component={ClientImport} />
@@ -651,7 +648,7 @@ export default function App() {
   useEffect(() => {
     // Initialize locale settings
     setLocale(locale);
-  }, [locale, setLocale]);
+  }, []);
 
   return (
     <ErrorBoundary>

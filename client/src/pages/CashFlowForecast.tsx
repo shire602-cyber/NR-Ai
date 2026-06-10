@@ -1,27 +1,27 @@
-import { Badge } from '@/components/ui/badge';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
-import { useQuery } from '@tanstack/react-query';
 import {
-AlertTriangle,
-ArrowDownRight,
-ArrowUpRight,
-Calendar,
-CheckCircle2,
-DollarSign,
-Info,
-RefreshCw,
-TrendingDown,
-TrendingUp,
-Wallet,
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+  RefreshCw,
+  Calendar,
+  ArrowUpRight,
+  ArrowDownRight,
+  Wallet,
 } from 'lucide-react';
-import { useState } from 'react';
 
 interface WeeklyProjection {
   week: number;
@@ -48,7 +48,7 @@ interface MonthlyCashHistory {
 }
 
 export default function CashFlowForecast() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [forecastDays, setForecastDays] = useState('90');
 

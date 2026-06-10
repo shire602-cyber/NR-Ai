@@ -1,54 +1,54 @@
-import {
-AlertDialog,
-AlertDialogAction,
-AlertDialogCancel,
-AlertDialogContent,
-AlertDialogDescription,
-AlertDialogFooter,
-AlertDialogHeader,
-AlertDialogTitle,
-AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import {
-Select,
-SelectContent,
-SelectItem,
-SelectTrigger,
-SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
 import {
-Table,
-TableBody,
-TableCell,
-TableHead,
-TableHeader,
-TableRow,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import {
-AlertTriangle,
-ArrowRight,
-BookOpen,
-CalendarCheck,
-CheckCircle2,
-Clock,
-FileText,
-Lock,
-RefreshCw,
-Sparkles,
-Unlock,
-XCircle,
+  CalendarCheck,
+  CheckCircle2,
+  XCircle,
+  Lock,
+  Unlock,
+  Sparkles,
+  FileText,
+  RefreshCw,
+  Clock,
+  AlertTriangle,
+  ArrowRight,
+  BookOpen,
 } from 'lucide-react';
-import { useMemo,useState } from 'react';
 
 // ---- Types ----
 
@@ -116,7 +116,7 @@ const fixRoutes: Record<number, string> = {
 // ---- Component ----
 
 export default function MonthEndClose() {
-  const { t: _t, locale: _locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 

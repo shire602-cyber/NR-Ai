@@ -1,7 +1,7 @@
-import { and,eq,isNull } from 'drizzle-orm';
-import type { NextFunction,Request,Response } from 'express';
-import { companies,companyUsers,firmStaffAssignments } from '../../shared/schema';
+import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
+import { eq, and, isNull } from 'drizzle-orm';
+import { companyUsers, companies, firmStaffAssignments } from '../../shared/schema';
 
 const FIRM_ROLES = ['firm_owner', 'firm_admin'] as const;
 export type FirmRole = typeof FIRM_ROLES[number];

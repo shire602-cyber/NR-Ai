@@ -1,17 +1,12 @@
-import { Button } from '@/components/ui/button';
-import { removeToken } from '@/lib/auth';
-import { apiRequest } from '@/lib/queryClient';
+import { useLocation, Link } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence,motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-BarChart2,
-Building2,
-FileText,FolderOpen,
-LayoutDashboard,
-LogOut,
-MessageSquare,
+  LayoutDashboard, FileText, FolderOpen, BarChart2, MessageSquare, LogOut, Building2,
 } from 'lucide-react';
-import { Link,useLocation } from 'wouter';
+import { Button } from '@/components/ui/button';
+import { apiRequest } from '@/lib/queryClient';
+import { removeToken } from '@/lib/auth';
 
 const NAV_ITEMS = [
   { label: 'Dashboard',   href: '/client-portal/dashboard',   icon: LayoutDashboard },
@@ -30,12 +25,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
     staleTime: 5 * 60 * 1000,
   });
 
-  async function handleLogout() {
-    try {
-      await apiRequest('POST', '/api/auth/logout');
-    } catch {
-      // Local logout should still complete if the network is unavailable.
-    }
+  function handleLogout() {
     removeToken();
     navigate('/login');
   }

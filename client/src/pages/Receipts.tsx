@@ -1,43 +1,45 @@
-import { DateRangeFilter,type DateRange } from '@/components/DateRangeFilter';
-import { Badge } from '@/components/ui/badge';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogHeader,DialogTitle } from '@/components/ui/dialog';
-import { DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Form,FormControl,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { CardListSkeleton } from '@/components/ui/loading-skeletons';
 import { Progress } from '@/components/ui/progress';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { VirtualList } from '@/components/VirtualList';
+import { Skeleton } from '@/components/ui/skeleton';
+import { CardListSkeleton } from '@/components/ui/loading-skeletons';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { apiUrl } from '@/lib/api';
 import { getAuthHeaders } from '@/lib/auth';
-import { clearCsrfToken,withCsrfHeader } from '@/lib/csrf';
+import { clearCsrfToken, withCsrfHeader } from '@/lib/csrf';
+import { DateRangeFilter, type DateRange } from '@/components/DateRangeFilter';
 import {
-downloadOcrExcel,
-downloadReceiptsExcel,
-exportToExcel,
-exportToGoogleSheets,
-ocrDataToExportRow,
-prepareReceiptsForExport,
+  exportToExcel,
+  exportToGoogleSheets,
+  prepareReceiptsForExport,
+  downloadOcrExcel,
+  downloadReceiptsExcel,
+  ocrDataToExportRow,
 } from '@/lib/export';
-import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { endOfDay,format,isWithinInterval,parseISO,startOfDay } from 'date-fns';
-import { Bot,Brain,Camera,CheckCircle2,Download,Edit,FileSpreadsheet,FileText,Loader2,Sparkles,Trash2,Upload,X,XCircle,Zap,ZoomIn } from 'lucide-react';
-import { useCallback,useEffect,useMemo,useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { SiGooglesheets } from 'react-icons/si';
 import Tesseract from 'tesseract.js';
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, Loader2, Camera, Image as ImageIcon, X, Trash2, Edit, Download, FileSpreadsheet, ZoomIn, Brain, Bot, Zap, Plus } from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
+import { SiGooglesheets } from 'react-icons/si';
+import { VirtualList } from '@/components/VirtualList';
+import { formatCurrency } from '@/lib/format';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 
 interface ExtractedData {
   merchant?: string;
@@ -95,10 +97,7 @@ function useReceiptImageUrl(companyId: string | undefined, receiptId: string, ha
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!companyId || !receiptId || !hasImage) {
-      setUrl(null);
-      return;
-    }
+    if (!companyId || !receiptId || !hasImage) return;
     let cancelled = false;
     let createdUrl: string | null = null;
 
@@ -121,6 +120,9 @@ function useReceiptImageUrl(companyId: string | undefined, receiptId: string, ha
     return () => {
       cancelled = true;
       if (createdUrl) URL.revokeObjectURL(createdUrl);
+      // Reset in cleanup (not the effect body) so a dep change never leaves a
+      // revoked blob URL on screen and the effect stays render-safe.
+      setUrl(null);
     };
   }, [companyId, receiptId, hasImage]);
 
@@ -179,9 +181,9 @@ function isInternalClassifierMethod(value: unknown): value is InternalClassifier
 }
 
 export default function Receipts() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
+  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -243,7 +245,7 @@ export default function Receipts() {
   });
 
   // Save single receipt mutation
-  const _saveReceiptMutation = useMutation({
+  const saveReceiptMutation = useMutation({
     mutationFn: async (data: any) => {
       return apiRequest('POST', `/api/companies/${companyId}/receipts`, data);
     },
@@ -366,7 +368,7 @@ export default function Receipts() {
     },
   });
 
-  const _checkSimilarMutation = useMutation({
+  const checkSimilarMutation = useMutation({
     mutationFn: (data: any) => 
       apiRequest('POST', `/api/companies/${companyId}/receipts/check-similar`, data),
   });
@@ -910,11 +912,10 @@ export default function Receipts() {
     try {
       const response = await fetch(apiUrl('/api/ai/categorize'), {
         method: 'POST',
-        headers: await withCsrfHeader('POST', {
+        headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders(),
-        }),
-        credentials: 'include',
+        },
         body: JSON.stringify({
           companyId,
           description: `${data.merchant || 'Unknown'} - ${data.total} ${data.currency}`,
@@ -1217,17 +1218,17 @@ export default function Receipts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-semibold mb-2">Receipt Scanner</h1>
-          <p className="text-muted-foreground">
-            Upload receipts for AI extraction or enter manually
-          </p>
-        </div>
-        <Button onClick={() => setManualExpenseDialogOpen(true)} className="w-full sm:w-auto" data-testid="button-add-manual-expense">
-          + Add Expense Manually
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Purchases"
+        title="Receipt Scanner"
+        description="Upload receipts for AI extraction or enter manually"
+        actions={
+          <Button onClick={() => setManualExpenseDialogOpen(true)} className="w-full sm:w-auto" data-testid="button-add-manual-expense">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Expense Manually
+          </Button>
+        }
+      />
 
       {/* Upload Section */}
       <Card>

@@ -11,11 +11,8 @@ function walk(relDir, predicate = () => true) {
   const results = [];
   for (const entry of fs.readdirSync(absDir, { withFileTypes: true })) {
     const relPath = path.join(relDir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...walk(relPath, predicate));
-    } else if (predicate(relPath)) {
-      results.push(relPath.replaceAll(path.sep, '/'));
-    }
+    if (entry.isDirectory()) results.push(...walk(relPath, predicate));
+    else if (predicate(relPath)) results.push(relPath.replaceAll(path.sep, '/'));
   }
   return results.sort();
 }
@@ -56,11 +53,7 @@ for (const file of serverRouteFiles) {
   const source = read(file);
   const directRoutes = [...source.matchAll(/\bapp\.(get|post|put|patch|delete)\(\s*['"`]([^'"`]+)['"`]/g)];
   for (const match of directRoutes) {
-    serverPatterns.push({
-      method: match[1].toUpperCase(),
-      path: normalizeApiPath(match[2]),
-      file,
-    });
+    serverPatterns.push({ method: match[1].toUpperCase(), path: normalizeApiPath(match[2]), file });
   }
 
   const routerRoutes = [...source.matchAll(/\brouter\.(get|post|put|patch|delete)\(\s*['"`]([^'"`]+)['"`]/g)];
@@ -99,15 +92,10 @@ for (const file of clientFiles) {
       if (apiIndex >= 0) {
         const parts = [];
         for (const token of tokens.slice(apiIndex)) {
-          if (token.startsWith('/api') || token.startsWith('/nra')) {
-            parts.push(token);
-          } else if (/^[A-Za-z_$]/.test(token)) {
-            parts.push(':param');
-          } else if (token.startsWith('/')) {
-            parts.push(token.replace(/^\//, ''));
-          } else {
-            parts.push(token);
-          }
+          if (token.startsWith('/api') || token.startsWith('/nra')) parts.push(token);
+          else if (/^[A-Za-z_$]/.test(token)) parts.push(':param');
+          else if (token.startsWith('/')) parts.push(token.replace(/^\//, ''));
+          else parts.push(token);
         }
         const ref = parts.join('/').replace(/\/+/g, '/');
         apiReferences.push({ file, ref: normalizeApiPath(ref), raw: ref });
@@ -116,9 +104,7 @@ for (const file of clientFiles) {
     }
 
     const matches = [...line.matchAll(/[`'"]((?:\/api|\/nra)\/[^`'"\s),>]*)/g)];
-    for (const match of matches) {
-      apiReferences.push({ file, ref: normalizeApiPath(match[1]), raw: match[1] });
-    }
+    for (const match of matches) apiReferences.push({ file, ref: normalizeApiPath(match[1]), raw: match[1] });
   }
 }
 

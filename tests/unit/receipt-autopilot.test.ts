@@ -63,21 +63,6 @@ vi.mock('../../server/storage', () => ({
       state.journalEntries.push(row);
       return row;
     }),
-    createJournalEntryWithGeneratedNumber: vi.fn(async (entry: any, lines: any[]) => {
-      const totalDebit = lines.reduce((s: number, l: any) => s + (Number(l.debit) || 0), 0);
-      const totalCredit = lines.reduce((s: number, l: any) => s + (Number(l.credit) || 0), 0);
-      if (Math.abs(totalDebit - totalCredit) > 0.01) {
-        throw new Error(`Test mock: unbalanced entry ${totalDebit} vs ${totalCredit}`);
-      }
-      const row = {
-        id: `je-${state.journalEntries.length + 1}`,
-        entryNumber: `JE-TEST-${String(state.journalEntries.length + 1).padStart(3, '0')}`,
-        ...entry,
-        lines,
-      };
-      state.journalEntries.push(row);
-      return row;
-    }),
   },
 }));
 

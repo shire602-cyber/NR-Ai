@@ -1,9 +1,9 @@
-import type { NextFunction,Request,Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
-import { isProduction } from '../config/env';
 import { createLogger } from '../config/logger';
-import { AppError,AuthError,RetentionError,ValidationError } from '../errors';
+import { isProduction } from '../config/env';
 import { RetentionViolationError } from '../services/retention.service';
+import { AppError, RetentionError, ValidationError, AuthError } from '../errors';
 
 const log = createLogger('error');
 

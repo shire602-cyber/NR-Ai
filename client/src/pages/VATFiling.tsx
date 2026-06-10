@@ -1,36 +1,36 @@
-import { Badge } from '@/components/ui/badge';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { format, parseISO, startOfQuarter, endOfQuarter } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { VatWorkpaperWorkspace } from '@/components/VatWorkpaperWorkspace';
-import { useToast } from '@/hooks/use-toast';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency } from '@/lib/format';
 import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { endOfQuarter,format,parseISO,startOfQuarter } from 'date-fns';
-import {
-AlertTriangle,
-Calculator,
-CheckCircle2,
-Clock,
-Download,
-Edit3,
-Eye,
-FileText,
-Loader2,
-Send
+import { useToast } from '@/hooks/use-toast';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { formatCurrency } from '@/lib/format';
+import VAT201Form from '@/components/VAT201Form';
+import { PageHeader } from '@/components/ui/page-header';
+import { 
+  FileText, 
+  Download, 
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  Calculator,
+  Send,
+  FileCheck,
+  Loader2,
+  Eye,
+  Edit3
 } from 'lucide-react';
-import { lazy,Suspense,useMemo,useState } from 'react';
-
-const VAT201Form = lazy(() => import('@/components/VAT201Form'));
+import jsPDF from 'jspdf';
 
 interface VATReturn {
   id: string;
@@ -107,7 +107,6 @@ interface Company {
   nameAr: string | null;
   trnVatNumber: string | null;
   vatFilingFrequency: string | null;
-  emirate?: string | null;
   address: string | null;
   phone: string | null;
 }
@@ -130,10 +129,9 @@ const DEFAULT_VAT_DATA = {
 };
 
 export default function VATFiling() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
-  const { data: currentUser } = useCurrentUser();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -141,8 +139,6 @@ export default function VATFiling() {
   const [newPeriodStart, setNewPeriodStart] = useState('');
   const [newPeriodEnd, setNewPeriodEnd] = useState('');
   const [notes, setNotes] = useState('');
-
-  const hasFirmWorkspaceAccess = currentUser?.firmRole === 'firm_owner' || currentUser?.firmRole === 'firm_admin' || currentUser?.isAdmin === true;
   const [vatFormData, setVatFormData] = useState(DEFAULT_VAT_DATA);
 
   const { data: company } = useQuery<Company>({
@@ -235,8 +231,6 @@ export default function VATFiling() {
       end: endOfQuarter(now),
     };
   }, []);
-  const currentPeriodStart = format(currentQuarter.start, 'yyyy-MM-dd');
-  const currentPeriodEnd = format(currentQuarter.end, 'yyyy-MM-dd');
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -367,8 +361,7 @@ export default function VATFiling() {
     submitMutation.mutate({ id: selectedReturn.id });
   };
 
-  const handleExportPDF = async (vatReturn: VATReturn) => {
-    const { default: jsPDF } = await import('jspdf');
+  const handleExportPDF = (vatReturn: VATReturn) => {
     const doc = new jsPDF('p', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 15;
@@ -545,22 +538,21 @@ export default function VATFiling() {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            {locale === 'ar' ? 'إقرار ضريبة القيمة المضافة 201' : 'UAE VAT 201 Return'}
-          </h1>
-          <p className="text-muted-foreground">
-            {locale === 'ar' 
-              ? 'تحضير أرقام ضريبة القيمة المضافة الجاهزة للنسخ إلى بوابة الهيئة الاتحادية للضرائب'
-              : 'Prepare copy-ready VAT 201 figures for manual entry into the FTA portal'}
-          </p>
-        </div>
-        <Button onClick={handleCreateReturn} data-testid="button-create-return">
-          <Calculator className="w-4 h-4 mr-2" />
-          {locale === 'ar' ? 'إنشاء إقرار' : 'Generate Return'}
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow={locale === 'ar' ? 'الامتثال الضريبي' : 'Compliance'}
+        title={locale === 'ar' ? 'إقرار ضريبة القيمة المضافة 201' : 'UAE VAT 201 Return'}
+        description={
+          locale === 'ar'
+            ? 'إنشاء وتقديم إقرارات ضريبة القيمة المضافة وفقاً لمتطلبات الهيئة الاتحادية للضرائب'
+            : 'Generate and submit VAT returns compliant with FTA requirements'
+        }
+        actions={
+          <Button onClick={handleCreateReturn} data-testid="button-create-return">
+            <Calculator className="w-4 h-4 mr-2" />
+            {locale === 'ar' ? 'إنشاء إقرار' : 'Generate Return'}
+          </Button>
+        }
+      />
 
       {!company?.trnVatNumber && (
         <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20">
@@ -580,19 +572,6 @@ export default function VATFiling() {
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {hasFirmWorkspaceAccess && companyId && (
-        <VatWorkpaperWorkspace
-          companyId={companyId}
-          companyName={company?.name}
-          companyEmirate={company?.emirate}
-          defaultPeriodStart={currentPeriodStart}
-          defaultPeriodEnd={currentPeriodEnd}
-          onReturnGenerated={() => {
-            queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'vat-returns'] });
-          }}
-        />
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -807,7 +786,6 @@ export default function VATFiling() {
             </DialogDescription>
           </DialogHeader>
           {selectedReturn && company && (
-            <Suspense fallback={<Skeleton className="h-96 w-full" />}>
             <VAT201Form
               data={vatFormData}
               onChange={() => {}}
@@ -827,7 +805,6 @@ export default function VATFiling() {
               }}
               readOnly={true}
             />
-            </Suspense>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
@@ -855,7 +832,6 @@ export default function VATFiling() {
           </DialogHeader>
           {selectedReturn && company && (
             <>
-              <Suspense fallback={<Skeleton className="h-96 w-full" />}>
               <VAT201Form
                 data={vatFormData}
                 onChange={setVatFormData}
@@ -875,7 +851,6 @@ export default function VATFiling() {
                 }}
                 readOnly={false}
               />
-              </Suspense>
               <div className="space-y-2">
                 <Label>{locale === 'ar' ? 'ملاحظات' : 'Notes'}</Label>
                 <Textarea

@@ -1,8 +1,8 @@
+import { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Download, X, Smartphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { isStandalone,onInstallPromptAvailable,showInstallPrompt } from '@/lib/pwa';
-import { AnimatePresence,motion } from 'framer-motion';
-import { Download,Smartphone,X } from 'lucide-react';
-import { useCallback,useEffect,useState } from 'react';
+import { showInstallPrompt, onInstallPromptAvailable, isStandalone } from '@/lib/pwa';
 
 const SESSION_DISMISSED_KEY = 'muhasib-pwa-prompt-dismissed';
 

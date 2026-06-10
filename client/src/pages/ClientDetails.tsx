@@ -1,26 +1,28 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
 import { useQuery } from '@tanstack/react-query';
-import { format,parseISO } from 'date-fns';
-import {
-AlertTriangle,
-ArrowLeft,
-Building2,
-Calendar,
-CheckCircle2,
-Clock,
-FileText,
-Globe,
-Mail,
-MapPin,
-Phone,
-Receipt,
-Users
+import { useParams, Link } from 'wouter';
+import { format, parseISO } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { 
+  Building2, 
+  ArrowLeft, 
+  FileText, 
+  Calendar, 
+  Users, 
+  Receipt, 
+  Mail, 
+  Phone, 
+  Globe, 
+  MapPin,
+  Edit,
+  Clock,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
-import { Link,useParams } from 'wouter';
 
 interface Company {
   id: string;

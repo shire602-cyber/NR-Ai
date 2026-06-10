@@ -1,7 +1,7 @@
-import type { Express,Request,Response } from "express";
+import type { Express, Request, Response } from "express";
+import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { storage } from "../storage";
 
 export function registerPortalRoutes(app: Express) {
   // =====================================
@@ -107,10 +107,7 @@ export function registerPortalRoutes(app: Express) {
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    const deleted = await storage.deleteDocument(documentId, document.companyId);
-    if (!deleted) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
+    await storage.deleteDocument(documentId);
     res.json({ success: true });
   }));
 
@@ -238,10 +235,7 @@ export function registerPortalRoutes(app: Express) {
     if (req.body.dueDate) updates.dueDate = new Date(req.body.dueDate);
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
 
-    const task = await storage.updateComplianceTask(taskId, existing.companyId, updates);
-    if (!task) {
-      return res.status(404).json({ message: 'Compliance task not found' });
-    }
+    const task = await storage.updateComplianceTask(taskId, updates);
     res.json(task);
   }));
 
@@ -257,10 +251,7 @@ export function registerPortalRoutes(app: Express) {
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
     }
-    const deleted = await storage.deleteComplianceTask(taskId, existing.companyId);
-    if (!deleted) {
-      return res.status(404).json({ message: 'Compliance task not found' });
-    }
+    await storage.deleteComplianceTask(taskId);
     res.json({ success: true });
   }));
 

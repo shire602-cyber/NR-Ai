@@ -6,39 +6,39 @@
  * batch / mutation endpoints require firm_owner specifically (requireFirmOwner).
  */
 
-import { and,eq,gte,inArray,isNull,lt,or,sql,sum } from 'drizzle-orm';
-import type { Express,Request,Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import { Router } from 'express';
 import { z } from 'zod';
+import { and, eq, gte, inArray, isNull, lt, or, sql, sum } from 'drizzle-orm';
 
-import { companies,invoices,receipts } from '../../shared/schema';
+import { authMiddleware } from '../middleware/auth';
+import { requireFirmAdmin, requireFirmOwner } from '../middleware/rbac';
+import { asyncHandler } from '../middleware/errorHandler';
 import { createLogger } from '../config/logger';
 import { db } from '../db';
-import { authMiddleware } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { requireFirmAdmin,requireFirmOwner } from '../middleware/rbac';
+import { companies, invoices, receipts } from '../../shared/schema';
 import { recordAudit } from '../services/audit.service';
 import {
-assignStaffToCompany,
-buildClientSnapshots,
-buildFirmDashboard,
-calculateHealthScore,
-calculatePeriodComparison,
-fetchPeriodMetric,
-fetchStaffWorkload,
-generateAlertsForClient,
-listFirmAlerts,
-markAlertRead,
-previousPeriodRange,
-rankClients,
-refreshFirmAlerts,
-resolveAccessibleClientIds,
-resolveAlert,
-scopeBatchToAccessible,
-type ClientHealthScore,
-type ClientRankBy,
-type ClientSnapshot,
-type SortDir,
+  buildClientSnapshots,
+  buildFirmDashboard,
+  calculateHealthScore,
+  calculatePeriodComparison,
+  fetchPeriodMetric,
+  fetchStaffWorkload,
+  generateAlertsForClient,
+  listFirmAlerts,
+  markAlertRead,
+  previousPeriodRange,
+  rankClients,
+  refreshFirmAlerts,
+  resolveAccessibleClientIds,
+  resolveAlert,
+  scopeBatchToAccessible,
+  assignStaffToCompany,
+  type ClientHealthScore,
+  type ClientRankBy,
+  type ClientSnapshot,
+  type SortDir,
 } from '../services/firm-command-center.service';
 
 const logger = createLogger('firm-command-center-routes');

@@ -1,47 +1,49 @@
-import { Badge } from '@/components/ui/badge';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
-import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { TableSkeleton } from '@/components/ui/loading-skeletons';
-import { Progress } from '@/components/ui/progress';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
+import { PageHeader } from '@/components/ui/page-header';
+import { TableSkeleton } from '@/components/ui/loading-skeletons';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
+import { useTranslation } from '@/lib/i18n';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { format,parseISO } from 'date-fns';
-import {
-AlertTriangle,
-ArrowRightLeft,
-BarChart3,
-BookOpen,
-Building2,
-Check,
-CheckCircle2,
-ChevronRight,
-FileSpreadsheet,
-FileText,
-Link2,
-Loader2,
-Receipt,
-Search,
-Sparkles,
-Unlink,
-Upload,
-XCircle
-} from 'lucide-react';
-import { useMemo,useState } from 'react';
 import Tesseract from 'tesseract.js';
+import {
+  Upload,
+  FileText,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  Link2,
+  Unlink,
+  Search,
+  RefreshCw,
+  Building2,
+  ArrowRightLeft,
+  Sparkles,
+  FileSpreadsheet,
+  BookOpen,
+  Receipt,
+  Check,
+  AlertTriangle,
+  BarChart3,
+  ChevronRight,
+} from 'lucide-react';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -148,7 +150,7 @@ function formatDate(dateStr: string) {
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function BankReconciliation() {
-  const { t, locale: _locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
@@ -436,38 +438,37 @@ export default function BankReconciliation() {
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            {t.bankReconciliation}
-          </h1>
-          <p className="text-muted-foreground text-sm">{t.bankReconciliationDescription}</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={() => setReportDialogOpen(true)}>
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Report
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => autoReconcileMutation.mutate()}
-            disabled={autoReconcileMutation.isPending}
-            data-testid="button-auto-reconcile"
-          >
-            {autoReconcileMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4 mr-2" />
-            )}
-            {t.autoMatch}
-          </Button>
-          <Button onClick={() => setImportDialogOpen(true)} size="sm" data-testid="button-import-transactions">
-            <Upload className="w-4 h-4 mr-2" />
-            {t.importCsv}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Accounting"
+        title={t.bankReconciliation}
+        description={t.bankReconciliationDescription}
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setReportDialogOpen(true)}>
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Report
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => autoReconcileMutation.mutate()}
+              disabled={autoReconcileMutation.isPending}
+              data-testid="button-auto-reconcile"
+            >
+              {autoReconcileMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              {t.autoMatch}
+            </Button>
+            <Button onClick={() => setImportDialogOpen(true)} size="sm" data-testid="button-import-transactions">
+              <Upload className="w-4 h-4 mr-2" />
+              {t.importCsv}
+            </Button>
+          </>
+        }
+      />
 
       {/* ── Summary cards ── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

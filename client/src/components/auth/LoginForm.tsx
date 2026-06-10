@@ -1,16 +1,16 @@
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardFooter,CardHeader,CardTitle } from '@/components/ui/card';
-import { Form,FormControl,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { useToast } from '@/hooks/use-toast';
-import { apiUrl } from '@/lib/api';
-import { useTranslation } from '@/lib/i18n';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { LogIn } from 'lucide-react';
-import { useEffect,useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link } from 'wouter';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Link } from 'wouter';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from '@/lib/i18n';
+import { apiUrl } from '@/lib/api';
+import { LogIn } from 'lucide-react';
 import { OAuthButtons } from './OAuthButtons';
 
 const loginSchema = z.object({
@@ -104,9 +104,11 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   };
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-semibold">{t.login}</CardTitle>
+    <Card className="w-full max-w-md border-border/60 shadow-xl">
+      <CardHeader className="space-y-1.5">
+        <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
+          Welcome back<span className="text-accent">.</span>
+        </CardTitle>
         <CardDescription>
           Enter your credentials to access your account
         </CardDescription>

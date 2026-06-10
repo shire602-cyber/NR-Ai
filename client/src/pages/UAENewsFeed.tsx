@@ -1,23 +1,26 @@
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs,TabsList,TabsTrigger } from '@/components/ui/tabs';
-import { useTranslation } from '@/lib/i18n';
-import { useQuery } from '@tanstack/react-query';
-import { format,parseISO } from 'date-fns';
-import {
-Building2,
-Calendar,
-ExternalLink,
-Globe,
-Newspaper,
-Receipt,
-RefreshCw,
-Scale,
-TrendingUp
-} from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { format, parseISO } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useTranslation } from '@/lib/i18n';
+import { 
+  Newspaper, 
+  ExternalLink, 
+  Calendar,
+  Building2,
+  Receipt,
+  TrendingUp,
+  Scale,
+  Globe,
+  RefreshCw
+} from 'lucide-react';
 
 interface NewsItem {
   id: string;
@@ -100,7 +103,7 @@ const SAMPLE_NEWS: NewsItem[] = [
 ];
 
 export default function UAENewsFeed() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   const { data: newsItems, isLoading, refetch } = useQuery<NewsItem[]>({
@@ -133,22 +136,19 @@ export default function UAENewsFeed() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">
-            {locale === 'ar' ? 'أخبار الضرائب والاقتصاد الإماراتي' : 'UAE Tax & Finance News'}
-          </h1>
-          <p className="text-muted-foreground">
-            {locale === 'ar' 
-              ? 'آخر التحديثات من الهيئة الاتحادية للضرائب والمصادر الموثوقة'
-              : 'Latest updates from FTA and trusted sources'}
-          </p>
-        </div>
-        <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh-news">
-          <RefreshCw className="w-4 h-4 mr-2" />
-          {locale === 'ar' ? 'تحديث' : 'Refresh'}
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Insights"
+        title={locale === 'ar' ? 'أخبار الضرائب والاقتصاد الإماراتي' : 'UAE Tax & Finance News'}
+        description={locale === 'ar'
+          ? 'آخر التحديثات من الهيئة الاتحادية للضرائب والمصادر الموثوقة'
+          : 'Latest updates from FTA and trusted sources'}
+        actions={
+          <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh-news">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            {locale === 'ar' ? 'تحديث' : 'Refresh'}
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">

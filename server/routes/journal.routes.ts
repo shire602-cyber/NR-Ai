@@ -1,45 +1,15 @@
-import { eq,sql } from 'drizzle-orm';
-import type { Express,Request,Response } from 'express';
-import {
-journalEntries as journalEntriesTable,
-journalEntryNumberSequences,
-journalLines as journalLinesTable,
-type JournalEntry
-} from '../../shared/schema';
-import { createLogger } from '../config/logger';
-import { db } from '../db';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import type { Express, Request, Response } from 'express';
+import { z } from 'zod';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
-import { recordAudit } from '../services/audit.service';
-import { assertPeriodNotLocked } from '../services/period-lock.service';
-import { assertRetentionExpired } from '../services/retention.service';
 import { storage } from '../storage';
+import { insertJournalEntrySchema, type JournalEntry } from '../../shared/schema';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { recordAudit } from '../services/audit.service';
+import { createLogger } from '../config/logger';
+import { assertRetentionExpired } from '../services/retention.service';
 
 const log = createLogger('journal');
-
-async function allocateJournalEntryNumberInTransaction(
-  companyId: string,
-  date: Date,
-  tx: typeof db,
-): Promise<string> {
-  const dateKey = date.toISOString().slice(0, 10);
-  const prefix = `JE-${dateKey.replace(/-/g, '')}`;
-  const [seq] = await tx
-    .insert(journalEntryNumberSequences)
-    .values({ companyId, entryDate: dateKey, lastValue: 1 })
-    .onConflictDoUpdate({
-      target: [
-        journalEntryNumberSequences.companyId,
-        journalEntryNumberSequences.entryDate,
-      ],
-      set: {
-        lastValue: sql`${journalEntryNumberSequences.lastValue} + 1`,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ lastValue: journalEntryNumberSequences.lastValue });
-  return `${prefix}-${String(seq.lastValue).padStart(3, '0')}`;
-}
 
 // Walk the user's companies to find the entry. Storage queries are
 // tenant-scoped, so a hit also proves the user has access.
@@ -137,16 +107,20 @@ export function registerJournalRoutes(app: Express) {
     // their existence implies they will eventually be posted on this date.
     await assertPeriodNotLocked(companyId, entryDate);
 
+    // Generate entry number atomically via storage helper
+    const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
+
     // Determine if posting immediately
     const isPosting = status === 'posted';
 
     // Create journal entry + lines atomically (storage validates balance & wraps in transaction)
-    const entry = await storage.createJournalEntryWithGeneratedNumber(
+    const entry = await storage.createJournalEntry(
       {
         ...entryData,
         date: entryDate,
         companyId,
         createdBy: userId,
+        entryNumber,
         status: isPosting ? 'posted' : 'draft',
         source: entryData.source || 'manual',
         sourceId: entryData.sourceId || null,
@@ -403,16 +377,15 @@ export function registerJournalRoutes(app: Express) {
       return res.status(400).json({ message: 'Cannot reverse an entry with no lines' });
     }
 
+    // Generate reversal entry number atomically via storage helper
+    const reversalNumber = await storage.generateEntryNumber(entry.companyId, now);
+
     // Build swapped lines and verify the original was balanced before persisting reversal
     const reversalLines = originalLines.map((line) => ({
       accountId: line.accountId,
       debit: line.credit,
       credit: line.debit,
       description: `Reversal: ${line.description || ''}`,
-      foreignCurrency: line.foreignCurrency,
-      foreignDebit: line.foreignCredit || 0,
-      foreignCredit: line.foreignDebit || 0,
-      exchangeRate: line.exchangeRate || 1,
     }));
 
     const totalDebit = reversalLines.reduce((sum, l) => sum + (Number(l.debit) || 0), 0);
@@ -423,37 +396,30 @@ export function registerJournalRoutes(app: Express) {
       });
     }
 
-    const reversalEntry = await db.transaction(async (tx: typeof db) => {
-      const reversalNumber = await allocateJournalEntryNumberInTransaction(entry.companyId, now, tx);
-      const [created] = await tx
-        .insert(journalEntriesTable)
-        .values({
-          companyId: entry.companyId,
-          date: now,
-          memo: `Reversal of ${entry.entryNumber}: ${reason || 'No reason provided'}`,
-          entryNumber: reversalNumber,
-          status: 'posted',
-          source: 'reversal',
-          sourceId: id,
-          reversedEntryId: id,
-          reversalReason: reason || null,
-          createdBy: userId,
-          postedBy: userId,
-          postedAt: new Date(),
-        })
-        .returning();
-      for (const line of reversalLines) {
-        await tx.insert(journalLinesTable).values({ ...line, entryId: created.id });
-      }
-      await tx
-        .update(journalEntriesTable)
-        .set({
-          status: 'void',
-          updatedBy: userId,
-          updatedAt: new Date(),
-        })
-        .where(eq(journalEntriesTable.id, id));
-      return created;
+    // Create reversing entry + lines atomically (storage re-validates balance inside transaction)
+    const reversalEntry = await storage.createJournalEntry(
+      {
+        companyId: entry.companyId,
+        date: now,
+        memo: `Reversal of ${entry.entryNumber}: ${reason || 'No reason provided'}`,
+        entryNumber: reversalNumber,
+        status: 'posted',
+        source: 'reversal',
+        sourceId: id,
+        reversedEntryId: id,
+        reversalReason: reason || null,
+        createdBy: userId,
+        postedBy: userId,
+        postedAt: new Date(),
+      },
+      reversalLines
+    );
+
+    // Mark original entry as void
+    await storage.updateJournalEntry(id, entry.companyId, {
+      status: 'void',
+      updatedBy: userId,
+      updatedAt: new Date(),
     });
 
     await recordAudit({

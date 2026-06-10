@@ -1,45 +1,46 @@
+import { PageHeader } from '@/components/ui/page-header';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-AlertTriangle,
-ArrowRight,
-Banknote,
-Bot,
-BriefcaseBusiness,
-CheckCircle2,
-ClipboardCheck,
-FileArchive,
-FileText,
-Gauge,
-Landmark,
-MessageCircle,
-PackageOpen,
-ShieldCheck,
-Sparkles,
-TrendingUp,
-UploadCloud,
-} from 'lucide-react';
-import { useEffect,useMemo,useState } from 'react';
 import { useLocation } from 'wouter';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Banknote,
+  Bot,
+  BriefcaseBusiness,
+  CheckCircle2,
+  ClipboardCheck,
+  FileArchive,
+  FileText,
+  Gauge,
+  Landmark,
+  MessageCircle,
+  PackageOpen,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  UploadCloud,
+} from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-Dialog,
-DialogContent,
-DialogHeader,
-DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import {
-Table,
-TableBody,
-TableCell,
-TableHead,
-TableHeader,
-TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '@/lib/queryClient';
 
 type Priority = 'critical' | 'high' | 'medium' | 'low';
@@ -113,7 +114,6 @@ interface ValueOpsOpportunity {
 
 interface ValueOpsAction {
   id: string;
-  actionKey: string;
   lane: ValueLane;
   priority: Priority;
   companyId: string;
@@ -126,7 +126,6 @@ interface ValueOpsAction {
 
 interface FirmReviewItem {
   id: string;
-  actionKey: string;
   kind: ReviewItemKind;
   priority: Priority;
   companyId: string;
@@ -158,38 +157,6 @@ interface ValueOpsDashboard {
   opportunities: ValueOpsOpportunity[];
   actions: ValueOpsAction[];
   clients: ValueOpsClient[];
-}
-
-interface ValueOpsOperatingMove {
-  lane: ValueLane;
-  priority: Priority;
-  title: string;
-  metric: string;
-  detail: string;
-  href: string;
-}
-
-interface ValueOpsClientBrief {
-  actionKey: string;
-  companyId: string;
-  companyName: string;
-  priority: Priority;
-  headline: string;
-  whyNow: string;
-  commercialImpactAed: number;
-  dueInDays: number | null;
-  ownerRole: string;
-  recommendedActions: string[];
-  healthSignals: string[];
-  href: string;
-}
-
-interface ValueOpsActionBrief {
-  generatedAt: string;
-  summary: string[];
-  operatingMoves: ValueOpsOperatingMove[];
-  clientBriefs: ValueOpsClientBrief[];
-  servicePlays: ValueOpsOperatingMove[];
 }
 
 interface ClientAuditPack {
@@ -335,10 +302,6 @@ export default function ValueOps() {
     queryKey: ['/api/firm/value-ops/review-queue'],
   });
 
-  const actionBriefQuery = useQuery<ValueOpsActionBrief>({
-    queryKey: ['/api/firm/value-ops/action-brief'],
-  });
-
   useEffect(() => {
     const [, queryString] = location.split('?');
     const client = new URLSearchParams(queryString ?? '').get('client');
@@ -383,16 +346,17 @@ export default function ValueOps() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Value Ops</h1>
-          <p className="text-muted-foreground">NRA-wide cash, compliance, close, review, and client reporting queue.</p>
-        </div>
-        <Button variant="outline" onClick={() => dashboardQuery.refetch()}>
-          <Gauge className="mr-2 h-4 w-4" />
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Firm"
+        title="Value Ops"
+        description="NRA-wide cash, compliance, close, review, and client reporting queue."
+        actions={
+          <Button variant="outline" onClick={() => dashboardQuery.refetch()}>
+            <Gauge className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard title="Cash at risk" value={formatAed(data.summary.cashAtRisk)} icon={Banknote} />
@@ -401,22 +365,13 @@ export default function ValueOps() {
         <MetricCard title="NRA service AR" value={formatAed(data.summary.nraServiceAr)} icon={BriefcaseBusiness} />
       </div>
 
-      <Tabs defaultValue="brief" className="space-y-4">
+      <Tabs defaultValue="board" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="brief">Brief</TabsTrigger>
           <TabsTrigger value="board">Board</TabsTrigger>
           <TabsTrigger value="review">AI review</TabsTrigger>
           <TabsTrigger value="actions">Actions</TabsTrigger>
           <TabsTrigger value="clients">Clients</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="brief">
-          <ActionBriefView
-            brief={actionBriefQuery.data}
-            loading={actionBriefQuery.isLoading}
-            onNavigate={navigate}
-          />
-        </TabsContent>
 
         <TabsContent value="board" className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -649,134 +604,6 @@ export default function ValueOps() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function ActionBriefView({
-  brief,
-  loading,
-  onNavigate,
-}: {
-  brief?: ValueOpsActionBrief;
-  loading: boolean;
-  onNavigate: (href: string) => void;
-}) {
-  if (loading) return <div className="py-10 text-center text-muted-foreground">Loading action brief...</div>;
-  if (!brief) return <div className="py-10 text-center text-muted-foreground">No action brief available.</div>;
-
-  const moves = [...brief.operatingMoves, ...brief.servicePlays];
-
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-            <CardTitle className="text-base">Firm Action Brief</CardTitle>
-            <div className="text-xs text-muted-foreground">Generated {formatDate(brief.generatedAt)}</div>
-          </div>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          {brief.summary.map((line) => (
-            <div key={line} className="rounded-md border p-3 text-sm">
-              {line}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      {moves.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {moves.map((move) => {
-            const Icon = laneConfig[move.lane].icon;
-            return (
-              <Card key={`${move.lane}:${move.title}`}>
-                <CardHeader className="space-y-0 pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <CardTitle className="text-sm leading-snug">{move.title}</CardTitle>
-                      <div className="mt-1 text-xs text-muted-foreground">{laneConfig[move.lane].label}</div>
-                    </div>
-                    <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-2xl font-semibold">{move.metric}</div>
-                    <Badge className={priorityClass(move.priority)}>{move.priority}</Badge>
-                  </div>
-                  <div className="min-h-10 text-sm text-muted-foreground">{move.detail}</div>
-                  <Button variant="outline" size="sm" onClick={() => onNavigate(move.href)}>
-                    Open <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Highest-Impact Client Moves</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Priority</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Move</TableHead>
-                <TableHead>Owner</TableHead>
-                <TableHead className="text-right">Impact</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {brief.clientBriefs.map((client) => (
-                <TableRow key={client.companyId}>
-                  <TableCell>
-                    <Badge className={priorityClass(client.priority)}>{client.priority}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{client.companyName}</div>
-                    <div className="text-xs text-muted-foreground">{client.whyNow}</div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{client.headline}</div>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {client.healthSignals.map((signal) => (
-                        <Badge key={signal} variant="outline" className="font-normal">
-                          {signal}
-                        </Badge>
-                      ))}
-                    </div>
-                    <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-                      {client.recommendedActions.slice(0, 3).map((action) => (
-                        <li key={action}>{action}</li>
-                      ))}
-                    </ul>
-                  </TableCell>
-                  <TableCell>{client.ownerRole}</TableCell>
-                  <TableCell className="text-right">{formatAed(client.commercialImpactAed)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => onNavigate(client.href)}>
-                      Open <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {brief.clientBriefs.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                    No high-impact client moves right now.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
     </div>
   );
 }

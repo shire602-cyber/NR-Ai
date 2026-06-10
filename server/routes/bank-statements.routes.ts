@@ -1,14 +1,14 @@
-import type { Express,Request,Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { createLogger } from '../config/logger';
-import { ACCOUNT_CODES } from '../constants';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
-import { autoReconcileTransactions,getSuggestionsForTransaction } from '../services/auto-reconcile.service';
-import { assertPeriodNotLocked } from '../services/period-lock.service';
-import { createAndEmitNotification } from '../services/socket.service';
 import { storage } from '../storage';
+import { autoReconcileTransactions, getSuggestionsForTransaction } from '../services/auto-reconcile.service';
+import { createLogger } from '../config/logger';
+import { createAndEmitNotification } from '../services/socket.service';
+import { assertPeriodNotLocked } from '../services/period-lock.service';
+import { ACCOUNT_CODES } from '../constants';
 
 const log = createLogger('bank-statements');
 
@@ -118,7 +118,7 @@ function parseDate(raw: string): Date | null {
   }
 
   // Try DD-MM-YYYY or DD-MMM-YYYY
-  const parts = cleaned.split(/[-\s]/);
+  const parts = cleaned.split(/[-\/\s]/);
   if (parts.length >= 3) {
     const months: Record<string, number> = {
       jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
@@ -728,9 +728,12 @@ export function registerBankStatementRoutes(app: Express) {
       // Block creating reconciliation journal entries into a locked period.
       await assertPeriodNotLocked(companyId, txn.transactionDate);
 
-      const entry = await storage.createJournalEntryWithGeneratedNumber(
+      const entryNumber = await storage.generateEntryNumber(companyId, new Date(txn.transactionDate));
+
+      const entry = await storage.createJournalEntry(
         {
           companyId,
+          entryNumber,
           date: new Date(txn.transactionDate),
           memo: memo || txn.description,
           status: 'posted',

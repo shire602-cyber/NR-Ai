@@ -1,42 +1,26 @@
-import { Badge,StatusBadge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency,formatDate } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Badge, StatusBadge } from '@/components/ui/badge';
+import { useTranslation } from '@/lib/i18n';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import { formatCurrency, formatDate } from '@/lib/format';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import {
-ArrowRight,
-ArrowUpRight,
-BarChart3,
-BookOpen,
-CheckCircle2,
-Clock,
-Coins,
-FileText,
-Plus,Receipt,
-Sparkles,
-TrendingDown,
-TrendingUp
+  TrendingUp, TrendingDown, AlertCircle, FileText,
+  Plus, Receipt, BookOpen, Sparkles, ArrowRight, Clock, CheckCircle2,
+  BarChart3, ArrowUpRight, Wallet, Coins,
 } from 'lucide-react';
-import { useMemo } from 'react';
 import {
-Area,
-AreaChart,
-Cell,
-Pie,
-PieChart,
-ResponsiveContainer,
-Tooltip,
-XAxis,YAxis
+  ResponsiveContainer, PieChart, Pie, Cell,
+  XAxis, YAxis, Tooltip, AreaChart, Area, BarChart, Bar,
 } from 'recharts';
 import { Link } from 'wouter';
+import { motion } from 'framer-motion';
+import { MeshGradient } from '@/components/ui/mesh-gradient';
 import ClientDashboard from './ClientDashboard';
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const CHART_COLORS = {
   primary: 'hsl(var(--chart-1))',
@@ -54,13 +38,43 @@ const PIE_PALETTE = [
   CHART_COLORS.muted,
 ];
 
+// ─── Count-up hook ───────────────────────────────────────────────────────────
+
+/** Eases a numeric value toward its target — the landing-page counter feel. */
+function useCountUp(target: number, duration = 1400): number {
+  const [value, setValue] = useState(0);
+  const fromRef = useRef(0);
+
+  useEffect(() => {
+    const reduceMotion =
+      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const effectiveDuration = reduceMotion ? 0 : duration;
+    const from = fromRef.current;
+    const start = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      const p = effectiveDuration === 0 ? 1 : Math.min(1, (now - start) / effectiveDuration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setValue(from + (target - from) * eased);
+      if (p < 1) {
+        raf = requestAnimationFrame(tick);
+      } else {
+        fromRef.current = target;
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+
+  return value;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { data: user, isLoading } = useCurrentUser();
   if (isLoading) return null;
-  const userType = user?.userType || 'customer';
-  if (userType === 'client') return <ClientDashboard />;
+  if (user?.userType === 'client') return <ClientDashboard />;
   return <CustomerDashboard />;
 }
 
@@ -165,6 +179,76 @@ function KpiCard({ label, value, delta, trend, spark, accent, isLoading, delay =
   );
 }
 
+// ─── Compliance pulse ────────────────────────────────────────────────────────
+
+function ScoreRing({ score }: { score: number }) {
+  const animated = useCountUp(score, 1200);
+  const r = 26;
+  const c = 2 * Math.PI * r;
+  const color =
+    score >= 80 ? 'hsl(var(--success))' : score >= 50 ? 'hsl(var(--warning))' : 'hsl(var(--destructive))';
+  return (
+    <div className="relative w-16 h-16 shrink-0" role="img" aria-label={`Audit readiness score ${score} out of 100`}>
+      <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
+        <circle cx={32} cy={32} r={r} fill="none" stroke="hsl(var(--border))" strokeWidth={5} />
+        <circle
+          cx={32}
+          cy={32}
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth={5}
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c - (Math.min(100, Math.max(0, animated)) / 100) * c}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center font-mono font-semibold tabular-nums text-[15px] text-foreground">
+        {Math.round(animated)}
+      </div>
+    </div>
+  );
+}
+
+function FilingStatusBadge({ status }: { status?: 'up_to_date' | 'due_soon' | 'overdue' }) {
+  if (status === 'overdue') return <Badge variant="danger" dot>Overdue</Badge>;
+  if (status === 'due_soon') return <Badge variant="warning" dot>Due soon</Badge>;
+  return <Badge variant="success" dot>On track</Badge>;
+}
+
+/**
+ * Maps audit-readiness issue strings from /compliance/overview to the screen
+ * where the user can resolve them. Strings must match the server exactly
+ * (server/routes/compliance-dashboard.routes.ts).
+ */
+const ISSUE_ACTIONS: Record<string, { href: string; cta: string }> = {
+  'No VAT returns filed': { href: '/vat-filing', cta: 'File VAT 201' },
+  'No chart of accounts configured': { href: '/chart-of-accounts', cta: 'Set up accounts' },
+  'No journal entries in the last 90 days': { href: '/journal', cta: 'Post an entry' },
+  'No bank reconciliation rules configured': { href: '/bank-reconciliation', cta: 'Set up reconciliation' },
+  'Bank reconciliation not set up': { href: '/bank-reconciliation', cta: 'Set up reconciliation' },
+  'No completed data backups': { href: '/backup-restore', cta: 'Run a backup' },
+};
+
+function FixItRow({ issue }: { issue: string }) {
+  const action = ISSUE_ACTIONS[issue];
+  return (
+    <div className="flex items-center justify-between gap-3 px-5 py-2.5">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
+        <span className="text-[13px] text-foreground/80 truncate">{issue}</span>
+      </div>
+      {action && (
+        <Link href={action.href}>
+          <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent shrink-0 -me-2">
+            {action.cta} <ArrowRight className="w-3.5 h-3.5" />
+          </Button>
+        </Link>
+      )}
+    </div>
+  );
+}
+
 // ─── Quick action ────────────────────────────────────────────────────────────
 
 function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
@@ -245,6 +329,12 @@ function CustomerDashboard() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: compliance } = useQuery<any>({
+    queryKey: ['/api/companies', selectedCompanyId, 'compliance/overview'],
+    enabled: !!selectedCompanyId,
+    retry: 1,
+  });
+
   // Derive deltas + sparklines from monthlyTrends, gracefully handling empty data
   const sparks = useMemo(() => {
     const trends = monthlyTrends ?? [];
@@ -270,6 +360,7 @@ function CustomerDashboard() {
   const monthLabel = new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' });
   const profit = (stats?.revenue || 0) - (stats?.expenses || 0);
   const margin = stats?.revenue > 0 ? (profit / stats.revenue) * 100 : 0;
+  const animatedProfit = useCountUp(statsLoading ? 0 : profit);
 
   return (
     <div className="space-y-12">
@@ -280,10 +371,11 @@ function CustomerDashboard() {
         transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
         className="relative"
       >
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-end">
+        <MeshGradient className="rounded-3xl opacity-60" emerald={0.2} gold={0.16} />
+        <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-6 items-end">
           <div className="lg:col-span-7 xl:col-span-8">
-            <div className="text-[11px] uppercase tracking-[0.18em] font-semibold text-muted-foreground/80 mb-3 flex items-center gap-2">
-              <span className="inline-block w-6 h-px bg-foreground/40" />
+            <div className="text-[11px] uppercase tracking-[0.18em] font-semibold text-accent mb-3 flex items-center gap-2">
+              <span className="inline-block w-6 h-px bg-accent/60" />
               <span className="font-mono">{monthLabel}</span>
             </div>
             <h1 className="font-display text-[40px] md:text-[56px] xl:text-[68px] leading-[1.02] tracking-tightest text-foreground">
@@ -298,7 +390,7 @@ function CustomerDashboard() {
           </div>
 
           <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-3">
-            <div className="rounded-xl border border-card-border bg-card/70 p-5 backdrop-blur">
+            <div className="rounded-2xl border border-card-border bg-card/70 p-5 backdrop-blur-xl shadow-lg">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
                   Net Profit · This Month
@@ -312,8 +404,8 @@ function CustomerDashboard() {
                   <Skeleton className="h-10 w-40" />
                 ) : (
                   <>
-                    <span className="font-display text-[36px] md:text-[44px] leading-none tracking-tight text-foreground">
-                      {formatCurrency(profit, 'AED', locale)}
+                    <span className="font-display text-[36px] md:text-[44px] leading-none tracking-tight tabular-nums text-foreground">
+                      {formatCurrency(animatedProfit, 'AED', locale)}
                     </span>
                   </>
                 )}
@@ -382,6 +474,99 @@ function CustomerDashboard() {
           delay={0.2}
         />
       </section>
+
+      {/* ── Compliance pulse ─────────────────────────────────────────────── */}
+      {compliance && (
+        <motion.section
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+        >
+          <SectionHeader
+            eyebrow="Compliance"
+            title="Filing pulse"
+            action={
+              <Link href="/compliance-calendar">
+                <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent -me-2">
+                  Calendar <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+              </Link>
+            }
+          />
+          <Card className="border-card-border overflow-hidden">
+            <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border/60">
+              {/* Audit readiness */}
+              <div className="p-5 flex items-center gap-4">
+                <ScoreRing score={compliance.auditReadiness?.score ?? 0} />
+                <div className="min-w-0">
+                  <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
+                    Audit readiness
+                  </div>
+                  <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">
+                    {(compliance.auditReadiness?.issues?.length ?? 0) === 0
+                      ? 'No open items — audit-ready books.'
+                      : `${compliance.auditReadiness.issues.length} open item${compliance.auditReadiness.issues.length === 1 ? '' : 's'} to resolve`}
+                  </div>
+                </div>
+              </div>
+
+              {/* VAT 201 */}
+              <div className="p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
+                    VAT 201
+                  </div>
+                  <FilingStatusBadge status={compliance.vatStatus?.filingStatus} />
+                </div>
+                <div className="mt-2 font-mono tabular-nums text-[14px] text-foreground">
+                  {compliance.vatStatus?.nextDue
+                    ? <>Next due {formatDate(compliance.vatStatus.nextDue, locale)}</>
+                    : 'No return filed yet'}
+                </div>
+                <Link href="/vat-filing">
+                  <Button variant="ghost" size="sm" className="mt-2 -ms-3 gap-1 text-accent hover:text-accent">
+                    Open VAT workspace <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Corporate tax */}
+              <div className="p-5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
+                    Corporate tax
+                  </div>
+                  <FilingStatusBadge status={compliance.corporateTaxStatus?.status} />
+                </div>
+                <div className="mt-2 font-mono tabular-nums text-[14px] text-foreground">
+                  {compliance.corporateTaxStatus?.nextDue
+                    ? <>Next due {formatDate(compliance.corporateTaxStatus.nextDue, locale)}</>
+                    : 'No return filed yet'}
+                </div>
+                <Link href="/corporate-tax">
+                  <Button variant="ghost" size="sm" className="mt-2 -ms-3 gap-1 text-accent hover:text-accent">
+                    Open tax workpaper <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </Link>
+              </div>
+            </div>
+
+            {/* Fix-it list — each open item links to the screen that resolves it */}
+            {(compliance.auditReadiness?.issues?.length ?? 0) > 0 && (
+              <div className="border-t border-border/60">
+                <div className="px-5 pt-3 pb-1 text-[10.5px] uppercase tracking-[0.14em] font-semibold text-muted-foreground/80">
+                  Raise your score
+                </div>
+                <div className="divide-y divide-border/40 pb-1.5">
+                  {compliance.auditReadiness.issues.map((issue: string) => (
+                    <FixItRow key={issue} issue={issue} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </Card>
+        </motion.section>
+      )}
 
       {/* ── AI Insights — refined ────────────────────────────────────────── */}
       {!statsLoading && stats && (stats.revenue > 0 || stats.expenses > 0 || stats.outstanding > 0) && (

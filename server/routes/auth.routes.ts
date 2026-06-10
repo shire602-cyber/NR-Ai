@@ -1,99 +1,50 @@
-import bcrypt from 'bcryptjs';
-import { createHash,randomBytes } from 'crypto';
-import type { Express,Request,Response } from 'express';
+import type { Request, Response } from 'express';
 import { Router } from 'express';
+import type { Express } from 'express';
+import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
+import { randomBytes, createHash } from 'crypto';
 import { z } from 'zod';
 
-import { eq } from 'drizzle-orm';
-import { insertUserSchema,users } from '../../shared/schema';
-import {
-forgotPasswordSchema,
-resetPasswordSchema,
-loginSchema as sharedLoginSchema,
-trnSchema,
-} from '../../shared/validators';
+import { storage } from '../storage';
 import { getEnv } from '../config/env';
-import { createLogger } from '../config/logger';
-import { db } from '../db';
-import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
 import {
-authMiddleware,
-generateToken,
+  authMiddleware,
+  generateToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+  decodeTokenUnsafe,
 } from '../middleware/auth';
+import {
+  clearAuthCookies,
+  getAccessTokenFromRequest,
+  getRefreshTokenFromRequest,
+  setAuthCookies,
+} from '../services/auth-cookies.service';
+import { blacklistToken, isTokenBlacklisted } from '../services/auth-tokens.service';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
+import { insertUserSchema } from '../../shared/schema';
+import { forgotPasswordSchema, resetPasswordSchema } from '../../shared/validators';
+import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
+import { createLogger } from '../config/logger';
 import {
-clearAuthCookies,
-getAccessTokenFromRequest,
-getRefreshTokenFromRequest,
-sessionMetaFromRequest,
-setAuthCookies,
-} from '../services/auth-cookies.service';
-import {
-blacklistToken,
-consumeEmailVerificationToken,
-createEmailVerificationToken,
-createRefreshSession,
-revokeRefreshSession,
-rotateRefreshSession,
-} from '../services/auth-tokens.service';
-import {
-consumeOAuthState,
-createOAuthAuthorizationUrl,
-exchangeOAuthCallback,
-getAuthIdentity,
-getOAuthProviderInfo,
-getUserByNormalizedOAuthEmail,
-isOAuthProviderId,
-linkAuthIdentity,
-markOAuthLogin,
-oauthCallbackFailureUrl,
-oauthCallbackSuccessUrl,
-oauthRedirectUri,
-type OAuthIdentityProfile,
+  consumeOAuthState,
+  createOAuthAuthorizationUrl,
+  exchangeOAuthCallback,
+  getAuthIdentity,
+  getOAuthProviderInfo,
+  getUserByNormalizedOAuthEmail,
+  isOAuthProviderId,
+  linkAuthIdentity,
+  markOAuthLogin,
+  oauthCallbackFailureUrl,
+  oauthCallbackSuccessUrl,
+  oauthRedirectUri,
+  type OAuthIdentityProfile,
 } from '../services/oauth.service';
-import { storage } from '../storage';
 
 const log = createLogger('auth');
-
-// =============================================
-// Helpers (migrated from monolith routes.ts)
-// =============================================
-
-/**
- * Seed Chart of Accounts for a newly created company.
- */
-async function seedChartOfAccounts(
-  companyId: string
-): Promise<{ created: number; alreadyExisted: boolean }> {
-  const hasAccounts = await storage.companyHasAccounts(companyId);
-  if (hasAccounts) {
-    log.info({ companyId }, 'Company already has accounts, skipping seed');
-    return { created: 0, alreadyExisted: true };
-  }
-
-  const defaultAccounts = createDefaultAccountsForCompany(companyId);
-
-  try {
-    const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
-    log.info({ companyId, count: createdAccounts.length }, 'Created chart of accounts');
-    return { created: createdAccounts.length, alreadyExisted: false };
-  } catch (error: any) {
-    if (error.message?.includes('PARTIAL_INSERT')) {
-      log.error({ companyId, err: error.message }, 'Partial insert detected during COA seed');
-      throw new Error(
-        'PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support.'
-      );
-    }
-    throw error;
-  }
-}
-
-async function issueAuthCookies(user: { id: string; email: string; isAdmin?: boolean; userType?: string; firmRole?: string | null }, req: Request, res: Response): Promise<void> {
-  const accessToken = generateToken(user);
-  const refresh = await createRefreshSession(user.id, sessionMetaFromRequest(req));
-  setAuthCookies(res, accessToken, refresh.token, refresh.expiresAt);
-}
 
 function publicUser(user: any) {
   const { passwordHash: _passwordHash, password: _password, ...safeUser } = user;
@@ -145,58 +96,6 @@ async function createOAuthCustomer(profile: OAuthIdentityProfile) {
   } as any);
 
   return user;
-}
-
-async function recordReferralSignupFromRegistration(input: {
-  code: string | undefined;
-  refereeUserId: string;
-  refereeEmail: string;
-}): Promise<void> {
-  const code = input.code?.trim();
-  if (!code) return;
-
-  const referralCode = await storage.getReferralCodeByCode(code);
-  if (!referralCode || !referralCode.isActive) return;
-  if (referralCode.expiresAt && new Date(referralCode.expiresAt) < new Date()) return;
-  if (referralCode.userId === input.refereeUserId) return;
-
-  const refereeEmail = input.refereeEmail.trim().toLowerCase();
-  const existing = await storage.getReferralByCodeAndEmail(referralCode.id, refereeEmail);
-  if (existing) {
-    if (!existing.refereeId || existing.status === 'pending') {
-      await storage.updateReferral(existing.id, {
-        refereeId: input.refereeUserId,
-        status: 'signed_up',
-      });
-    }
-    return;
-  }
-
-  await storage.createReferral({
-    referralCodeId: referralCode.id,
-    referrerId: referralCode.userId,
-    refereeId: input.refereeUserId,
-    refereeEmail,
-    status: 'signed_up',
-    signupSource: 'registration',
-    referrerRewardStatus: 'pending',
-    refereeRewardStatus: 'pending',
-    referrerRewardAmount: referralCode.referrerRewardValue,
-    refereeRewardAmount: referralCode.refereeRewardValue,
-  });
-
-  await storage.updateReferralCode(referralCode.id, {
-    totalReferrals: (referralCode.totalReferrals || 0) + 1,
-  });
-
-  await storage.createNotification({
-    userId: referralCode.userId,
-    type: 'referral',
-    title: 'New referral signup',
-    message: 'A new user signed up using your referral code.',
-    priority: 'normal',
-    actionUrl: '/referrals',
-  });
 }
 
 async function resolveOAuthUser(profile: OAuthIdentityProfile): Promise<{ user: any; mode: 'existing_identity' | 'linked_existing' | 'created_customer' }> {
@@ -256,8 +155,67 @@ async function auditOAuthLogin(req: Request, userId: string, profile: OAuthIdent
   }
 }
 
-// Stronger password validation: 8+ characters
-const passwordSchema = z.string().min(8, 'Password must be at least 8 characters');
+function issueAuthTokens(res: Response, user: { id: string; email: string; isAdmin?: boolean; userType?: string }) {
+  const token = generateToken(user);
+  const refreshToken = generateRefreshToken(user);
+  setAuthCookies(res, token, refreshToken);
+  return { token, refreshToken };
+}
+
+function loginRateLimitKey(req: Request): string {
+  const rawEmail = (req.body as { email?: unknown } | undefined)?.email;
+  const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : 'unknown';
+  return `${req.ip || 'unknown'}:${email || 'unknown'}`;
+}
+
+function retryAfterSeconds(req: Request, fallbackSeconds: number): number {
+  const resetTime = (req as any).rateLimit?.resetTime;
+  if (resetTime instanceof Date) {
+    return Math.max(1, Math.ceil((resetTime.getTime() - Date.now()) / 1000));
+  }
+  return fallbackSeconds;
+}
+
+// =============================================
+// Helpers (migrated from monolith routes.ts)
+// =============================================
+
+/**
+ * Seed Chart of Accounts for a newly created company.
+ */
+async function seedChartOfAccounts(
+  companyId: string
+): Promise<{ created: number; alreadyExisted: boolean }> {
+  const hasAccounts = await storage.companyHasAccounts(companyId);
+  if (hasAccounts) {
+    log.info({ companyId }, 'Company already has accounts, skipping seed');
+    return { created: 0, alreadyExisted: true };
+  }
+
+  const defaultAccounts = createDefaultAccountsForCompany(companyId);
+
+  try {
+    const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
+    log.info({ companyId, count: createdAccounts.length }, 'Seeded chart of accounts');
+    return { created: createdAccounts.length, alreadyExisted: false };
+  } catch (error: any) {
+    if (error.message?.includes('PARTIAL_INSERT')) {
+      log.error({ companyId, message: error.message }, 'Partial COA insert detected');
+      throw new Error(
+        'PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support.'
+      );
+    }
+    throw error;
+  }
+}
+
+// Stronger password validation for a financial system:
+// 8+ characters, at least one uppercase, one lowercase, one digit
+const passwordSchema = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one digit');
 
 // =============================================
 // Route registration
@@ -279,35 +237,10 @@ export function registerAuthRoutes(app: Express): void {
       // Strengthen password validation (8+ chars)
       passwordSchema.parse(validated.password);
 
-      // Optional TRN at signup. We accept it here (instead of forcing the user
-      // through onboarding first) so the auto-created company is seeded with a
-      // valid value. Format is enforced via the shared schema.
-      const trnFromBody = (req.body as any)?.trn as string | undefined;
-      let trn: string | undefined;
-      if (typeof trnFromBody === 'string' && trnFromBody.trim() !== '') {
-        const trnParse = trnSchema.safeParse(trnFromBody.trim());
-        if (!trnParse.success) {
-          return res.status(400).json({
-            message: trnParse.error.issues[0]?.message || 'Invalid TRN',
-            field: 'trn',
-          });
-        }
-        trn = trnParse.data;
-      }
-      const referralCodeFromBody = typeof (req.body as any)?.referralCode === 'string'
-        ? (req.body as any).referralCode
-        : typeof (req.body as any)?.referral === 'string'
-          ? (req.body as any).referral
-          : undefined;
-
-      // Check if user exists. Return a generic message either way to prevent
-      // email enumeration via differing 200/400 responses.
+      // Check if user exists
       const existingUser = await storage.getUserByEmail(validated.email);
       if (existingUser) {
-        return res.status(400).json({
-          message:
-            'Unable to create account. Please try again or use a different email.',
-        });
+        return res.status(400).json({ message: 'Email already registered' });
       }
 
       // Hash password
@@ -334,7 +267,6 @@ export function registerAuthRoutes(app: Express): void {
         baseCurrency: 'AED',
         locale: 'en',
         companyType: 'customer', // Self-signup companies are customer type (not managed by NR)
-        trnVatNumber: trn,
       });
 
       // Associate user with company as owner
@@ -359,42 +291,23 @@ export function registerAuthRoutes(app: Express): void {
         status: 'active',
         currentPeriodStart: now,
         currentPeriodEnd: periodEnd,
+        maxUsers: 1,
+        maxInvoices: 20,
+        maxReceipts: 20,
+        aiCreditsRemaining: 10,
       });
 
-      try {
-        await recordReferralSignupFromRegistration({
-          code: referralCodeFromBody,
-          refereeUserId: user.id,
-          refereeEmail: user.email,
-        });
-      } catch (err) {
-        log.error({ err, userId: user.id }, 'Failed to record referral signup');
-      }
-
-      // Issue email verification token. The token is logged for now —
-      // when a transactional-email provider is wired up this should be
-      // delivered via email instead.
-      try {
-        const verificationToken = await createEmailVerificationToken(user.id);
-        log.info(
-          { userId: user.id, email: user.email },
-          `Email verification pending — verify URL: /verify-email/${verificationToken}`,
-        );
-      } catch (err) {
-        log.error({ err, userId: user.id }, 'Failed to issue email verification token');
-      }
-
-      await issueAuthCookies(user, req, res);
+      const { token, refreshToken } = issueAuthTokens(res, user);
 
       res.json({
+        token,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
           name: user.name,
           isAdmin: false,
           userType: 'customer',
-          firmRole: user.firmRole ?? null,
-          emailVerified: false,
         },
         company: {
           id: company.id,
@@ -404,20 +317,44 @@ export function registerAuthRoutes(app: Express): void {
     })
   );
 
-  // Login — body validated up-front via shared schema before reaching handler.
+  // Login
+  // Dummy bcrypt hash generated once at startup. Used when the email is
+  // unknown so we still spend CPU on a comparison — this removes the
+  // timing signal that distinguishes "no such user" from "wrong password"
+  // and prevents email enumeration via response-time measurement.
+  const DUMMY_HASH = bcrypt.hashSync('account_enumeration_placeholder', 10);
+  const loginLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 8,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    keyGenerator: loginRateLimitKey,
+    handler: (req, res) => {
+      const retryAfter = retryAfterSeconds(req, 60);
+      res.setHeader('Retry-After', String(retryAfter));
+      res.status(429).json({
+        message: 'Too many login attempts for this email. Please wait before trying again.',
+        details: { retryAfterSeconds: retryAfter },
+      });
+    },
+  });
+
   router.post(
     '/auth/login',
-    validate({ body: sharedLoginSchema }),
+    loginLimiter,
     asyncHandler(async (req: Request, res: Response) => {
-      const { email, password } = req.body as { email: string; password: string };
+      const { email, password } = req.body;
 
       const user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials' });
-      }
 
-      const isValid = await bcrypt.compare(password, user.passwordHash);
-      if (!isValid) {
+      // Always compare against *some* hash so the timing is constant.
+      const passwordToCheck = typeof password === 'string' ? password : '';
+      const isValid = user
+        ? await bcrypt.compare(passwordToCheck, user.passwordHash)
+        : (await bcrypt.compare(passwordToCheck, DUMMY_HASH), false);
+
+      if (!user || !isValid) {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
@@ -427,17 +364,17 @@ export function registerAuthRoutes(app: Express): void {
         (user.isAdmin as any) === 'true' ||
         (user.isAdmin as any) === 1;
 
-      await issueAuthCookies(user, req, res);
+      const { token, refreshToken } = issueAuthTokens(res, user);
 
       res.json({
+        token,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
           name: user.name,
           isAdmin: isAdminBoolean,
           userType: user.userType || 'customer', // Include userType in response
-          firmRole: user.firmRole ?? null,
-          emailVerified: user.emailVerified === true,
         },
       });
     })
@@ -482,7 +419,7 @@ export function registerAuthRoutes(app: Express): void {
         const profile = await exchangeOAuthCallback(provider, callbackUrlFromRequest(req, provider), state);
         const { user, mode } = await resolveOAuthUser(profile);
 
-        await issueAuthCookies(user, req, res);
+        issueAuthTokens(res, user);
         await auditOAuthLogin(req, user.id, profile, mode);
         log.info({ provider, userId: user.id, mode }, 'OAuth login completed');
 
@@ -495,58 +432,63 @@ export function registerAuthRoutes(app: Express): void {
     }),
   );
 
-  // Refresh token handler (shared by both /auth/refresh-token and /auth/refresh)
+  // Refresh token endpoint
   const handleRefreshToken = asyncHandler(async (req: Request, res: Response) => {
-    const refreshToken = getRefreshTokenFromRequest(req);
+    const refreshToken = req.body?.refreshToken || getRefreshTokenFromRequest(req);
+
     if (!refreshToken) {
+      return res.status(400).json({ message: 'Refresh token is required' });
+    }
+
+    const payload = verifyRefreshToken(refreshToken);
+    if (!payload) {
       return res.status(401).json({ message: 'Invalid or expired refresh token' });
     }
 
-    const rotated = await rotateRefreshSession(refreshToken, sessionMetaFromRequest(req));
-    if (!rotated.ok) {
-      clearAuthCookies(res);
-      const message =
-        rotated.reason === 'reused'
-          ? 'Refresh token reuse detected. Please sign in again.'
-          : 'Invalid or expired refresh token';
-      return res.status(401).json({ message });
+    // Revocation check — refresh tokens are long-lived (7d), so a
+    // denylist hit here is the main defence against a stolen refresh
+    // token being replayed after logout.
+    if (await isTokenBlacklisted(refreshToken)) {
+      return res.status(401).json({ message: 'Refresh token has been revoked' });
     }
 
-    const user = await storage.getUser(rotated.userId);
+    // Verify user still exists in DB
+    const user = await storage.getUser(payload.userId);
     if (!user) {
-      clearAuthCookies(res);
       return res.status(401).json({ message: 'User not found' });
     }
 
+    // Refresh-token rotation: revoke the one we just consumed so it
+    // cannot be replayed, and issue a fresh pair.
+    await blacklistToken(refreshToken);
     const newToken = generateToken(user);
-    setAuthCookies(res, newToken, rotated.token, rotated.expiresAt);
+    const newRefreshToken = generateRefreshToken(user);
+    setAuthCookies(res, newToken, newRefreshToken);
 
-    res.json({ ok: true });
+    res.json({
+      token: newToken,
+      refreshToken: newRefreshToken,
+    });
   });
 
-  // Refresh token endpoint (canonical path)
   router.post('/auth/refresh-token', handleRefreshToken);
-
-  // Alias for frontend compatibility: POST /api/auth/refresh
   router.post('/auth/refresh', handleRefreshToken);
 
   // =====================================
   // PASSWORD RESET
   // =====================================
 
-  // Hash a raw token before storing or looking up — DB only ever sees the digest.
   const hashResetToken = (token: string): string =>
     createHash('sha256').update(token).digest('hex');
 
-  // Request a password reset link. Always returns 200 to prevent email enumeration.
+  // Request a password reset link. Always returns 200 so callers cannot
+  // discover whether a specific email is registered.
   router.post(
     '/auth/forgot-password',
     validate({ body: forgotPasswordSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { email } = req.body as { email: string };
       const user = await storage.getUserByEmail(email);
-
-      // Generic response — never reveal whether the email exists
       const genericResponse = {
         message: 'If that email is registered, a reset link has been sent.',
       };
@@ -555,19 +497,12 @@ export function registerAuthRoutes(app: Express): void {
         return res.json(genericResponse);
       }
 
-      // Issue a one-time token; raw token only exists in memory long enough
-      // to email the user. The DB stores only the SHA-256 digest.
       const rawToken = randomBytes(32).toString('hex');
       const tokenHash = hashResetToken(rawToken);
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-      // Invalidate any prior outstanding tokens so only the latest one works.
       await storage.deletePasswordResetTokensForUser(user.id);
-      await storage.createPasswordResetToken({
-        userId: user.id,
-        tokenHash,
-        expiresAt,
-      });
+      await storage.createPasswordResetToken({ userId: user.id, tokenHash, expiresAt });
 
       const env = getEnv();
       const appUrl = (env as any).APP_URL || (env as any).PUBLIC_URL || '';
@@ -575,44 +510,82 @@ export function registerAuthRoutes(app: Express): void {
 
       log.info({ userId: user.id, email }, 'Password reset requested');
 
-      // TODO(email): wire to outbound email service when configured.
-      // In non-production, return the URL so QA can verify the flow.
-      const isProd = (env as any).NODE_ENV === 'production';
-      if (!isProd) {
-        return res.json({
-          ...genericResponse,
-          devResetUrl: resetUrl,
-        });
+      if ((env as any).NODE_ENV !== 'production') {
+        return res.json({ ...genericResponse, devResetUrl: resetUrl });
       }
 
       return res.json(genericResponse);
     }),
   );
 
-  // Consume a reset token and set a new password.
   router.post(
     '/auth/reset-password',
     validate({ body: resetPasswordSchema }),
     asyncHandler(async (req: Request, res: Response) => {
       const { token, password } = req.body as { token: string; password: string };
+      passwordSchema.parse(password);
 
       const tokenHash = hashResetToken(token);
       const record = await storage.findValidPasswordResetToken(tokenHash);
 
       if (!record) {
-        return res.status(400).json({ message: 'This reset link is invalid or has expired. Please request a new one.' });
+        return res.status(400).json({
+          message: 'This reset link is invalid or has expired. Please request a new one.',
+        });
       }
 
-      const newHash = await bcrypt.hash(password, 10);
-      await storage.updateUserPassword(record.userId, newHash);
+      const passwordHash = await bcrypt.hash(password, 10);
+      await storage.updateUserPassword(record.userId, passwordHash);
       await storage.markPasswordResetTokenUsed(record.id);
-      // Revoke any other outstanding reset tokens — one successful reset
-      // invalidates the whole batch.
       await storage.deletePasswordResetTokensForUser(record.userId);
 
       log.info({ userId: record.userId }, 'Password reset completed');
 
       res.json({ message: 'Your password has been reset. You can now sign in with your new password.' });
+    }),
+  );
+
+  router.get(
+    '/auth/me',
+    authMiddleware as any,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      res.json(publicUser(user));
+    }),
+  );
+
+  // Logout endpoint — revokes both the access token (from Authorization
+  // header) and the refresh token (from body) by adding their jti to the
+  // denylist table. Expired tokens are skipped; malformed tokens are a
+  // no-op (we still return 200 so the client proceeds with its local
+  // cleanup). Subsequent requests using either revoked token are
+  // rejected in authMiddleware.
+  router.post(
+    '/auth/logout',
+    asyncHandler(async (req: Request, res: Response) => {
+      const revokeIfValid = async (raw: string | undefined, reason: string) => {
+        if (!raw) return;
+        const decoded = decodeTokenUnsafe(raw);
+        if (!decoded?.exp) return;
+        if (decoded.exp * 1000 < Date.now()) return; // already expired
+        await blacklistToken(raw);
+      };
+
+      const authHeader = req.headers.authorization;
+      const accessToken =
+        getAccessTokenFromRequest(req) ||
+        (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined);
+      const refreshToken: string | undefined = req.body?.refreshToken || getRefreshTokenFromRequest(req) || undefined;
+
+      await revokeIfValid(accessToken, 'logout');
+      await revokeIfValid(refreshToken, 'logout');
+      clearAuthCookies(res);
+
+      res.json({ ok: true });
     }),
   );
 
@@ -661,6 +634,9 @@ export function registerAuthRoutes(app: Express): void {
       const { token } = req.params;
       const { name, password } = req.body;
 
+      const nameSchema = z.string().min(1, 'Name is required').max(100, 'Name too long');
+      nameSchema.parse(name);
+
       // Strengthen password validation (8+ chars)
       passwordSchema.parse(password);
 
@@ -684,12 +660,12 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: 'User already exists with this email' });
       }
 
-      // Create user with appropriate userType from invitation
+      // Create user with appropriate userType from invitation.
+      // Only pass passwordHash — never the raw password.
       const passwordHash = await bcrypt.hash(password, 10);
       const user = await storage.createUser({
         email: invitation.email,
         name,
-        password,
         isAdmin: invitation.role === 'staff' || invitation.userType === 'admin',
         userType: invitation.userType || 'client',
         passwordHash,
@@ -727,93 +703,9 @@ export function registerAuthRoutes(app: Express): void {
         description: `User registered via invitation: ${user.email}`,
       });
 
-      await issueAuthCookies(user, req, res);
-      res.json({ user: publicUser(user) });
-    })
-  );
+      const { token: jwtToken, refreshToken } = issueAuthTokens(res, user);
 
-  // Current user profile
-  router.get(
-    '/auth/me',
-    authMiddleware as any,
-    asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-      res.json(publicUser(user));
-    })
-  );
-
-  // Logout — server-side JWT invalidation via the token_blacklist table.
-  router.post(
-    '/auth/logout',
-    authMiddleware as any,
-    asyncHandler(async (req: Request, res: Response) => {
-      const authHeader = req.headers.authorization;
-      const accessToken =
-        getAccessTokenFromRequest(req) ||
-        (authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null);
-      const refreshToken = getRefreshTokenFromRequest(req);
-
-      if (accessToken) {
-        try {
-          await blacklistToken(accessToken);
-        } catch (err) {
-          log.error({ err }, 'Failed to blacklist token on logout');
-        }
-      }
-
-      await revokeRefreshSession(refreshToken).catch((err) => {
-        log.error({ err }, 'Failed to revoke refresh session on logout');
-      });
-      clearAuthCookies(res);
-
-      res.json({ message: 'Logged out successfully' });
-    })
-  );
-
-  // ─── Email verification ────────────────────────────────────────────
-
-  router.post(
-    '/auth/verify-email/:token',
-    asyncHandler(async (req: Request, res: Response) => {
-      const { token } = req.params;
-      const userId = await consumeEmailVerificationToken(token);
-      if (!userId) {
-        return res
-          .status(400)
-          .json({ message: 'Verification link is invalid or has expired' });
-      }
-      await db.update(users).set({ emailVerified: true }).where(eq(users.id, userId));
-      res.json({ message: 'Email verified successfully' });
-    })
-  );
-
-  // Resend verification email — authenticated; rate-limited at the network layer.
-  router.post(
-    '/auth/resend-verification',
-    authMiddleware as any,
-    asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-      if (user.emailVerified) {
-        return res.json({ message: 'Email is already verified' });
-      }
-      try {
-        const verificationToken = await createEmailVerificationToken(user.id);
-        log.info(
-          { userId: user.id, email: user.email },
-          `Verification re-issued — verify URL: /verify-email/${verificationToken}`,
-        );
-      } catch (err) {
-        log.error({ err, userId: user.id }, 'Failed to re-issue verification token');
-      }
-      res.json({ message: 'Verification email sent' });
+      res.json({ user: publicUser(user), token: jwtToken, refreshToken });
     })
   );
 

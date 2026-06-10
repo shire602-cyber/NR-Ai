@@ -1,11 +1,11 @@
-import type { Express,Request,Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { createLogger } from '../config/logger';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import { storage } from '../storage';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
+import { createLogger } from '../config/logger';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
-import { storage } from '../storage';
 
 const log = createLogger('inventory');
 

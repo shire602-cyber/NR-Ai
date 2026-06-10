@@ -1,34 +1,36 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { format, differenceInDays, parseISO } from 'date-fns';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { differenceInDays,format,parseISO } from 'date-fns';
-import {
-AlertTriangle,
-Building2,
-Clock,
-Download,
-Eye,
-FileText,
-FileUp,
-Filter,
-FolderOpen,
-Loader2,
-Plus,
-Search,
-Trash2,
-Upload
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { 
+  Upload, 
+  FileText, 
+  Download, 
+  Trash2, 
+  Search, 
+  AlertTriangle,
+  Clock,
+  FolderOpen,
+  Calendar,
+  Loader2,
+  Plus,
+  Eye,
+  Filter,
+  Building2,
+  FileUp
 } from 'lucide-react';
-import { useState } from 'react';
 
 interface Company {
   id: string;
@@ -234,24 +236,22 @@ export default function AdminDocuments() {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-admin-documents-title">
-            Client Document Management
-          </h1>
-          <p className="text-muted-foreground">
-            Upload and manage invoices, bills, and documents for your clients
-          </p>
-        </div>
-        <Button 
-          onClick={() => setUploadDialogOpen(true)} 
-          disabled={!selectedCompanyId}
-          data-testid="button-upload-client-document"
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Upload Document
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Admin"
+        title="Client Document Management"
+        testId="text-admin-documents-title"
+        description="Upload and manage invoices, bills, and documents for your clients"
+        actions={
+          <Button
+            onClick={() => setUploadDialogOpen(true)}
+            disabled={!selectedCompanyId}
+            data-testid="button-upload-client-document"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Upload Document
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>

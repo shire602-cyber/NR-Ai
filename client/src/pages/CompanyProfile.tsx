@@ -1,21 +1,22 @@
+import { PageHeader } from '@/components/ui/page-header';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Form,FormControl,FormDescription,FormField,FormItem,FormLabel,FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { Building2, FileText, Upload, Save } from 'lucide-react';
 import type { Company } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { Building2,FileText,Save } from 'lucide-react';
-import { useEffect,useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { useLocation } from 'wouter';
-import { z } from 'zod';
 
 const companyProfileSchema = z.object({
   // Basic Info
@@ -48,7 +49,7 @@ export default function CompanyProfile() {
   const [, navigate] = useLocation();
   const { companyId, isLoading: companiesLoading } = useDefaultCompany();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [_logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
 
   const { data: company, isLoading } = useQuery<Company>({
     queryKey: ['/api/companies', companyId],
@@ -179,12 +180,11 @@ export default function CompanyProfile() {
 
   return (
     <div className="space-y-8 max-w-4xl">
-      <div>
-        <h1 className="text-3xl font-semibold mb-2">Company Profile</h1>
-        <p className="text-muted-foreground">
-          Manage your company information, tax settings, and compliance details
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Settings"
+        title="Company Profile"
+        description="Manage your company information, tax settings, and compliance details"
+      />
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">

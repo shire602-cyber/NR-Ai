@@ -1,26 +1,27 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState, useRef } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import {
+  Plus,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  X,
+  UserPlus,
+  MoreHorizontal,
+  Loader2,
+} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogFooter,DialogHeader,DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import {
-ChevronDown,
-ChevronUp,
-Loader2,
-MoreHorizontal,
-Plus,
-Sparkles,
-UserPlus,
-X,
-} from 'lucide-react';
-import { useRef,useState } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -539,31 +540,33 @@ export default function LeadPipeline() {
 
   return (
     <div className="p-6 space-y-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">{(t as any).leadPipeline || 'Lead Pipeline'}</h1>
-          <p className="text-sm text-muted-foreground">
+      <PageHeader
+        eyebrow="Firm"
+        title={(t as any).leadPipeline || 'Lead Pipeline'}
+        description={
+          <>
             {pipeline?.totalLeads ?? 0} leads · {pipeline?.conversionRate ?? 0}% conversion
             {pipeline?.avgDaysToConvert != null && ` · ${pipeline.avgDaysToConvert}d avg to convert`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowDiscover(v => !v)}
-          >
-            <Sparkles className="w-4 h-4 mr-1.5 text-amber-500" />
-            Auto-discover
-            {showDiscover ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
-          </Button>
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus className="w-4 h-4 mr-1.5" />
-            Add Lead
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDiscover(v => !v)}
+            >
+              <Sparkles className="w-4 h-4 mr-1.5 text-amber-500" />
+              Auto-discover
+              {showDiscover ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
+            </Button>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="w-4 h-4 mr-1.5" />
+              Add Lead
+            </Button>
+          </>
+        }
+      />
 
       {/* Auto-discover panel */}
       {showDiscover && (

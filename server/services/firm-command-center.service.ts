@@ -14,37 +14,37 @@
  * caller-supplied TTL.
  */
 
+import { db } from '../db';
 import {
-and,
-count,
-desc,
-eq,
-gte,
-inArray,
-isNull,
-lt,
-max,
-ne,
-or,
-sql,
-sum,
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  max,
+  ne,
+  or,
+  sql,
+  sum,
 } from 'drizzle-orm';
 import {
-bankTransactions,
-companies,
-firmAlerts,
-firmMetricsCache,
-firmStaffAssignments,
-invoices,
-receipts,
-users,
-vatReturns,
-type FirmAlert,
-type FirmAlertSeverity,
-type FirmAlertType,
+  bankTransactions,
+  companies,
+  firmAlerts,
+  firmMetricsCache,
+  firmStaffAssignments,
+  invoices,
+  receipts,
+  users,
+  vatReturns,
+  type FirmAlert,
+  type FirmAlertSeverity,
+  type FirmAlertType,
 } from '../../shared/schema';
-import { db } from '../db';
-import { NotFoundError,ValidationError } from '../errors';
+import { NotFoundError, ValidationError } from '../errors';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

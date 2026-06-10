@@ -1,13 +1,11 @@
-import type { NextFunction,Request,Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
+import { storage } from '../storage';
 import { getEnv } from '../config/env';
 import { createLogger } from '../config/logger';
-import {
-ACCESS_TOKEN_TTL_SECONDS,
-getAccessTokenFromRequest,
-} from '../services/auth-cookies.service';
+import { getAccessTokenFromRequest } from '../services/auth-cookies.service';
 import { isTokenBlacklisted } from '../services/auth-tokens.service';
-import { storage } from '../storage';
 
 const log = createLogger('auth');
 
@@ -23,7 +21,7 @@ export interface AuthUser {
 }
 
 /**
- * Augment Express.User so Passport's Request.user picks up our fields.
+ * Extend Express Request to include authenticated user.
  */
 declare global {
   namespace Express {
@@ -34,6 +32,9 @@ declare global {
       userType: string;
       firmRole: string | null;
     }
+    interface Request {
+      subscription?: any; // Cached subscription for feature gating
+    }
   }
 }
 
@@ -43,12 +44,13 @@ declare global {
 interface JwtPayload {
   userId: string;
   email: string;
+  jti?: string;
   iat?: number;
   exp?: number;
 }
 
 /**
- * Extract and verify JWT token from Authorization header.
+ * Extract and verify JWT token from httpOnly cookie or Authorization header.
  * Fetches the actual user from DB to prevent JWT claim tampering.
  */
 export async function authMiddleware(
@@ -69,7 +71,10 @@ export async function authMiddleware(
   try {
     const decoded = jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload;
 
-    // Reject tokens that have been logged out (blacklisted)
+    // Revocation check — a token that was present at logout (or during a
+    // password change, or admin-revoked) is refused here even though its
+    // signature is still valid. Tokens issued before we added the jti
+    // claim have no `jti` and skip the check; they'll naturally expire.
     if (await isTokenBlacklisted(token)) {
       res.status(401).json({ message: 'Token has been revoked' });
       return;
@@ -184,13 +189,7 @@ export function requireUserType(...allowedTypes: string[]) {
 /**
  * Require that the authenticated user has access to the company referenced
  * by the request. Reads companyId from req.params, then req.body, then
- * req.query (in that order). Admins are NOT bypassed — admin-only routes
- * should use requireAdmin instead.
- *
- * Returns 400 if no companyId can be resolved, 403 if the user is not a
- * member of that company. Designed to be mounted after authMiddleware on
- * any handler that previously did the check ad-hoc, so that uncited routes
- * (and future routes) cannot leak cross-tenant data by omission.
+ * req.query unless a source is provided.
  */
 export function requireCompanyAccess(
   paramSource?: 'params' | 'body' | 'query',
@@ -221,7 +220,7 @@ export function requireCompanyAccess(
       return;
     }
 
-    const allowed = await storage.hasCompanyAccess(req.user.id, candidate, req.user.firmRole);
+    const allowed = await storage.hasCompanyAccess(req.user.id, candidate);
     if (!allowed) {
       log.warn(
         { userId: req.user.id, companyId: candidate, path: req.path },
@@ -247,8 +246,49 @@ export function generateToken(user: { id: string; email: string; isAdmin?: boole
       isAdmin: user.isAdmin === true,
       userType: user.userType || 'customer',
       firmRole: user.firmRole ?? null,
+      jti: randomUUID(),
     },
     env.JWT_SECRET,
-    { expiresIn: ACCESS_TOKEN_TTL_SECONDS }
+    { expiresIn: '24h' }
   );
+}
+
+/**
+ * Generate a refresh token (longer-lived).
+ */
+export function generateRefreshToken(user: { id: string; email: string }): string {
+  const env = getEnv();
+  return jwt.sign(
+    { userId: user.id, email: user.email, type: 'refresh', jti: randomUUID() },
+    env.JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
+
+/**
+ * Decode a token without verifying its signature. Used by /auth/logout
+ * so we can read the jti + exp of a token we're about to revoke even if
+ * its signature is past expiry (no point adding an already-expired token
+ * to the denylist, but the logout should still succeed).
+ */
+export function decodeTokenUnsafe(token: string): JwtPayload | null {
+  try {
+    const decoded = jwt.decode(token) as JwtPayload | null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify a refresh token and return the payload.
+ */
+export function verifyRefreshToken(token: string): JwtPayload | null {
+  try {
+    const decoded = jwt.verify(token, getEnv().JWT_SECRET) as JwtPayload & { type?: string };
+    if (decoded.type !== 'refresh') return null;
+    return decoded;
+  } catch {
+    return null;
+  }
 }

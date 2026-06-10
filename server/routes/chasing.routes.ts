@@ -12,27 +12,28 @@
  * /firm middleware split mirrors invoices.routes.ts.
  */
 
-import type { Express,Request,Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
-import { createLogger } from '../config/logger';
-import { authMiddleware,requireCustomer } from '../middleware/auth';
+import { storage } from '../storage';
+import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { createLogger } from '../config/logger';
 import { recordAudit } from '../services/audit.service';
 import {
-type ChaseAgingRow,
-type ChaseLanguage,
-type ChasePayment,
-buildAgingRow,
-buildWaMeLink,
-computeEffectiveness,
-contextForInvoice,
-groupByClient,
-isFrequencyEligible,
-isOverdueAndChaseable,
-nextLevelFor,
-renderTemplate
+  type ChaseAgingRow,
+  type ChasePayment,
+  type ChaseLanguage,
+  buildAgingRow,
+  isOverdueAndChaseable,
+  nextLevelFor,
+  isFrequencyEligible,
+  contextForInvoice,
+  renderTemplate,
+  groupByClient,
+  renderGroupedMessage,
+  computeEffectiveness,
+  buildWaMeLink,
 } from '../services/payment-chasing.service';
-import { storage } from '../storage';
 
 const log = createLogger('chasing');
 

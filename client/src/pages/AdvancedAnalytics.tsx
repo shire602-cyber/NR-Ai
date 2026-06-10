@@ -1,38 +1,40 @@
-import { Badge } from '@/components/ui/badge';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Progress } from '@/components/ui/progress';
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from 'recharts';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from '@/lib/i18n';
 import { useDefaultCompany } from '@/hooks/useDefaultCompany';
 import { formatCurrency } from '@/lib/format';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import { useMutation,useQuery } from '@tanstack/react-query';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import {
-Activity,
-AlertTriangle,
-ArrowDown,
-ArrowUp,
-BarChart3,
-Brain,
-Calendar,
-ChevronRight,
-DollarSign,
-Loader2,
-Minus,
-PiggyBank,
-RefreshCw,
-Sparkles,
-Target,
-TrendingUp,
-Wallet,
-Zap
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
+  Brain,
+  Wallet,
+  Calendar,
+  Target,
+  AlertTriangle,
+  ArrowUp,
+  ArrowDown,
+  Minus,
+  Sparkles,
+  RefreshCw,
+  Loader2,
+  ChevronRight,
+  DollarSign,
+  PiggyBank,
+  Activity,
+  Zap
 } from 'lucide-react';
-import { useState } from 'react';
-import { Area,AreaChart,Bar,CartesianGrid,ComposedChart,Legend,Line,ResponsiveContainer,Tooltip,XAxis,YAxis } from 'recharts';
 
 interface CashFlowForecast {
   id: string;
@@ -76,7 +78,7 @@ interface AIInsight {
 }
 
 export default function AdvancedAnalytics() {
-  const { t: _t, locale } = useTranslation();
+  const { t, locale } = useTranslation();
   const isRTL = locale === 'ar';
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();

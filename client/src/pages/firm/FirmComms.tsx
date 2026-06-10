@@ -1,54 +1,56 @@
-import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/ui/page-header';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardHeader,CardTitle } from '@/components/ui/card';
-import {
-Dialog,
-DialogContent,
-DialogFooter,
-DialogHeader,
-DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
-Select,
-SelectContent,
-SelectItem,
-SelectTrigger,
-SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from '@/components/ui/select';
 import {
-Table,
-TableBody,
-TableCell,
-TableHead,
-TableHeader,
-TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from '@/components/ui/table';
-import { Tabs,TabsContent,TabsList,TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { apiRequest } from '@/lib/queryClient';
-import { useMutation,useQuery,useQueryClient } from '@tanstack/react-query';
 import {
-CheckCircle,
-Eye,
-FileText,
-Inbox,
-Mail,
-MessageCircle,
-Plus,
-Send,
-XCircle,
-Zap
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
+import { useTranslation } from '@/lib/i18n';
+import {
+  Mail,
+  MessageCircle,
+  Send,
+  FileText,
+  Zap,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Inbox,
+  Plus,
+  Eye,
 } from 'lucide-react';
-import { useState } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type CommChannel = 'email' | 'whatsapp' | 'sms';
-type CommStatus = 'logged' | 'sent' | 'delivered' | 'read' | 'failed';
+type CommStatus = 'sent' | 'delivered' | 'read' | 'failed';
 
 interface Communication {
   id: string;
@@ -160,7 +162,6 @@ function ChannelIcon({ channel }: { channel: CommChannel }) {
 
 function CommStatusBadge({ status }: { status: CommStatus }) {
   const map: Record<CommStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-    logged: { label: 'Logged only', variant: 'outline' },
     sent: { label: 'Sent', variant: 'default' },
     delivered: { label: 'Delivered', variant: 'secondary' },
     read: { label: 'Read', variant: 'outline' },
@@ -334,11 +335,9 @@ function ComposeTab() {
   const sendMutation = useMutation({
     mutationFn: (data: Record<string, string>) =>
       apiRequest('POST', channel === 'email' ? '/api/firm/comms/send-email' : '/api/firm/comms/send-whatsapp', data),
-    onSuccess: (res: { success: boolean; deliveryStatus?: CommStatus; note?: string }) => {
+    onSuccess: (res: { success: boolean; note?: string }) => {
       queryClient.invalidateQueries({ queryKey: ['/api/firm/comms/log'] });
-      if (res.deliveryStatus === 'logged') {
-        toast({ title: 'Logged only', description: res.note });
-      } else if (res.success) {
+      if (res.success) {
         toast({ title: 'Message sent' });
       } else {
         toast({ title: 'Logged (not sent)', description: res.note, variant: 'destructive' });
@@ -864,12 +863,11 @@ export default function FirmComms() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold">{t.communicationsHub}</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Send emails, manage templates, and track all client communications.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Firm"
+        title={t.communicationsHub}
+        description="Send emails, manage templates, and track all client communications."
+      />
 
       <Tabs defaultValue="inbox">
         <div className="overflow-x-auto">

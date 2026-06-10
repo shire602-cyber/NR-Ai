@@ -1,9 +1,9 @@
-import type { Express,Request,Response } from "express";
-import { insertAccountSchema,type Account } from "../../shared/schema";
-import { authMiddleware,requireCustomer } from "../middleware/auth";
-import { asyncHandler } from "../middleware/errorHandler";
-import { recordAudit } from "../services/audit.service";
+import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { insertAccountSchema, type Account } from "../../shared/schema";
+import { recordAudit } from "../services/audit.service";
 
 // Walk the user's companies and return the first match. Storage queries are
 // already tenant-scoped, so this also enforces the access check — if no

@@ -76,7 +76,7 @@ describe('requireCompanyAccess', () => {
     const res = mockRes();
     const next = vi.fn() as NextFunction;
     await requireCompanyAccess()(mockReq({ body: { companyId: 'co-9' } }), res, next);
-    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-9', null);
+    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-9');
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
   });
@@ -99,7 +99,7 @@ describe('requireCompanyAccess', () => {
       res,
       next,
     );
-    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-params', null);
+    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-params');
   });
 
   it('reads from body when source="body"', async () => {
@@ -111,7 +111,7 @@ describe('requireCompanyAccess', () => {
       res,
       next,
     );
-    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-body', null);
+    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-body');
   });
 
   it('reads from query when source="query"', async () => {
@@ -123,29 +123,7 @@ describe('requireCompanyAccess', () => {
       res,
       next,
     );
-    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-query', null);
-  });
-
-  it('passes firmRole through for firm-scoped access decisions', async () => {
-    hasCompanyAccess.mockResolvedValue(true);
-    const res = mockRes();
-    const next = vi.fn() as NextFunction;
-    await requireCompanyAccess()(
-      mockReq({
-        params: { companyId: 'co-firm' },
-        user: {
-          id: 'user-1',
-          email: 'a@b.c',
-          isAdmin: false,
-          userType: 'firm',
-          firmRole: 'accountant',
-        } as any,
-      }),
-      res,
-      next,
-    );
-    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-firm', 'accountant');
-    expect(next).toHaveBeenCalledTimes(1);
+    expect(hasCompanyAccess).toHaveBeenCalledWith('user-1', 'co-query');
   });
 
   it('rejects non-string companyId (defensive)', async () => {

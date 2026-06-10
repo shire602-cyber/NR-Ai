@@ -1,34 +1,35 @@
-import { AlertDialog,AlertDialogAction,AlertDialogCancel,AlertDialogContent,AlertDialogDescription,AlertDialogFooter,AlertDialogHeader,AlertDialogTitle,AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card,CardContent,CardDescription,CardHeader,CardTitle } from '@/components/ui/card';
-import { Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle,DialogTrigger } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Table,TableBody,TableCell,TableHead,TableHeader,TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiUrl } from '@/lib/api';
-import { apiRequest,queryClient } from '@/lib/queryClient';
-import type { Backup } from '@shared/schema';
-import { useMutation,useQuery } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import {
-AlertTriangle,
-CheckCircle,
-Clock,
-Database,
-Download,
-FileJson,
-HardDrive,
-Plus,
-RefreshCw,
-Trash2,
-Upload,
-XCircle
-} from 'lucide-react';
+import { PageHeader } from '@/components/ui/page-header';
 import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { 
+  Database, 
+  Download, 
+  Upload, 
+  Plus, 
+  Trash2, 
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  HardDrive,
+  FileJson,
+  RefreshCw
+} from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { apiUrl } from '@/lib/api';
+import { format } from 'date-fns';
+import { useDefaultCompany } from '@/hooks/useDefaultCompany';
+import type { Backup } from '@shared/schema';
 
 type BackupWithoutData = Omit<Backup, 'dataSnapshot'>;
 
@@ -209,18 +210,19 @@ export default function BackupRestore() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-backup-title">Backup & Restore</h1>
-          <p className="text-muted-foreground">Safeguard your financial records with automated backups</p>
-        </div>
-        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-create-backup">
-              <Plus className="h-4 w-4 mr-2" />
-              Create Backup
-            </Button>
-          </DialogTrigger>
+      <PageHeader
+        eyebrow="Settings"
+        title="Backup & Restore"
+        testId="text-backup-title"
+        description="Safeguard your financial records with automated backups"
+        actions={
+          <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-backup">
+            <Plus className="h-4 w-4 mr-2" />
+            Create Backup
+          </Button>
+        }
+      />
+      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create New Backup</DialogTitle>
@@ -277,7 +279,6 @@ export default function BackupRestore() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>

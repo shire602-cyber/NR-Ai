@@ -1,10 +1,21 @@
-import cors from 'cors';
-import type { Express,NextFunction,Request,Response } from 'express';
 import helmet from 'helmet';
-import { getEnv,isProduction } from '../config/env';
+import cors from 'cors';
+import type { Express, Request, Response, NextFunction } from 'express';
+import { getEnv, isProduction } from '../config/env';
 import { createLogger } from '../config/logger';
-import { buildCspDirectives,cspNonce,cspReportHandler } from './csp';
-import { buildLimiter,limiterProfiles } from './rateLimit';
+import { buildLimiter, limiterProfiles } from './rateLimit';
+import { cspNonce, buildCspDirectives, cspReportHandler } from './csp';
+
+/**
+ * Paths under /api/auth/ that accept credentials or tokens an attacker could
+ * brute-force. Only these consume the strict auth rate-limit budget.
+ * `path` is relative to the /api/auth mount (e.g. '/login').
+ */
+const CREDENTIAL_AUTH_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
+
+export function isCredentialAuthPath(path: string): boolean {
+  return CREDENTIAL_AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
+}
 
 const log = createLogger('security');
 
@@ -48,29 +59,22 @@ export function applySecurityMiddleware(app: Express): void {
   );
 
   // ─── CORS: Cross-Origin Resource Sharing ──────────────────
-  const allowedOrigins = new Set<string>();
+  const allowedOrigins: string[] = [];
 
   if (env.FRONTEND_URL) {
-    allowedOrigins.add(env.FRONTEND_URL);
-  }
-
-  if (env.CORS_ORIGIN) {
-    for (const origin of env.CORS_ORIGIN.split(',')) {
-      const trimmed = origin.trim();
-      if (trimmed) allowedOrigins.add(trimmed);
-    }
+    allowedOrigins.push(env.FRONTEND_URL);
   }
 
   // In development, allow localhost origins
   if (!isProduction()) {
-    [
+    allowedOrigins.push(
       'http://localhost:5173',
       'http://localhost:5000',
       'http://localhost:3000',
       'http://127.0.0.1:5173',
       'http://127.0.0.1:5000',
       'http://127.0.0.1:3000'
-    ].forEach((origin) => allowedOrigins.add(origin));
+    );
   }
 
   app.use(
@@ -79,7 +83,7 @@ export function applySecurityMiddleware(app: Express): void {
         // Allow requests with no origin (mobile apps, curl, server-to-server)
         if (!origin) return callback(null, true);
 
-        if (allowedOrigins.has(origin)) {
+        if (allowedOrigins.includes(origin)) {
           return callback(null, true);
         }
 
@@ -93,6 +97,31 @@ export function applySecurityMiddleware(app: Express): void {
       maxAge: 86400, // Cache preflight for 24 hours
     })
   );
+
+  // ─── Rate Limiting (sliding window, configurable per route) ──
+  // Each limiter has its own in-memory sliding-window store, sized via
+  // env vars (RL_*). Composite key (ip+userId) prevents NAT collisions.
+  // Order matters: more specific paths must be registered before /api/.
+  app.use('/api/auth/oauth/', buildLimiter(limiterProfiles.authOAuth));
+  // Brute-force guard for credential-bearing attempts ONLY. Session reads
+  // (/me, /refresh, /oauth/providers, /logout) fire on every page load, so
+  // counting them here used to exhaust the 5/min budget before the user even
+  // submitted the login form — locking the whole app behind 429s. Those
+  // routes fall through to the general /api limiter below instead.
+  // Successful attempts refund their hit, so legitimate sign-ins on a shared
+  // office IP never throttle each other; only failures accumulate.
+  app.use(
+    '/api/auth/',
+    buildLimiter({
+      ...limiterProfiles.auth,
+      skipSuccessfulRequests: true,
+      skipIf: (req) => !isCredentialAuthPath(req.path),
+    }),
+  );
+  app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
+  app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));
+  app.use('/api/firm/bulk/ocr', buildLimiter(limiterProfiles.ai));
+  app.use('/api/', buildLimiter(limiterProfiles.api));
 
   // ─── Request Size Limits ──────────────────────────────────
   // Hard ceiling: image-upload routes allow up to 10MB; the per-route
@@ -142,26 +171,4 @@ export function applySecurityMiddleware(app: Express): void {
   });
 
   log.info('Security middleware applied');
-}
-
-/**
- * Rate limiting needs parsed bodies for auth login keys (`ip + email`), so it
- * is installed after JSON parsing in index.ts while still before routes.
- */
-export function applyRateLimitMiddleware(app: Express): void {
-  app.use('/api/auth/login', buildLimiter(limiterProfiles.authLogin));
-  app.use('/api/auth/register', buildLimiter(limiterProfiles.authRegister));
-  app.use(['/api/auth/forgot-password', '/api/auth/reset-password'], buildLimiter(limiterProfiles.authRecovery));
-  app.use(['/api/auth/refresh-token', '/api/auth/refresh', '/api/auth/logout'], buildLimiter(limiterProfiles.authSession));
-  app.use('/api/auth/me', buildLimiter(limiterProfiles.authSessionRead));
-  app.use('/api/auth/oauth/providers', buildLimiter(limiterProfiles.authProviderRead));
-  app.use('/api/auth/oauth/', buildLimiter(limiterProfiles.authOAuth));
-  app.use('/api/auth/', buildLimiter(limiterProfiles.authOther));
-  app.use('/api/ai/', buildLimiter(limiterProfiles.ai));
-  app.use('/api/ocr/', buildLimiter(limiterProfiles.ai));
-  app.use('/api/firm/bulk/ocr', buildLimiter(limiterProfiles.ai));
-  app.use('/api/', buildLimiter(limiterProfiles.read));
-  app.use('/api/', buildLimiter(limiterProfiles.api));
-
-  log.info('Rate-limit middleware applied');
 }

@@ -1,40 +1,41 @@
-import type { Express,Request,Response } from 'express';
+import type { Request, Response } from 'express';
 import { Router } from 'express';
+import type { Express } from 'express';
 import { z } from 'zod';
 
-import {
-and,
-count,
-desc,
-eq,
-gte,
-inArray,
-isNull,
-lt,
-max,
-ne,
-notInArray,
-or,
-sql,
-sum,
-} from 'drizzle-orm';
-import {
-companies,
-companyUsers,
-engagements,
-firmLeads,
-firmStaffAssignments,
-invoices,
-receipts,
-serviceInvoices,
-users,
-vatReturns,
-} from '../../shared/schema';
-import { createLogger } from '../config/logger';
-import { db } from '../db';
 import { authMiddleware } from '../middleware/auth';
+import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
 import { asyncHandler } from '../middleware/errorHandler';
-import { getAccessibleCompanyIds,requireFirmRole } from '../middleware/rbac';
+import { db } from '../db';
+import {
+  companies,
+  users,
+  invoices,
+  vatReturns,
+  engagements,
+  serviceInvoices,
+  firmStaffAssignments,
+  firmLeads,
+  companyUsers,
+  receipts,
+} from '../../shared/schema';
+import {
+  eq,
+  and,
+  count,
+  sum,
+  max,
+  desc,
+  inArray,
+  isNull,
+  gte,
+  lt,
+  or,
+  ne,
+  sql,
+  notInArray,
+} from 'drizzle-orm';
+import { createLogger } from '../config/logger';
 
 const logger = createLogger('firm-analytics-routes');
 

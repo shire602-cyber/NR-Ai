@@ -1,5 +1,5 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
-import { useMutation,useQueryClient } from '@tanstack/react-query';
 
 interface OptimisticListMutationOptions<TVars, TItem> {
   /** Query key for the list cache to update. */

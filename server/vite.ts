@@ -1,7 +1,7 @@
-import express,{ type Express } from 'express';
+import express, { type Express } from 'express';
 import fs from 'fs';
-import { type Server } from 'http';
 import path from 'path';
+import { type Server } from 'http';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,7 +57,26 @@ export async function setupVite(app: Express, server: Server) {
 /**
  * Serve static production build (production only).
  * No dev dependencies required.
+ *
+ * Caching strategy is deliberate:
+ *   - /assets/* — vite-hashed files, content-addressed → cache forever (1y, immutable)
+ *   - / and *.html — entry document, must always be fresh so the user picks up
+ *     new bundle hashes after a deploy. Without this Fastly was caching the
+ *     post-build HTML for hours and pinning users to a stale bundle even
+ *     after the pod restarted with a new image.
+ *
+ * The `Surrogate-Control` and `CDN-Cache-Control` headers are specifically
+ * honored by Fastly (Railway's CDN) and override the upstream Cache-Control
+ * for the edge cache only — the browser still sees no-store.
  */
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+  'CDN-Cache-Control': 'no-store',
+  'Surrogate-Control': 'no-store',
+  Pragma: 'no-cache',
+  Expires: '0',
+};
+
 export function serveStatic(app: Express) {
   const distPath = path.resolve(projectRoot, 'dist', 'public');
 
@@ -67,32 +86,33 @@ export function serveStatic(app: Express) {
     );
   }
 
-  // Long-lived cache for hashed assets (Vite emits content-hashed filenames
-  // under /assets/, so they are safe to cache aggressively).
+  // Hashed assets — safe to cache aggressively because the filename changes
+  // any time content does.
   app.use(
     '/assets',
-    express.static(path.join(distPath, 'assets'), {
-      maxAge: '1y',
+    express.static(path.resolve(distPath, 'assets'), {
       immutable: true,
+      maxAge: '1y',
     }),
   );
 
-  // Other static files — short cache, since index.html and similar are not
-  // content-hashed and need to refresh on deploy.
+  // Everything else (favicon, manifest, robots, etc.) — short cache only.
   app.use(
     express.static(distPath, {
-      maxAge: '1h',
+      etag: true,
+      lastModified: true,
       setHeaders: (res, filePath) => {
-        if (filePath.endsWith('index.html')) {
-          res.setHeader('Cache-Control', 'no-cache');
+        if (filePath.endsWith('.html')) {
+          for (const [k, v] of Object.entries(NO_STORE_HEADERS)) res.setHeader(k, v);
         }
       },
     }),
   );
 
-  // SPA fallback
+  // SPA fallback — index.html is the entry document; must NEVER be cached
+  // by the CDN or it pins users to a stale bundle hash forever.
   app.use('*', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-cache');
+    for (const [k, v] of Object.entries(NO_STORE_HEADERS)) res.setHeader(k, v);
     res.sendFile(path.resolve(distPath, 'index.html'));
   });
 }
