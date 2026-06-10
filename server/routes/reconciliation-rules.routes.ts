@@ -115,7 +115,7 @@ export function registerReconciliationRuleRoutes(app: Express) {
 
           if (isMatch) {
             // Update the transaction: set matchedJournalEntryId to the rule's target account and mark reconciled
-            await storage.updateBankTransaction(transaction.id, {
+            await storage.updateBankTransaction(transaction.id, companyId, {
               isReconciled: true,
               category: rule.category || transaction.category,
             });

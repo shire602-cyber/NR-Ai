@@ -111,6 +111,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: 'chartOfAccounts', url: '/chart-of-accounts' },
       { titleKey: 'journal', url: '/journal' },
       { titleKey: 'bankReconciliation', url: '/bank-reconciliation' },
+      { titleKey: 'reconciliationRules', url: '/reconciliation-rules' },
       { titleKey: 'costCenters', url: '/cost-centers' },
       { titleKey: 'exchangeRates', url: '/exchange-rates' },
       { titleKey: 'fixedAssets', url: '/fixed-assets' },
@@ -123,6 +124,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     icon: BarChart3,
     items: [
       { titleKey: 'reports', url: '/reports' },
+      { titleKey: 'financialStatements', url: '/financial-statements' },
       { titleKey: 'vatFiling', url: '/vat-filing' },
       { titleKey: 'vatAutopilot', url: '/vat-autopilot' },
       { titleKey: 'corporateTax', url: '/corporate-tax' },

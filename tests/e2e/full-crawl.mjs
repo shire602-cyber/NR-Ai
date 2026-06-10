@@ -34,7 +34,7 @@ const ROUTES = [
   '/expense-claims', '/inventory', '/integrations', '/integrations-hub', '/whatsapp',
   '/document-chasing', '/notifications', '/reminders', '/company-profile',
   '/settings/company', '/team', '/document-vault', '/month-end', '/backup-restore',
-  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/task-center', '/news-feed',
+  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/financial-statements', '/reconciliation-rules', '/task-center', '/news-feed',
   '/admin/dashboard', '/admin/clients', '/admin/invitations', '/admin/import',
   '/admin/activity-logs', '/admin/users', '/admin',
   '/firm/command-center', '/firm/clients', '/firm/staff', '/firm/health',
@@ -383,6 +383,46 @@ async function main() {
     }
   } catch (e) {
     await fail('cost-center-flow', { crash: e.message.slice(0, 150) });
+  }
+
+  // ── 9. Financial statements + reconciliation rules flows ──────────────────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+
+    // P&L must reflect the journal entry posted in flow 4 (150 expense).
+    const today = new Date().toISOString().slice(0, 10);
+    const plRes = await page.request.get(
+      `${BASE}/api/companies/${companyId}/financial-statements/profit-loss?startDate=${today}&endDate=${today}`,
+    );
+    if (plRes.status() >= 300) {
+      await fail('financial-statements pl', { detail: `status ${plRes.status()}: ${(await plRes.text()).slice(0, 200)}` });
+    }
+    const bsRes = await page.request.get(
+      `${BASE}/api/companies/${companyId}/financial-statements/balance-sheet?asOfDate=${today}`,
+    );
+    if (bsRes.status() >= 300) {
+      await fail('financial-statements bs', { detail: `status ${bsRes.status()}: ${(await bsRes.text()).slice(0, 200)}` });
+    }
+
+    // Reconciliation rule: create then run auto-match (no transactions is fine
+    // — the endpoint must respond coherently, not 500).
+    const ruleRes = await page.request.post(`${BASE}/api/companies/${companyId}/reconciliation-rules`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: { name: 'Salaries auto-tag', matchField: 'description', matchType: 'contains', matchValue: 'SALARY', category: 'Payroll' },
+    });
+    if (ruleRes.status() !== 201 && ruleRes.status() !== 200) {
+      await fail('reconciliation-rule create', { detail: `status ${ruleRes.status()}: ${(await ruleRes.text()).slice(0, 200)}` });
+    } else {
+      const applyRes = await page.request.post(`${BASE}/api/companies/${companyId}/reconciliation-rules/auto-match`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+      });
+      if (applyRes.status() >= 300) {
+        await fail('reconciliation-rule apply', { detail: `status ${applyRes.status()}: ${(await applyRes.text()).slice(0, 200)}` });
+      }
+    }
+  } catch (e) {
+    await fail('statements-rules-flow', { crash: e.message.slice(0, 150) });
   }
 
   await browser.close();
