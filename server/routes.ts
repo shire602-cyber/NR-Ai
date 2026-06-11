@@ -62,6 +62,7 @@ import { registerCostCenterRoutes } from './routes/cost-centers.routes';
 import { registerFinancialStatementRoutes } from './routes/financial-statements.routes';
 import { registerReconciliationRuleRoutes } from './routes/reconciliation-rules.routes';
 import { registerInvoiceTemplateRoutes } from './routes/invoice-templates.routes';
+import { registerBankRoutes } from './routes/bank.routes';
 import { registerAdminHealthRoutes } from './routes/admin-health.routes';
 import { registerBankStatementRoutes } from './routes/bank-statements.routes';
 import { registerExchangeRateRoutes } from './routes/exchange-rates.routes';
@@ -124,6 +125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerFinancialStatementRoutes(app);
   registerReconciliationRuleRoutes(app);
   registerInvoiceTemplateRoutes(app);
+  registerBankRoutes(app);
 
   // ─── Reporting & Analytics ──────────────────────────────
   registerDashboardRoutes(app);

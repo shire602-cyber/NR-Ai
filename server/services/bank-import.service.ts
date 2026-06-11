@@ -184,7 +184,7 @@ export async function importBankStatement(
 
   // Update connection sync time
   await storage.updateBankConnection(connectionId, {
-    lastSyncAt: new Date(),
+    lastSyncedAt: new Date(),
   });
 
   log.info({ companyId, connectionId, imported, duplicates, errors: errors.length }, 'Bank statement import complete');

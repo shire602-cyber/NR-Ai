@@ -336,7 +336,7 @@ export function registerBankRoutes(app: Express) {
       }
 
       // Update last sync time
-      await storage.updateBankConnection(id, { lastSyncAt: new Date() });
+      await storage.updateBankConnection(id, { lastSyncedAt: new Date() });
 
       logger.info({ connectionId: id, imported, provider: connection.provider }, 'Bank transactions synced');
       res.json({ synced: imported, total: bankTransactions.length });

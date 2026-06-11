@@ -928,6 +928,43 @@ export type InsertInvoiceTemplate = z.infer<typeof insertInvoiceTemplateSchema>;
 export type InvoiceTemplate = typeof invoiceTemplates.$inferSelect;
 
 // ===========================
+// Bank Connections (open-banking links + manual statement imports)
+// ===========================
+export const bankConnections = pgTable("bank_connections", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull().default("manual"), // manual | lean | ...
+  connectionType: text("connection_type").notNull().default("statement"), // statement | open_banking
+  bankName: text("bank_name"),
+  accountName: text("account_name"),
+  bankAccountId: uuid("bank_account_id"), // optional link to bank_accounts ledger record
+  externalAccountId: text("external_account_id"),
+  accountNumberLast4: text("account_number_last4"),
+  iban: text("iban"),
+  consentId: text("consent_id"),
+  autoSync: boolean("auto_sync").notNull().default(false),
+  lastError: text("last_error"),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  status: text("status").notNull().default("active"), // active | error | disconnected
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_bank_connections_company_id").on(table.companyId),
+}));
+
+export const insertBankConnectionSchema = createInsertSchema(bankConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertBankConnection = z.infer<typeof insertBankConnectionSchema>;
+export type BankConnection = typeof bankConnections.$inferSelect;
+
+// ===========================
 // Invoice Payments
 // ===========================
 export const invoicePayments = pgTable("invoice_payments", {
@@ -1445,6 +1482,7 @@ export type BankAccount = typeof bankAccounts.$inferSelect;
 export const bankTransactions = pgTable("bank_transactions", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  bankConnectionId: uuid("bank_connection_id"), // source connection for imported rows
   bankAccountId: uuid("bank_account_id").references(() => accounts.id), // Links to bank account in COA
   bankStatementAccountId: uuid("bank_statement_account_id").references(() => bankAccounts.id), // Links to managed bank account
   transactionDate: timestamp("transaction_date").notNull(),
