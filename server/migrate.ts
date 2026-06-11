@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { validateEnv } from './config/env';
 import { createLogger } from './config/logger';
 import { closePool, ensureCriticalSchema, runMigrations } from './db';
+import { backfillPlaintextSecrets } from './services/secret-backfill';
 
 validateEnv();
 
@@ -17,6 +18,7 @@ const migrationsFolder = path.resolve(projectRoot, 'migrations');
 try {
   await runMigrations(migrationsFolder);
   await ensureCriticalSchema();
+  await backfillPlaintextSecrets();
   log.info('Production migration completed');
 } catch (err) {
   log.error({ err }, 'Production migration failed');

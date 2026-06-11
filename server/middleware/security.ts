@@ -20,6 +20,43 @@ export function isCredentialAuthPath(path: string): boolean {
 const log = createLogger('security');
 
 /**
+ * Resolve the CORS allowlist from env: FRONTEND_URL (first-party default)
+ * plus CORS_ORIGIN as comma-separated extra origins. Invalid entries are
+ * dropped with a warning rather than silently allowed. Origins are
+ * normalized to scheme://host[:port] (no path, no trailing slash) because
+ * that is exactly what browsers send in the Origin header.
+ */
+export function resolveAllowedOrigins(env: {
+  FRONTEND_URL?: string;
+  CORS_ORIGIN?: string;
+}, production: boolean): string[] {
+  const allowed: string[] = [];
+
+  const add = (raw: string, source: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    try {
+      const url = new URL(trimmed);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('non-http scheme');
+      if (!allowed.includes(url.origin)) allowed.push(url.origin);
+    } catch {
+      log.warn({ origin: trimmed, source }, 'Ignoring invalid CORS origin');
+    }
+  };
+
+  if (env.FRONTEND_URL) add(env.FRONTEND_URL, 'FRONTEND_URL');
+  for (const entry of (env.CORS_ORIGIN ?? '').split(',')) add(entry, 'CORS_ORIGIN');
+
+  if (!production) {
+    for (const port of [5173, 5000, 3000]) {
+      allowed.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
+    }
+  }
+
+  return allowed;
+}
+
+/**
  * Apply all security middleware to the Express app.
  * Must be called BEFORE route registration.
  */
@@ -59,23 +96,9 @@ export function applySecurityMiddleware(app: Express): void {
   );
 
   // ─── CORS: Cross-Origin Resource Sharing ──────────────────
-  const allowedOrigins: string[] = [];
-
-  if (env.FRONTEND_URL) {
-    allowedOrigins.push(env.FRONTEND_URL);
-  }
-
-  // In development, allow localhost origins
-  if (!isProduction()) {
-    allowedOrigins.push(
-      'http://localhost:5173',
-      'http://localhost:5000',
-      'http://localhost:3000',
-      'http://127.0.0.1:5173',
-      'http://127.0.0.1:5000',
-      'http://127.0.0.1:3000'
-    );
-  }
+  // FRONTEND_URL is the first-party default; CORS_ORIGIN adds extra origins
+  // (comma-separated). Dev additionally allows localhost.
+  const allowedOrigins = resolveAllowedOrigins(env, isProduction());
 
   app.use(
     cors({

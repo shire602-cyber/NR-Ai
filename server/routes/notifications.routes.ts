@@ -23,10 +23,14 @@ export function registerNotificationRoutes(app: Express) {
     res.json(news);
   }));
 
-  // Mark notification as read
+  // Mark notification as read (only the owner's row can match)
   app.patch("/api/notifications/:id/read", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const notification = await storage.markNotificationAsRead(id);
+    const userId = (req as any).user?.id;
+    const notification = await storage.markNotificationAsRead(id, userId);
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
     res.json(notification);
   }));
 
@@ -37,10 +41,14 @@ export function registerNotificationRoutes(app: Express) {
     res.json({ message: 'All notifications marked as read' });
   }));
 
-  // Dismiss notification
+  // Dismiss notification (only the owner's row can match)
   app.patch("/api/notifications/:id/dismiss", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const notification = await storage.dismissNotification(id);
+    const userId = (req as any).user?.id;
+    const notification = await storage.dismissNotification(id, userId);
+    if (!notification) {
+      return res.status(404).json({ message: 'Notification not found' });
+    }
     res.json(notification);
   }));
 

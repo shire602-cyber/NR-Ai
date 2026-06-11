@@ -93,6 +93,23 @@ export default tseslint.config(
   },
 
   {
+    // Browser-extension scripts: chrome.* APIs plus page DOM.
+    files: ["extensions/**/*.js"],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.webextensions },
+    },
+  },
+
+  {
+    // E2E crawler runs under Node but its page.evaluate callbacks execute in
+    // the browser, so both global sets apply.
+    files: ["tests/**/*.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
+
+  {
     files: ["**/*.test.ts", "**/*.spec.ts", "tests/**/*.ts"],
     languageOptions: {
       globals: { ...globals.node, ...globals.jest },

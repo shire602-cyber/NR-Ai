@@ -443,9 +443,9 @@ export interface IStorage {
   getNotificationsByUserId(userId: string): Promise<Notification[]>;
   getUnreadNotificationCount(userId: string): Promise<number>;
   createNotification(notification: InsertNotification): Promise<Notification>;
-  markNotificationAsRead(id: string): Promise<Notification>;
+  markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined>;
   markAllNotificationsAsRead(userId: string): Promise<void>;
-  dismissNotification(id: string): Promise<Notification>;
+  dismissNotification(id: string, userId: string): Promise<Notification | undefined>;
   
   // Regulatory News
   getRegulatoryNews(): Promise<RegulatoryNews[]>;
@@ -2716,15 +2716,27 @@ export class DatabaseStorage implements IStorage {
   async createEcommerceIntegration(insertIntegration: InsertEcommerceIntegration): Promise<EcommerceIntegration> {
     const [integration] = await db
       .insert(ecommerceIntegrations)
-      .values(insertIntegration)
+      .values({
+        ...insertIntegration,
+        // Same at-rest encryption as bank connection tokens.
+        apiKey: encryptSecret(insertIntegration.apiKey ?? null),
+        accessToken: encryptSecret(insertIntegration.accessToken ?? null),
+        refreshToken: encryptSecret(insertIntegration.refreshToken ?? null),
+        webhookSecret: encryptSecret(insertIntegration.webhookSecret ?? null),
+      })
       .returning();
     return integration;
   }
 
   async updateEcommerceIntegration(id: string, data: Partial<InsertEcommerceIntegration>): Promise<EcommerceIntegration> {
+    const patch = { ...data };
+    if ('apiKey' in patch) patch.apiKey = encryptSecret(patch.apiKey ?? null);
+    if ('accessToken' in patch) patch.accessToken = encryptSecret(patch.accessToken ?? null);
+    if ('refreshToken' in patch) patch.refreshToken = encryptSecret(patch.refreshToken ?? null);
+    if ('webhookSecret' in patch) patch.webhookSecret = encryptSecret(patch.webhookSecret ?? null);
     const [integration] = await db
       .update(ecommerceIntegrations)
-      .set(data)
+      .set(patch)
       .where(eq(ecommerceIntegrations.id, id))
       .returning();
     if (!integration) {
@@ -2824,11 +2836,13 @@ export class DatabaseStorage implements IStorage {
     return notification;
   }
 
-  async markNotificationAsRead(id: string): Promise<Notification> {
+  async markNotificationAsRead(id: string, userId: string): Promise<Notification | undefined> {
+    // Ownership is part of the WHERE clause so another user's notification
+    // is indistinguishable from a missing one (no existence oracle).
     const [notification] = await db
       .update(notifications)
       .set({ isRead: true, readAt: new Date() })
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
       .returning();
     return notification;
   }
@@ -2840,11 +2854,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(notifications.userId, userId));
   }
 
-  async dismissNotification(id: string): Promise<Notification> {
+  async dismissNotification(id: string, userId: string): Promise<Notification | undefined> {
     const [notification] = await db
       .update(notifications)
       .set({ isDismissed: true })
-      .where(eq(notifications.id, id))
+      .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))
       .returning();
     return notification;
   }

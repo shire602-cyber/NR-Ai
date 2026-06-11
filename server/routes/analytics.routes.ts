@@ -3,6 +3,22 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
+import type { EcommerceIntegration } from "../../shared/schema";
+
+/**
+ * Credentials never leave the server once stored — responses carry presence
+ * flags only. The client write-only form never needs them back.
+ */
+function maskIntegrationSecrets(integration: EcommerceIntegration) {
+  const { apiKey, accessToken, refreshToken, webhookSecret, ...rest } = integration;
+  return {
+    ...rest,
+    hasApiKey: !!apiKey,
+    hasAccessToken: !!accessToken,
+    hasRefreshToken: !!refreshToken,
+    hasWebhookSecret: !!webhookSecret,
+  };
+}
 
 export function registerAnalyticsRoutes(app: Express) {
   // =====================================
@@ -265,7 +281,7 @@ export function registerAnalyticsRoutes(app: Express) {
     }
 
     const integrations = await storage.getEcommerceIntegrations(companyId as string);
-    res.json(integrations || []);
+    res.json((integrations || []).map(maskIntegrationSecrets));
   }));
 
   // Get e-commerce transactions (MUST be before :integrationId route)
@@ -311,7 +327,7 @@ export function registerAnalyticsRoutes(app: Express) {
       syncStatus: 'never',
     });
 
-    res.json(integration);
+    res.json(maskIntegrationSecrets(integration));
   }));
 
   // Sync e-commerce integration

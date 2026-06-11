@@ -22,6 +22,7 @@ import {
   setAuthCookies,
 } from '../services/auth-cookies.service';
 import { blacklistToken, isTokenBlacklisted } from '../services/auth-tokens.service';
+import { hasEmailProvider, sendPasswordResetEmail } from '../services/email.service';
 import { asyncHandler } from '../middleware/errorHandler';
 import { validate } from '../middleware/validate';
 import { insertUserSchema } from '../../shared/schema';
@@ -505,13 +506,29 @@ export function registerAuthRoutes(app: Express): void {
       await storage.createPasswordResetToken({ userId: user.id, tokenHash, expiresAt });
 
       const env = getEnv();
-      const appUrl = (env as any).APP_URL || (env as any).PUBLIC_URL || '';
+      // Canonical public URL: FRONTEND_URL first, AUTH_PUBLIC_URL as fallback
+      // (same precedence as OAuth redirects in oauth.service.ts).
+      const appUrl = (env.FRONTEND_URL || env.AUTH_PUBLIC_URL || '').replace(/\/+$/, '');
       const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
 
       log.info({ userId: user.id, email }, 'Password reset requested');
 
-      if ((env as any).NODE_ENV !== 'production') {
+      if (env.NODE_ENV !== 'production') {
         return res.json({ ...genericResponse, devResetUrl: resetUrl });
+      }
+
+      if (!appUrl) {
+        log.error('FRONTEND_URL/AUTH_PUBLIC_URL not set; cannot build password reset link');
+      } else if (!hasEmailProvider()) {
+        log.error('No email provider configured (RESEND_API_KEY or SMTP_*); password reset email not sent');
+      } else {
+        // Failures stay server-side: the response is identical either way so
+        // callers can't probe which emails exist or whether delivery worked.
+        try {
+          await sendPasswordResetEmail(user.email, resetUrl);
+        } catch (err) {
+          log.error({ err, userId: user.id }, 'Failed to send password reset email');
+        }
       }
 
       return res.json(genericResponse);

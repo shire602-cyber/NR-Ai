@@ -381,6 +381,49 @@ export async function sendGenericEmail(
   });
 }
 
+export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
+  const transporter = createTransporter();
+  // Token is server-generated hex appended to a config URL; escape anyway so
+  // a misconfigured base URL can never inject markup.
+  const safeUrl = escapeHtml(resetUrl);
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:32px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <tr><td style="background:#1E40AF;padding:24px 40px;">
+          <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:bold;">Muhasib.ai</h1>
+        </td></tr>
+        <tr><td style="padding:32px 40px;">
+          <p style="color:#374151;font-size:14px;line-height:1.7;margin:0 0 16px;">We received a request to reset your password. Click the button below to choose a new one. This link expires in 1 hour and can only be used once.</p>
+          <p style="text-align:center;margin:24px 0;">
+            <a href="${safeUrl}" style="display:inline-block;background:#1E40AF;color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;padding:12px 28px;border-radius:6px;">Reset password</a>
+          </p>
+          <p style="color:#6B7280;font-size:12px;line-height:1.6;margin:0 0 8px;">If the button doesn't work, copy this link into your browser:</p>
+          <p style="color:#1E40AF;font-size:12px;word-break:break-all;margin:0 0 16px;">${safeUrl}</p>
+          <p style="color:#6B7280;font-size:12px;line-height:1.6;margin:0;">If you didn't request this, you can safely ignore this email — your password will not change.</p>
+        </td></tr>
+        <tr><td style="background:#F9FAFB;padding:16px 40px;border-top:1px solid #E5E7EB;">
+          <p style="color:#9CA3AF;font-size:11px;margin:0;text-align:center;">Muhasib.ai — Smart Accounting</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  await transporter.sendMail({
+    from: getFromAddress(),
+    to,
+    subject: 'Reset your Muhasib.ai password',
+    html,
+  });
+}
+
 export async function sendWelcomeEmail(to: string, name: string, companyName?: string): Promise<void> {
   const transporter = createTransporter();
   const safeName = escapeHtml(name);
