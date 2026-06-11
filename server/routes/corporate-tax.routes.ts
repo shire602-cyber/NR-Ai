@@ -4,6 +4,25 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { storage } from '../storage';
 import { UAE_CT_EXEMPTION_THRESHOLD } from '../constants';
 import { assertPeriodNotLocked } from '../services/period-lock.service';
+import {
+  buildCtReturnWorkbook,
+  buildCtTemplateWorkbook,
+  ctReturnExportFilename,
+  parseCtWorkbookRows,
+} from '../services/ct-workpaper-export.service';
+import { computeCtLiability, computeCtTotals } from '../../shared/ct-workpaper';
+
+const CT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+const CT_IMPORT_MAX_ROWS = 2000;
+
+// Client payloads carry ISO strings; Drizzle timestamp columns want Dates.
+function normalizeCtDates<T extends { taxPeriodStart?: unknown; taxPeriodEnd?: unknown; filedAt?: unknown }>(data: T): T {
+  const out: any = { ...data };
+  if (out.taxPeriodStart) out.taxPeriodStart = new Date(out.taxPeriodStart);
+  if (out.taxPeriodEnd) out.taxPeriodEnd = new Date(out.taxPeriodEnd);
+  if (out.filedAt) out.filedAt = new Date(out.filedAt);
+  return out;
+}
 
 export function registerCorporateTaxRoutes(app: Express) {
   // =====================================
@@ -25,6 +44,14 @@ export function registerCorporateTaxRoutes(app: Express) {
   }));
 
   // Get a single corporate tax return
+  // Blank workpaper template whose headers round-trip the shared parser.
+  app.get("/api/corporate-tax/returns/template", authMiddleware, requireCustomer, asyncHandler(async (_req: Request, res: Response) => {
+    const buffer = await buildCtTemplateWorkbook();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="muhasib-ct-workpaper-template.xlsx"');
+    res.send(buffer);
+  }));
+
   app.get("/api/corporate-tax/returns/:id", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const userId = (req as any).user.id;
     const { id } = req.params;
@@ -59,10 +86,10 @@ export function registerCorporateTaxRoutes(app: Express) {
       await assertPeriodNotLocked(companyId, periodEnd);
     }
 
-    const taxReturn = await storage.createCorporateTaxReturn({
+    const taxReturn = await storage.createCorporateTaxReturn(normalizeCtDates({
       ...req.body,
       companyId,
-    });
+    }));
 
     res.status(201).json(taxReturn);
   }));
@@ -87,8 +114,175 @@ export function registerCorporateTaxRoutes(app: Express) {
       await assertPeriodNotLocked(existing.companyId, periodEnd);
     }
 
-    const taxReturn = await storage.updateCorporateTaxReturn(id, req.body);
+    const taxReturn = await storage.updateCorporateTaxReturn(id, normalizeCtDates(req.body));
     res.json(taxReturn);
+  }));
+
+  // Downloadable Excel copy: workpaper schedule + copy-ready computation.
+  app.get("/api/corporate-tax/returns/:id/export", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
+    if (!ctReturn) {
+      return res.status(404).json({ message: 'Corporate tax return not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, ctReturn.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const company = await storage.getCompany(ctReturn.companyId);
+    const buffer = await buildCtReturnWorkbook(ctReturn, company ?? null);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${ctReturnExportFilename(ctReturn, company ?? null)}"`);
+    res.send(buffer);
+  }));
+
+  // Import a filled .xlsx workpaper (the template or any sheet with
+  // recognisable headers); replaces the workpaper rows and recomputes the
+  // return's totals and liability.
+  app.post("/api/corporate-tax/returns/:id/import-file", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
+    if (!ctReturn) {
+      return res.status(404).json({ message: 'Corporate tax return not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, ctReturn.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    if (ctReturn.status !== 'draft') {
+      return res.status(400).json({ message: 'Only draft returns can be re-imported' });
+    }
+
+    const { fileName, fileDataBase64 } = req.body ?? {};
+    if (typeof fileName !== 'string' || !/\.xlsx$/i.test(fileName)) {
+      return res.status(400).json({ message: 'Only .xlsx workbooks are supported' });
+    }
+    if (typeof fileDataBase64 !== 'string' || fileDataBase64.length === 0) {
+      return res.status(400).json({ message: 'Workbook payload is required' });
+    }
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(fileDataBase64, 'base64');
+    } catch {
+      return res.status(400).json({ message: 'Workbook payload is not valid base64' });
+    }
+    if (buffer.length === 0 || buffer.length > CT_IMPORT_MAX_BYTES) {
+      return res.status(400).json({ message: 'Workbook must be between 1 byte and 10 MB' });
+    }
+
+    let rows;
+    try {
+      rows = await parseCtWorkbookRows(buffer);
+    } catch {
+      return res.status(400).json({ message: 'Could not read the workbook — is it a valid .xlsx file?' });
+    }
+    if (rows.length === 0) {
+      return res.status(400).json({ message: 'No workpaper rows recognised in the workbook' });
+    }
+    if (rows.length > CT_IMPORT_MAX_ROWS) {
+      return res.status(400).json({ message: `Workbook has too many rows (max ${CT_IMPORT_MAX_ROWS})` });
+    }
+
+    const totals = computeCtTotals(rows);
+    const liability = computeCtLiability({
+      ...totals,
+      totalDeductions: Number(ctReturn.totalDeductions ?? 0),
+      exemptionThreshold: Number(ctReturn.exemptionThreshold ?? UAE_CT_EXEMPTION_THRESHOLD),
+      taxRate: Number(ctReturn.taxRate ?? 0.09),
+    });
+
+    const updated = await storage.updateCorporateTaxReturn(ctReturn.id, {
+      workpaper: {
+        source: 'manual_workpaper',
+        rows,
+        ...totals,
+        preparedAt: new Date().toISOString(),
+      },
+      totalRevenue: totals.totalRevenue,
+      totalExpenses: totals.totalExpenses,
+      taxableIncome: liability.taxableIncome,
+      taxPayable: liability.taxPayable,
+    });
+
+    res.json({ ...updated, imported: rows.length });
+  }));
+
+  // Populate the workpaper from the books: one row per income/expense account
+  // with its posted net for the tax period. Replaces the previous workpaper.
+  app.post("/api/corporate-tax/returns/:id/pull-from-books", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const userId = (req as any).user.id;
+    const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
+    if (!ctReturn) {
+      return res.status(404).json({ message: 'Corporate tax return not found' });
+    }
+    const hasAccess = await storage.hasCompanyAccess(userId, ctReturn.companyId);
+    if (!hasAccess) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    if (ctReturn.status !== 'draft') {
+      return res.status(400).json({ message: 'Only draft returns can be repopulated from the books' });
+    }
+
+    const startDate = new Date(ctReturn.taxPeriodStart);
+    const endDate = new Date(ctReturn.taxPeriodEnd);
+
+    const allAccounts = await storage.getAccountsByCompanyId(ctReturn.companyId);
+    const accountMap = new Map(allAccounts.map(a => [a.id, a]));
+
+    const journalEntries = await storage.getJournalEntriesByCompanyId(ctReturn.companyId);
+    const periodEntries = journalEntries.filter(entry => {
+      const entryDate = new Date(entry.date);
+      return entryDate >= startDate && entryDate <= endDate && entry.status === 'posted';
+    });
+
+    const netByAccount = new Map<string, number>();
+    const periodLines = await storage.getJournalLinesByEntryIds(periodEntries.map(e => e.id));
+    for (const line of periodLines) {
+      const account = accountMap.get(line.accountId);
+      if (!account || (account.type !== 'income' && account.type !== 'expense')) continue;
+      const net = account.type === 'income'
+        ? (line.credit || 0) - (line.debit || 0)
+        : (line.debit || 0) - (line.credit || 0);
+      netByAccount.set(line.accountId, (netByAccount.get(line.accountId) ?? 0) + net);
+    }
+
+    const rows = [...netByAccount.entries()]
+      .map(([accountId, amount]) => {
+        const account = accountMap.get(accountId)!;
+        return {
+          id: `books-${accountId}`,
+          type: (account.type === 'income' ? 'revenue' : 'expense') as 'revenue' | 'expense',
+          label: account.nameEn,
+          amount: Math.round(amount * 100) / 100,
+          notes: `Posted net for ${account.code ?? ''}`.trim(),
+        };
+      })
+      .filter(row => row.amount !== 0)
+      .sort((a, b) => (a.type === b.type ? b.amount - a.amount : a.type === 'revenue' ? -1 : 1));
+
+    const totals = computeCtTotals(rows);
+    const liability = computeCtLiability({
+      ...totals,
+      totalDeductions: Number(ctReturn.totalDeductions ?? 0),
+      exemptionThreshold: Number(ctReturn.exemptionThreshold ?? UAE_CT_EXEMPTION_THRESHOLD),
+      taxRate: Number(ctReturn.taxRate ?? 0.09),
+    });
+
+    const updated = await storage.updateCorporateTaxReturn(ctReturn.id, {
+      workpaper: {
+        source: 'journal_calculation',
+        rows,
+        ...totals,
+        preparedAt: new Date().toISOString(),
+      },
+      totalRevenue: totals.totalRevenue,
+      totalExpenses: totals.totalExpenses,
+      taxableIncome: liability.taxableIncome,
+      taxPayable: liability.taxPayable,
+    });
+
+    res.json({ ...updated, rows: rows.length, entriesProcessed: periodEntries.length });
   }));
 
   // Auto-calculate corporate tax for a period from journal entries

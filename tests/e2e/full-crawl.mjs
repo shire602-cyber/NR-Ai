@@ -496,6 +496,51 @@ async function main() {
     await fail('bank-import-flow', { crash: e.message.slice(0, 150) });
   }
 
+  // ── 9d. Corporate-tax workpaper: create return → pull-from-books fills the
+  //       schedule from posted entries → Excel export + template respond ────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const year = new Date().getFullYear();
+    const ctRes = await page.request.post(`${BASE}/api/companies/${companyId}/corporate-tax/returns`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: {
+        taxPeriodStart: `${year}-01-01`,
+        taxPeriodEnd: `${year}-12-31`,
+        totalRevenue: 0,
+        totalExpenses: 0,
+        totalDeductions: 0,
+        taxableIncome: 0,
+        taxPayable: 0,
+        status: 'draft',
+      },
+    });
+    if (ctRes.status() !== 201) {
+      await fail('ct-flow create', { detail: `status ${ctRes.status()}: ${(await ctRes.text()).slice(0, 200)}` });
+    } else {
+      const ct = await ctRes.json();
+      const pullRes = await page.request.post(`${BASE}/api/corporate-tax/returns/${ct.id}/pull-from-books`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+      });
+      const pulled = await pullRes.json().catch(() => ({}));
+      if (pullRes.status() >= 300 || (pulled?.rows ?? 0) < 1) {
+        await fail('ct-flow pull', { detail: `status ${pullRes.status()}, rows ${pulled?.rows}` });
+      } else if (!pulled?.workpaper?.rows?.length) {
+        await fail('ct-flow workpaper', { detail: 'workpaper rows missing on updated return' });
+      }
+      const exportRes = await page.request.get(`${BASE}/api/corporate-tax/returns/${ct.id}/export`);
+      if (exportRes.status() >= 300) {
+        await fail('ct-flow export', { detail: `status ${exportRes.status()}` });
+      }
+      const tplRes = await page.request.get(`${BASE}/api/corporate-tax/returns/template`);
+      if (tplRes.status() >= 300) {
+        await fail('ct-flow template', { detail: `status ${tplRes.status()}` });
+      }
+    }
+  } catch (e) {
+    await fail('ct-flow', { crash: e.message.slice(0, 150) });
+  }
+
   // ── 10. Account-type matrix: every kind of account must work ──────────────
   // (a) 'client' userType: flat workspace sidebar — dashboard, documents,
   //     reports must render with no admin/firm assumptions leaking in.
