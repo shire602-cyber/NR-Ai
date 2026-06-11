@@ -3239,6 +3239,12 @@ export const corporateTaxReturns = pgTable(
     exemptionThreshold: money("exemption_threshold").notNull().default(375000),
     taxRate: real("tax_rate").notNull().default(0.09),
     taxPayable: money("tax_payable").notNull().default(0),
+    // Taxable-profit bridge (FDL 47/2022): loss pool in/out, Art. 21 small
+    // business relief election, and related-party/TP disclosure notes.
+    lossBroughtForward: money("loss_brought_forward").notNull().default(0),
+    lossCarriedForward: money("loss_carried_forward").notNull().default(0),
+    smallBusinessRelief: boolean("small_business_relief").notNull().default(false),
+    relatedPartyNotes: text("related_party_notes"),
     status: text("status").notNull().default("draft"), // draft | filed | paid
     filedAt: timestamp("filed_at"),
     workpaper: jsonb("workpaper"),

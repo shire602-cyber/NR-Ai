@@ -6,6 +6,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import { ValidationError } from "../errors";
+import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { requireFirmAdmin } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -329,6 +330,39 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
         req,
       });
       res.json(row);
+    })
+  );
+
+  // Drilldown: VAT 201 line evidence — resolve a workpaper row back to its
+  // source invoice/receipt/journal so every box amount is traceable.
+  router.get(
+    "/:id/rows/:rowId/source",
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsedParams = rowParamSchema.safeParse(req.params);
+      if (!parsedParams.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+      const detail = await requireWorkpaperAccess(req, res, parsedParams.data.id);
+      if (!detail) return;
+
+      const row = detail.rows.find((r: any) => r.id === parsedParams.data.rowId);
+      if (!row) return res.status(404).json({ message: "Workpaper row not found" });
+      if (!row.sourceDocumentType || !row.sourceDocumentId) {
+        return res.json({ row, sourceDocumentType: null, document: null });
+      }
+
+      // Tenant-scoped fetch: the workpaper's company is the only tenant the
+      // row may reference, so a forged sourceDocumentId resolves to nothing.
+      const companyId = detail.workpaper.companyId;
+      let document: unknown = null;
+      if (row.sourceDocumentType === "invoice") {
+        document = (await storage.getInvoice(row.sourceDocumentId, companyId)) ?? null;
+      } else if (row.sourceDocumentType === "receipt") {
+        document = (await storage.getReceipt(row.sourceDocumentId, companyId)) ?? null;
+      } else if (row.sourceDocumentType === "journal") {
+        document = (await storage.getJournalEntry(row.sourceDocumentId, companyId)) ?? null;
+      }
+
+      res.json({ row, sourceDocumentType: row.sourceDocumentType, document });
     })
   );
 

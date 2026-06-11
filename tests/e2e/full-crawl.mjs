@@ -697,6 +697,35 @@ async function main() {
       } else if (!pulled?.workpaper?.rows?.length) {
         await fail("ct-flow workpaper", { detail: "workpaper rows missing on updated return" });
       }
+      // Full taxable-profit bridge: add-back + SBR election → deterministic
+      // schedule persisted on the return.
+      const computeRes = await page.request.post(
+        `${BASE}/api/corporate-tax/returns/${ct.id}/compute`,
+        {
+          headers: { "x-csrf-token": csrfToken ?? "" },
+          data: {
+            adjustments: [{ id: "e2e-ent", category: "entertainment_50", amount: 1000 }],
+            smallBusinessReliefElected: false,
+            relatedPartyNotes: "No related-party transactions in the period.",
+          },
+        }
+      );
+      const computed = await computeRes.json().catch(() => ({}));
+      if (computeRes.status() >= 300 || !computed?.computation?.bridge?.length) {
+        await fail("ct-flow compute", {
+          detail: `status ${computeRes.status()}: ${JSON.stringify(computed).slice(0, 150)}`,
+        });
+      } else {
+        const bridgeLabels = computed.computation.bridge.map((l) => l.label).join("|");
+        if (!/entertainment/i.test(bridgeLabels) || !/Corporate tax payable/.test(bridgeLabels)) {
+          await fail("ct-flow bridge", { detail: bridgeLabels.slice(0, 200) });
+        }
+        if (
+          computed?.return?.relatedPartyNotes !== "No related-party transactions in the period."
+        ) {
+          await fail("ct-flow tp-notes", { detail: "related-party notes not persisted" });
+        }
+      }
       const exportRes = await page.request.get(`${BASE}/api/corporate-tax/returns/${ct.id}/export`);
       if (exportRes.status() >= 300) {
         await fail("ct-flow export", { detail: `status ${exportRes.status()}` });
