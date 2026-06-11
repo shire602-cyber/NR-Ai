@@ -46,6 +46,7 @@ interface ModelStats {
     mode: ClassifierMode;
     accuracyThreshold: number;
     autopilotEnabled: boolean;
+    autopostThreshold?: number;
   };
 }
 
@@ -275,8 +276,8 @@ export default function ReceiptAutopilot() {
                   Auto-post high-confidence receipts
                 </Label>
                 <p className="text-sm text-muted-foreground mt-1">
-                  When enabled, receipts matching a rule with ≥5 acceptances and ≥90% confidence are
-                  auto-posted to the GL without user review.
+                  When enabled, receipts matching a rule with ≥5 acceptances and confidence at or
+                  above your auto-post threshold are posted to the GL without user review.
                 </p>
               </div>
               <Switch
@@ -286,6 +287,32 @@ export default function ReceiptAutopilot() {
                 onCheckedChange={(checked) => updateConfig.mutate({ autopilotEnabled: checked })}
                 disabled={updateConfig.isPending}
               />
+            </div>
+
+            <div className="flex items-center justify-between gap-6">
+              <div>
+                <Label htmlFor="autopost-threshold" className="text-base font-semibold">
+                  Auto-post confidence threshold
+                </Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Minimum classification confidence before a receipt may post without review
+                  (80–99%). Below it, receipts wait in the review queue.
+                </p>
+              </div>
+              <select
+                id="autopost-threshold"
+                data-testid="select-autopost-threshold"
+                className="border rounded-md px-3 py-2 bg-background text-sm"
+                value={String(config.autopostThreshold ?? 0.9)}
+                onChange={(e) => updateConfig.mutate({ autopostThreshold: Number(e.target.value) })}
+                disabled={updateConfig.isPending}
+              >
+                {[0.8, 0.85, 0.9, 0.95, 0.99].map((v) => (
+                  <option key={v} value={String(v)}>
+                    {Math.round(v * 100)}%
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="flex items-center justify-between">

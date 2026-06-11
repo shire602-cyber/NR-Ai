@@ -2178,12 +2178,19 @@ export interface ClassifierConfig {
   mode: ClassifierMode;
   accuracyThreshold: number;
   autopilotEnabled: boolean;
+  /**
+   * Minimum classification confidence before the autopilot may post a
+   * journal entry without review. Stricter floor than accuracyThreshold
+   * because crossing it mutates the books.
+   */
+  autopostThreshold: number;
 }
 
 export const DEFAULT_CLASSIFIER_CONFIG: ClassifierConfig = {
   mode: "hybrid",
   accuracyThreshold: 0.8,
   autopilotEnabled: false,
+  autopostThreshold: 0.9,
 };
 
 // ===========================

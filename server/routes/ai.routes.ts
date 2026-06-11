@@ -1349,6 +1349,9 @@ Respond with JSON:
     // the failsafe condition `internalAccuracy < threshold` stays satisfiable.
     accuracyThreshold: z.number().min(0.5).max(0.99).optional(),
     autopilotEnabled: z.boolean().optional(),
+    // Auto-posting mutates the books — stricter 0.8 floor than the general
+    // classification threshold.
+    autopostThreshold: z.number().min(0.8).max(0.99).optional(),
   });
 
   const companyIdQuerySchema = z.object({
@@ -1445,17 +1448,20 @@ Respond with JSON:
           .status(400)
           .json({ message: "Invalid request body", errors: parsed.error.flatten() });
       }
-      const { companyId, mode, accuracyThreshold, autopilotEnabled } = parsed.data;
+      const { companyId, mode, accuracyThreshold, autopilotEnabled, autopostThreshold } =
+        parsed.data;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
       const patch: Partial<{
         mode: "hybrid" | "openai_only";
         accuracyThreshold: number;
         autopilotEnabled: boolean;
+        autopostThreshold: number;
       }> = {};
       if (mode !== undefined) patch.mode = mode;
       if (accuracyThreshold !== undefined) patch.accuracyThreshold = accuracyThreshold;
       if (autopilotEnabled !== undefined) patch.autopilotEnabled = autopilotEnabled;
+      if (autopostThreshold !== undefined) patch.autopostThreshold = autopostThreshold;
       const config = await setClassifierConfig(companyId, patch);
       res.json(config);
     })

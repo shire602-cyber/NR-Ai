@@ -21,6 +21,7 @@ import { pool } from "../db";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { recordAudit } from "./audit.service";
 import {
   classifyReceipt,
   type ClassificationResult,
@@ -33,6 +34,7 @@ import {
   applyAccuracyFailsafe,
 } from "./training-data.service";
 import type { Account } from "../../shared/schema";
+import { DEFAULT_CLASSIFIER_CONFIG } from "../../shared/schema";
 
 const log = createLogger("receipt-autopilot");
 
@@ -225,9 +227,15 @@ export async function runAutopilot(
   // Foreign-currency receipts go to manual review until the autopilot grows
   // an FX path.
   const isAed = (ocr.currency || "AED").toUpperCase() === "AED";
+  // Per-company auto-post gate; fall back to the default for configs stored
+  // before the field existed (getClassifierConfig normalizes, but stay safe).
+  const autopostThreshold =
+    typeof config.autopostThreshold === "number"
+      ? config.autopostThreshold
+      : DEFAULT_CLASSIFIER_CONFIG.autopostThreshold;
   const shouldAutoPost =
     config.autopilotEnabled &&
-    classification.confidence >= 0.9 &&
+    classification.confidence >= autopostThreshold &&
     ruleAcceptedEnough &&
     !!expenseAccountId &&
     !!paymentAccountId &&
@@ -272,6 +280,26 @@ export async function runAutopilot(
       classificationId: classificationRow.id,
     };
   }
+
+  // Audit trail: AI changed posted ledger state without a human in the loop.
+  // The log row carries the evidence a reviewer needs to judge the call.
+  await recordAudit({
+    userId: uploadedBy,
+    companyId,
+    action: "ai_autopost_receipt",
+    entityType: "journal_entry",
+    entityId: journalEntryId,
+    extra: {
+      receiptId: receipt.id,
+      classificationId: classificationRow.id,
+      confidence: classification.confidence,
+      autopostThreshold,
+      method: classification.method,
+      reason: classification.reason,
+      merchant: merchantSafe,
+      amount: grossAmount,
+    },
+  });
 
   // The JE is now committed. Receipt-link update and rule-counter bump are
   // best-effort — failing them does NOT mean the JE rolled back. Returning

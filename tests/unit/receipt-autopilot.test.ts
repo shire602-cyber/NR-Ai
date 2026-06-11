@@ -21,6 +21,7 @@ const state = {
   receipts: [] as any[],
   classifications: [] as any[],
   journalEntries: [] as any[],
+  auditLogs: [] as any[],
 };
 
 // Mocks must be hoisted before the imports below.
@@ -50,6 +51,10 @@ vi.mock("../../server/storage", () => ({
       return c;
     }),
     hasCompanyAccess: vi.fn(async () => true),
+    createAuditLog: vi.fn(async (row: any) => {
+      state.auditLogs.push(row);
+      return row;
+    }),
     generateEntryNumber: vi.fn(async () => "JE-TEST-001"),
     createJournalEntry: vi.fn(async (entry: any, lines: any[]) => {
       // Mirror the production assertion so tests fail loudly on an unbalanced
@@ -100,7 +105,12 @@ vi.mock("../../server/services/training-data.service", async () => {
 // Extend state with classifier config + model state used by the mocked module.
 (state as any)._rules = [];
 (state as any)._trainingExamples = [];
-(state as any)._config = { mode: "hybrid", accuracyThreshold: 0.8, autopilotEnabled: false };
+(state as any)._config = {
+  mode: "hybrid",
+  accuracyThreshold: 0.8,
+  autopilotEnabled: false,
+  autopostThreshold: 0.9,
+};
 
 // Now import the SUT.
 import {
@@ -181,7 +191,13 @@ beforeEach(() => {
   state.journalEntries = [];
   (state as any)._rules = [];
   (state as any)._trainingExamples = [];
-  (state as any)._config = { mode: "hybrid", accuracyThreshold: 0.8, autopilotEnabled: false };
+  (state as any)._config = {
+    mode: "hybrid",
+    accuracyThreshold: 0.8,
+    autopilotEnabled: false,
+    autopostThreshold: 0.9,
+  };
+  state.auditLogs = [];
   __setOpenAIForTests(null);
 });
 
@@ -482,6 +498,107 @@ describe("runAutopilot pipeline", () => {
     expect(result.classification.method).toBe("rule");
     expect(result.autoPosted).toBe(false);
     expect(result.queuedForReview).toBe(true);
+  });
+
+  // ---------- configurable auto-post threshold ----------
+  // The gate reads classifierConfig.autopostThreshold (default 0.9, floor 0.8)
+  // so a cautious company can demand 95% and a confident one can run at 85%.
+
+  it("honors a lower per-company autopostThreshold (0.85 posts at 0.86)", async () => {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._config.autopostThreshold = 0.85;
+    (state as any)._rules = [
+      {
+        id: "rule-1",
+        merchantPattern: "DEWA April 2026",
+        descriptionPattern: null,
+        accountId: "a-utilities",
+        category: "Utilities",
+        confidence: 0.86,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const result = await runAutopilot("co-1", "user-1", ocr);
+    expect(result.autoPosted).toBe(true);
+  });
+
+  it("honors a stricter per-company autopostThreshold (0.95 blocks 0.93)", async () => {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._config.autopostThreshold = 0.95;
+    (state as any)._rules = [
+      {
+        id: "rule-1",
+        merchantPattern: "DEWA April 2026",
+        descriptionPattern: null,
+        accountId: "a-utilities",
+        category: "Utilities",
+        confidence: 0.93,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const result = await runAutopilot("co-1", "user-1", ocr);
+    expect(result.autoPosted).toBe(false);
+    expect(result.queuedForReview).toBe(true);
+  });
+
+  it("falls back to the 0.9 default when the stored config predates the field", async () => {
+    (state as any)._config.autopilotEnabled = true;
+    delete (state as any)._config.autopostThreshold; // legacy JSONB shape
+    (state as any)._rules = [
+      {
+        id: "rule-1",
+        merchantPattern: "DEWA April 2026",
+        descriptionPattern: null,
+        accountId: "a-utilities",
+        category: "Utilities",
+        confidence: 0.91,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const result = await runAutopilot("co-1", "user-1", ocr);
+    expect(result.autoPosted).toBe(true);
+  });
+
+  // ---------- audit trail on AI mutation ----------
+
+  it("writes an audit log row when the AI auto-posts (and none when queued)", async () => {
+    (state as any)._config.autopilotEnabled = true;
+    (state as any)._rules = [
+      {
+        id: "rule-1",
+        merchantPattern: "DEWA April 2026",
+        descriptionPattern: null,
+        accountId: "a-utilities",
+        category: "Utilities",
+        confidence: 0.95,
+        timesApplied: 10,
+        timesAccepted: 9,
+        timesRejected: 1,
+      },
+    ];
+    const posted = await runAutopilot("co-1", "user-1", ocr);
+    expect(posted.autoPosted).toBe(true);
+    expect(state.auditLogs).toHaveLength(1);
+    expect(state.auditLogs[0].action).toBe("ai_autopost_receipt");
+    expect(state.auditLogs[0].resourceType).toBe("journal_entry");
+    expect(state.auditLogs[0].resourceId).toBe(posted.journalEntryId);
+    const details = JSON.parse(state.auditLogs[0].details);
+    expect(details.confidence).toBe(0.95);
+    expect(details.autopostThreshold).toBe(0.9);
+    expect(details.receiptId).toBe(posted.receiptId);
+
+    // Low-confidence path stays silent — nothing was mutated.
+    state.auditLogs = [];
+    (state as any)._rules[0].confidence = 0.7;
+    const queued = await runAutopilot("co-1", "user-1", ocr);
+    expect(queued.autoPosted).toBe(false);
+    expect(state.auditLogs).toHaveLength(0);
   });
 
   it("auto-posts at the exact 5-accept boundary (timesAccepted === 5)", async () => {
