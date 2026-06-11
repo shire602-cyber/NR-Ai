@@ -26,7 +26,10 @@ import {
   Trash2,
   Plus,
   RotateCcw,
+  Download,
+  BookOpen,
 } from 'lucide-react';
+import { apiUrl } from '@/lib/api';
 
 type CorporateTaxWorkpaperRowType = 'revenue' | 'expense';
 
@@ -119,6 +122,38 @@ const parseMoneyInput = (value: string) => {
 export default function CorporateTax() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
+
+  const downloadBlob = async (url: string, fallbackName: string) => {
+    try {
+      const response = await fetch(apiUrl(url), { credentials: 'include' });
+      if (!response.ok) throw new Error(await response.text());
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') ?? '';
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? fallbackName;
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Download failed', description: error?.message });
+    }
+  };
+
+  const pullFromBooksMutation = useMutation({
+    mutationFn: (id: string) => apiRequest('POST', `/api/corporate-tax/returns/${id}/pull-from-books`),
+    onSuccess: (result: any) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/corporate-tax/returns`] });
+      toast({
+        title: `${result?.rows ?? 0} workpaper rows pulled from books`,
+        description: 'One row per income/expense account with its posted net for the period.',
+      });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not pull from books', description: e?.message }),
+  });
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
   // Calculator state
@@ -682,6 +717,27 @@ export default function CorporateTax() {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void downloadBlob(`/api/corporate-tax/returns/${taxReturn.id}/export`, 'ct-workpaper.xlsx')}
+                            title="Download Excel workpaper"
+                            data-testid={`button-ct-export-${taxReturn.id}`}
+                          >
+                            <Download className="w-4 h-4" />
+                          </Button>
+                          {taxReturn.status === 'draft' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => pullFromBooksMutation.mutate(taxReturn.id)}
+                              disabled={pullFromBooksMutation.isPending}
+                              title="Pull workpaper from books"
+                              data-testid={`button-ct-pull-${taxReturn.id}`}
+                            >
+                              <BookOpen className="w-4 h-4" />
+                            </Button>
+                          )}
                           {taxReturn.status === 'draft' && (
                             <>
                               <Button
