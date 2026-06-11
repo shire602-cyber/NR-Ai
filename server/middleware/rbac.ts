@@ -1,10 +1,10 @@
-import type { Request, Response, NextFunction } from 'express';
-import { db } from '../db';
-import { eq, and, isNull } from 'drizzle-orm';
-import { companyUsers, companies, firmStaffAssignments } from '../../shared/schema';
+import type { Request, Response, NextFunction } from "express";
+import { db } from "../db";
+import { eq, and, isNull } from "drizzle-orm";
+import { companyUsers, companies, firmStaffAssignments } from "../../shared/schema";
 
-const FIRM_ROLES = ['firm_owner', 'firm_admin'] as const;
-export type FirmRole = typeof FIRM_ROLES[number];
+const FIRM_ROLES = ["firm_owner", "firm_admin"] as const;
+export type FirmRole = (typeof FIRM_ROLES)[number];
 
 /**
  * Require the requesting user to have one of the given roles in the active
@@ -15,41 +15,36 @@ export type FirmRole = typeof FIRM_ROLES[number];
 export function requireRole(...roles: string[]) {
   return async function (req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!req.user) {
-      res.status(401).json({ message: 'Authentication required' });
+      res.status(401).json({ message: "Authentication required" });
       return;
     }
 
     // firm_owner bypasses all company-level role checks
-    if ((req.user as any).firmRole === 'firm_owner') {
+    if ((req.user as any).firmRole === "firm_owner") {
       next();
       return;
     }
 
     const companyId = req.params.companyId ?? req.body?.companyId;
     if (!companyId) {
-      res.status(400).json({ message: 'Company context required' });
+      res.status(400).json({ message: "Company context required" });
       return;
     }
 
     const [membership] = await db
       .select({ role: companyUsers.role })
       .from(companyUsers)
-      .where(
-        and(
-          eq(companyUsers.companyId, companyId),
-          eq(companyUsers.userId, req.user.id)
-        )
-      )
+      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, req.user.id)))
       .limit(1);
 
     if (!membership) {
-      res.status(403).json({ message: 'Not a member of this company' });
+      res.status(403).json({ message: "Not a member of this company" });
       return;
     }
 
     if (!roles.includes(membership.role)) {
       res.status(403).json({
-        message: `Role '${membership.role}' is not authorized. Required: ${roles.join(', ')}`,
+        message: `Role '${membership.role}' is not authorized. Required: ${roles.join(", ")}`,
       });
       return;
     }
@@ -67,13 +62,13 @@ export function requireRole(...roles: string[]) {
 export function requireFirmRole() {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
-      res.status(401).json({ message: 'Authentication required' });
+      res.status(401).json({ message: "Authentication required" });
       return;
     }
 
     const firmRole = (req.user as any).firmRole as string | undefined;
     if (!firmRole || !FIRM_ROLES.includes(firmRole as FirmRole)) {
-      res.status(403).json({ message: 'NRA firm staff access required' });
+      res.status(403).json({ message: "NRA firm staff access required" });
       return;
     }
 
@@ -90,12 +85,12 @@ export function requireFirmRole() {
 export function requireFirmOwner() {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
-      res.status(401).json({ message: 'Authentication required' });
+      res.status(401).json({ message: "Authentication required" });
       return;
     }
     const firmRole = (req.user as any).firmRole as string | undefined;
-    if (firmRole !== 'firm_owner') {
-      res.status(403).json({ message: 'Firm owner access required' });
+    if (firmRole !== "firm_owner") {
+      res.status(403).json({ message: "Firm owner access required" });
       return;
     }
     next();
@@ -112,12 +107,12 @@ export function requireFirmOwner() {
 export function requireFirmAdmin() {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
-      res.status(401).json({ message: 'Authentication required' });
+      res.status(401).json({ message: "Authentication required" });
       return;
     }
     const firmRole = (req.user as any).firmRole as string | undefined;
     if (!firmRole || !FIRM_ROLES.includes(firmRole as FirmRole)) {
-      res.status(403).json({ message: 'NRA firm staff access required' });
+      res.status(403).json({ message: "NRA firm staff access required" });
       return;
     }
     next();
@@ -145,7 +140,7 @@ export async function getAccessibleCompanyIds(
   userId: string,
   firmRole: string
 ): Promise<string[] | null> {
-  if (firmRole === 'firm_owner') return null;
+  if (firmRole === "firm_owner") return null;
 
   const [byAssignment, byMembership] = await Promise.all([
     db
@@ -155,9 +150,9 @@ export async function getAccessibleCompanyIds(
       .where(
         and(
           eq(firmStaffAssignments.userId, userId),
-          eq(companies.companyType, 'client'),
-          isNull(companies.deletedAt),
-        ),
+          eq(companies.companyType, "client"),
+          isNull(companies.deletedAt)
+        )
       ),
     db
       .select({ companyId: companies.id })
@@ -166,9 +161,9 @@ export async function getAccessibleCompanyIds(
       .where(
         and(
           eq(companyUsers.userId, userId),
-          eq(companies.companyType, 'client'),
-          isNull(companies.deletedAt),
-        ),
+          eq(companies.companyType, "client"),
+          isNull(companies.deletedAt)
+        )
       ),
   ]);
 

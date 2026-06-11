@@ -1,13 +1,7 @@
-import { useLocation } from 'wouter';
-import { motion } from 'framer-motion';
-import {
-  LayoutDashboard,
-  FileText,
-  Camera,
-  BarChart3,
-  MoreHorizontal,
-} from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { useLocation } from "wouter";
+import { motion } from "framer-motion";
+import { LayoutDashboard, FileText, Camera, BarChart3, MoreHorizontal } from "lucide-react";
+import { useState, useCallback } from "react";
 
 interface NavItem {
   label: string;
@@ -18,24 +12,24 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
-  { label: 'Invoices', icon: FileText, href: '/invoices' },
-  { label: 'Receipts', icon: Camera, href: '/receipts' },
-  { label: 'Reports', icon: BarChart3, href: '/reports' },
-  { label: 'More', icon: MoreHorizontal, href: '#', isMore: true },
+  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "Invoices", icon: FileText, href: "/invoices" },
+  { label: "Receipts", icon: Camera, href: "/receipts" },
+  { label: "Reports", icon: BarChart3, href: "/reports" },
+  { label: "More", icon: MoreHorizontal, href: "#", isMore: true },
 ];
 
 const moreLinks = [
-  { label: 'Accounts', href: '/chart-of-accounts' },
-  { label: 'Journal', href: '/journal' },
-  { label: 'Contacts', href: '/contacts' },
-  { label: 'Inventory', href: '/inventory' },
-  { label: 'VAT Filing', href: '/vat-filing' },
-  { label: 'Corporate Tax', href: '/corporate-tax' },
-  { label: 'Bank Reconciliation', href: '/bank-reconciliation' },
-  { label: 'AI CFO', href: '/ai-cfo' },
-  { label: 'Document Vault', href: '/document-vault' },
-  { label: 'Settings', href: '/company-profile' },
+  { label: "Accounts", href: "/chart-of-accounts" },
+  { label: "Journal", href: "/journal" },
+  { label: "Contacts", href: "/contacts" },
+  { label: "Inventory", href: "/inventory" },
+  { label: "VAT Filing", href: "/vat-filing" },
+  { label: "Corporate Tax", href: "/corporate-tax" },
+  { label: "Bank Reconciliation", href: "/bank-reconciliation" },
+  { label: "AI CFO", href: "/ai-cfo" },
+  { label: "Document Vault", href: "/document-vault" },
+  { label: "Settings", href: "/company-profile" },
 ];
 
 /**
@@ -70,8 +64,8 @@ export function MobileNav() {
   );
 
   const isActive = (href: string) => {
-    if (href === '#') return moreOpen;
-    return location === href || location.startsWith(href + '/');
+    if (href === "#") return moreOpen;
+    return location === href || location.startsWith(href + "/");
   };
 
   return (
@@ -90,10 +84,10 @@ export function MobileNav() {
       {/* More menu sheet */}
       {moreOpen && (
         <motion.div
-          initial={{ y: '100%' }}
+          initial={{ y: "100%" }}
           animate={{ y: 0 }}
-          exit={{ y: '100%' }}
-          transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+          exit={{ y: "100%" }}
+          transition={{ type: "spring", damping: 30, stiffness: 400 }}
           className="mobile-nav-more-sheet"
         >
           <div className="mobile-nav-more-handle" />
@@ -103,7 +97,7 @@ export function MobileNav() {
                 key={link.href}
                 onClick={() => handleMoreLink(link.href)}
                 className={`mobile-nav-more-item ${
-                  location === link.href ? 'mobile-nav-more-item--active' : ''
+                  location === link.href ? "mobile-nav-more-item--active" : ""
                 }`}
               >
                 {link.label}
@@ -123,8 +117,8 @@ export function MobileNav() {
             <button
               key={item.label}
               onClick={() => handleNavClick(item)}
-              className={`mobile-nav-tab ${active ? 'mobile-nav-tab--active' : ''}`}
-              aria-current={active ? 'page' : undefined}
+              className={`mobile-nav-tab ${active ? "mobile-nav-tab--active" : ""}`}
+              aria-current={active ? "page" : undefined}
               aria-label={item.label}
             >
               <div className="mobile-nav-tab-icon">
@@ -133,7 +127,7 @@ export function MobileNav() {
                   <motion.div
                     layoutId="mobile-nav-indicator"
                     className="mobile-nav-indicator"
-                    transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+                    transition={{ type: "spring", damping: 30, stiffness: 400 }}
                   />
                 )}
               </div>

@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { db } from '../db';
+import { db } from "../db";
 import {
   bankTransactions,
   companies,
@@ -8,17 +8,17 @@ import {
   firmGrowthOpportunities,
   invoices,
   receipts,
-} from '../../shared/schema';
+} from "../../shared/schema";
 
-export type GrowthOpportunityStatus = 'open' | 'accepted' | 'snoozed' | 'dismissed' | 'completed';
-export type GrowthOpportunityPriority = 'critical' | 'high' | 'medium' | 'low';
+export type GrowthOpportunityStatus = "open" | "accepted" | "snoozed" | "dismissed" | "completed";
+export type GrowthOpportunityPriority = "critical" | "high" | "medium" | "low";
 export type GrowthOpportunityType =
-  | 'service_ar'
-  | 'cleanup'
-  | 'advisory_pack'
-  | 'audit_pack'
-  | 'cfo_pack'
-  | 'compliance_extra';
+  | "service_ar"
+  | "cleanup"
+  | "advisory_pack"
+  | "audit_pack"
+  | "cfo_pack"
+  | "compliance_extra";
 
 export interface GrowthCandidate {
   companyId: string;
@@ -67,9 +67,9 @@ function money(value: unknown): number {
 }
 
 function priorityFor(value: number, critical: number, high: number): GrowthOpportunityPriority {
-  if (value >= critical) return 'critical';
-  if (value >= high) return 'high';
-  return 'medium';
+  if (value >= critical) return "critical";
+  if (value >= high) return "high";
+  return "medium";
 }
 
 export async function buildGrowthCandidates(companyIds: string[]): Promise<GrowthCandidate[]> {
@@ -84,7 +84,7 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
         corporateTaxId: companies.corporateTaxId,
       })
       .from(companies)
-      .where(and(inArray(companies.id, companyIds), eq(companies.companyType, 'client'))),
+      .where(and(inArray(companies.id, companyIds), eq(companies.companyType, "client"))),
     db
       .select({
         companyId: invoices.companyId,
@@ -116,13 +116,13 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
   ]);
 
   const invoicesByCompany = new Map<string, GrowthInvoiceStats>(
-    (invoiceRows as GrowthInvoiceStats[]).map((row: GrowthInvoiceStats) => [row.companyId, row]),
+    (invoiceRows as GrowthInvoiceStats[]).map((row: GrowthInvoiceStats) => [row.companyId, row])
   );
   const receiptsByCompany = new Map<string, GrowthReceiptStats>(
-    (receiptRows as GrowthReceiptStats[]).map((row: GrowthReceiptStats) => [row.companyId, row]),
+    (receiptRows as GrowthReceiptStats[]).map((row: GrowthReceiptStats) => [row.companyId, row])
   );
   const bankByCompany = new Map<string, GrowthBankStats>(
-    (bankRows as GrowthBankStats[]).map((row: GrowthBankStats) => [row.companyId, row]),
+    (bankRows as GrowthBankStats[]).map((row: GrowthBankStats) => [row.companyId, row])
   );
   const candidates: GrowthCandidate[] = [];
 
@@ -141,10 +141,10 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
       candidates.push({
         companyId: client.id,
         sourceKey: `${client.id}:service-ar`,
-        opportunityType: 'service_ar',
-        sourceSignal: 'overdue_service_ar',
-        title: 'Recover NRA service AR',
-        reason: `${client.name} has ${overdueCount} overdue invoice(s) and AED ${Math.round(openAr).toLocaleString('en-AE')} open AR.`,
+        opportunityType: "service_ar",
+        sourceSignal: "overdue_service_ar",
+        title: "Recover NRA service AR",
+        reason: `${client.name} has ${overdueCount} overdue invoice(s) and AED ${Math.round(openAr).toLocaleString("en-AE")} open AR.`,
         estimatedValue: Math.max(500, Math.round(openAr * 0.05)),
         confidence: 0.78,
         priority: priorityFor(openAr, 25000, 10000),
@@ -156,9 +156,9 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
       candidates.push({
         companyId: client.id,
         sourceKey: `${client.id}:cleanup`,
-        opportunityType: 'cleanup',
-        sourceSignal: 'cleanup_workload',
-        title: 'Bill cleanup work',
+        opportunityType: "cleanup",
+        sourceSignal: "cleanup_workload",
+        title: "Bill cleanup work",
         reason: `${cleanupItems} VAT/bookkeeping source items need cleanup before the file is ready.`,
         estimatedValue: Math.max(750, cleanupItems * 45),
         confidence: 0.72,
@@ -171,33 +171,38 @@ export async function buildGrowthCandidates(companyIds: string[]): Promise<Growt
       candidates.push({
         companyId: client.id,
         sourceKey: `${client.id}:cfo-pack`,
-        opportunityType: 'cfo_pack',
-        sourceSignal: 'high_activity_client',
-        title: 'Offer monthly CFO pack',
+        opportunityType: "cfo_pack",
+        sourceSignal: "high_activity_client",
+        title: "Offer monthly CFO pack",
         reason: `${client.name} has enough transaction volume or AR exposure for a higher-value advisory cadence.`,
         estimatedValue: 2500,
         confidence: 0.62,
-        priority: openAr >= 75000 ? 'high' : 'medium',
+        priority: openAr >= 75000 ? "high" : "medium",
         metadata: { invoiceCount, openAr },
       });
     }
 
     if (!client.trnVatNumber || !client.corporateTaxId) {
       const missing = [
-        !client.trnVatNumber ? 'VAT TRN' : null,
-        !client.corporateTaxId ? 'corporate tax registration' : null,
-      ].filter(Boolean).join(' and ');
+        !client.trnVatNumber ? "VAT TRN" : null,
+        !client.corporateTaxId ? "corporate tax registration" : null,
+      ]
+        .filter(Boolean)
+        .join(" and ");
       candidates.push({
         companyId: client.id,
         sourceKey: `${client.id}:compliance-extra`,
-        opportunityType: 'compliance_extra',
-        sourceSignal: 'missing_tax_registration',
-        title: 'Compliance setup opportunity',
+        opportunityType: "compliance_extra",
+        sourceSignal: "missing_tax_registration",
+        title: "Compliance setup opportunity",
         reason: `${client.name} is missing ${missing}.`,
         estimatedValue: 1200,
         confidence: 0.68,
-        priority: 'high',
-        metadata: { missingTrn: !client.trnVatNumber, missingCorporateTaxId: !client.corporateTaxId },
+        priority: "high",
+        metadata: {
+          missingTrn: !client.trnVatNumber,
+          missingCorporateTaxId: !client.corporateTaxId,
+        },
       });
     }
   }
@@ -215,12 +220,20 @@ export async function refreshGrowthOpportunities(companyIds: string[]) {
       status: firmGrowthOpportunities.status,
     })
     .from(firmGrowthOpportunities)
-    .where(inArray(firmGrowthOpportunities.sourceKey, candidates.map(c => c.sourceKey)));
+    .where(
+      inArray(
+        firmGrowthOpportunities.sourceKey,
+        candidates.map((c) => c.sourceKey)
+      )
+    );
 
   const closed = new Set(
     (existing as Array<{ sourceKey: string; status: string }>)
-      .filter((row: { sourceKey: string; status: string }) => row.status === 'completed' || row.status === 'dismissed')
-      .map((row: { sourceKey: string; status: string }) => row.sourceKey),
+      .filter(
+        (row: { sourceKey: string; status: string }) =>
+          row.status === "completed" || row.status === "dismissed"
+      )
+      .map((row: { sourceKey: string; status: string }) => row.sourceKey)
   );
   let generated = 0;
   let skippedClosed = 0;
@@ -243,7 +256,7 @@ export async function refreshGrowthOpportunities(companyIds: string[]) {
         estimatedValue: candidate.estimatedValue,
         confidence: candidate.confidence,
         priority: candidate.priority,
-        status: 'open',
+        status: "open",
         dueDate: candidate.dueDate ?? null,
         metadata: candidate.metadata ?? {},
       } as any)
@@ -302,19 +315,21 @@ export async function listGrowthOpportunities(companyIds: string[]) {
     .where(inArray(firmGrowthOpportunities.companyId, companyIds))
     .orderBy(desc(firmGrowthOpportunities.updatedAt));
 
-  const summary = (rows as Array<{ estimatedValue: unknown; status: string }>).reduce<GrowthSummary>(
+  const summary = (
+    rows as Array<{ estimatedValue: unknown; status: string }>
+  ).reduce<GrowthSummary>(
     (acc: GrowthSummary, row: { estimatedValue: unknown; status: string }) => {
       const value = money(row.estimatedValue);
-      if (row.status === 'completed') acc.completed += value;
-      else if (row.status === 'accepted') acc.accepted += value;
-      else if (row.status === 'dismissed') acc.missed += value;
+      if (row.status === "completed") acc.completed += value;
+      else if (row.status === "accepted") acc.accepted += value;
+      else if (row.status === "dismissed") acc.missed += value;
       else {
         acc.estimated += value;
         acc.openCount += 1;
       }
       return acc;
     },
-    { estimated: 0, accepted: 0, completed: 0, missed: 0, openCount: 0 },
+    { estimated: 0, accepted: 0, completed: 0, missed: 0, openCount: 0 }
   );
 
   return { summary, opportunities: rows };
@@ -330,14 +345,14 @@ export async function updateGrowthOpportunity(
     resolutionNote?: string | null;
     note?: string | null;
     actionType: string;
-  },
+  }
 ) {
   const update: Record<string, unknown> = { updatedAt: new Date() };
   if (data.status) update.status = data.status;
-  if ('ownerUserId' in data) update.ownerUserId = data.ownerUserId ?? null;
-  if ('snoozedUntil' in data) update.snoozedUntil = data.snoozedUntil ?? null;
-  if ('resolutionNote' in data) update.resolutionNote = data.resolutionNote ?? null;
-  if (data.status === 'completed' || data.status === 'dismissed') update.resolvedAt = new Date();
+  if ("ownerUserId" in data) update.ownerUserId = data.ownerUserId ?? null;
+  if ("snoozedUntil" in data) update.snoozedUntil = data.snoozedUntil ?? null;
+  if ("resolutionNote" in data) update.resolutionNote = data.resolutionNote ?? null;
+  if (data.status === "completed" || data.status === "dismissed") update.resolvedAt = new Date();
 
   const [updated] = await db
     .update(firmGrowthOpportunities)
@@ -351,8 +366,8 @@ export async function updateGrowthOpportunity(
     opportunityId,
     actorUserId,
     actionType: data.actionType,
-    channel: 'internal',
-    deliveryState: 'logged',
+    channel: "internal",
+    deliveryState: "logged",
     note: data.note ?? data.resolutionNote ?? null,
     metadata: {
       status: data.status,

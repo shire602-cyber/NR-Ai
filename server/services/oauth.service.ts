@@ -1,13 +1,13 @@
-import crypto from 'node:crypto';
-import type { Request } from 'express';
-import { and, eq, sql } from 'drizzle-orm';
-import * as oidc from 'openid-client';
+import crypto from "node:crypto";
+import type { Request } from "express";
+import { and, eq, sql } from "drizzle-orm";
+import * as oidc from "openid-client";
 
-import { db } from '../db';
-import { getEnv, isProduction } from '../config/env';
-import { authIdentities, oauthLoginStates, users } from '../../shared/schema';
+import { db } from "../db";
+import { getEnv, isProduction } from "../config/env";
+import { authIdentities, oauthLoginStates, users } from "../../shared/schema";
 
-export type OAuthProviderId = 'google' | 'microsoft';
+export type OAuthProviderId = "google" | "microsoft";
 
 export interface OAuthProviderInfo {
   id: OAuthProviderId;
@@ -36,61 +36,67 @@ export interface OAuthIdentityProfile {
 }
 
 class OAuthPublicError extends Error {
-  constructor(message: string, public readonly code: string) {
+  constructor(
+    message: string,
+    public readonly code: string
+  ) {
     super(message);
-    this.name = 'OAuthPublicError';
+    this.name = "OAuthPublicError";
   }
 }
 
 export class OAuthConfigError extends OAuthPublicError {
   constructor(message: string) {
-    super(message, 'OAUTH_CONFIG_ERROR');
-    this.name = 'OAuthConfigError';
+    super(message, "OAUTH_CONFIG_ERROR");
+    this.name = "OAuthConfigError";
   }
 }
 
 export class OAuthStateError extends OAuthPublicError {
   constructor(message: string) {
-    super(message, 'OAUTH_STATE_ERROR');
-    this.name = 'OAuthStateError';
+    super(message, "OAUTH_STATE_ERROR");
+    this.name = "OAuthStateError";
   }
 }
 
 export class OAuthIdentityError extends OAuthPublicError {
   constructor(message: string) {
-    super(message, 'OAUTH_IDENTITY_ERROR');
-    this.name = 'OAuthIdentityError';
+    super(message, "OAUTH_IDENTITY_ERROR");
+    this.name = "OAuthIdentityError";
   }
 }
 
 const PROVIDERS: Record<OAuthProviderId, { label: string; issuer: string }> = {
   google: {
-    label: 'Google',
-    issuer: 'https://accounts.google.com',
+    label: "Google",
+    issuer: "https://accounts.google.com",
   },
   microsoft: {
-    label: 'Microsoft',
-    issuer: 'https://login.microsoftonline.com/common/v2.0',
+    label: "Microsoft",
+    issuer: "https://login.microsoftonline.com/common/v2.0",
   },
 };
 
-const OAUTH_SCOPE = 'openid email profile';
+const OAUTH_SCOPE = "openid email profile";
 const STATE_TTL_MS = 10 * 60 * 1000;
-const encryptionPrefix = 'v1';
+const encryptionPrefix = "v1";
 
 const configCache = new Map<OAuthProviderId, Promise<oidc.Configuration>>();
 
 export function isOAuthProviderId(value: string): value is OAuthProviderId {
-  return value === 'google' || value === 'microsoft';
+  return value === "google" || value === "microsoft";
 }
 
 export function normalizeOAuthEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function providerCredentials(provider: OAuthProviderId): { clientId?: string; clientSecret?: string } {
+function providerCredentials(provider: OAuthProviderId): {
+  clientId?: string;
+  clientSecret?: string;
+} {
   const env = getEnv();
-  if (provider === 'google') {
+  if (provider === "google") {
     return {
       clientId: env.OAUTH_GOOGLE_CLIENT_ID,
       clientSecret: env.OAUTH_GOOGLE_CLIENT_SECRET,
@@ -102,7 +108,10 @@ function providerCredentials(provider: OAuthProviderId): { clientId?: string; cl
   };
 }
 
-function requireProviderCredentials(provider: OAuthProviderId): { clientId: string; clientSecret: string } {
+function requireProviderCredentials(provider: OAuthProviderId): {
+  clientId: string;
+  clientSecret: string;
+} {
   const credentials = providerCredentials(provider);
   if (!credentials.clientId || !credentials.clientSecret) {
     throw new OAuthConfigError(`${PROVIDERS[provider].label} login is not configured`);
@@ -132,92 +141,90 @@ async function getOpenIdConfiguration(provider: OAuthProviderId): Promise<oidc.C
 }
 
 function base64Url(buffer: Buffer): string {
-  return buffer
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/g, '');
+  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 export function hashOAuthSecret(value: string): string {
-  return crypto.createHash('sha256').update(value).digest('hex');
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 function encryptionKey(): Buffer {
-  return crypto.createHash('sha256').update(getEnv().SESSION_SECRET).digest();
+  return crypto.createHash("sha256").update(getEnv().SESSION_SECRET).digest();
 }
 
 export function encryptOAuthSecret(value: string): string {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', encryptionKey(), iv);
-  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  const cipher = crypto.createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return [
-    encryptionPrefix,
-    base64Url(iv),
-    base64Url(tag),
-    base64Url(encrypted),
-  ].join('.');
+  return [encryptionPrefix, base64Url(iv), base64Url(tag), base64Url(encrypted)].join(".");
 }
 
 function decodeBase64Url(value: string): Buffer {
-  const base64 = value.replace(/-/g, '+').replace(/_/g, '/');
-  return Buffer.from(base64.padEnd(Math.ceil(base64.length / 4) * 4, '='), 'base64');
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="), "base64");
 }
 
 export function decryptOAuthSecret(value: string): string {
-  const [version, rawIv, rawTag, rawEncrypted] = value.split('.');
+  const [version, rawIv, rawTag, rawEncrypted] = value.split(".");
   if (version !== encryptionPrefix || !rawIv || !rawTag || !rawEncrypted) {
-    throw new OAuthStateError('Invalid OAuth state secret');
+    throw new OAuthStateError("Invalid OAuth state secret");
   }
 
-  const decipher = crypto.createDecipheriv('aes-256-gcm', encryptionKey(), decodeBase64Url(rawIv));
+  const decipher = crypto.createDecipheriv("aes-256-gcm", encryptionKey(), decodeBase64Url(rawIv));
   decipher.setAuthTag(decodeBase64Url(rawTag));
-  return Buffer.concat([
-    decipher.update(decodeBase64Url(rawEncrypted)),
-    decipher.final(),
-  ]).toString('utf8');
+  return Buffer.concat([decipher.update(decodeBase64Url(rawEncrypted)), decipher.final()]).toString(
+    "utf8"
+  );
 }
 
 export function sanitizeOAuthNextPath(input: unknown): string {
-  if (typeof input !== 'string') return '/dashboard';
+  if (typeof input !== "string") return "/dashboard";
   const trimmed = input.trim();
-  if (!trimmed || !trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
-    return '/dashboard';
+  if (
+    !trimmed ||
+    !trimmed.startsWith("/") ||
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/\\")
+  ) {
+    return "/dashboard";
   }
   for (let i = 0; i < trimmed.length; i += 1) {
     const code = trimmed.charCodeAt(i);
-    if (code <= 31 || code === 127) return '/dashboard';
+    if (code <= 31 || code === 127) return "/dashboard";
   }
 
   try {
-    const parsed = new URL(trimmed, 'https://muhasib.local');
-    if (parsed.origin !== 'https://muhasib.local') return '/dashboard';
+    const parsed = new URL(trimmed, "https://muhasib.local");
+    if (parsed.origin !== "https://muhasib.local") return "/dashboard";
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
-    return '/dashboard';
+    return "/dashboard";
   }
 }
 
 function requestBaseUrl(req: Request): string {
   const env = getEnv();
-  if (env.AUTH_PUBLIC_URL) return env.AUTH_PUBLIC_URL.replace(/\/+$/, '');
+  if (env.AUTH_PUBLIC_URL) return env.AUTH_PUBLIC_URL.replace(/\/+$/, "");
   if (isProduction()) {
-    throw new OAuthConfigError('AUTH_PUBLIC_URL is required for production OAuth callbacks');
+    throw new OAuthConfigError("AUTH_PUBLIC_URL is required for production OAuth callbacks");
   }
 
-  const forwardedProto = req.get('x-forwarded-proto')?.split(',')[0]?.trim();
-  const proto = forwardedProto || req.protocol || 'http';
-  const host = req.get('host');
-  if (!host) throw new OAuthConfigError('Cannot infer OAuth callback host');
+  const forwardedProto = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const proto = forwardedProto || req.protocol || "http";
+  const host = req.get("host");
+  if (!host) throw new OAuthConfigError("Cannot infer OAuth callback host");
   return `${proto}://${host}`;
 }
 
 export function frontendBaseUrl(): string {
   const env = getEnv();
-  const url = env.FRONTEND_URL || env.AUTH_PUBLIC_URL || (!isProduction() ? 'http://127.0.0.1:5173' : undefined);
-  if (!url) throw new OAuthConfigError('FRONTEND_URL is required for OAuth redirects');
-  return url.replace(/\/+$/, '');
+  const url =
+    env.FRONTEND_URL ||
+    env.AUTH_PUBLIC_URL ||
+    (!isProduction() ? "http://127.0.0.1:5173" : undefined);
+  if (!url) throw new OAuthConfigError("FRONTEND_URL is required for OAuth redirects");
+  return url.replace(/\/+$/, "");
 }
 
 export function oauthRedirectUri(req: Request, provider: OAuthProviderId): string {
@@ -236,7 +243,7 @@ export function oauthCallbackFailureUrl(): string {
 export async function createOAuthAuthorizationUrl(
   provider: OAuthProviderId,
   req: Request,
-  nextPathInput: unknown,
+  nextPathInput: unknown
 ): Promise<URL> {
   const config = await getOpenIdConfiguration(provider);
   const state = oidc.randomState();
@@ -254,15 +261,15 @@ export async function createOAuthAuthorizationUrl(
     nextPath,
     expiresAt: new Date(Date.now() + STATE_TTL_MS),
     ipAddress: req.ip ?? null,
-    userAgent: req.get('user-agent') ?? null,
+    userAgent: req.get("user-agent") ?? null,
   });
 
   return oidc.buildAuthorizationUrl(config, {
     redirect_uri: oauthRedirectUri(req, provider),
-    response_type: 'code',
+    response_type: "code",
     scope: OAUTH_SCOPE,
     code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
+    code_challenge_method: "S256",
     state,
     nonce,
   });
@@ -270,10 +277,10 @@ export async function createOAuthAuthorizationUrl(
 
 export async function consumeOAuthState(
   provider: OAuthProviderId,
-  rawState: unknown,
+  rawState: unknown
 ): Promise<ConsumedOAuthState> {
-  if (typeof rawState !== 'string' || !rawState) {
-    throw new OAuthStateError('Missing OAuth state');
+  if (typeof rawState !== "string" || !rawState) {
+    throw new OAuthStateError("Missing OAuth state");
   }
 
   const stateHash = hashOAuthSecret(rawState);
@@ -297,11 +304,11 @@ export async function consumeOAuthState(
     const rows = (result?.rows ?? result) as any[];
     const row = rows[0];
 
-    if (!row) throw new OAuthStateError('OAuth state not found');
-    if (row.provider !== provider) throw new OAuthStateError('OAuth provider mismatch');
-    if (row.consumedAt) throw new OAuthStateError('OAuth state already consumed');
+    if (!row) throw new OAuthStateError("OAuth state not found");
+    if (row.provider !== provider) throw new OAuthStateError("OAuth provider mismatch");
+    if (row.consumedAt) throw new OAuthStateError("OAuth state already consumed");
     if (new Date(row.expiresAt).getTime() <= now.getTime()) {
-      throw new OAuthStateError('OAuth state expired');
+      throw new OAuthStateError("OAuth state expired");
     }
 
     await tx
@@ -321,19 +328,19 @@ export async function consumeOAuthState(
 
 function claimString(claims: Record<string, unknown>, key: string): string | undefined {
   const value = claims[key];
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function validateProviderIssuer(provider: OAuthProviderId, issuer: string): void {
-  if (provider === 'google') {
+  if (provider === "google") {
     if (issuer !== PROVIDERS.google.issuer) {
-      throw new OAuthIdentityError('Unexpected Google issuer');
+      throw new OAuthIdentityError("Unexpected Google issuer");
     }
     return;
   }
 
-  if (!issuer.startsWith('https://login.microsoftonline.com/') || !issuer.endsWith('/v2.0')) {
-    throw new OAuthIdentityError('Unexpected Microsoft issuer');
+  if (!issuer.startsWith("https://login.microsoftonline.com/") || !issuer.endsWith("/v2.0")) {
+    throw new OAuthIdentityError("Unexpected Microsoft issuer");
   }
 }
 
@@ -341,13 +348,13 @@ function validateAudience(provider: OAuthProviderId, claims: Record<string, unkn
   const { clientId } = requireProviderCredentials(provider);
   const aud = claims.aud;
   const matches = Array.isArray(aud) ? aud.includes(clientId) : aud === clientId;
-  if (!matches) throw new OAuthIdentityError('Unexpected OAuth audience');
+  if (!matches) throw new OAuthIdentityError("Unexpected OAuth audience");
 }
 
 export async function exchangeOAuthCallback(
   provider: OAuthProviderId,
   currentUrl: URL,
-  state: ConsumedOAuthState,
+  state: ConsumedOAuthState
 ): Promise<OAuthIdentityProfile> {
   const config = await getOpenIdConfiguration(provider);
   const tokens = await oidc.authorizationCodeGrant(config, currentUrl, {
@@ -358,38 +365,38 @@ export async function exchangeOAuthCallback(
   });
 
   const claims = tokens.claims() as Record<string, unknown> | undefined;
-  if (!claims) throw new OAuthIdentityError('Missing ID token claims');
+  if (!claims) throw new OAuthIdentityError("Missing ID token claims");
 
   validateAudience(provider, claims);
 
-  const issuer = claimString(claims, 'iss');
-  const subject = claimString(claims, 'sub');
-  if (!issuer || !subject) throw new OAuthIdentityError('Missing issuer or subject');
+  const issuer = claimString(claims, "iss");
+  const subject = claimString(claims, "sub");
+  if (!issuer || !subject) throw new OAuthIdentityError("Missing issuer or subject");
   validateProviderIssuer(provider, issuer);
 
   const rawEmail =
-    claimString(claims, 'email') ||
-    claimString(claims, 'preferred_username') ||
-    claimString(claims, 'upn');
-  if (!rawEmail || !rawEmail.includes('@')) {
-    throw new OAuthIdentityError('OAuth provider did not return a usable email');
+    claimString(claims, "email") ||
+    claimString(claims, "preferred_username") ||
+    claimString(claims, "upn");
+  if (!rawEmail || !rawEmail.includes("@")) {
+    throw new OAuthIdentityError("OAuth provider did not return a usable email");
   }
 
-  const googleEmailVerified = claims.email_verified === true || claims.email_verified === 'true';
-  if (provider === 'google' && !googleEmailVerified) {
-    throw new OAuthIdentityError('Google email is not verified');
+  const googleEmailVerified = claims.email_verified === true || claims.email_verified === "true";
+  if (provider === "google" && !googleEmailVerified) {
+    throw new OAuthIdentityError("Google email is not verified");
   }
 
   const email = normalizeOAuthEmail(rawEmail);
-  const name = claimString(claims, 'name') || email.split('@')[0] || 'Muhasib user';
-  const picture = claimString(claims, 'picture');
+  const name = claimString(claims, "name") || email.split("@")[0] || "Muhasib user";
+  const picture = claimString(claims, "picture");
 
   return {
     provider,
     issuer,
     subject,
     email,
-    emailVerified: provider === 'google' ? true : true,
+    emailVerified: provider === "google" ? true : true,
     name,
     picture,
     claims,
@@ -400,15 +407,20 @@ export async function getAuthIdentity(profile: OAuthIdentityProfile) {
   const [identity] = await db
     .select()
     .from(authIdentities)
-    .where(and(
-      eq(authIdentities.provider, profile.provider),
-      eq(authIdentities.issuer, profile.issuer),
-      eq(authIdentities.providerSubject, profile.subject),
-    ));
+    .where(
+      and(
+        eq(authIdentities.provider, profile.provider),
+        eq(authIdentities.issuer, profile.issuer),
+        eq(authIdentities.providerSubject, profile.subject)
+      )
+    );
   return identity;
 }
 
-export async function linkAuthIdentity(userId: string, profile: OAuthIdentityProfile): Promise<void> {
+export async function linkAuthIdentity(
+  userId: string,
+  profile: OAuthIdentityProfile
+): Promise<void> {
   await db
     .insert(authIdentities)
     .values({
@@ -425,11 +437,14 @@ export async function linkAuthIdentity(userId: string, profile: OAuthIdentityPro
 
   const linked = await getAuthIdentity(profile);
   if (!linked || linked.userId !== userId) {
-    throw new OAuthIdentityError('OAuth identity is already linked to another user');
+    throw new OAuthIdentityError("OAuth identity is already linked to another user");
   }
 }
 
-export async function markOAuthLogin(userId: string, profile?: OAuthIdentityProfile): Promise<void> {
+export async function markOAuthLogin(
+  userId: string,
+  profile?: OAuthIdentityProfile
+): Promise<void> {
   const now = new Date();
   await db
     .update(users)
@@ -448,11 +463,13 @@ export async function markOAuthLogin(userId: string, profile?: OAuthIdentityProf
         profile: profile.claims as any,
         lastLoginAt: now,
       })
-      .where(and(
-        eq(authIdentities.provider, profile.provider),
-        eq(authIdentities.issuer, profile.issuer),
-        eq(authIdentities.providerSubject, profile.subject),
-      ));
+      .where(
+        and(
+          eq(authIdentities.provider, profile.provider),
+          eq(authIdentities.issuer, profile.issuer),
+          eq(authIdentities.providerSubject, profile.subject)
+        )
+      );
   }
 }
 

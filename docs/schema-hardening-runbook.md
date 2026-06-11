@@ -30,41 +30,41 @@ reversible and the column-type migration is not.
 
 ## What
 
-| Change | Rationale |
-| --- | --- |
-| `ALTER COLUMN … TYPE numeric(15, 2)` for all money columns | precision |
-| `ALTER COLUMN … TYPE numeric(15, 4)` for quantities | precision |
-| `ALTER COLUMN … TYPE numeric(10, 6)` for rates (vat_rate, tax_rate, ai_confidence) | precision + range |
-| `ALTER COLUMN journal_lines.account_id SET NOT NULL` | integrity |
-| `ADD CONSTRAINT unique_company_invoice_number UNIQUE (company_id, number)` on `invoices` | dedup |
-| `ADD CONSTRAINT unique_company_account_code UNIQUE (company_id, code)` on `accounts` | dedup |
-| `CREATE INDEX idx_invoices_company_date ON invoices(company_id, date)` | report perf |
-| `CREATE INDEX idx_journal_lines_account ON journal_lines(account_id)` | ledger perf |
-| `CREATE INDEX idx_receipts_company_category ON receipts(company_id, category)` | receipt filter perf |
+| Change                                                                                   | Rationale           |
+| ---------------------------------------------------------------------------------------- | ------------------- |
+| `ALTER COLUMN … TYPE numeric(15, 2)` for all money columns                               | precision           |
+| `ALTER COLUMN … TYPE numeric(15, 4)` for quantities                                      | precision           |
+| `ALTER COLUMN … TYPE numeric(10, 6)` for rates (vat_rate, tax_rate, ai_confidence)       | precision + range   |
+| `ALTER COLUMN journal_lines.account_id SET NOT NULL`                                     | integrity           |
+| `ADD CONSTRAINT unique_company_invoice_number UNIQUE (company_id, number)` on `invoices` | dedup               |
+| `ADD CONSTRAINT unique_company_account_code UNIQUE (company_id, code)` on `accounts`     | dedup               |
+| `CREATE INDEX idx_invoices_company_date ON invoices(company_id, date)`                   | report perf         |
+| `CREATE INDEX idx_journal_lines_account ON journal_lines(account_id)`                    | ledger perf         |
+| `CREATE INDEX idx_receipts_company_category ON receipts(company_id, category)`           | receipt filter perf |
 
 ## Safety
 
-* **Test in staging first.** Restore a production snapshot into staging,
+- **Test in staging first.** Restore a production snapshot into staging,
   run the migration there end-to-end, run a representative reporting
   load (balance sheet, trial balance, VAT 201), compare totals to the
   pre-migration snapshot. Any drift > 0.01 AED on any account aborts
   the rollout.
-* **ALTER COLUMN TYPE rewrites the table.** Neon/Postgres takes a brief
+- **ALTER COLUMN TYPE rewrites the table.** Neon/Postgres takes a brief
   exclusive lock per table while the rewrite runs. For our current
   data volume this is seconds-to-minutes per table, but it is not
   zero-downtime. Schedule a maintenance window and expect writes to
   stall briefly during each ALTER.
-* **Backup immediately before.** `pg_dump` the target database and
+- **Backup immediately before.** `pg_dump` the target database and
   confirm the dump is readable (`pg_restore --list`) before the first
   ALTER.
-* **Pre-flight dedup check.** The two new UNIQUE constraints will fail
+- **Pre-flight dedup check.** The two new UNIQUE constraints will fail
   if existing rows already violate them. Run the detection queries in
   the "Pre-flight" section below and resolve duplicates first.
-* **Numeric rounding.** Casting `real → numeric(15, 2)` rounds to two
+- **Numeric rounding.** Casting `real → numeric(15, 2)` rounds to two
   decimals. Values like `1000.0000001` become `1000.00`. This is a
   correction, not a new error, but expect micro-shifts in individual
   row values. Running balance totals should come out identical or
-  *closer to* the hand-calculated truth than before.
+  _closer to_ the hand-calculated truth than before.
 
 ## Pre-flight queries
 
@@ -131,9 +131,9 @@ statements.
 
 ## Tracked items not in this runbook
 
-* `invoices.contact_id` FK to `customer_contacts` — referenced by the
+- `invoices.contact_id` FK to `customer_contacts` — referenced by the
   portal IDOR fix in commit 318445c (defense-in-depth already shipped).
   Adding the FK is its own migration and will let us drop name-based
   matching entirely.
-* MemoryStore → Redis for Express session. Not a schema migration;
+- MemoryStore → Redis for Express session. Not a schema migration;
   tracked as an infra-level change.

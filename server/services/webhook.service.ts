@@ -1,8 +1,8 @@
-import crypto from 'crypto';
-import { storage } from '../storage';
-import { createLogger } from '../config/logger';
+import crypto from "crypto";
+import { storage } from "../storage";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('webhook-service');
+const log = createLogger("webhook-service");
 
 /**
  * Dispatch a webhook event to all active endpoints for a company
@@ -13,13 +13,13 @@ const log = createLogger('webhook-service');
 export async function dispatchWebhookEvent(
   companyId: string,
   event: string,
-  payload: object,
+  payload: object
 ): Promise<void> {
   let endpoints;
   try {
     endpoints = await storage.getActiveWebhookEndpointsForEvent(companyId, event);
   } catch (err) {
-    log.error({ err, companyId, event }, 'Failed to fetch webhook endpoints');
+    log.error({ err, companyId, event }, "Failed to fetch webhook endpoints");
     return;
   }
 
@@ -27,10 +27,7 @@ export async function dispatchWebhookEvent(
     return;
   }
 
-  log.info(
-    { companyId, event, endpointCount: endpoints.length },
-    'Dispatching webhook event',
-  );
+  log.info({ companyId, event, endpointCount: endpoints.length }, "Dispatching webhook event");
 
   const fullPayload = {
     event,
@@ -43,14 +40,11 @@ export async function dispatchWebhookEvent(
   // Fire all webhook deliveries in parallel
   const deliveryPromises = endpoints.map(async (endpoint) => {
     if (!endpoint.secret) {
-      log.warn({ endpointId: endpoint.id }, 'Webhook endpoint has no secret, skipping');
+      log.warn({ endpointId: endpoint.id }, "Webhook endpoint has no secret, skipping");
       return;
     }
 
-    const signature = crypto
-      .createHmac('sha256', endpoint.secret)
-      .update(payloadStr)
-      .digest('hex');
+    const signature = crypto.createHmac("sha256", endpoint.secret).update(payloadStr).digest("hex");
 
     let responseStatus: number | null = null;
     let responseBody: string | null = null;
@@ -58,11 +52,11 @@ export async function dispatchWebhookEvent(
 
     try {
       const response = await fetch(endpoint.url, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'X-Webhook-Signature': `sha256=${signature}`,
-          'X-Webhook-Event': event,
+          "Content-Type": "application/json",
+          "X-Webhook-Signature": `sha256=${signature}`,
+          "X-Webhook-Event": event,
         },
         body: payloadStr,
         signal: AbortSignal.timeout(15000), // 15 second timeout
@@ -74,15 +68,15 @@ export async function dispatchWebhookEvent(
 
       log.info(
         { endpointId: endpoint.id, url: endpoint.url, status: responseStatus, success },
-        'Webhook delivered',
+        "Webhook delivered"
       );
     } catch (err: any) {
-      responseBody = err.message || 'Network error';
+      responseBody = err.message || "Network error";
       success = false;
 
       log.warn(
         { endpointId: endpoint.id, url: endpoint.url, error: err.message },
-        'Webhook delivery failed',
+        "Webhook delivery failed"
       );
     }
 
@@ -98,7 +92,7 @@ export async function dispatchWebhookEvent(
         attemptNumber: 1,
       });
     } catch (err) {
-      log.error({ err, endpointId: endpoint.id }, 'Failed to record webhook delivery');
+      log.error({ err, endpointId: endpoint.id }, "Failed to record webhook delivery");
     }
 
     // Update endpoint metadata
@@ -111,7 +105,7 @@ export async function dispatchWebhookEvent(
         await storage.incrementWebhookFailureCount(endpoint.id);
       }
     } catch (err) {
-      log.error({ err, endpointId: endpoint.id }, 'Failed to update webhook endpoint metadata');
+      log.error({ err, endpointId: endpoint.id }, "Failed to update webhook endpoint metadata");
     }
   });
 

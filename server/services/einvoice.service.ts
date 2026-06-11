@@ -1,25 +1,25 @@
-import crypto from 'crypto';
-import type { Invoice, InvoiceLine, Company } from '../../shared/schema';
-import { UAE_VAT_RATE } from '../constants';
+import crypto from "crypto";
+import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
+import { UAE_VAT_RATE } from "../constants";
 
 /**
  * Escape XML special characters to prevent malformed output.
  */
 function escapeXml(str: string): string {
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 /**
  * Format a Date as YYYY-MM-DD for UBL IssueDate.
  */
 function formatDate(date: Date | string): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toISOString().split('T')[0];
+  const d = typeof date === "string" ? new Date(date) : date;
+  return d.toISOString().split("T")[0];
 }
 
 /**
@@ -33,13 +33,18 @@ function formatDate(date: Date | string): string {
  * UAE VAT category codes (UNCL5305 subset used by PINT AE):
  * S standard 5% · Z zero-rated · E exempt · O out of scope.
  */
-export function vatCategoryFor(line: Pick<InvoiceLine, 'vatSupplyType' | 'vatRate'>): 'S' | 'Z' | 'E' | 'O' {
+export function vatCategoryFor(
+  line: Pick<InvoiceLine, "vatSupplyType" | "vatRate">
+): "S" | "Z" | "E" | "O" {
   switch (line.vatSupplyType) {
-    case 'zero_rated': return 'Z';
-    case 'exempt': return 'E';
-    case 'out_of_scope': return 'O';
+    case "zero_rated":
+      return "Z";
+    case "exempt":
+      return "E";
+    case "out_of_scope":
+      return "O";
     default:
-      return (line.vatRate ?? UAE_VAT_RATE) === 0 ? 'Z' : 'S';
+      return (line.vatRate ?? UAE_VAT_RATE) === 0 ? "Z" : "S";
   }
 }
 
@@ -51,7 +56,7 @@ export function generateEInvoiceXML(
 ): { xml: string; uuid: string; hash: string } {
   const uuid = crypto.randomUUID();
   const issueDate = formatDate(invoice.date);
-  const currency = invoice.currency || 'AED';
+  const currency = invoice.currency || "AED";
 
   // Build invoice lines XML
   const invoiceLinesXml = lines
@@ -60,7 +65,7 @@ export function generateEInvoiceXML(
       const vatRate = line.vatRate ?? UAE_VAT_RATE;
       const vatAmount = lineExtension * vatRate;
       const category = vatCategoryFor(line);
-      const vatPercent = (category === 'S' ? vatRate * 100 : 0).toFixed(2);
+      const vatPercent = (category === "S" ? vatRate * 100 : 0).toFixed(2);
       void vatAmount;
 
       return `
@@ -83,14 +88,17 @@ export function generateEInvoiceXML(
       </cac:Price>
     </cac:InvoiceLine>`;
     })
-    .join('');
+    .join("");
 
   // Tax breakdown grouped by (VAT category, rate) — Z/E/O lines must not be
   // declared under the standard-rated category.
-  const taxByGroup = new Map<string, { category: string; rate: number; taxable: number; tax: number }>();
+  const taxByGroup = new Map<
+    string,
+    { category: string; rate: number; taxable: number; tax: number }
+  >();
   for (const line of lines) {
     const category = vatCategoryFor(line);
-    const vatRate = category === 'S' ? (line.vatRate ?? UAE_VAT_RATE) : 0;
+    const vatRate = category === "S" ? (line.vatRate ?? UAE_VAT_RATE) : 0;
     const lineExtension = line.quantity * line.unitPrice;
     const key = `${category}:${vatRate}`;
     const existing = taxByGroup.get(key) || { category, rate: vatRate, taxable: 0, tax: 0 };
@@ -116,10 +124,10 @@ export function generateEInvoiceXML(
         </cac:TaxCategory>
       </cac:TaxSubtotal>`;
     })
-    .join('');
+    .join("");
 
-  const customerName = customer?.name || invoice.customerName || 'Cash Customer';
-  const customerTrn = customer?.trn || invoice.customerTrn || '';
+  const customerName = customer?.name || invoice.customerName || "Cash Customer";
+  const customerTrn = customer?.trn || invoice.customerTrn || "";
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -141,24 +149,32 @@ export function generateEInvoiceXML(
         <cbc:Name>${escapeXml(company.name)}</cbc:Name>
       </cac:PartyName>
       <cac:PostalAddress>
-        <cbc:StreetName>${escapeXml(company.businessAddress || '')}</cbc:StreetName>
+        <cbc:StreetName>${escapeXml(company.businessAddress || "")}</cbc:StreetName>
         <cac:Country>
           <cbc:IdentificationCode>AE</cbc:IdentificationCode>
         </cac:Country>
       </cac:PostalAddress>
       <cac:PartyTaxScheme>
-        <cbc:CompanyID>${escapeXml(company.trnVatNumber || '')}</cbc:CompanyID>
+        <cbc:CompanyID>${escapeXml(company.trnVatNumber || "")}</cbc:CompanyID>
         <cac:TaxScheme>
           <cbc:ID>VAT</cbc:ID>
         </cac:TaxScheme>
       </cac:PartyTaxScheme>
       <cac:PartyLegalEntity>
         <cbc:RegistrationName>${escapeXml(company.name)}</cbc:RegistrationName>
-      </cac:PartyLegalEntity>${company.contactEmail ? `
+      </cac:PartyLegalEntity>${
+        company.contactEmail
+          ? `
       <cac:Contact>
-        <cbc:ElectronicMail>${escapeXml(company.contactEmail)}</cbc:ElectronicMail>${company.contactPhone ? `
-        <cbc:Telephone>${escapeXml(company.contactPhone)}</cbc:Telephone>` : ''}
-      </cac:Contact>` : ''}
+        <cbc:ElectronicMail>${escapeXml(company.contactEmail)}</cbc:ElectronicMail>${
+          company.contactPhone
+            ? `
+        <cbc:Telephone>${escapeXml(company.contactPhone)}</cbc:Telephone>`
+            : ""
+        }
+      </cac:Contact>`
+          : ""
+      }
     </cac:Party>
   </cac:AccountingSupplierParty>
 
@@ -167,13 +183,17 @@ export function generateEInvoiceXML(
     <cac:Party>
       <cac:PartyName>
         <cbc:Name>${escapeXml(customerName)}</cbc:Name>
-      </cac:PartyName>${customerTrn ? `
+      </cac:PartyName>${
+        customerTrn
+          ? `
       <cac:PartyTaxScheme>
         <cbc:CompanyID>${escapeXml(customerTrn)}</cbc:CompanyID>
         <cac:TaxScheme>
           <cbc:ID>VAT</cbc:ID>
         </cac:TaxScheme>
-      </cac:PartyTaxScheme>` : ''}
+      </cac:PartyTaxScheme>`
+          : ""
+      }
       <cac:PartyLegalEntity>
         <cbc:RegistrationName>${escapeXml(customerName)}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
@@ -196,11 +216,10 @@ export function generateEInvoiceXML(
   <!-- Invoice Lines -->${invoiceLinesXml}
 </Invoice>`;
 
-  const hash = crypto.createHash('sha256').update(xml).digest('hex');
+  const hash = crypto.createHash("sha256").update(xml).digest("hex");
 
   return { xml, uuid, hash };
 }
-
 
 export interface EInvoiceIssue {
   field: string;
@@ -216,70 +235,82 @@ const TRN_RE = /^[0-9]{15}$/;
 export function validateForEInvoicing(
   invoice: Invoice,
   lines: InvoiceLine[],
-  company: Company,
+  company: Company
 ): EInvoiceIssue[] {
   const issues: EInvoiceIssue[] = [];
 
   if (!company.trnVatNumber) {
-    issues.push({ field: 'company.trnVatNumber', message: 'Supplier TRN is required for e-invoicing' });
+    issues.push({
+      field: "company.trnVatNumber",
+      message: "Supplier TRN is required for e-invoicing",
+    });
   } else if (!TRN_RE.test(company.trnVatNumber)) {
-    issues.push({ field: 'company.trnVatNumber', message: 'Supplier TRN must be exactly 15 digits' });
+    issues.push({
+      field: "company.trnVatNumber",
+      message: "Supplier TRN must be exactly 15 digits",
+    });
   }
   if (!company.name) {
-    issues.push({ field: 'company.name', message: 'Supplier legal name is required' });
+    issues.push({ field: "company.name", message: "Supplier legal name is required" });
   }
   if (!invoice.number) {
-    issues.push({ field: 'invoice.number', message: 'Invoice number is required' });
+    issues.push({ field: "invoice.number", message: "Invoice number is required" });
   }
   if (!invoice.date) {
-    issues.push({ field: 'invoice.date', message: 'Invoice issue date is required' });
+    issues.push({ field: "invoice.date", message: "Invoice issue date is required" });
   }
   if (!invoice.customerName) {
-    issues.push({ field: 'invoice.customerName', message: 'Buyer name is required' });
+    issues.push({ field: "invoice.customerName", message: "Buyer name is required" });
   }
   if (invoice.customerTrn && !TRN_RE.test(invoice.customerTrn)) {
-    issues.push({ field: 'invoice.customerTrn', message: 'Buyer TRN must be exactly 15 digits when provided' });
+    issues.push({
+      field: "invoice.customerTrn",
+      message: "Buyer TRN must be exactly 15 digits when provided",
+    });
   }
   if (lines.length === 0) {
-    issues.push({ field: 'lines', message: 'At least one invoice line is required' });
+    issues.push({ field: "lines", message: "At least one invoice line is required" });
   }
 
   let lineSum = 0;
   let lineVat = 0;
   lines.forEach((line, i) => {
     if (!line.description) {
-      issues.push({ field: `lines[${i}].description`, message: 'Line description is required' });
+      issues.push({ field: `lines[${i}].description`, message: "Line description is required" });
     }
     if (!(line.quantity > 0)) {
-      issues.push({ field: `lines[${i}].quantity`, message: 'Line quantity must be positive' });
+      issues.push({ field: `lines[${i}].quantity`, message: "Line quantity must be positive" });
     }
     if (line.unitPrice < 0) {
-      issues.push({ field: `lines[${i}].unitPrice`, message: 'Line unit price cannot be negative' });
+      issues.push({
+        field: `lines[${i}].unitPrice`,
+        message: "Line unit price cannot be negative",
+      });
     }
     const ext = line.quantity * line.unitPrice;
     lineSum += ext;
-    lineVat += vatCategoryFor(line) === 'S' ? ext * (line.vatRate ?? UAE_VAT_RATE) : 0;
+    lineVat += vatCategoryFor(line) === "S" ? ext * (line.vatRate ?? UAE_VAT_RATE) : 0;
   });
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
   if (lines.length > 0) {
     if (Math.abs(round2(lineSum) - round2(invoice.subtotal)) > 0.05) {
       issues.push({
-        field: 'invoice.subtotal',
+        field: "invoice.subtotal",
         message: `Line totals (${round2(lineSum).toFixed(2)}) do not match the invoice subtotal (${round2(invoice.subtotal).toFixed(2)})`,
       });
     }
     if (Math.abs(round2(lineVat) - round2(invoice.vatAmount)) > 0.05) {
       issues.push({
-        field: 'invoice.vatAmount',
+        field: "invoice.vatAmount",
         message: `Line VAT (${round2(lineVat).toFixed(2)}) does not match the invoice VAT amount (${round2(invoice.vatAmount).toFixed(2)})`,
       });
     }
   }
   if (Math.abs(round2(invoice.subtotal + invoice.vatAmount) - round2(invoice.total)) > 0.05) {
     issues.push({
-      field: 'invoice.total',
-      message: 'Subtotal plus VAT does not equal the invoice total',
+      field: "invoice.total",
+      message: "Subtotal plus VAT does not equal the invoice total",
     });
   }
 

@@ -1,9 +1,9 @@
-import { queryClient } from './queryClient';
+import { queryClient } from "./queryClient";
 
-const ACTIVE_COMPANY_STORAGE_KEY = 'muhasib_active_company_id';
+const ACTIVE_COMPANY_STORAGE_KEY = "muhasib_active_company_id";
 
 export function getActiveCompanyId(): string | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === "undefined") return null;
   try {
     return window.localStorage.getItem(ACTIVE_COMPANY_STORAGE_KEY);
   } catch {
@@ -12,7 +12,7 @@ export function getActiveCompanyId(): string | null {
 }
 
 export function setActiveCompanyIdRaw(companyId: string | null): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
   try {
     if (companyId) {
       window.localStorage.setItem(ACTIVE_COMPANY_STORAGE_KEY, companyId);
@@ -46,9 +46,9 @@ export async function switchActiveCompany(companyId: string): Promise<void> {
 
   // Notify any in-app listeners (some components key UI state off the active
   // company without holding a React Query subscription).
-  if (typeof window !== 'undefined') {
+  if (typeof window !== "undefined") {
     window.dispatchEvent(
-      new CustomEvent('muhasib:active-company-changed', { detail: { companyId } }),
+      new CustomEvent("muhasib:active-company-changed", { detail: { companyId } })
     );
   }
 }

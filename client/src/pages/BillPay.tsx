@@ -1,30 +1,64 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm, useFieldArray } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { format, parseISO, startOfDay, endOfDay, isWithinInterval } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Calendar } from '@/components/ui/calendar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency, formatDate } from '@/lib/format';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { cn } from '@/lib/utils';
-import { PageHeader } from '@/components/ui/page-header';
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm, useFieldArray } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { format, parseISO, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Plus,
   FileText,
@@ -39,7 +73,7 @@ import {
   CreditCard,
   BarChart3,
   Receipt,
-} from 'lucide-react';
+} from "lucide-react";
 
 // ===========================
 // Types
@@ -117,29 +151,29 @@ interface AgingReport {
 // ===========================
 
 const billLineSchema = z.object({
-  description: z.string().min(1, 'Description is required'),
-  quantity: z.coerce.number().min(0.01, 'Quantity must be positive'),
-  unit_price: z.coerce.number().min(0, 'Price must be non-negative'),
+  description: z.string().min(1, "Description is required"),
+  quantity: z.coerce.number().min(0.01, "Quantity must be positive"),
+  unit_price: z.coerce.number().min(0, "Price must be non-negative"),
   vat_rate: z.coerce.number().default(5),
   account_id: z.string().optional(),
 });
 
 const billFormSchema = z.object({
-  vendor_name: z.string().min(1, 'Vendor name is required'),
+  vendor_name: z.string().min(1, "Vendor name is required"),
   vendor_trn: z.string().optional(),
   bill_number: z.string().optional(),
   bill_date: z.date(),
   due_date: z.date().optional(),
-  currency: z.string().default('AED'),
+  currency: z.string().default("AED"),
   category: z.string().optional(),
   notes: z.string().optional(),
-  line_items: z.array(billLineSchema).min(1, 'At least one line item is required'),
+  line_items: z.array(billLineSchema).min(1, "At least one line item is required"),
 });
 
 const paymentFormSchema = z.object({
   payment_date: z.date(),
-  amount: z.coerce.number().min(0.01, 'Amount must be positive'),
-  payment_method: z.string().default('bank_transfer'),
+  amount: z.coerce.number().min(0.01, "Amount must be positive"),
+  payment_method: z.string().default("bank_transfer"),
   reference: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -153,16 +187,51 @@ type PaymentFormData = z.infer<typeof paymentFormSchema>;
 
 function getStatusBadge(status: string) {
   switch (status) {
-    case 'pending':
-      return <Badge variant="outline" className="bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400">Pending</Badge>;
-    case 'approved':
-      return <Badge variant="outline" className="bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400">Approved</Badge>;
-    case 'partial':
-      return <Badge variant="outline" className="bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400">Partial</Badge>;
-    case 'paid':
-      return <Badge variant="outline" className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">Paid</Badge>;
-    case 'overdue':
-      return <Badge variant="outline" className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">Overdue</Badge>;
+    case "pending":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-gray-100 text-gray-700 dark:bg-gray-900/20 dark:text-gray-400"
+        >
+          Pending
+        </Badge>
+      );
+    case "approved":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+        >
+          Approved
+        </Badge>
+      );
+    case "partial":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400"
+        >
+          Partial
+        </Badge>
+      );
+    case "paid":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+        >
+          Paid
+        </Badge>
+      );
+    case "overdue":
+      return (
+        <Badge
+          variant="outline"
+          className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+        >
+          Overdue
+        </Badge>
+      );
     default:
       return <Badge variant="outline">{status}</Badge>;
   }
@@ -177,38 +246,38 @@ export default function BillPay() {
   const { toast } = useToast();
   const { company, companyId } = useDefaultCompany();
 
-  const [activeTab, setActiveTab] = useState('bills');
+  const [activeTab, setActiveTab] = useState("bills");
   const [billDialogOpen, setBillDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<BillDetail | null>(null);
   const [payingBill, setPayingBill] = useState<VendorBill | null>(null);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [vendorSearch, setVendorSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [vendorSearch, setVendorSearch] = useState("");
 
   // ===========================
   // Queries
   // ===========================
 
   const { data: bills = [], isLoading: billsLoading } = useQuery<VendorBill[]>({
-    queryKey: ['/api/companies', companyId, 'bills'],
-    queryFn: () => apiRequest('GET', `/api/companies/${companyId}/bills`),
+    queryKey: ["/api/companies", companyId, "bills"],
+    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills`),
     enabled: !!companyId,
   });
 
   const { data: accounts = [] } = useQuery<any[]>({
-    queryKey: ['/api/companies', companyId, 'accounts'],
+    queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
   });
 
   const { data: summary } = useQuery<BillSummary>({
-    queryKey: ['/api/companies', companyId, 'bills', 'summary'],
-    queryFn: () => apiRequest('GET', `/api/companies/${companyId}/bills/summary`),
+    queryKey: ["/api/companies", companyId, "bills", "summary"],
+    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills/summary`),
     enabled: !!companyId,
   });
 
   const { data: aging } = useQuery<AgingReport>({
-    queryKey: ['/api/companies', companyId, 'bills', 'aging'],
-    queryFn: () => apiRequest('GET', `/api/companies/${companyId}/bills/aging`),
+    queryKey: ["/api/companies", companyId, "bills", "aging"],
+    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills/aging`),
     enabled: !!companyId,
   });
 
@@ -221,16 +290,14 @@ export default function BillPay() {
 
   // Collect payments from bills for the Payments tab
   const { data: paymentsData = [] } = useQuery<any[]>({
-    queryKey: ['/api/companies', companyId, 'bills', 'all-payments'],
+    queryKey: ["/api/companies", companyId, "bills", "all-payments"],
     queryFn: async () => {
       if (!bills || bills.length === 0) return [];
-      const paidBills = bills.filter(b =>
-        b.status === 'paid' || b.status === 'partial'
-      );
+      const paidBills = bills.filter((b) => b.status === "paid" || b.status === "partial");
       const paymentPromises = paidBills.map(async (bill) => {
         try {
-          const detail: BillDetail = await apiRequest('GET', `/api/bills/${bill.id}`);
-          return (detail.payments || []).map(p => ({
+          const detail: BillDetail = await apiRequest("GET", `/api/bills/${bill.id}`);
+          return (detail.payments || []).map((p) => ({
             ...p,
             vendor_name: bill.vendor_name,
             bill_number: bill.bill_number,
@@ -240,9 +307,9 @@ export default function BillPay() {
         }
       });
       const results = await Promise.all(paymentPromises);
-      return results.flat().sort((a, b) =>
-        new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()
-      );
+      return results
+        .flat()
+        .sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
     },
     enabled: !!companyId && bills.length > 0,
   });
@@ -253,14 +320,15 @@ export default function BillPay() {
 
   const filteredBills = useMemo(() => {
     let filtered = [...bills];
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(b => b.status === statusFilter);
+    if (statusFilter !== "all") {
+      filtered = filtered.filter((b) => b.status === statusFilter);
     }
     if (vendorSearch.trim()) {
       const search = vendorSearch.toLowerCase();
-      filtered = filtered.filter(b =>
-        b.vendor_name.toLowerCase().includes(search) ||
-        (b.bill_number && b.bill_number.toLowerCase().includes(search))
+      filtered = filtered.filter(
+        (b) =>
+          b.vendor_name.toLowerCase().includes(search) ||
+          (b.bill_number && b.bill_number.toLowerCase().includes(search))
       );
     }
     return filtered;
@@ -273,21 +341,25 @@ export default function BillPay() {
   const billForm = useForm<BillFormData>({
     resolver: zodResolver(billFormSchema),
     defaultValues: {
-      vendor_name: '',
-      vendor_trn: '',
-      bill_number: '',
+      vendor_name: "",
+      vendor_trn: "",
+      bill_number: "",
       bill_date: new Date(),
       due_date: undefined,
-      currency: 'AED',
-      category: '',
-      notes: '',
-      line_items: [{ description: '', quantity: 1, unit_price: 0, vat_rate: 5, account_id: '' }],
+      currency: "AED",
+      category: "",
+      notes: "",
+      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
     },
   });
 
-  const { fields: lineFields, append: appendLine, remove: removeLine } = useFieldArray({
+  const {
+    fields: lineFields,
+    append: appendLine,
+    remove: removeLine,
+  } = useFieldArray({
     control: billForm.control,
-    name: 'line_items',
+    name: "line_items",
   });
 
   // ===========================
@@ -299,9 +371,9 @@ export default function BillPay() {
     defaultValues: {
       payment_date: new Date(),
       amount: 0,
-      payment_method: 'bank_transfer',
-      reference: '',
-      notes: '',
+      payment_method: "bank_transfer",
+      reference: "",
+      notes: "",
     },
   });
 
@@ -310,10 +382,12 @@ export default function BillPay() {
   // ===========================
 
   const invalidateBills = () => {
-    queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bills'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bills', 'summary'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bills', 'aging'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bills', 'all-payments'] });
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bills"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bills", "summary"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bills", "aging"] });
+    queryClient.invalidateQueries({
+      queryKey: ["/api/companies", companyId, "bills", "all-payments"],
+    });
   };
 
   const createBillMutation = useMutation({
@@ -322,21 +396,25 @@ export default function BillPay() {
         ...data,
         bill_date: data.bill_date.toISOString(),
         due_date: data.due_date ? data.due_date.toISOString() : null,
-        line_items: data.line_items.map(l => ({
+        line_items: data.line_items.map((l) => ({
           ...l,
           account_id: l.account_id || null,
         })),
       };
-      return apiRequest('POST', `/api/companies/${companyId}/bills`, payload);
+      return apiRequest("POST", `/api/companies/${companyId}/bills`, payload);
     },
     onSuccess: () => {
       invalidateBills();
-      toast({ title: 'Bill created', description: 'Vendor bill has been created successfully.' });
+      toast({ title: "Bill created", description: "Vendor bill has been created successfully." });
       setBillDialogOpen(false);
       resetBillForm();
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create bill', description: error?.message || 'Please try again.' });
+      toast({
+        variant: "destructive",
+        title: "Failed to create bill",
+        description: error?.message || "Please try again.",
+      });
     },
   });
 
@@ -346,44 +424,56 @@ export default function BillPay() {
         ...data,
         bill_date: data.bill_date.toISOString(),
         due_date: data.due_date ? data.due_date.toISOString() : null,
-        line_items: data.line_items.map(l => ({
+        line_items: data.line_items.map((l) => ({
           ...l,
           account_id: l.account_id || null,
         })),
       };
-      return apiRequest('PATCH', `/api/bills/${id}`, payload);
+      return apiRequest("PATCH", `/api/bills/${id}`, payload);
     },
     onSuccess: () => {
       invalidateBills();
-      toast({ title: 'Bill updated', description: 'Vendor bill has been updated successfully.' });
+      toast({ title: "Bill updated", description: "Vendor bill has been updated successfully." });
       setBillDialogOpen(false);
       setEditingBill(null);
       resetBillForm();
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to update bill', description: error?.message || 'Please try again.' });
+      toast({
+        variant: "destructive",
+        title: "Failed to update bill",
+        description: error?.message || "Please try again.",
+      });
     },
   });
 
   const deleteBillMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('DELETE', `/api/bills/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/bills/${id}`),
     onSuccess: () => {
       invalidateBills();
-      toast({ title: 'Bill deleted', description: 'Vendor bill has been deleted.' });
+      toast({ title: "Bill deleted", description: "Vendor bill has been deleted." });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to delete bill', description: error?.message || 'Please try again.' });
+      toast({
+        variant: "destructive",
+        title: "Failed to delete bill",
+        description: error?.message || "Please try again.",
+      });
     },
   });
 
   const approveBillMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('POST', `/api/bills/${id}/approve`),
+    mutationFn: (id: string) => apiRequest("POST", `/api/bills/${id}/approve`),
     onSuccess: () => {
       invalidateBills();
-      toast({ title: 'Bill approved', description: 'The bill has been approved.' });
+      toast({ title: "Bill approved", description: "The bill has been approved." });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to approve bill', description: error?.message || 'Please try again.' });
+      toast({
+        variant: "destructive",
+        title: "Failed to approve bill",
+        description: error?.message || "Please try again.",
+      });
     },
   });
 
@@ -393,26 +483,30 @@ export default function BillPay() {
         ...data,
         payment_date: data.payment_date.toISOString(),
       };
-      return apiRequest('POST', `/api/bills/${billId}/payments`, payload);
+      return apiRequest("POST", `/api/bills/${billId}/payments`, payload);
     },
     onSuccess: (result: any) => {
       invalidateBills();
       toast({
-        title: 'Payment recorded',
-        description: `Payment recorded. Bill status: ${result.bill_status}. Remaining: ${formatCurrency(result.remaining, 'AED')}`,
+        title: "Payment recorded",
+        description: `Payment recorded. Bill status: ${result.bill_status}. Remaining: ${formatCurrency(result.remaining, "AED")}`,
       });
       setPaymentDialogOpen(false);
       setPayingBill(null);
       paymentForm.reset({
         payment_date: new Date(),
         amount: 0,
-        payment_method: 'bank_transfer',
-        reference: '',
-        notes: '',
+        payment_method: "bank_transfer",
+        reference: "",
+        notes: "",
       });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to record payment', description: error?.message || 'Please try again.' });
+      toast({
+        variant: "destructive",
+        title: "Failed to record payment",
+        description: error?.message || "Please try again.",
+      });
     },
   });
 
@@ -422,45 +516,50 @@ export default function BillPay() {
 
   const resetBillForm = () => {
     billForm.reset({
-      vendor_name: '',
-      vendor_trn: '',
-      bill_number: '',
+      vendor_name: "",
+      vendor_trn: "",
+      bill_number: "",
       bill_date: new Date(),
       due_date: undefined,
-      currency: 'AED',
-      category: '',
-      notes: '',
-      line_items: [{ description: '', quantity: 1, unit_price: 0, vat_rate: 5, account_id: '' }],
+      currency: "AED",
+      category: "",
+      notes: "",
+      line_items: [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
     });
     setEditingBill(null);
   };
 
   const handleEditBill = async (bill: VendorBill) => {
     try {
-      const detail: BillDetail = await apiRequest('GET', `/api/bills/${bill.id}`);
+      const detail: BillDetail = await apiRequest("GET", `/api/bills/${bill.id}`);
       setEditingBill(detail);
       billForm.reset({
         vendor_name: detail.vendor_name,
-        vendor_trn: detail.vendor_trn || '',
-        bill_number: detail.bill_number || '',
+        vendor_trn: detail.vendor_trn || "",
+        bill_number: detail.bill_number || "",
         bill_date: new Date(detail.bill_date),
         due_date: detail.due_date ? new Date(detail.due_date) : undefined,
-        currency: detail.currency || 'AED',
-        category: detail.category || '',
-        notes: detail.notes || '',
-        line_items: detail.line_items.length > 0
-          ? detail.line_items.map(l => ({
-              description: l.description,
-              quantity: Number(l.quantity),
-              unit_price: Number(l.unit_price),
-              vat_rate: Number(l.vat_rate),
-              account_id: l.account_id || '',
-            }))
-          : [{ description: '', quantity: 1, unit_price: 0, vat_rate: 5, account_id: '' }],
+        currency: detail.currency || "AED",
+        category: detail.category || "",
+        notes: detail.notes || "",
+        line_items:
+          detail.line_items.length > 0
+            ? detail.line_items.map((l) => ({
+                description: l.description,
+                quantity: Number(l.quantity),
+                unit_price: Number(l.unit_price),
+                vat_rate: Number(l.vat_rate),
+                account_id: l.account_id || "",
+              }))
+            : [{ description: "", quantity: 1, unit_price: 0, vat_rate: 5, account_id: "" }],
       });
       setBillDialogOpen(true);
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to load bill details.' });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.message || "Failed to load bill details.",
+      });
     }
   };
 
@@ -470,9 +569,9 @@ export default function BillPay() {
     paymentForm.reset({
       payment_date: new Date(),
       amount: Number(remaining.toFixed(2)),
-      payment_method: 'bank_transfer',
-      reference: '',
-      notes: '',
+      payment_method: "bank_transfer",
+      reference: "",
+      notes: "",
     });
     setPaymentDialogOpen(true);
   };
@@ -491,8 +590,11 @@ export default function BillPay() {
   };
 
   // Watch line items for live total calculation
-  const watchLines = billForm.watch('line_items');
-  const subtotal = watchLines.reduce((sum, line) => sum + ((Number(line.quantity) || 0) * (Number(line.unit_price) || 0)), 0);
+  const watchLines = billForm.watch("line_items");
+  const subtotal = watchLines.reduce(
+    (sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.unit_price) || 0),
+    0
+  );
   const vatAmount = watchLines.reduce((sum, line) => {
     const lineAmount = (Number(line.quantity) || 0) * (Number(line.unit_price) || 0);
     return sum + lineAmount * ((Number(line.vat_rate) || 0) / 100);
@@ -500,7 +602,7 @@ export default function BillPay() {
   const totalAmount = subtotal + vatAmount;
 
   // Expense account options
-  const expenseAccounts = accounts.filter((a: any) => a.type === 'expense' || a.type === 'asset');
+  const expenseAccounts = accounts.filter((a: any) => a.type === "expense" || a.type === "asset");
 
   // ===========================
   // Render
@@ -572,10 +674,13 @@ export default function BillPay() {
                     </SelectContent>
                   </Select>
                 </div>
-                <Dialog open={billDialogOpen} onOpenChange={(open) => {
-                  setBillDialogOpen(open);
-                  if (!open) resetBillForm();
-                }}>
+                <Dialog
+                  open={billDialogOpen}
+                  onOpenChange={(open) => {
+                    setBillDialogOpen(open);
+                    if (!open) resetBillForm();
+                  }}
+                >
                   <DialogTrigger asChild>
                     <Button>
                       <Plus className="w-4 h-4 mr-2" />
@@ -584,9 +689,11 @@ export default function BillPay() {
                   </DialogTrigger>
                   <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                      <DialogTitle>{editingBill ? 'Edit Bill' : 'New Vendor Bill'}</DialogTitle>
+                      <DialogTitle>{editingBill ? "Edit Bill" : "New Vendor Bill"}</DialogTitle>
                       <DialogDescription>
-                        {editingBill ? 'Update vendor bill details' : 'Create a new vendor bill with line items and VAT calculation'}
+                        {editingBill
+                          ? "Update vendor bill details"
+                          : "Create a new vendor bill with line items and VAT calculation"}
                       </DialogDescription>
                     </DialogHeader>
                     <Form {...billForm}>
@@ -613,7 +720,11 @@ export default function BillPay() {
                               <FormItem>
                                 <FormLabel>Vendor TRN</FormLabel>
                                 <FormControl>
-                                  <Input {...field} placeholder="Tax Registration Number (optional)" className="font-mono" />
+                                  <Input
+                                    {...field}
+                                    placeholder="Tax Registration Number (optional)"
+                                    className="font-mono"
+                                  />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -630,7 +741,11 @@ export default function BillPay() {
                               <FormItem>
                                 <FormLabel>Bill Number</FormLabel>
                                 <FormControl>
-                                  <Input {...field} placeholder="e.g. BILL-001" className="font-mono" />
+                                  <Input
+                                    {...field}
+                                    placeholder="e.g. BILL-001"
+                                    className="font-mono"
+                                  />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -648,12 +763,12 @@ export default function BillPay() {
                                       <Button
                                         variant="outline"
                                         className={cn(
-                                          'w-full justify-start text-left font-normal',
-                                          !field.value && 'text-muted-foreground'
+                                          "w-full justify-start text-left font-normal",
+                                          !field.value && "text-muted-foreground"
                                         )}
                                       >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {field.value ? format(field.value, 'PPP') : 'Pick a date'}
+                                        {field.value ? format(field.value, "PPP") : "Pick a date"}
                                       </Button>
                                     </FormControl>
                                   </PopoverTrigger>
@@ -682,12 +797,12 @@ export default function BillPay() {
                                       <Button
                                         variant="outline"
                                         className={cn(
-                                          'w-full justify-start text-left font-normal',
-                                          !field.value && 'text-muted-foreground'
+                                          "w-full justify-start text-left font-normal",
+                                          !field.value && "text-muted-foreground"
                                         )}
                                       >
                                         <CalendarIcon className="mr-2 h-4 w-4" />
-                                        {field.value ? format(field.value, 'PPP') : 'Pick a date'}
+                                        {field.value ? format(field.value, "PPP") : "Pick a date"}
                                       </Button>
                                     </FormControl>
                                   </PopoverTrigger>
@@ -714,7 +829,7 @@ export default function BillPay() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel>Category</FormLabel>
-                                <Select value={field.value || ''} onValueChange={field.onChange}>
+                                <Select value={field.value || ""} onValueChange={field.onChange}>
                                   <FormControl>
                                     <SelectTrigger>
                                       <SelectValue placeholder="Select category" />
@@ -770,7 +885,15 @@ export default function BillPay() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => appendLine({ description: '', quantity: 1, unit_price: 0, vat_rate: 5, account_id: '' })}
+                              onClick={() =>
+                                appendLine({
+                                  description: "",
+                                  quantity: 1,
+                                  unit_price: 0,
+                                  vat_rate: 5,
+                                  account_id: "",
+                                })
+                              }
                             >
                               <Plus className="w-4 h-4 mr-2" />
                               Add Line
@@ -778,7 +901,10 @@ export default function BillPay() {
                           </div>
 
                           {lineFields.map((field, index) => (
-                            <div key={field.id} className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md">
+                            <div
+                              key={field.id}
+                              className="grid grid-cols-12 gap-2 items-start p-3 border rounded-md"
+                            >
                               <div className="col-span-3">
                                 <FormField
                                   control={billForm.control}
@@ -799,7 +925,12 @@ export default function BillPay() {
                                   render={({ field }) => (
                                     <FormItem>
                                       <FormControl>
-                                        <Input {...field} type="number" step="0.01" placeholder="Qty" />
+                                        <Input
+                                          {...field}
+                                          type="number"
+                                          step="0.01"
+                                          placeholder="Qty"
+                                        />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -812,7 +943,12 @@ export default function BillPay() {
                                   render={({ field }) => (
                                     <FormItem>
                                       <FormControl>
-                                        <Input {...field} type="number" step="0.01" placeholder="Unit Price" />
+                                        <Input
+                                          {...field}
+                                          type="number"
+                                          step="0.01"
+                                          placeholder="Unit Price"
+                                        />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -825,7 +961,12 @@ export default function BillPay() {
                                   render={({ field }) => (
                                     <FormItem>
                                       <FormControl>
-                                        <Input {...field} type="number" step="0.01" placeholder="VAT%" />
+                                        <Input
+                                          {...field}
+                                          type="number"
+                                          step="0.01"
+                                          placeholder="VAT%"
+                                        />
                                       </FormControl>
                                     </FormItem>
                                   )}
@@ -837,7 +978,10 @@ export default function BillPay() {
                                   name={`line_items.${index}.account_id`}
                                   render={({ field }) => (
                                     <FormItem>
-                                      <Select value={field.value || ''} onValueChange={field.onChange}>
+                                      <Select
+                                        value={field.value || ""}
+                                        onValueChange={field.onChange}
+                                      >
                                         <FormControl>
                                           <SelectTrigger>
                                             <SelectValue placeholder="Account" />
@@ -858,8 +1002,9 @@ export default function BillPay() {
                               <div className="col-span-2 flex items-center justify-between">
                                 <span className="text-sm font-medium">
                                   {formatCurrency(
-                                    (Number(watchLines[index]?.quantity) || 0) * (Number(watchLines[index]?.unit_price) || 0),
-                                    'AED'
+                                    (Number(watchLines[index]?.quantity) || 0) *
+                                      (Number(watchLines[index]?.unit_price) || 0),
+                                    "AED"
                                   )}
                                 </span>
                                 {lineFields.length > 1 && (
@@ -882,15 +1027,15 @@ export default function BillPay() {
                             <div className="w-64 space-y-1 text-sm">
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">Subtotal:</span>
-                                <span>{formatCurrency(subtotal, 'AED')}</span>
+                                <span>{formatCurrency(subtotal, "AED")}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-muted-foreground">VAT:</span>
-                                <span>{formatCurrency(vatAmount, 'AED')}</span>
+                                <span>{formatCurrency(vatAmount, "AED")}</span>
                               </div>
                               <div className="flex justify-between font-semibold border-t pt-1">
                                 <span>Total:</span>
-                                <span>{formatCurrency(totalAmount, 'AED')}</span>
+                                <span>{formatCurrency(totalAmount, "AED")}</span>
                               </div>
                             </div>
                           </div>
@@ -904,7 +1049,11 @@ export default function BillPay() {
                             <FormItem>
                               <FormLabel>Notes</FormLabel>
                               <FormControl>
-                                <Textarea {...field} placeholder="Optional notes about this bill" rows={2} />
+                                <Textarea
+                                  {...field}
+                                  placeholder="Optional notes about this bill"
+                                  rows={2}
+                                />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -926,7 +1075,11 @@ export default function BillPay() {
                             type="submit"
                             disabled={createBillMutation.isPending || updateBillMutation.isPending}
                           >
-                            {(createBillMutation.isPending || updateBillMutation.isPending) ? 'Saving...' : editingBill ? 'Update Bill' : 'Create Bill'}
+                            {createBillMutation.isPending || updateBillMutation.isPending
+                              ? "Saving..."
+                              : editingBill
+                                ? "Update Bill"
+                                : "Create Bill"}
                           </Button>
                         </div>
                       </form>
@@ -942,87 +1095,99 @@ export default function BillPay() {
             <CardContent className="pt-6">
               {billsLoading ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
                 </div>
               ) : filteredBills.length === 0 ? (
                 <div className="text-center py-12">
                   <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-1">No bills found</h3>
                   <p className="text-muted-foreground">
-                    {bills.length === 0 ? 'Create your first vendor bill to get started.' : 'No bills match your current filters.'}
+                    {bills.length === 0
+                      ? "Create your first vendor bill to get started."
+                      : "No bills match your current filters."}
                   </p>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>Bill #</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Due Date</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Paid</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredBills.map((bill) => {
-                      const remaining = Number(bill.total_amount) - Number(bill.amount_paid);
-                      return (
-                        <TableRow key={bill.id}>
-                          <TableCell className="font-medium">{bill.vendor_name}</TableCell>
-                          <TableCell className="font-mono text-sm">{bill.bill_number || '-'}</TableCell>
-                          <TableCell>{formatDate(bill.bill_date)}</TableCell>
-                          <TableCell>{bill.due_date ? formatDate(bill.due_date) : '-'}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(Number(bill.total_amount), bill.currency || 'AED')}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(Number(bill.amount_paid), bill.currency || 'AED')}</TableCell>
-                          <TableCell>{getStatusBadge(bill.status)}</TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm">
-                                  <MoreHorizontal className="w-4 h-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleEditBill(bill)}>
-                                  <Edit className="w-4 h-4 mr-2" />
-                                  Edit
-                                </DropdownMenuItem>
-                                {bill.status === 'pending' && (
-                                  <DropdownMenuItem onClick={() => approveBillMutation.mutate(bill.id)}>
-                                    <CheckCircle className="w-4 h-4 mr-2" />
-                                    Approve
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Vendor</TableHead>
+                        <TableHead>Bill #</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Due Date</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead className="text-right">Paid</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredBills.map((bill) => {
+                        const remaining = Number(bill.total_amount) - Number(bill.amount_paid);
+                        return (
+                          <TableRow key={bill.id}>
+                            <TableCell className="font-medium">{bill.vendor_name}</TableCell>
+                            <TableCell className="font-mono text-sm">
+                              {bill.bill_number || "-"}
+                            </TableCell>
+                            <TableCell>{formatDate(bill.bill_date)}</TableCell>
+                            <TableCell>{bill.due_date ? formatDate(bill.due_date) : "-"}</TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(Number(bill.total_amount), bill.currency || "AED")}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(Number(bill.amount_paid), bill.currency || "AED")}
+                            </TableCell>
+                            <TableCell>{getStatusBadge(bill.status)}</TableCell>
+                            <TableCell className="text-right">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="sm">
+                                    <MoreHorizontal className="w-4 h-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => handleEditBill(bill)}>
+                                    <Edit className="w-4 h-4 mr-2" />
+                                    Edit
                                   </DropdownMenuItem>
-                                )}
-                                {bill.status !== 'paid' && (
-                                  <DropdownMenuItem onClick={() => handlePayBill(bill)}>
-                                    <DollarSign className="w-4 h-4 mr-2" />
-                                    Record Payment
+                                  {bill.status === "pending" && (
+                                    <DropdownMenuItem
+                                      onClick={() => approveBillMutation.mutate(bill.id)}
+                                    >
+                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      Approve
+                                    </DropdownMenuItem>
+                                  )}
+                                  {bill.status !== "paid" && (
+                                    <DropdownMenuItem onClick={() => handlePayBill(bill)}>
+                                      <DollarSign className="w-4 h-4 mr-2" />
+                                      Record Payment
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    className="text-red-600"
+                                    onClick={() => {
+                                      if (confirm("Are you sure you want to delete this bill?")) {
+                                        deleteBillMutation.mutate(bill.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="w-4 h-4 mr-2" />
+                                    Delete
                                   </DropdownMenuItem>
-                                )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-red-600"
-                                  onClick={() => {
-                                    if (confirm('Are you sure you want to delete this bill?')) {
-                                      deleteBillMutation.mutate(bill.id);
-                                    }
-                                  }}
-                                >
-                                  <Trash2 className="w-4 h-4 mr-2" />
-                                  Delete
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>
@@ -1043,7 +1208,9 @@ export default function BillPay() {
                 <div className="text-center py-12">
                   <Receipt className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium mb-1">No payments yet</h3>
-                  <p className="text-muted-foreground">Payments will appear here when you record them against bills.</p>
+                  <p className="text-muted-foreground">
+                    Payments will appear here when you record them against bills.
+                  </p>
                 </div>
               ) : (
                 <Table>
@@ -1062,14 +1229,20 @@ export default function BillPay() {
                       <TableRow key={payment.id}>
                         <TableCell>{formatDate(payment.payment_date)}</TableCell>
                         <TableCell className="font-medium">{payment.vendor_name}</TableCell>
-                        <TableCell className="font-mono text-sm">{payment.bill_number || '-'}</TableCell>
-                        <TableCell className="text-right font-medium">{formatCurrency(Number(payment.amount), 'AED')}</TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {payment.bill_number || "-"}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(Number(payment.amount), "AED")}
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="capitalize">
-                            {(payment.payment_method || 'bank_transfer').replace(/_/g, ' ')}
+                            {(payment.payment_method || "bank_transfer").replace(/_/g, " ")}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-muted-foreground">{payment.reference || '-'}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {payment.reference || "-"}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1090,8 +1263,12 @@ export default function BillPay() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Pending</p>
-                    <p className="text-2xl font-bold">{formatCurrency(summary?.pending.total || 0, 'AED')}</p>
-                    <p className="text-xs text-muted-foreground">{summary?.pending.count || 0} bills</p>
+                    <p className="text-2xl font-bold">
+                      {formatCurrency(summary?.pending.total || 0, "AED")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {summary?.pending.count || 0} bills
+                    </p>
                   </div>
                   <Clock className="w-8 h-8 text-gray-400" />
                 </div>
@@ -1102,8 +1279,12 @@ export default function BillPay() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Approved</p>
-                    <p className="text-2xl font-bold">{formatCurrency(summary?.approved.total || 0, 'AED')}</p>
-                    <p className="text-xs text-muted-foreground">{summary?.approved.count || 0} bills</p>
+                    <p className="text-2xl font-bold">
+                      {formatCurrency(summary?.approved.total || 0, "AED")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {summary?.approved.count || 0} bills
+                    </p>
                   </div>
                   <CheckCircle className="w-8 h-8 text-blue-400" />
                 </div>
@@ -1114,8 +1295,12 @@ export default function BillPay() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Partially Paid</p>
-                    <p className="text-2xl font-bold">{formatCurrency(summary?.partial.total || 0, 'AED')}</p>
-                    <p className="text-xs text-muted-foreground">{summary?.partial.count || 0} bills</p>
+                    <p className="text-2xl font-bold">
+                      {formatCurrency(summary?.partial.total || 0, "AED")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {summary?.partial.count || 0} bills
+                    </p>
                   </div>
                   <DollarSign className="w-8 h-8 text-orange-400" />
                 </div>
@@ -1126,8 +1311,12 @@ export default function BillPay() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Paid</p>
-                    <p className="text-2xl font-bold">{formatCurrency(summary?.paid.total || 0, 'AED')}</p>
-                    <p className="text-xs text-muted-foreground">{summary?.paid.count || 0} bills</p>
+                    <p className="text-2xl font-bold">
+                      {formatCurrency(summary?.paid.total || 0, "AED")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {summary?.paid.count || 0} bills
+                    </p>
                   </div>
                   <CheckCircle className="w-8 h-8 text-green-400" />
                 </div>
@@ -1138,8 +1327,12 @@ export default function BillPay() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">Overdue</p>
-                    <p className="text-2xl font-bold text-red-600">{formatCurrency(summary?.overdue.total || 0, 'AED')}</p>
-                    <p className="text-xs text-muted-foreground">{summary?.overdue.count || 0} bills</p>
+                    <p className="text-2xl font-bold text-red-600">
+                      {formatCurrency(summary?.overdue.total || 0, "AED")}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {summary?.overdue.count || 0} bills
+                    </p>
                   </div>
                   <AlertTriangle className="w-8 h-8 text-red-400" />
                 </div>
@@ -1166,46 +1359,68 @@ export default function BillPay() {
                   <TableBody>
                     <TableRow>
                       <TableCell className="font-medium">Current (Not Yet Due)</TableCell>
-                      <TableCell className="text-right">{formatCurrency(aging.current.amount, 'AED')}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(aging.current.amount, "AED")}
+                      </TableCell>
                       <TableCell className="text-right">{aging.current.count}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">1 - 30 Days</TableCell>
-                      <TableCell className="text-right">{formatCurrency(aging.days_1_30.amount, 'AED')}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(aging.days_1_30.amount, "AED")}
+                      </TableCell>
                       <TableCell className="text-right">{aging.days_1_30.count}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">31 - 60 Days</TableCell>
-                      <TableCell className="text-right">{formatCurrency(aging.days_31_60.amount, 'AED')}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(aging.days_31_60.amount, "AED")}
+                      </TableCell>
                       <TableCell className="text-right">{aging.days_31_60.count}</TableCell>
                     </TableRow>
                     <TableRow>
                       <TableCell className="font-medium">61 - 90 Days</TableCell>
-                      <TableCell className="text-right">{formatCurrency(aging.days_61_90.amount, 'AED')}</TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(aging.days_61_90.amount, "AED")}
+                      </TableCell>
                       <TableCell className="text-right">{aging.days_61_90.count}</TableCell>
                     </TableRow>
                     <TableRow className="font-semibold">
                       <TableCell className="text-red-600">90+ Days</TableCell>
-                      <TableCell className="text-right text-red-600">{formatCurrency(aging.days_90_plus.amount, 'AED')}</TableCell>
-                      <TableCell className="text-right text-red-600">{aging.days_90_plus.count}</TableCell>
+                      <TableCell className="text-right text-red-600">
+                        {formatCurrency(aging.days_90_plus.amount, "AED")}
+                      </TableCell>
+                      <TableCell className="text-right text-red-600">
+                        {aging.days_90_plus.count}
+                      </TableCell>
                     </TableRow>
                     <TableRow className="border-t-2 font-bold">
                       <TableCell>Total Outstanding</TableCell>
                       <TableCell className="text-right">
                         {formatCurrency(
-                          aging.current.amount + aging.days_1_30.amount + aging.days_31_60.amount + aging.days_61_90.amount + aging.days_90_plus.amount,
-                          'AED'
+                          aging.current.amount +
+                            aging.days_1_30.amount +
+                            aging.days_31_60.amount +
+                            aging.days_61_90.amount +
+                            aging.days_90_plus.amount,
+                          "AED"
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        {aging.current.count + aging.days_1_30.count + aging.days_31_60.count + aging.days_61_90.count + aging.days_90_plus.count}
+                        {aging.current.count +
+                          aging.days_1_30.count +
+                          aging.days_31_60.count +
+                          aging.days_61_90.count +
+                          aging.days_90_plus.count}
                       </TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
               ) : (
                 <div className="space-y-3">
-                  {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
                 </div>
               )}
             </CardContent>
@@ -1216,13 +1431,16 @@ export default function BillPay() {
       {/* ================================== */}
       {/* RECORD PAYMENT DIALOG              */}
       {/* ================================== */}
-      <Dialog open={paymentDialogOpen} onOpenChange={(open) => {
-        setPaymentDialogOpen(open);
-        if (!open) {
-          setPayingBill(null);
-          paymentForm.reset();
-        }
-      }}>
+      <Dialog
+        open={paymentDialogOpen}
+        onOpenChange={(open) => {
+          setPaymentDialogOpen(open);
+          if (!open) {
+            setPayingBill(null);
+            paymentForm.reset();
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Record Payment</DialogTitle>
@@ -1232,9 +1450,14 @@ export default function BillPay() {
                   Bill from <strong>{payingBill.vendor_name}</strong>
                   {payingBill.bill_number && <> ({payingBill.bill_number})</>}
                   <br />
-                  Total: {formatCurrency(Number(payingBill.total_amount), payingBill.currency || 'AED')}
-                  {' | '}
-                  Remaining: {formatCurrency(Number(payingBill.total_amount) - Number(payingBill.amount_paid), payingBill.currency || 'AED')}
+                  Total:{" "}
+                  {formatCurrency(Number(payingBill.total_amount), payingBill.currency || "AED")}
+                  {" | "}
+                  Remaining:{" "}
+                  {formatCurrency(
+                    Number(payingBill.total_amount) - Number(payingBill.amount_paid),
+                    payingBill.currency || "AED"
+                  )}
                 </>
               )}
             </DialogDescription>
@@ -1266,12 +1489,12 @@ export default function BillPay() {
                           <Button
                             variant="outline"
                             className={cn(
-                              'w-full justify-start text-left font-normal',
-                              !field.value && 'text-muted-foreground'
+                              "w-full justify-start text-left font-normal",
+                              !field.value && "text-muted-foreground"
                             )}
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? format(field.value, 'PPP') : 'Pick a date'}
+                            {field.value ? format(field.value, "PPP") : "Pick a date"}
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
@@ -1349,7 +1572,7 @@ export default function BillPay() {
                   Cancel
                 </Button>
                 <Button type="submit" disabled={recordPaymentMutation.isPending}>
-                  {recordPaymentMutation.isPending ? 'Recording...' : 'Record Payment'}
+                  {recordPaymentMutation.isPending ? "Recording..." : "Record Payment"}
                 </Button>
               </DialogFooter>
             </form>

@@ -1,4 +1,4 @@
-import { parseISO } from 'date-fns';
+import { parseISO } from "date-fns";
 
 /**
  * Safe date-parsing helpers. API payloads and form data regularly contain
@@ -12,11 +12,11 @@ export function toDate(input: unknown): Date | null {
   if (input instanceof Date) {
     return isNaN(input.getTime()) ? null : input;
   }
-  if (typeof input === 'number' && Number.isFinite(input)) {
+  if (typeof input === "number" && Number.isFinite(input)) {
     const d = new Date(input);
     return isNaN(d.getTime()) ? null : d;
   }
-  if (typeof input === 'string' && input.length > 0) {
+  if (typeof input === "string" && input.length > 0) {
     // Try ISO 8601 first (most API responses); fall back to Date ctor for
     // looser formats ("2026-04-19", "Apr 19 2026", etc).
     try {
@@ -34,7 +34,7 @@ export function toDate(input: unknown): Date | null {
 export function formatDateSafe(
   input: unknown,
   formatter: (d: Date) => string,
-  fallback = '—'
+  fallback = "—"
 ): string {
   const d = toDate(input);
   if (!d) return fallback;

@@ -1,4 +1,4 @@
-import { PageHeader } from '@/components/ui/page-header';
+import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -162,7 +162,9 @@ function UsageMeter({
           <Icon className="w-4 h-4 text-muted-foreground" />
           <span className="text-sm font-medium">{label}</span>
         </div>
-        <span className={`text-sm ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-amber-500" : "text-muted-foreground"}`}>
+        <span
+          className={`text-sm ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-amber-500" : "text-muted-foreground"}`}
+        >
           {isUnlimited ? `${used} used` : `${used} / ${limit}`}
         </span>
       </div>
@@ -188,7 +190,7 @@ export default function Subscription() {
 
   const checkoutMutation = useMutation({
     mutationFn: (planId: string) => {
-      if (!companyId) throw new Error('No company selected');
+      if (!companyId) throw new Error("No company selected");
       return apiRequest("POST", `/api/companies/${companyId}/billing/checkout`, {
         planId,
         billingCycle,
@@ -203,7 +205,7 @@ export default function Subscription() {
 
   const portalMutation = useMutation({
     mutationFn: () => {
-      if (!companyId) throw new Error('No company selected');
+      if (!companyId) throw new Error("No company selected");
       return apiRequest("POST", `/api/companies/${companyId}/billing/portal`);
     },
     onSuccess: (data: { url: string }) => {
@@ -293,7 +295,9 @@ export default function Subscription() {
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Usage This Month</CardTitle>
-            <CardDescription>Your resource consumption for the current billing period</CardDescription>
+            <CardDescription>
+              Your resource consumption for the current billing period
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <UsageMeter
@@ -334,14 +338,18 @@ export default function Subscription() {
 
       {/* Billing Cycle Toggle */}
       <div className="flex items-center justify-center gap-4 pt-4">
-        <span className={`text-sm font-medium ${billingCycle === "monthly" ? "text-foreground" : "text-muted-foreground"}`}>
+        <span
+          className={`text-sm font-medium ${billingCycle === "monthly" ? "text-foreground" : "text-muted-foreground"}`}
+        >
           Monthly
         </span>
         <Switch
           checked={billingCycle === "yearly"}
           onCheckedChange={(checked) => setBillingCycle(checked ? "yearly" : "monthly")}
         />
-        <span className={`text-sm font-medium ${billingCycle === "yearly" ? "text-foreground" : "text-muted-foreground"}`}>
+        <span
+          className={`text-sm font-medium ${billingCycle === "yearly" ? "text-foreground" : "text-muted-foreground"}`}
+        >
           Yearly
         </span>
         {billingCycle === "yearly" && (
@@ -365,8 +373,8 @@ export default function Subscription() {
                 plan.popular
                   ? "border-primary/50 bg-gradient-to-b from-primary/5 to-transparent shadow-lg shadow-primary/10"
                   : isCurrent
-                  ? "border-primary/30 bg-primary/5"
-                  : "border-border"
+                    ? "border-primary/30 bg-primary/5"
+                    : "border-border"
               }`}
             >
               {plan.popular && (
@@ -393,9 +401,7 @@ export default function Subscription() {
                     <span className="text-3xl font-bold">
                       {price === 0 ? "Free" : `AED ${price}`}
                     </span>
-                    {price > 0 && (
-                      <span className="text-muted-foreground text-sm">/mo</span>
-                    )}
+                    {price > 0 && <span className="text-muted-foreground text-sm">/mo</span>}
                   </div>
                   {billingCycle === "yearly" && plan.monthlyPrice > 0 && (
                     <p className="text-xs text-muted-foreground mt-1">
@@ -440,9 +446,9 @@ export default function Subscription() {
                       {plan.monthlyPrice === 0
                         ? "Downgrade"
                         : PLANS.findIndex((p) => p.id === tierName) >
-                          PLANS.findIndex((p) => p.id === plan.id)
-                        ? "Downgrade"
-                        : "Upgrade"}
+                            PLANS.findIndex((p) => p.id === plan.id)
+                          ? "Downgrade"
+                          : "Upgrade"}
                     </Button>
                   )}
                 </div>

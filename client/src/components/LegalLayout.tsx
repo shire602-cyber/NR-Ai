@@ -1,8 +1,8 @@
-import { Link } from 'wouter';
-import { Separator } from '@/components/ui/separator';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft, Mail, MapPin, Phone } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Link } from "wouter";
+import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, Mail, MapPin, Phone } from "lucide-react";
+import type { ReactNode } from "react";
 
 interface LegalLayoutProps {
   title: string;
@@ -55,17 +55,41 @@ export function LegalLayout({ title, effectiveDate, children }: LegalLayoutProps
             <div>
               <h4 className="font-semibold mb-2">Legal</h4>
               <ul className="space-y-1.5 text-muted-foreground">
-                <li><Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link></li>
-                <li><Link href="/terms" className="hover:text-foreground transition-colors">Terms of Service</Link></li>
-                <li><Link href="/cookies" className="hover:text-foreground transition-colors">Cookie Policy</Link></li>
+                <li>
+                  <Link href="/privacy" className="hover:text-foreground transition-colors">
+                    Privacy Policy
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/terms" className="hover:text-foreground transition-colors">
+                    Terms of Service
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/cookies" className="hover:text-foreground transition-colors">
+                    Cookie Policy
+                  </Link>
+                </li>
               </ul>
             </div>
             <div>
               <h4 className="font-semibold mb-2">Product</h4>
               <ul className="space-y-1.5 text-muted-foreground">
-                <li><Link href="/" className="hover:text-foreground transition-colors">Features</Link></li>
-                <li><Link href="/pricing" className="hover:text-foreground transition-colors">Pricing</Link></li>
-                <li><Link href="/login" className="hover:text-foreground transition-colors">Sign In</Link></li>
+                <li>
+                  <Link href="/" className="hover:text-foreground transition-colors">
+                    Features
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/pricing" className="hover:text-foreground transition-colors">
+                    Pricing
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/login" className="hover:text-foreground transition-colors">
+                    Sign In
+                  </Link>
+                </li>
               </ul>
             </div>
             <div>
@@ -77,11 +101,18 @@ export function LegalLayout({ title, effectiveDate, children }: LegalLayoutProps
                 </li>
                 <li className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 shrink-0 text-primary" />
-                  <a href="tel:+97141234567" className="hover:text-foreground transition-colors">+971 4 123 4567</a>
+                  <a href="tel:+97141234567" className="hover:text-foreground transition-colors">
+                    +971 4 123 4567
+                  </a>
                 </li>
                 <li className="flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 shrink-0 text-primary" />
-                  <a href="mailto:hello@muhasib.ai" className="hover:text-foreground transition-colors">hello@muhasib.ai</a>
+                  <a
+                    href="mailto:hello@muhasib.ai"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    hello@muhasib.ai
+                  </a>
                 </li>
               </ul>
             </div>

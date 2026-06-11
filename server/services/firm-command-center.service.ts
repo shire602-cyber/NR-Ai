@@ -14,22 +14,8 @@
  * caller-supplied TTL.
  */
 
-import { db } from '../db';
-import {
-  and,
-  count,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNull,
-  lt,
-  max,
-  ne,
-  or,
-  sql,
-  sum,
-} from 'drizzle-orm';
+import { db } from "../db";
+import { and, count, desc, eq, gte, inArray, isNull, lt, max, ne, or, sql, sum } from "drizzle-orm";
 import {
   bankTransactions,
   companies,
@@ -43,8 +29,8 @@ import {
   type FirmAlert,
   type FirmAlertSeverity,
   type FirmAlertType,
-} from '../../shared/schema';
-import { NotFoundError, ValidationError } from '../errors';
+} from "../../shared/schema";
+import { NotFoundError, ValidationError } from "../errors";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,7 +44,7 @@ export interface ClientHealthInputs {
   /** Number of overdue invoices. */
   overdueInvoiceCount: number;
   /** Latest VAT return status, or null if none filed yet. */
-  vatStatus: 'draft' | 'pending_review' | 'submitted' | 'filed' | 'amended' | null;
+  vatStatus: "draft" | "pending_review" | "submitted" | "filed" | "amended" | null;
   /** Due date of latest VAT return, or null. */
   vatDueDate: Date | null;
   /** Receipts uploaded but not yet posted to GL. */
@@ -75,7 +61,7 @@ export interface ClientHealthScore {
   companyId: string;
   companyName: string;
   score: number; // 0..100, higher = healthier
-  rating: 'excellent' | 'good' | 'fair' | 'poor' | 'critical';
+  rating: "excellent" | "good" | "fair" | "poor" | "critical";
   factors: {
     missingDocuments: number;
     overdueBalance: number;
@@ -123,7 +109,7 @@ export interface ClientSnapshot {
   companyId: string;
   companyName: string;
   onboardingCompleted: boolean;
-  vatStatus: ClientHealthInputs['vatStatus'];
+  vatStatus: ClientHealthInputs["vatStatus"];
   vatDueDate: Date | null;
   overdueBalance: number;
   overdueInvoiceCount: number;
@@ -135,12 +121,12 @@ export interface ClientSnapshot {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Health score thresholds. */
-const HEALTH_RATINGS: Array<{ min: number; rating: ClientHealthScore['rating'] }> = [
-  { min: 85, rating: 'excellent' },
-  { min: 70, rating: 'good' },
-  { min: 50, rating: 'fair' },
-  { min: 30, rating: 'poor' },
-  { min: 0, rating: 'critical' },
+const HEALTH_RATINGS: Array<{ min: number; rating: ClientHealthScore["rating"] }> = [
+  { min: 85, rating: "excellent" },
+  { min: 70, rating: "good" },
+  { min: 50, rating: "fair" },
+  { min: 30, rating: "poor" },
+  { min: 0, rating: "critical" },
 ];
 
 /** Days a client may be inactive before triggering a stale_activity alert. */
@@ -184,7 +170,7 @@ export function calculateHealthScore(inputs: ClientHealthInputs): ClientHealthSc
   if (inputs.vatStatus === null) {
     score -= 5;
     vatOnTime = false;
-  } else if (inputs.vatStatus !== 'filed' && inputs.vatStatus !== 'submitted') {
+  } else if (inputs.vatStatus !== "filed" && inputs.vatStatus !== "submitted") {
     if (inputs.vatDueDate) {
       const msUntilDue = inputs.vatDueDate.getTime() - now.getTime();
       const daysUntilDue = Math.floor(msUntilDue / (1000 * 60 * 60 * 24));
@@ -222,8 +208,7 @@ export function calculateHealthScore(inputs: ClientHealthInputs): ClientHealthSc
   // Clamp.
   score = Math.max(0, Math.min(100, Math.round(score)));
 
-  const rating =
-    HEALTH_RATINGS.find((r) => score >= r.min)?.rating ?? 'critical';
+  const rating = HEALTH_RATINGS.find((r) => score >= r.min)?.rating ?? "critical";
 
   return {
     companyId: inputs.companyId,
@@ -257,34 +242,33 @@ export function generateAlertsForClient(
   const alerts: AlertCandidate[] = [];
 
   // 1. VAT deadline approaching / overdue
-  if (
-    snapshot.vatDueDate &&
-    snapshot.vatStatus !== 'filed' &&
-    snapshot.vatStatus !== 'submitted'
-  ) {
+  if (snapshot.vatDueDate && snapshot.vatStatus !== "filed" && snapshot.vatStatus !== "submitted") {
     const msUntilDue = snapshot.vatDueDate.getTime() - now.getTime();
     const daysUntilDue = Math.floor(msUntilDue / (1000 * 60 * 60 * 24));
     if (msUntilDue < 0) {
       alerts.push({
         companyId: snapshot.companyId,
-        alertType: 'vat_deadline',
-        severity: 'critical',
+        alertType: "vat_deadline",
+        severity: "critical",
         message: `${snapshot.companyName}: VAT return ${Math.abs(daysUntilDue)} days overdue`,
-        metadata: { dueDate: snapshot.vatDueDate.toISOString(), daysOverdue: Math.abs(daysUntilDue) },
+        metadata: {
+          dueDate: snapshot.vatDueDate.toISOString(),
+          daysOverdue: Math.abs(daysUntilDue),
+        },
       });
     } else if (daysUntilDue <= VAT_DEADLINE_CRITICAL_DAYS) {
       alerts.push({
         companyId: snapshot.companyId,
-        alertType: 'vat_deadline',
-        severity: 'critical',
+        alertType: "vat_deadline",
+        severity: "critical",
         message: `${snapshot.companyName}: VAT return due in ${daysUntilDue} days`,
         metadata: { dueDate: snapshot.vatDueDate.toISOString(), daysUntilDue },
       });
     } else if (daysUntilDue <= VAT_DEADLINE_WARNING_DAYS) {
       alerts.push({
         companyId: snapshot.companyId,
-        alertType: 'vat_deadline',
-        severity: 'warning',
+        alertType: "vat_deadline",
+        severity: "warning",
         message: `${snapshot.companyName}: VAT return due in ${daysUntilDue} days`,
         metadata: { dueDate: snapshot.vatDueDate.toISOString(), daysUntilDue },
       });
@@ -299,8 +283,8 @@ export function generateAlertsForClient(
     if (daysSince >= STALE_ACTIVITY_DAYS) {
       alerts.push({
         companyId: snapshot.companyId,
-        alertType: 'stale_activity',
-        severity: daysSince >= 90 ? 'critical' : 'warning',
+        alertType: "stale_activity",
+        severity: daysSince >= 90 ? "critical" : "warning",
         message: `${snapshot.companyName}: no activity for ${daysSince} days`,
         metadata: { daysSinceActivity: daysSince },
       });
@@ -308,21 +292,20 @@ export function generateAlertsForClient(
   } else {
     alerts.push({
       companyId: snapshot.companyId,
-      alertType: 'stale_activity',
-      severity: 'warning',
+      alertType: "stale_activity",
+      severity: "warning",
       message: `${snapshot.companyName}: no activity recorded yet`,
     });
   }
 
   // 3. High overdue balance
   if (snapshot.overdueBalance >= OVERDUE_BALANCE_THRESHOLD) {
-    const severity: FirmAlertSeverity =
-      snapshot.overdueBalance >= 100_000 ? 'critical' : 'warning';
+    const severity: FirmAlertSeverity = snapshot.overdueBalance >= 100_000 ? "critical" : "warning";
     alerts.push({
       companyId: snapshot.companyId,
-      alertType: 'overdue_balance',
+      alertType: "overdue_balance",
       severity,
-      message: `${snapshot.companyName}: AED ${snapshot.overdueBalance.toLocaleString('en-AE')} overdue across ${snapshot.overdueInvoiceCount} invoices`,
+      message: `${snapshot.companyName}: AED ${snapshot.overdueBalance.toLocaleString("en-AE")} overdue across ${snapshot.overdueInvoiceCount} invoices`,
       metadata: {
         overdueBalance: snapshot.overdueBalance,
         overdueInvoiceCount: snapshot.overdueInvoiceCount,
@@ -334,8 +317,8 @@ export function generateAlertsForClient(
   if (!snapshot.onboardingCompleted) {
     alerts.push({
       companyId: snapshot.companyId,
-      alertType: 'incomplete_onboarding',
-      severity: 'info',
+      alertType: "incomplete_onboarding",
+      severity: "info",
       message: `${snapshot.companyName}: onboarding not yet completed`,
     });
   }
@@ -344,8 +327,8 @@ export function generateAlertsForClient(
   if (snapshot.missingDocuments > 0) {
     alerts.push({
       companyId: snapshot.companyId,
-      alertType: 'document_missing',
-      severity: snapshot.missingDocuments >= 5 ? 'warning' : 'info',
+      alertType: "document_missing",
+      severity: snapshot.missingDocuments >= 5 ? "warning" : "info",
       message: `${snapshot.companyName}: ${snapshot.missingDocuments} document(s) missing`,
       metadata: { missingCount: snapshot.missingDocuments },
     });
@@ -356,8 +339,8 @@ export function generateAlertsForClient(
 
 // ─── Pure logic: ranking ──────────────────────────────────────────────────────
 
-export type ClientRankBy = 'health' | 'revenue' | 'overdue' | 'compliance';
-export type SortDir = 'asc' | 'desc';
+export type ClientRankBy = "health" | "revenue" | "overdue" | "compliance";
+export type SortDir = "asc" | "desc";
 
 export interface RankableClient {
   companyId: string;
@@ -372,7 +355,7 @@ export interface RankableClient {
 export function rankClients<T extends RankableClient>(
   clients: T[],
   by: ClientRankBy,
-  dir: SortDir = 'desc'
+  dir: SortDir = "desc"
 ): T[] {
   const keyFn: Record<ClientRankBy, (c: T) => number> = {
     health: (c) => c.healthScore,
@@ -381,7 +364,7 @@ export function rankClients<T extends RankableClient>(
     compliance: (c) => c.complianceScore,
   };
   const fn = keyFn[by];
-  const factor = dir === 'asc' ? 1 : -1;
+  const factor = dir === "asc" ? 1 : -1;
   return [...clients].sort((a, b) => factor * (fn(a) - fn(b)));
 }
 
@@ -535,7 +518,7 @@ export async function buildClientSnapshots(
     .where(
       and(
         inArray(invoices.companyId, companyIds),
-        or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial')),
+        or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
         lt(invoices.dueDate, now)
       )
     )
@@ -546,12 +529,12 @@ export async function buildClientSnapshots(
   const latestVatSub = db
     .select({
       companyId: vatReturns.companyId,
-      maxPeriodEnd: max(vatReturns.periodEnd).as('max_period_end'),
+      maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
     })
     .from(vatReturns)
     .where(inArray(vatReturns.companyId, companyIds))
     .groupBy(vatReturns.companyId)
-    .as('latest_vat_phase6');
+    .as("latest_vat_phase6");
 
   type VatRow = {
     companyId: string;
@@ -622,7 +605,7 @@ export async function buildClientSnapshots(
       companyId: c.id,
       companyName: c.name,
       onboardingCompleted: c.onboardingCompleted,
-      vatStatus: (vat?.status as ClientSnapshot['vatStatus']) ?? null,
+      vatStatus: (vat?.status as ClientSnapshot["vatStatus"]) ?? null,
       vatDueDate: vat?.dueDate ?? null,
       overdueBalance: Number(overdue?.balance ?? 0),
       overdueInvoiceCount: Number(overdue?.cnt ?? 0),
@@ -660,49 +643,43 @@ export async function buildDashboardSummary(
 
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [companyRows, revenueRow, arRow, vatRow, monthReceipts, monthInvoices] = await Promise.all(
-    [
-      db
-        .select({ id: companies.id, isActive: companies.isActive })
-        .from(companies)
-        .where(inArray(companies.id, companyIds)),
-      db
-        .select({ total: sum(invoices.total) })
-        .from(invoices)
-        .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, 'paid'))),
-      db
-        .select({ total: sum(invoices.total) })
-        .from(invoices)
-        .where(
-          and(
-            inArray(invoices.companyId, companyIds),
-            or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial'))
-          )
-        ),
-      db
-        .select({ liability: sum(vatReturns.box14PayableTax) })
-        .from(vatReturns)
-        .where(
-          and(
-            inArray(vatReturns.companyId, companyIds),
-            ne(vatReturns.status, 'filed'),
-            ne(vatReturns.status, 'submitted')
-          )
-        ),
-      db
-        .select({ cnt: count() })
-        .from(receipts)
-        .where(
-          and(inArray(receipts.companyId, companyIds), gte(receipts.createdAt, monthStart))
-        ),
-      db
-        .select({ cnt: count() })
-        .from(invoices)
-        .where(
-          and(inArray(invoices.companyId, companyIds), gte(invoices.createdAt, monthStart))
-        ),
-    ]
-  );
+  const [companyRows, revenueRow, arRow, vatRow, monthReceipts, monthInvoices] = await Promise.all([
+    db
+      .select({ id: companies.id, isActive: companies.isActive })
+      .from(companies)
+      .where(inArray(companies.id, companyIds)),
+    db
+      .select({ total: sum(invoices.total) })
+      .from(invoices)
+      .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, "paid"))),
+    db
+      .select({ total: sum(invoices.total) })
+      .from(invoices)
+      .where(
+        and(
+          inArray(invoices.companyId, companyIds),
+          or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
+        )
+      ),
+    db
+      .select({ liability: sum(vatReturns.box14PayableTax) })
+      .from(vatReturns)
+      .where(
+        and(
+          inArray(vatReturns.companyId, companyIds),
+          ne(vatReturns.status, "filed"),
+          ne(vatReturns.status, "submitted")
+        )
+      ),
+    db
+      .select({ cnt: count() })
+      .from(receipts)
+      .where(and(inArray(receipts.companyId, companyIds), gte(receipts.createdAt, monthStart))),
+    db
+      .select({ cnt: count() })
+      .from(invoices)
+      .where(and(inArray(invoices.companyId, companyIds), gte(invoices.createdAt, monthStart))),
+  ]);
 
   return {
     totalClients: companyRows.length,
@@ -734,7 +711,7 @@ export async function fetchPeriodMetric(
       .where(
         and(
           inArray(invoices.companyId, companyIds),
-          eq(invoices.status, 'paid'),
+          eq(invoices.status, "paid"),
           gte(invoices.createdAt, range.start),
           lt(invoices.createdAt, range.end)
         )
@@ -821,7 +798,7 @@ export async function refreshFirmAlerts(
   return await db.transaction(async (tx: typeof db) => {
     // Hash the firm id into two int4 keys to fit pg_advisory_xact_lock(int, int).
     await tx.execute(
-      sql`SELECT pg_advisory_xact_lock(hashtext(${'firm_alerts_refresh'}), hashtext(${firmId}))`,
+      sql`SELECT pg_advisory_xact_lock(hashtext(${"firm_alerts_refresh"}), hashtext(${firmId}))`
     );
 
     const existing = await tx
@@ -832,11 +809,11 @@ export async function refreshFirmAlerts(
     const existingKeys = new Set(
       existing.map(
         (a: { companyId: string | null; alertType: string }) =>
-          `${a.companyId ?? ''}|${a.alertType}`,
-      ),
+          `${a.companyId ?? ""}|${a.alertType}`
+      )
     );
     const fresh = candidates.filter(
-      (c) => !existingKeys.has(`${c.companyId ?? ''}|${c.alertType}`),
+      (c) => !existingKeys.has(`${c.companyId ?? ""}|${c.alertType}`)
     );
     if (fresh.length === 0) return { generated: candidates.length, created: [] };
 
@@ -892,7 +869,7 @@ export async function fetchStaffWorkload(): Promise<StaffWorkloadRow[]> {
     })
     .from(users)
     .leftJoin(firmStaffAssignments, eq(firmStaffAssignments.userId, users.id))
-    .where(eq(users.firmRole, 'firm_admin'))) as Row[];
+    .where(eq(users.firmRole, "firm_admin"))) as Row[];
 
   const grouped = new Map<string, StaffWorkloadInput>();
   for (const r of rows) {
@@ -916,19 +893,19 @@ export async function fetchStaffWorkload(): Promise<StaffWorkloadRow[]> {
 export async function assignStaffToCompany(
   userId: string,
   companyId: string,
-  role: string = 'accountant'
+  role: string = "accountant"
 ): Promise<void> {
   // Validate the user is firm_admin. firm_owner doesn't need explicit assignment.
   const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  if (!u) throw new NotFoundError('User');
-  if (u.firmRole !== 'firm_admin') {
-    throw new ValidationError('Only firm_admin users can be assigned via this endpoint');
+  if (!u) throw new NotFoundError("User");
+  if (u.firmRole !== "firm_admin") {
+    throw new ValidationError("Only firm_admin users can be assigned via this endpoint");
   }
   // Validate the target is a managed client company.
   const [c] = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
-  if (!c) throw new NotFoundError('Company');
-  if (c.companyType !== 'client') {
-    throw new ValidationError('Only managed client companies can have staff assignments');
+  if (!c) throw new NotFoundError("Company");
+  if (c.companyType !== "client") {
+    throw new ValidationError("Only managed client companies can have staff assignments");
   }
 
   await db
@@ -995,7 +972,7 @@ export async function writeMetricsCache<T>(
         and(
           eq(firmMetricsCache.firmId, firmId),
           eq(firmMetricsCache.metricType, metricType),
-          ...cachePeriodConditions(period),
+          ...cachePeriodConditions(period)
         )
       );
 
@@ -1019,21 +996,19 @@ export async function resolveAccessibleClientIds(
   userId: string,
   firmRole: string | null
 ): Promise<string[]> {
-  if (firmRole === 'firm_owner') {
+  if (firmRole === "firm_owner") {
     const rows = await db
       .select({ id: companies.id })
       .from(companies)
-      .where(eq(companies.companyType, 'client'));
+      .where(eq(companies.companyType, "client"));
     return rows.map((r: { id: string }) => r.id);
   }
-  if (firmRole === 'firm_admin') {
+  if (firmRole === "firm_admin") {
     const rows = await db
       .select({ id: firmStaffAssignments.companyId })
       .from(firmStaffAssignments)
       .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
-      .where(
-        and(eq(firmStaffAssignments.userId, userId), eq(companies.companyType, 'client'))
-      );
+      .where(and(eq(firmStaffAssignments.userId, userId), eq(companies.companyType, "client")));
     return rows.map((r: { id: string }) => r.id);
   }
   return [];
@@ -1053,7 +1028,7 @@ export async function buildFirmDashboard(
   summary: FirmDashboardSummary;
   healthScores: ClientHealthScore[];
 }> {
-  const cacheKey = 'dashboard_summary';
+  const cacheKey = "dashboard_summary";
   if (!options.skipCache) {
     const cached = await readMetricsCache<{
       summary: FirmDashboardSummary;

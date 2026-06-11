@@ -1,9 +1,9 @@
-import type { Express, Request, Response } from 'express';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { requireFeature } from '../middleware/featureGate';
-import { storage } from '../storage';
-import crypto from 'crypto';
+import type { Express, Request, Response } from "express";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { requireFeature } from "../middleware/featureGate";
+import { storage } from "../storage";
+import crypto from "crypto";
 
 export function registerWebhookRoutes(app: Express) {
   // =====================================
@@ -12,17 +12,17 @@ export function registerWebhookRoutes(app: Express) {
 
   // List all webhook endpoints for a company
   app.get(
-    '/api/companies/:companyId/webhooks',
+    "/api/companies/:companyId/webhooks",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const endpoints = await storage.getWebhookEndpointsByCompanyId(companyId);
@@ -34,15 +34,15 @@ export function registerWebhookRoutes(app: Express) {
       }));
 
       res.json(masked);
-    }),
+    })
   );
 
   // Create a new webhook endpoint
   app.post(
-    '/api/companies/:companyId/webhooks',
+    "/api/companies/:companyId/webhooks",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { companyId } = req.params;
@@ -50,25 +50,25 @@ export function registerWebhookRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
-      if (!url || typeof url !== 'string') {
-        return res.status(400).json({ message: 'Webhook URL is required' });
+      if (!url || typeof url !== "string") {
+        return res.status(400).json({ message: "Webhook URL is required" });
       }
 
-      if (!events || typeof events !== 'string' || events.trim().length === 0) {
-        return res.status(400).json({ message: 'At least one event is required' });
+      if (!events || typeof events !== "string" || events.trim().length === 0) {
+        return res.status(400).json({ message: "At least one event is required" });
       }
 
       // Validate URL format
       try {
         new URL(url);
       } catch {
-        return res.status(400).json({ message: 'Invalid webhook URL' });
+        return res.status(400).json({ message: "Invalid webhook URL" });
       }
 
-      const secret = crypto.randomBytes(32).toString('hex');
+      const secret = crypto.randomBytes(32).toString("hex");
 
       const created = await storage.createWebhookEndpoint({
         companyId,
@@ -84,15 +84,15 @@ export function registerWebhookRoutes(app: Express) {
         ...created,
         secret, // full secret returned only once
       });
-    }),
+    })
   );
 
   // Update a webhook endpoint (url, events, isActive)
   app.put(
-    '/api/webhooks/:id',
+    "/api/webhooks/:id",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { id } = req.params;
@@ -100,19 +100,19 @@ export function registerWebhookRoutes(app: Express) {
 
       const endpoint = await storage.getWebhookEndpoint(id);
       if (!endpoint) {
-        return res.status(404).json({ message: 'Webhook endpoint not found' });
+        return res.status(404).json({ message: "Webhook endpoint not found" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, endpoint.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       if (url) {
         try {
           new URL(url);
         } catch {
-          return res.status(400).json({ message: 'Invalid webhook URL' });
+          return res.status(400).json({ message: "Invalid webhook URL" });
         }
       }
 
@@ -123,7 +123,7 @@ export function registerWebhookRoutes(app: Express) {
 
       const updated = await storage.updateWebhookEndpoint(id, updateData);
       if (!updated) {
-        return res.status(404).json({ message: 'Webhook endpoint not found' });
+        return res.status(404).json({ message: "Webhook endpoint not found" });
       }
       const { secret, ...safeEndpoint } = updated;
 
@@ -131,84 +131,84 @@ export function registerWebhookRoutes(app: Express) {
         ...safeEndpoint,
         secretLast4: secret.slice(-4),
       });
-    }),
+    })
   );
 
   // Delete a webhook endpoint
   app.delete(
-    '/api/webhooks/:id',
+    "/api/webhooks/:id",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { id } = req.params;
 
       const endpoint = await storage.getWebhookEndpoint(id);
       if (!endpoint) {
-        return res.status(404).json({ message: 'Webhook endpoint not found' });
+        return res.status(404).json({ message: "Webhook endpoint not found" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, endpoint.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       await storage.deleteWebhookEndpoint(id);
-      res.json({ message: 'Webhook endpoint deleted successfully' });
-    }),
+      res.json({ message: "Webhook endpoint deleted successfully" });
+    })
   );
 
   // List recent deliveries for a webhook endpoint
   app.get(
-    '/api/webhooks/:id/deliveries',
+    "/api/webhooks/:id/deliveries",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { id } = req.params;
 
       const endpoint = await storage.getWebhookEndpoint(id);
       if (!endpoint) {
-        return res.status(404).json({ message: 'Webhook endpoint not found' });
+        return res.status(404).json({ message: "Webhook endpoint not found" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, endpoint.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const deliveries = await storage.getWebhookDeliveriesByEndpointId(id);
       res.json(deliveries);
-    }),
+    })
   );
 
   // Send a test webhook event
   app.post(
-    '/api/webhooks/:id/test',
+    "/api/webhooks/:id/test",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { id } = req.params;
 
       const endpoint = await storage.getWebhookEndpoint(id);
       if (!endpoint) {
-        return res.status(404).json({ message: 'Webhook endpoint not found' });
+        return res.status(404).json({ message: "Webhook endpoint not found" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, endpoint.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const testPayload = {
-        event: 'test',
+        event: "test",
         timestamp: new Date().toISOString(),
         data: {
-          message: 'This is a test webhook from Muhasib.ai',
+          message: "This is a test webhook from Muhasib.ai",
           companyId: endpoint.companyId,
           webhookEndpointId: endpoint.id,
         },
@@ -216,9 +216,9 @@ export function registerWebhookRoutes(app: Express) {
 
       const payloadStr = JSON.stringify(testPayload);
       const signature = crypto
-        .createHmac('sha256', endpoint.secret)
+        .createHmac("sha256", endpoint.secret)
         .update(payloadStr)
-        .digest('hex');
+        .digest("hex");
 
       let responseStatus: number | null = null;
       let responseBody: string | null = null;
@@ -226,11 +226,11 @@ export function registerWebhookRoutes(app: Express) {
 
       try {
         const response = await fetch(endpoint.url, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            'X-Webhook-Signature': `sha256=${signature}`,
-            'X-Webhook-Event': 'test',
+            "Content-Type": "application/json",
+            "X-Webhook-Signature": `sha256=${signature}`,
+            "X-Webhook-Event": "test",
           },
           body: payloadStr,
           signal: AbortSignal.timeout(10000),
@@ -240,14 +240,14 @@ export function registerWebhookRoutes(app: Express) {
         responseBody = await response.text().catch(() => null);
         success = response.ok;
       } catch (err: any) {
-        responseBody = err.message || 'Network error';
+        responseBody = err.message || "Network error";
         success = false;
       }
 
       // Record the delivery
       const delivery = await storage.createWebhookDelivery({
         webhookEndpointId: endpoint.id,
-        event: 'test',
+        event: "test",
         payload: payloadStr,
         responseStatus,
         responseBody,
@@ -269,6 +269,6 @@ export function registerWebhookRoutes(app: Express) {
         delivery,
         responseStatus,
       });
-    }),
+    })
   );
 }

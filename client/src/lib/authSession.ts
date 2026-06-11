@@ -1,6 +1,6 @@
-import { currentUserQueryKey } from '@/hooks/useCurrentUser';
-import { fetchCurrentUser, setStoredUser } from './auth';
-import { queryClient } from './queryClient';
+import { currentUserQueryKey } from "@/hooks/useCurrentUser";
+import { fetchCurrentUser, setStoredUser } from "./auth";
+import { queryClient } from "./queryClient";
 
 export async function establishAuthenticatedSession(authUser: any): Promise<any> {
   await queryClient.cancelQueries({ queryKey: currentUserQueryKey });
@@ -11,7 +11,7 @@ export async function establishAuthenticatedSession(authUser: any): Promise<any>
   if (!currentUser) {
     queryClient.setQueryData(currentUserQueryKey, null);
     throw new Error(
-      'Login succeeded, but the browser session was not established. Please refresh and try again.',
+      "Login succeeded, but the browser session was not established. Please refresh and try again."
     );
   }
 

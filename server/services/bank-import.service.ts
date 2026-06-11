@@ -1,7 +1,7 @@
-import { storage } from '../storage';
-import { createLogger } from '../config/logger';
+import { storage } from "../storage";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('bank-import');
+const log = createLogger("bank-import");
 
 export interface ParsedTransaction {
   transactionDate: Date;
@@ -18,48 +18,52 @@ export async function parseCSVBankStatement(
   csvContent: string,
   _bankName?: string
 ): Promise<ParsedTransaction[]> {
-  const lines = csvContent.trim().split('\n');
+  const lines = csvContent.trim().split("\n");
   if (lines.length < 2) {
-    throw new Error('CSV file must contain a header row and at least one data row');
+    throw new Error("CSV file must contain a header row and at least one data row");
   }
 
   const header = lines[0].toLowerCase();
   const columns = parseCSVLine(lines[0]);
-  const headerLower = columns.map(c => c.toLowerCase().trim());
+  const headerLower = columns.map((c) => c.toLowerCase().trim());
 
   // Auto-detect column indices
-  const dateIdx = headerLower.findIndex(h =>
-    h.includes('date') || h.includes('تاريخ')
+  const dateIdx = headerLower.findIndex((h) => h.includes("date") || h.includes("تاريخ"));
+  const descIdx = headerLower.findIndex(
+    (h) =>
+      h.includes("description") ||
+      h.includes("detail") ||
+      h.includes("narration") ||
+      h.includes("memo") ||
+      h.includes("particulars") ||
+      h.includes("وصف")
   );
-  const descIdx = headerLower.findIndex(h =>
-    h.includes('description') || h.includes('detail') || h.includes('narration') ||
-    h.includes('memo') || h.includes('particulars') || h.includes('وصف')
+  const amountIdx = headerLower.findIndex((h) => h === "amount" || h.includes("مبلغ"));
+  const debitIdx = headerLower.findIndex(
+    (h) => h.includes("debit") || h.includes("withdrawal") || h.includes("مدين")
   );
-  const amountIdx = headerLower.findIndex(h =>
-    h === 'amount' || h.includes('مبلغ')
+  const creditIdx = headerLower.findIndex(
+    (h) => h.includes("credit") || h.includes("deposit") || h.includes("دائن")
   );
-  const debitIdx = headerLower.findIndex(h =>
-    h.includes('debit') || h.includes('withdrawal') || h.includes('مدين')
-  );
-  const creditIdx = headerLower.findIndex(h =>
-    h.includes('credit') || h.includes('deposit') || h.includes('دائن')
-  );
-  const refIdx = headerLower.findIndex(h =>
-    h.includes('reference') || h.includes('ref') || h.includes('cheque') || h.includes('مرجع')
+  const refIdx = headerLower.findIndex(
+    (h) =>
+      h.includes("reference") || h.includes("ref") || h.includes("cheque") || h.includes("مرجع")
   );
 
   if (dateIdx === -1) {
     throw new Error('Could not detect date column. Expected header containing "date".');
   }
   if (descIdx === -1 && amountIdx === -1 && debitIdx === -1) {
-    throw new Error('Could not detect description or amount columns.');
+    throw new Error("Could not detect description or amount columns.");
   }
 
   const hasSeparateDebitCredit = debitIdx !== -1 && creditIdx !== -1;
   const hasAmount = amountIdx !== -1;
 
   if (!hasSeparateDebitCredit && !hasAmount) {
-    throw new Error('Could not detect amount columns. Expected "amount" or "debit"/"credit" columns.');
+    throw new Error(
+      'Could not detect amount columns. Expected "amount" or "debit"/"credit" columns.'
+    );
   }
 
   const transactions: ParsedTransaction[] = [];
@@ -77,7 +81,8 @@ export async function parseCSVBankStatement(
       const date = parseDate(dateStr);
       if (!date) continue;
 
-      const description = descIdx !== -1 ? (cols[descIdx]?.trim() || 'No description') : 'No description';
+      const description =
+        descIdx !== -1 ? cols[descIdx]?.trim() || "No description" : "No description";
       const reference = refIdx !== -1 ? cols[refIdx]?.trim() : undefined;
 
       let amount = 0;
@@ -93,7 +98,7 @@ export async function parseCSVBankStatement(
 
       transactions.push({ transactionDate: date, description, amount, reference });
     } catch (err) {
-      log.warn({ line: i + 1, error: err }, 'Skipping malformed CSV row');
+      log.warn({ line: i + 1, error: err }, "Skipping malformed CSV row");
     }
   }
 
@@ -114,10 +119,11 @@ export async function parseOFXStatement(ofxContent: string): Promise<ParsedTrans
   while ((match = txRegex.exec(ofxContent)) !== null) {
     const block = match[1];
 
-    const amount = extractOFXField(block, 'TRNAMT');
-    const dateStr = extractOFXField(block, 'DTPOSTED');
-    const name = extractOFXField(block, 'NAME') || extractOFXField(block, 'MEMO') || 'No description';
-    const refNum = extractOFXField(block, 'FITID') || extractOFXField(block, 'CHECKNUM');
+    const amount = extractOFXField(block, "TRNAMT");
+    const dateStr = extractOFXField(block, "DTPOSTED");
+    const name =
+      extractOFXField(block, "NAME") || extractOFXField(block, "MEMO") || "No description";
+    const refNum = extractOFXField(block, "FITID") || extractOFXField(block, "CHECKNUM");
 
     if (!amount || !dateStr) continue;
 
@@ -147,8 +153,9 @@ export async function importBankStatement(
   // Get existing transactions for dedup
   const existing = await storage.getBankTransactionsByCompanyId(companyId);
   const existingKeys = new Set(
-    existing.map(t =>
-      `${new Date(t.transactionDate).toISOString().slice(0, 10)}|${t.amount}|${t.description.slice(0, 50)}`
+    existing.map(
+      (t) =>
+        `${new Date(t.transactionDate).toISOString().slice(0, 10)}|${t.amount}|${t.description.slice(0, 50)}`
     )
   );
 
@@ -171,7 +178,7 @@ export async function importBankStatement(
         description: tx.description,
         amount: tx.amount,
         reference: tx.reference || null,
-        importSource: 'csv',
+        importSource: "csv",
         bankConnectionId: connectionId,
         isReconciled: false,
       });
@@ -187,7 +194,10 @@ export async function importBankStatement(
     lastSyncedAt: new Date(),
   });
 
-  log.info({ companyId, connectionId, imported, duplicates, errors: errors.length }, 'Bank statement import complete');
+  log.info(
+    { companyId, connectionId, imported, duplicates, errors: errors.length },
+    "Bank statement import complete"
+  );
 
   return { imported, duplicates, errors };
 }
@@ -196,16 +206,16 @@ export async function importBankStatement(
 
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
-  let current = '';
+  let current = "";
   let inQuotes = false;
 
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
     if (char === '"') {
       inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === "," && !inQuotes) {
       result.push(current);
-      current = '';
+      current = "";
     } else {
       current += char;
     }
@@ -217,7 +227,7 @@ function parseCSVLine(line: string): string[] {
 function parseNumber(str: string | undefined): number {
   if (!str) return 0;
   // Remove currency symbols, commas, spaces
-  const cleaned = str.replace(/[^\d.\-]/g, '');
+  const cleaned = str.replace(/[^\d.\-]/g, "");
   const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
 }
@@ -253,7 +263,7 @@ function parseDate(str: string): Date | null {
 
 function extractOFXField(block: string, field: string): string | null {
   // OFX format: <FIELDNAME>value or <FIELDNAME>value\n
-  const regex = new RegExp(`<${field}>([^<\\n\\r]+)`, 'i');
+  const regex = new RegExp(`<${field}>([^<\\n\\r]+)`, "i");
   const match = block.match(regex);
   return match ? match[1].trim() : null;
 }

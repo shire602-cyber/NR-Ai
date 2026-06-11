@@ -1,15 +1,22 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +24,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,23 +34,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useSubscription } from '@/hooks/useSubscription';
-import { UpgradePrompt } from '@/components/UpgradePrompt';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import {
-  Key,
-  Webhook,
-  Plus,
-  Trash2,
-  Copy,
-  Check,
-  Send,
-  Eye,
-  RefreshCw,
-} from 'lucide-react';
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useSubscription } from "@/hooks/useSubscription";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Key, Webhook, Plus, Trash2, Copy, Check, Send, Eye, RefreshCw } from "lucide-react";
 
 // ===========================
 // Types
@@ -89,18 +86,18 @@ interface WebhookDeliveryItem {
 // Constants
 // ===========================
 
-const API_KEY_SCOPES = ['read', 'write', 'admin'] as const;
+const API_KEY_SCOPES = ["read", "write", "admin"] as const;
 
 const WEBHOOK_EVENTS = [
-  'invoice.created',
-  'invoice.paid',
-  'invoice.overdue',
-  'payment.received',
-  'quote.created',
-  'quote.accepted',
-  'receipt.uploaded',
-  'credit_note.created',
-  'vat_return.filed',
+  "invoice.created",
+  "invoice.paid",
+  "invoice.overdue",
+  "payment.received",
+  "quote.created",
+  "quote.accepted",
+  "receipt.uploaded",
+  "credit_note.created",
+  "vat_return.filed",
 ] as const;
 
 // ===========================
@@ -111,13 +108,13 @@ export default function DeveloperSettings() {
   const { companyId } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
 
-  if (!canAccess('apiAccess')) {
+  if (!canAccess("apiAccess")) {
     return (
       <div className="container mx-auto py-8 px-4 max-w-6xl">
         <PageHeader eyebrow="Settings" title="Developer Settings" className="mb-6" />
         <UpgradePrompt
           feature="apiAccess"
-          requiredTier={getRequiredTier('apiAccess')}
+          requiredTier={getRequiredTier("apiAccess")}
           title="Unlock API & Webhook Access"
           description="API keys and webhooks are available on the Enterprise plan. Integrate Muhasib.ai with your own systems."
         />
@@ -170,51 +167,63 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
   const [copied, setCopied] = useState(false);
 
   // Form state
-  const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(['read']);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read"]);
 
   const { data: apiKeys, isLoading } = useQuery<ApiKeyItem[]>({
-    queryKey: ['/api/companies', companyId, 'api-keys'],
+    queryKey: ["/api/companies", companyId, "api-keys"],
     enabled: !!companyId,
   });
 
   const createMutation = useMutation({
     mutationFn: (data: { name: string; scopes: string }) =>
-      apiRequest('POST', `/api/companies/${companyId}/api-keys`, data),
+      apiRequest("POST", `/api/companies/${companyId}/api-keys`, data),
     onSuccess: (result: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'api-keys'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
       setCreatedKey(result.key);
       setCreateOpen(false);
       setShowKeyDialog(true);
-      setNewKeyName('');
-      setNewKeyScopes(['read']);
+      setNewKeyName("");
+      setNewKeyScopes(["read"]);
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create API key', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to create API key",
+        description: error?.message,
+      });
     },
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      apiRequest('PUT', `/api/api-keys/${id}`, { isActive }),
+      apiRequest("PUT", `/api/api-keys/${id}`, { isActive }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'api-keys'] });
-      toast({ title: 'API key updated' });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
+      toast({ title: "API key updated" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to update API key', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to update API key",
+        description: error?.message,
+      });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('DELETE', `/api/api-keys/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/api-keys/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'api-keys'] });
-      toast({ title: 'API key revoked' });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
+      toast({ title: "API key revoked" });
       setDeleteId(null);
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to revoke API key', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to revoke API key",
+        description: error?.message,
+      });
     },
   });
 
@@ -228,7 +237,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
 
   const handleScopeToggle = (scope: string) => {
     setNewKeyScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
+      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope]
     );
   };
 
@@ -271,13 +280,11 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                   <TableRow key={key.id}>
                     <TableCell className="font-medium">{key.name}</TableCell>
                     <TableCell>
-                      <code className="text-sm bg-muted px-2 py-1 rounded">
-                        {key.keyPrefix}
-                      </code>
+                      <code className="text-sm bg-muted px-2 py-1 rounded">{key.keyPrefix}</code>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1 flex-wrap">
-                        {key.scopes.split(',').map((scope) => (
+                        {key.scopes.split(",").map((scope) => (
                           <Badge key={scope} variant="secondary" className="text-xs">
                             {scope.trim()}
                           </Badge>
@@ -285,9 +292,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {key.lastUsedAt
-                        ? new Date(key.lastUsedAt).toLocaleDateString()
-                        : 'Never'}
+                      {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleDateString() : "Never"}
                     </TableCell>
                     <TableCell>
                       <Switch
@@ -298,11 +303,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                       />
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteId(key.id)}
-                      >
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteId(key.id)}>
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
                     </TableCell>
@@ -319,9 +320,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create API Key</DialogTitle>
-            <DialogDescription>
-              Generate a new API key for programmatic access.
-            </DialogDescription>
+            <DialogDescription>Generate a new API key for programmatic access.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -345,9 +344,9 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                     />
                     <Label htmlFor={`scope-${scope}`} className="font-normal capitalize">
                       {scope}
-                      {scope === 'read' && ' — Read-only access to your data'}
-                      {scope === 'write' && ' — Create and update records'}
-                      {scope === 'admin' && ' — Full access including deletions'}
+                      {scope === "read" && " — Read-only access to your data"}
+                      {scope === "write" && " — Create and update records"}
+                      {scope === "admin" && " — Full access including deletions"}
                     </Label>
                   </div>
                 ))}
@@ -362,12 +361,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               onClick={() =>
                 createMutation.mutate({
                   name: newKeyName,
-                  scopes: newKeyScopes.join(','),
+                  scopes: newKeyScopes.join(","),
                 })
               }
               disabled={!newKeyName.trim() || newKeyScopes.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? 'Creating...' : 'Create Key'}
+              {createMutation.isPending ? "Creating..." : "Create Key"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -393,11 +392,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
-              <Input
-                readOnly
-                value={createdKey || ''}
-                className="font-mono text-sm"
-              />
+              <Input readOnly value={createdKey || ""} className="font-mono text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopy}>
                 {copied ? (
                   <Check className="h-4 w-4 text-green-600" />
@@ -430,7 +425,8 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke API Key?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. Any applications using this key will immediately lose access.
+              This action cannot be undone. Any applications using this key will immediately lose
+              access.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -462,84 +458,96 @@ function WebhooksTab({ companyId }: { companyId: string }) {
   const [copied, setCopied] = useState(false);
 
   // Form state
-  const [newUrl, setNewUrl] = useState('');
+  const [newUrl, setNewUrl] = useState("");
   const [newEvents, setNewEvents] = useState<string[]>([]);
 
   const { data: webhooks, isLoading } = useQuery<WebhookEndpointItem[]>({
-    queryKey: ['/api/companies', companyId, 'webhooks'],
+    queryKey: ["/api/companies", companyId, "webhooks"],
     enabled: !!companyId,
   });
 
   const { data: deliveries } = useQuery<WebhookDeliveryItem[]>({
-    queryKey: ['/api/webhooks', deliveriesEndpointId, 'deliveries'],
-    queryFn: () => apiRequest('GET', `/api/webhooks/${deliveriesEndpointId}/deliveries`),
+    queryKey: ["/api/webhooks", deliveriesEndpointId, "deliveries"],
+    queryFn: () => apiRequest("GET", `/api/webhooks/${deliveriesEndpointId}/deliveries`),
     enabled: !!deliveriesEndpointId,
   });
 
   const createMutation = useMutation({
     mutationFn: (data: { url: string; events: string }) =>
-      apiRequest('POST', `/api/companies/${companyId}/webhooks`, data),
+      apiRequest("POST", `/api/companies/${companyId}/webhooks`, data),
     onSuccess: (result: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'webhooks'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
       setCreatedSecret(result.secret);
       setCreateOpen(false);
       setShowSecretDialog(true);
-      setNewUrl('');
+      setNewUrl("");
       setNewEvents([]);
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create webhook', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to create webhook",
+        description: error?.message,
+      });
     },
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
-      apiRequest('PUT', `/api/webhooks/${id}`, { isActive }),
+      apiRequest("PUT", `/api/webhooks/${id}`, { isActive }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'webhooks'] });
-      toast({ title: 'Webhook updated' });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
+      toast({ title: "Webhook updated" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to update webhook', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to update webhook",
+        description: error?.message,
+      });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('DELETE', `/api/webhooks/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/webhooks/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'webhooks'] });
-      toast({ title: 'Webhook deleted' });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
+      toast({ title: "Webhook deleted" });
       setDeleteId(null);
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to delete webhook', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to delete webhook",
+        description: error?.message,
+      });
     },
   });
 
   const testMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('POST', `/api/webhooks/${id}/test`),
+    mutationFn: (id: string) => apiRequest("POST", `/api/webhooks/${id}/test`),
     onSuccess: (result: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'webhooks'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
       if (result.success) {
-        toast({ title: 'Test sent', description: `Received HTTP ${result.responseStatus}` });
+        toast({ title: "Test sent", description: `Received HTTP ${result.responseStatus}` });
       } else {
         toast({
-          variant: 'destructive',
-          title: 'Test failed',
+          variant: "destructive",
+          title: "Test failed",
           description: result.responseStatus
             ? `Received HTTP ${result.responseStatus}`
-            : 'Could not reach endpoint',
+            : "Could not reach endpoint",
         });
       }
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Test failed', description: error?.message });
+      toast({ variant: "destructive", title: "Test failed", description: error?.message });
     },
   });
 
   const handleEventToggle = (event: string) => {
     setNewEvents((prev) =>
-      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event],
+      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]
     );
   };
 
@@ -594,16 +602,16 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     <TableCell>
                       <div className="flex gap-1 flex-wrap max-w-[200px]">
                         {wh.events
-                          .split(',')
+                          .split(",")
                           .slice(0, 3)
                           .map((event) => (
                             <Badge key={event} variant="outline" className="text-xs">
                               {event.trim()}
                             </Badge>
                           ))}
-                        {wh.events.split(',').length > 3 && (
+                        {wh.events.split(",").length > 3 && (
                           <Badge variant="outline" className="text-xs">
-                            +{wh.events.split(',').length - 3}
+                            +{wh.events.split(",").length - 3}
                           </Badge>
                         )}
                       </div>
@@ -626,7 +634,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                     <TableCell className="text-muted-foreground">
                       {wh.lastTriggeredAt
                         ? new Date(wh.lastTriggeredAt).toLocaleDateString()
-                        : 'Never'}
+                        : "Never"}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -651,11 +659,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                             <Send className="h-4 w-4" />
                           )}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeleteId(wh.id)}
-                        >
+                        <Button variant="ghost" size="icon" onClick={() => setDeleteId(wh.id)}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -713,14 +717,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               onClick={() =>
                 createMutation.mutate({
                   url: newUrl,
-                  events: newEvents.join(','),
+                  events: newEvents.join(","),
                 })
               }
-              disabled={
-                !newUrl.trim() || newEvents.length === 0 || createMutation.isPending
-              }
+              disabled={!newUrl.trim() || newEvents.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? 'Creating...' : 'Add Endpoint'}
+              {createMutation.isPending ? "Creating..." : "Add Endpoint"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -741,16 +743,13 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           <DialogHeader>
             <DialogTitle>Webhook Secret Created</DialogTitle>
             <DialogDescription>
-              Copy this signing secret now. You will not be able to see it again. Use it to verify webhook signatures.
+              Copy this signing secret now. You will not be able to see it again. Use it to verify
+              webhook signatures.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
-              <Input
-                readOnly
-                value={createdSecret || ''}
-                className="font-mono text-sm"
-              />
+              <Input readOnly value={createdSecret || ""} className="font-mono text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopySecret}>
                 {copied ? (
                   <Check className="h-4 w-4 text-green-600" />
@@ -760,7 +759,8 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Each webhook delivery includes an X-Webhook-Signature header signed with HMAC-SHA256 using this secret.
+              Each webhook delivery includes an X-Webhook-Signature header signed with HMAC-SHA256
+              using this secret.
             </p>
           </div>
           <DialogFooter>
@@ -791,9 +791,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           </DialogHeader>
           <div className="py-4">
             {!deliveries?.length ? (
-              <p className="text-muted-foreground text-center py-4">
-                No deliveries recorded yet.
-              </p>
+              <p className="text-muted-foreground text-center py-4">No deliveries recorded yet.</p>
             ) : (
               <Table>
                 <TableHeader>
@@ -822,7 +820,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                       <TableCell className="text-muted-foreground">
                         {delivery.responseStatus
                           ? `HTTP ${delivery.responseStatus}`
-                          : 'No response'}
+                          : "No response"}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {new Date(delivery.createdAt).toLocaleString()}
@@ -842,7 +840,8 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Webhook Endpoint?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this endpoint and all delivery history. Events will no longer be sent to this URL.
+              This will permanently delete this endpoint and all delivery history. Events will no
+              longer be sent to this URL.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

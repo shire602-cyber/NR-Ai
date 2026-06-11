@@ -1,37 +1,37 @@
-import { useState, useRef, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency } from '@/lib/format';
-import { apiRequest } from '@/lib/queryClient';
-import { 
-  MessageCircle, 
-  Send, 
-  Sparkles, 
-  TrendingUp, 
+import { useState, useRef, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatCurrency } from "@/lib/format";
+import { apiRequest } from "@/lib/queryClient";
+import {
+  MessageCircle,
+  Send,
+  Sparkles,
+  TrendingUp,
   TrendingDown,
-  DollarSign, 
-  FileText, 
+  DollarSign,
+  FileText,
   Loader2,
   Receipt,
   Lightbulb,
   HelpCircle,
   ChevronRight,
   Bot,
-  User
-} from 'lucide-react';
+  User,
+} from "lucide-react";
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: Date;
   intent?: string;
@@ -67,7 +67,7 @@ export default function SmartAssistant() {
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -91,13 +91,13 @@ export default function SmartAssistant() {
     totalInvoices: number;
     totalEntries: number;
   }>({
-    queryKey: ['/api/companies', companyId, 'dashboard/stats'],
+    queryKey: ["/api/companies", companyId, "dashboard/stats"],
     enabled: !!companyId,
   });
 
   const nlMutation = useMutation({
     mutationFn: async (message: string) => {
-      const response = await apiRequest('POST', '/api/ai/nl-gateway', {
+      const response = await apiRequest("POST", "/api/ai/nl-gateway", {
         companyId,
         message,
         locale,
@@ -105,20 +105,23 @@ export default function SmartAssistant() {
       return response as NLGatewayResponse;
     },
     onSuccess: (data) => {
-      setMessages(prev => [...prev, {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: data.response,
-        timestamp: new Date(data.timestamp),
-        intent: data.intent,
-        followUpPrompts: data.followUpPrompts,
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: data.response,
+          timestamp: new Date(data.timestamp),
+          intent: data.intent,
+          followUpPrompts: data.followUpPrompts,
+        },
+      ]);
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error?.message || 'Failed to process your question',
+        variant: "destructive",
+        title: "Error",
+        description: error?.message || "Failed to process your question",
       });
     },
   });
@@ -129,49 +132,85 @@ export default function SmartAssistant() {
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
-      role: 'user',
+      role: "user",
       content: input,
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
     nlMutation.mutate(input);
   };
 
   const handleQuickQuestion = (question: string) => {
     if (nlMutation.isPending) return;
-    
+
     const userMessage: Message = {
       id: `user-${Date.now()}`,
-      role: 'user',
+      role: "user",
       content: question,
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     nlMutation.mutate(question);
   };
 
   const quickQuestions = [
-    { icon: DollarSign, text: "What were our total sales this month?", color: "text-green-600 dark:text-green-400" },
-    { icon: Receipt, text: "Show me pending invoices", color: "text-orange-600 dark:text-orange-400" },
-    { icon: TrendingUp, text: "What's my profit margin?", color: "text-blue-600 dark:text-blue-400" },
-    { icon: TrendingDown, text: "What are my biggest expenses?", color: "text-red-600 dark:text-red-400" },
-    { icon: FileText, text: "How many invoices are unpaid?", color: "text-purple-600 dark:text-purple-400" },
-    { icon: Lightbulb, text: "Give me financial insights", color: "text-yellow-600 dark:text-yellow-400" },
+    {
+      icon: DollarSign,
+      text: "What were our total sales this month?",
+      color: "text-green-600 dark:text-green-400",
+    },
+    {
+      icon: Receipt,
+      text: "Show me pending invoices",
+      color: "text-orange-600 dark:text-orange-400",
+    },
+    {
+      icon: TrendingUp,
+      text: "What's my profit margin?",
+      color: "text-blue-600 dark:text-blue-400",
+    },
+    {
+      icon: TrendingDown,
+      text: "What are my biggest expenses?",
+      color: "text-red-600 dark:text-red-400",
+    },
+    {
+      icon: FileText,
+      text: "How many invoices are unpaid?",
+      color: "text-purple-600 dark:text-purple-400",
+    },
+    {
+      icon: Lightbulb,
+      text: "Give me financial insights",
+      color: "text-yellow-600 dark:text-yellow-400",
+    },
   ];
 
   const arabicQuickQuestions = [
-    { icon: DollarSign, text: "ما هو إجمالي مبيعاتنا هذا الشهر؟", color: "text-green-600 dark:text-green-400" },
+    {
+      icon: DollarSign,
+      text: "ما هو إجمالي مبيعاتنا هذا الشهر؟",
+      color: "text-green-600 dark:text-green-400",
+    },
     { icon: Receipt, text: "أرني الفواتير المعلقة", color: "text-orange-600 dark:text-orange-400" },
-    { icon: TrendingUp, text: "ما هو هامش الربح الخاص بي؟", color: "text-blue-600 dark:text-blue-400" },
+    {
+      icon: TrendingUp,
+      text: "ما هو هامش الربح الخاص بي؟",
+      color: "text-blue-600 dark:text-blue-400",
+    },
     { icon: TrendingDown, text: "ما هي أكبر نفقاتي؟", color: "text-red-600 dark:text-red-400" },
-    { icon: FileText, text: "كم عدد الفواتير غير المدفوعة؟", color: "text-purple-600 dark:text-purple-400" },
+    {
+      icon: FileText,
+      text: "كم عدد الفواتير غير المدفوعة؟",
+      color: "text-purple-600 dark:text-purple-400",
+    },
     { icon: Lightbulb, text: "أعطني رؤى مالية", color: "text-yellow-600 dark:text-yellow-400" },
   ];
 
-  const displayQuestions = locale === 'ar' ? arabicQuickQuestions : quickQuestions;
+  const displayQuestions = locale === "ar" ? arabicQuickQuestions : quickQuestions;
 
   return (
     <div className="h-full flex flex-col max-h-[calc(100vh-120px)]">
@@ -185,9 +224,7 @@ export default function SmartAssistant() {
             <h1 className="text-2xl font-semibold" data-testid="text-smart-assistant-title">
               {t.smartAssistant}
             </h1>
-            <p className="text-sm text-muted-foreground">
-              {t.askAnything}
-            </p>
+            <p className="text-sm text-muted-foreground">{t.askAnything}</p>
           </div>
         </div>
       </div>
@@ -202,7 +239,7 @@ export default function SmartAssistant() {
                 <span className="text-xs font-medium">{t.revenue}</span>
               </div>
               <p className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.revenue || 0, 'AED')}
+                {formatCurrency(stats.revenue || 0, "AED")}
               </p>
             </CardContent>
           </Card>
@@ -213,7 +250,7 @@ export default function SmartAssistant() {
                 <span className="text-xs font-medium">{t.expenses}</span>
               </div>
               <p className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.expenses || 0, 'AED')}
+                {formatCurrency(stats.expenses || 0, "AED")}
               </p>
             </CardContent>
           </Card>
@@ -224,7 +261,7 @@ export default function SmartAssistant() {
                 <span className="text-xs font-medium">{t.outstanding}</span>
               </div>
               <p className="text-lg font-bold font-mono mt-1">
-                {formatCurrency(stats.outstanding || 0, 'AED')}
+                {formatCurrency(stats.outstanding || 0, "AED")}
               </p>
             </CardContent>
           </Card>
@@ -234,9 +271,7 @@ export default function SmartAssistant() {
                 <FileText className="w-4 h-4" />
                 <span className="text-xs font-medium">{t.invoices}</span>
               </div>
-              <p className="text-lg font-bold font-mono mt-1">
-                {stats.totalInvoices}
-              </p>
+              <p className="text-lg font-bold font-mono mt-1">{stats.totalInvoices}</p>
             </CardContent>
           </Card>
         </div>
@@ -251,9 +286,7 @@ export default function SmartAssistant() {
                 <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
                   <Sparkles className="w-8 h-8 text-primary" />
                 </div>
-                <h2 className="text-lg font-medium mb-2">
-                  {t.greeting}
-                </h2>
+                <h2 className="text-lg font-medium mb-2">{t.greeting}</h2>
                 <p className="text-muted-foreground text-sm max-w-md mx-auto">
                   {t.askAboutFinancialData}
                 </p>
@@ -281,33 +314,29 @@ export default function SmartAssistant() {
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex gap-3 ${message.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {message.role === 'assistant' && (
+                  {message.role === "assistant" && (
                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                       <Bot className="w-4 h-4 text-primary" />
                     </div>
                   )}
                   <div
                     className={`max-w-[80%] rounded-lg p-3 ${
-                      message.role === 'user'
-                        ? 'bg-primary text-primary-foreground'
-                        : 'bg-muted'
+                      message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
                     }`}
                   >
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                    {message.role === 'assistant' && message.intent && (
+                    {message.role === "assistant" && message.intent && (
                       <Badge variant="secondary" className="mt-2 text-xs">
-                        {message.intent === 'query' && t.query}
-                        {message.intent === 'advice' && t.advice}
-                        {message.intent === 'action' && t.action}
+                        {message.intent === "query" && t.query}
+                        {message.intent === "advice" && t.advice}
+                        {message.intent === "action" && t.action}
                       </Badge>
                     )}
                     {message.followUpPrompts && message.followUpPrompts.length > 0 && (
                       <div className="mt-3 space-y-1">
-                        <p className="text-xs text-muted-foreground mb-2">
-                          {t.suggestedFollowUps}
-                        </p>
+                        <p className="text-xs text-muted-foreground mb-2">{t.suggestedFollowUps}</p>
                         {message.followUpPrompts.map((prompt, i) => (
                           <Button
                             key={i}
@@ -327,7 +356,7 @@ export default function SmartAssistant() {
                       {message.timestamp.toLocaleTimeString()}
                     </p>
                   </div>
-                  {message.role === 'user' && (
+                  {message.role === "user" && (
                     <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
                       <User className="w-4 h-4 text-primary-foreground" />
                     </div>
@@ -342,9 +371,7 @@ export default function SmartAssistant() {
                   <div className="bg-muted rounded-lg p-3">
                     <div className="flex items-center gap-2">
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span className="text-sm text-muted-foreground">
-                        {t.analyzing}
-                      </span>
+                      <span className="text-sm text-muted-foreground">{t.analyzing}</span>
                     </div>
                   </div>
                 </div>
@@ -367,8 +394,8 @@ export default function SmartAssistant() {
               className="flex-1"
               data-testid="input-smart-assistant-message"
             />
-            <Button 
-              type="submit" 
+            <Button
+              type="submit"
               disabled={nlMutation.isPending || !input.trim()}
               data-testid="button-send-message"
             >
@@ -379,9 +406,7 @@ export default function SmartAssistant() {
               )}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground mt-2 text-center">
-            {t.pressEnterToSend}
-          </p>
+          <p className="text-xs text-muted-foreground mt-2 text-center">{t.pressEnterToSend}</p>
         </form>
       </Card>
     </div>

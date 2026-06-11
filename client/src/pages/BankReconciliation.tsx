@@ -1,28 +1,48 @@
-import { useState, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { format, parseISO } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/components/ui/empty-state';
-import { PageHeader } from '@/components/ui/page-header';
-import { TableSkeleton } from '@/components/ui/loading-skeletons';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency } from '@/lib/format';
-import Tesseract from 'tesseract.js';
+import { useState, useMemo } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { format, parseISO } from "date-fns";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency } from "@/lib/format";
+import Tesseract from "tesseract.js";
 import {
   Upload,
   FileText,
@@ -43,7 +63,7 @@ import {
   AlertTriangle,
   BarChart3,
   ChevronRight,
-} from 'lucide-react';
+} from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -79,12 +99,12 @@ interface BankAccount {
   isActive: boolean;
 }
 
-let pdfJsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
+let pdfJsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
 
-function loadPdfJs(): Promise<typeof import('pdfjs-dist')> {
+function loadPdfJs(): Promise<typeof import("pdfjs-dist")> {
   pdfJsPromise ??= Promise.all([
-    import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+    import("pdfjs-dist"),
+    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
   ]).then(([pdfjsLib, worker]) => {
     pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
     return pdfjsLib;
@@ -94,7 +114,7 @@ function loadPdfJs(): Promise<typeof import('pdfjs-dist')> {
 
 interface MatchSuggestion {
   bankTransactionId: string;
-  matchedType: 'journal_entry' | 'invoice' | 'receipt';
+  matchedType: "journal_entry" | "invoice" | "receipt";
   matchedId: string;
   confidence: number;
   matchReason: string;
@@ -128,20 +148,45 @@ interface ReportData {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 const matchTypeConfig = {
-  journal_entry: { icon: BookOpen, label: 'Journal Entry', color: 'text-[hsl(var(--chart-3))]', bg: 'bg-[hsl(var(--chart-3)/0.10)]' },
-  invoice: { icon: FileText, label: 'Invoice', color: 'text-[hsl(var(--chart-1))]', bg: 'bg-[hsl(var(--chart-1)/0.10)]' },
-  receipt: { icon: Receipt, label: 'Receipt', color: 'text-[hsl(var(--chart-5))]', bg: 'bg-[hsl(var(--chart-5)/0.10)]' },
+  journal_entry: {
+    icon: BookOpen,
+    label: "Journal Entry",
+    color: "text-[hsl(var(--chart-3))]",
+    bg: "bg-[hsl(var(--chart-3)/0.10)]",
+  },
+  invoice: {
+    icon: FileText,
+    label: "Invoice",
+    color: "text-[hsl(var(--chart-1))]",
+    bg: "bg-[hsl(var(--chart-1)/0.10)]",
+  },
+  receipt: {
+    icon: Receipt,
+    label: "Receipt",
+    color: "text-[hsl(var(--chart-5))]",
+    bg: "bg-[hsl(var(--chart-5)/0.10)]",
+  },
 };
 
 function confidenceLabel(score: number): { label: string; color: string; bg: string } {
-  if (score >= 80) return { label: 'High', color: 'text-[hsl(var(--chart-5))]', bg: 'bg-[hsl(var(--chart-5)/0.15)]' };
-  if (score >= 60) return { label: 'Medium', color: 'text-[hsl(var(--chart-4))]', bg: 'bg-[hsl(var(--chart-4)/0.15)]' };
-  return { label: 'Low', color: 'text-destructive', bg: 'bg-destructive/15' };
+  if (score >= 80)
+    return {
+      label: "High",
+      color: "text-[hsl(var(--chart-5))]",
+      bg: "bg-[hsl(var(--chart-5)/0.15)]",
+    };
+  if (score >= 60)
+    return {
+      label: "Medium",
+      color: "text-[hsl(var(--chart-4))]",
+      bg: "bg-[hsl(var(--chart-4)/0.15)]",
+    };
+  return { label: "Low", color: "text-destructive", bg: "bg-destructive/15" };
 }
 
 function formatDate(dateStr: string) {
   try {
-    return format(parseISO(dateStr), 'dd MMM yyyy');
+    return format(parseISO(dateStr), "dd MMM yyyy");
   } catch {
     return dateStr;
   }
@@ -154,42 +199,54 @@ export default function BankReconciliation() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
-  const [selectedBankAccount, setSelectedBankAccount] = useState<string>('');
+  const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<BankTransaction | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showReconciled, setShowReconciled] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const [pdfProgress, setPdfProgress] = useState(0);
-  const [processingStatus, setProcessingStatus] = useState('');
+  const [processingStatus, setProcessingStatus] = useState("");
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
   const { data: bankAccounts, isLoading: isLoadingBankAccounts } = useQuery<BankAccount[]>({
-    queryKey: ['/api/companies', companyId, 'bank-accounts'],
+    queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
 
   const { data: transactions, isLoading: isLoadingTransactions } = useQuery<BankTransaction[]>({
-    queryKey: ['/api/companies', companyId, 'bank-statements', 'transactions'],
+    queryKey: ["/api/companies", companyId, "bank-statements", "transactions"],
     enabled: !!companyId,
   });
 
   const { data: matchSuggestions, isLoading: isLoadingMatches } = useQuery<MatchSuggestion[]>({
-    queryKey: ['/api/companies', companyId, 'bank-statements', selectedTransaction?.id, 'suggestions'],
+    queryKey: [
+      "/api/companies",
+      companyId,
+      "bank-statements",
+      selectedTransaction?.id,
+      "suggestions",
+    ],
     enabled: !!selectedTransaction?.id && matchDialogOpen,
   });
 
   const { data: reportData, isLoading: isLoadingReport } = useQuery<ReportData>({
-    queryKey: ['/api/companies', companyId, 'bank-statements', 'report', selectedBankAccount || 'all'],
+    queryKey: [
+      "/api/companies",
+      companyId,
+      "bank-statements",
+      "report",
+      selectedBankAccount || "all",
+    ],
     enabled: !!companyId && reportDialogOpen,
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (selectedBankAccount) params.set('bankAccountId', selectedBankAccount);
-      return apiRequest('GET', `/api/companies/${companyId}/bank-statements/report?${params}`);
+      if (selectedBankAccount) params.set("bankAccountId", selectedBankAccount);
+      return apiRequest("GET", `/api/companies/${companyId}/bank-statements/report?${params}`);
     },
   });
 
@@ -213,52 +270,82 @@ export default function BankReconciliation() {
   }, [transactions, showReconciled, selectedBankAccount, searchQuery]);
 
   const stats = useMemo(() => {
-    if (!transactions) return { total: 0, reconciled: 0, unreconciled: 0, suggested: 0, totalAmount: 0 };
+    if (!transactions)
+      return { total: 0, reconciled: 0, unreconciled: 0, suggested: 0, totalAmount: 0 };
     const reconciled = transactions.filter((t) => t.isReconciled).length;
-    const suggested = transactions.filter((t) => !t.isReconciled && t.matchStatus === 'suggested').length;
+    const suggested = transactions.filter(
+      (t) => !t.isReconciled && t.matchStatus === "suggested"
+    ).length;
     const totalAmount = transactions.reduce((s, t) => s + t.amount, 0);
-    return { total: transactions.length, reconciled, unreconciled: transactions.length - reconciled, suggested, totalAmount };
+    return {
+      total: transactions.length,
+      reconciled,
+      unreconciled: transactions.length - reconciled,
+      suggested,
+      totalAmount,
+    };
   }, [transactions]);
 
   // ─── Mutations ────────────────────────────────────────────────────────────
 
   const importMutation = useMutation({
     mutationFn: async (payload: { bankAccountId: string; csvContent: string }) =>
-      apiRequest('POST', `/api/companies/${companyId}/bank-statements/import`, payload),
+      apiRequest("POST", `/api/companies/${companyId}/bank-statements/import`, payload),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
-      toast({ title: 'Import Successful', description: `Imported ${data.imported ?? 0} transactions` });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
+      toast({
+        title: "Import Successful",
+        description: `Imported ${data.imported ?? 0} transactions`,
+      });
       setImportDialogOpen(false);
       setImportFile(null);
       setPdfProgress(0);
-      setProcessingStatus('');
+      setProcessingStatus("");
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Import Failed', description: error?.message });
+      toast({ variant: "destructive", title: "Import Failed", description: error?.message });
     },
   });
 
   const matchMutation = useMutation({
-    mutationFn: ({ transactionId, matchedId, matchedType }: { transactionId: string; matchedId: string; matchedType: string }) =>
-      apiRequest('POST', `/api/companies/${companyId}/bank-statements/${transactionId}/match`, {
-        matchedType: matchedType === 'journal_entry' ? 'journal' : matchedType,
+    mutationFn: ({
+      transactionId,
+      matchedId,
+      matchedType,
+    }: {
+      transactionId: string;
+      matchedId: string;
+      matchedType: string;
+    }) =>
+      apiRequest("POST", `/api/companies/${companyId}/bank-statements/${transactionId}/match`, {
+        matchedType: matchedType === "journal_entry" ? "journal" : matchedType,
         matchedId,
       }),
     onMutate: async ({ transactionId, matchedId, matchedType }) => {
-      const queryKey = ['/api/companies', companyId, 'bank-statements'] as const;
+      const queryKey = ["/api/companies", companyId, "bank-statements"] as const;
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(queryKey, (old) =>
-        old?.map((tx: any) =>
-          tx.id === transactionId
-            ? { ...tx, matchedId, matchedType: matchedType === 'journal_entry' ? 'journal' : matchedType, status: 'matched' }
-            : tx,
-        ) ?? [],
+      queryClient.setQueryData<any[]>(
+        queryKey,
+        (old) =>
+          old?.map((tx: any) =>
+            tx.id === transactionId
+              ? {
+                  ...tx,
+                  matchedId,
+                  matchedType: matchedType === "journal_entry" ? "journal" : matchedType,
+                  status: "matched",
+                }
+              : tx
+          ) ?? []
       );
       return { previous, queryKey };
     },
     onSuccess: () => {
-      toast({ title: 'Transaction Reconciled', description: 'Bank transaction matched successfully.' });
+      toast({
+        title: "Transaction Reconciled",
+        description: "Bank transaction matched successfully.",
+      });
       setMatchDialogOpen(false);
       setSelectedTransaction(null);
     },
@@ -266,52 +353,64 @@ export default function BankReconciliation() {
       if (context?.previous && context?.queryKey) {
         queryClient.setQueryData(context.queryKey, context.previous);
       }
-      toast({ variant: 'destructive', title: 'Reconciliation Failed', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Reconciliation Failed",
+        description: error?.message,
+      });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
     },
   });
 
   const unmatchMutation = useMutation({
     mutationFn: (transactionId: string) =>
-      apiRequest('DELETE', `/api/companies/${companyId}/bank-statements/${transactionId}/match`),
+      apiRequest("DELETE", `/api/companies/${companyId}/bank-statements/${transactionId}/match`),
     onMutate: async (transactionId: string) => {
-      const queryKey = ['/api/companies', companyId, 'bank-statements'] as const;
+      const queryKey = ["/api/companies", companyId, "bank-statements"] as const;
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(queryKey, (old) =>
-        old?.map((tx: any) =>
-          tx.id === transactionId ? { ...tx, matchedId: null, matchedType: null, status: 'unmatched' } : tx,
-        ) ?? [],
+      queryClient.setQueryData<any[]>(
+        queryKey,
+        (old) =>
+          old?.map((tx: any) =>
+            tx.id === transactionId
+              ? { ...tx, matchedId: null, matchedType: null, status: "unmatched" }
+              : tx
+          ) ?? []
       );
       return { previous, queryKey };
     },
     onSuccess: () => {
-      toast({ title: 'Match Removed', description: 'Transaction reset to unmatched.' });
+      toast({ title: "Match Removed", description: "Transaction reset to unmatched." });
     },
     onError: (error: any, _id, context: any) => {
       if (context?.previous && context?.queryKey) {
         queryClient.setQueryData(context.queryKey, context.previous);
       }
-      toast({ variant: 'destructive', title: 'Error', description: error?.message });
+      toast({ variant: "destructive", title: "Error", description: error?.message });
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
     },
   });
 
   const autoReconcileMutation = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/companies/${companyId}/auto-reconcile`),
+    mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/auto-reconcile`),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       toast({
-        title: 'Auto-Reconciliation Complete',
+        title: "Auto-Reconciliation Complete",
         description: `Found ${data.matches?.length ?? 0} potential matches`,
       });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Auto-Reconciliation Failed', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Auto-Reconciliation Failed",
+        description: error?.message,
+      });
     },
   });
 
@@ -319,23 +418,27 @@ export default function BankReconciliation() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) { setImportFile(file); setPdfProgress(0); setProcessingStatus(''); }
+    if (file) {
+      setImportFile(file);
+      setPdfProgress(0);
+      setProcessingStatus("");
+    }
   };
 
   const convertPdfPageToImage = async (page: any): Promise<Blob> => {
     const scale = 2;
     const viewport = page.getViewport({ scale });
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d')!;
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d")!;
     canvas.height = viewport.height;
     canvas.width = viewport.width;
     await page.render({ canvasContext: context, viewport, canvas } as any).promise;
-    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob!), 'image/png'));
+    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob!), "image/png"));
   };
 
   const extractTransactionsFromText = async (text: string): Promise<any[]> => {
     try {
-      const response = await apiRequest('POST', '/api/ai/parse-bank-statement', { text });
+      const response = await apiRequest("POST", "/api/ai/parse-bank-statement", { text });
       return response.transactions || [];
     } catch {
       return [];
@@ -344,55 +447,65 @@ export default function BankReconciliation() {
 
   const handleImport = async () => {
     if (!importFile || !selectedBankAccount) {
-      toast({ variant: 'destructive', title: 'Missing Information', description: 'Select a bank account and upload a file' });
+      toast({
+        variant: "destructive",
+        title: "Missing Information",
+        description: "Select a bank account and upload a file",
+      });
       return;
     }
 
     setIsImporting(true);
 
     try {
-      if (importFile.type === 'application/pdf') {
+      if (importFile.type === "application/pdf") {
         // PDF → text → AI parse → import as JSON
-        setProcessingStatus('Converting PDF pages...');
+        setProcessingStatus("Converting PDF pages...");
         const pdfjsLib = await loadPdfJs();
         const arrayBuffer = await importFile.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const totalPages = Math.min(pdf.numPages, 10);
-        let allText = '';
+        let allText = "";
 
         for (let p = 1; p <= totalPages; p++) {
           setProcessingStatus(`Processing page ${p} of ${totalPages}...`);
           setPdfProgress((p / totalPages) * 50);
           const page = await pdf.getPage(p);
           const textContent = await page.getTextContent();
-          const pageText = textContent.items.map((i: any) => i.str).join(' ');
+          const pageText = textContent.items.map((i: any) => i.str).join(" ");
           if (pageText.trim().length > 50) {
-            allText += pageText + '\n';
+            allText += pageText + "\n";
           } else {
             setProcessingStatus(`Running OCR on page ${p}...`);
             const imageBlob = await convertPdfPageToImage(page);
-            const result = await Tesseract.recognize(imageBlob, 'eng');
-            allText += result.data.text + '\n';
+            const result = await Tesseract.recognize(imageBlob, "eng");
+            allText += result.data.text + "\n";
           }
         }
 
-        setProcessingStatus('Extracting transactions...');
+        setProcessingStatus("Extracting transactions...");
         setPdfProgress(75);
         const txns = await extractTransactionsFromText(allText);
         setPdfProgress(100);
 
         if (txns.length === 0) {
-          toast({ variant: 'destructive', title: 'No transactions found', description: 'Try a different format.' });
+          toast({
+            variant: "destructive",
+            title: "No transactions found",
+            description: "Try a different format.",
+          });
           return;
         }
 
         // For PDFs, fall back to old JSON import endpoint
-        await apiRequest('POST', `/api/companies/${companyId}/bank-transactions/import`, {
+        await apiRequest("POST", `/api/companies/${companyId}/bank-transactions/import`, {
           transactions: txns,
           bankAccountId: selectedBankAccount,
         });
-        queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
-        toast({ title: 'Import Successful', description: `Imported ${txns.length} transactions` });
+        queryClient.invalidateQueries({
+          queryKey: ["/api/companies", companyId, "bank-statements"],
+        });
+        toast({ title: "Import Successful", description: `Imported ${txns.length} transactions` });
         setImportDialogOpen(false);
         setImportFile(null);
       } else {
@@ -401,10 +514,10 @@ export default function BankReconciliation() {
         await importMutation.mutateAsync({ bankAccountId: selectedBankAccount, csvContent });
       }
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Import Failed', description: error?.message });
+      toast({ variant: "destructive", title: "Import Failed", description: error?.message });
     } finally {
       setIsImporting(false);
-      setProcessingStatus('');
+      setProcessingStatus("");
       setPdfProgress(0);
     }
   };
@@ -419,7 +532,11 @@ export default function BankReconciliation() {
   const handleAcceptSuggestion = (tx: BankTransaction) => {
     if (!tx.matchedJournalEntryId && !tx.matchedInvoiceId && !tx.matchedReceiptId) return;
     const matchedId = tx.matchedJournalEntryId ?? tx.matchedInvoiceId ?? tx.matchedReceiptId!;
-    const matchedType = tx.matchedJournalEntryId ? 'journal' : tx.matchedInvoiceId ? 'invoice' : 'receipt';
+    const matchedType = tx.matchedJournalEntryId
+      ? "journal"
+      : tx.matchedInvoiceId
+        ? "invoice"
+        : "receipt";
     matchMutation.mutate({ transactionId: tx.id, matchedId, matchedType });
   };
 
@@ -428,7 +545,9 @@ export default function BankReconciliation() {
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-24" />)}
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
         </div>
         <Skeleton className="h-96" />
       </div>
@@ -462,7 +581,11 @@ export default function BankReconciliation() {
               )}
               {t.autoMatch}
             </Button>
-            <Button onClick={() => setImportDialogOpen(true)} size="sm" data-testid="button-import-transactions">
+            <Button
+              onClick={() => setImportDialogOpen(true)}
+              size="sm"
+              data-testid="button-import-transactions"
+            >
               <Upload className="w-4 h-4 mr-2" />
               {t.importCsv}
             </Button>
@@ -515,7 +638,9 @@ export default function BankReconciliation() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${stats.totalAmount >= 0 ? 'text-[hsl(var(--chart-5))]' : 'text-destructive'}`}>
+            <div
+              className={`text-2xl font-bold ${stats.totalAmount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
+            >
               {formatCurrency(stats.totalAmount)}
             </div>
           </CardContent>
@@ -539,8 +664,8 @@ export default function BankReconciliation() {
                 </Label>
               </div>
               <Select
-                value={selectedBankAccount || 'all'}
-                onValueChange={(v) => setSelectedBankAccount(v === 'all' ? '' : v)}
+                value={selectedBankAccount || "all"}
+                onValueChange={(v) => setSelectedBankAccount(v === "all" ? "" : v)}
               >
                 <SelectTrigger className="w-44" data-testid="select-bank-account">
                   <SelectValue placeholder="All accounts" />
@@ -574,8 +699,16 @@ export default function BankReconciliation() {
             <EmptyState
               icon={Building2}
               title="No bank transactions"
-              description={t.noTransactionsFound || 'Import a bank statement (CSV or PDF) to start matching transactions to journal entries.'}
-              action={{ label: 'Import bank statement', icon: Upload, variant: 'outline', onClick: () => setImportDialogOpen(true) }}
+              description={
+                t.noTransactionsFound ||
+                "Import a bank statement (CSV or PDF) to start matching transactions to journal entries."
+              }
+              action={{
+                label: "Import bank statement",
+                icon: Upload,
+                variant: "outline",
+                onClick: () => setImportDialogOpen(true),
+              }}
               testId="empty-state-bank-transactions"
             />
           ) : (
@@ -593,13 +726,16 @@ export default function BankReconciliation() {
                 </TableHeader>
                 <TableBody>
                   {filteredTransactions.map((tx) => {
-                    const conf = tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
+                    const conf =
+                      tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
                     const confMeta = conf != null ? confidenceLabel(conf) : null;
                     return (
                       <TableRow
                         key={tx.id}
                         data-testid={`row-transaction-${tx.id}`}
-                        className={tx.matchStatus === 'suggested' ? 'bg-[hsl(var(--chart-4)/0.06)]' : ''}
+                        className={
+                          tx.matchStatus === "suggested" ? "bg-[hsl(var(--chart-4)/0.06)]" : ""
+                        }
                       >
                         <TableCell className="font-mono text-sm">
                           {formatDate(tx.transactionDate)}
@@ -608,9 +744,11 @@ export default function BankReconciliation() {
                           <div className="truncate font-medium">{tx.description}</div>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {tx.reference || '—'}
+                          {tx.reference || "—"}
                         </TableCell>
-                        <TableCell className={`text-right font-mono font-medium ${tx.amount >= 0 ? 'text-[hsl(var(--chart-5))]' : 'text-destructive'}`}>
+                        <TableCell
+                          className={`text-right font-mono font-medium ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
+                        >
                           {formatCurrency(tx.amount)}
                         </TableCell>
                         <TableCell>
@@ -620,7 +758,7 @@ export default function BankReconciliation() {
                                 <CheckCircle2 className="w-3 h-3 mr-1" />
                                 Reconciled
                               </StatusBadge>
-                            ) : tx.matchStatus === 'suggested' ? (
+                            ) : tx.matchStatus === "suggested" ? (
                               <StatusBadge tone="warning" className="w-fit">
                                 <Sparkles className="w-3 h-3 mr-1" />
                                 Suggested
@@ -651,7 +789,7 @@ export default function BankReconciliation() {
                               >
                                 <Unlink className="w-3.5 h-3.5" />
                               </Button>
-                            ) : tx.matchStatus === 'suggested' ? (
+                            ) : tx.matchStatus === "suggested" ? (
                               <>
                                 <Button
                                   size="sm"
@@ -698,14 +836,22 @@ export default function BankReconciliation() {
       </Card>
 
       {/* ── Match Dialog ─────────────────────────────────────────────────────── */}
-      <Dialog open={matchDialogOpen} onOpenChange={(open) => { setMatchDialogOpen(open); if (!open) setSelectedTransaction(null); }}>
+      <Dialog
+        open={matchDialogOpen}
+        onOpenChange={(open) => {
+          setMatchDialogOpen(open);
+          if (!open) setSelectedTransaction(null);
+        }}
+      >
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>Match Transaction</DialogTitle>
             <DialogDescription>
               {selectedTransaction && (
                 <span>
-                  {selectedTransaction.description} &mdash; {formatCurrency(selectedTransaction.amount)} on {formatDate(selectedTransaction.transactionDate)}
+                  {selectedTransaction.description} &mdash;{" "}
+                  {formatCurrency(selectedTransaction.amount)} on{" "}
+                  {formatDate(selectedTransaction.transactionDate)}
                 </span>
               )}
             </DialogDescription>
@@ -715,7 +861,9 @@ export default function BankReconciliation() {
           <div className="grid grid-cols-2 gap-4 mt-2">
             {/* Left: Bank transaction */}
             <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bank Transaction</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Bank Transaction
+              </p>
               {selectedTransaction && (
                 <div className="space-y-2">
                   <div>
@@ -734,14 +882,16 @@ export default function BankReconciliation() {
                   )}
                   <div>
                     <p className="text-xs text-muted-foreground">Amount</p>
-                    <p className={`text-xl font-bold ${selectedTransaction.amount >= 0 ? 'text-[hsl(var(--chart-5))]' : 'text-destructive'}`}>
+                    <p
+                      className={`text-xl font-bold ${selectedTransaction.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
+                    >
                       {formatCurrency(selectedTransaction.amount)}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Direction</p>
                     <Badge variant="outline" className="text-xs">
-                      {selectedTransaction.amount >= 0 ? '↑ Credit / Inflow' : '↓ Debit / Outflow'}
+                      {selectedTransaction.amount >= 0 ? "↑ Credit / Inflow" : "↓ Debit / Outflow"}
                     </Badge>
                   </div>
                 </div>
@@ -750,10 +900,14 @@ export default function BankReconciliation() {
 
             {/* Right: Match suggestions */}
             <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Suggested Matches</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Suggested Matches
+              </p>
               {isLoadingMatches ? (
                 <div className="space-y-2">
-                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20" />)}
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-20" />
+                  ))}
                 </div>
               ) : matchSuggestions && matchSuggestions.length > 0 ? (
                 <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
@@ -765,11 +919,13 @@ export default function BankReconciliation() {
                       <div
                         key={`${s.matchedType}-${s.matchedId}`}
                         className="rounded-lg border bg-card p-3 cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                        onClick={() => matchMutation.mutate({
-                          transactionId: selectedTransaction!.id,
-                          matchedId: s.matchedId,
-                          matchedType: s.matchedType,
-                        })}
+                        onClick={() =>
+                          matchMutation.mutate({
+                            transactionId: selectedTransaction!.id,
+                            matchedId: s.matchedId,
+                            matchedType: s.matchedType,
+                          })
+                        }
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2 min-w-0">
@@ -777,13 +933,17 @@ export default function BankReconciliation() {
                               <TypeIcon className={`w-3.5 h-3.5 ${typeCfg.color}`} />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs font-medium text-muted-foreground">{typeCfg.label}</p>
-                              <p className="text-sm font-medium truncate">{s.matchedDescription || s.matchedId.slice(0, 8)}</p>
+                              <p className="text-xs font-medium text-muted-foreground">
+                                {typeCfg.label}
+                              </p>
+                              <p className="text-sm font-medium truncate">
+                                {s.matchedDescription || s.matchedId.slice(0, 8)}
+                              </p>
                             </div>
                           </div>
                           <div className="text-right shrink-0">
                             <p className="font-mono font-semibold text-sm">
-                              {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : '—'}
+                              {s.matchedAmount != null ? formatCurrency(s.matchedAmount) : "—"}
                             </p>
                             <span className={`text-xs font-medium ${confMeta.color}`}>
                               {s.confidence}% {confMeta.label}
@@ -799,7 +959,9 @@ export default function BankReconciliation() {
                           </p>
                         )}
                         {s.matchReason && (
-                          <p className="text-xs text-muted-foreground mt-1 italic">{s.matchReason}</p>
+                          <p className="text-xs text-muted-foreground mt-1 italic">
+                            {s.matchReason}
+                          </p>
                         )}
                         <div className="mt-2 flex justify-end">
                           <Badge variant="outline" className="text-xs">
@@ -867,12 +1029,14 @@ export default function BankReconciliation() {
               />
               {importFile && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {importFile.type === 'application/pdf' ? (
+                  {importFile.type === "application/pdf" ? (
                     <FileText className="w-4 h-4 text-destructive" />
                   ) : (
                     <FileSpreadsheet className="w-4 h-4 text-[hsl(var(--chart-5))]" />
                   )}
-                  <span>{importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)</span>
+                  <span>
+                    {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
+                  </span>
                 </div>
               )}
               {isImporting && pdfProgress > 0 && (
@@ -895,7 +1059,11 @@ export default function BankReconciliation() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setImportDialogOpen(false)} disabled={isImporting}>
+            <Button
+              variant="outline"
+              onClick={() => setImportDialogOpen(false)}
+              disabled={isImporting}
+            >
               Cancel
             </Button>
             <Button
@@ -922,7 +1090,7 @@ export default function BankReconciliation() {
               Summary of matched and unmatched transactions
               {selectedBankAccount && bankAccounts?.find((a) => a.id === selectedBankAccount)
                 ? ` for ${bankAccounts.find((a) => a.id === selectedBankAccount)!.nameEn}`
-                : ' across all accounts'}
+                : " across all accounts"}
             </DialogDescription>
           </DialogHeader>
           {isLoadingReport ? (
@@ -935,18 +1103,24 @@ export default function BankReconciliation() {
             <div className="space-y-4">
               {/* Status breakdown */}
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Status</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Status
+                </p>
                 <div className="grid grid-cols-3 gap-3">
                   <div className="rounded-lg border p-3 text-center">
                     <div className="text-2xl font-bold">{reportData.summary.totalTransactions}</div>
                     <div className="text-xs text-muted-foreground mt-1">Total</div>
                   </div>
                   <div className="rounded-lg border border-[hsl(var(--chart-5)/0.30)] bg-[hsl(var(--chart-5)/0.10)] p-3 text-center">
-                    <div className="text-2xl font-bold text-[hsl(var(--chart-5))]">{reportData.summary.reconciledCount}</div>
+                    <div className="text-2xl font-bold text-[hsl(var(--chart-5))]">
+                      {reportData.summary.reconciledCount}
+                    </div>
                     <div className="text-xs text-muted-foreground mt-1">Reconciled</div>
                   </div>
                   <div className="rounded-lg border border-[hsl(var(--chart-4)/0.30)] bg-[hsl(var(--chart-4)/0.10)] p-3 text-center">
-                    <div className="text-2xl font-bold text-[hsl(var(--chart-4))]">{reportData.summary.unreconciledCount}</div>
+                    <div className="text-2xl font-bold text-[hsl(var(--chart-4))]">
+                      {reportData.summary.unreconciledCount}
+                    </div>
                     <div className="text-xs text-muted-foreground mt-1">Unreconciled</div>
                   </div>
                 </div>
@@ -965,33 +1139,47 @@ export default function BankReconciliation() {
 
               {/* Amount breakdown */}
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Amounts</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Amounts
+                </p>
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Total Credits</span>
-                    <span className="font-mono font-medium text-[hsl(var(--chart-5))]">{formatCurrency(reportData.amounts.totalCredits)}</span>
+                    <span className="font-mono font-medium text-[hsl(var(--chart-5))]">
+                      {formatCurrency(reportData.amounts.totalCredits)}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Total Debits</span>
-                    <span className="font-mono font-medium text-destructive">{formatCurrency(reportData.amounts.totalDebits)}</span>
+                    <span className="font-mono font-medium text-destructive">
+                      {formatCurrency(reportData.amounts.totalDebits)}
+                    </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Reconciled Credits</span>
-                    <span className="font-mono text-[hsl(var(--chart-5))]">{formatCurrency(reportData.amounts.reconciledCredits)}</span>
+                    <span className="font-mono text-[hsl(var(--chart-5))]">
+                      {formatCurrency(reportData.amounts.reconciledCredits)}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Reconciled Debits</span>
-                    <span className="font-mono text-destructive">{formatCurrency(reportData.amounts.reconciledDebits)}</span>
+                    <span className="font-mono text-destructive">
+                      {formatCurrency(reportData.amounts.reconciledDebits)}
+                    </span>
                   </div>
                   <Separator />
                   <div className="flex justify-between items-center text-sm font-semibold">
                     <span>Unreconciled Credits</span>
-                    <span className="font-mono text-[hsl(var(--chart-4))]">{formatCurrency(reportData.amounts.unreconciledCredits)}</span>
+                    <span className="font-mono text-[hsl(var(--chart-4))]">
+                      {formatCurrency(reportData.amounts.unreconciledCredits)}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center text-sm font-semibold">
                     <span>Unreconciled Debits</span>
-                    <span className="font-mono text-[hsl(var(--chart-4))]">{formatCurrency(reportData.amounts.unreconciledDebits)}</span>
+                    <span className="font-mono text-[hsl(var(--chart-4))]">
+                      {formatCurrency(reportData.amounts.unreconciledDebits)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1002,8 +1190,8 @@ export default function BankReconciliation() {
                   <div className="flex items-center gap-2 rounded-lg bg-[hsl(var(--chart-4)/0.10)] border border-[hsl(var(--chart-4)/0.30)] p-3">
                     <Sparkles className="w-4 h-4 text-[hsl(var(--chart-4))] shrink-0" />
                     <p className="text-sm text-foreground">
-                      <strong>{reportData.summary.suggestedCount}</strong> transaction(s) have suggested matches
-                      waiting for your review.
+                      <strong>{reportData.summary.suggestedCount}</strong> transaction(s) have
+                      suggested matches waiting for your review.
                     </p>
                   </div>
                 </>
@@ -1011,7 +1199,9 @@ export default function BankReconciliation() {
             </div>
           ) : null}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setReportDialogOpen(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setReportDialogOpen(false)}>
+              Close
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

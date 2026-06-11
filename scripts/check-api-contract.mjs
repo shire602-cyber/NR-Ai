@@ -22,7 +22,10 @@ for (const contract of config.requiredServerContracts ?? []) {
 
   const source = fs.readFileSync(filePath, 'utf8');
   for (const fragment of contract.mustContain ?? []) {
-    if (!source.includes(fragment)) {
+    // Quote-agnostic: contract fragments are written with single quotes but
+    // the formatter may emit double quotes (and vice versa).
+    const variants = [fragment, fragment.replaceAll("'", '"'), fragment.replaceAll('"', "'")];
+    if (!variants.some((variant) => source.includes(variant))) {
       failures.push(`${contract.name}: ${contract.file} does not contain ${fragment}`);
     }
   }

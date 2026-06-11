@@ -1,28 +1,28 @@
-import type { ReactNode } from 'react';
-import { Link } from 'wouter';
-import { motion } from 'framer-motion';
-import { ArrowLeft, ShieldCheck, Landmark, Languages } from 'lucide-react';
-import { BrandMark } from '@/components/BrandMark';
-import { MeshGradient } from '@/components/ui/mesh-gradient';
+import type { ReactNode } from "react";
+import { Link } from "wouter";
+import { motion } from "framer-motion";
+import { ArrowLeft, ShieldCheck, Landmark, Languages } from "lucide-react";
+import { BrandMark } from "@/components/BrandMark";
+import { MeshGradient } from "@/components/ui/mesh-gradient";
 
-const MIDNIGHT = '#0E1320';
-const GOLD = '#C19E50';
+const MIDNIGHT = "#0E1320";
+const GOLD = "#C19E50";
 
 const TRUST_POINTS = [
   {
     icon: Landmark,
-    title: 'FTA-native VAT 201',
-    body: 'Returns pre-filled from your ledger, EmaraTax-ready.',
+    title: "FTA-native VAT 201",
+    body: "Returns pre-filled from your ledger, EmaraTax-ready.",
   },
   {
     icon: ShieldCheck,
-    title: 'Bank-grade security',
-    body: 'Encrypted at rest and in transit, UAE data residency.',
+    title: "Bank-grade security",
+    body: "Encrypted at rest and in transit, UAE data residency.",
   },
   {
     icon: Languages,
-    title: 'Bilingual by design',
-    body: 'English and Arabic, side by side — invoices included.',
+    title: "Bilingual by design",
+    body: "English and Arabic, side by side — invoices included.",
   },
 ];
 
@@ -47,20 +47,27 @@ export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
       >
         <MeshGradient emerald={0.4} gold={0.3} />
 
-        <Link href="/" className="relative flex items-center gap-2.5 w-fit" data-testid="link-brand-home">
+        <Link
+          href="/"
+          className="relative flex items-center gap-2.5 w-fit"
+          data-testid="link-brand-home"
+        >
           <BrandMark size="md" />
           <span className="font-semibold text-[15px] tracking-tight text-white">
-            Muhasib<span style={{ color: '#34A87A' }}>.ai</span>
+            Muhasib<span style={{ color: "#34A87A" }}>.ai</span>
           </span>
         </Link>
 
         <motion.div
           className="relative max-w-md"
-          initial={{ opacity: 0, y: 24, filter: 'blur(8px)' }}
-          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          initial={{ opacity: 0, y: 24, filter: "blur(8px)" }}
+          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: GOLD }}>
+          <div
+            className="mb-5 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
+            style={{ color: GOLD }}
+          >
             <span className="inline-block w-6 h-px" style={{ background: GOLD }} />
             AI-native accounting · UAE
           </div>
@@ -79,11 +86,15 @@ export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
                 transition={{ duration: 0.6, delay: 0.3 + i * 0.12, ease: [0.22, 1, 0.36, 1] }}
               >
                 <span className="mt-0.5 flex items-center justify-center w-8 h-8 rounded-lg bg-white/[0.06] ring-1 ring-white/10">
-                  <Icon className="w-4 h-4" style={{ color: '#34A87A' }} strokeWidth={1.75} />
+                  <Icon className="w-4 h-4" style={{ color: "#34A87A" }} strokeWidth={1.75} />
                 </span>
                 <span>
-                  <span className="block text-[13.5px] font-semibold tracking-tight text-white/90">{title}</span>
-                  <span className="block mt-0.5 text-[12.5px] leading-relaxed text-white/45">{body}</span>
+                  <span className="block text-[13.5px] font-semibold tracking-tight text-white/90">
+                    {title}
+                  </span>
+                  <span className="block mt-0.5 text-[12.5px] leading-relaxed text-white/45">
+                    {body}
+                  </span>
                 </span>
               </motion.li>
             ))}

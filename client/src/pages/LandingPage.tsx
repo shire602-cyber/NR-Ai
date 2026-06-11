@@ -1,8 +1,8 @@
-import { Link } from 'wouter';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
   Scan,
   FileCheck,
@@ -25,17 +25,17 @@ import {
   ChevronRight,
   Menu,
   X,
-} from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+} from "lucide-react";
+import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   ScrollReveal,
   StaggerContainer,
   StaggerItem,
   AnimatedNumber,
   hoverLift,
-} from '@/lib/animations';
-import { useI18n } from '@/lib/i18n';
+} from "@/lib/animations";
+import { useI18n } from "@/lib/i18n";
 
 // ──────────────────────────────────────────────
 // Data
@@ -44,159 +44,159 @@ import { useI18n } from '@/lib/i18n';
 const features = [
   {
     icon: Scan,
-    title: 'AI Receipt OCR',
+    title: "AI Receipt OCR",
     description:
-      'Photograph receipts and let AI extract vendor, amount, date, and VAT automatically. No manual entry.',
-    color: 'text-violet-500',
-    bg: 'bg-violet-500/10',
+      "Photograph receipts and let AI extract vendor, amount, date, and VAT automatically. No manual entry.",
+    color: "text-violet-500",
+    bg: "bg-violet-500/10",
   },
   {
     icon: FileCheck,
-    title: 'FTA-Compliant VAT',
+    title: "FTA-Compliant VAT",
     description:
-      'VAT 201 returns, e-invoicing, and audit-ready ledgers. Stay compliant with UAE Federal Tax Authority rules.',
-    color: 'text-blue-500',
-    bg: 'bg-blue-500/10',
+      "VAT 201 returns, e-invoicing, and audit-ready ledgers. Stay compliant with UAE Federal Tax Authority rules.",
+    color: "text-blue-500",
+    bg: "bg-blue-500/10",
   },
   {
     icon: RefreshCw,
-    title: 'Bank Reconciliation',
+    title: "Bank Reconciliation",
     description:
-      'Smart transaction matching across UAE major banks. Reconcile months of statements in minutes.',
-    color: 'text-emerald-500',
-    bg: 'bg-emerald-500/10',
+      "Smart transaction matching across UAE major banks. Reconcile months of statements in minutes.",
+    color: "text-emerald-500",
+    bg: "bg-emerald-500/10",
   },
   {
     icon: Globe,
-    title: 'Multi-Currency',
+    title: "Multi-Currency",
     description:
-      'AED as home currency with real-time FX rates for USD, EUR, GBP, and 150+ more. Gain/loss auto-posted.',
-    color: 'text-orange-500',
-    bg: 'bg-orange-500/10',
+      "AED as home currency with real-time FX rates for USD, EUR, GBP, and 150+ more. Gain/loss auto-posted.",
+    color: "text-orange-500",
+    bg: "bg-orange-500/10",
   },
   {
     icon: Languages,
-    title: 'Arabic + English',
+    title: "Arabic + English",
     description:
-      'Full bilingual interface and documents. Switch between Arabic and English with one click.',
-    color: 'text-rose-500',
-    bg: 'bg-rose-500/10',
+      "Full bilingual interface and documents. Switch between Arabic and English with one click.",
+    color: "text-rose-500",
+    bg: "bg-rose-500/10",
   },
   {
     icon: LayoutDashboard,
-    title: 'Real-Time Dashboard',
+    title: "Real-Time Dashboard",
     description:
-      'Cash flow, P&L, VAT liability, and KPIs updated live. Spot issues before month-end.',
-    color: 'text-indigo-500',
-    bg: 'bg-indigo-500/10',
+      "Cash flow, P&L, VAT liability, and KPIs updated live. Spot issues before month-end.",
+    color: "text-indigo-500",
+    bg: "bg-indigo-500/10",
   },
   {
     icon: FileText,
-    title: 'Invoice Management',
+    title: "Invoice Management",
     description:
-      'Create FTA-compliant tax invoices, send via email or WhatsApp, and track payment status automatically.',
-    color: 'text-cyan-500',
-    bg: 'bg-cyan-500/10',
+      "Create FTA-compliant tax invoices, send via email or WhatsApp, and track payment status automatically.",
+    color: "text-cyan-500",
+    bg: "bg-cyan-500/10",
   },
   {
     icon: Users,
-    title: 'Payroll (WPS SIF)',
+    title: "Payroll (WPS SIF)",
     description:
-      'Generate WPS-compliant SIF files, calculate end-of-service gratuity, and manage leave accruals.',
-    color: 'text-fuchsia-500',
-    bg: 'bg-fuchsia-500/10',
+      "Generate WPS-compliant SIF files, calculate end-of-service gratuity, and manage leave accruals.",
+    color: "text-fuchsia-500",
+    bg: "bg-fuchsia-500/10",
   },
 ];
 
 const steps = [
   {
-    number: '01',
-    title: 'Sign Up',
+    number: "01",
+    title: "Sign Up",
     description:
-      'Create your account in under 2 minutes. No credit card required for the free tier.',
+      "Create your account in under 2 minutes. No credit card required for the free tier.",
     icon: CheckCircle2,
   },
   {
-    number: '02',
-    title: 'Connect Your Bank',
+    number: "02",
+    title: "Connect Your Bank",
     description:
-      'Securely link your Emirates NBD, ADCB, FAB, or any UAE bank account via encrypted feeds.',
+      "Securely link your Emirates NBD, ADCB, FAB, or any UAE bank account via encrypted feeds.",
     icon: Shield,
   },
   {
-    number: '03',
-    title: 'Let AI Do the Rest',
+    number: "03",
+    title: "Let AI Do the Rest",
     description:
-      'Transactions are categorized, VAT extracted, invoices matched, and reports generated automatically.',
+      "Transactions are categorized, VAT extracted, invoices matched, and reports generated automatically.",
     icon: Zap,
   },
 ];
 
 const plans = [
   {
-    name: 'Free',
-    price: '0',
-    period: 'forever',
-    description: 'Perfect for sole traders and freelancers getting started.',
-    cta: 'Start Free',
-    href: '/register',
+    name: "Free",
+    price: "0",
+    period: "forever",
+    description: "Perfect for sole traders and freelancers getting started.",
+    cta: "Start Free",
+    href: "/register",
     popular: false,
     features: [
-      '50 transactions / month',
-      '5 invoices / month',
-      'Receipt OCR (10/mo)',
-      'VAT calculator',
-      'English only',
-      'Email support',
+      "50 transactions / month",
+      "5 invoices / month",
+      "Receipt OCR (10/mo)",
+      "VAT calculator",
+      "English only",
+      "Email support",
     ],
   },
   {
-    name: 'Professional',
-    price: '99',
-    period: '/month',
-    description: 'Everything a growing UAE SME needs — fully automated.',
-    cta: 'Start Free Trial',
-    href: '/register',
+    name: "Professional",
+    price: "99",
+    period: "/month",
+    description: "Everything a growing UAE SME needs — fully automated.",
+    cta: "Start Free Trial",
+    href: "/register",
     popular: true,
     features: [
-      'Unlimited transactions',
-      'Unlimited invoices',
-      'Unlimited Receipt OCR',
-      'FTA VAT 201 filing',
-      'Bank reconciliation',
-      'Multi-currency (AED + 150+)',
-      'Arabic + English UI',
-      'WPS Payroll (SIF)',
-      'Real-time dashboard',
-      'WhatsApp notifications',
-      'Priority support',
+      "Unlimited transactions",
+      "Unlimited invoices",
+      "Unlimited Receipt OCR",
+      "FTA VAT 201 filing",
+      "Bank reconciliation",
+      "Multi-currency (AED + 150+)",
+      "Arabic + English UI",
+      "WPS Payroll (SIF)",
+      "Real-time dashboard",
+      "WhatsApp notifications",
+      "Priority support",
     ],
   },
   {
-    name: 'Enterprise',
-    price: 'Custom',
-    period: '',
-    description: 'For accounting firms and multi-entity businesses.',
-    cta: 'Contact Us',
-    href: 'mailto:hello@muhasib.ai',
+    name: "Enterprise",
+    price: "Custom",
+    period: "",
+    description: "For accounting firms and multi-entity businesses.",
+    cta: "Contact Us",
+    href: "mailto:hello@muhasib.ai",
     popular: false,
     features: [
-      'Everything in Professional',
-      'Multi-entity / group companies',
-      'Dedicated account manager',
-      'Custom integrations',
-      'SLA-backed uptime',
-      'On-site training',
-      'FTA audit representation',
+      "Everything in Professional",
+      "Multi-entity / group companies",
+      "Dedicated account manager",
+      "Custom integrations",
+      "SLA-backed uptime",
+      "On-site training",
+      "FTA audit representation",
     ],
   },
 ];
 
 const stats = [
-  { value: 12000, suffix: '+', label: 'Invoices Generated' },
-  { value: 99, suffix: '%', label: 'AI Accuracy Rate' },
-  { value: 20, suffix: 'hrs', label: 'Saved Per Month' },
-  { value: 500, suffix: '+', label: 'UAE Businesses' },
+  { value: 12000, suffix: "+", label: "Invoices Generated" },
+  { value: 99, suffix: "%", label: "AI Accuracy Rate" },
+  { value: 20, suffix: "hrs", label: "Saved Per Month" },
+  { value: 500, suffix: "+", label: "UAE Businesses" },
 ];
 
 // ──────────────────────────────────────────────
@@ -210,18 +210,18 @@ export default function LandingPage() {
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const toggleLocale = () => setLocale(locale === 'en' ? 'ar' : 'en');
+  const toggleLocale = () => setLocale(locale === "en" ? "ar" : "en");
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Navbar ── */}
       <header
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          scrolled ? 'bg-background/95 backdrop-blur border-b shadow-sm' : 'bg-transparent'
+          scrolled ? "bg-background/95 backdrop-blur border-b shadow-sm" : "bg-transparent"
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -238,16 +238,28 @@ export default function LandingPage() {
 
             {/* Desktop nav */}
             <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-              <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
+              <a
+                href="#features"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
                 Features
               </a>
-              <a href="#how-it-works" className="text-muted-foreground hover:text-foreground transition-colors">
+              <a
+                href="#how-it-works"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
                 How it works
               </a>
-              <a href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors">
+              <a
+                href="#pricing"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
                 Pricing
               </a>
-              <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">
+              <a
+                href="#contact"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
                 Contact
               </a>
             </nav>
@@ -258,15 +270,19 @@ export default function LandingPage() {
                 variant="ghost"
                 size="sm"
                 onClick={toggleLocale}
-                aria-label={locale === 'en' ? 'Switch to Arabic' : 'Switch to English'}
+                aria-label={locale === "en" ? "Switch to Arabic" : "Switch to English"}
                 data-testid="button-language-toggle"
                 className="gap-1.5"
               >
                 <Languages className="w-4 h-4" />
-                <span className="text-xs font-semibold">{locale === 'en' ? 'العربية' : 'English'}</span>
+                <span className="text-xs font-semibold">
+                  {locale === "en" ? "العربية" : "English"}
+                </span>
               </Button>
               <Link href="/login">
-                <Button variant="ghost" size="sm">Sign In</Button>
+                <Button variant="ghost" size="sm">
+                  Sign In
+                </Button>
               </Link>
               <Link href="/register">
                 <Button size="sm" className="bg-primary hover:bg-primary/90">
@@ -291,30 +307,61 @@ export default function LandingPage() {
           {menuOpen && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
+              animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               className="md:hidden bg-background border-b overflow-hidden"
             >
               <div className="px-4 py-4 flex flex-col gap-3">
-                <a href="#features" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-2">Features</a>
-                <a href="#how-it-works" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-2">How it works</a>
-                <a href="#pricing" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-2">Pricing</a>
-                <a href="#contact" onClick={() => setMenuOpen(false)} className="text-sm font-medium py-2">Contact</a>
+                <a
+                  href="#features"
+                  onClick={() => setMenuOpen(false)}
+                  className="text-sm font-medium py-2"
+                >
+                  Features
+                </a>
+                <a
+                  href="#how-it-works"
+                  onClick={() => setMenuOpen(false)}
+                  className="text-sm font-medium py-2"
+                >
+                  How it works
+                </a>
+                <a
+                  href="#pricing"
+                  onClick={() => setMenuOpen(false)}
+                  className="text-sm font-medium py-2"
+                >
+                  Pricing
+                </a>
+                <a
+                  href="#contact"
+                  onClick={() => setMenuOpen(false)}
+                  className="text-sm font-medium py-2"
+                >
+                  Contact
+                </a>
                 <Separator />
                 <Button
                   variant="ghost"
                   className="w-full justify-start gap-2"
-                  onClick={() => { toggleLocale(); setMenuOpen(false); }}
+                  onClick={() => {
+                    toggleLocale();
+                    setMenuOpen(false);
+                  }}
                   data-testid="button-language-toggle-mobile"
                 >
                   <Languages className="w-4 h-4" />
-                  {locale === 'en' ? 'العربية' : 'English'}
+                  {locale === "en" ? "العربية" : "English"}
                 </Button>
                 <Link href="/login">
-                  <Button variant="outline" className="w-full" onClick={() => setMenuOpen(false)}>Sign In</Button>
+                  <Button variant="outline" className="w-full" onClick={() => setMenuOpen(false)}>
+                    Sign In
+                  </Button>
                 </Link>
                 <Link href="/register">
-                  <Button className="w-full bg-primary" onClick={() => setMenuOpen(false)}>Start Free Trial</Button>
+                  <Button className="w-full bg-primary" onClick={() => setMenuOpen(false)}>
+                    Start Free Trial
+                  </Button>
                 </Link>
               </div>
             </motion.div>
@@ -332,7 +379,10 @@ export default function LandingPage() {
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <ScrollReveal>
-            <Badge variant="outline" className="mb-6 px-4 py-1.5 text-sm font-medium border-primary/30 text-primary bg-primary/5">
+            <Badge
+              variant="outline"
+              className="mb-6 px-4 py-1.5 text-sm font-medium border-primary/30 text-primary bg-primary/5"
+            >
               <Award className="w-3.5 h-3.5 mr-1.5" />
               Powered by Najma Al Raeda — Registered UAE Accounting Firm
             </Badge>
@@ -340,10 +390,8 @@ export default function LandingPage() {
 
           <ScrollReveal delay={0.1}>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-6">
-              AI Bookkeeping{' '}
-              <span className="text-primary">Built for</span>
-              <br className="hidden sm:block" />
-              {' '}UAE Businesses
+              AI Bookkeeping <span className="text-primary">Built for</span>
+              <br className="hidden sm:block" /> UAE Businesses
             </h1>
           </ScrollReveal>
 
@@ -358,7 +406,10 @@ export default function LandingPage() {
             <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
               <Link href="/register">
                 <motion.div whileHover={hoverLift}>
-                  <Button size="lg" className="bg-primary hover:bg-primary/90 px-8 text-base h-12 shadow-lg shadow-primary/25">
+                  <Button
+                    size="lg"
+                    className="bg-primary hover:bg-primary/90 px-8 text-base h-12 shadow-lg shadow-primary/25"
+                  >
                     Start Free Trial
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
@@ -406,7 +457,8 @@ export default function LandingPage() {
               Everything You Need to Run Your Finances
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              Built from the ground up for UAE businesses — FTA-compliant, bilingual, and AI-powered.
+              Built from the ground up for UAE businesses — FTA-compliant, bilingual, and
+              AI-powered.
             </p>
           </ScrollReveal>
 
@@ -418,13 +470,17 @@ export default function LandingPage() {
                   <motion.div whileHover={hoverLift} className="h-full">
                     <Card className="h-full border border-border/60 hover:border-primary/30 hover:shadow-lg transition-all duration-300 bg-background">
                       <CardHeader className="pb-3">
-                        <div className={`w-10 h-10 rounded-xl ${f.bg} flex items-center justify-center mb-3`}>
+                        <div
+                          className={`w-10 h-10 rounded-xl ${f.bg} flex items-center justify-center mb-3`}
+                        >
                           <Icon className={`w-5 h-5 ${f.color}`} />
                         </div>
                         <h3 className="font-semibold text-base">{f.title}</h3>
                       </CardHeader>
                       <CardContent>
-                        <p className="text-sm text-muted-foreground leading-relaxed">{f.description}</p>
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {f.description}
+                        </p>
                       </CardContent>
                     </Card>
                   </motion.div>
@@ -482,7 +538,10 @@ export default function LandingPage() {
 
           <ScrollReveal delay={0.3} className="text-center mt-12">
             <Link href="/register">
-              <Button size="lg" className="bg-primary hover:bg-primary/90 px-10 shadow-lg shadow-primary/25">
+              <Button
+                size="lg"
+                className="bg-primary hover:bg-primary/90 px-10 shadow-lg shadow-primary/25"
+              >
                 Get Started Free
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
@@ -513,8 +572,8 @@ export default function LandingPage() {
                   <Card
                     className={`h-full flex flex-col relative transition-all duration-300 ${
                       plan.popular
-                        ? 'border-primary shadow-xl shadow-primary/15 bg-background ring-2 ring-primary ring-offset-2'
-                        : 'border-border/60 hover:border-primary/30 hover:shadow-lg bg-background'
+                        ? "border-primary shadow-xl shadow-primary/15 bg-background ring-2 ring-primary ring-offset-2"
+                        : "border-border/60 hover:border-primary/30 hover:shadow-lg bg-background"
                     }`}
                   >
                     {plan.popular && (
@@ -529,7 +588,7 @@ export default function LandingPage() {
                       <h3 className="text-lg font-bold">{plan.name}</h3>
                       <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>
                       <div className="mt-4 flex items-baseline gap-1">
-                        {plan.price === 'Custom' ? (
+                        {plan.price === "Custom" ? (
                           <span className="text-3xl font-bold">Custom</span>
                         ) : (
                           <>
@@ -555,10 +614,10 @@ export default function LandingPage() {
                         <Button
                           className={`w-full ${
                             plan.popular
-                              ? 'bg-primary hover:bg-primary/90 shadow-md shadow-primary/20'
-                              : ''
+                              ? "bg-primary hover:bg-primary/90 shadow-md shadow-primary/20"
+                              : ""
                           }`}
-                          variant={plan.popular ? 'default' : 'outline'}
+                          variant={plan.popular ? "default" : "outline"}
                           size="lg"
                         >
                           {plan.cta}
@@ -587,23 +646,27 @@ export default function LandingPage() {
 
               {/* Text */}
               <div className="flex-1 text-center lg:text-left">
-                <Badge variant="outline" className="mb-3 border-primary/30 text-primary bg-primary/5">
+                <Badge
+                  variant="outline"
+                  className="mb-3 border-primary/30 text-primary bg-primary/5"
+                >
                   Trusted Partner
                 </Badge>
                 <h2 className="text-2xl lg:text-3xl font-bold mb-3">
                   Powered by Najma Al Raeda Accounting
                 </h2>
                 <p className="text-muted-foreground leading-relaxed max-w-2xl">
-                  Muhasib.ai is the official digital platform of <strong>Najma Al Raeda (NRA) Accounting</strong> —
-                  a UAE-registered accounting firm with over a decade of experience serving Emirati businesses.
-                  NRA is an FTA-registered Tax Agent, ensuring your filings meet every regulatory requirement.
+                  Muhasib.ai is the official digital platform of{" "}
+                  <strong>Najma Al Raeda (NRA) Accounting</strong> — a UAE-registered accounting
+                  firm with over a decade of experience serving Emirati businesses. NRA is an
+                  FTA-registered Tax Agent, ensuring your filings meet every regulatory requirement.
                 </p>
 
                 <div className="mt-6 flex flex-wrap gap-4 justify-center lg:justify-start">
                   {[
-                    { icon: Shield, text: 'FTA-Registered Tax Agent' },
-                    { icon: Award, text: 'UAE Registered Firm' },
-                    { icon: CheckCircle2, text: 'Serving UAE since 2017' },
+                    { icon: Shield, text: "FTA-Registered Tax Agent" },
+                    { icon: Award, text: "UAE Registered Firm" },
+                    { icon: CheckCircle2, text: "Serving UAE since 2017" },
                   ].map((item) => {
                     const Icon = item.icon;
                     return (
@@ -632,7 +695,11 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link href="/register">
-                <Button size="lg" variant="secondary" className="px-10 h-12 text-base font-semibold shadow-lg">
+                <Button
+                  size="lg"
+                  variant="secondary"
+                  className="px-10 h-12 text-base font-semibold shadow-lg"
+                >
                   Start Free Trial
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
@@ -661,9 +728,7 @@ export default function LandingPage() {
             <Badge variant="outline" className="mb-4 border-primary/30 text-primary bg-primary/5">
               Get in Touch
             </Badge>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
-              Talk to Our Team
-            </h2>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">Talk to Our Team</h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
               Questions about VAT, onboarding, or pricing? Our UAE-based team is here to help.
             </p>
@@ -676,7 +741,11 @@ export default function LandingPage() {
                   <Mail className="w-5 h-5 text-primary" />
                 </div>
                 <h3 className="font-semibold text-base mb-1">Email</h3>
-                <a href="mailto:hello@muhasib.ai" className="text-sm text-primary hover:underline" data-testid="link-contact-email">
+                <a
+                  href="mailto:hello@muhasib.ai"
+                  className="text-sm text-primary hover:underline"
+                  data-testid="link-contact-email"
+                >
                   hello@muhasib.ai
                 </a>
                 <p className="text-xs text-muted-foreground mt-2">Replies within 1 business day</p>
@@ -689,7 +758,11 @@ export default function LandingPage() {
                   <Phone className="w-5 h-5 text-primary" />
                 </div>
                 <h3 className="font-semibold text-base mb-1">Phone</h3>
-                <a href="tel:+97141234567" className="text-sm text-primary hover:underline" data-testid="link-contact-phone">
+                <a
+                  href="tel:+97141234567"
+                  className="text-sm text-primary hover:underline"
+                  data-testid="link-contact-phone"
+                >
                   +971 4 123 4567
                 </a>
                 <p className="text-xs text-muted-foreground mt-2">Sun – Thu, 9:00 – 18:00 GST</p>
@@ -731,10 +804,26 @@ export default function LandingPage() {
             <div>
               <h4 className="font-semibold text-sm mb-3">Product</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#features" className="hover:text-foreground transition-colors">Features</a></li>
-                <li><a href="#pricing" className="hover:text-foreground transition-colors">Pricing</a></li>
-                <li><Link href="/login" className="hover:text-foreground transition-colors">Sign In</Link></li>
-                <li><Link href="/register" className="hover:text-foreground transition-colors">Sign Up</Link></li>
+                <li>
+                  <a href="#features" className="hover:text-foreground transition-colors">
+                    Features
+                  </a>
+                </li>
+                <li>
+                  <a href="#pricing" className="hover:text-foreground transition-colors">
+                    Pricing
+                  </a>
+                </li>
+                <li>
+                  <Link href="/login" className="hover:text-foreground transition-colors">
+                    Sign In
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/register" className="hover:text-foreground transition-colors">
+                    Sign Up
+                  </Link>
+                </li>
               </ul>
             </div>
 
@@ -750,9 +839,21 @@ export default function LandingPage() {
               </ul>
               <h4 className="font-semibold text-sm mt-5 mb-3">Legal</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><Link href="/privacy" className="hover:text-foreground transition-colors">Privacy Policy</Link></li>
-                <li><Link href="/terms" className="hover:text-foreground transition-colors">Terms of Service</Link></li>
-                <li><Link href="/cookies" className="hover:text-foreground transition-colors">Cookie Policy</Link></li>
+                <li>
+                  <Link href="/privacy" className="hover:text-foreground transition-colors">
+                    Privacy Policy
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/terms" className="hover:text-foreground transition-colors">
+                    Terms of Service
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/cookies" className="hover:text-foreground transition-colors">
+                    Cookie Policy
+                  </Link>
+                </li>
               </ul>
             </div>
 
@@ -766,29 +867,39 @@ export default function LandingPage() {
                 </li>
                 <li className="flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 shrink-0 text-primary" />
-                  <a href="tel:+97141234567" className="hover:text-foreground transition-colors">+971 4 123 4567</a>
+                  <a href="tel:+97141234567" className="hover:text-foreground transition-colors">
+                    +971 4 123 4567
+                  </a>
                 </li>
                 <li className="flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 shrink-0 text-primary" />
-                  <a href="mailto:hello@muhasib.ai" className="hover:text-foreground transition-colors">hello@muhasib.ai</a>
+                  <a
+                    href="mailto:hello@muhasib.ai"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    hello@muhasib.ai
+                  </a>
                 </li>
                 <li className="flex items-center gap-2">
                   <Mail className="w-3.5 h-3.5 shrink-0 text-primary" />
-                  <a href="mailto:support@muhasib.ai" className="hover:text-foreground transition-colors">support@muhasib.ai</a>
+                  <a
+                    href="mailto:support@muhasib.ai"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    support@muhasib.ai
+                  </a>
                 </li>
               </ul>
 
               {/* Social placeholders */}
               <div className="flex gap-3 mt-4">
-                {['LinkedIn', 'X', 'Instagram'].map((s) => (
+                {["LinkedIn", "X", "Instagram"].map((s) => (
                   <div
                     key={s}
                     title={s}
                     className="w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
                   >
-                    <span className="text-[10px] font-bold text-muted-foreground">
-                      {s[0]}
-                    </span>
+                    <span className="text-[10px] font-bold text-muted-foreground">{s[0]}</span>
                   </div>
                 ))}
               </div>
@@ -798,11 +909,31 @@ export default function LandingPage() {
           <Separator className="mb-6" />
 
           <div className="flex flex-col sm:flex-row justify-between items-center gap-3 text-xs text-muted-foreground">
-            <span>© {new Date().getFullYear()} Muhasib.ai · Powered by Najma Al Raeda Accounting LLC</span>
+            <span>
+              © {new Date().getFullYear()} Muhasib.ai · Powered by Najma Al Raeda Accounting LLC
+            </span>
             <div className="flex gap-4">
-              <Link href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-footer-privacy">Privacy Policy</Link>
-              <Link href="/terms" className="hover:text-foreground transition-colors" data-testid="link-footer-terms">Terms of Service</Link>
-              <Link href="/cookies" className="hover:text-foreground transition-colors" data-testid="link-footer-cookies">Cookie Policy</Link>
+              <Link
+                href="/privacy"
+                className="hover:text-foreground transition-colors"
+                data-testid="link-footer-privacy"
+              >
+                Privacy Policy
+              </Link>
+              <Link
+                href="/terms"
+                className="hover:text-foreground transition-colors"
+                data-testid="link-footer-terms"
+              >
+                Terms of Service
+              </Link>
+              <Link
+                href="/cookies"
+                className="hover:text-foreground transition-colors"
+                data-testid="link-footer-cookies"
+              >
+                Cookie Policy
+              </Link>
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { motion, useInView, useScroll, useTransform } from 'framer-motion';
+import { motion, useInView, useScroll, useTransform } from "framer-motion";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -17,9 +17,9 @@ import {
   TrendingUp,
   Wallet,
   X,
-} from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { Link } from 'wouter';
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "wouter";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Muhasib.ai · Landing page
@@ -40,17 +40,17 @@ import { Link } from 'wouter';
 
 // Brand tokens — kept inline so the file is self-contained.
 const C = {
-  paper: '#FAFAF6',
-  ink: '#131820',
-  emerald: '#0D5C3D',
-  emeraldSoft: '#E6F1EC',
-  gold: '#C19E50',
-  goldSoft: '#F7EFDA',
-  midnight: '#0E1320',
-  hairline: 'rgba(15,20,25,0.08)',
-  hairlineStrong: 'rgba(15,20,25,0.14)',
-  muted: 'rgba(15,20,25,0.55)',
-  whisper: 'rgba(15,20,25,0.04)',
+  paper: "#FAFAF6",
+  ink: "#131820",
+  emerald: "#0D5C3D",
+  emeraldSoft: "#E6F1EC",
+  gold: "#C19E50",
+  goldSoft: "#F7EFDA",
+  midnight: "#0E1320",
+  hairline: "rgba(15,20,25,0.08)",
+  hairlineStrong: "rgba(15,20,25,0.14)",
+  muted: "rgba(15,20,25,0.55)",
+  whisper: "rgba(15,20,25,0.04)",
 };
 
 // ── 1.  Linear-style scroll-in (blur → clarity + translateY) ─────────────────
@@ -67,9 +67,9 @@ function Reveal({
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y, filter: 'blur(8px)' }}
-      whileInView={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-      viewport={{ once: true, margin: '-80px' }}
+      initial={{ opacity: 0, y, filter: "blur(8px)" }}
+      whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.9, delay, ease: [0.22, 1, 0.36, 1] }}
       className={className}
     >
@@ -79,7 +79,15 @@ function Reveal({
 }
 
 // ── 2. Animated counter (IntersectionObserver-triggered, cubic ease-out) ─────
-function Counter({ to, suffix = '', prefix = '' }: { to: number; suffix?: string; prefix?: string }) {
+function Counter({
+  to,
+  suffix = "",
+  prefix = "",
+}: {
+  to: number;
+  suffix?: string;
+  prefix?: string;
+}) {
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, amount: 0.6 });
   const [v, setV] = useState(0);
@@ -113,20 +121,18 @@ function HeroMesh() {
       <motion.div
         className="absolute -left-32 top-0 h-[640px] w-[640px] rounded-full opacity-50 blur-3xl"
         style={{
-          background:
-            'radial-gradient(circle, rgba(13,92,61,0.35) 0%, rgba(13,92,61,0) 60%)',
+          background: "radial-gradient(circle, rgba(13,92,61,0.35) 0%, rgba(13,92,61,0) 60%)",
         }}
         animate={{ x: [0, 60, 0], y: [0, -30, 0] }}
-        transition={{ duration: 22, repeat: Infinity, ease: 'easeInOut' }}
+        transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
       />
       <motion.div
         className="absolute -right-32 top-32 h-[560px] w-[560px] rounded-full opacity-40 blur-3xl"
         style={{
-          background:
-            'radial-gradient(circle, rgba(193,158,80,0.32) 0%, rgba(193,158,80,0) 60%)',
+          background: "radial-gradient(circle, rgba(193,158,80,0.32) 0%, rgba(193,158,80,0) 60%)",
         }}
         animate={{ x: [0, -40, 0], y: [0, 40, 0] }}
-        transition={{ duration: 26, repeat: Infinity, ease: 'easeInOut' }}
+        transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
       />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_60%,#FAFAF6_100%)]" />
     </div>
@@ -145,11 +151,11 @@ function HeroProductMock() {
           {/* Browser chrome */}
           <div
             className="flex items-center gap-1.5 border-b px-4 py-2.5"
-            style={{ borderColor: C.hairline, background: 'rgba(15,20,25,0.02)' }}
+            style={{ borderColor: C.hairline, background: "rgba(15,20,25,0.02)" }}
           >
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#ED6B5F' }} />
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#F4BE4F' }} />
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: '#60C354' }} />
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#ED6B5F" }} />
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#F4BE4F" }} />
+            <span className="h-2.5 w-2.5 rounded-full" style={{ background: "#60C354" }} />
             <span
               className="ml-3 rounded-md px-2.5 py-0.5 font-mono text-[10px]"
               style={{ background: C.whisper, color: C.muted }}
@@ -174,23 +180,25 @@ function HeroProductMock() {
                 </span>
               </div>
               <div className="space-y-1">
-                {['Dashboard', 'Invoices', 'Receipts', 'VAT 201', 'Bank Feeds', 'Reports'].map((l, i) => (
-                  <div
-                    key={l}
-                    className="flex items-center gap-2 rounded px-2 py-1.5 text-[11px]"
-                    style={{
-                      background: i === 0 ? C.emeraldSoft : 'transparent',
-                      color: i === 0 ? C.emerald : C.muted,
-                      fontWeight: i === 0 ? 600 : 500,
-                    }}
-                  >
-                    <span
-                      className="h-1 w-1 rounded-full"
-                      style={{ background: i === 0 ? C.emerald : 'transparent' }}
-                    />
-                    {l}
-                  </div>
-                ))}
+                {["Dashboard", "Invoices", "Receipts", "VAT 201", "Bank Feeds", "Reports"].map(
+                  (l, i) => (
+                    <div
+                      key={l}
+                      className="flex items-center gap-2 rounded px-2 py-1.5 text-[11px]"
+                      style={{
+                        background: i === 0 ? C.emeraldSoft : "transparent",
+                        color: i === 0 ? C.emerald : C.muted,
+                        fontWeight: i === 0 ? 600 : 500,
+                      }}
+                    >
+                      <span
+                        className="h-1 w-1 rounded-full"
+                        style={{ background: i === 0 ? C.emerald : "transparent" }}
+                      />
+                      {l}
+                    </div>
+                  )
+                )}
               </div>
             </div>
 
@@ -210,7 +218,10 @@ function HeroProductMock() {
                     <div className="text-[11px] font-semibold" style={{ color: C.ink }}>
                       Cash flow · 90 days
                     </div>
-                    <div className="text-[9px] font-medium uppercase tracking-wider" style={{ color: C.muted }}>
+                    <div
+                      className="text-[9px] font-medium uppercase tracking-wider"
+                      style={{ color: C.muted }}
+                    >
                       Operating · Investing · Financing
                     </div>
                   </div>
@@ -232,7 +243,7 @@ function HeroProductMock() {
                     initial={{ pathLength: 0 }}
                     whileInView={{ pathLength: 1 }}
                     viewport={{ once: true }}
-                    transition={{ duration: 2.2, ease: 'easeInOut', delay: 0.6 }}
+                    transition={{ duration: 2.2, ease: "easeInOut", delay: 0.6 }}
                     d="M 0 75 Q 40 70 60 60 T 110 55 T 170 42 T 230 35 T 290 28 T 350 22 T 400 14"
                     fill="none"
                     stroke={C.emerald}
@@ -247,18 +258,24 @@ function HeroProductMock() {
 
               {/* Transactions row */}
               <div className="mt-4 rounded-xl border" style={{ borderColor: C.hairline }}>
-                <div className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: C.hairline }}>
+                <div
+                  className="flex items-center justify-between border-b px-4 py-2.5"
+                  style={{ borderColor: C.hairline }}
+                >
                   <span className="text-[11px] font-semibold" style={{ color: C.ink }}>
                     Today · auto-categorised
                   </span>
-                  <span className="text-[9px] font-medium uppercase tracking-wider" style={{ color: C.muted }}>
+                  <span
+                    className="text-[9px] font-medium uppercase tracking-wider"
+                    style={{ color: C.muted }}
+                  >
                     AI · 99.2% confidence
                   </span>
                 </div>
                 {[
-                  ['Carrefour Hypermarket', 'Office supplies', 'AED 432.10'],
-                  ['Etisalat — Business Line', 'Telecom', 'AED 879.00'],
-                  ['DEWA — June bill', 'Utilities', 'AED 1,204.50'],
+                  ["Carrefour Hypermarket", "Office supplies", "AED 432.10"],
+                  ["Etisalat — Business Line", "Telecom", "AED 879.00"],
+                  ["DEWA — June bill", "Utilities", "AED 1,204.50"],
                 ].map(([v, c, a], i) => (
                   <motion.div
                     key={v}
@@ -295,7 +312,10 @@ function HeroProductMock() {
           className="absolute -bottom-8 -left-8 hidden w-[320px] overflow-hidden rounded-2xl border bg-white p-4 shadow-[0_24px_60px_-30px_rgba(15,20,25,0.3),0_8px_24px_-12px_rgba(15,20,25,0.1)] sm:block"
           style={{ borderColor: C.hairline }}
         >
-          <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
+          <div
+            className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider"
+            style={{ color: C.muted }}
+          >
             <span
               className="flex h-5 w-5 items-center justify-center rounded-md"
               style={{ background: C.emerald }}
@@ -314,12 +334,19 @@ function HeroProductMock() {
             className="rounded-lg px-3 py-2.5 text-[11px] leading-relaxed"
             style={{ background: C.emeraldSoft, color: C.ink }}
           >
-            <span className="font-semibold">AED 48,210</span> due 28 October. Down 3.4% from Q2 — driven by lower zero-rated exports. Want me to draft the return?
+            <span className="font-semibold">AED 48,210</span> due 28 October. Down 3.4% from Q2 —
+            driven by lower zero-rated exports. Want me to draft the return?
             <div className="mt-2 flex gap-1.5">
-              <span className="rounded-full bg-white px-2 py-0.5 font-mono text-[9px]" style={{ color: C.emerald }}>
+              <span
+                className="rounded-full bg-white px-2 py-0.5 font-mono text-[9px]"
+                style={{ color: C.emerald }}
+              >
                 Draft return
               </span>
-              <span className="rounded-full bg-white px-2 py-0.5 font-mono text-[9px]" style={{ color: C.muted }}>
+              <span
+                className="rounded-full bg-white px-2 py-0.5 font-mono text-[9px]"
+                style={{ color: C.muted }}
+              >
                 Show workpaper
               </span>
             </div>
@@ -334,7 +361,10 @@ function HeroProductMock() {
           style={{ borderColor: C.hairline }}
         >
           <FileCheck className="h-4 w-4" style={{ color: C.emerald }} />
-          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.ink }}>
+          <span
+            className="text-[10px] font-semibold uppercase tracking-wider"
+            style={{ color: C.ink }}
+          >
             FTA · VAT 201 · ready to file
           </span>
         </div>
@@ -366,8 +396,8 @@ function KpiTile({
         <span
           className="rounded-full px-1.5 py-0.5 font-mono text-[9px]"
           style={{
-            background: negative ? '#FBE7E3' : C.emeraldSoft,
-            color: negative ? '#B5392B' : C.emerald,
+            background: negative ? "#FBE7E3" : C.emeraldSoft,
+            color: negative ? "#B5392B" : C.emerald,
           }}
         >
           {delta}
@@ -380,18 +410,21 @@ function KpiTile({
 // ── 5. Live FTA regulatory updates ticker (the differentiator) ───────────────
 function FtaTicker() {
   const updates = [
-    ['FTA Decision 5/2025', 'Real-estate VAT clarification published — effective 1 Sep'],
-    ['Cabinet Decision 100/2024', 'Corporate Tax small-business relief threshold confirmed'],
-    ['e-Invoicing Phase 2', 'PINT AE format mandatory for B2B from July 2026'],
-    ['EmaraTax', 'New API endpoint for bulk VAT 201 submission (v2.4)'],
-    ['Public Clarification', 'Treatment of director services for VAT — VATP040'],
-    ['FTA Decision 8/2025', 'E-commerce supplies — emirate-level reporting refinement'],
+    ["FTA Decision 5/2025", "Real-estate VAT clarification published — effective 1 Sep"],
+    ["Cabinet Decision 100/2024", "Corporate Tax small-business relief threshold confirmed"],
+    ["e-Invoicing Phase 2", "PINT AE format mandatory for B2B from July 2026"],
+    ["EmaraTax", "New API endpoint for bulk VAT 201 submission (v2.4)"],
+    ["Public Clarification", "Treatment of director services for VAT — VATP040"],
+    ["FTA Decision 8/2025", "E-commerce supplies — emirate-level reporting refinement"],
   ];
   // Duplicate for seamless loop.
   const stream = [...updates, ...updates];
 
   return (
-    <div className="relative overflow-hidden border-y" style={{ borderColor: C.hairline, background: C.whisper }}>
+    <div
+      className="relative overflow-hidden border-y"
+      style={{ borderColor: C.hairline, background: C.whisper }}
+    >
       <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-24 bg-gradient-to-r from-[#FAFAF6] to-transparent" />
       <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-24 bg-gradient-to-l from-[#FAFAF6] to-transparent" />
 
@@ -410,14 +443,14 @@ function FtaTicker() {
         <div className="relative flex-1 overflow-hidden">
           <motion.div
             className="flex items-center gap-10 whitespace-nowrap"
-            animate={{ x: ['0%', '-50%'] }}
-            transition={{ duration: 60, repeat: Infinity, ease: 'linear' }}
+            animate={{ x: ["0%", "-50%"] }}
+            transition={{ duration: 60, repeat: Infinity, ease: "linear" }}
           >
             {stream.map(([tag, body], i) => (
               <div key={i} className="flex shrink-0 items-center gap-3 text-[12px]">
                 <span
                   className="rounded-full px-2 py-0.5 font-mono text-[10px]"
-                  style={{ background: C.goldSoft, color: '#7B6228' }}
+                  style={{ background: C.goldSoft, color: "#7B6228" }}
                 >
                   {tag}
                 </span>
@@ -438,47 +471,58 @@ function CapabilityBento() {
     <div className="grid gap-4 md:grid-cols-6 md:grid-rows-2">
       {/* Receipt OCR — wide */}
       <BentoCard className="md:col-span-3 md:row-span-1">
-        <BentoHeader icon={Receipt} eyebrow="Receipt vision" title="Photograph it. We do the rest." />
+        <BentoHeader
+          icon={Receipt}
+          eyebrow="Receipt vision"
+          title="Photograph it. We do the rest."
+        />
         <BentoBody>
-          Vendor, VAT, total, currency, IBAN — extracted in under a second. Arabic and English, faded or crumpled.
+          Vendor, VAT, total, currency, IBAN — extracted in under a second. Arabic and English,
+          faded or crumpled.
         </BentoBody>
         <div
           className="relative mt-5 overflow-hidden rounded-xl border"
-          style={{ borderColor: C.hairline, background: 'rgba(15,20,25,0.02)' }}
+          style={{ borderColor: C.hairline, background: "rgba(15,20,25,0.02)" }}
         >
           <div className="grid grid-cols-5 gap-px p-px">
             <div className="col-span-2 bg-white p-4">
               {/* Mock receipt */}
               <div
                 className="relative aspect-[3/4] rounded-md border"
-                style={{ borderColor: C.hairline, background: '#FBF9F2' }}
+                style={{ borderColor: C.hairline, background: "#FBF9F2" }}
               >
                 <div className="p-2.5 text-[8px] font-mono leading-tight" style={{ color: C.ink }}>
-                  CARREFOUR<br />
-                  Dubai Mall<br />
-                  ───────────────<br />
-                  Office supplies 432.10<br />
-                  VAT 5% 21.61<br />
-                  ───────────────<br />
+                  CARREFOUR
+                  <br />
+                  Dubai Mall
+                  <br />
+                  ───────────────
+                  <br />
+                  Office supplies 432.10
+                  <br />
+                  VAT 5% 21.61
+                  <br />
+                  ───────────────
+                  <br />
                   TOTAL AED 453.71
                 </div>
                 {/* Scan line */}
                 <motion.div
                   className="absolute inset-x-2 h-0.5"
                   style={{ background: C.emerald, boxShadow: `0 0 12px ${C.emerald}` }}
-                  animate={{ top: ['8%', '92%', '8%'] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                  animate={{ top: ["8%", "92%", "8%"] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
                 />
               </div>
             </div>
             <div className="col-span-3 bg-white p-4">
               {[
-                ['Vendor', 'Carrefour Hypermarket'],
-                ['Date', '12 Jun 2026'],
-                ['Subtotal', 'AED 432.10'],
-                ['VAT 5%', 'AED 21.61'],
-                ['Total', 'AED 453.71'],
-                ['Category', 'Office supplies'],
+                ["Vendor", "Carrefour Hypermarket"],
+                ["Date", "12 Jun 2026"],
+                ["Subtotal", "AED 432.10"],
+                ["VAT 5%", "AED 21.61"],
+                ["Total", "AED 453.71"],
+                ["Category", "Office supplies"],
               ].map(([k, v], i) => (
                 <motion.div
                   key={k}
@@ -504,20 +548,24 @@ function CapabilityBento() {
       <BentoCard className="md:col-span-3">
         <BentoHeader icon={FileCheck} eyebrow="VAT 201" title="Pre-filed before you log in." />
         <BentoBody>
-          Output VAT, input VAT, reverse charge, designated-zone adjustments — calculated continuously and held audit-ready.
+          Output VAT, input VAT, reverse charge, designated-zone adjustments — calculated
+          continuously and held audit-ready.
         </BentoBody>
         <div
           className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border"
           style={{ borderColor: C.hairline, background: C.hairline }}
         >
           {[
-            ['Box 1a · Standard rated', 'AED 824,000'],
-            ['Box 1a · Output VAT', 'AED 41,200'],
-            ['Box 9 · Input VAT', 'AED 14,820'],
-            ['Net payable', 'AED 26,380'],
+            ["Box 1a · Standard rated", "AED 824,000"],
+            ["Box 1a · Output VAT", "AED 41,200"],
+            ["Box 9 · Input VAT", "AED 14,820"],
+            ["Net payable", "AED 26,380"],
           ].map(([k, v], i) => (
             <div key={k} className="bg-white p-3">
-              <div className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: C.muted }}>
+              <div
+                className="text-[9px] font-semibold uppercase tracking-wider"
+                style={{ color: C.muted }}
+              >
                 {k}
               </div>
               <div className="mt-1 font-mono text-[13px]" style={{ color: C.ink }}>
@@ -531,7 +579,9 @@ function CapabilityBento() {
       {/* Bilingual invoice — narrow */}
       <BentoCard className="md:col-span-2">
         <BentoHeader icon={Languages} eyebrow="Bilingual" title="One invoice. Two scripts." />
-        <BentoBody>FTA-compliant tax invoices with Arabic and English on the same document.</BentoBody>
+        <BentoBody>
+          FTA-compliant tax invoices with Arabic and English on the same document.
+        </BentoBody>
         <div
           className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border text-[8px]"
           style={{ borderColor: C.hairline, background: C.hairline }}
@@ -549,7 +599,11 @@ function CapabilityBento() {
               <div className="font-semibold">Total · AED 5,250.00</div>
             </div>
           </div>
-          <div className="bg-white p-3 text-right leading-tight" dir="rtl" style={{ color: C.ink, fontFamily: '"Cairo", "Noto Sans Arabic", sans-serif' }}>
+          <div
+            className="bg-white p-3 text-right leading-tight"
+            dir="rtl"
+            style={{ color: C.ink, fontFamily: '"Cairo", "Noto Sans Arabic", sans-serif' }}
+          >
             <div className="font-semibold" style={{ color: C.emerald }}>
               فاتورة ضريبية
             </div>
@@ -568,15 +622,18 @@ function CapabilityBento() {
       {/* Reconciliation */}
       <BentoCard className="md:col-span-2">
         <BentoHeader icon={RefreshCw} eyebrow="Bank feeds" title="Reconciled while you sleep." />
-        <BentoBody>Live feeds from Emirates NBD, ADCB, FAB, Mashreq, RAKBANK, ENBD Islamic. Matched, posted, cleared.</BentoBody>
+        <BentoBody>
+          Live feeds from Emirates NBD, ADCB, FAB, Mashreq, RAKBANK, ENBD Islamic. Matched, posted,
+          cleared.
+        </BentoBody>
         <div
           className="mt-5 space-y-1.5 overflow-hidden rounded-xl border bg-white p-3"
           style={{ borderColor: C.hairline }}
         >
           {[
-            ['ENBD · 2841', 'matched', 'AED 12,400'],
-            ['ADCB · 0119', 'matched', 'AED 3,250'],
-            ['Mashreq · 5520', 'review', 'AED 880'],
+            ["ENBD · 2841", "matched", "AED 12,400"],
+            ["ADCB · 0119", "matched", "AED 3,250"],
+            ["Mashreq · 5520", "review", "AED 880"],
           ].map(([bank, status, amt], i) => (
             <div key={i} className="flex items-center justify-between text-[10px]">
               <span className="font-mono" style={{ color: C.muted }}>
@@ -585,8 +642,8 @@ function CapabilityBento() {
               <span
                 className="rounded-full px-1.5 py-0.5 text-[8px] font-semibold uppercase"
                 style={{
-                  background: status === 'matched' ? C.emeraldSoft : C.goldSoft,
-                  color: status === 'matched' ? C.emerald : '#7B6228',
+                  background: status === "matched" ? C.emeraldSoft : C.goldSoft,
+                  color: status === "matched" ? C.emerald : "#7B6228",
                 }}
               >
                 {status}
@@ -602,21 +659,29 @@ function CapabilityBento() {
       {/* Multi-currency */}
       <BentoCard className="md:col-span-2">
         <BentoHeader icon={Wallet} eyebrow="Multi-currency" title="AED home, 150+ rails." />
-        <BentoBody>Live FX rates, automatic gain/loss postings, designated-zone exemption handling.</BentoBody>
+        <BentoBody>
+          Live FX rates, automatic gain/loss postings, designated-zone exemption handling.
+        </BentoBody>
         <div className="mt-5 grid grid-cols-3 gap-1.5 text-center text-[10px]">
           {[
-            ['USD', '3.6730', '+0.01'],
-            ['EUR', '3.9582', '-0.04'],
-            ['GBP', '4.6810', '+0.12'],
+            ["USD", "3.6730", "+0.01"],
+            ["EUR", "3.9582", "-0.04"],
+            ["GBP", "4.6810", "+0.12"],
           ].map(([k, r, d]) => (
             <div key={k} className="rounded-lg border p-2" style={{ borderColor: C.hairline }}>
-              <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: C.muted }}>
+              <div
+                className="font-mono text-[9px] uppercase tracking-wider"
+                style={{ color: C.muted }}
+              >
                 AED · {k}
               </div>
               <div className="mt-0.5 font-mono font-semibold" style={{ color: C.ink }}>
                 {r}
               </div>
-              <div className="font-mono text-[9px]" style={{ color: d.startsWith('+') ? C.emerald : '#B5392B' }}>
+              <div
+                className="font-mono text-[9px]"
+                style={{ color: d.startsWith("+") ? C.emerald : "#B5392B" }}
+              >
                 {d}
               </div>
             </div>
@@ -627,7 +692,13 @@ function CapabilityBento() {
   );
 }
 
-function BentoCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function BentoCard({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
     <Reveal className={className}>
       <div
@@ -651,7 +722,10 @@ function BentoHeader({
 }) {
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: C.muted }}>
+      <div
+        className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em]"
+        style={{ color: C.muted }}
+      >
         <Icon className="h-3.5 w-3.5" style={{ color: C.emerald }} />
         {eyebrow}
       </div>
@@ -673,15 +747,15 @@ function BentoBody({ children }: { children: React.ReactNode }) {
 // ── 7. Comparison strip ──────────────────────────────────────────────────────
 function ComparisonTable() {
   const rows = [
-    ['FTA-native VAT 201 filing', true, false, false, false],
-    ['Arabic + English UI', true, false, false, true],
-    ['e-Invoicing PINT AE (2026)', true, false, false, false],
-    ['UAE bank feeds (ENBD / ADCB / FAB)', true, false, false, false],
-    ['Receipt OCR — Arabic + English', true, true, false, false],
-    ['UAE corporate tax workpapers', true, false, false, false],
-    ['Pricing in AED', true, false, false, true],
+    ["FTA-native VAT 201 filing", true, false, false, false],
+    ["Arabic + English UI", true, false, false, true],
+    ["e-Invoicing PINT AE (2026)", true, false, false, false],
+    ["UAE bank feeds (ENBD / ADCB / FAB)", true, false, false, false],
+    ["Receipt OCR — Arabic + English", true, true, false, false],
+    ["UAE corporate tax workpapers", true, false, false, false],
+    ["Pricing in AED", true, false, false, true],
   ];
-  const cols = ['Muhasib', 'QuickBooks', 'Xero', 'Zoho Books'];
+  const cols = ["Muhasib", "QuickBooks", "Xero", "Zoho Books"];
   return (
     <Reveal>
       <div
@@ -699,7 +773,7 @@ function ComparisonTable() {
               className="border-l px-4 py-4 text-center"
               style={{
                 borderColor: C.hairline,
-                background: i === 0 ? C.emeraldSoft : 'transparent',
+                background: i === 0 ? C.emeraldSoft : "transparent",
                 color: i === 0 ? C.emerald : C.muted,
               }}
             >
@@ -720,12 +794,18 @@ function ComparisonTable() {
               <div
                 key={i}
                 className="border-l px-4 py-3.5 text-center"
-                style={{ borderColor: C.hairline, background: i === 0 ? C.emeraldSoft : 'transparent' }}
+                style={{
+                  borderColor: C.hairline,
+                  background: i === 0 ? C.emeraldSoft : "transparent",
+                }}
               >
                 {v ? (
-                  <Check className="mx-auto h-4 w-4" style={{ color: i === 0 ? C.emerald : C.ink }} />
+                  <Check
+                    className="mx-auto h-4 w-4"
+                    style={{ color: i === 0 ? C.emerald : C.ink }}
+                  />
                 ) : (
-                  <span className="font-mono text-base" style={{ color: 'rgba(15,20,25,0.2)' }}>
+                  <span className="font-mono text-base" style={{ color: "rgba(15,20,25,0.2)" }}>
                     —
                   </span>
                 )}
@@ -743,7 +823,7 @@ function Workflow() {
   const ref = useRef<HTMLDivElement>(null);
   const { scrollYProgress } = useScroll({
     target: ref,
-    offset: ['start end', 'end start'],
+    offset: ["start end", "end start"],
   });
 
   // All useTransform calls happen at the top level — Rules of Hooks.
@@ -781,45 +861,72 @@ function Workflow() {
     n: string;
     t: string;
     d: string;
-    op: import('framer-motion').MotionValue<number>;
-    border: import('framer-motion').MotionValue<string>;
+    op: import("framer-motion").MotionValue<number>;
+    border: import("framer-motion").MotionValue<string>;
   }> = [
-    { n: '01', t: 'Capture', d: 'Photo, email forward, or bank feed.', op: s1Op, border: s1Border },
-    { n: '02', t: 'Categorise', d: 'AI assigns COA, VAT code, project, cost centre.', op: s2Op, border: s2Border },
-    { n: '03', t: 'Reconcile', d: 'Matched against bank movements continuously.', op: s3Op, border: s3Border },
-    { n: '04', t: 'File', d: 'VAT 201 drafted, signed, submitted to EmaraTax.', op: s4Op, border: s4Border },
+    { n: "01", t: "Capture", d: "Photo, email forward, or bank feed.", op: s1Op, border: s1Border },
+    {
+      n: "02",
+      t: "Categorise",
+      d: "AI assigns COA, VAT code, project, cost centre.",
+      op: s2Op,
+      border: s2Border,
+    },
+    {
+      n: "03",
+      t: "Reconcile",
+      d: "Matched against bank movements continuously.",
+      op: s3Op,
+      border: s3Border,
+    },
+    {
+      n: "04",
+      t: "File",
+      d: "VAT 201 drafted, signed, submitted to EmaraTax.",
+      op: s4Op,
+      border: s4Border,
+    },
   ];
 
   const pipeline: Array<{
     label: string;
     body: string;
-    op: import('framer-motion').MotionValue<number>;
-    tick: import('framer-motion').MotionValue<number>;
-    bg: import('framer-motion').MotionValue<string>;
+    op: import("framer-motion").MotionValue<number>;
+    tick: import("framer-motion").MotionValue<number>;
+    bg: import("framer-motion").MotionValue<string>;
   }> = [
-    { label: 'Receipt captured', body: 'Carrefour · AED 453.71', op: p1Op, tick: t1, bg: b1 },
-    { label: 'Categorised', body: 'Office supplies · VAT 5%', op: p2Op, tick: t2, bg: b2 },
-    { label: 'Reconciled', body: 'Matched ADCB · 0119', op: p3Op, tick: t3, bg: b3 },
-    { label: 'VAT 201 queued', body: 'Q3 2026 · ready to file', op: p4Op, tick: t4, bg: b4 },
+    { label: "Receipt captured", body: "Carrefour · AED 453.71", op: p1Op, tick: t1, bg: b1 },
+    { label: "Categorised", body: "Office supplies · VAT 5%", op: p2Op, tick: t2, bg: b2 },
+    { label: "Reconciled", body: "Matched ADCB · 0119", op: p3Op, tick: t3, bg: b3 },
+    { label: "VAT 201 queued", body: "Q3 2026 · ready to file", op: p4Op, tick: t4, bg: b4 },
   ];
 
   return (
     <div ref={ref} className="relative">
       <div className="grid items-start gap-12 lg:grid-cols-2">
         <div>
-          <div className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: C.emerald }}>
+          <div
+            className="mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
+            style={{ color: C.emerald }}
+          >
             <span className="h-px w-8" style={{ background: C.emerald }} />
             How it works
           </div>
-          <h2 className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl" style={{ color: C.ink }}>
-            From receipt to <span className="italic" style={{ color: C.emerald }}>filed</span>.<br />
+          <h2
+            className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"
+            style={{ color: C.ink }}
+          >
+            From receipt to{" "}
+            <span className="italic" style={{ color: C.emerald }}>
+              filed
+            </span>
+            .<br />
             Untouched.
           </h2>
           <p className="mt-6 max-w-md text-base leading-relaxed" style={{ color: C.muted }}>
-            Snap a receipt, forward an invoice, or sync a bank line.
-            Muhasib categorises it, posts the journal, updates your VAT
-            position, and queues the return — all before you'd have opened
-            your spreadsheet.
+            Snap a receipt, forward an invoice, or sync a bank line. Muhasib categorises it, posts
+            the journal, updates your VAT position, and queues the return — all before you'd have
+            opened your spreadsheet.
           </p>
 
           <div className="mt-10 space-y-5">
@@ -847,9 +954,12 @@ function Workflow() {
         <div className="sticky top-32">
           <div
             className="relative overflow-hidden rounded-2xl border bg-white p-6"
-            style={{ borderColor: C.hairline, boxShadow: '0 24px 60px -30px rgba(15,20,25,0.25)' }}
+            style={{ borderColor: C.hairline, boxShadow: "0 24px 60px -30px rgba(15,20,25,0.25)" }}
           >
-            <div className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em]" style={{ color: C.muted }}>
+            <div
+              className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em]"
+              style={{ color: C.muted }}
+            >
               <Cpu className="h-3.5 w-3.5" style={{ color: C.emerald }} />
               Live pipeline
             </div>
@@ -896,16 +1006,19 @@ export default function MuhasibLanding() {
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
     onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   return (
-    <div className="min-h-screen antialiased" style={{ background: C.paper, color: C.ink, fontFamily: '"Geist", system-ui, sans-serif' }}>
+    <div
+      className="min-h-screen antialiased"
+      style={{ background: C.paper, color: C.ink, fontFamily: '"Geist", system-ui, sans-serif' }}
+    >
       {/* ─── Navbar ────────────────────────────────────────────────────── */}
       <header
         className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-          scrolled ? 'border-b bg-[#FAFAF6]/85 backdrop-blur-xl' : 'border-b border-transparent'
+          scrolled ? "border-b bg-[#FAFAF6]/85 backdrop-blur-xl" : "border-b border-transparent"
         }`}
         style={scrolled ? { borderColor: C.hairline } : undefined}
       >
@@ -926,10 +1039,10 @@ export default function MuhasibLanding() {
 
           <nav className="hidden items-center gap-8 md:flex">
             {[
-              ['Product', '#capabilities'],
-              ['Compliance', '#compliance'],
-              ['Compare', '#compare'],
-              ['Pricing', '/pricing'],
+              ["Product", "#capabilities"],
+              ["Compliance", "#compliance"],
+              ["Compare", "#compare"],
+              ["Pricing", "/pricing"],
             ].map(([l, h]) => (
               <a
                 key={l}
@@ -976,13 +1089,21 @@ export default function MuhasibLanding() {
             style={{ borderColor: C.hairline }}
           >
             <div className="flex flex-col gap-1 p-4">
-              {['Product', 'Compliance', 'Compare', 'Pricing'].map((l) => (
-                <a key={l} href="#" className="rounded-md px-3 py-3 text-sm font-medium" style={{ color: C.ink }}>
+              {["Product", "Compliance", "Compare", "Pricing"].map((l) => (
+                <a
+                  key={l}
+                  href="#"
+                  className="rounded-md px-3 py-3 text-sm font-medium"
+                  style={{ color: C.ink }}
+                >
                   {l}
                 </a>
               ))}
               <Link href="/register" className="mt-2">
-                <button className="w-full rounded-full px-4 py-3 text-sm font-semibold text-white" style={{ background: C.emerald }}>
+                <button
+                  className="w-full rounded-full px-4 py-3 text-sm font-semibold text-white"
+                  style={{ background: C.emerald }}
+                >
                   Start free
                 </button>
               </Link>
@@ -1001,7 +1122,11 @@ export default function MuhasibLanding() {
               <Reveal>
                 <div
                   className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]"
-                  style={{ borderColor: C.hairlineStrong, background: 'rgba(255,255,255,0.6)', color: C.muted }}
+                  style={{
+                    borderColor: C.hairlineStrong,
+                    background: "rgba(255,255,255,0.6)",
+                    color: C.muted,
+                  }}
                 >
                   <span className="h-1.5 w-1.5 rounded-full" style={{ background: C.emerald }} />
                   Built in Dubai · for the UAE
@@ -1028,10 +1153,9 @@ export default function MuhasibLanding() {
                   className="mt-7 max-w-xl text-base leading-relaxed md:text-lg"
                   style={{ color: C.muted }}
                 >
-                  AI-native accounting for UAE businesses. Receipts captured, VAT
-                  calculated, banks reconciled, and FTA returns filed —
-                  continuously, by an agent that never sleeps and never
-                  miscategorises.
+                  AI-native accounting for UAE businesses. Receipts captured, VAT calculated, banks
+                  reconciled, and FTA returns filed — continuously, by an agent that never sleeps
+                  and never miscategorises.
                 </p>
               </Reveal>
 
@@ -1060,7 +1184,10 @@ export default function MuhasibLanding() {
 
               {/* Trust strip */}
               <Reveal delay={0.4}>
-                <div className="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3 text-[11px] font-medium uppercase tracking-[0.16em]" style={{ color: C.muted }}>
+                <div
+                  className="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3 text-[11px] font-medium uppercase tracking-[0.16em]"
+                  style={{ color: C.muted }}
+                >
                   <div className="flex items-center gap-1.5">
                     <FileCheck className="h-3.5 w-3.5" style={{ color: C.emerald }} />
                     FTA · VAT 201
@@ -1102,13 +1229,16 @@ export default function MuhasibLanding() {
         <Reveal>
           <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
             {[
-              { value: 500, suffix: '+', label: 'UAE businesses on Muhasib' },
-              { value: 12, prefix: 'AED ', suffix: 'M', label: 'In VAT filed last quarter' },
-              { value: 99, suffix: '%', label: 'AI categorisation accuracy' },
-              { value: 22, suffix: 'h', label: 'Saved per company per month' },
+              { value: 500, suffix: "+", label: "UAE businesses on Muhasib" },
+              { value: 12, prefix: "AED ", suffix: "M", label: "In VAT filed last quarter" },
+              { value: 99, suffix: "%", label: "AI categorisation accuracy" },
+              { value: 22, suffix: "h", label: "Saved per company per month" },
             ].map((s) => (
               <div key={s.label}>
-                <div className="font-serif text-5xl tracking-tight md:text-6xl" style={{ color: C.ink }}>
+                <div
+                  className="font-serif text-5xl tracking-tight md:text-6xl"
+                  style={{ color: C.ink }}
+                >
                   <Counter to={s.value} suffix={s.suffix} prefix={s.prefix} />
                 </div>
                 <div
@@ -1127,13 +1257,22 @@ export default function MuhasibLanding() {
       <section id="capabilities" className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
         <Reveal>
           <div className="mb-14 max-w-3xl">
-            <div className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: C.emerald }}>
+            <div
+              className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
+              style={{ color: C.emerald }}
+            >
               <span className="h-px w-8" style={{ background: C.emerald }} />
               Product
             </div>
-            <h2 className="font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl" style={{ color: C.ink }}>
-              Every UAE accounting workflow,<br />
-              <span className="italic" style={{ color: C.emerald }}>quietly automated.</span>
+            <h2
+              className="font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
+              style={{ color: C.ink }}
+            >
+              Every UAE accounting workflow,
+              <br />
+              <span className="italic" style={{ color: C.emerald }}>
+                quietly automated.
+              </span>
             </h2>
           </div>
         </Reveal>
@@ -1144,7 +1283,7 @@ export default function MuhasibLanding() {
       <section
         id="compliance"
         className="mx-auto max-w-7xl px-6 py-24 lg:py-32"
-        style={{ background: 'linear-gradient(180deg,transparent,rgba(13,92,61,0.025))' }}
+        style={{ background: "linear-gradient(180deg,transparent,rgba(13,92,61,0.025))" }}
       >
         <Workflow />
       </section>
@@ -1153,18 +1292,26 @@ export default function MuhasibLanding() {
       <section id="compare" className="mx-auto max-w-7xl px-6 py-24 lg:py-32">
         <Reveal>
           <div className="mb-14 max-w-3xl">
-            <div className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: C.emerald }}>
+            <div
+              className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
+              style={{ color: C.emerald }}
+            >
               <span className="h-px w-8" style={{ background: C.emerald }} />
               Compare
             </div>
-            <h2 className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl" style={{ color: C.ink }}>
-              Other tools were built<br />
-              <span className="italic" style={{ color: C.emerald }}>somewhere else.</span>
+            <h2
+              className="font-serif text-4xl leading-[1.05] tracking-tight md:text-5xl"
+              style={{ color: C.ink }}
+            >
+              Other tools were built
+              <br />
+              <span className="italic" style={{ color: C.emerald }}>
+                somewhere else.
+              </span>
             </h2>
             <p className="mt-6 max-w-2xl text-base leading-relaxed" style={{ color: C.muted }}>
-              QuickBooks was built for the US tax code. Xero for the Anzac
-              market. Zoho is closer, but adapts global features for the UAE
-              — instead of starting here.
+              QuickBooks was built for the US tax code. Xero for the Anzac market. Zoho is closer,
+              but adapts global features for the UAE — instead of starting here.
             </p>
           </div>
         </Reveal>
@@ -1176,40 +1323,48 @@ export default function MuhasibLanding() {
         <Reveal>
           <figure
             className="relative overflow-hidden rounded-3xl border p-12 lg:p-16"
-            style={{ background: C.midnight, borderColor: 'rgba(255,255,255,0.06)' }}
+            style={{ background: C.midnight, borderColor: "rgba(255,255,255,0.06)" }}
           >
             {/* soft glow */}
             <div
               className="pointer-events-none absolute -right-32 -top-32 h-72 w-72 rounded-full blur-3xl"
-              style={{ background: 'rgba(13,92,61,0.4)' }}
+              style={{ background: "rgba(13,92,61,0.4)" }}
             />
             <div
               className="pointer-events-none absolute -bottom-32 -left-32 h-72 w-72 rounded-full blur-3xl"
-              style={{ background: 'rgba(193,158,80,0.25)' }}
+              style={{ background: "rgba(193,158,80,0.25)" }}
             />
 
             <div className="relative">
-              <div className="mb-6 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: C.gold }}>
+              <div
+                className="mb-6 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
+                style={{ color: C.gold }}
+              >
                 <span className="h-px w-8" style={{ background: C.gold }} />
                 Customer
               </div>
-              <blockquote className="max-w-3xl font-serif text-3xl leading-tight md:text-4xl lg:text-5xl" style={{ color: '#F4F2EC' }}>
-                "Our close went from 11 days to{' '}
-                <span className="italic" style={{ color: C.gold }}>under two</span>. The VAT 201 is
-                drafted before our accountant even looks at it."
+              <blockquote
+                className="max-w-3xl font-serif text-3xl leading-tight md:text-4xl lg:text-5xl"
+                style={{ color: "#F4F2EC" }}
+              >
+                "Our close went from 11 days to{" "}
+                <span className="italic" style={{ color: C.gold }}>
+                  under two
+                </span>
+                . The VAT 201 is drafted before our accountant even looks at it."
               </blockquote>
               <figcaption className="mt-10 flex items-center gap-4 text-sm">
                 <div
                   className="flex h-12 w-12 items-center justify-center rounded-full font-serif text-lg font-semibold"
-                  style={{ background: 'rgba(255,255,255,0.08)', color: '#F4F2EC' }}
+                  style={{ background: "rgba(255,255,255,0.08)", color: "#F4F2EC" }}
                 >
                   HM
                 </div>
                 <div>
-                  <div className="font-semibold" style={{ color: '#F4F2EC' }}>
+                  <div className="font-semibold" style={{ color: "#F4F2EC" }}>
                     Hassan Mansour
                   </div>
-                  <div className="text-[12px]" style={{ color: 'rgba(244,242,236,0.6)' }}>
+                  <div className="text-[12px]" style={{ color: "rgba(244,242,236,0.6)" }}>
                     Group CFO · Madar Holdings (Dubai)
                   </div>
                 </div>
@@ -1224,15 +1379,25 @@ export default function MuhasibLanding() {
         <Reveal>
           <div className="flex items-end justify-between gap-6">
             <div>
-              <div className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: C.emerald }}>
+              <div
+                className="mb-4 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
+                style={{ color: C.emerald }}
+              >
                 <span className="h-px w-8" style={{ background: C.emerald }} />
                 Insights
               </div>
-              <h2 className="font-serif text-3xl tracking-tight md:text-5xl" style={{ color: C.ink }}>
+              <h2
+                className="font-serif text-3xl tracking-tight md:text-5xl"
+                style={{ color: C.ink }}
+              >
                 From the desk.
               </h2>
             </div>
-            <a href="#" className="hidden items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] sm:inline-flex" style={{ color: C.muted }}>
+            <a
+              href="#"
+              className="hidden items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.18em] sm:inline-flex"
+              style={{ color: C.muted }}
+            >
               All insights <ArrowUpRight className="h-3.5 w-3.5" />
             </a>
           </div>
@@ -1240,22 +1405,40 @@ export default function MuhasibLanding() {
 
         <div className="mt-10 grid gap-6 md:grid-cols-3">
           {[
-            ['FTA decision 5/2025', 'A practical guide to the new real-estate VAT clarification', '8 min read'],
-            ['Corporate tax', 'When the AED 3M small-business relief actually saves you money', '6 min read'],
-            ['e-Invoicing', 'PINT AE in plain Arabic: what changes for your invoicing in July 2026', '11 min read'],
+            [
+              "FTA decision 5/2025",
+              "A practical guide to the new real-estate VAT clarification",
+              "8 min read",
+            ],
+            [
+              "Corporate tax",
+              "When the AED 3M small-business relief actually saves you money",
+              "6 min read",
+            ],
+            [
+              "e-Invoicing",
+              "PINT AE in plain Arabic: what changes for your invoicing in July 2026",
+              "11 min read",
+            ],
           ].map(([eyebrow, title, meta], i) => (
             <Reveal key={i} delay={i * 0.08}>
               <article
                 className="group relative h-full overflow-hidden rounded-2xl border bg-white p-7 transition-shadow hover:shadow-[0_12px_36px_-18px_rgba(15,20,25,0.18)]"
                 style={{ borderColor: C.hairline }}
               >
-                <div className="text-[10px] font-bold uppercase tracking-[0.22em]" style={{ color: C.emerald }}>
+                <div
+                  className="text-[10px] font-bold uppercase tracking-[0.22em]"
+                  style={{ color: C.emerald }}
+                >
                   {eyebrow}
                 </div>
                 <h3 className="mt-3 font-serif text-2xl leading-tight" style={{ color: C.ink }}>
                   {title}
                 </h3>
-                <div className="mt-8 flex items-center justify-between text-[11px] font-medium" style={{ color: C.muted }}>
+                <div
+                  className="mt-8 flex items-center justify-between text-[11px] font-medium"
+                  style={{ color: C.muted }}
+                >
                   <span>{meta}</span>
                   <ArrowUpRight className="h-3.5 w-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
                 </div>
@@ -1274,17 +1457,29 @@ export default function MuhasibLanding() {
           >
             <HeroMesh />
             <div className="relative">
-              <div className="mb-6 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: C.emerald }}>
+              <div
+                className="mb-6 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.3em]"
+                style={{ color: C.emerald }}
+              >
                 <span className="h-px w-8" style={{ background: C.emerald }} />
                 30-day trial · no card
               </div>
-              <h2 className="mx-auto max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl" style={{ color: C.ink }}>
-                Hand the ledger to an<br />
-                <span className="italic" style={{ color: C.emerald }}>agent that never sleeps.</span>
+              <h2
+                className="mx-auto max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
+                style={{ color: C.ink }}
+              >
+                Hand the ledger to an
+                <br />
+                <span className="italic" style={{ color: C.emerald }}>
+                  agent that never sleeps.
+                </span>
               </h2>
-              <p className="mx-auto mt-7 max-w-xl text-base leading-relaxed" style={{ color: C.muted }}>
-                Migrate from your old tool in minutes. We import your COA,
-                opening balances, contacts, and last twelve months.
+              <p
+                className="mx-auto mt-7 max-w-xl text-base leading-relaxed"
+                style={{ color: C.muted }}
+              >
+                Migrate from your old tool in minutes. We import your COA, opening balances,
+                contacts, and last twelve months.
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                 <Link href="/register">
@@ -1310,7 +1505,10 @@ export default function MuhasibLanding() {
       </section>
 
       {/* ─── Footer ──────────────────────────────────────────────────── */}
-      <footer className="border-t" style={{ borderColor: C.hairline, background: 'rgba(15,20,25,0.02)' }}>
+      <footer
+        className="border-t"
+        style={{ borderColor: C.hairline, background: "rgba(15,20,25,0.02)" }}
+      >
         <div className="mx-auto max-w-7xl px-6 py-14">
           <div className="grid gap-10 md:grid-cols-4">
             <div className="md:col-span-2">
@@ -1326,8 +1524,8 @@ export default function MuhasibLanding() {
                 </span>
               </div>
               <p className="mt-5 max-w-md text-sm" style={{ color: C.muted }}>
-                AI-native accounting, built in Dubai for the UAE. Headquartered
-                in DIFC. Operating across the GCC.
+                AI-native accounting, built in Dubai for the UAE. Headquartered in DIFC. Operating
+                across the GCC.
               </p>
               <div className="mt-6 flex items-center gap-2 text-[11px]" style={{ color: C.muted }}>
                 <Building2 className="h-3.5 w-3.5" />
@@ -1335,11 +1533,32 @@ export default function MuhasibLanding() {
               </div>
             </div>
 
-            <FooterCol title="Product" links={[['Receipts', '#'], ['VAT 201', '#'], ['Bank feeds', '#'], ['Bilingual invoices', '#'], ['Pricing', '/pricing']]} />
-            <FooterCol title="Company" links={[['Sign in', '/login'], ['Register', '/register'], ['Privacy', '/privacy'], ['Terms', '/terms'], ['Cookies', '/cookies']]} />
+            <FooterCol
+              title="Product"
+              links={[
+                ["Receipts", "#"],
+                ["VAT 201", "#"],
+                ["Bank feeds", "#"],
+                ["Bilingual invoices", "#"],
+                ["Pricing", "/pricing"],
+              ]}
+            />
+            <FooterCol
+              title="Company"
+              links={[
+                ["Sign in", "/login"],
+                ["Register", "/register"],
+                ["Privacy", "/privacy"],
+                ["Terms", "/terms"],
+                ["Cookies", "/cookies"],
+              ]}
+            />
           </div>
 
-          <div className="mt-14 flex flex-col items-start justify-between gap-3 border-t pt-8 text-[11px] md:flex-row md:items-center" style={{ borderColor: C.hairline, color: C.muted }}>
+          <div
+            className="mt-14 flex flex-col items-start justify-between gap-3 border-t pt-8 text-[11px] md:flex-row md:items-center"
+            style={{ borderColor: C.hairline, color: C.muted }}
+          >
             <div>© {new Date().getFullYear()} Muhasib.ai · DIFC, Dubai, United Arab Emirates</div>
             <div className="flex items-center gap-2">
               <TrendingUp className="h-3.5 w-3.5" style={{ color: C.emerald }} />
@@ -1355,7 +1574,10 @@ export default function MuhasibLanding() {
 function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
   return (
     <div>
-      <h4 className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em]" style={{ color: C.muted }}>
+      <h4
+        className="mb-4 text-[10px] font-bold uppercase tracking-[0.3em]"
+        style={{ color: C.muted }}
+      >
         {title}
       </h4>
       <ul className="space-y-3">

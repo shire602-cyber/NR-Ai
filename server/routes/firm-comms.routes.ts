@@ -1,31 +1,31 @@
-import type { Request, Response } from 'express';
-import { Router } from 'express';
-import type { Express } from 'express';
-import { z } from 'zod';
+import type { Request, Response } from "express";
+import { Router } from "express";
+import type { Express } from "express";
+import { z } from "zod";
 
-import { db } from '../db';
-import { eq, and, desc, inArray, gte, lte, sql } from 'drizzle-orm';
+import { db } from "../db";
+import { eq, and, desc, inArray, gte, lte, sql } from "drizzle-orm";
 import {
   clientCommunications,
   communicationTemplates,
   companies,
   invoices,
   vatReturns,
-} from '../../shared/schema';
-import { authMiddleware } from '../middleware/auth';
-import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
-import { asyncHandler } from '../middleware/errorHandler';
-import { createLogger } from '../config/logger';
+} from "../../shared/schema";
+import { authMiddleware } from "../middleware/auth";
+import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
+import { asyncHandler } from "../middleware/errorHandler";
+import { createLogger } from "../config/logger";
 import {
   sendEmail,
   renderTemplate,
   hasSmtpConfig,
   sendGenericEmail,
-} from '../services/email.service';
-import { createAndEmitNotification } from '../services/socket.service';
-import { recordAudit } from '../services/audit.service';
+} from "../services/email.service";
+import { createAndEmitNotification } from "../services/socket.service";
+import { recordAudit } from "../services/audit.service";
 
-const logger = createLogger('firm-comms-routes');
+const logger = createLogger("firm-comms-routes");
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -36,13 +36,13 @@ const sendEmailSchema = z
     subject: z.string().min(1).optional(),
     body: z.string().min(1).optional(),
     templateType: z
-      .enum(['vat_reminder', 'invoice', 'document_request', 'payment_confirmation', 'custom'])
+      .enum(["vat_reminder", "invoice", "document_request", "payment_confirmation", "custom"])
       .optional(),
     templateId: z.string().uuid().optional(),
     invoiceId: z.string().uuid().optional(),
   })
   .refine((d) => (d.subject && d.body) || d.templateId, {
-    message: 'Provide subject+body or a templateId',
+    message: "Provide subject+body or a templateId",
   });
 
 const sendWhatsAppSchema = z.object({
@@ -50,24 +50,24 @@ const sendWhatsAppSchema = z.object({
   recipientPhone: z.string().min(1),
   body: z.string().min(1),
   templateType: z
-    .enum(['vat_reminder', 'invoice', 'document_request', 'payment_confirmation', 'custom'])
+    .enum(["vat_reminder", "invoice", "document_request", "payment_confirmation", "custom"])
     .optional(),
 });
 
 const templateSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().min(1),
-  channel: z.enum(['whatsapp', 'email', 'sms']),
+  channel: z.enum(["whatsapp", "email", "sms"]),
   templateType: z.enum([
-    'vat_reminder',
-    'invoice',
-    'document_request',
-    'payment_confirmation',
-    'custom',
+    "vat_reminder",
+    "invoice",
+    "document_request",
+    "payment_confirmation",
+    "custom",
   ]),
   subjectTemplate: z.string().optional(),
   bodyTemplate: z.string().min(1),
-  language: z.enum(['en', 'ar']).default('en'),
+  language: z.enum(["en", "ar"]).default("en"),
   isActive: z.boolean().default(true),
 });
 
@@ -83,18 +83,24 @@ export function registerFirmCommsRoutes(app: Express): void {
 
   // Scope auth + firm-role guards to /firm/* so this router (mounted at /api)
   // does not short-circuit unrelated /api requests like /api/health.
-  router.use('/firm', authMiddleware as any);
-  router.use('/firm', requireFirmRole());
+  router.use("/firm", authMiddleware as any);
+  router.use("/firm", requireFirmRole());
 
   // ─── GET /api/firm/comms/log ──────────────────────────────────────────────
   router.get(
-    '/firm/comms/log',
+    "/firm/comms/log",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const { companyId, channel, from, to, page = '1', limit = '50' } =
-        req.query as Record<string, string>;
+      const {
+        companyId,
+        channel,
+        from,
+        to,
+        page = "1",
+        limit = "50",
+      } = req.query as Record<string, string>;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
 
       if (accessibleIds !== null && accessibleIds.length === 0) {
         return res.json({ data: [], total: 0, page: 1, limit: 50 });
@@ -105,13 +111,11 @@ export function registerFirmCommsRoutes(app: Express): void {
       const offset = (pageNum - 1) * limitNum;
 
       const whereClause = and(
-        accessibleIds !== null
-          ? inArray(clientCommunications.companyId, accessibleIds)
-          : undefined,
+        accessibleIds !== null ? inArray(clientCommunications.companyId, accessibleIds) : undefined,
         companyId ? eq(clientCommunications.companyId, companyId) : undefined,
         channel ? eq(clientCommunications.channel, channel) : undefined,
         from ? gte(clientCommunications.sentAt, new Date(from)) : undefined,
-        to ? lte(clientCommunications.sentAt, new Date(to)) : undefined,
+        to ? lte(clientCommunications.sentAt, new Date(to)) : undefined
       );
 
       const [rows, countResult] = await Promise.all([
@@ -151,14 +155,14 @@ export function registerFirmCommsRoutes(app: Express): void {
 
   // ─── GET /api/firm/comms/log/:companyId ───────────────────────────────────
   router.get(
-    '/firm/comms/log/:companyId',
+    "/firm/comms/log/:companyId",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-        return res.status(403).json({ message: 'Access denied to this client' });
+        return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const rows = await db
@@ -174,14 +178,14 @@ export function registerFirmCommsRoutes(app: Express): void {
 
   // ─── POST /api/firm/comms/send-email ──────────────────────────────────────
   router.post(
-    '/firm/comms/send-email',
+    "/firm/comms/send-email",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
       const validated = sendEmailSchema.parse(req.body);
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
       if (accessibleIds !== null && !accessibleIds.includes(validated.companyId)) {
-        return res.status(403).json({ message: 'Access denied to this client' });
+        return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const [company] = await db
@@ -191,12 +195,12 @@ export function registerFirmCommsRoutes(app: Express): void {
         .limit(1);
 
       if (!company) {
-        return res.status(404).json({ message: 'Company not found' });
+        return res.status(404).json({ message: "Company not found" });
       }
 
       // Resolve subject/body — either from request or from a saved template
-      let subject = validated.subject ?? '';
-      let body = validated.body ?? '';
+      let subject = validated.subject ?? "";
+      let body = validated.body ?? "";
 
       if (validated.templateId) {
         const [tmpl] = await db
@@ -206,14 +210,14 @@ export function registerFirmCommsRoutes(app: Express): void {
           .limit(1);
 
         if (!tmpl) {
-          return res.status(404).json({ message: 'Template not found' });
+          return res.status(404).json({ message: "Template not found" });
         }
 
         // Build template variable substitutions
         const vars: Record<string, string> = {
           companyName: company.name,
-          contactEmail: company.contactEmail ?? '',
-          trnVatNumber: company.trnVatNumber ?? '',
+          contactEmail: company.contactEmail ?? "",
+          trnVatNumber: company.trnVatNumber ?? "",
         };
 
         // Enrich with invoice data when invoiceId is provided
@@ -221,14 +225,26 @@ export function registerFirmCommsRoutes(app: Express): void {
           const [inv] = await db
             .select()
             .from(invoices)
-            .where(and(eq(invoices.id, validated.invoiceId), eq(invoices.companyId, validated.companyId)))
+            .where(
+              and(eq(invoices.id, validated.invoiceId), eq(invoices.companyId, validated.companyId))
+            )
             .limit(1);
 
           if (inv) {
             vars.invoiceNumber = inv.number;
             vars.customerName = inv.customerName;
-            vars.invoiceDate = new Date(inv.date).toLocaleDateString('en-AE', { year: 'numeric', month: 'long', day: 'numeric' });
-            vars.dueDate = inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('en-AE', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+            vars.invoiceDate = new Date(inv.date).toLocaleDateString("en-AE", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            });
+            vars.dueDate = inv.dueDate
+              ? new Date(inv.dueDate).toLocaleDateString("en-AE", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })
+              : "";
             vars.total = `${inv.currency} ${inv.total.toFixed(2)}`;
             vars.subtotal = `${inv.currency} ${inv.subtotal.toFixed(2)}`;
             vars.vatAmount = `${inv.currency} ${inv.vatAmount.toFixed(2)}`;
@@ -242,26 +258,34 @@ export function registerFirmCommsRoutes(app: Express): void {
       }
 
       if (!subject || !body) {
-        return res.status(400).json({ message: 'Could not resolve subject or body from template' });
+        return res.status(400).json({ message: "Could not resolve subject or body from template" });
       }
 
-      const result = await sendEmail(validated.recipientEmail, subject, body, { fromName: company.name });
+      const result = await sendEmail(validated.recipientEmail, subject, body, {
+        fromName: company.name,
+      });
 
       const [comm] = await db
         .insert(clientCommunications)
         .values({
           companyId: validated.companyId,
           userId,
-          channel: 'email',
-          direction: 'outbound',
+          channel: "email",
+          direction: "outbound",
           recipientEmail: validated.recipientEmail,
           subject,
           body,
-          status: result.sent ? 'sent' : 'failed',
-          templateType: validated.templateType ?? 'custom',
+          status: result.sent ? "sent" : "failed",
+          templateType: validated.templateType ?? "custom",
           sentAt: new Date(),
           ...(validated.templateId || validated.invoiceId
-            ? { metadata: JSON.stringify({ templateId: validated.templateId, invoiceId: validated.invoiceId, provider: result.provider }) }
+            ? {
+                metadata: JSON.stringify({
+                  templateId: validated.templateId,
+                  invoiceId: validated.invoiceId,
+                  provider: result.provider,
+                }),
+              }
             : {}),
         })
         .returning();
@@ -269,24 +293,24 @@ export function registerFirmCommsRoutes(app: Express): void {
       createAndEmitNotification({
         userId,
         companyId: validated.companyId,
-        type: 'communication',
-        title: 'Email sent to client',
+        type: "communication",
+        title: "Email sent to client",
         message: `Email "${validated.subject}" sent to ${validated.recipientEmail}`,
-        priority: 'normal',
-        relatedEntityType: 'communication',
+        priority: "normal",
+        relatedEntityType: "communication",
         relatedEntityId: comm.id,
-        actionUrl: '/firm/comms',
+        actionUrl: "/firm/comms",
       }).catch(() => {});
 
       await recordAudit({
         userId,
         companyId: validated.companyId,
-        action: 'firm_communication_email',
-        entityType: 'client_communication',
+        action: "firm_communication_email",
+        entityType: "client_communication",
         entityId: comm.id,
         req,
         extra: {
-          channel: 'email',
+          channel: "email",
           deliveryStatus: comm.status,
           templateType: comm.templateType,
           recipientEmail: validated.recipientEmail,
@@ -305,14 +329,14 @@ export function registerFirmCommsRoutes(app: Express): void {
 
   // ─── POST /api/firm/comms/send-whatsapp ───────────────────────────────────
   router.post(
-    '/firm/comms/send-whatsapp',
+    "/firm/comms/send-whatsapp",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
       const validated = sendWhatsAppSchema.parse(req.body);
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
       if (accessibleIds !== null && !accessibleIds.includes(validated.companyId)) {
-        return res.status(403).json({ message: 'Access denied to this client' });
+        return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const [comm] = await db
@@ -320,16 +344,16 @@ export function registerFirmCommsRoutes(app: Express): void {
         .values({
           companyId: validated.companyId,
           userId,
-          channel: 'whatsapp',
-          direction: 'outbound',
+          channel: "whatsapp",
+          direction: "outbound",
           recipientPhone: validated.recipientPhone,
           body: validated.body,
-          status: 'logged',
-          templateType: validated.templateType ?? 'custom',
+          status: "logged",
+          templateType: validated.templateType ?? "custom",
           sentAt: new Date(),
           metadata: JSON.stringify({
-            deliveryMode: 'logged_only',
-            reason: 'WhatsApp Business API integration pending',
+            deliveryMode: "logged_only",
+            reason: "WhatsApp Business API integration pending",
           }),
         })
         .returning();
@@ -337,25 +361,25 @@ export function registerFirmCommsRoutes(app: Express): void {
       createAndEmitNotification({
         userId,
         companyId: validated.companyId,
-        type: 'communication',
-        title: 'WhatsApp message logged',
+        type: "communication",
+        title: "WhatsApp message logged",
         message: `WhatsApp draft logged for ${validated.recipientPhone}; no provider delivery occurred.`,
-        priority: 'normal',
-        relatedEntityType: 'communication',
+        priority: "normal",
+        relatedEntityType: "communication",
         relatedEntityId: comm.id,
-        actionUrl: '/firm/comms',
+        actionUrl: "/firm/comms",
       }).catch(() => {});
 
       await recordAudit({
         userId,
         companyId: validated.companyId,
-        action: 'firm_communication_whatsapp_logged',
-        entityType: 'client_communication',
+        action: "firm_communication_whatsapp_logged",
+        entityType: "client_communication",
         entityId: comm.id,
         req,
         extra: {
-          channel: 'whatsapp',
-          deliveryStatus: 'logged',
+          channel: "whatsapp",
+          deliveryStatus: "logged",
           templateType: comm.templateType,
           recipientPhone: validated.recipientPhone,
         },
@@ -363,16 +387,16 @@ export function registerFirmCommsRoutes(app: Express): void {
 
       res.json({
         success: true,
-        deliveryStatus: 'logged',
+        deliveryStatus: "logged",
         communication: comm,
-        note: 'WhatsApp Business API integration pending — message was logged only and not delivered.',
+        note: "WhatsApp Business API integration pending — message was logged only and not delivered.",
       });
     })
   );
 
   // ─── GET /api/firm/comms/templates ────────────────────────────────────────
   router.get(
-    '/firm/comms/templates',
+    "/firm/comms/templates",
     asyncHandler(async (_req: Request, res: Response) => {
       const templates = await db
         .select()
@@ -385,7 +409,7 @@ export function registerFirmCommsRoutes(app: Express): void {
 
   // ─── POST /api/firm/comms/templates ───────────────────────────────────────
   router.post(
-    '/firm/comms/templates',
+    "/firm/comms/templates",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
       const validated = templateSchema.parse(req.body);
@@ -404,11 +428,11 @@ export function registerFirmCommsRoutes(app: Express): void {
           })
           .where(eq(communicationTemplates.id, validated.id))
           .returning();
-        if (!updated) return res.status(404).json({ message: 'Template not found' });
+        if (!updated) return res.status(404).json({ message: "Template not found" });
         await recordAudit({
           userId,
-          action: 'firm_communication_template_update',
-          entityType: 'communication_template',
+          action: "firm_communication_template_update",
+          entityType: "communication_template",
           entityId: updated.id,
           req,
           extra: {
@@ -434,8 +458,8 @@ export function registerFirmCommsRoutes(app: Express): void {
           .returning();
         await recordAudit({
           userId,
-          action: 'firm_communication_template_create',
-          entityType: 'communication_template',
+          action: "firm_communication_template_create",
+          entityType: "communication_template",
           entityId: created.id,
           req,
           extra: {
@@ -452,12 +476,12 @@ export function registerFirmCommsRoutes(app: Express): void {
 
   // ─── POST /api/firm/comms/bulk-remind ─────────────────────────────────────
   router.post(
-    '/firm/comms/bulk-remind',
+    "/firm/comms/bulk-remind",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
       const { daysAhead, dryRun } = bulkRemindSchema.parse(req.body);
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
       if (accessibleIds !== null && accessibleIds.length === 0) {
         return res.json({ sent: 0, failed: 0, results: [], preview: [] });
       }
@@ -478,19 +502,17 @@ export function registerFirmCommsRoutes(app: Express): void {
         .innerJoin(companies, eq(companies.id, vatReturns.companyId))
         .where(
           and(
-            eq(companies.companyType, 'client'),
+            eq(companies.companyType, "client"),
             gte(vatReturns.dueDate, now),
             lte(vatReturns.dueDate, cutoff),
-            accessibleIds !== null
-              ? inArray(vatReturns.companyId, accessibleIds)
-              : undefined,
+            accessibleIds !== null ? inArray(vatReturns.companyId, accessibleIds) : undefined
           )
         )
         .orderBy(vatReturns.dueDate);
 
       // Deduplicate — keep earliest due date per company
       const seen = new Set<string>();
-      const targets = dueSoon.filter((r: typeof dueSoon[number]) => {
+      const targets = dueSoon.filter((r: (typeof dueSoon)[number]) => {
         if (seen.has(r.companyId)) return false;
         seen.add(r.companyId);
         return true;
@@ -513,42 +535,44 @@ export function registerFirmCommsRoutes(app: Express): void {
             companyId: target.companyId,
             companyName: target.companyName,
             sent: false,
-            note: 'No contact email on file',
+            note: "No contact email on file",
           });
           continue;
         }
 
-        const dueDate = new Date(target.dueDate).toLocaleDateString('en-AE', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
+        const dueDate = new Date(target.dueDate).toLocaleDateString("en-AE", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
         });
         const subject = `VAT Return Reminder — Due ${dueDate}`;
         const body = [
           `Dear ${target.companyName},`,
-          '',
+          "",
           `This is a reminder that your VAT return is due on ${dueDate}. Please ensure all documents are submitted to our team promptly.`,
-          '',
-          'If you have any questions, please do not hesitate to contact us.',
-          '',
-          'Kind regards,',
-          'NR Accounting Team',
-        ].join('\n');
+          "",
+          "If you have any questions, please do not hesitate to contact us.",
+          "",
+          "Kind regards,",
+          "NR Accounting Team",
+        ].join("\n");
 
-        const result = await sendEmail(target.contactEmail, subject, body, { fromName: 'NR Accounting' });
+        const result = await sendEmail(target.contactEmail, subject, body, {
+          fromName: "NR Accounting",
+        });
         const sent = result.sent;
         const note = result.error;
 
         await db.insert(clientCommunications).values({
           companyId: target.companyId,
           userId,
-          channel: 'email',
-          direction: 'outbound',
+          channel: "email",
+          direction: "outbound",
           recipientEmail: target.contactEmail,
           subject,
           body,
-          status: sent ? 'sent' : 'failed',
-          templateType: 'vat_reminder',
+          status: sent ? "sent" : "failed",
+          templateType: "vat_reminder",
           sentAt: new Date(),
           metadata: JSON.stringify({
             dueDate: target.dueDate,
@@ -557,13 +581,18 @@ export function registerFirmCommsRoutes(app: Express): void {
           }),
         });
 
-        results.push({ companyId: target.companyId, companyName: target.companyName, sent, ...(note ? { note } : {}) });
+        results.push({
+          companyId: target.companyId,
+          companyName: target.companyName,
+          sent,
+          ...(note ? { note } : {}),
+        });
       }
 
       await recordAudit({
         userId,
-        action: 'firm_bulk_vat_reminder',
-        entityType: 'client_communication',
+        action: "firm_bulk_vat_reminder",
+        entityType: "client_communication",
         req,
         extra: {
           daysAhead,
@@ -581,6 +610,6 @@ export function registerFirmCommsRoutes(app: Express): void {
     })
   );
 
-  app.use('/api', router);
-  logger.info('Firm comms routes registered at /api/firm/comms/*');
+  app.use("/api", router);
+  logger.info("Firm comms routes registered at /api/firm/comms/*");
 }

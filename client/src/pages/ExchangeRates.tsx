@@ -1,24 +1,44 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useSubscription } from '@/hooks/useSubscription';
-import { UpgradePrompt } from '@/components/UpgradePrompt';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatDate, formatNumber } from '@/lib/format';
-import { Plus, ArrowRightLeft, RefreshCw } from 'lucide-react';
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useTranslation } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useSubscription } from "@/hooks/useSubscription";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatDate, formatNumber } from "@/lib/format";
+import { Plus, ArrowRightLeft, RefreshCw } from "lucide-react";
 
-const CURRENCIES = ['AED', 'USD', 'EUR', 'GBP', 'SAR', 'INR', 'PKR', 'EGP', 'BHD', 'QAR'];
+const CURRENCIES = ["AED", "USD", "EUR", "GBP", "SAR", "INR", "PKR", "EGP", "BHD", "QAR"];
 
 interface ExchangeRate {
   id: string;
@@ -48,17 +68,15 @@ export default function ExchangeRates() {
 
   // Dialog state
   const [showAddDialog, setShowAddDialog] = useState(false);
-  const [formFromCurrency, setFormFromCurrency] = useState('USD');
-  const [formToCurrency, setFormToCurrency] = useState('AED');
-  const [formRate, setFormRate] = useState('');
-  const [formEffectiveDate, setFormEffectiveDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
+  const [formFromCurrency, setFormFromCurrency] = useState("USD");
+  const [formToCurrency, setFormToCurrency] = useState("AED");
+  const [formRate, setFormRate] = useState("");
+  const [formEffectiveDate, setFormEffectiveDate] = useState(new Date().toISOString().slice(0, 10));
 
   // Converter state
-  const [convertFrom, setConvertFrom] = useState('USD');
-  const [convertTo, setConvertTo] = useState('AED');
-  const [convertAmount, setConvertAmount] = useState('');
+  const [convertFrom, setConvertFrom] = useState("USD");
+  const [convertTo, setConvertTo] = useState("AED");
+  const [convertAmount, setConvertAmount] = useState("");
   const [convertResult, setConvertResult] = useState<ConvertResult | null>(null);
 
   // Fetch exchange rates
@@ -75,16 +93,16 @@ export default function ExchangeRates() {
       rate: number;
       effectiveDate: string;
     }) => {
-      return apiRequest('POST', `/api/companies/${companyId}/exchange-rates`, data);
+      return apiRequest("POST", `/api/companies/${companyId}/exchange-rates`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/exchange-rates`] });
       setShowAddDialog(false);
-      setFormRate('');
-      toast({ title: 'Exchange rate added successfully' });
+      setFormRate("");
+      toast({ title: "Exchange rate added successfully" });
     },
     onError: (error: Error) => {
-      toast({ title: 'Failed to add rate', description: error?.message, variant: 'destructive' });
+      toast({ title: "Failed to add rate", description: error?.message, variant: "destructive" });
     },
   });
 
@@ -96,13 +114,13 @@ export default function ExchangeRates() {
         to: convertTo,
         amount: convertAmount,
       });
-      return apiRequest('GET', `/api/companies/${companyId}/exchange-rates/convert?${params}`);
+      return apiRequest("GET", `/api/companies/${companyId}/exchange-rates/convert?${params}`);
     },
     onSuccess: (data: ConvertResult) => {
       setConvertResult(data);
     },
     onError: (error: Error) => {
-      toast({ title: 'Conversion failed', description: error?.message, variant: 'destructive' });
+      toast({ title: "Conversion failed", description: error?.message, variant: "destructive" });
       setConvertResult(null);
     },
   });
@@ -110,11 +128,11 @@ export default function ExchangeRates() {
   const handleAddRate = () => {
     const rate = parseFloat(formRate);
     if (isNaN(rate) || rate <= 0) {
-      toast({ title: 'Please enter a valid rate', variant: 'destructive' });
+      toast({ title: "Please enter a valid rate", variant: "destructive" });
       return;
     }
     if (formFromCurrency === formToCurrency) {
-      toast({ title: 'Currencies must be different', variant: 'destructive' });
+      toast({ title: "Currencies must be different", variant: "destructive" });
       return;
     }
     createMutation.mutate({
@@ -128,14 +146,16 @@ export default function ExchangeRates() {
   const handleConvert = () => {
     const amount = parseFloat(convertAmount);
     if (isNaN(amount) || amount <= 0) {
-      toast({ title: 'Please enter a valid amount', variant: 'destructive' });
+      toast({ title: "Please enter a valid amount", variant: "destructive" });
       return;
     }
     convertMutation.mutate();
   };
 
-  if (!canAccess('multiCurrency')) {
-    return <UpgradePrompt feature="multiCurrency" requiredTier={getRequiredTier('multiCurrency')} />;
+  if (!canAccess("multiCurrency")) {
+    return (
+      <UpgradePrompt feature="multiCurrency" requiredTier={getRequiredTier("multiCurrency")} />
+    );
   }
 
   if (isLoadingCompany) {
@@ -187,8 +207,10 @@ export default function ExchangeRates() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CURRENCIES.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -200,8 +222,10 @@ export default function ExchangeRates() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CURRENCIES.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -214,7 +238,7 @@ export default function ExchangeRates() {
                 min="0"
                 placeholder="Enter amount"
                 value={convertAmount}
-                onChange={e => {
+                onChange={(e) => {
                   setConvertAmount(e.target.value);
                   setConvertResult(null);
                 }}
@@ -232,7 +256,8 @@ export default function ExchangeRates() {
           {convertResult && (
             <div className="mt-4 p-4 bg-muted rounded-lg">
               <p className="text-lg font-semibold">
-                {formatNumber(convertResult.amount, locale)} {convertResult.from} = {formatNumber(convertResult.convertedAmount, locale)} {convertResult.to}
+                {formatNumber(convertResult.amount, locale)} {convertResult.from} ={" "}
+                {formatNumber(convertResult.convertedAmount, locale)} {convertResult.to}
               </p>
               <p className="text-sm text-muted-foreground">
                 Rate: 1 {convertResult.from} = {convertResult.rate.toFixed(6)} {convertResult.to}
@@ -276,7 +301,7 @@ export default function ExchangeRates() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rates.map(rate => (
+                {rates.map((rate) => (
                   <TableRow key={rate.id}>
                     <TableCell className="font-medium">{rate.fromCurrency}</TableCell>
                     <TableCell className="font-medium">{rate.toCurrency}</TableCell>
@@ -309,8 +334,10 @@ export default function ExchangeRates() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    {CURRENCIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -322,8 +349,10 @@ export default function ExchangeRates() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {CURRENCIES.map(c => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    {CURRENCIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -337,7 +366,7 @@ export default function ExchangeRates() {
                 min="0"
                 placeholder="e.g. 3.6725"
                 value={formRate}
-                onChange={e => setFormRate(e.target.value)}
+                onChange={(e) => setFormRate(e.target.value)}
               />
               <p className="text-xs text-muted-foreground">
                 1 {formFromCurrency} = ? {formToCurrency}
@@ -348,7 +377,7 @@ export default function ExchangeRates() {
               <Input
                 type="date"
                 value={formEffectiveDate}
-                onChange={e => setFormEffectiveDate(e.target.value)}
+                onChange={(e) => setFormEffectiveDate(e.target.value)}
               />
             </div>
           </div>
@@ -357,7 +386,7 @@ export default function ExchangeRates() {
               Cancel
             </Button>
             <Button onClick={handleAddRate} disabled={createMutation.isPending}>
-              {createMutation.isPending ? 'Adding...' : 'Add Rate'}
+              {createMutation.isPending ? "Adding..." : "Add Rate"}
             </Button>
           </DialogFooter>
         </DialogContent>

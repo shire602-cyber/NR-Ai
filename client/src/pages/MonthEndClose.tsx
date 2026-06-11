@@ -1,17 +1,17 @@
-import { useState, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Separator } from '@/components/ui/separator';
+import { useState, useMemo } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -19,7 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,11 +30,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+} from "@/components/ui/alert-dialog";
+import { useTranslation } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   CalendarCheck,
   CheckCircle2,
@@ -48,7 +48,7 @@ import {
   AlertTriangle,
   ArrowRight,
   BookOpen,
-} from 'lucide-react';
+} from "lucide-react";
 
 // ---- Types ----
 
@@ -56,7 +56,7 @@ interface ChecklistItem {
   id: number;
   title: string;
   description: string;
-  status: 'complete' | 'incomplete';
+  status: "complete" | "incomplete";
   details?: string;
 }
 
@@ -104,13 +104,13 @@ interface CloseRecord {
 
 // ---- Fix routes for incomplete items ----
 const fixRoutes: Record<number, string> = {
-  1: '/bank-reconciliation',
-  2: '/invoices',
-  3: '/receipts',
-  4: '/anomaly-detection',
-  5: '/ai-features',
-  6: '/fixed-assets',
-  7: '/vat-filing',
+  1: "/bank-reconciliation",
+  2: "/invoices",
+  3: "/receipts",
+  4: "/anomaly-detection",
+  5: "/ai-features",
+  6: "/fixed-assets",
+  7: "/vat-filing",
 };
 
 // ---- Component ----
@@ -127,16 +127,16 @@ export default function MonthEndClose() {
   const [selectedMonth, setSelectedMonth] = useState(String(prevMonth.getMonth() + 1));
 
   const period = useMemo(
-    () => `${selectedYear}-${selectedMonth.padStart(2, '0')}`,
+    () => `${selectedYear}-${selectedMonth.padStart(2, "0")}`,
     [selectedYear, selectedMonth]
   );
 
   const periodDates = useMemo(() => {
     const y = parseInt(selectedYear);
     const m = parseInt(selectedMonth);
-    const periodStart = `${y}-${String(m).padStart(2, '0')}-01`;
+    const periodStart = `${y}-${String(m).padStart(2, "0")}-01`;
     const lastDay = new Date(y, m, 0).getDate();
-    const periodEnd = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const periodEnd = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
     return { periodStart, periodEnd };
   }, [selectedYear, selectedMonth]);
 
@@ -151,10 +151,7 @@ export default function MonthEndClose() {
     enabled: !!companyId,
   });
 
-  const {
-    data: historyData,
-    isLoading: isLoadingHistory,
-  } = useQuery<CloseRecord[]>({
+  const { data: historyData, isLoading: isLoadingHistory } = useQuery<CloseRecord[]>({
     queryKey: [`/api/companies/${companyId}/month-end/history`],
     enabled: !!companyId,
   });
@@ -163,100 +160,109 @@ export default function MonthEndClose() {
 
   const validationMutation = useMutation<ValidationResponse>({
     mutationFn: async () => {
-      return apiRequest('GET', `/api/companies/${companyId}/month-end/ai-validation?period=${period}`);
+      return apiRequest(
+        "GET",
+        `/api/companies/${companyId}/month-end/ai-validation?period=${period}`
+      );
     },
     onError: (error: Error) => {
-      toast({ title: 'Validation Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Validation Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const closingEntriesMutation = useMutation<ClosingEntry>({
     mutationFn: async () => {
-      return apiRequest('POST', `/api/companies/${companyId}/month-end/generate-closing-entries`, {
+      return apiRequest("POST", `/api/companies/${companyId}/month-end/generate-closing-entries`, {
         periodStart: periodDates.periodStart,
         periodEnd: periodDates.periodEnd,
       });
     },
     onSuccess: (data) => {
       toast({
-        title: 'Closing Entries Created',
+        title: "Closing Entries Created",
         description: `Journal entry ${data.entryNumber} posted with ${data.lines.length} lines.`,
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/month-end/checklist`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/month-end/checklist`],
+      });
       refetchChecklist();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const lockPeriodMutation = useMutation<CloseRecord>({
     mutationFn: async () => {
-      return apiRequest('POST', `/api/companies/${companyId}/month-end/lock-period`, {
+      return apiRequest("POST", `/api/companies/${companyId}/month-end/lock-period`, {
         periodEnd: periodDates.periodEnd,
       });
     },
     onSuccess: () => {
       toast({
-        title: 'Period Locked',
+        title: "Period Locked",
         description: `Period ${formatPeriodLabel(period)} has been locked.`,
       });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/month-end/history`] });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/month-end/history`],
+      });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   // ---- Helpers ----
 
   const months = [
-    { value: '1', label: 'January' },
-    { value: '2', label: 'February' },
-    { value: '3', label: 'March' },
-    { value: '4', label: 'April' },
-    { value: '5', label: 'May' },
-    { value: '6', label: 'June' },
-    { value: '7', label: 'July' },
-    { value: '8', label: 'August' },
-    { value: '9', label: 'September' },
-    { value: '10', label: 'October' },
-    { value: '11', label: 'November' },
-    { value: '12', label: 'December' },
+    { value: "1", label: "January" },
+    { value: "2", label: "February" },
+    { value: "3", label: "March" },
+    { value: "4", label: "April" },
+    { value: "5", label: "May" },
+    { value: "6", label: "June" },
+    { value: "7", label: "July" },
+    { value: "8", label: "August" },
+    { value: "9", label: "September" },
+    { value: "10", label: "October" },
+    { value: "11", label: "November" },
+    { value: "12", label: "December" },
   ];
 
   const years = Array.from({ length: 5 }, (_, i) => String(now.getFullYear() - i));
 
   function formatPeriodLabel(p: string): string {
-    const [y, m] = p.split('-').map(Number);
-    const monthName = months.find((mo) => Number(mo.value) === m)?.label || '';
+    const [y, m] = p.split("-").map(Number);
+    const monthName = months.find((mo) => Number(mo.value) === m)?.label || "";
     return `${monthName} ${y}`;
   }
 
   function formatDate(dateStr: string | null): string {
-    if (!dateStr) return '-';
+    if (!dateStr) return "-";
     try {
-      return new Date(dateStr).toLocaleDateString('en-AE', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+      return new Date(dateStr).toLocaleDateString("en-AE", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
     } catch {
       return dateStr;
     }
   }
 
-  const isCurrentPeriodLocked = historyData?.some(
-    (record) =>
-      record.status === 'locked' &&
-      new Date(record.periodEnd).toISOString().startsWith(
-        `${selectedYear}-${selectedMonth.padStart(2, '0')}`
-      )
-  ) || false;
+  const isCurrentPeriodLocked =
+    historyData?.some(
+      (record) =>
+        record.status === "locked" &&
+        new Date(record.periodEnd)
+          .toISOString()
+          .startsWith(`${selectedYear}-${selectedMonth.padStart(2, "0")}`)
+    ) || false;
 
-  const completedCount = checklistData?.checklist.filter((i) => i.status === 'complete').length || 0;
+  const completedCount =
+    checklistData?.checklist.filter((i) => i.status === "complete").length || 0;
   const totalCount = checklistData?.checklist.length || 7;
 
   // ---- Loading state ----
@@ -344,7 +350,7 @@ export default function MonthEndClose() {
               onClick={() => refetchChecklist()}
               disabled={isLoadingChecklist}
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingChecklist ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoadingChecklist ? "animate-spin" : ""}`} />
               Refresh
             </Button>
           </div>
@@ -361,8 +367,10 @@ export default function MonthEndClose() {
                 {completedCount}/{totalCount} items complete for {formatPeriodLabel(period)}
               </CardDescription>
             </div>
-            <Badge variant={completedCount === totalCount ? 'default' : 'secondary'}>
-              {completedCount === totalCount ? 'All Clear' : `${totalCount - completedCount} remaining`}
+            <Badge variant={completedCount === totalCount ? "default" : "secondary"}>
+              {completedCount === totalCount
+                ? "All Clear"
+                : `${totalCount - completedCount} remaining`}
             </Badge>
           </div>
         </CardHeader>
@@ -379,23 +387,25 @@ export default function MonthEndClose() {
                 <div
                   key={item.id}
                   className={`flex items-center justify-between p-3 rounded-lg border ${
-                    item.status === 'complete'
-                      ? 'bg-green-50 border-green-200'
-                      : 'bg-red-50 border-red-200'
+                    item.status === "complete"
+                      ? "bg-green-50 border-green-200"
+                      : "bg-red-50 border-red-200"
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    {item.status === 'complete' ? (
+                    {item.status === "complete" ? (
                       <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
                     ) : (
                       <XCircle className="h-5 w-5 text-red-500 shrink-0" />
                     )}
                     <div>
                       <p className="text-sm font-medium">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.details || item.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {item.details || item.description}
+                      </p>
                     </div>
                   </div>
-                  {item.status === 'incomplete' && fixRoutes[item.id] && (
+                  {item.status === "incomplete" && fixRoutes[item.id] && (
                     <a href={fixRoutes[item.id]}>
                       <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
                         Fix <ArrowRight className="h-3 w-3 ml-1" />
@@ -440,8 +450,8 @@ export default function MonthEndClose() {
             <div
               className={`p-4 rounded-lg border ${
                 validationMutation.data.ready
-                  ? 'bg-green-50 border-green-200'
-                  : 'bg-amber-50 border-amber-200'
+                  ? "bg-green-50 border-green-200"
+                  : "bg-amber-50 border-amber-200"
               }`}
             >
               <div className="flex items-start gap-3">
@@ -452,7 +462,7 @@ export default function MonthEndClose() {
                 )}
                 <div className="space-y-1">
                   <p className="font-medium text-sm">
-                    {validationMutation.data.ready ? 'Ready to Close' : 'Not Ready'}
+                    {validationMutation.data.ready ? "Ready to Close" : "Not Ready"}
                   </p>
                   <pre className="text-sm text-muted-foreground whitespace-pre-wrap font-sans">
                     {validationMutation.data.summary}
@@ -494,9 +504,9 @@ export default function MonthEndClose() {
             <AlertDialogHeader>
               <AlertDialogTitle>Generate Closing Entries</AlertDialogTitle>
               <AlertDialogDescription>
-                This will create a journal entry that closes all revenue and expense accounts
-                for {formatPeriodLabel(period)}, transferring the net result to retained earnings.
-                This action posts the entry immediately.
+                This will create a journal entry that closes all revenue and expense accounts for{" "}
+                {formatPeriodLabel(period)}, transferring the net result to retained earnings. This
+                action posts the entry immediately.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -528,8 +538,8 @@ export default function MonthEndClose() {
               <AlertDialogTitle>Lock Period</AlertDialogTitle>
               <AlertDialogDescription>
                 Locking {formatPeriodLabel(period)} will prevent any modifications to transactions
-                in this period. This is typically done after all closing entries are posted and
-                the period has been fully reviewed. This action cannot be easily undone.
+                in this period. This is typically done after all closing entries are posted and the
+                period has been fully reviewed. This action cannot be easily undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -574,20 +584,28 @@ export default function MonthEndClose() {
                       {line.accountName}
                     </TableCell>
                     <TableCell className="text-right">
-                      {line.debit > 0 ? line.debit.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : ''}
+                      {line.debit > 0
+                        ? line.debit.toLocaleString("en-AE", { minimumFractionDigits: 2 })
+                        : ""}
                     </TableCell>
                     <TableCell className="text-right">
-                      {line.credit > 0 ? line.credit.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : ''}
+                      {line.credit > 0
+                        ? line.credit.toLocaleString("en-AE", { minimumFractionDigits: 2 })
+                        : ""}
                     </TableCell>
                   </TableRow>
                 ))}
                 <TableRow className="font-bold border-t-2">
                   <TableCell>Total</TableCell>
                   <TableCell className="text-right">
-                    {closingEntriesMutation.data.totalDebits.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                    {closingEntriesMutation.data.totalDebits.toLocaleString("en-AE", {
+                      minimumFractionDigits: 2,
+                    })}
                   </TableCell>
                   <TableCell className="text-right">
-                    {closingEntriesMutation.data.totalCredits.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                    {closingEntriesMutation.data.totalCredits.toLocaleString("en-AE", {
+                      minimumFractionDigits: 2,
+                    })}
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -631,14 +649,14 @@ export default function MonthEndClose() {
                       {(() => {
                         try {
                           const d = new Date(record.periodEnd);
-                          return d.toLocaleDateString('en-AE', { year: 'numeric', month: 'long' });
+                          return d.toLocaleDateString("en-AE", { year: "numeric", month: "long" });
                         } catch {
                           return record.periodEnd;
                         }
                       })()}
                     </TableCell>
                     <TableCell>
-                      {record.status === 'locked' ? (
+                      {record.status === "locked" ? (
                         <Badge variant="destructive" className="flex items-center gap-1 w-fit">
                           <Lock className="h-3 w-3" />
                           Locked
@@ -651,7 +669,7 @@ export default function MonthEndClose() {
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {record.closedByEmail || record.closedBy || '-'}
+                      {record.closedByEmail || record.closedBy || "-"}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {formatDate(record.closedAt)}

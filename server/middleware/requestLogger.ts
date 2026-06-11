@@ -1,7 +1,7 @@
-import type { Request, Response, NextFunction } from 'express';
-import { createLogger } from '../config/logger';
+import type { Request, Response, NextFunction } from "express";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('http');
+const log = createLogger("http");
 
 /**
  * HTTP request/response logger middleware.
@@ -10,12 +10,12 @@ const log = createLogger('http');
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const start = Date.now();
 
-  res.on('finish', () => {
+  res.on("finish", () => {
     const duration = Date.now() - start;
     const path = req.originalUrl || req.url;
 
     // Only log API requests (skip static files)
-    if (!path.startsWith('/api') && path !== '/health') return;
+    if (!path.startsWith("/api") && path !== "/health") return;
 
     const logData = {
       requestId: req.id,
@@ -24,7 +24,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
       statusCode: res.statusCode,
       duration: `${duration}ms`,
       ip: req.ip,
-      userAgent: req.get('user-agent'),
+      userAgent: req.get("user-agent"),
       userId: (req as any).user?.id,
     };
 

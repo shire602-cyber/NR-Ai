@@ -172,7 +172,7 @@
   }
 
   .btn-icon-sm::before {
-    content: '';
+    content: "";
     position: absolute;
     inset: -6px;
   }

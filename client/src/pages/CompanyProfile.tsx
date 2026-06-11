@@ -1,45 +1,87 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Building2, FileText, Upload, Save } from 'lucide-react';
-import type { Company } from '@shared/schema';
+import { PageHeader } from "@/components/ui/page-header";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormDescription,
+} from "@/components/ui/form";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Building2, FileText, Upload, Save } from "lucide-react";
+import type { Company } from "@shared/schema";
 
 const companyProfileSchema = z.object({
   // Basic Info
-  name: z.string().min(2, 'Company name is required'),
-  baseCurrency: z.string().default('AED'),
-  locale: z.enum(['en', 'ar']).default('en'),
-  
+  name: z.string().min(2, "Company name is required"),
+  baseCurrency: z.string().default("AED"),
+  locale: z.enum(["en", "ar"]).default("en"),
+
   // Company Information
-  legalStructure: z.string().min(1, 'Legal structure is required'),
-  industry: z.string().transform(val => val || undefined).optional(),
-  registrationNumber: z.string().transform(val => val || undefined).optional(),
-  businessAddress: z.string().min(1, 'Business address is required'),
-  contactPhone: z.string().transform(val => val || undefined).optional(),
-  contactEmail: z.string().email('Invalid email').or(z.literal('')).transform(val => val || undefined).optional(),
-  websiteUrl: z.string().url('Invalid URL').or(z.literal('')).transform(val => val || undefined).optional(),
-  logoUrl: z.string().transform(val => val || undefined).optional(),
-  
+  legalStructure: z.string().min(1, "Legal structure is required"),
+  industry: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
+  registrationNumber: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
+  businessAddress: z.string().min(1, "Business address is required"),
+  contactPhone: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
+  contactEmail: z
+    .string()
+    .email("Invalid email")
+    .or(z.literal(""))
+    .transform((val) => val || undefined)
+    .optional(),
+  websiteUrl: z
+    .string()
+    .url("Invalid URL")
+    .or(z.literal(""))
+    .transform((val) => val || undefined)
+    .optional(),
+  logoUrl: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
+
   // Tax & Compliance
-  trnVatNumber: z.string().min(1, 'TRN/VAT Number is required'),
-  taxRegistrationType: z.string().min(1, 'Tax registration type is required'),
-  vatFilingFrequency: z.string().min(1, 'VAT filing frequency is required'),
-  taxRegistrationDate: z.string().transform(val => val || undefined).optional(),
-  corporateTaxId: z.string().transform(val => val || undefined).optional(),
+  trnVatNumber: z.string().min(1, "TRN/VAT Number is required"),
+  taxRegistrationType: z.string().min(1, "Tax registration type is required"),
+  vatFilingFrequency: z.string().min(1, "VAT filing frequency is required"),
+  taxRegistrationDate: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
+  corporateTaxId: z
+    .string()
+    .transform((val) => val || undefined)
+    .optional(),
 });
 
 type CompanyProfileFormData = z.infer<typeof companyProfileSchema>;
@@ -52,29 +94,29 @@ export default function CompanyProfile() {
   const [logoFile, setLogoFile] = useState<File | null>(null);
 
   const { data: company, isLoading } = useQuery<Company>({
-    queryKey: ['/api/companies', companyId],
+    queryKey: ["/api/companies", companyId],
     enabled: !!companyId,
   });
 
   const form = useForm<CompanyProfileFormData>({
     resolver: zodResolver(companyProfileSchema),
     defaultValues: {
-      name: '',
-      baseCurrency: 'AED',
-      locale: 'en',
-      legalStructure: '',
-      industry: '',
-      registrationNumber: '',
-      businessAddress: '',
-      contactPhone: '',
-      contactEmail: '',
-      websiteUrl: '',
-      logoUrl: '',
-      trnVatNumber: '',
-      taxRegistrationType: '',
-      vatFilingFrequency: '',
-      taxRegistrationDate: '',
-      corporateTaxId: '',
+      name: "",
+      baseCurrency: "AED",
+      locale: "en",
+      legalStructure: "",
+      industry: "",
+      registrationNumber: "",
+      businessAddress: "",
+      contactPhone: "",
+      contactEmail: "",
+      websiteUrl: "",
+      logoUrl: "",
+      trnVatNumber: "",
+      taxRegistrationType: "",
+      vatFilingFrequency: "",
+      taxRegistrationDate: "",
+      corporateTaxId: "",
     },
   });
 
@@ -82,24 +124,26 @@ export default function CompanyProfile() {
   useEffect(() => {
     if (company) {
       form.reset({
-        name: company.name || '',
-        baseCurrency: company.baseCurrency || 'AED',
-        locale: company.locale as 'en' | 'ar' || 'en',
-        legalStructure: company.legalStructure || '',
-        industry: company.industry || '',
-        registrationNumber: company.registrationNumber || '',
-        businessAddress: company.businessAddress || '',
-        contactPhone: company.contactPhone || '',
-        contactEmail: company.contactEmail || '',
-        websiteUrl: company.websiteUrl || '',
-        logoUrl: company.logoUrl || '',
-        trnVatNumber: company.trnVatNumber || '',
-        taxRegistrationType: company.taxRegistrationType || '',
-        vatFilingFrequency: company.vatFilingFrequency || '',
-        taxRegistrationDate: company.taxRegistrationDate ? new Date(company.taxRegistrationDate).toISOString().split('T')[0] : '',
-        corporateTaxId: company.corporateTaxId || '',
+        name: company.name || "",
+        baseCurrency: company.baseCurrency || "AED",
+        locale: (company.locale as "en" | "ar") || "en",
+        legalStructure: company.legalStructure || "",
+        industry: company.industry || "",
+        registrationNumber: company.registrationNumber || "",
+        businessAddress: company.businessAddress || "",
+        contactPhone: company.contactPhone || "",
+        contactEmail: company.contactEmail || "",
+        websiteUrl: company.websiteUrl || "",
+        logoUrl: company.logoUrl || "",
+        trnVatNumber: company.trnVatNumber || "",
+        taxRegistrationType: company.taxRegistrationType || "",
+        vatFilingFrequency: company.vatFilingFrequency || "",
+        taxRegistrationDate: company.taxRegistrationDate
+          ? new Date(company.taxRegistrationDate).toISOString().split("T")[0]
+          : "",
+        corporateTaxId: company.corporateTaxId || "",
       });
-      
+
       if (company.logoUrl) {
         setLogoPreview(company.logoUrl);
       }
@@ -111,25 +155,25 @@ export default function CompanyProfile() {
       // Convert date string to Date object if present
       const payload = {
         ...data,
-        taxRegistrationDate: data.taxRegistrationDate 
-          ? new Date(data.taxRegistrationDate) 
+        taxRegistrationDate: data.taxRegistrationDate
+          ? new Date(data.taxRegistrationDate)
           : undefined,
       };
-      return apiRequest('PATCH', `/api/companies/${companyId}`, payload);
+      return apiRequest("PATCH", `/api/companies/${companyId}`, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: 'Company profile updated',
-        description: 'Your company profile has been saved successfully.',
+        title: "Company profile updated",
+        description: "Your company profile has been saved successfully.",
       });
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Failed to update profile',
-        description: error?.message || 'Please try again.',
+        variant: "destructive",
+        title: "Failed to update profile",
+        description: error?.message || "Please try again.",
       });
     },
   });
@@ -146,7 +190,7 @@ export default function CompanyProfile() {
       reader.onloadend = () => {
         const result = reader.result as string;
         setLogoPreview(result);
-        form.setValue('logoUrl', result);
+        form.setValue("logoUrl", result);
       };
       reader.readAsDataURL(file);
     }
@@ -168,7 +212,7 @@ export default function CompanyProfile() {
             <div className="text-center text-muted-foreground">
               <Building2 className="w-12 h-12 mx-auto mb-4" />
               <p className="mb-4">Set up your company to manage its profile.</p>
-              <Button onClick={() => navigate('/onboarding')} data-testid="button-create-company">
+              <Button onClick={() => navigate("/onboarding")} data-testid="button-create-company">
                 Create your company
               </Button>
             </div>
@@ -195,9 +239,7 @@ export default function CompanyProfile() {
                 <Building2 className="w-5 h-5 text-primary" />
                 <div>
                   <CardTitle>Company Information</CardTitle>
-                  <CardDescription>
-                    Basic details about your business
-                  </CardDescription>
+                  <CardDescription>Basic details about your business</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -210,7 +252,11 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>Company Name *</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Acme Corporation" data-testid="input-company-name" />
+                        <Input
+                          {...field}
+                          placeholder="Acme Corporation"
+                          data-testid="input-company-name"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -249,7 +295,11 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>Industry</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Technology, Retail, etc." data-testid="input-industry" />
+                        <Input
+                          {...field}
+                          placeholder="Technology, Retail, etc."
+                          data-testid="input-industry"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -263,7 +313,12 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>Business Registration Number</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="1234567890" className="font-mono" data-testid="input-registration-number" />
+                        <Input
+                          {...field}
+                          placeholder="1234567890"
+                          className="font-mono"
+                          data-testid="input-registration-number"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -278,8 +333,8 @@ export default function CompanyProfile() {
                   <FormItem>
                     <FormLabel>Business Address *</FormLabel>
                     <FormControl>
-                      <Textarea 
-                        {...field} 
+                      <Textarea
+                        {...field}
                         placeholder="123 Business St, Dubai, UAE"
                         rows={3}
                         data-testid="textarea-business-address"
@@ -298,7 +353,12 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>Contact Phone</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="+971 4 123 4567" type="tel" data-testid="input-contact-phone" />
+                        <Input
+                          {...field}
+                          placeholder="+971 4 123 4567"
+                          type="tel"
+                          data-testid="input-contact-phone"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -312,7 +372,12 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>Contact Email</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="contact@company.com" type="email" data-testid="input-contact-email" />
+                        <Input
+                          {...field}
+                          placeholder="contact@company.com"
+                          type="email"
+                          data-testid="input-contact-email"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -328,7 +393,12 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>Website URL</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="https://www.company.com" type="url" data-testid="input-website-url" />
+                        <Input
+                          {...field}
+                          placeholder="https://www.company.com"
+                          type="url"
+                          data-testid="input-website-url"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -340,7 +410,11 @@ export default function CompanyProfile() {
                   <div className="flex items-center gap-4">
                     {logoPreview && (
                       <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0">
-                        <img src={logoPreview} alt="Logo preview" className="w-full h-full object-cover" />
+                        <img
+                          src={logoPreview}
+                          alt="Logo preview"
+                          className="w-full h-full object-cover"
+                        />
                       </div>
                     )}
                     <div className="flex-1">
@@ -351,7 +425,9 @@ export default function CompanyProfile() {
                         className="cursor-pointer"
                         data-testid="input-logo-upload"
                       />
-                      <FormDescription className="mt-2">Upload your company logo (optional)</FormDescription>
+                      <FormDescription className="mt-2">
+                        Upload your company logo (optional)
+                      </FormDescription>
                     </div>
                   </div>
                 </FormItem>
@@ -366,9 +442,7 @@ export default function CompanyProfile() {
                 <FileText className="w-5 h-5 text-primary" />
                 <div>
                   <CardTitle>Tax & Compliance Settings</CardTitle>
-                  <CardDescription>
-                    VAT registration and tax compliance information
-                  </CardDescription>
+                  <CardDescription>VAT registration and tax compliance information</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -381,9 +455,9 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>TRN / VAT Number *</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
-                          placeholder="123456789012345" 
+                        <Input
+                          {...field}
+                          placeholder="123456789012345"
                           className="font-mono"
                           data-testid="input-trn-vat-number"
                         />
@@ -463,9 +537,9 @@ export default function CompanyProfile() {
                     <FormItem>
                       <FormLabel>Corporate Tax ID</FormLabel>
                       <FormControl>
-                        <Input 
-                          {...field} 
-                          placeholder="CT-123456789" 
+                        <Input
+                          {...field}
+                          placeholder="CT-123456789"
                           className="font-mono"
                           data-testid="input-corporate-tax-id"
                         />
@@ -487,7 +561,7 @@ export default function CompanyProfile() {
               data-testid="button-save-company-profile"
             >
               {updateMutation.isPending ? (
-                'Saving...'
+                "Saving..."
               ) : (
                 <>
                   <Save className="w-4 h-4 mr-2" />

@@ -18,6 +18,7 @@ at `/api/version`). `NR-Ai-Backend` is a stale sibling — do not develop there.
 
 Workflow: branch → PR → CI green (three checks) → merge → auto-deploy.
 CI gates every PR with:
+
 1. **Typecheck · Test · Build** — tsc, 491 vitest unit tests, hygiene scripts
    (bundle hygiene, route registration vs config/route-registry.json, API
    contract), production build
@@ -74,7 +75,7 @@ decision, not just code: `billing` + `stripe.service` (monetization; flip
 - Sidebar shows full workspace nav for every userType except 'client'.
 - Credit-note account lookups go by ACCOUNT_CODES, names only as fallback.
 - Route payload dates: coerce ISO strings to Date at route boundaries
-  (normalize*Dates helpers) — Drizzle timestamps reject strings.
+  (normalize\*Dates helpers) — Drizzle timestamps reject strings.
 
 ## Where to go next (priority order)
 

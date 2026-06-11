@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm, useFieldArray } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { format } from 'date-fns';
+import { useState, useMemo } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm, useFieldArray } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { format } from "date-fns";
 import {
   Receipt,
   Plus,
@@ -17,15 +17,15 @@ import {
   FileText,
   Eye,
   CreditCard,
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { EmptyState } from '@/components/ui/empty-state';
-import { TableSkeleton, StatCardSkeleton } from '@/components/ui/loading-skeletons';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeleton, StatCardSkeleton } from "@/components/ui/loading-skeletons";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -33,7 +33,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -41,15 +41,24 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Form,
   FormControl,
@@ -57,14 +66,14 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { getStoredUser } from '@/lib/auth';
-import { formatCurrency } from '@/lib/format';
+} from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getStoredUser } from "@/lib/auth";
+import { formatCurrency } from "@/lib/format";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -109,39 +118,39 @@ interface ClaimSummary {
 // ─── Constants ────────────────────────────────────────────
 
 const EXPENSE_CATEGORIES = [
-  'Travel',
-  'Meals',
-  'Transport',
-  'Accommodation',
-  'Office Supplies',
-  'Client Entertainment',
-  'Telephone',
-  'Internet',
-  'Other',
+  "Travel",
+  "Meals",
+  "Transport",
+  "Accommodation",
+  "Office Supplies",
+  "Client Entertainment",
+  "Telephone",
+  "Internet",
+  "Other",
 ] as const;
 
 // ─── Schemas ──────────────────────────────────────────────
 
 const expenseItemSchema = z.object({
-  expense_date: z.string().min(1, 'Date is required'),
-  category: z.string().min(1, 'Category is required'),
-  description: z.string().min(1, 'Description is required'),
-  amount: z.coerce.number().min(0.01, 'Amount must be greater than 0'),
-  vat_amount: z.coerce.number().min(0, 'VAT amount must be >= 0'),
+  expense_date: z.string().min(1, "Date is required"),
+  category: z.string().min(1, "Category is required"),
+  description: z.string().min(1, "Description is required"),
+  amount: z.coerce.number().min(0.01, "Amount must be greater than 0"),
+  vat_amount: z.coerce.number().min(0, "VAT amount must be >= 0"),
   merchant_name: z.string().optional().nullable(),
   receipt_url: z.string().optional().nullable(),
 });
 
 const claimFormSchema = z.object({
-  title: z.string().min(1, 'Title is required'),
+  title: z.string().min(1, "Title is required"),
   description: z.string().optional().nullable(),
-  items: z.array(expenseItemSchema).min(1, 'At least one expense item is required'),
+  items: z.array(expenseItemSchema).min(1, "At least one expense item is required"),
 });
 
 type ClaimFormData = z.infer<typeof claimFormSchema>;
 
 const reviewFormSchema = z.object({
-  review_notes: z.string().min(1, 'Review notes are required'),
+  review_notes: z.string().min(1, "Review notes are required"),
 });
 
 type ReviewFormData = z.infer<typeof reviewFormSchema>;
@@ -165,7 +174,7 @@ export default function ExpenseClaims() {
   const [viewingClaim, setViewingClaim] = useState<ExpenseClaim | null>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
-  const [reviewAction, setReviewAction] = useState<'approve' | 'reject'>('approve');
+  const [reviewAction, setReviewAction] = useState<"approve" | "reject">("approve");
   const [reviewClaimId, setReviewClaimId] = useState<string | null>(null);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [claimToDelete, setClaimToDelete] = useState<string | null>(null);
@@ -191,7 +200,7 @@ export default function ExpenseClaims() {
   );
 
   const submittedClaims = useMemo(
-    () => allClaims.filter((c) => c.status === 'submitted'),
+    () => allClaims.filter((c) => c.status === "submitted"),
     [allClaims]
   );
 
@@ -204,17 +213,17 @@ export default function ExpenseClaims() {
   const claimForm = useForm<ClaimFormData>({
     resolver: zodResolver(claimFormSchema),
     defaultValues: {
-      title: '',
-      description: '',
+      title: "",
+      description: "",
       items: [
         {
-          expense_date: format(new Date(), 'yyyy-MM-dd'),
-          category: '',
-          description: '',
+          expense_date: format(new Date(), "yyyy-MM-dd"),
+          category: "",
+          description: "",
           amount: 0,
           vat_amount: 0,
-          merchant_name: '',
-          receipt_url: '',
+          merchant_name: "",
+          receipt_url: "",
         },
       ],
     },
@@ -222,118 +231,138 @@ export default function ExpenseClaims() {
 
   const { fields, append, remove } = useFieldArray({
     control: claimForm.control,
-    name: 'items',
+    name: "items",
   });
 
   const reviewForm = useForm<ReviewFormData>({
     resolver: zodResolver(reviewFormSchema),
-    defaultValues: { review_notes: '' },
+    defaultValues: { review_notes: "" },
   });
 
   const paymentForm = useForm<PaymentFormData>({
     resolver: zodResolver(paymentFormSchema),
-    defaultValues: { payment_reference: '' },
+    defaultValues: { payment_reference: "" },
   });
 
   // ─── Mutations ────────────────────────────────────────
 
   const createClaimMutation = useMutation({
     mutationFn: (data: ClaimFormData) =>
-      apiRequest('POST', `/api/companies/${companyId}/expense-claims`, data),
+      apiRequest("POST", `/api/companies/${companyId}/expense-claims`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims/summary`] });
-      toast({ title: 'Claim Created', description: 'Your expense claim has been created as a draft.' });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
+      });
+      toast({
+        title: "Claim Created",
+        description: "Your expense claim has been created as a draft.",
+      });
       setClaimDialogOpen(false);
       claimForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const updateClaimMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: ClaimFormData }) =>
-      apiRequest('PATCH', `/api/expense-claims/${id}`, data),
+      apiRequest("PATCH", `/api/expense-claims/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims/summary`] });
-      toast({ title: 'Claim Updated', description: 'Your expense claim has been updated.' });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
+      });
+      toast({ title: "Claim Updated", description: "Your expense claim has been updated." });
       setClaimDialogOpen(false);
       setEditingClaim(null);
       claimForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const deleteClaimMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('DELETE', `/api/expense-claims/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/expense-claims/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims/summary`] });
-      toast({ title: 'Claim Deleted', description: 'The expense claim has been deleted.' });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
+      });
+      toast({ title: "Claim Deleted", description: "The expense claim has been deleted." });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const submitClaimMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('POST', `/api/expense-claims/${id}/submit`),
+    mutationFn: (id: string) => apiRequest("POST", `/api/expense-claims/${id}/submit`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims/summary`] });
-      toast({ title: 'Claim Submitted', description: 'Your expense claim has been submitted for review.' });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
+      });
+      toast({
+        title: "Claim Submitted",
+        description: "Your expense claim has been submitted for review.",
+      });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const approveClaimMutation = useMutation({
     mutationFn: ({ id, review_notes }: { id: string; review_notes?: string }) =>
-      apiRequest('POST', `/api/expense-claims/${id}/approve`, { review_notes }),
+      apiRequest("POST", `/api/expense-claims/${id}/approve`, { review_notes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims/summary`] });
-      toast({ title: 'Claim Approved', description: 'The expense claim has been approved.' });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
+      });
+      toast({ title: "Claim Approved", description: "The expense claim has been approved." });
       setReviewDialogOpen(false);
       reviewForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const rejectClaimMutation = useMutation({
     mutationFn: ({ id, review_notes }: { id: string; review_notes: string }) =>
-      apiRequest('POST', `/api/expense-claims/${id}/reject`, { review_notes }),
+      apiRequest("POST", `/api/expense-claims/${id}/reject`, { review_notes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims/summary`] });
-      toast({ title: 'Claim Rejected', description: 'The expense claim has been rejected.' });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
+      });
+      toast({ title: "Claim Rejected", description: "The expense claim has been rejected." });
       setReviewDialogOpen(false);
       reviewForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const markPaidMutation = useMutation({
     mutationFn: ({ id, payment_reference }: { id: string; payment_reference?: string | null }) =>
-      apiRequest('POST', `/api/expense-claims/${id}/mark-paid`, { payment_reference }),
+      apiRequest("POST", `/api/expense-claims/${id}/mark-paid`, { payment_reference }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims/summary`] });
-      toast({ title: 'Claim Paid', description: 'The expense claim has been marked as paid.' });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
+      });
+      toast({ title: "Claim Paid", description: "The expense claim has been marked as paid." });
       setPaymentDialogOpen(false);
       paymentForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
@@ -342,17 +371,17 @@ export default function ExpenseClaims() {
   const handleOpenCreateDialog = () => {
     setEditingClaim(null);
     claimForm.reset({
-      title: '',
-      description: '',
+      title: "",
+      description: "",
       items: [
         {
-          expense_date: format(new Date(), 'yyyy-MM-dd'),
-          category: '',
-          description: '',
+          expense_date: format(new Date(), "yyyy-MM-dd"),
+          category: "",
+          description: "",
           amount: 0,
           vat_amount: 0,
-          merchant_name: '',
-          receipt_url: '',
+          merchant_name: "",
+          receipt_url: "",
         },
       ],
     });
@@ -361,49 +390,49 @@ export default function ExpenseClaims() {
 
   const handleOpenEditDialog = async (claim: ExpenseClaim) => {
     try {
-      const fullClaim = await apiRequest('GET', `/api/expense-claims/${claim.id}`);
+      const fullClaim = await apiRequest("GET", `/api/expense-claims/${claim.id}`);
       setEditingClaim(fullClaim);
       claimForm.reset({
         title: fullClaim.title,
-        description: fullClaim.description || '',
+        description: fullClaim.description || "",
         items:
           fullClaim.items && fullClaim.items.length > 0
             ? fullClaim.items.map((item: ExpenseClaimItem) => ({
                 expense_date: item.expense_date
-                  ? format(new Date(item.expense_date), 'yyyy-MM-dd')
-                  : '',
+                  ? format(new Date(item.expense_date), "yyyy-MM-dd")
+                  : "",
                 category: item.category,
                 description: item.description,
                 amount: parseFloat(String(item.amount)),
                 vat_amount: parseFloat(String(item.vat_amount)) || 0,
-                merchant_name: item.merchant_name || '',
-                receipt_url: item.receipt_url || '',
+                merchant_name: item.merchant_name || "",
+                receipt_url: item.receipt_url || "",
               }))
             : [
                 {
-                  expense_date: format(new Date(), 'yyyy-MM-dd'),
-                  category: '',
-                  description: '',
+                  expense_date: format(new Date(), "yyyy-MM-dd"),
+                  category: "",
+                  description: "",
                   amount: 0,
                   vat_amount: 0,
-                  merchant_name: '',
-                  receipt_url: '',
+                  merchant_name: "",
+                  receipt_url: "",
                 },
               ],
       });
       setClaimDialogOpen(true);
     } catch (error: any) {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     }
   };
 
   const handleViewClaim = async (claim: ExpenseClaim) => {
     try {
-      const fullClaim = await apiRequest('GET', `/api/expense-claims/${claim.id}`);
+      const fullClaim = await apiRequest("GET", `/api/expense-claims/${claim.id}`);
       setViewingClaim(fullClaim);
       setViewDialogOpen(true);
     } catch (error: any) {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     }
   };
 
@@ -415,16 +444,16 @@ export default function ExpenseClaims() {
     }
   };
 
-  const handleOpenReviewDialog = (claimId: string, action: 'approve' | 'reject') => {
+  const handleOpenReviewDialog = (claimId: string, action: "approve" | "reject") => {
     setReviewClaimId(claimId);
     setReviewAction(action);
-    reviewForm.reset({ review_notes: '' });
+    reviewForm.reset({ review_notes: "" });
     setReviewDialogOpen(true);
   };
 
   const handleReviewSubmit = (data: ReviewFormData) => {
     if (!reviewClaimId) return;
-    if (reviewAction === 'approve') {
+    if (reviewAction === "approve") {
       approveClaimMutation.mutate({ id: reviewClaimId, review_notes: data.review_notes });
     } else {
       rejectClaimMutation.mutate({ id: reviewClaimId, review_notes: data.review_notes });
@@ -433,7 +462,7 @@ export default function ExpenseClaims() {
 
   const handleOpenPaymentDialog = (claimId: string) => {
     setPaymentClaimId(claimId);
-    paymentForm.reset({ payment_reference: '' });
+    paymentForm.reset({ payment_reference: "" });
     setPaymentDialogOpen(true);
   };
 
@@ -446,15 +475,15 @@ export default function ExpenseClaims() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'draft':
+      case "draft":
         return <StatusBadge tone="neutral">Draft</StatusBadge>;
-      case 'submitted':
+      case "submitted":
         return <StatusBadge tone="info">Submitted</StatusBadge>;
-      case 'approved':
+      case "approved":
         return <StatusBadge tone="success">Approved</StatusBadge>;
-      case 'rejected':
+      case "rejected":
         return <StatusBadge tone="danger">Rejected</StatusBadge>;
-      case 'paid':
+      case "paid":
         return <StatusBadge tone="accent">Paid</StatusBadge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
@@ -462,8 +491,11 @@ export default function ExpenseClaims() {
   };
 
   const calculateItemsTotal = () => {
-    const items = claimForm.watch('items');
-    return items.reduce((sum, item) => sum + (Number(item.amount) || 0) + (Number(item.vat_amount) || 0), 0);
+    const items = claimForm.watch("items");
+    return items.reduce(
+      (sum, item) => sum + (Number(item.amount) || 0) + (Number(item.vat_amount) || 0),
+      0
+    );
   };
 
   // ─── Loading State ────────────────────────────────────
@@ -488,9 +520,11 @@ export default function ExpenseClaims() {
         title="Set up your company first"
         description="Expense claims live inside a company workspace. Finish onboarding to start tracking reimbursements."
         action={{
-          label: 'Continue setup',
-          onClick: () => { window.location.href = '/onboarding'; },
-          testId: 'button-go-onboarding',
+          label: "Continue setup",
+          onClick: () => {
+            window.location.href = "/onboarding";
+          },
+          testId: "button-go-onboarding",
         }}
       />
     );
@@ -498,7 +532,14 @@ export default function ExpenseClaims() {
 
   // ─── Claims Table Component ───────────────────────────
 
-  const ClaimsTable = ({ claims, showActions = true, isReview = false, emptyTitle, emptyDescription, emptyAction }: {
+  const ClaimsTable = ({
+    claims,
+    showActions = true,
+    isReview = false,
+    emptyTitle,
+    emptyDescription,
+    emptyAction,
+  }: {
     claims: ExpenseClaim[];
     showActions?: boolean;
     isReview?: boolean;
@@ -510,38 +551,48 @@ export default function ExpenseClaims() {
       return (
         <EmptyState
           icon={Receipt}
-          title={emptyTitle ?? 'No expense claims yet'}
-          description={emptyDescription ?? 'Submit your first reimbursement to get started.'}
-          action={emptyAction ? { label: emptyAction.label, onClick: emptyAction.onClick, icon: Plus } : undefined}
+          title={emptyTitle ?? "No expense claims yet"}
+          description={emptyDescription ?? "Submit your first reimbursement to get started."}
+          action={
+            emptyAction
+              ? { label: emptyAction.label, onClick: emptyAction.onClick, icon: Plus }
+              : undefined
+          }
           testId="empty-state-expense-claims"
         />
       );
     }
     return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Claim #</TableHead>
-            <TableHead>Title</TableHead>
-            <TableHead>{t.date || 'Date'}</TableHead>
-            <TableHead className="text-right">{t.amount || 'Amount'}</TableHead>
-            <TableHead>{t.status || 'Status'}</TableHead>
-            {showActions && <TableHead className="text-right">{t.actions || 'Actions'}</TableHead>}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {claims.map((claim) => (
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Claim #</TableHead>
+              <TableHead>Title</TableHead>
+              <TableHead>{t.date || "Date"}</TableHead>
+              <TableHead className="text-right">{t.amount || "Amount"}</TableHead>
+              <TableHead>{t.status || "Status"}</TableHead>
+              {showActions && (
+                <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
+              )}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {claims.map((claim) => (
               <TableRow key={claim.id}>
                 <TableCell className="font-mono text-sm text-muted-foreground">
                   {claim.claim_number}
                 </TableCell>
                 <TableCell className="font-medium">{claim.title}</TableCell>
                 <TableCell className="whitespace-nowrap">
-                  {claim.created_at ? format(new Date(claim.created_at), 'MMM dd, yyyy') : '-'}
+                  {claim.created_at ? format(new Date(claim.created_at), "MMM dd, yyyy") : "-"}
                 </TableCell>
                 <TableCell className="text-right font-mono">
-                  {formatCurrency(parseFloat(String(claim.total_amount)) || 0, claim.currency || 'AED', locale)}
+                  {formatCurrency(
+                    parseFloat(String(claim.total_amount)) || 0,
+                    claim.currency || "AED",
+                    locale
+                  )}
                 </TableCell>
                 <TableCell>{getStatusBadge(claim.status)}</TableCell>
                 {showActions && (
@@ -555,7 +606,7 @@ export default function ExpenseClaims() {
                       >
                         <Eye className="w-4 h-4" />
                       </Button>
-                      {!isReview && claim.status === 'draft' && (
+                      {!isReview && claim.status === "draft" && (
                         <>
                           <Button
                             variant="ghost"
@@ -585,12 +636,12 @@ export default function ExpenseClaims() {
                           </Button>
                         </>
                       )}
-                      {isReview && claim.status === 'submitted' && (
+                      {isReview && claim.status === "submitted" && (
                         <>
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleOpenReviewDialog(claim.id, 'approve')}
+                            onClick={() => handleOpenReviewDialog(claim.id, "approve")}
                             title="Approve"
                             className="text-[hsl(var(--chart-5))] hover:text-[hsl(var(--chart-5))]"
                           >
@@ -599,7 +650,7 @@ export default function ExpenseClaims() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleOpenReviewDialog(claim.id, 'reject')}
+                            onClick={() => handleOpenReviewDialog(claim.id, "reject")}
                             title="Reject"
                             className="text-destructive hover:text-destructive"
                           >
@@ -607,7 +658,7 @@ export default function ExpenseClaims() {
                           </Button>
                         </>
                       )}
-                      {claim.status === 'approved' && (
+                      {claim.status === "approved" && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -623,9 +674,9 @@ export default function ExpenseClaims() {
                 )}
               </TableRow>
             ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableBody>
+        </Table>
+      </div>
     );
   };
 
@@ -653,9 +704,7 @@ export default function ExpenseClaims() {
             <Clock className="w-4 h-4 text-[hsl(var(--chart-1))]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(pendingTotal, 'AED', locale)}
-            </div>
+            <div className="text-2xl font-bold">{formatCurrency(pendingTotal, "AED", locale)}</div>
             <p className="text-xs text-muted-foreground">
               {summary?.thisMonth?.submitted?.count || 0} claims awaiting review
             </p>
@@ -668,9 +717,7 @@ export default function ExpenseClaims() {
             <CheckCircle className="w-4 h-4 text-[hsl(var(--chart-5))]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(approvedTotal, 'AED', locale)}
-            </div>
+            <div className="text-2xl font-bold">{formatCurrency(approvedTotal, "AED", locale)}</div>
             <p className="text-xs text-muted-foreground">
               {summary?.thisMonth?.approved?.count || 0} claims approved
             </p>
@@ -683,9 +730,7 @@ export default function ExpenseClaims() {
             <DollarSign className="w-4 h-4 text-[hsl(var(--chart-3))]" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(paidTotal, 'AED', locale)}
-            </div>
+            <div className="text-2xl font-bold">{formatCurrency(paidTotal, "AED", locale)}</div>
             <p className="text-xs text-muted-foreground">
               {summary?.thisMonth?.paid?.count || 0} claims paid out
             </p>
@@ -723,7 +768,7 @@ export default function ExpenseClaims() {
                 <div>
                   <CardTitle>My Expense Claims</CardTitle>
                   <CardDescription>
-                    {myClaims.length} claim{myClaims.length !== 1 ? 's' : ''} submitted
+                    {myClaims.length} claim{myClaims.length !== 1 ? "s" : ""} submitted
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
@@ -740,7 +785,7 @@ export default function ExpenseClaims() {
                   claims={myClaims}
                   emptyTitle="No claims yet"
                   emptyDescription="Submit your first reimbursement to get started."
-                  emptyAction={{ label: 'New Claim', onClick: handleOpenCreateDialog }}
+                  emptyAction={{ label: "New Claim", onClick: handleOpenCreateDialog }}
                 />
               )}
             </CardContent>
@@ -753,7 +798,8 @@ export default function ExpenseClaims() {
             <CardHeader>
               <CardTitle>Claims for Review</CardTitle>
               <CardDescription>
-                {submittedClaims.length} claim{submittedClaims.length !== 1 ? 's' : ''} pending approval
+                {submittedClaims.length} claim{submittedClaims.length !== 1 ? "s" : ""} pending
+                approval
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -777,7 +823,8 @@ export default function ExpenseClaims() {
             <CardHeader>
               <CardTitle>All Company Claims</CardTitle>
               <CardDescription>
-                {allClaims.length} total claim{allClaims.length !== 1 ? 's' : ''} across the organization
+                {allClaims.length} total claim{allClaims.length !== 1 ? "s" : ""} across the
+                organization
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -799,11 +846,11 @@ export default function ExpenseClaims() {
       <Dialog open={claimDialogOpen} onOpenChange={setClaimDialogOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingClaim ? 'Edit Expense Claim' : 'New Expense Claim'}</DialogTitle>
+            <DialogTitle>{editingClaim ? "Edit Expense Claim" : "New Expense Claim"}</DialogTitle>
             <DialogDescription>
               {editingClaim
-                ? 'Update your expense claim details and items.'
-                : 'Create a new expense claim with your expense items. You can save as draft and submit later.'}
+                ? "Update your expense claim details and items."
+                : "Create a new expense claim with your expense items. You can save as draft and submit later."}
             </DialogDescription>
           </DialogHeader>
 
@@ -830,12 +877,12 @@ export default function ExpenseClaims() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t.description || 'Description'}</FormLabel>
+                      <FormLabel>{t.description || "Description"}</FormLabel>
                       <FormControl>
                         <Textarea
                           placeholder="Optional description of the expense claim"
                           {...field}
-                          value={field.value || ''}
+                          value={field.value || ""}
                         />
                       </FormControl>
                       <FormMessage />
@@ -854,13 +901,13 @@ export default function ExpenseClaims() {
                     size="sm"
                     onClick={() =>
                       append({
-                        expense_date: format(new Date(), 'yyyy-MM-dd'),
-                        category: '',
-                        description: '',
+                        expense_date: format(new Date(), "yyyy-MM-dd"),
+                        category: "",
+                        description: "",
                         amount: 0,
                         vat_amount: 0,
-                        merchant_name: '',
-                        receipt_url: '',
+                        merchant_name: "",
+                        receipt_url: "",
                       })
                     }
                   >
@@ -894,7 +941,7 @@ export default function ExpenseClaims() {
                         name={`items.${index}.expense_date`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{t.date || 'Date'} *</FormLabel>
+                            <FormLabel>{t.date || "Date"} *</FormLabel>
                             <FormControl>
                               <Input type="date" {...field} />
                             </FormControl>
@@ -935,7 +982,11 @@ export default function ExpenseClaims() {
                           <FormItem>
                             <FormLabel>Merchant</FormLabel>
                             <FormControl>
-                              <Input placeholder="e.g., Emirates Airlines" {...field} value={field.value || ''} />
+                              <Input
+                                placeholder="e.g., Emirates Airlines"
+                                {...field}
+                                value={field.value || ""}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -949,7 +1000,7 @@ export default function ExpenseClaims() {
                         name={`items.${index}.description`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{t.description || 'Description'} *</FormLabel>
+                            <FormLabel>{t.description || "Description"} *</FormLabel>
                             <FormControl>
                               <Input placeholder="Describe the expense" {...field} />
                             </FormControl>
@@ -965,7 +1016,7 @@ export default function ExpenseClaims() {
                         name={`items.${index}.amount`}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>{t.amount || 'Amount'} (AED) *</FormLabel>
+                            <FormLabel>{t.amount || "Amount"} (AED) *</FormLabel>
                             <FormControl>
                               <Input type="number" step="0.01" min="0" {...field} />
                             </FormControl>
@@ -995,7 +1046,11 @@ export default function ExpenseClaims() {
                           <FormItem>
                             <FormLabel>Receipt</FormLabel>
                             <FormControl>
-                              <Input placeholder="Receipt URL (upload coming soon)" {...field} value={field.value || ''} />
+                              <Input
+                                placeholder="Receipt URL (upload coming soon)"
+                                {...field}
+                                value={field.value || ""}
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1006,7 +1061,9 @@ export default function ExpenseClaims() {
                 ))}
 
                 {claimForm.formState.errors.items?.message && (
-                  <p className="text-sm text-destructive">{claimForm.formState.errors.items.message}</p>
+                  <p className="text-sm text-destructive">
+                    {claimForm.formState.errors.items.message}
+                  </p>
                 )}
 
                 {/* Total */}
@@ -1014,7 +1071,7 @@ export default function ExpenseClaims() {
                   <div className="text-right">
                     <span className="text-sm text-muted-foreground">Claim Total: </span>
                     <span className="text-lg font-bold">
-                      {formatCurrency(calculateItemsTotal(), 'AED', locale)}
+                      {formatCurrency(calculateItemsTotal(), "AED", locale)}
                     </span>
                   </div>
                 </div>
@@ -1022,17 +1079,17 @@ export default function ExpenseClaims() {
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setClaimDialogOpen(false)}>
-                  {t.cancel || 'Cancel'}
+                  {t.cancel || "Cancel"}
                 </Button>
                 <Button
                   type="submit"
                   disabled={createClaimMutation.isPending || updateClaimMutation.isPending}
                 >
-                  {(createClaimMutation.isPending || updateClaimMutation.isPending)
-                    ? (t.loading || 'Loading...')
+                  {createClaimMutation.isPending || updateClaimMutation.isPending
+                    ? t.loading || "Loading..."
                     : editingClaim
-                      ? 'Update Claim'
-                      : 'Save as Draft'}
+                      ? "Update Claim"
+                      : "Save as Draft"}
                 </Button>
               </DialogFooter>
             </form>
@@ -1062,7 +1119,7 @@ export default function ExpenseClaims() {
                   <div className="mt-1 font-bold text-lg">
                     {formatCurrency(
                       parseFloat(String(viewingClaim.total_amount)) || 0,
-                      viewingClaim.currency || 'AED',
+                      viewingClaim.currency || "AED",
                       locale
                     )}
                   </div>
@@ -1071,15 +1128,15 @@ export default function ExpenseClaims() {
                   <span className="text-sm text-muted-foreground">Created</span>
                   <div className="mt-1">
                     {viewingClaim.created_at
-                      ? format(new Date(viewingClaim.created_at), 'MMM dd, yyyy HH:mm')
-                      : '-'}
+                      ? format(new Date(viewingClaim.created_at), "MMM dd, yyyy HH:mm")
+                      : "-"}
                   </div>
                 </div>
                 {viewingClaim.submitted_at && (
                   <div>
                     <span className="text-sm text-muted-foreground">Submitted</span>
                     <div className="mt-1">
-                      {format(new Date(viewingClaim.submitted_at), 'MMM dd, yyyy HH:mm')}
+                      {format(new Date(viewingClaim.submitted_at), "MMM dd, yyyy HH:mm")}
                     </div>
                   </div>
                 )}
@@ -1087,7 +1144,7 @@ export default function ExpenseClaims() {
                   <div>
                     <span className="text-sm text-muted-foreground">Reviewed</span>
                     <div className="mt-1">
-                      {format(new Date(viewingClaim.reviewed_at), 'MMM dd, yyyy HH:mm')}
+                      {format(new Date(viewingClaim.reviewed_at), "MMM dd, yyyy HH:mm")}
                     </div>
                   </div>
                 )}
@@ -1095,7 +1152,7 @@ export default function ExpenseClaims() {
                   <div>
                     <span className="text-sm text-muted-foreground">Paid</span>
                     <div className="mt-1">
-                      {format(new Date(viewingClaim.paid_at), 'MMM dd, yyyy HH:mm')}
+                      {format(new Date(viewingClaim.paid_at), "MMM dd, yyyy HH:mm")}
                     </div>
                   </div>
                 )}
@@ -1130,11 +1187,11 @@ export default function ExpenseClaims() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>{t.date || 'Date'}</TableHead>
+                          <TableHead>{t.date || "Date"}</TableHead>
                           <TableHead>Category</TableHead>
-                          <TableHead>{t.description || 'Description'}</TableHead>
+                          <TableHead>{t.description || "Description"}</TableHead>
                           <TableHead>Merchant</TableHead>
-                          <TableHead className="text-right">{t.amount || 'Amount'}</TableHead>
+                          <TableHead className="text-right">{t.amount || "Amount"}</TableHead>
                           <TableHead className="text-right">VAT</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1143,21 +1200,25 @@ export default function ExpenseClaims() {
                           <TableRow key={item.id || idx}>
                             <TableCell className="whitespace-nowrap">
                               {item.expense_date
-                                ? format(new Date(item.expense_date), 'MMM dd, yyyy')
-                                : '-'}
+                                ? format(new Date(item.expense_date), "MMM dd, yyyy")
+                                : "-"}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline">{item.category}</Badge>
                             </TableCell>
                             <TableCell>{item.description}</TableCell>
                             <TableCell className="text-muted-foreground">
-                              {item.merchant_name || '-'}
+                              {item.merchant_name || "-"}
                             </TableCell>
                             <TableCell className="text-right font-mono">
-                              {formatCurrency(parseFloat(String(item.amount)) || 0, 'AED', locale)}
+                              {formatCurrency(parseFloat(String(item.amount)) || 0, "AED", locale)}
                             </TableCell>
                             <TableCell className="text-right font-mono">
-                              {formatCurrency(parseFloat(String(item.vat_amount)) || 0, 'AED', locale)}
+                              {formatCurrency(
+                                parseFloat(String(item.vat_amount)) || 0,
+                                "AED",
+                                locale
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1176,12 +1237,12 @@ export default function ExpenseClaims() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {reviewAction === 'approve' ? 'Approve Claim' : 'Reject Claim'}
+              {reviewAction === "approve" ? "Approve Claim" : "Reject Claim"}
             </DialogTitle>
             <DialogDescription>
-              {reviewAction === 'approve'
-                ? 'Add optional notes and approve this expense claim.'
-                : 'Please provide a reason for rejecting this expense claim.'}
+              {reviewAction === "approve"
+                ? "Add optional notes and approve this expense claim."
+                : "Please provide a reason for rejecting this expense claim."}
             </DialogDescription>
           </DialogHeader>
 
@@ -1192,15 +1253,13 @@ export default function ExpenseClaims() {
                 name="review_notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
-                      Review Notes {reviewAction === 'reject' ? '*' : ''}
-                    </FormLabel>
+                    <FormLabel>Review Notes {reviewAction === "reject" ? "*" : ""}</FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder={
-                          reviewAction === 'approve'
-                            ? 'Optional approval notes'
-                            : 'Reason for rejection (required)'
+                          reviewAction === "approve"
+                            ? "Optional approval notes"
+                            : "Reason for rejection (required)"
                         }
                         {...field}
                       />
@@ -1212,18 +1271,18 @@ export default function ExpenseClaims() {
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setReviewDialogOpen(false)}>
-                  {t.cancel || 'Cancel'}
+                  {t.cancel || "Cancel"}
                 </Button>
                 <Button
                   type="submit"
-                  variant={reviewAction === 'approve' ? 'default' : 'destructive'}
+                  variant={reviewAction === "approve" ? "default" : "destructive"}
                   disabled={approveClaimMutation.isPending || rejectClaimMutation.isPending}
                 >
-                  {(approveClaimMutation.isPending || rejectClaimMutation.isPending)
-                    ? (t.loading || 'Loading...')
-                    : reviewAction === 'approve'
-                      ? 'Approve'
-                      : 'Reject'}
+                  {approveClaimMutation.isPending || rejectClaimMutation.isPending
+                    ? t.loading || "Loading..."
+                    : reviewAction === "approve"
+                      ? "Approve"
+                      : "Reject"}
                 </Button>
               </DialogFooter>
             </form>
@@ -1253,7 +1312,7 @@ export default function ExpenseClaims() {
                       <Input
                         placeholder="e.g., Bank transfer ref, cheque number"
                         {...field}
-                        value={field.value || ''}
+                        value={field.value || ""}
                       />
                     </FormControl>
                     <FormMessage />
@@ -1263,15 +1322,10 @@ export default function ExpenseClaims() {
 
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setPaymentDialogOpen(false)}>
-                  {t.cancel || 'Cancel'}
+                  {t.cancel || "Cancel"}
                 </Button>
-                <Button
-                  type="submit"
-                  disabled={markPaidMutation.isPending}
-                >
-                  {markPaidMutation.isPending
-                    ? (t.loading || 'Loading...')
-                    : 'Mark as Paid'}
+                <Button type="submit" disabled={markPaidMutation.isPending}>
+                  {markPaidMutation.isPending ? t.loading || "Loading..." : "Mark as Paid"}
                 </Button>
               </DialogFooter>
             </form>
@@ -1279,7 +1333,12 @@ export default function ExpenseClaims() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!claimToDelete} onOpenChange={(open) => { if (!open) setClaimToDelete(null); }}>
+      <AlertDialog
+        open={!!claimToDelete}
+        onOpenChange={(open) => {
+          if (!open) setClaimToDelete(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Expense Claim?</AlertDialogTitle>

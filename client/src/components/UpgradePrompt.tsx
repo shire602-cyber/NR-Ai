@@ -34,11 +34,10 @@ export function UpgradePrompt({ feature, requiredTier, title, description }: Upg
   return (
     <Card className="border-dashed border-2 border-muted-foreground/25">
       <CardHeader className="text-center">
-        <CardTitle className="text-lg">
-          {title || `Unlock ${featureLabel}`}
-        </CardTitle>
+        <CardTitle className="text-lg">{title || `Unlock ${featureLabel}`}</CardTitle>
         <CardDescription>
-          {description || `This feature is available on the ${requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)} plan and above.`}
+          {description ||
+            `This feature is available on the ${requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)} plan and above.`}
         </CardDescription>
       </CardHeader>
       <CardContent className="text-center">

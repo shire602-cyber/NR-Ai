@@ -1,8 +1,8 @@
-import type { Request, Response, NextFunction } from 'express';
-import { storage } from '../storage';
-import { createLogger } from '../config/logger';
+import type { Request, Response, NextFunction } from "express";
+import { storage } from "../storage";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('feature-gate');
+const log = createLogger("feature-gate");
 
 // ===========================
 // Tier Feature Map
@@ -113,7 +113,7 @@ const TIER_LIMITS: Record<string, Record<string, number>> = {
   },
 };
 
-const TIER_ORDER = ['free', 'starter', 'professional', 'enterprise'];
+const TIER_ORDER = ["free", "starter", "professional", "enterprise"];
 
 // Minimum tier that unlocks each feature
 const FEATURE_MIN_TIER: Record<string, string> = {};
@@ -143,7 +143,7 @@ async function getRequestSubscription(req: Request): Promise<any | null> {
     }
     return subscription || null;
   } catch (error) {
-    log.error({ error, companyId }, 'Failed to fetch subscription');
+    log.error({ error, companyId }, "Failed to fetch subscription");
     return null;
   }
 }
@@ -157,7 +157,7 @@ async function getRequestSubscription(req: Request): Promise<any | null> {
 // actually deployed there is no way to leave the free tier — enforcing it
 // would paywall features behind a dead upgrade button. Set
 // BILLING_ENFORCEMENT=true when billing ships.
-const billingEnforced = () => process.env.BILLING_ENFORCEMENT === 'true';
+const billingEnforced = () => process.env.BILLING_ENFORCEMENT === "true";
 
 export function requireFeature(feature: string) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -172,16 +172,16 @@ export function requireFeature(feature: string) {
       return;
     }
 
-    const planId = subscription.planId || 'free';
+    const planId = subscription.planId || "free";
     const tierFeatures = TIER_FEATURES[planId] || TIER_FEATURES.free;
 
     if (!tierFeatures[feature]) {
       res.status(403).json({
-        message: 'Upgrade required to access this feature',
-        code: 'TIER_LOCKED',
+        message: "Upgrade required to access this feature",
+        code: "TIER_LOCKED",
         feature,
         currentTier: planId,
-        requiredTier: FEATURE_MIN_TIER[feature] || 'starter',
+        requiredTier: FEATURE_MIN_TIER[feature] || "starter",
       });
       return;
     }
@@ -200,7 +200,7 @@ export function requireTier(minimumTier: string) {
       return;
     }
     const subscription = await getRequestSubscription(req);
-    const currentTier = subscription?.planId || 'free';
+    const currentTier = subscription?.planId || "free";
 
     const currentIndex = TIER_ORDER.indexOf(currentTier);
     const requiredIndex = TIER_ORDER.indexOf(minimumTier);
@@ -208,7 +208,7 @@ export function requireTier(minimumTier: string) {
     if (currentIndex < requiredIndex) {
       res.status(403).json({
         message: `This feature requires the ${minimumTier} plan or higher`,
-        code: 'TIER_LOCKED',
+        code: "TIER_LOCKED",
         currentTier,
         requiredTier: minimumTier,
       });
@@ -223,21 +223,36 @@ export function requireTier(minimumTier: string) {
  * Middleware: Check and increment usage limit.
  * Call this BEFORE the route handler — it increments the counter.
  */
-export function checkUsageLimit(resource: 'invoices' | 'receipts' | 'aiCredits') {
+export function checkUsageLimit(resource: "invoices" | "receipts" | "aiCredits") {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     if (!billingEnforced()) {
       next();
       return;
     }
     const subscription = await getRequestSubscription(req);
-    const planId = subscription?.planId || 'free';
+    const planId = subscription?.planId || "free";
     const limits = TIER_LIMITS[planId] || TIER_LIMITS.free;
 
     // Map resource to limit key and usage field
-    const resourceMap: Record<string, { limitKey: string; usageField: string; incrementFn: string }> = {
-      invoices: { limitKey: 'maxInvoicesPerMonth', usageField: 'invoicesCreatedThisMonth', incrementFn: 'incrementInvoiceCount' },
-      receipts: { limitKey: 'maxReceiptsPerMonth', usageField: 'receiptsCreatedThisMonth', incrementFn: 'incrementReceiptCount' },
-      aiCredits: { limitKey: 'aiCreditsPerMonth', usageField: 'aiCreditsUsedThisMonth', incrementFn: 'decrementAiCredits' },
+    const resourceMap: Record<
+      string,
+      { limitKey: string; usageField: string; incrementFn: string }
+    > = {
+      invoices: {
+        limitKey: "maxInvoicesPerMonth",
+        usageField: "invoicesCreatedThisMonth",
+        incrementFn: "incrementInvoiceCount",
+      },
+      receipts: {
+        limitKey: "maxReceiptsPerMonth",
+        usageField: "receiptsCreatedThisMonth",
+        incrementFn: "incrementReceiptCount",
+      },
+      aiCredits: {
+        limitKey: "aiCreditsPerMonth",
+        usageField: "aiCreditsUsedThisMonth",
+        incrementFn: "decrementAiCredits",
+      },
     };
 
     const mapping = resourceMap[resource];
@@ -255,12 +270,13 @@ export function checkUsageLimit(resource: 'invoices' | 'receipts' | 'aiCredits')
     }
 
     // Check current usage
-    const currentUsage = subscription?.[mapping.usageField as keyof typeof subscription] as number || 0;
+    const currentUsage =
+      (subscription?.[mapping.usageField as keyof typeof subscription] as number) || 0;
 
     if (currentUsage >= limit) {
       res.status(403).json({
         message: `Monthly ${resource} limit reached. Upgrade your plan for more.`,
-        code: 'LIMIT_REACHED',
+        code: "LIMIT_REACHED",
         resource,
         currentUsage,
         limit,
@@ -274,19 +290,19 @@ export function checkUsageLimit(resource: 'invoices' | 'receipts' | 'aiCredits')
     // any handler failure and made race conditions immediately destructive.
     const companyId = req.params.companyId || req.body?.companyId;
     if (companyId && subscription) {
-      res.on('finish', () => {
+      res.on("finish", () => {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           const doIncrement = async () => {
             try {
-              if (resource === 'invoices') {
+              if (resource === "invoices") {
                 await (storage as any).incrementInvoiceCount?.(companyId);
-              } else if (resource === 'receipts') {
+              } else if (resource === "receipts") {
                 await (storage as any).incrementReceiptCount?.(companyId);
-              } else if (resource === 'aiCredits') {
+              } else if (resource === "aiCredits") {
                 await (storage as any).decrementAiCredits?.(companyId);
               }
             } catch (error) {
-              log.error({ error, companyId, resource }, 'Failed to increment usage counter');
+              log.error({ error, companyId, resource }, "Failed to increment usage counter");
             }
           };
           doIncrement();
@@ -316,7 +332,7 @@ export function getTierFeatures(planId: string) {
  * Get all plan definitions (for public API / pricing page).
  */
 export function getAllPlanDefinitions() {
-  return TIER_ORDER.map(tier => ({
+  return TIER_ORDER.map((tier) => ({
     id: tier,
     name: tier.charAt(0).toUpperCase() + tier.slice(1),
     features: TIER_FEATURES[tier],
@@ -327,10 +343,10 @@ export function getAllPlanDefinitions() {
 
 function getPlanPricing(planId: string) {
   const pricing: Record<string, { monthly: number; yearly: number; currency: string }> = {
-    free: { monthly: 0, yearly: 0, currency: 'AED' },
-    starter: { monthly: 49, yearly: 39, currency: 'AED' },
-    professional: { monthly: 129, yearly: 99, currency: 'AED' },
-    enterprise: { monthly: 299, yearly: 249, currency: 'AED' },
+    free: { monthly: 0, yearly: 0, currency: "AED" },
+    starter: { monthly: 49, yearly: 39, currency: "AED" },
+    professional: { monthly: 129, yearly: 99, currency: "AED" },
+    enterprise: { monthly: 299, yearly: 249, currency: "AED" },
   };
   return pricing[planId] || pricing.free;
 }

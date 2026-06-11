@@ -1,5 +1,5 @@
-import { motion, useInView, useAnimation, Variants } from 'framer-motion';
-import { useEffect, useRef, useState, ReactNode } from 'react';
+import { motion, useInView, useAnimation, Variants } from "framer-motion";
+import { useEffect, useRef, useState, ReactNode } from "react";
 
 // Reusable animation variants.
 //
@@ -15,8 +15,8 @@ export const fadeInUp: Variants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] }
-  }
+    transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] },
+  },
 };
 
 export const fadeInDown: Variants = {
@@ -24,8 +24,8 @@ export const fadeInDown: Variants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] }
-  }
+    transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] },
+  },
 };
 
 export const fadeInLeft: Variants = {
@@ -33,8 +33,8 @@ export const fadeInLeft: Variants = {
   visible: {
     opacity: 1,
     x: 0,
-    transition: { duration: 0.6, ease: [0.6, -0.05, 0.01, 0.99] }
-  }
+    transition: { duration: 0.6, ease: [0.6, -0.05, 0.01, 0.99] },
+  },
 };
 
 export const fadeInRight: Variants = {
@@ -42,8 +42,8 @@ export const fadeInRight: Variants = {
   visible: {
     opacity: 1,
     x: 0,
-    transition: { duration: 0.6, ease: [0.6, -0.05, 0.01, 0.99] }
-  }
+    transition: { duration: 0.6, ease: [0.6, -0.05, 0.01, 0.99] },
+  },
 };
 
 export const scaleIn: Variants = {
@@ -51,8 +51,8 @@ export const scaleIn: Variants = {
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { duration: 0.4, ease: [0.6, -0.05, 0.01, 0.99] }
-  }
+    transition: { duration: 0.4, ease: [0.6, -0.05, 0.01, 0.99] },
+  },
 };
 
 export const staggerContainer: Variants = {
@@ -61,9 +61,9 @@ export const staggerContainer: Variants = {
     opacity: 1,
     transition: {
       staggerChildren: 0.1,
-      delayChildren: 0.1
-    }
-  }
+      delayChildren: 0.1,
+    },
+  },
 };
 
 export const staggerItem: Variants = {
@@ -71,19 +71,19 @@ export const staggerItem: Variants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] }
-  }
+    transition: { duration: 0.5, ease: [0.6, -0.05, 0.01, 0.99] },
+  },
 };
 
 // Hover animations
 export const hoverScale = {
   scale: 1.05,
-  transition: { duration: 0.2, ease: "easeOut" }
+  transition: { duration: 0.2, ease: "easeOut" },
 };
 
 export const hoverLift = {
   y: -4,
-  transition: { duration: 0.2, ease: "easeOut" }
+  transition: { duration: 0.2, ease: "easeOut" },
 };
 
 // Scroll-triggered animation component.
@@ -93,12 +93,12 @@ export const hoverLift = {
 export function ScrollReveal({
   children,
   delay = 0,
-  direction = 'up',
-  className = '',
+  direction = "up",
+  className = "",
 }: {
   children: ReactNode;
   delay?: number;
-  direction?: 'up' | 'down' | 'left' | 'right';
+  direction?: "up" | "down" | "left" | "right";
   className?: string;
 }) {
   const ref = useRef(null);
@@ -107,10 +107,10 @@ export function ScrollReveal({
 
   useEffect(() => {
     if (isInView) {
-      controls.start('visible');
+      controls.start("visible");
       return;
     }
-    const fallback = setTimeout(() => controls.start('visible'), 200);
+    const fallback = setTimeout(() => controls.start("visible"), 200);
     return () => clearTimeout(fallback);
   }, [isInView, controls]);
 
@@ -139,7 +139,7 @@ export function ScrollReveal({
 // stagger reveal never strands its children at opacity:0 if useInView no-ops.
 export function StaggerContainer({
   children,
-  className = '',
+  className = "",
 }: {
   children: ReactNode;
   className?: string;
@@ -170,7 +170,7 @@ export function StaggerContainer({
 // Stagger item component
 export function StaggerItem({
   children,
-  className = '',
+  className = "",
 }: {
   children: ReactNode;
   className?: string;
@@ -183,12 +183,12 @@ export function StaggerItem({
 }
 
 // Number counter animation
-export function AnimatedNumber({ 
-  value, 
+export function AnimatedNumber({
+  value,
   duration = 2,
-  className = ''
-}: { 
-  value: number; 
+  className = "",
+}: {
+  value: number;
   duration?: number;
   className?: string;
 }) {
@@ -206,11 +206,11 @@ export function AnimatedNumber({
     const animate = (currentTime: number) => {
       if (startTime === null) startTime = currentTime;
       const progress = Math.min((currentTime - startTime) / (duration * 1000), 1);
-      
+
       // Easing function for smooth animation
       const easeOutQuart = 1 - Math.pow(1 - progress, 4);
       const currentValue = startValue + (endValue - startValue) * easeOutQuart;
-      
+
       setDisplayValue(Math.floor(currentValue));
 
       if (progress < 1) {
@@ -231,13 +231,13 @@ export function AnimatedNumber({
 }
 
 // Floating animation component
-export function Floating({ 
-  children, 
+export function Floating({
+  children,
   intensity = 10,
   duration = 3,
-  className = ''
-}: { 
-  children: ReactNode; 
+  className = "",
+}: {
+  children: ReactNode;
   intensity?: number;
   duration?: number;
   className?: string;
@@ -250,7 +250,7 @@ export function Floating({
       transition={{
         duration,
         repeat: Infinity,
-        ease: "easeInOut"
+        ease: "easeInOut",
       }}
       className={className}
     >
@@ -260,14 +260,14 @@ export function Floating({
 }
 
 // Pulse glow animation
-export function PulseGlow({ 
-  children, 
-  className = '',
-  color = 'primary'
-}: { 
-  children: ReactNode; 
+export function PulseGlow({
+  children,
+  className = "",
+  color = "primary",
+}: {
+  children: ReactNode;
   className?: string;
-  color?: 'primary' | 'accent' | 'success' | 'warning';
+  color?: "primary" | "accent" | "success" | "warning";
 }) {
   return (
     <motion.div
@@ -281,7 +281,7 @@ export function PulseGlow({
       transition={{
         duration: 2,
         repeat: Infinity,
-        ease: "easeInOut"
+        ease: "easeInOut",
       }}
       className={className}
     >
@@ -291,11 +291,7 @@ export function PulseGlow({
 }
 
 // Page transition wrapper
-export function PageTransition({ 
-  children 
-}: { 
-  children: ReactNode;
-}) {
+export function PageTransition({ children }: { children: ReactNode }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}

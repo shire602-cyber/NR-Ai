@@ -1,26 +1,32 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest } from '@/lib/queryClient';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import { useLocation } from 'wouter';
-import { 
-  Sparkles, 
-  Building2, 
-  BookOpen, 
-  FileText, 
-  Receipt, 
-  BarChart3, 
-  Bot, 
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { useLocation } from "wouter";
+import {
+  Sparkles,
+  Building2,
+  BookOpen,
+  FileText,
+  Receipt,
+  BarChart3,
+  Bot,
   Bell,
   CheckCircle,
   ArrowRight,
-  X
-} from 'lucide-react';
-import type { UserOnboarding } from '@shared/schema';
+  X,
+} from "lucide-react";
+import type { UserOnboarding } from "@shared/schema";
 
 interface OnboardingStep {
   key: string;
@@ -34,76 +40,76 @@ interface OnboardingStep {
 
 const ONBOARDING_STEPS: OnboardingStep[] = [
   {
-    key: 'welcome',
-    field: 'hasCompletedWelcome',
-    title: 'Welcome to Muhasib.ai',
-    description: 'Set up UAE-compliant accounting, VAT, and reporting for your business',
+    key: "welcome",
+    field: "hasCompletedWelcome",
+    title: "Welcome to Muhasib.ai",
+    description: "Set up UAE-compliant accounting, VAT, and reporting for your business",
     icon: Sparkles,
-    action: 'Continue',
-    path: '/dashboard',
+    action: "Continue",
+    path: "/dashboard",
   },
   {
-    key: 'company',
-    field: 'hasCreatedCompany',
-    title: 'Set Up Your Company',
-    description: 'Add your company details and tax information',
+    key: "company",
+    field: "hasCreatedCompany",
+    title: "Set Up Your Company",
+    description: "Add your company details and tax information",
     icon: Building2,
-    action: 'Set Up Company',
-    path: '/company-profile',
+    action: "Set Up Company",
+    path: "/company-profile",
   },
   {
-    key: 'accounts',
-    field: 'hasSetupChartOfAccounts',
-    title: 'Chart of Accounts',
-    description: 'Review and customize your UAE-compliant chart of accounts',
+    key: "accounts",
+    field: "hasSetupChartOfAccounts",
+    title: "Chart of Accounts",
+    description: "Review and customize your UAE-compliant chart of accounts",
     icon: BookOpen,
-    action: 'View Accounts',
-    path: '/accounts',
+    action: "View Accounts",
+    path: "/accounts",
   },
   {
-    key: 'invoice',
-    field: 'hasCreatedFirstInvoice',
-    title: 'Create Your First Invoice',
-    description: 'Generate professional VAT-compliant invoices',
+    key: "invoice",
+    field: "hasCreatedFirstInvoice",
+    title: "Create Your First Invoice",
+    description: "Generate professional VAT-compliant invoices",
     icon: FileText,
-    action: 'Create Invoice',
-    path: '/invoices',
+    action: "Create Invoice",
+    path: "/invoices",
   },
   {
-    key: 'receipt',
-    field: 'hasUploadedFirstReceipt',
-    title: 'Upload a Receipt',
-    description: 'Let AI extract and categorize your expenses',
+    key: "receipt",
+    field: "hasUploadedFirstReceipt",
+    title: "Upload a Receipt",
+    description: "Let AI extract and categorize your expenses",
     icon: Receipt,
-    action: 'Upload Receipt',
-    path: '/receipts',
+    action: "Upload Receipt",
+    path: "/receipts",
   },
   {
-    key: 'reports',
-    field: 'hasViewedReports',
-    title: 'Explore Reports',
-    description: 'View financial statements and VAT summaries',
+    key: "reports",
+    field: "hasViewedReports",
+    title: "Explore Reports",
+    description: "View financial statements and VAT summaries",
     icon: BarChart3,
-    action: 'View Reports',
-    path: '/reports',
+    action: "View Reports",
+    path: "/reports",
   },
   {
-    key: 'ai',
-    field: 'hasExploredAI',
-    title: 'Meet Your AI CFO',
-    description: 'Get insights and recommendations from your AI financial advisor',
+    key: "ai",
+    field: "hasExploredAI",
+    title: "Meet Your AI CFO",
+    description: "Get insights and recommendations from your AI financial advisor",
     icon: Bot,
-    action: 'Explore AI Features',
-    path: '/ai-cfo',
+    action: "Explore AI Features",
+    path: "/ai-cfo",
   },
   {
-    key: 'reminders',
-    field: 'hasConfiguredReminders',
-    title: 'Set Up Reminders',
-    description: 'Configure automatic payment reminders',
+    key: "reminders",
+    field: "hasConfiguredReminders",
+    title: "Set Up Reminders",
+    description: "Configure automatic payment reminders",
     icon: Bell,
-    action: 'Configure Reminders',
-    path: '/reminders',
+    action: "Configure Reminders",
+    path: "/reminders",
   },
 ];
 
@@ -117,26 +123,26 @@ export function OnboardingWizard() {
   const [hasAutoShown, setHasAutoShown] = useState(false);
 
   const { data: onboarding, isLoading } = useQuery<UserOnboarding>({
-    queryKey: ['/api/onboarding'],
+    queryKey: ["/api/onboarding"],
   });
 
   const completeMutation = useMutation({
-    mutationFn: (step: string) => apiRequest('POST', '/api/onboarding/complete-step', { step }),
+    mutationFn: (step: string) => apiRequest("POST", "/api/onboarding/complete-step", { step }),
     onMutate: async (step: string) => {
-      await queryClient.cancelQueries({ queryKey: ['/api/onboarding'] });
-      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(['/api/onboarding']);
-      
+      await queryClient.cancelQueries({ queryKey: ["/api/onboarding"] });
+      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(["/api/onboarding"]);
+
       const stepToField: Record<string, keyof UserOnboarding> = {
-        welcome: 'hasCompletedWelcome',
-        company: 'hasCreatedCompany',
-        accounts: 'hasSetupChartOfAccounts',
-        invoice: 'hasCreatedFirstInvoice',
-        receipt: 'hasUploadedFirstReceipt',
-        reports: 'hasViewedReports',
-        ai: 'hasExploredAI',
-        reminders: 'hasConfiguredReminders',
+        welcome: "hasCompletedWelcome",
+        company: "hasCreatedCompany",
+        accounts: "hasSetupChartOfAccounts",
+        invoice: "hasCreatedFirstInvoice",
+        receipt: "hasUploadedFirstReceipt",
+        reports: "hasViewedReports",
+        ai: "hasExploredAI",
+        reminders: "hasConfiguredReminders",
       };
-      
+
       if (previousOnboarding) {
         const field = stepToField[step];
         const newData = { ...previousOnboarding, [field]: true };
@@ -151,37 +157,37 @@ export function OnboardingWizard() {
         if (newData.hasConfiguredReminders) newCurrentStep++;
         newData.currentStep = newCurrentStep;
         newData.isOnboardingComplete = newCurrentStep >= 8;
-        queryClient.setQueryData(['/api/onboarding'], newData);
+        queryClient.setQueryData(["/api/onboarding"], newData);
       }
       return { previousOnboarding };
     },
     onError: (_err, _step, context) => {
       if (context?.previousOnboarding) {
-        queryClient.setQueryData(['/api/onboarding'], context.previousOnboarding);
+        queryClient.setQueryData(["/api/onboarding"], context.previousOnboarding);
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/onboarding'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/onboarding"] });
     },
   });
 
   const skipMutation = useMutation({
-    mutationFn: () => apiRequest('PATCH', '/api/onboarding', { showTour: false }),
+    mutationFn: () => apiRequest("PATCH", "/api/onboarding", { showTour: false }),
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['/api/onboarding'] });
-      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(['/api/onboarding']);
+      await queryClient.cancelQueries({ queryKey: ["/api/onboarding"] });
+      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(["/api/onboarding"]);
       if (previousOnboarding) {
-        queryClient.setQueryData(['/api/onboarding'], { ...previousOnboarding, showTour: false });
+        queryClient.setQueryData(["/api/onboarding"], { ...previousOnboarding, showTour: false });
       }
       return { previousOnboarding };
     },
     onError: (_err, _vars, context) => {
       if (context?.previousOnboarding) {
-        queryClient.setQueryData(['/api/onboarding'], context.previousOnboarding);
+        queryClient.setQueryData(["/api/onboarding"], context.previousOnboarding);
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/onboarding'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/onboarding"] });
     },
   });
 
@@ -210,7 +216,7 @@ export function OnboardingWizard() {
   const currentStep = onboarding.currentStep || 0;
   const totalSteps = ONBOARDING_STEPS.length;
   const progress = (currentStep / totalSteps) * 100;
-  const nextStep = ONBOARDING_STEPS.find(step => !onboarding[step.field as keyof UserOnboarding]);
+  const nextStep = ONBOARDING_STEPS.find((step) => !onboarding[step.field as keyof UserOnboarding]);
 
   if (!nextStep) {
     return null;
@@ -247,7 +253,9 @@ export function OnboardingWizard() {
         <div className="py-4">
           <div className="flex justify-between text-sm text-muted-foreground mb-2">
             <span>Progress</span>
-            <span>{currentStep}/{totalSteps} completed</span>
+            <span>
+              {currentStep}/{totalSteps} completed
+            </span>
           </div>
           <Progress value={progress} className="h-2" />
         </div>
@@ -256,7 +264,10 @@ export function OnboardingWizard() {
           <Button variant="outline" onClick={handleSkip} data-testid="button-skip-onboarding">
             Skip for now
           </Button>
-          <Button onClick={() => handleStepAction(nextStep)} data-testid="button-continue-onboarding">
+          <Button
+            onClick={() => handleStepAction(nextStep)}
+            data-testid="button-continue-onboarding"
+          >
             {nextStep.action}
             <ArrowRight className="w-4 h-4 ml-2" />
           </Button>
@@ -268,28 +279,28 @@ export function OnboardingWizard() {
 
 export function OnboardingProgress() {
   const [, setLocation] = useLocation();
-  
+
   const { data: onboarding, isLoading } = useQuery<UserOnboarding>({
-    queryKey: ['/api/onboarding'],
+    queryKey: ["/api/onboarding"],
   });
 
   const completeMutation = useMutation({
-    mutationFn: (step: string) => apiRequest('POST', '/api/onboarding/complete-step', { step }),
+    mutationFn: (step: string) => apiRequest("POST", "/api/onboarding/complete-step", { step }),
     onMutate: async (step: string) => {
-      await queryClient.cancelQueries({ queryKey: ['/api/onboarding'] });
-      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(['/api/onboarding']);
-      
+      await queryClient.cancelQueries({ queryKey: ["/api/onboarding"] });
+      const previousOnboarding = queryClient.getQueryData<UserOnboarding>(["/api/onboarding"]);
+
       const stepToField: Record<string, keyof UserOnboarding> = {
-        welcome: 'hasCompletedWelcome',
-        company: 'hasCreatedCompany',
-        accounts: 'hasSetupChartOfAccounts',
-        invoice: 'hasCreatedFirstInvoice',
-        receipt: 'hasUploadedFirstReceipt',
-        reports: 'hasViewedReports',
-        ai: 'hasExploredAI',
-        reminders: 'hasConfiguredReminders',
+        welcome: "hasCompletedWelcome",
+        company: "hasCreatedCompany",
+        accounts: "hasSetupChartOfAccounts",
+        invoice: "hasCreatedFirstInvoice",
+        receipt: "hasUploadedFirstReceipt",
+        reports: "hasViewedReports",
+        ai: "hasExploredAI",
+        reminders: "hasConfiguredReminders",
       };
-      
+
       if (previousOnboarding) {
         const field = stepToField[step];
         const newData = { ...previousOnboarding, [field]: true };
@@ -304,17 +315,17 @@ export function OnboardingProgress() {
         if (newData.hasConfiguredReminders) newCurrentStep++;
         newData.currentStep = newCurrentStep;
         newData.isOnboardingComplete = newCurrentStep >= 8;
-        queryClient.setQueryData(['/api/onboarding'], newData);
+        queryClient.setQueryData(["/api/onboarding"], newData);
       }
       return { previousOnboarding };
     },
     onError: (_err, _step, context) => {
       if (context?.previousOnboarding) {
-        queryClient.setQueryData(['/api/onboarding'], context.previousOnboarding);
+        queryClient.setQueryData(["/api/onboarding"], context.previousOnboarding);
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/onboarding'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/onboarding"] });
     },
   });
 
@@ -334,11 +345,13 @@ export function OnboardingProgress() {
             <Sparkles className="w-5 h-5 text-primary" />
             <span className="font-medium">Getting Started</span>
           </div>
-          <Badge variant="outline">{currentStep}/{totalSteps} completed</Badge>
+          <Badge variant="outline">
+            {currentStep}/{totalSteps} completed
+          </Badge>
         </div>
-        
+
         <Progress value={progress} className="h-2 mb-4" />
-        
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {ONBOARDING_STEPS.slice(0, 8).map((step) => {
             const Icon = step.icon;
@@ -353,9 +366,7 @@ export function OnboardingProgress() {
                   setLocation(step.path);
                 }}
                 className={`flex items-center gap-2 p-2 rounded-lg text-sm transition-colors ${
-                  isCompleted 
-                    ? 'bg-green-500/10 text-green-700' 
-                    : 'bg-background hover:bg-accent'
+                  isCompleted ? "bg-green-500/10 text-green-700" : "bg-background hover:bg-accent"
                 }`}
                 data-testid={`onboarding-step-${step.key}`}
               >
@@ -364,7 +375,7 @@ export function OnboardingProgress() {
                 ) : (
                   <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                 )}
-                <span className="truncate">{step.title.split(' ').slice(-2).join(' ')}</span>
+                <span className="truncate">{step.title.split(" ").slice(-2).join(" ")}</span>
               </button>
             );
           })}
@@ -376,13 +387,13 @@ export function OnboardingProgress() {
 
 export function HelpTip({ tipKey, children }: { tipKey: string; children: React.ReactNode }) {
   const { data: onboarding } = useQuery<UserOnboarding>({
-    queryKey: ['/api/onboarding'],
+    queryKey: ["/api/onboarding"],
   });
 
   const dismissMutation = useMutation({
-    mutationFn: (tipId: string) => apiRequest('POST', '/api/onboarding/dismiss-tip', { tipId }),
+    mutationFn: (tipId: string) => apiRequest("POST", "/api/onboarding/dismiss-tip", { tipId }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/onboarding'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/onboarding"] });
     },
   });
 

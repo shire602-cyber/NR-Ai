@@ -4,10 +4,16 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
 import { eq, and, desc, lte } from "drizzle-orm";
 import { exchangeRates, invoices, receipts } from "../../shared/schema";
-import type { UnrealizedFxGainLoss, FxGainsLossesReport, ExchangeRate, Invoice, Receipt } from "../../shared/schema";
+import type {
+  UnrealizedFxGainLoss,
+  FxGainsLossesReport,
+  ExchangeRate,
+  Invoice,
+  Receipt,
+} from "../../shared/schema";
 import { storage } from "../storage";
 
-export type ExchangeRateSource = 'manual' | 'api' | 'fta';
+export type ExchangeRateSource = "manual" | "api" | "fta";
 
 export interface RateLookupResult {
   rate: number;
@@ -28,10 +34,10 @@ export async function getLatestRateDetailed(
   baseCurrency: string,
   targetCurrency: string,
   asOf?: Date,
-  options: { preferFta?: boolean } = {},
+  options: { preferFta?: boolean } = {}
 ): Promise<RateLookupResult | null> {
   if (baseCurrency === targetCurrency) {
-    return { rate: 1, source: 'manual', date: asOf ?? new Date() };
+    return { rate: 1, source: "manual", date: asOf ?? new Date() };
   }
 
   const preferFta = options.preferFta !== false;
@@ -46,11 +52,11 @@ export async function getLatestRateDetailed(
     const ftaRows = await db
       .select()
       .from(exchangeRates)
-      .where(and(...baseConditions, eq(exchangeRates.source, 'fta')))
+      .where(and(...baseConditions, eq(exchangeRates.source, "fta")))
       .orderBy(desc(exchangeRates.date))
       .limit(1);
     if (ftaRows.length > 0) {
-      return { rate: ftaRows[0].rate, source: 'fta', date: ftaRows[0].date };
+      return { rate: ftaRows[0].rate, source: "fta", date: ftaRows[0].date };
     }
   }
 
@@ -64,7 +70,7 @@ export async function getLatestRateDetailed(
   if (rows.length === 0) return null;
   return {
     rate: rows[0].rate,
-    source: (rows[0].source as ExchangeRateSource) ?? 'manual',
+    source: (rows[0].source as ExchangeRateSource) ?? "manual",
     date: rows[0].date,
   };
 }
@@ -72,7 +78,7 @@ export async function getLatestRateDetailed(
 export async function getLatestRate(
   baseCurrency: string,
   targetCurrency: string,
-  asOf?: Date,
+  asOf?: Date
 ): Promise<number | null> {
   const result = await getLatestRateDetailed(baseCurrency, targetCurrency, asOf);
   return result === null ? null : result.rate;
@@ -85,7 +91,7 @@ export async function getLatestRate(
 export function toBaseCurrency(
   foreignAmount: number,
   foreignCurrency: string,
-  rateToBase: number,
+  rateToBase: number
 ): number {
   if (foreignCurrency === "AED") return foreignAmount;
   return foreignAmount * rateToBase;
@@ -117,13 +123,10 @@ export function registerExchangeRateRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const rows = await db
-        .select()
-        .from(exchangeRates)
-        .orderBy(desc(exchangeRates.date));
+      const rows = await db.select().from(exchangeRates).orderBy(desc(exchangeRates.date));
 
       res.json(rows.map((row: ExchangeRate) => toCompanyRateResponse(row, companyId)));
-    }),
+    })
   );
 
   app.post(
@@ -165,7 +168,7 @@ export function registerExchangeRateRoutes(app: Express) {
         .returning();
 
       res.status(201).json(toCompanyRateResponse(created, companyId));
-    }),
+    })
   );
 
   app.get(
@@ -229,7 +232,7 @@ export function registerExchangeRateRoutes(app: Express) {
       }
 
       return res.status(404).json({ message: `No exchange rate found for ${from}/${to}` });
-    }),
+    })
   );
 
   // ─────────────────────────────────────────────
@@ -241,7 +244,11 @@ export function registerExchangeRateRoutes(app: Express) {
     "/api/exchange-rates",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { base = "AED", target, asOf } = req.query as {
+      const {
+        base = "AED",
+        target,
+        asOf,
+      } = req.query as {
         base?: string;
         target?: string;
         asOf?: string;
@@ -275,7 +282,7 @@ export function registerExchangeRateRoutes(app: Express) {
       });
 
       res.json(latest);
-    }),
+    })
   );
 
   // ─────────────────────────────────────────────
@@ -297,7 +304,7 @@ export function registerExchangeRateRoutes(app: Express) {
       if (typeof rate !== "number" || rate <= 0) {
         return res.status(400).json({ message: "rate must be a positive number" });
       }
-      if (!['manual', 'api', 'fta'].includes(source)) {
+      if (!["manual", "api", "fta"].includes(source)) {
         return res.status(400).json({ message: "source must be 'manual', 'api', or 'fta'" });
       }
 
@@ -313,7 +320,7 @@ export function registerExchangeRateRoutes(app: Express) {
         .returning();
 
       res.status(201).json(created);
-    }),
+    })
   );
 
   // ─────────────────────────────────────────────
@@ -335,15 +342,15 @@ export function registerExchangeRateRoutes(app: Express) {
         return res.status(400).json({ message: "rates array is required" });
       }
 
-      const inserted: typeof exchangeRates.$inferSelect[] = [];
+      const inserted: (typeof exchangeRates.$inferSelect)[] = [];
       const skipped: Array<{ targetCurrency: string; date: string; reason: string }> = [];
 
       for (const r of rates) {
-        if (!r.targetCurrency || typeof r.rate !== 'number' || r.rate <= 0 || !r.date) {
+        if (!r.targetCurrency || typeof r.rate !== "number" || r.rate <= 0 || !r.date) {
           skipped.push({
-            targetCurrency: r.targetCurrency ?? '?',
-            date: r.date ?? '?',
-            reason: 'invalid payload',
+            targetCurrency: r.targetCurrency ?? "?",
+            date: r.date ?? "?",
+            reason: "invalid payload",
           });
           continue;
         }
@@ -355,7 +362,7 @@ export function registerExchangeRateRoutes(app: Express) {
               targetCurrency: r.targetCurrency,
               rate: r.rate,
               date: new Date(r.date),
-              source: 'fta',
+              source: "fta",
             })
             .returning();
           if (row) inserted.push(row);
@@ -364,7 +371,7 @@ export function registerExchangeRateRoutes(app: Express) {
           skipped.push({
             targetCurrency: r.targetCurrency,
             date: r.date,
-            reason: err instanceof Error ? err.message : 'duplicate',
+            reason: err instanceof Error ? err.message : "duplicate",
           });
         }
       }
@@ -374,7 +381,7 @@ export function registerExchangeRateRoutes(app: Express) {
         skipped: skipped.length,
         skippedDetails: skipped,
       });
-    }),
+    })
   );
 
   // ─────────────────────────────────────────────
@@ -386,7 +393,11 @@ export function registerExchangeRateRoutes(app: Express) {
     "/api/exchange-rates/lookup",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { base = "AED", target, asOf } = req.query as {
+      const {
+        base = "AED",
+        target,
+        asOf,
+      } = req.query as {
         base?: string;
         target?: string;
         asOf?: string;
@@ -405,7 +416,7 @@ export function registerExchangeRateRoutes(app: Express) {
         source: result.source,
         date: result.date,
       });
-    }),
+    })
   );
 
   // ─────────────────────────────────────────────
@@ -432,17 +443,10 @@ export function registerExchangeRateRoutes(app: Express) {
       const openInvoices = await db
         .select()
         .from(invoices)
-        .where(
-          and(
-            eq(invoices.companyId, companyId),
-          ),
-        );
+        .where(and(eq(invoices.companyId, companyId)));
 
       const foreignInvoices = openInvoices.filter(
-        (inv: Invoice) =>
-          inv.currency !== "AED" &&
-          inv.status !== "paid" &&
-          inv.status !== "void",
+        (inv: Invoice) => inv.currency !== "AED" && inv.status !== "paid" && inv.status !== "void"
       );
 
       const receivables: UnrealizedFxGainLoss[] = [];
@@ -476,13 +480,10 @@ export function registerExchangeRateRoutes(app: Express) {
       }
 
       // ── Open foreign-currency payables (unposted receipts) ──
-      const allReceipts = await db
-        .select()
-        .from(receipts)
-        .where(eq(receipts.companyId, companyId));
+      const allReceipts = await db.select().from(receipts).where(eq(receipts.companyId, companyId));
 
       const foreignReceipts = allReceipts.filter(
-        (r: Receipt) => r.currency && r.currency !== "AED" && !r.posted,
+        (r: Receipt) => r.currency && r.currency !== "AED" && !r.posted
       );
 
       const payables: UnrealizedFxGainLoss[] = [];
@@ -533,6 +534,6 @@ export function registerExchangeRateRoutes(app: Express) {
       };
 
       res.json(report);
-    }),
+    })
   );
 }

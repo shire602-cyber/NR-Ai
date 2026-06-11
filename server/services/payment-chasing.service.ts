@@ -18,8 +18,8 @@
  */
 
 export type ChaseLevel = 1 | 2 | 3 | 4;
-export type ChaseLanguage = 'en' | 'ar';
-export type ChaseMethod = 'whatsapp' | 'email' | 'manual';
+export type ChaseLanguage = "en" | "ar";
+export type ChaseMethod = "whatsapp" | "email" | "manual";
 
 export interface ChaseInvoice {
   id: string;
@@ -56,7 +56,7 @@ export interface ChaseAgingRow {
   recommendedLevel: ChaseLevel;
 }
 
-export type AgingBucket = 'current' | '1-7' | '8-30' | '31-60' | '60+';
+export type AgingBucket = "current" | "1-7" | "8-30" | "31-60" | "60+";
 
 export interface RenderContext {
   customerName: string;
@@ -79,7 +79,7 @@ const LEVEL_THRESHOLDS: Array<{ minDays: number; level: ChaseLevel }> = [
   { minDays: 1, level: 1 },
 ];
 
-const TERMINAL_INVOICE_STATUSES = new Set(['paid', 'void', 'cancelled']);
+const TERMINAL_INVOICE_STATUSES = new Set(["paid", "void", "cancelled"]);
 
 // ─── Aging ───────────────────────────────────────────────────────────────────
 
@@ -90,20 +90,23 @@ export function daysBetween(from: Date, to: Date): number {
   return Math.floor((b - a) / 86_400_000);
 }
 
-export function calculateDaysOverdue(dueDate: Date | string | null, now: Date = new Date()): number {
+export function calculateDaysOverdue(
+  dueDate: Date | string | null,
+  now: Date = new Date()
+): number {
   if (!dueDate) return 0;
-  const due = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
+  const due = typeof dueDate === "string" ? new Date(dueDate) : dueDate;
   if (Number.isNaN(due.getTime())) return 0;
   const diff = daysBetween(due, now);
   return diff > 0 ? diff : 0;
 }
 
 export function bucketFor(daysOverdue: number): AgingBucket {
-  if (daysOverdue <= 0) return 'current';
-  if (daysOverdue <= 7) return '1-7';
-  if (daysOverdue <= 30) return '8-30';
-  if (daysOverdue <= 60) return '31-60';
-  return '60+';
+  if (daysOverdue <= 0) return "current";
+  if (daysOverdue <= 7) return "1-7";
+  if (daysOverdue <= 30) return "8-30";
+  if (daysOverdue <= 60) return "31-60";
+  return "60+";
 }
 
 export function recommendedLevelFor(daysOverdue: number): ChaseLevel {
@@ -119,7 +122,7 @@ export function recommendedLevelFor(daysOverdue: number): ChaseLevel {
  */
 export function outstandingFor(invoice: ChaseInvoice, payments: ChasePayment[]): number {
   const paid = payments
-    .filter(p => p.invoiceId === invoice.id)
+    .filter((p) => p.invoiceId === invoice.id)
     .reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const outstanding = Math.max(0, (Number(invoice.total) || 0) - paid);
   return Math.round(outstanding * 100) / 100;
@@ -128,7 +131,7 @@ export function outstandingFor(invoice: ChaseInvoice, payments: ChasePayment[]):
 export function buildAgingRow(
   invoice: ChaseInvoice,
   payments: ChasePayment[],
-  now: Date = new Date(),
+  now: Date = new Date()
 ): ChaseAgingRow {
   const paidAmount = (Number(invoice.total) || 0) - outstandingFor(invoice, payments);
   const outstanding = outstandingFor(invoice, payments);
@@ -154,7 +157,7 @@ export function buildAgingRow(
 export function isOverdueAndChaseable(row: ChaseAgingRow): boolean {
   const inv = row.invoice;
   if (TERMINAL_INVOICE_STATUSES.has(inv.status)) return false;
-  if (inv.status === 'draft') return false;
+  if (inv.status === "draft") return false;
   if (inv.doNotChase) return false;
   if (row.outstanding <= 0) return false;
   if (row.daysOverdue <= 0) return false;
@@ -176,7 +179,7 @@ export function isOverdueAndChaseable(row: ChaseAgingRow): boolean {
  */
 export function nextLevelFor(
   row: ChaseAgingRow,
-  opts: { maxLevel?: number } = {},
+  opts: { maxLevel?: number } = {}
 ): ChaseLevel | null {
   if (!isOverdueAndChaseable(row)) return null;
   const max = Math.min(4, Math.max(1, opts.maxLevel ?? 4)) as ChaseLevel;
@@ -203,10 +206,10 @@ export function nextLevelFor(
 export function isFrequencyEligible(
   lastChasedAt: Date | string | null | undefined,
   frequencyDays: number,
-  now: Date = new Date(),
+  now: Date = new Date()
 ): boolean {
   if (!lastChasedAt) return true;
-  const last = typeof lastChasedAt === 'string' ? new Date(lastChasedAt) : lastChasedAt;
+  const last = typeof lastChasedAt === "string" ? new Date(lastChasedAt) : lastChasedAt;
   if (Number.isNaN(last.getTime())) return true;
   const elapsed = daysBetween(last, now);
   return elapsed >= Math.max(0, frequencyDays);
@@ -229,12 +232,12 @@ export function renderTemplate(body: string, ctx: Record<string, string | number
 export function contextForInvoice(
   row: ChaseAgingRow,
   contact: ChaseContact | null,
-  opts: { senderName: string; paymentLink: string; locale?: ChaseLanguage },
+  opts: { senderName: string; paymentLink: string; locale?: ChaseLanguage }
 ): RenderContext {
   const inv = row.invoice;
-  const customerName = contact?.name?.trim() || inv.customerName || 'Customer';
+  const customerName = contact?.name?.trim() || inv.customerName || "Customer";
   const due = inv.dueDate ? new Date(inv.dueDate) : null;
-  const dueStr = due && !Number.isNaN(due.getTime()) ? due.toISOString().slice(0, 10) : '—';
+  const dueStr = due && !Number.isNaN(due.getTime()) ? due.toISOString().slice(0, 10) : "—";
   return {
     customerName,
     invoiceNumber: inv.number,
@@ -297,17 +300,16 @@ export function groupByClient(rows: ChaseAgingRow[]): ChaseGroup[] {
 export function renderGroupedMessage(
   group: ChaseGroup,
   template: { body: string; subject?: string | null },
-  opts: { senderName: string; paymentLink: string },
+  opts: { senderName: string; paymentLink: string }
 ): { subject: string | null; body: string } {
   const ctx = {
     customerName: group.customerName,
-    invoiceNumber: group.rows.length === 1
-      ? group.rows[0].invoice.number
-      : `${group.rows.length} invoices`,
+    invoiceNumber:
+      group.rows.length === 1 ? group.rows[0].invoice.number : `${group.rows.length} invoices`,
     amount: group.totalOutstanding.toFixed(2),
     currency: group.currency,
-    dueDate: '—',
-    daysOverdue: Math.max(...group.rows.map(r => r.daysOverdue)),
+    dueDate: "—",
+    daysOverdue: Math.max(...group.rows.map((r) => r.daysOverdue)),
     paymentLink: opts.paymentLink,
     senderName: opts.senderName,
   };
@@ -315,8 +317,11 @@ export function renderGroupedMessage(
   if (group.rows.length > 1) {
     const lines = group.rows
       .sort((a, b) => b.daysOverdue - a.daysOverdue)
-      .map(r => `  • ${r.invoice.number} — ${r.invoice.currency} ${r.outstanding.toFixed(2)} (${r.daysOverdue} days overdue)`)
-      .join('\n');
+      .map(
+        (r) =>
+          `  • ${r.invoice.number} — ${r.invoice.currency} ${r.outstanding.toFixed(2)} (${r.daysOverdue} days overdue)`
+      )
+      .join("\n");
     body += `\n\nOutstanding invoices:\n${lines}`;
   }
   const subject = template.subject ? renderTemplate(template.subject, ctx) : null;
@@ -358,12 +363,15 @@ export function computeEffectiveness(chases: EffectivenessChase[]): Effectivenes
   };
   const firstByInvoice = new Map<string, EffectivenessChase>();
   for (const c of chases) {
-    const lvl = (c.level >= 1 && c.level <= 4) ? c.level as ChaseLevel : 1;
+    const lvl = c.level >= 1 && c.level <= 4 ? (c.level as ChaseLevel) : 1;
     byLevel[lvl].sent += 1;
     if (c.paidAt) byLevel[lvl].paid += 1;
     const existing = firstByInvoice.get(c.invoiceId);
-    const sent = typeof c.sentAt === 'string' ? new Date(c.sentAt) : c.sentAt;
-    if (!existing || (typeof existing.sentAt === 'string' ? new Date(existing.sentAt) : existing.sentAt) > sent) {
+    const sent = typeof c.sentAt === "string" ? new Date(c.sentAt) : c.sentAt;
+    if (
+      !existing ||
+      (typeof existing.sentAt === "string" ? new Date(existing.sentAt) : existing.sentAt) > sent
+    ) {
       firstByInvoice.set(c.invoiceId, c);
     }
   }
@@ -376,8 +384,8 @@ export function computeEffectiveness(chases: EffectivenessChase[]): Effectivenes
   for (const c of firstByInvoice.values()) {
     if (!c.paidAt) continue;
     paidAfterChase += 1;
-    const sent = typeof c.sentAt === 'string' ? new Date(c.sentAt) : c.sentAt;
-    const paid = typeof c.paidAt === 'string' ? new Date(c.paidAt) : c.paidAt;
+    const sent = typeof c.sentAt === "string" ? new Date(c.sentAt) : c.sentAt;
+    const paid = typeof c.paidAt === "string" ? new Date(c.paidAt) : c.paidAt;
     const days = daysBetween(sent, paid);
     if (days >= 0) {
       daysSum += days;
@@ -403,7 +411,7 @@ export function computeEffectiveness(chases: EffectivenessChase[]): Effectivenes
 
 // ─── WhatsApp deep-link helpers ──────────────────────────────────────────────
 
-const UAE_DIAL_CODE = '971';
+const UAE_DIAL_CODE = "971";
 
 /**
  * Normalize a phone number to E.164 digits (no plus) for wa.me. UAE numbers
@@ -420,12 +428,12 @@ const UAE_DIAL_CODE = '971';
  * Empty / non-digit input → empty string.
  */
 export function normalizePhoneForWa(phone: string | null | undefined): string {
-  if (!phone) return '';
-  let digits = phone.replace(/[^0-9]/g, '');
-  if (!digits) return '';
-  if (digits.startsWith('00')) {
+  if (!phone) return "";
+  let digits = phone.replace(/[^0-9]/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("00")) {
     digits = digits.slice(2);
-  } else if (digits.startsWith('0')) {
+  } else if (digits.startsWith("0")) {
     digits = UAE_DIAL_CODE + digits.slice(1);
   }
   return digits;

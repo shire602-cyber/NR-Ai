@@ -1,34 +1,35 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Send, MessageSquare, Loader2 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
-import { apiRequest } from '@/lib/queryClient';
-import { useToast } from '@/hooks/use-toast';
-import { format } from 'date-fns';
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Send, MessageSquare, Loader2 } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { format } from "date-fns";
 
 export default function PortalMessages() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [subject, setSubject] = useState('');
-  const [content, setContent] = useState('');
+  const [subject, setSubject] = useState("");
+  const [content, setContent] = useState("");
 
   const { data: messages = [], isLoading } = useQuery<any[]>({
-    queryKey: ['portal-messages'],
-    queryFn: () => apiRequest('GET', '/api/client-portal/messages'),
+    queryKey: ["portal-messages"],
+    queryFn: () => apiRequest("GET", "/api/client-portal/messages"),
   });
 
   const sendMutation = useMutation({
-    mutationFn: (payload: any) => apiRequest('POST', '/api/client-portal/messages', payload),
+    mutationFn: (payload: any) => apiRequest("POST", "/api/client-portal/messages", payload),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['portal-messages'] });
-      setSubject('');
-      setContent('');
-      toast({ title: 'Message sent', description: 'NR Accounting will respond shortly.' });
+      qc.invalidateQueries({ queryKey: ["portal-messages"] });
+      setSubject("");
+      setContent("");
+      toast({ title: "Message sent", description: "NR Accounting will respond shortly." });
     },
-    onError: (e: any) => toast({ title: 'Failed to send', description: e.message, variant: 'destructive' }),
+    onError: (e: any) =>
+      toast({ title: "Failed to send", description: e.message, variant: "destructive" }),
   });
 
   function handleSend() {
@@ -54,13 +55,13 @@ export default function PortalMessages() {
           <Input
             placeholder="Subject (optional)"
             value={subject}
-            onChange={e => setSubject(e.target.value)}
+            onChange={(e) => setSubject(e.target.value)}
           />
           <Textarea
             placeholder="Write your message..."
             rows={4}
             value={content}
-            onChange={e => setContent(e.target.value)}
+            onChange={(e) => setContent(e.target.value)}
           />
           <div className="flex justify-end">
             <Button
@@ -68,9 +69,11 @@ export default function PortalMessages() {
               disabled={!content.trim() || sendMutation.isPending}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {sendMutation.isPending
-                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                : <Send className="w-4 h-4 mr-2" />}
+              {sendMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 mr-2" />
+              )}
               Send
             </Button>
           </div>
@@ -96,16 +99,22 @@ export default function PortalMessages() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       {msg.subject && (
-                        <p className="text-sm font-semibold text-gray-900 truncate">{msg.subject}</p>
+                        <p className="text-sm font-semibold text-gray-900 truncate">
+                          {msg.subject}
+                        </p>
                       )}
-                      <p className="text-sm text-gray-700 mt-0.5 whitespace-pre-wrap">{msg.content}</p>
+                      <p className="text-sm text-gray-700 mt-0.5 whitespace-pre-wrap">
+                        {msg.content}
+                      </p>
                     </div>
                     <span className="text-xs text-gray-400 flex-shrink-0 mt-0.5">
-                      {msg.createdAt ? format(new Date(msg.createdAt), 'MMM d, h:mm a') : ''}
+                      {msg.createdAt ? format(new Date(msg.createdAt), "MMM d, h:mm a") : ""}
                     </span>
                   </div>
                   {!msg.isRead && (
-                    <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">Unread</span>
+                    <span className="inline-block mt-1 text-xs bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">
+                      Unread
+                    </span>
                   )}
                 </div>
               ))}

@@ -1,16 +1,16 @@
-import { apiRequest } from './queryClient';
-import { formatPhoneForWhatsApp, openWhatsApp } from './whatsapp-templates';
+import { apiRequest } from "./queryClient";
+import { formatPhoneForWhatsApp, openWhatsApp } from "./whatsapp-templates";
 
-const BRIDGE_REQUEST = 'NR_WHATSAPP_BRIDGE_REQUEST';
-const BRIDGE_RESPONSE = 'NR_WHATSAPP_BRIDGE_RESPONSE';
-const BRIDGE_EXTERNAL_REQUEST = 'NR_WHATSAPP_BRIDGE_EXTERNAL_REQUEST';
+const BRIDGE_REQUEST = "NR_WHATSAPP_BRIDGE_REQUEST";
+const BRIDGE_RESPONSE = "NR_WHATSAPP_BRIDGE_RESPONSE";
+const BRIDGE_EXTERNAL_REQUEST = "NR_WHATSAPP_BRIDGE_EXTERNAL_REQUEST";
 const KNOWN_EXTENSION_IDS = [
-  'jlhkbnegpoefoodkdgfdolkolianihpm',
-  'fignfifoniblkonapihmkfakmlgkbkcf',
+  "jlhkbnegpoefoodkdgfdolkolianihpm",
+  "fignfifoniblkonapihmkfakmlgkbkcf",
 ];
-export const MIN_SUPPORTED_WHATSAPP_BRIDGE_VERSION = '0.1.1';
+export const MIN_SUPPORTED_WHATSAPP_BRIDGE_VERSION = "0.1.1";
 
-type BridgeCommand = 'ping' | 'draft';
+type BridgeCommand = "ping" | "draft";
 
 declare global {
   interface Window {
@@ -19,7 +19,7 @@ declare global {
         sendMessage?: (
           extensionId: string,
           message: unknown,
-          callback: (response?: BridgeExternalResponse) => void,
+          callback: (response?: BridgeExternalResponse) => void
         ) => void;
         lastError?: {
           message?: string;
@@ -47,7 +47,7 @@ export interface WhatsAppBridgeJobPayload {
 
 export interface WhatsAppBridgeDraftResult {
   ok: boolean;
-  mode: 'extension' | 'fallback';
+  mode: "extension" | "fallback";
   message?: string;
   extensionId?: string;
   version?: string;
@@ -70,7 +70,7 @@ interface BridgeResponse {
 
 interface BridgeExternalResponse {
   ok: boolean;
-  mode?: 'extension';
+  mode?: "extension";
   payload?: any;
   error?: string;
 }
@@ -79,7 +79,7 @@ let requestSeq = 0;
 
 export function isSupportedWhatsAppBridgeVersion(version?: string | null): boolean {
   if (!version) return false;
-  const parse = (value: string) => value.split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const parse = (value: string) => value.split(".").map((part) => Number.parseInt(part, 10) || 0);
   const current = parse(version);
   const minimum = parse(MIN_SUPPORTED_WHATSAPP_BRIDGE_VERSION);
   for (let index = 0; index < Math.max(current.length, minimum.length); index += 1) {
@@ -91,10 +91,14 @@ export function isSupportedWhatsAppBridgeVersion(version?: string | null): boole
   return true;
 }
 
-function askExternalBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 1000): Promise<T | null> {
-  if (typeof window === 'undefined') return Promise.resolve(null);
+function askExternalBridge<T>(
+  command: BridgeCommand,
+  payload?: unknown,
+  timeoutMs = 1000
+): Promise<T | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
   const sendMessage = window.chrome?.runtime?.sendMessage;
-  if (typeof sendMessage !== 'function') return Promise.resolve(null);
+  if (typeof sendMessage !== "function") return Promise.resolve(null);
 
   return new Promise((resolve) => {
     let settled = false;
@@ -137,8 +141,12 @@ function askExternalBridge<T>(command: BridgeCommand, payload?: unknown, timeout
   });
 }
 
-function askBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 1000): Promise<T | null> {
-  if (typeof window === 'undefined') return Promise.resolve(null);
+function askBridge<T>(
+  command: BridgeCommand,
+  payload?: unknown,
+  timeoutMs = 1000
+): Promise<T | null> {
+  if (typeof window === "undefined") return Promise.resolve(null);
 
   const requestId = `nr_${Date.now()}_${requestSeq++}`;
 
@@ -147,7 +155,7 @@ function askBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 100
     const timer = window.setTimeout(() => {
       if (done) return;
       done = true;
-      window.removeEventListener('message', onMessage);
+      window.removeEventListener("message", onMessage);
       resolve(null);
     }, timeoutMs);
 
@@ -158,7 +166,7 @@ function askBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 100
 
       done = true;
       window.clearTimeout(timer);
-      window.removeEventListener('message', onMessage);
+      window.removeEventListener("message", onMessage);
       if (!data.ok) {
         resolve(null);
         return;
@@ -166,21 +174,22 @@ function askBridge<T>(command: BridgeCommand, payload?: unknown, timeoutMs = 100
       resolve((data.payload ?? null) as T | null);
     }
 
-    window.addEventListener('message', onMessage);
+    window.addEventListener("message", onMessage);
     const envelope: BridgeEnvelope = { type: BRIDGE_REQUEST, requestId, command, payload };
     window.postMessage(envelope, window.location.origin);
   });
 }
 
 export async function pingWhatsAppBridge(timeoutMs = 700): Promise<WhatsAppBridgePing> {
-  const result = await askExternalBridge<WhatsAppBridgePing>('ping', {}, timeoutMs)
-    || await askBridge<WhatsAppBridgePing>('ping', {}, timeoutMs);
-  if (!result?.available) return { available: false, reason: 'extension_not_detected' };
+  const result =
+    (await askExternalBridge<WhatsAppBridgePing>("ping", {}, timeoutMs)) ||
+    (await askBridge<WhatsAppBridgePing>("ping", {}, timeoutMs));
+  if (!result?.available) return { available: false, reason: "extension_not_detected" };
   if (!isSupportedWhatsAppBridgeVersion(result.version)) {
     return {
       ...result,
       available: false,
-      reason: `extension_outdated_${result.version || 'unknown'}`,
+      reason: `extension_outdated_${result.version || "unknown"}`,
     };
   }
   return result;
@@ -188,10 +197,10 @@ export async function pingWhatsAppBridge(timeoutMs = 700): Promise<WhatsAppBridg
 
 export async function registerWhatsAppBridgeSession(
   ping: WhatsAppBridgePing,
-  companyId?: string,
+  companyId?: string
 ): Promise<void> {
   if (!ping.available || !ping.extensionId) return;
-  await apiRequest('POST', '/api/integrations/whatsapp/bridge/sessions', {
+  await apiRequest("POST", "/api/integrations/whatsapp/bridge/sessions", {
     companyId,
     extensionId: ping.extensionId,
     extensionVersion: ping.version || null,
@@ -201,31 +210,33 @@ export async function registerWhatsAppBridgeSession(
 
 export async function draftWithWhatsAppBridge(
   payload: WhatsAppBridgeJobPayload,
-  timeoutMs = 2500,
+  timeoutMs = 2500
 ): Promise<WhatsAppBridgeDraftResult> {
   const normalized = formatPhoneForWhatsApp(payload.phone);
   if (!normalized) {
-    return { ok: false, mode: 'fallback', message: 'Invalid WhatsApp phone number' };
+    return { ok: false, mode: "fallback", message: "Invalid WhatsApp phone number" };
   }
 
   const job = {
     ...payload,
     phone: normalized,
   };
-  const result = await askExternalBridge<WhatsAppBridgeDraftResult>('draft', job, timeoutMs)
-    || await askBridge<WhatsAppBridgeDraftResult>('draft', job, timeoutMs);
+  const result =
+    (await askExternalBridge<WhatsAppBridgeDraftResult>("draft", job, timeoutMs)) ||
+    (await askBridge<WhatsAppBridgeDraftResult>("draft", job, timeoutMs));
 
-  if (result?.ok && isSupportedWhatsAppBridgeVersion(result.version)) return { ...result, mode: 'extension' };
-  return { ok: false, mode: 'fallback', message: 'extension_not_detected' };
+  if (result?.ok && isSupportedWhatsAppBridgeVersion(result.version))
+    return { ...result, mode: "extension" };
+  return { ok: false, mode: "fallback", message: "extension_not_detected" };
 }
 
 export async function updateWhatsAppBridgeJobStatus(
   jobId: string,
-  status: 'drafted' | 'sent_unverified' | 'failed' | 'cancelled' | 'expired',
-  deliveryStatus?: 'drafted' | 'sent_unverified' | 'failed' | 'logged',
-  errorMessage?: string,
+  status: "drafted" | "sent_unverified" | "failed" | "cancelled" | "expired",
+  deliveryStatus?: "drafted" | "sent_unverified" | "failed" | "logged",
+  errorMessage?: string
 ): Promise<void> {
-  await apiRequest('PATCH', `/api/integrations/whatsapp/bridge/jobs/${jobId}/status`, {
+  await apiRequest("PATCH", `/api/integrations/whatsapp/bridge/jobs/${jobId}/status`, {
     status,
     deliveryStatus,
     errorMessage,
@@ -235,12 +246,15 @@ export async function updateWhatsAppBridgeJobStatus(
 export async function openWhatsAppWithLoggedFallback(
   phone: string,
   message: string,
-  bridgeJobId?: string,
+  bridgeJobId?: string
 ): Promise<void> {
   if (bridgeJobId) {
-    await updateWhatsAppBridgeJobStatus(bridgeJobId, 'drafted', 'drafted').catch(() => {});
+    await updateWhatsAppBridgeJobStatus(bridgeJobId, "drafted", "drafted").catch(() => {});
   } else {
-    await apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: phone, message }).catch(() => {});
+    await apiRequest("POST", "/api/integrations/whatsapp/log-message", {
+      to: phone,
+      message,
+    }).catch(() => {});
   }
   openWhatsApp(phone, message);
 }

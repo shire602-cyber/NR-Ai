@@ -1,9 +1,9 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   Plus,
   Edit,
@@ -13,14 +13,14 @@ import {
   TrendingUp,
   TrendingDown,
   DollarSign,
-} from 'lucide-react';
-import { useSubscription } from '@/hooks/useSubscription';
-import { UpgradePrompt } from '@/components/UpgradePrompt';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
+} from "lucide-react";
+import { useSubscription } from "@/hooks/useSubscription";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -28,21 +28,21 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Form,
   FormControl,
@@ -50,13 +50,13 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
-import { Switch } from '@/components/ui/switch';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency } from '@/lib/format';
+} from "@/components/ui/form";
+import { Switch } from "@/components/ui/switch";
+import { useTranslation } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency } from "@/lib/format";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -79,8 +79,8 @@ interface CostCenterReport {
 // ─── Schemas ─────────────────────────────────────────────
 
 const costCenterFormSchema = z.object({
-  code: z.string().min(1, 'Code is required'),
-  name: z.string().min(1, 'Name is required'),
+  code: z.string().min(1, "Code is required"),
+  name: z.string().min(1, "Name is required"),
   description: z.string().optional(),
   parentId: z.string().optional().nullable(),
   isActive: z.boolean().default(true),
@@ -98,7 +98,7 @@ export default function CostCenters() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCostCenter, setEditingCostCenter] = useState<CostCenter | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<string | null>(null);
 
   // ─── Queries ───────────────────────────────────────────
@@ -118,9 +118,9 @@ export default function CostCenters() {
   const form = useForm<CostCenterFormData>({
     resolver: zodResolver(costCenterFormSchema),
     defaultValues: {
-      code: '',
-      name: '',
-      description: '',
+      code: "",
+      name: "",
+      description: "",
       parentId: null,
       isActive: true,
     },
@@ -130,50 +130,56 @@ export default function CostCenters() {
 
   const createMutation = useMutation({
     mutationFn: (data: CostCenterFormData) =>
-      apiRequest('POST', `/api/companies/${companyId}/cost-centers`, {
+      apiRequest("POST", `/api/companies/${companyId}/cost-centers`, {
         ...data,
         parentId: data.parentId || null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
-      toast({ title: 'Cost Center Created', description: 'Cost center has been added successfully.' });
+      toast({
+        title: "Cost Center Created",
+        description: "Cost center has been added successfully.",
+      });
       setDialogOpen(false);
       form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<CostCenterFormData> }) =>
-      apiRequest('PUT', `/api/cost-centers/${id}`, {
+      apiRequest("PUT", `/api/cost-centers/${id}`, {
         ...data,
         parentId: data.parentId || null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
-      toast({ title: 'Cost Center Updated', description: 'Cost center details have been updated.' });
+      toast({
+        title: "Cost Center Updated",
+        description: "Cost center details have been updated.",
+      });
       setDialogOpen(false);
       setEditingCostCenter(null);
       form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('DELETE', `/api/cost-centers/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/cost-centers/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
       if (selectedCostCenterId) {
         setSelectedCostCenterId(null);
       }
-      toast({ title: 'Cost Center Deleted', description: 'Cost center has been removed.' });
+      toast({ title: "Cost Center Deleted", description: "Cost center has been removed." });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
@@ -182,9 +188,9 @@ export default function CostCenters() {
   const handleOpenCreateDialog = () => {
     setEditingCostCenter(null);
     form.reset({
-      code: '',
-      name: '',
-      description: '',
+      code: "",
+      name: "",
+      description: "",
       parentId: null,
       isActive: true,
     });
@@ -196,7 +202,7 @@ export default function CostCenters() {
     form.reset({
       code: costCenter.code,
       name: costCenter.name,
-      description: costCenter.description || '',
+      description: costCenter.description || "",
       parentId: costCenter.parentId || null,
       isActive: costCenter.isActive,
     });
@@ -214,9 +220,9 @@ export default function CostCenters() {
   // ─── Helpers ──────────────────────────────────────────
 
   const getParentName = (parentId: string | null | undefined): string => {
-    if (!parentId) return '-';
+    if (!parentId) return "-";
     const parent = costCenters.find((cc) => cc.id === parentId);
-    return parent ? parent.name : '-';
+    return parent ? parent.name : "-";
   };
 
   const getAvailableParents = (): CostCenter[] => {
@@ -238,8 +244,8 @@ export default function CostCenters() {
   const inactiveCount = costCenters.filter((cc) => !cc.isActive).length;
   const selectedCostCenter = costCenters.find((cc) => cc.id === selectedCostCenterId);
 
-  if (!canAccess('costCenters')) {
-    return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier('costCenters')} />;
+  if (!canAccess("costCenters")) {
+    return <UpgradePrompt feature="costCenters" requiredTier={getRequiredTier("costCenters")} />;
   }
 
   if (isLoadingCompany || isLoading) {
@@ -327,28 +333,38 @@ export default function CostCenters() {
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     {searchQuery
-                      ? 'No cost centers match your search'
-                      : 'No cost centers yet. Add your first cost center to get started.'}
+                      ? "No cost centers match your search"
+                      : "No cost centers yet. Add your first cost center to get started."}
                   </TableCell>
                 </TableRow>
               ) : (
                 filteredCostCenters.map((cc) => (
                   <TableRow
                     key={cc.id}
-                    className={selectedCostCenterId === cc.id ? 'bg-muted/50' : 'cursor-pointer hover:bg-muted/30'}
-                    onClick={() => setSelectedCostCenterId(cc.id === selectedCostCenterId ? null : cc.id)}
+                    className={
+                      selectedCostCenterId === cc.id
+                        ? "bg-muted/50"
+                        : "cursor-pointer hover:bg-muted/30"
+                    }
+                    onClick={() =>
+                      setSelectedCostCenterId(cc.id === selectedCostCenterId ? null : cc.id)
+                    }
                   >
                     <TableCell className="font-mono text-sm">{cc.code}</TableCell>
                     <TableCell className="font-medium">{cc.name}</TableCell>
                     <TableCell className="text-muted-foreground max-w-[200px] truncate">
-                      {cc.description || '-'}
+                      {cc.description || "-"}
                     </TableCell>
                     <TableCell>{getParentName(cc.parentId)}</TableCell>
                     <TableCell>
                       {cc.isActive ? (
-                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Active</Badge>
+                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                          Active
+                        </Badge>
                       ) : (
-                        <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Inactive</Badge>
+                        <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">
+                          Inactive
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -368,7 +384,9 @@ export default function CostCenters() {
                           size="icon"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (window.confirm('Are you sure you want to delete this cost center?')) {
+                            if (
+                              window.confirm("Are you sure you want to delete this cost center?")
+                            ) {
                               deleteMutation.mutate(cc.id);
                             }
                           }}
@@ -403,7 +421,7 @@ export default function CostCenters() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-green-700 font-mono">
-                      {formatCurrency(report.income, 'AED', locale)}
+                      {formatCurrency(report.income, "AED", locale)}
                     </div>
                   </CardContent>
                 </Card>
@@ -414,20 +432,32 @@ export default function CostCenters() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-red-700 font-mono">
-                      {formatCurrency(report.expenses, 'AED', locale)}
+                      {formatCurrency(report.expenses, "AED", locale)}
                     </div>
                   </CardContent>
                 </Card>
-                <Card className={report.net >= 0 ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}>
+                <Card
+                  className={
+                    report.net >= 0
+                      ? "bg-blue-50 border-blue-200"
+                      : "bg-orange-50 border-orange-200"
+                  }
+                >
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className={`text-sm font-medium ${report.net >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
+                    <CardTitle
+                      className={`text-sm font-medium ${report.net >= 0 ? "text-blue-700" : "text-orange-700"}`}
+                    >
                       Net
                     </CardTitle>
-                    <DollarSign className={`h-4 w-4 ${report.net >= 0 ? 'text-blue-600' : 'text-orange-600'}`} />
+                    <DollarSign
+                      className={`h-4 w-4 ${report.net >= 0 ? "text-blue-600" : "text-orange-600"}`}
+                    />
                   </CardHeader>
                   <CardContent>
-                    <div className={`text-2xl font-bold font-mono ${report.net >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
-                      {formatCurrency(report.net, 'AED', locale)}
+                    <div
+                      className={`text-2xl font-bold font-mono ${report.net >= 0 ? "text-blue-700" : "text-orange-700"}`}
+                    >
+                      {formatCurrency(report.net, "AED", locale)}
                     </div>
                   </CardContent>
                 </Card>
@@ -445,11 +475,11 @@ export default function CostCenters() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingCostCenter ? 'Edit Cost Center' : 'Add Cost Center'}</DialogTitle>
+            <DialogTitle>{editingCostCenter ? "Edit Cost Center" : "Add Cost Center"}</DialogTitle>
             <DialogDescription>
               {editingCostCenter
-                ? 'Update cost center details below.'
-                : 'Fill in the details to create a new cost center.'}
+                ? "Update cost center details below."
+                : "Fill in the details to create a new cost center."}
             </DialogDescription>
           </DialogHeader>
 
@@ -495,7 +525,7 @@ export default function CostCenters() {
                         placeholder="Optional description for this cost center"
                         rows={3}
                         {...field}
-                        value={field.value || ''}
+                        value={field.value || ""}
                       />
                     </FormControl>
                     <FormMessage />
@@ -510,8 +540,8 @@ export default function CostCenters() {
                   <FormItem>
                     <FormLabel>Parent Cost Center</FormLabel>
                     <Select
-                      onValueChange={(value) => field.onChange(value === '_none' ? null : value)}
-                      value={field.value || '_none'}
+                      onValueChange={(value) => field.onChange(value === "_none" ? null : value)}
+                      value={field.value || "_none"}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -561,7 +591,7 @@ export default function CostCenters() {
                   {(createMutation.isPending || updateMutation.isPending) && (
                     <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                   )}
-                  {editingCostCenter ? 'Update Cost Center' : 'Add Cost Center'}
+                  {editingCostCenter ? "Update Cost Center" : "Add Cost Center"}
                 </Button>
               </div>
             </form>

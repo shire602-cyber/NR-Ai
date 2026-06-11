@@ -1,6 +1,6 @@
 // @ts-ignore - pdfkit has no type declarations
-import PDFDocument from 'pdfkit';
-import type { Quote, QuoteLine, Company } from '../../shared/schema';
+import PDFDocument from "pdfkit";
+import type { Quote, QuoteLine, Company } from "../../shared/schema";
 
 /**
  * Generate a professional quotation/estimate PDF on the server side using PDFKit.
@@ -14,7 +14,7 @@ export async function generateQuotePDF(
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({
-        size: 'A4',
+        size: "A4",
         margin: 50,
         info: {
           Title: `Quotation ${quote.number}`,
@@ -23,56 +23,56 @@ export async function generateQuotePDF(
       });
 
       const chunks: Buffer[] = [];
-      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-      doc.on('error', reject);
+      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
 
       const pageWidth = 595.28; // A4 width in points
       const margin = 50;
       const contentWidth = pageWidth - 2 * margin;
 
       // --- Header: Blue background bar ---
-      doc.rect(0, 0, pageWidth, 100).fill('#1E40AF');
+      doc.rect(0, 0, pageWidth, 100).fill("#1E40AF");
 
       // Company Name
-      doc.fontSize(22).fillColor('#FFFFFF').font('Helvetica-Bold');
+      doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
       doc.text(company.name, margin, 30, { width: contentWidth * 0.6 });
 
       // Quote Type Label
-      const quoteLabel = 'QUOTATION';
-      doc.fontSize(16).fillColor('#FFFFFF').font('Helvetica-Bold');
+      const quoteLabel = "QUOTATION";
+      doc.fontSize(16).fillColor("#FFFFFF").font("Helvetica-Bold");
       doc.text(quoteLabel, margin, 35, {
         width: contentWidth,
-        align: 'right',
+        align: "right",
       });
 
       // --- Quote Details Box ---
       let y = 120;
       const detailBoxHeight = quote.expiryDate ? 68 : 50;
-      doc.rect(margin, y, contentWidth, detailBoxHeight).fill('#F9FAFB').stroke('#E5E7EB');
+      doc.rect(margin, y, contentWidth, detailBoxHeight).fill("#F9FAFB").stroke("#E5E7EB");
 
-      doc.fontSize(10).fillColor('#1F2937').font('Helvetica-Bold');
-      doc.text('Quote #:', margin + 10, y + 12);
-      doc.font('Helvetica').text(quote.number, margin + 75, y + 12);
+      doc.fontSize(10).fillColor("#1F2937").font("Helvetica-Bold");
+      doc.text("Quote #:", margin + 10, y + 12);
+      doc.font("Helvetica").text(quote.number, margin + 75, y + 12);
 
-      doc.font('Helvetica-Bold').text('Date:', margin + 10, y + 30);
-      doc.font('Helvetica').text(
-        new Date(quote.date).toLocaleDateString('en-AE', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
+      doc.font("Helvetica-Bold").text("Date:", margin + 10, y + 30);
+      doc.font("Helvetica").text(
+        new Date(quote.date).toLocaleDateString("en-AE", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
         }),
         margin + 75,
         y + 30
       );
 
       if (quote.expiryDate) {
-        doc.font('Helvetica-Bold').text('Valid Until:', margin + 10, y + 48);
-        doc.font('Helvetica').text(
-          new Date(quote.expiryDate).toLocaleDateString('en-AE', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
+        doc.font("Helvetica-Bold").text("Valid Until:", margin + 10, y + 48);
+        doc.font("Helvetica").text(
+          new Date(quote.expiryDate).toLocaleDateString("en-AE", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
           }),
           margin + 75,
           y + 48
@@ -82,19 +82,19 @@ export async function generateQuotePDF(
       // TRN on right side
       const isVATRegistered = !!company.trnVatNumber;
       if (isVATRegistered && company.trnVatNumber) {
-        doc.font('Helvetica-Bold').text('TRN:', margin + contentWidth - 170, y + 12);
-        doc.font('Helvetica').text(company.trnVatNumber, margin + contentWidth - 135, y + 12);
+        doc.font("Helvetica-Bold").text("TRN:", margin + contentWidth - 170, y + 12);
+        doc.font("Helvetica").text(company.trnVatNumber, margin + contentWidth - 135, y + 12);
       }
 
       // Status on right side
       if (quote.status) {
-        doc.font('Helvetica-Bold').text('Status:', margin + contentWidth - 170, y + 30);
-        doc.font('Helvetica').text(quote.status.toUpperCase(), margin + contentWidth - 125, y + 30);
+        doc.font("Helvetica-Bold").text("Status:", margin + contentWidth - 170, y + 30);
+        doc.font("Helvetica").text(quote.status.toUpperCase(), margin + contentWidth - 125, y + 30);
       }
 
       // --- Company Details ---
       y = 120 + detailBoxHeight + 15;
-      doc.fontSize(8).fillColor('#6B7280').font('Helvetica');
+      doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
       if (company.businessAddress) {
         doc.text(company.businessAddress, margin, y, { width: 200 });
         y += 12;
@@ -111,16 +111,16 @@ export async function generateQuotePDF(
       y = Math.max(y + 10, 220);
 
       // --- Bill To Section ---
-      doc.fontSize(12).fillColor('#1E40AF').font('Helvetica-Bold');
-      doc.text('BILL TO:', margin, y);
+      doc.fontSize(12).fillColor("#1E40AF").font("Helvetica-Bold");
+      doc.text("BILL TO:", margin, y);
       y += 18;
 
-      doc.fontSize(11).fillColor('#1F2937').font('Helvetica-Bold');
+      doc.fontSize(11).fillColor("#1F2937").font("Helvetica-Bold");
       doc.text(quote.customerName, margin, y);
       y += 16;
 
       if (quote.customerTrn) {
-        doc.fontSize(9).fillColor('#6B7280').font('Helvetica');
+        doc.fontSize(9).fillColor("#6B7280").font("Helvetica");
         doc.text(`TRN: ${quote.customerTrn}`, margin, y);
         y += 14;
       }
@@ -139,37 +139,43 @@ export async function generateQuotePDF(
       const rowHeight = 25;
 
       // Table Header
-      doc.rect(margin, tableTop, contentWidth, rowHeight).fill('#1E40AF');
-      doc.fontSize(9).fillColor('#FFFFFF').font('Helvetica-Bold');
-      doc.text('Description', colX.description, tableTop + 8);
-      doc.text('Qty', colX.qty, tableTop + 8, { width: 50, align: 'center' });
-      doc.text('Price', colX.price, tableTop + 8, { width: 60, align: 'center' });
-      doc.text('VAT', colX.vat, tableTop + 8, { width: 40, align: 'center' });
-      doc.text('Amount', colX.amount - 60, tableTop + 8, { width: 60, align: 'right' });
+      doc.rect(margin, tableTop, contentWidth, rowHeight).fill("#1E40AF");
+      doc.fontSize(9).fillColor("#FFFFFF").font("Helvetica-Bold");
+      doc.text("Description", colX.description, tableTop + 8);
+      doc.text("Qty", colX.qty, tableTop + 8, { width: 50, align: "center" });
+      doc.text("Price", colX.price, tableTop + 8, { width: 60, align: "center" });
+      doc.text("VAT", colX.vat, tableTop + 8, { width: 40, align: "center" });
+      doc.text("Amount", colX.amount - 60, tableTop + 8, { width: 60, align: "right" });
 
       y = tableTop + rowHeight;
 
       // Table Rows
-      doc.font('Helvetica').fillColor('#1F2937').fontSize(9);
+      doc.font("Helvetica").fillColor("#1F2937").fontSize(9);
       lines.forEach((line, index) => {
-        const bgColor = index % 2 === 0 ? '#FFFFFF' : '#F9FAFB';
+        const bgColor = index % 2 === 0 ? "#FFFFFF" : "#F9FAFB";
         doc.rect(margin, y, contentWidth, rowHeight).fill(bgColor);
 
         const lineTotal = line.quantity * line.unitPrice;
         const vatPercent = ((line.vatRate || 0.05) * 100).toFixed(0);
 
-        doc.fillColor('#1F2937');
+        doc.fillColor("#1F2937");
         doc.text(line.description, colX.description, y + 8, { width: 230 });
-        doc.text(line.quantity.toString(), colX.qty, y + 8, { width: 50, align: 'center' });
-        doc.text(formatAmount(line.unitPrice, quote.currency), colX.price, y + 8, { width: 60, align: 'center' });
-        doc.text(`${vatPercent}%`, colX.vat, y + 8, { width: 40, align: 'center' });
-        doc.text(formatAmount(lineTotal, quote.currency), colX.amount - 60, y + 8, { width: 60, align: 'right' });
+        doc.text(line.quantity.toString(), colX.qty, y + 8, { width: 50, align: "center" });
+        doc.text(formatAmount(line.unitPrice, quote.currency), colX.price, y + 8, {
+          width: 60,
+          align: "center",
+        });
+        doc.text(`${vatPercent}%`, colX.vat, y + 8, { width: 40, align: "center" });
+        doc.text(formatAmount(lineTotal, quote.currency), colX.amount - 60, y + 8, {
+          width: 60,
+          align: "right",
+        });
 
         y += rowHeight;
       });
 
       // Table border
-      doc.rect(margin, tableTop, contentWidth, y - tableTop).stroke('#E5E7EB');
+      doc.rect(margin, tableTop, contentWidth, y - tableTop).stroke("#E5E7EB");
 
       y += 15;
 
@@ -177,47 +183,54 @@ export async function generateQuotePDF(
       const totalsX = margin + contentWidth - 170;
       const totalsValueX = margin + contentWidth - 10;
 
-      doc.fontSize(10).fillColor('#1F2937').font('Helvetica');
-      doc.text('Subtotal:', totalsX, y);
-      doc.text(formatAmount(quote.subtotal, quote.currency), totalsValueX - 80, y, { width: 80, align: 'right' });
+      doc.fontSize(10).fillColor("#1F2937").font("Helvetica");
+      doc.text("Subtotal:", totalsX, y);
+      doc.text(formatAmount(quote.subtotal, quote.currency), totalsValueX - 80, y, {
+        width: 80,
+        align: "right",
+      });
       y += 18;
 
-      doc.text('VAT:', totalsX, y);
-      doc.text(formatAmount(quote.vatAmount, quote.currency), totalsValueX - 80, y, { width: 80, align: 'right' });
+      doc.text("VAT:", totalsX, y);
+      doc.text(formatAmount(quote.vatAmount, quote.currency), totalsValueX - 80, y, {
+        width: 80,
+        align: "right",
+      });
       y += 22;
 
       // Total with blue background
-      doc.rect(totalsX - 10, y - 7, 180, 28).fill('#1E40AF');
-      doc.fontSize(13).fillColor('#FFFFFF').font('Helvetica-Bold');
-      doc.text('TOTAL:', totalsX, y);
-      doc.text(formatAmount(quote.total, quote.currency), totalsValueX - 80, y, { width: 80, align: 'right' });
+      doc.rect(totalsX - 10, y - 7, 180, 28).fill("#1E40AF");
+      doc.fontSize(13).fillColor("#FFFFFF").font("Helvetica-Bold");
+      doc.text("TOTAL:", totalsX, y);
+      doc.text(formatAmount(quote.total, quote.currency), totalsValueX - 80, y, {
+        width: 80,
+        align: "right",
+      });
 
       // --- Notes ---
       if (quote.notes) {
         y += 45;
-        doc.fontSize(9).fillColor('#6B7280').font('Helvetica-Bold');
-        doc.text('Notes:', margin, y);
+        doc.fontSize(9).fillColor("#6B7280").font("Helvetica-Bold");
+        doc.text("Notes:", margin, y);
         y += 14;
-        doc.font('Helvetica').fontSize(8);
+        doc.font("Helvetica").fontSize(8);
         doc.text(quote.notes, margin, y, { width: contentWidth });
       }
 
       // --- Footer ---
       const footerY = 770;
-      doc.fontSize(8).fillColor('#6B7280').font('Helvetica');
-      doc.text('This quotation is valid for the period specified above.', margin, footerY, {
+      doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
+      doc.text("This quotation is valid for the period specified above.", margin, footerY, {
         width: contentWidth,
-        align: 'center',
+        align: "center",
       });
 
       if (isVATRegistered) {
         doc.fontSize(7);
-        doc.text(
-          'All amounts are inclusive of applicable VAT where stated',
-          margin,
-          footerY + 12,
-          { width: contentWidth, align: 'center' }
-        );
+        doc.text("All amounts are inclusive of applicable VAT where stated", margin, footerY + 12, {
+          width: contentWidth,
+          align: "center",
+        });
       }
 
       doc.end();
@@ -227,6 +240,6 @@ export async function generateQuotePDF(
   });
 }
 
-function formatAmount(amount: number, currency: string = 'AED'): string {
+function formatAmount(amount: number, currency: string = "AED"): string {
   return `${currency} ${amount.toFixed(2)}`;
 }

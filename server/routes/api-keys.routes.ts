@@ -1,9 +1,9 @@
-import type { Express, Request, Response } from 'express';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { requireFeature } from '../middleware/featureGate';
-import { storage } from '../storage';
-import crypto from 'crypto';
+import type { Express, Request, Response } from "express";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { requireFeature } from "../middleware/featureGate";
+import { storage } from "../storage";
+import crypto from "crypto";
 
 export function registerApiKeyRoutes(app: Express) {
   // =====================================
@@ -12,17 +12,17 @@ export function registerApiKeyRoutes(app: Express) {
 
   // List all API keys for a company (masked)
   app.get(
-    '/api/companies/:companyId/api-keys',
+    "/api/companies/:companyId/api-keys",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const keys = await storage.getApiKeysByCompanyId(companyId);
@@ -34,15 +34,15 @@ export function registerApiKeyRoutes(app: Express) {
       }));
 
       res.json(masked);
-    }),
+    })
   );
 
   // Create a new API key
   app.post(
-    '/api/companies/:companyId/api-keys',
+    "/api/companies/:companyId/api-keys",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { companyId } = req.params;
@@ -50,24 +50,24 @@ export function registerApiKeyRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
-      if (!name || typeof name !== 'string' || name.trim().length === 0) {
-        return res.status(400).json({ message: 'API key name is required' });
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ message: "API key name is required" });
       }
 
       // Generate a random 32-byte hex key
-      const rawKey = crypto.randomBytes(32).toString('hex');
+      const rawKey = crypto.randomBytes(32).toString("hex");
       const keyPrefix = rawKey.substring(0, 8);
-      const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+      const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
 
       const created = await storage.createApiKey({
         companyId,
         name: name.trim(),
         keyHash,
         keyPrefix,
-        scopes: scopes || 'read',
+        scopes: scopes || "read",
         createdBy: userId,
         isActive: true,
       });
@@ -79,22 +79,22 @@ export function registerApiKeyRoutes(app: Express) {
         key: rawKey,
         keyPrefix: `muh_${keyPrefix}...`,
       });
-    }),
+    })
   );
 
   // Update an API key (name, scopes, isActive)
   app.put(
-    '/api/api-keys/:id',
+    "/api/api-keys/:id",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { id } = req.params;
       const { name, scopes, isActive } = req.body;
 
       // Fetch existing key to verify ownership
-      const keys = await storage.getApiKeysByCompanyId('');
+      const keys = await storage.getApiKeysByCompanyId("");
       // We need to find this key across companies the user can access
       // Instead, update and verify via the key's company
       const allCompanies = await storage.getCompaniesByUserId(userId);
@@ -109,7 +109,7 @@ export function registerApiKeyRoutes(app: Express) {
       }
 
       if (!found) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const updateData: Record<string, any> = {};
@@ -119,7 +119,7 @@ export function registerApiKeyRoutes(app: Express) {
 
       const updated = await storage.updateApiKey(id, updateData);
       if (!updated) {
-        return res.status(404).json({ message: 'API key not found' });
+        return res.status(404).json({ message: "API key not found" });
       }
       const { keyHash: _hash, ...safeKey } = updated;
 
@@ -127,15 +127,15 @@ export function registerApiKeyRoutes(app: Express) {
         ...safeKey,
         keyPrefix: `muh_${safeKey.keyPrefix}...`,
       });
-    }),
+    })
   );
 
   // Delete/revoke an API key
   app.delete(
-    '/api/api-keys/:id',
+    "/api/api-keys/:id",
     authMiddleware,
     requireCustomer,
-    requireFeature('apiAccess'),
+    requireFeature("apiAccess"),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
       const { id } = req.params;
@@ -153,11 +153,11 @@ export function registerApiKeyRoutes(app: Express) {
       }
 
       if (!found) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       await storage.deleteApiKey(id);
-      res.json({ message: 'API key revoked successfully' });
-    }),
+      res.json({ message: "API key revoked successfully" });
+    })
   );
 }

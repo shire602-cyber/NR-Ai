@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Common request-shape validators shared between client and server.
@@ -7,7 +7,7 @@ import { z } from 'zod';
  */
 
 // ── Primitives ────────────────────────────────────────────────────
-export const uuidSchema = z.string().uuid('Must be a valid UUID');
+export const uuidSchema = z.string().uuid("Must be a valid UUID");
 
 export const idParamSchema = z.object({
   id: uuidSchema,
@@ -22,7 +22,7 @@ export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   sort: z.string().optional(),
-  order: z.enum(['asc', 'desc']).default('desc'),
+  order: z.enum(["asc", "desc"]).default("desc"),
 });
 
 // Date range — strings for query strings; ISO 8601 is enforced.
@@ -34,13 +34,13 @@ export const dateRangeSchema = z.object({
 // ── Money / currency ─────────────────────────────────────────────
 export const currencyCodeSchema = z
   .string()
-  .regex(/^[A-Z]{3}$/, 'Currency must be a 3-letter ISO 4217 code');
+  .regex(/^[A-Z]{3}$/, "Currency must be a 3-letter ISO 4217 code");
 
 export const moneySchema = z
   .number()
   .finite()
   .refine((n) => Math.round(n * 100) === n * 100, {
-    message: 'Money values must have at most 2 decimal places',
+    message: "Money values must have at most 2 decimal places",
   });
 
 // ── UAE TRN (Tax Registration Number) ────────────────────────────
@@ -49,12 +49,12 @@ export const moneySchema = z
 export const trnSchema = z
   .string()
   .trim()
-  .regex(/^[0-9]{15}$/, 'UAE TRN must be exactly 15 digits');
+  .regex(/^[0-9]{15}$/, "UAE TRN must be exactly 15 digits");
 
 export const optionalTrnSchema = z
   .string()
   .trim()
-  .transform((v) => (v === '' ? undefined : v))
+  .transform((v) => (v === "" ? undefined : v))
   .pipe(trnSchema.optional())
   .optional();
 
@@ -82,7 +82,7 @@ export const forgotPasswordSchema = z.object({
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(20).max(200),
-  password: z.string().min(8, 'Password must be at least 8 characters').max(256),
+  password: z.string().min(8, "Password must be at least 8 characters").max(256),
 });
 
 // ── Common request body for creating a contact / customer ────────
@@ -93,7 +93,7 @@ export const contactInputSchema = z.object({
   trn: z
     .string()
     .trim()
-    .regex(/^[0-9]{15}$/, 'UAE TRN must be 15 digits')
+    .regex(/^[0-9]{15}$/, "UAE TRN must be 15 digits")
     .optional()
     .nullable(),
   address: z.string().trim().max(500).optional().nullable(),
@@ -101,7 +101,7 @@ export const contactInputSchema = z.object({
 
 // ── Generic structured 400 response shape ────────────────────────
 export const validationErrorResponseSchema = z.object({
-  message: z.literal('Validation error'),
+  message: z.literal("Validation error"),
   errors: z.record(z.array(z.string()).optional()),
   formErrors: z.array(z.string()).optional(),
 });

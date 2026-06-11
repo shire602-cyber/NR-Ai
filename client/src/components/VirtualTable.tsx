@@ -1,6 +1,6 @@
-import { useRef, ReactNode, CSSProperties } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
-import { cn } from '@/lib/utils';
+import { useRef, ReactNode, CSSProperties } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { cn } from "@/lib/utils";
 
 export interface VirtualTableColumn<T> {
   key: string;
@@ -9,7 +9,7 @@ export interface VirtualTableColumn<T> {
   className?: string;
   headerClassName?: string;
   width?: string;
-  align?: 'left' | 'right' | 'center';
+  align?: "left" | "right" | "center";
 }
 
 interface VirtualTableProps<T> {
@@ -43,9 +43,7 @@ export function VirtualTable<T>({
   threshold = 100,
 }: VirtualTableProps<T>) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const gridTemplateColumns = columns
-    .map((c) => c.width ?? 'minmax(0, 1fr)')
-    .join(' ');
+  const gridTemplateColumns = columns.map((c) => c.width ?? "minmax(0, 1fr)").join(" ");
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -65,10 +63,10 @@ export function VirtualTable<T>({
           key={col.key}
           role="columnheader"
           className={cn(
-            'px-4 py-2.5 truncate',
-            col.align === 'right' && 'text-right',
-            col.align === 'center' && 'text-center',
-            col.headerClassName,
+            "px-4 py-2.5 truncate",
+            col.align === "right" && "text-right",
+            col.align === "center" && "text-center",
+            col.headerClassName
           )}
         >
           {col.header}
@@ -77,7 +75,12 @@ export function VirtualTable<T>({
     </div>
   );
 
-  const renderRow = (row: T, index: number, style?: CSSProperties, measureRef?: (el: HTMLDivElement | null) => void) => (
+  const renderRow = (
+    row: T,
+    index: number,
+    style?: CSSProperties,
+    measureRef?: (el: HTMLDivElement | null) => void
+  ) => (
     <div
       key={getRowId ? getRowId(row, index) : index}
       ref={measureRef}
@@ -92,10 +95,10 @@ export function VirtualTable<T>({
           key={col.key}
           role="cell"
           className={cn(
-            'px-4 py-3 text-sm',
-            col.align === 'right' && 'text-right',
-            col.align === 'center' && 'text-center',
-            col.className,
+            "px-4 py-3 text-sm",
+            col.align === "right" && "text-right",
+            col.align === "center" && "text-center",
+            col.className
           )}
         >
           {col.cell(row, index)}
@@ -106,7 +109,7 @@ export function VirtualTable<T>({
 
   if (rows.length === 0) {
     return (
-      <div className={cn('rounded-lg border border-border/70 bg-card overflow-hidden', className)}>
+      <div className={cn("rounded-lg border border-border/70 bg-card overflow-hidden", className)}>
         {renderHeader()}
         <div>{emptyState}</div>
       </div>
@@ -115,11 +118,12 @@ export function VirtualTable<T>({
 
   if (rows.length < threshold) {
     return (
-      <div className={cn('rounded-lg border border-border/70 bg-card overflow-hidden', className)} role="table">
+      <div
+        className={cn("rounded-lg border border-border/70 bg-card overflow-hidden", className)}
+        role="table"
+      >
         {renderHeader()}
-        <div className="overflow-x-auto">
-          {rows.map((row, i) => renderRow(row, i))}
-        </div>
+        <div className="overflow-x-auto">{rows.map((row, i) => renderRow(row, i))}</div>
       </div>
     );
   }
@@ -129,24 +133,24 @@ export function VirtualTable<T>({
 
   return (
     <div
-      className={cn('rounded-lg border border-border/70 bg-card overflow-hidden', className)}
+      className={cn("rounded-lg border border-border/70 bg-card overflow-hidden", className)}
       role="table"
       data-testid="virtual-table"
     >
       <div
         ref={parentRef}
         className="overflow-auto"
-        style={{ height: typeof height === 'number' ? `${height}px` : height, contain: 'strict' }}
+        style={{ height: typeof height === "number" ? `${height}px` : height, contain: "strict" }}
       >
         {renderHeader()}
-        <div style={{ height: totalSize, position: 'relative', width: '100%' }}>
+        <div style={{ height: totalSize, position: "relative", width: "100%" }}>
           {virtualItems.map((virtualRow) => {
             const row = rows[virtualRow.index];
             const style: CSSProperties = {
-              position: 'absolute',
+              position: "absolute",
               top: 0,
               left: 0,
-              width: '100%',
+              width: "100%",
               transform: `translateY(${virtualRow.start}px)`,
             };
             return renderRow(row, virtualRow.index, style, rowVirtualizer.measureElement);

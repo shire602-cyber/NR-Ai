@@ -1,33 +1,62 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useParams, useLocation } from 'wouter';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useParams, useLocation } from "wouter";
 import {
-  ArrowLeft, Building2, Phone, Mail, Globe, MapPin,
-  FileText, Receipt, Users, Calendar, Edit, Save, X,
-  BookOpen, ExternalLink, Shield, CheckCircle2, AlertCircle, Clock,
-  UserPlus, UserMinus,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Separator } from '@/components/ui/separator';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { format } from 'date-fns';
-import type { Company } from '@shared/schema';
+  ArrowLeft,
+  Building2,
+  Phone,
+  Mail,
+  Globe,
+  MapPin,
+  FileText,
+  Receipt,
+  Users,
+  Calendar,
+  Edit,
+  Save,
+  X,
+  BookOpen,
+  ExternalLink,
+  Shield,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  UserPlus,
+  UserMinus,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { format } from "date-fns";
+import type { Company } from "@shared/schema";
 import {
   CLIENT_SERVICE_OPTIONS,
   DEFAULT_CLIENT_SERVICE_CODES,
   serviceLabels,
   type ClientServiceCode,
   type ClientServicePlan,
-} from '@shared/client-services';
-import { useActiveCompany } from '@/components/ActiveCompanyProvider';
+} from "@shared/client-services";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 interface AssignedStaff {
   id: string;
@@ -70,47 +99,49 @@ interface StaffMember {
 type ClientEditData = Partial<Company> & { serviceScope?: ClientServiceCode[] };
 
 function formatAed(amount: number) {
-  return new Intl.NumberFormat('en-AE', {
-    style: 'currency',
-    currency: 'AED',
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
+    currency: "AED",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
 }
 
 const MONTH_OPTIONS = [
-  { value: '1', label: 'January' },
-  { value: '2', label: 'February' },
-  { value: '3', label: 'March' },
-  { value: '4', label: 'April' },
-  { value: '5', label: 'May' },
-  { value: '6', label: 'June' },
-  { value: '7', label: 'July' },
-  { value: '8', label: 'August' },
-  { value: '9', label: 'September' },
-  { value: '10', label: 'October' },
-  { value: '11', label: 'November' },
-  { value: '12', label: 'December' },
+  { value: "1", label: "January" },
+  { value: "2", label: "February" },
+  { value: "3", label: "March" },
+  { value: "4", label: "April" },
+  { value: "5", label: "May" },
+  { value: "6", label: "June" },
+  { value: "7", label: "July" },
+  { value: "8", label: "August" },
+  { value: "9", label: "September" },
+  { value: "10", label: "October" },
+  { value: "11", label: "November" },
+  { value: "12", label: "December" },
 ];
 
 const VAT_CLOSE_GROUPS = [
-  { value: '11', label: 'Jan / Apr / Jul / Oct' },
-  { value: '12', label: 'Feb / May / Aug / Nov' },
-  { value: '1', label: 'Mar / Jun / Sep / Dec' },
+  { value: "11", label: "Jan / Apr / Jul / Oct" },
+  { value: "12", label: "Feb / May / Aug / Nov" },
+  { value: "1", label: "Mar / Jun / Sep / Dec" },
 ];
 
 function monthLabel(month: number | string | null | undefined) {
-  return MONTH_OPTIONS.find(option => option.value === String(month || 1))?.label ?? 'January';
+  return MONTH_OPTIONS.find((option) => option.value === String(month || 1))?.label ?? "January";
 }
 
 function vatCloseGroupLabel(periodStartMonth: number | string | null | undefined) {
-  return VAT_CLOSE_GROUPS.find(option => option.value === String(periodStartMonth || 1))?.label
-    ?? 'Mar / Jun / Sep / Dec';
+  return (
+    VAT_CLOSE_GROUPS.find((option) => option.value === String(periodStartMonth || 1))?.label ??
+    "Mar / Jun / Sep / Dec"
+  );
 }
 
 function activeServiceScope(
   company: { serviceScope?: ClientServiceCode[] },
-  editData: ClientEditData,
+  editData: ClientEditData
 ): ClientServiceCode[] {
   return editData.serviceScope ?? company.serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES;
 }
@@ -118,7 +149,7 @@ function activeServiceScope(
 function ServiceBadges({ services }: { services: readonly ClientServiceCode[] }) {
   return (
     <div className="flex flex-wrap gap-1">
-      {serviceLabels(services).map(label => (
+      {serviceLabels(services).map((label) => (
         <Badge key={label} variant="outline" className="text-[11px]">
           {label}
         </Badge>
@@ -132,7 +163,7 @@ function EditableField({
   value,
   editing,
   onChange,
-  type = 'text',
+  type = "text",
   placeholder,
 }: {
   label: string;
@@ -148,13 +179,13 @@ function EditableField({
       {editing ? (
         <Input
           type={type}
-          value={value || ''}
-          onChange={e => onChange(e.target.value)}
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder || label}
           className="h-8"
         />
       ) : (
-        <p className="text-sm font-medium">{value || '—'}</p>
+        <p className="text-sm font-medium">{value || "—"}</p>
       )}
     </div>
   );
@@ -168,64 +199,71 @@ export default function ClientProfile() {
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<ClientEditData>({});
   const [assignOpen, setAssignOpen] = useState(false);
-  const [selectedStaff, setSelectedStaff] = useState('');
+  const [selectedStaff, setSelectedStaff] = useState("");
 
   const switchMutation = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/firm/clients/${companyId}/switch`),
+    mutationFn: () => apiRequest("POST", `/api/firm/clients/${companyId}/switch`),
     onSuccess: () => {
       if (companyId) setActiveClientCompany(companyId);
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
-      navigate('/dashboard');
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      navigate("/dashboard");
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Could not open client books', description: e?.message });
+      toast({
+        variant: "destructive",
+        title: "Could not open client books",
+        description: e?.message,
+      });
     },
   });
 
-  const { data: summary, isLoading, error: summaryError } = useQuery<ClientSummary>({
+  const {
+    data: summary,
+    isLoading,
+    error: summaryError,
+  } = useQuery<ClientSummary>({
     queryKey: [`/api/firm/clients/${companyId}/summary`],
     enabled: !!companyId,
     retry: 1,
   });
 
   const { data: firmStaff = [] } = useQuery<StaffMember[]>({
-    queryKey: ['/api/firm/staff'],
+    queryKey: ["/api/firm/staff"],
     enabled: assignOpen,
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: ClientEditData) =>
-      apiRequest('PUT', `/api/firm/clients/${companyId}`, data),
+    mutationFn: (data: ClientEditData) => apiRequest("PUT", `/api/firm/clients/${companyId}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
-      toast({ title: 'Client updated successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
+      toast({ title: "Client updated successfully" });
       setEditing(false);
       setEditData({});
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Update failed', description: e?.message });
+      toast({ variant: "destructive", title: "Update failed", description: e?.message });
     },
   });
 
   const assignMutation = useMutation({
-    mutationFn: ({ staffUserId, action }: { staffUserId: string; action: 'assign' | 'unassign' }) =>
-      apiRequest('POST', `/api/firm/clients/${companyId}/assign-staff`, {
+    mutationFn: ({ staffUserId, action }: { staffUserId: string; action: "assign" | "unassign" }) =>
+      apiRequest("POST", `/api/firm/clients/${companyId}/assign-staff`, {
         staffUserId,
         action,
-        role: 'accountant',
+        role: "accountant",
       }),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: [`/api/firm/clients/${companyId}/summary`] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
-      toast({ title: vars.action === 'assign' ? 'Staff assigned' : 'Staff unassigned' });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
+      toast({ title: vars.action === "assign" ? "Staff assigned" : "Staff unassigned" });
       setAssignOpen(false);
-      setSelectedStaff('');
+      setSelectedStaff("");
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Assignment failed', description: e?.message });
+      toast({ variant: "destructive", title: "Assignment failed", description: e?.message });
     },
   });
 
@@ -240,20 +278,19 @@ export default function ClientProfile() {
   if (!summary) {
     // Surface the server's actual reason — access denied, not-a-client, and
     // genuinely-missing are different problems with different fixes.
-    const message =
-      (summaryError as any)?.message || 'Client not found';
+    const message = (summaryError as any)?.message || "Client not found";
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
         <AlertCircle className="w-10 h-10 text-muted-foreground mb-3" />
         <p className="font-medium">{message}</p>
         <p className="text-sm text-muted-foreground mt-1 max-w-md">
-          {message.toLowerCase().includes('access')
-            ? 'Your account does not have this client assigned. A firm owner can assign you from the client profile.'
-            : message.toLowerCase().includes('not an nra client')
-              ? 'This company exists but is not marked as a firm-managed client.'
-              : 'The link may be outdated, or the client was removed.'}
+          {message.toLowerCase().includes("access")
+            ? "Your account does not have this client assigned. A firm owner can assign you from the client profile."
+            : message.toLowerCase().includes("not an nra client")
+              ? "This company exists but is not marked as a firm-managed client."
+              : "The link may be outdated, or the client was removed."}
         </p>
-        <Button variant="ghost" onClick={() => navigate('/firm/clients')}>
+        <Button variant="ghost" onClick={() => navigate("/firm/clients")}>
           Back to portfolio
         </Button>
       </div>
@@ -285,17 +322,17 @@ export default function ClientProfile() {
   const field = (key: keyof Company) => ({
     value: current[key] as string | null | undefined,
     editing,
-    onChange: (v: string) => setEditData(d => ({ ...d, [key]: v })),
+    onChange: (v: string) => setEditData((d) => ({ ...d, [key]: v })),
   });
 
-  const assignedIds = new Set(stats.assignedStaff.map(s => s.id));
-  const unassignedStaff = firmStaff.filter(s => !assignedIds.has(s.id));
+  const assignedIds = new Set(stats.assignedStaff.map((s) => s.id));
+  const unassignedStaff = firmStaff.filter((s) => !assignedIds.has(s.id));
 
   return (
     <div className="space-y-6 max-w-5xl">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/firm/clients')}>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/firm/clients")}>
           <ArrowLeft className="w-4 h-4 mr-1" />
           NRA Client Portfolio
         </Button>
@@ -312,8 +349,8 @@ export default function ClientProfile() {
           <div>
             <h1 className="text-2xl font-bold">{company.name}</h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              {company.trnVatNumber ? `TRN: ${company.trnVatNumber}` : 'No TRN registered'}
-              {company.emirate ? ` · ${company.emirate.replace(/_/g, ' ')}` : ''}
+              {company.trnVatNumber ? `TRN: ${company.trnVatNumber}` : "No TRN registered"}
+              {company.emirate ? ` · ${company.emirate.replace(/_/g, " ")}` : ""}
             </p>
           </div>
         </div>
@@ -326,7 +363,7 @@ export default function ClientProfile() {
               </Button>
               <Button onClick={handleSave} disabled={updateMutation.isPending}>
                 <Save className="w-4 h-4 mr-1" />
-                {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+                {updateMutation.isPending ? "Saving..." : "Save Changes"}
               </Button>
             </>
           ) : (
@@ -341,7 +378,7 @@ export default function ClientProfile() {
                 data-testid="button-open-books-profile"
               >
                 <BookOpen className="w-4 h-4 mr-2" />
-                {switchMutation.isPending ? 'Switching...' : 'Open Books'}
+                {switchMutation.isPending ? "Switching..." : "Open Books"}
                 <ExternalLink className="w-3.5 h-3.5 ml-1.5" />
               </Button>
             </>
@@ -369,8 +406,8 @@ export default function ClientProfile() {
             <p className="text-xs text-muted-foreground">Last Receipt</p>
             <p className="text-sm font-semibold mt-0.5">
               {stats.lastReceiptDate
-                ? format(new Date(stats.lastReceiptDate), 'MMM d, yyyy')
-                : 'Never'}
+                ? format(new Date(stats.lastReceiptDate), "MMM d, yyyy")
+                : "Never"}
             </p>
           </CardContent>
         </Card>
@@ -381,15 +418,15 @@ export default function ClientProfile() {
               <div className="mt-0.5">
                 <Badge
                   className={
-                    stats.vatStatus.status === 'filed'
-                      ? 'bg-green-100 text-green-800 border-green-200'
-                      : 'bg-amber-100 text-amber-800 border-amber-200'
+                    stats.vatStatus.status === "filed"
+                      ? "bg-green-100 text-green-800 border-green-200"
+                      : "bg-amber-100 text-amber-800 border-amber-200"
                   }
                 >
-                  {stats.vatStatus.status.replace(/_/g, ' ')}
+                  {stats.vatStatus.status.replace(/_/g, " ")}
                 </Badge>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Due {format(new Date(stats.vatStatus.dueDate), 'MMM d, yyyy')}
+                  Due {format(new Date(stats.vatStatus.dueDate), "MMM d, yyyy")}
                 </p>
               </div>
             ) : (
@@ -409,19 +446,20 @@ export default function ClientProfile() {
         <CardContent>
           {editing ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {CLIENT_SERVICE_OPTIONS.map(option => (
+              {CLIENT_SERVICE_OPTIONS.map((option) => (
                 <label
                   key={option.code}
                   className="flex items-start gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm"
                 >
                   <Checkbox
                     checked={serviceScope.includes(option.code)}
-                    onCheckedChange={checked => {
-                      setEditData(data => {
-                        const existing = data.serviceScope ?? company.serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES;
+                    onCheckedChange={(checked) => {
+                      setEditData((data) => {
+                        const existing =
+                          data.serviceScope ?? company.serviceScope ?? DEFAULT_CLIENT_SERVICE_CODES;
                         const next = checked
                           ? Array.from(new Set([...existing, option.code]))
-                          : existing.filter(service => service !== option.code);
+                          : existing.filter((service) => service !== option.code);
                         return {
                           ...data,
                           serviceScope: next.length > 0 ? next : existing,
@@ -440,7 +478,8 @@ export default function ClientProfile() {
             <div className="space-y-2">
               <ServiceBadges services={serviceScope} />
               <p className="text-xs text-muted-foreground">
-                VAT, corporate tax, bookkeeping, and accounting queues use this scope so clients only appear in services NRA actually delivers.
+                VAT, corporate tax, bookkeeping, and accounting queues use this scope so clients
+                only appear in services NRA actually delivers.
               </p>
             </div>
           )}
@@ -454,16 +493,16 @@ export default function ClientProfile() {
             <CardTitle className="text-base">Company Information</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-4">
-            <EditableField label="Company Name" {...field('name')} />
-            <EditableField label="TRN / VAT Number" {...field('trnVatNumber')} />
-            <EditableField label="Legal Structure" {...field('legalStructure')} />
-            <EditableField label="Industry" {...field('industry')} />
-            <EditableField label="Registration Number" {...field('registrationNumber')} />
-            <EditableField label="Emirate" {...field('emirate')} />
+            <EditableField label="Company Name" {...field("name")} />
+            <EditableField label="TRN / VAT Number" {...field("trnVatNumber")} />
+            <EditableField label="Legal Structure" {...field("legalStructure")} />
+            <EditableField label="Industry" {...field("industry")} />
+            <EditableField label="Registration Number" {...field("registrationNumber")} />
+            <EditableField label="Emirate" {...field("emirate")} />
             <div className="col-span-2">
               <EditableField
                 label="Business Address"
-                {...field('businessAddress')}
+                {...field("businessAddress")}
                 placeholder="Street, Area, City"
               />
             </div>
@@ -477,9 +516,9 @@ export default function ClientProfile() {
               <CardTitle className="text-base">Contact</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <EditableField label="Email" {...field('contactEmail')} type="email" />
-              <EditableField label="Phone" {...field('contactPhone')} type="tel" />
-              <EditableField label="Website" {...field('websiteUrl')} />
+              <EditableField label="Email" {...field("contactEmail")} type="email" />
+              <EditableField label="Phone" {...field("contactPhone")} type="tel" />
+              <EditableField label="Website" {...field("websiteUrl")} />
             </CardContent>
           </Card>
 
@@ -492,8 +531,8 @@ export default function ClientProfile() {
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT Filing</p>
                 {editing ? (
                   <Select
-                    value={current.vatFilingFrequency || 'quarterly'}
-                    onValueChange={v => setEditData(d => ({ ...d, vatFilingFrequency: v }))}
+                    value={current.vatFilingFrequency || "quarterly"}
+                    onValueChange={(v) => setEditData((d) => ({ ...d, vatFilingFrequency: v }))}
                   >
                     <SelectTrigger className="h-8">
                       <SelectValue />
@@ -505,22 +544,26 @@ export default function ClientProfile() {
                   </Select>
                 ) : (
                   <p className="text-sm font-medium capitalize">
-                    {company.vatFilingFrequency || 'quarterly'}
+                    {company.vatFilingFrequency || "quarterly"}
                   </p>
                 )}
               </div>
               <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">VAT Close Group</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  VAT Close Group
+                </p>
                 {editing ? (
                   <Select
                     value={String(current.vatPeriodStartMonth || 1)}
-                    onValueChange={v => setEditData(d => ({ ...d, vatPeriodStartMonth: Number(v) }))}
+                    onValueChange={(v) =>
+                      setEditData((d) => ({ ...d, vatPeriodStartMonth: Number(v) }))
+                    }
                   >
                     <SelectTrigger className="h-8">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {VAT_CLOSE_GROUPS.map(option => (
+                      {VAT_CLOSE_GROUPS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -534,17 +577,21 @@ export default function ClientProfile() {
                 )}
               </div>
               <div className="grid gap-1">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Financial Year Start</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Financial Year Start
+                </p>
                 {editing ? (
                   <Select
                     value={String(current.fiscalYearStartMonth || 1)}
-                    onValueChange={v => setEditData(d => ({ ...d, fiscalYearStartMonth: Number(v) }))}
+                    onValueChange={(v) =>
+                      setEditData((d) => ({ ...d, fiscalYearStartMonth: Number(v) }))
+                    }
                   >
                     <SelectTrigger className="h-8">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {MONTH_OPTIONS.map(option => (
+                      {MONTH_OPTIONS.map((option) => (
                         <SelectItem key={option.value} value={option.value}>
                           {option.label}
                         </SelectItem>
@@ -552,13 +599,11 @@ export default function ClientProfile() {
                     </SelectContent>
                   </Select>
                 ) : (
-                  <p className="text-sm font-medium">
-                    {monthLabel(company.fiscalYearStartMonth)}
-                  </p>
+                  <p className="text-sm font-medium">{monthLabel(company.fiscalYearStartMonth)}</p>
                 )}
               </div>
-              <EditableField label="Tax Registration Type" {...field('taxRegistrationType')} />
-              <EditableField label="Corporate Tax Registration" {...field('corporateTaxId')} />
+              <EditableField label="Tax Registration Type" {...field("taxRegistrationType")} />
+              <EditableField label="Corporate Tax Registration" {...field("corporateTaxId")} />
             </CardContent>
           </Card>
         </div>
@@ -581,7 +626,7 @@ export default function ClientProfile() {
             </div>
           ) : (
             <div className="space-y-2">
-              {stats.assignedStaff.map(staff => (
+              {stats.assignedStaff.map((staff) => (
                 <div
                   key={staff.id}
                   className="flex items-center justify-between p-3 rounded-lg border"
@@ -596,12 +641,16 @@ export default function ClientProfile() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="capitalize">{staff.role}</Badge>
+                    <Badge variant="outline" className="capitalize">
+                      {staff.role}
+                    </Badge>
                     <Button
                       size="sm"
                       variant="ghost"
                       className="text-destructive hover:text-destructive"
-                      onClick={() => assignMutation.mutate({ staffUserId: staff.id, action: 'unassign' })}
+                      onClick={() =>
+                        assignMutation.mutate({ staffUserId: staff.id, action: "unassign" })
+                      }
                       disabled={assignMutation.isPending}
                     >
                       <UserMinus className="w-4 h-4" />
@@ -637,7 +686,7 @@ export default function ClientProfile() {
                   <div className="text-right">
                     <p className="text-sm font-medium">{formatAed(inv.total)}</p>
                     <Badge
-                      variant={inv.status === 'paid' ? 'outline' : 'secondary'}
+                      variant={inv.status === "paid" ? "outline" : "secondary"}
                       className="text-xs"
                     >
                       {inv.status}
@@ -669,7 +718,7 @@ export default function ClientProfile() {
                     <SelectValue placeholder="Choose a staff member..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {unassignedStaff.map(s => (
+                    {unassignedStaff.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
                         {s.name} ({s.email})
                       </SelectItem>
@@ -680,14 +729,22 @@ export default function ClientProfile() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setAssignOpen(false); setSelectedStaff(''); }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAssignOpen(false);
+                setSelectedStaff("");
+              }}
+            >
               Cancel
             </Button>
             <Button
-              onClick={() => assignMutation.mutate({ staffUserId: selectedStaff, action: 'assign' })}
+              onClick={() =>
+                assignMutation.mutate({ staffUserId: selectedStaff, action: "assign" })
+              }
               disabled={!selectedStaff || assignMutation.isPending}
             >
-              {assignMutation.isPending ? 'Assigning...' : 'Assign'}
+              {assignMutation.isPending ? "Assigning..." : "Assign"}
             </Button>
           </DialogFooter>
         </DialogContent>

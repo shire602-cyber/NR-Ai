@@ -1,26 +1,52 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useSubscription } from '@/hooks/useSubscription';
-import { UpgradePrompt } from '@/components/UpgradePrompt';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Plus, Trash2, Edit, Zap, Loader2 } from 'lucide-react';
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useSubscription } from "@/hooks/useSubscription";
+import { UpgradePrompt } from "@/components/UpgradePrompt";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Plus, Trash2, Edit, Zap, Loader2 } from "lucide-react";
 
 interface ReconciliationRule {
   id: string;
@@ -45,11 +71,11 @@ interface AutoMatchResult {
 }
 
 const ruleFormSchema = z.object({
-  name: z.string().min(1, 'Rule name is required'),
+  name: z.string().min(1, "Rule name is required"),
   priority: z.coerce.number().int().min(0).default(0),
-  matchField: z.enum(['description', 'reference', 'amount']),
-  matchType: z.enum(['contains', 'exact', 'starts_with', 'regex']),
-  matchValue: z.string().min(1, 'Match value is required'),
+  matchField: z.enum(["description", "reference", "amount"]),
+  matchType: z.enum(["contains", "exact", "starts_with", "regex"]),
+  matchValue: z.string().min(1, "Match value is required"),
   category: z.string().optional(),
   memo: z.string().optional(),
   isActive: z.boolean().default(true),
@@ -58,16 +84,16 @@ const ruleFormSchema = z.object({
 type RuleFormData = z.infer<typeof ruleFormSchema>;
 
 const matchFieldLabels: Record<string, string> = {
-  description: 'Description',
-  reference: 'Reference',
-  amount: 'Amount',
+  description: "Description",
+  reference: "Reference",
+  amount: "Amount",
 };
 
 const matchTypeLabels: Record<string, string> = {
-  contains: 'Contains',
-  exact: 'Exact Match',
-  starts_with: 'Starts With',
-  regex: 'Regex',
+  contains: "Contains",
+  exact: "Exact Match",
+  starts_with: "Starts With",
+  regex: "Regex",
 };
 
 export default function ReconciliationRules() {
@@ -80,104 +106,129 @@ export default function ReconciliationRules() {
   const [editingRule, setEditingRule] = useState<ReconciliationRule | null>(null);
 
   const { data: rules, isLoading } = useQuery<ReconciliationRule[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'reconciliation-rules'],
+    queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
     enabled: !!selectedCompanyId,
   });
 
   const form = useForm<RuleFormData>({
     resolver: zodResolver(ruleFormSchema),
     defaultValues: {
-      name: '',
+      name: "",
       priority: 0,
-      matchField: 'description',
-      matchType: 'contains',
-      matchValue: '',
-      category: '',
-      memo: '',
+      matchField: "description",
+      matchType: "contains",
+      matchValue: "",
+      category: "",
+      memo: "",
       isActive: true,
     },
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: RuleFormData) => {
-      return await apiRequest('POST', `/api/companies/${selectedCompanyId}/reconciliation-rules`, data);
+      return await apiRequest(
+        "POST",
+        `/api/companies/${selectedCompanyId}/reconciliation-rules`,
+        data
+      );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'reconciliation-rules'] });
-      toast({ title: 'Rule created', description: 'Reconciliation rule has been created successfully.' });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
+      });
+      toast({
+        title: "Rule created",
+        description: "Reconciliation rule has been created successfully.",
+      });
       closeDialog();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<RuleFormData> }) => {
-      return await apiRequest('PUT', `/api/reconciliation-rules/${id}`, data);
+      return await apiRequest("PUT", `/api/reconciliation-rules/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'reconciliation-rules'] });
-      toast({ title: 'Rule updated', description: 'Reconciliation rule has been updated successfully.' });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
+      });
+      toast({
+        title: "Rule updated",
+        description: "Reconciliation rule has been updated successfully.",
+      });
       closeDialog();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest('DELETE', `/api/reconciliation-rules/${id}`);
+      return await apiRequest("DELETE", `/api/reconciliation-rules/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'reconciliation-rules'] });
-      toast({ title: 'Rule deleted', description: 'Reconciliation rule has been deleted.' });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
+      });
+      toast({ title: "Rule deleted", description: "Reconciliation rule has been deleted." });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const toggleActiveMutation = useMutation({
     mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
-      return await apiRequest('PUT', `/api/reconciliation-rules/${id}`, { isActive });
+      return await apiRequest("PUT", `/api/reconciliation-rules/${id}`, { isActive });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'reconciliation-rules'] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
+      });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const autoMatchMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('POST', `/api/companies/${selectedCompanyId}/reconciliation-rules/auto-match`) as AutoMatchResult;
+      return (await apiRequest(
+        "POST",
+        `/api/companies/${selectedCompanyId}/reconciliation-rules/auto-match`
+      )) as AutoMatchResult;
     },
     onSuccess: (result: AutoMatchResult) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'reconciliation-rules'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', selectedCompanyId, 'bank-transactions'] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", selectedCompanyId, "bank-transactions"],
+      });
       toast({
-        title: 'Auto-match completed',
+        title: "Auto-match completed",
         description: `Matched ${result.matched} of ${result.totalUnreconciled} unreconciled transactions using ${result.rulesEvaluated} rules.`,
       });
     },
     onError: (error: Error) => {
-      toast({ title: 'Auto-match failed', description: error?.message, variant: 'destructive' });
+      toast({ title: "Auto-match failed", description: error?.message, variant: "destructive" });
     },
   });
 
   function openCreateDialog() {
     setEditingRule(null);
     form.reset({
-      name: '',
+      name: "",
       priority: 0,
-      matchField: 'description',
-      matchType: 'contains',
-      matchValue: '',
-      category: '',
-      memo: '',
+      matchField: "description",
+      matchType: "contains",
+      matchValue: "",
+      category: "",
+      memo: "",
       isActive: true,
     });
     setDialogOpen(true);
@@ -188,11 +239,11 @@ export default function ReconciliationRules() {
     form.reset({
       name: rule.name,
       priority: rule.priority ?? 0,
-      matchField: rule.matchField as 'description' | 'reference' | 'amount',
-      matchType: rule.matchType as 'contains' | 'exact' | 'starts_with' | 'regex',
+      matchField: rule.matchField as "description" | "reference" | "amount",
+      matchType: rule.matchType as "contains" | "exact" | "starts_with" | "regex",
       matchValue: rule.matchValue,
-      category: rule.category ?? '',
-      memo: rule.memo ?? '',
+      category: rule.category ?? "",
+      memo: rule.memo ?? "",
       isActive: rule.isActive ?? true,
     });
     setDialogOpen(true);
@@ -212,8 +263,8 @@ export default function ReconciliationRules() {
     }
   }
 
-  if (!canAccess('bankImport')) {
-    return <UpgradePrompt feature="bankImport" requiredTier={getRequiredTier('bankImport')} />;
+  if (!canAccess("bankImport")) {
+    return <UpgradePrompt feature="bankImport" requiredTier={getRequiredTier("bankImport")} />;
   }
 
   if (!selectedCompanyId) {
@@ -221,7 +272,9 @@ export default function ReconciliationRules() {
       <div className="p-6">
         <Card>
           <CardContent className="p-6">
-            <p className="text-muted-foreground">Please select a company to manage reconciliation rules.</p>
+            <p className="text-muted-foreground">
+              Please select a company to manage reconciliation rules.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -260,7 +313,8 @@ export default function ReconciliationRules() {
         <CardHeader>
           <CardTitle>Rules</CardTitle>
           <CardDescription>
-            Rules are evaluated in priority order (lowest number first). The first matching rule wins.
+            Rules are evaluated in priority order (lowest number first). The first matching rule
+            wins.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -295,13 +349,19 @@ export default function ReconciliationRules() {
                     <TableCell className="font-mono text-sm">{rule.priority ?? 0}</TableCell>
                     <TableCell className="font-medium">{rule.name}</TableCell>
                     <TableCell>
-                      <Badge variant="outline">{matchFieldLabels[rule.matchField] || rule.matchField}</Badge>
+                      <Badge variant="outline">
+                        {matchFieldLabels[rule.matchField] || rule.matchField}
+                      </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{matchTypeLabels[rule.matchType] || rule.matchType}</Badge>
+                      <Badge variant="secondary">
+                        {matchTypeLabels[rule.matchType] || rule.matchType}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="max-w-[200px] truncate font-mono text-sm">{rule.matchValue}</TableCell>
-                    <TableCell>{rule.category || '-'}</TableCell>
+                    <TableCell className="max-w-[200px] truncate font-mono text-sm">
+                      {rule.matchValue}
+                    </TableCell>
+                    <TableCell>{rule.category || "-"}</TableCell>
                     <TableCell className="text-center">
                       <Badge variant="outline">{rule.timesApplied ?? 0}</Badge>
                     </TableCell>
@@ -315,11 +375,7 @@ export default function ReconciliationRules() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(rule)}
-                        >
+                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(rule)}>
                           <Edit className="h-4 w-4" />
                         </Button>
                         <Button
@@ -344,11 +400,11 @@ export default function ReconciliationRules() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
-            <DialogTitle>{editingRule ? 'Edit Rule' : 'Create Rule'}</DialogTitle>
+            <DialogTitle>{editingRule ? "Edit Rule" : "Create Rule"}</DialogTitle>
             <DialogDescription>
               {editingRule
-                ? 'Update this reconciliation rule.'
-                : 'Define a new rule to automatically match bank transactions.'}
+                ? "Update this reconciliation rule."
+                : "Define a new rule to automatically match bank transactions."}
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
@@ -479,7 +535,9 @@ export default function ReconciliationRules() {
                   <FormItem className="flex items-center justify-between rounded-lg border p-3">
                     <div>
                       <FormLabel className="text-base">Active</FormLabel>
-                      <p className="text-sm text-muted-foreground">Enable this rule for auto-matching</p>
+                      <p className="text-sm text-muted-foreground">
+                        Enable this rule for auto-matching
+                      </p>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -499,7 +557,7 @@ export default function ReconciliationRules() {
                   {(createMutation.isPending || updateMutation.isPending) && (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   )}
-                  {editingRule ? 'Update Rule' : 'Create Rule'}
+                  {editingRule ? "Update Rule" : "Create Rule"}
                 </Button>
               </div>
             </form>

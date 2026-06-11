@@ -1,25 +1,25 @@
-import { describe, expect, it } from 'vitest';
-import ExcelJS from 'exceljs';
+import { describe, expect, it } from "vitest";
+import ExcelJS from "exceljs";
 
 import {
   computeCtLiability,
   computeCtTotals,
   normalizeCtRowType,
   parseCtPasteRows,
-} from '../../shared/ct-workpaper';
+} from "../../shared/ct-workpaper";
 import {
   buildCtReturnWorkbook,
   buildCtTemplateWorkbook,
   ctReturnExportFilename,
   parseCtWorkbookRows,
-} from '../../server/services/ct-workpaper-export.service';
+} from "../../server/services/ct-workpaper-export.service";
 
 function fakeReturn() {
   return {
-    id: 'ct-1',
-    companyId: 'company-1',
-    taxPeriodStart: new Date('2026-01-01'),
-    taxPeriodEnd: new Date('2026-12-31'),
+    id: "ct-1",
+    companyId: "company-1",
+    taxPeriodStart: new Date("2026-01-01"),
+    taxPeriodEnd: new Date("2026-12-31"),
     totalRevenue: 570000,
     totalExpenses: 270000,
     totalDeductions: 0,
@@ -27,17 +27,17 @@ function fakeReturn() {
     exemptionThreshold: 375000,
     taxRate: 0.09,
     taxPayable: 0,
-    status: 'draft',
+    status: "draft",
     filedAt: null,
     notes: null,
     createdAt: new Date(),
     workpaper: {
-      source: 'manual_workpaper',
+      source: "manual_workpaper",
       rows: [
-        { id: 'r1', type: 'revenue', label: 'Product sales', amount: 450000 },
-        { id: 'r2', type: 'revenue', label: 'Service income', amount: 120000 },
-        { id: 'e1', type: 'expense', label: 'Salaries', amount: 210000, notes: 'WPS' },
-        { id: 'e2', type: 'expense', label: 'Rent', amount: 60000 },
+        { id: "r1", type: "revenue", label: "Product sales", amount: 450000 },
+        { id: "r2", type: "revenue", label: "Service income", amount: 120000 },
+        { id: "e1", type: "expense", label: "Salaries", amount: 210000, notes: "WPS" },
+        { id: "e2", type: "expense", label: "Rent", amount: 60000 },
       ],
       totalRevenue: 570000,
       totalExpenses: 270000,
@@ -47,22 +47,27 @@ function fakeReturn() {
   } as any;
 }
 
-describe('CT workpaper helpers', () => {
-  it('parses pasted rows with bookkeeper-friendly headers', () => {
+describe("CT workpaper helpers", () => {
+  it("parses pasted rows with bookkeeper-friendly headers", () => {
     const rows = parseCtPasteRows(
-      ['type\tdescription\tamount aed\tnotes', 'Income\tConsulting fees\t12,500.00\tQ2'].join('\n'),
+      ["type\tdescription\tamount aed\tnotes", "Income\tConsulting fees\t12,500.00\tQ2"].join("\n")
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ type: 'revenue', label: 'Consulting fees', amount: 12500, notes: 'Q2' });
+    expect(rows[0]).toMatchObject({
+      type: "revenue",
+      label: "Consulting fees",
+      amount: 12500,
+      notes: "Q2",
+    });
   });
 
-  it('defaults unknown types to expense and normalizes revenue aliases', () => {
-    expect(normalizeCtRowType('Sales')).toBe('revenue');
-    expect(normalizeCtRowType('income')).toBe('revenue');
-    expect(normalizeCtRowType('whatever')).toBe('expense');
+  it("defaults unknown types to expense and normalizes revenue aliases", () => {
+    expect(normalizeCtRowType("Sales")).toBe("revenue");
+    expect(normalizeCtRowType("income")).toBe("revenue");
+    expect(normalizeCtRowType("whatever")).toBe("expense");
   });
 
-  it('computes UAE CT liability with the small-business threshold', () => {
+  it("computes UAE CT liability with the small-business threshold", () => {
     const totals = computeCtTotals(fakeReturn().workpaper.rows);
     expect(totals).toEqual({ totalRevenue: 570000, totalExpenses: 270000, profitOrLoss: 300000 });
 
@@ -77,44 +82,44 @@ describe('CT workpaper helpers', () => {
   });
 });
 
-describe('CT workbook export', () => {
-  it('builds workpaper + computation sheets with the right numbers', async () => {
+describe("CT workbook export", () => {
+  it("builds workpaper + computation sheets with the right numbers", async () => {
     const buffer = await buildCtReturnWorkbook(fakeReturn(), {
-      name: 'Pearl Trading LLC',
-      trnVatNumber: '100123456700003',
+      name: "Pearl Trading LLC",
+      trnVatNumber: "100123456700003",
     } as any);
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as any);
 
-    const grid = workbook.getWorksheet('CT Workpaper');
-    const comp = workbook.getWorksheet('CT Computation');
+    const grid = workbook.getWorksheet("CT Workpaper");
+    const comp = workbook.getWorksheet("CT Computation");
     expect(grid).toBeDefined();
     expect(comp).toBeDefined();
 
     const text = (sheet: ExcelJS.Worksheet) => {
       const out: string[] = [];
       sheet.eachRow((row) => {
-        row.eachCell({ includeEmpty: true }, (cell) => out.push(String(cell.value ?? '')));
+        row.eachCell({ includeEmpty: true }, (cell) => out.push(String(cell.value ?? "")));
       });
-      return out.join('|');
+      return out.join("|");
     };
-    expect(text(grid!)).toContain('Product sales');
-    expect(text(grid!)).toContain('Salaries');
-    expect(text(comp!)).toContain('Corporate tax payable');
-    expect(text(comp!)).toContain('375000');
+    expect(text(grid!)).toContain("Product sales");
+    expect(text(grid!)).toContain("Salaries");
+    expect(text(comp!)).toContain("Corporate tax payable");
+    expect(text(comp!)).toContain("375000");
   });
 
-  it('template rows round-trip through the shared parser', async () => {
+  it("template rows round-trip through the shared parser", async () => {
     const buffer = await buildCtTemplateWorkbook();
     const rows = await parseCtWorkbookRows(buffer);
     expect(rows).toHaveLength(4);
-    expect(rows[0]).toMatchObject({ type: 'revenue', label: 'Product sales', amount: 450000 });
-    expect(rows[2]).toMatchObject({ type: 'expense', label: 'Salaries and wages', amount: 210000 });
+    expect(rows[0]).toMatchObject({ type: "revenue", label: "Product sales", amount: 450000 });
+    expect(rows[2]).toMatchObject({ type: "expense", label: "Salaries and wages", amount: 210000 });
   });
 
-  it('derives a clean export filename', () => {
-    expect(ctReturnExportFilename(fakeReturn(), { name: 'Pearl Trading LLC' } as any)).toBe(
-      'ct-workpaper-pearl-trading-llc-2026-12-31.xlsx',
+  it("derives a clean export filename", () => {
+    expect(ctReturnExportFilename(fakeReturn(), { name: "Pearl Trading LLC" } as any)).toBe(
+      "ct-workpaper-pearl-trading-llc-2026-12-31.xlsx"
     );
   });
 });

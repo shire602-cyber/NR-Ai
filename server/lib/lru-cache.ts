@@ -12,9 +12,12 @@ interface Entry<V> {
 export class LruCache<K, V> {
   private store = new Map<K, Entry<V>>();
 
-  constructor(private readonly maxEntries: number, private readonly ttlMs: number) {
-    if (maxEntries <= 0) throw new Error('maxEntries must be > 0');
-    if (ttlMs <= 0) throw new Error('ttlMs must be > 0');
+  constructor(
+    private readonly maxEntries: number,
+    private readonly ttlMs: number
+  ) {
+    if (maxEntries <= 0) throw new Error("maxEntries must be > 0");
+    if (ttlMs <= 0) throw new Error("ttlMs must be > 0");
   }
 
   get(key: K): V | undefined {

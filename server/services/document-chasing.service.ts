@@ -6,8 +6,8 @@
 // so they can be unit-tested in isolation; the DB-bound helpers at the
 // bottom drive the routes layer.
 
-import { and, asc, desc, eq, gte, lte, ne, sql } from 'drizzle-orm';
-import { db } from '../db';
+import { and, asc, desc, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { db } from "../db";
 import {
   documentRequirements,
   documentChases,
@@ -20,7 +20,7 @@ import {
   type ChaseChannel,
   type ComplianceEventType,
   CHASE_LEVELS,
-} from '@shared/schema';
+} from "@shared/schema";
 
 // ──────────────────────────────────────────────────────────────────────
 // Pure logic (no DB) — exercised by tests/unit/document-chasing.test.ts
@@ -35,10 +35,10 @@ export const DEFAULT_REMINDER_DAYS = [30, 14, 7, 0] as const;
 // pushed to at least level X. Picking from the bottom means a single
 // "gentle" send 60 days after the due date still escalates to "final".
 const ESCALATION_THRESHOLDS: Array<{ daysOverdue: number; level: ChaseLevel }> = [
-  { daysOverdue: 60, level: 'final' },
-  { daysOverdue: 30, level: 'urgent' },
-  { daysOverdue: 14, level: 'follow_up' },
-  { daysOverdue: 0, level: 'friendly' },
+  { daysOverdue: 60, level: "final" },
+  { daysOverdue: 30, level: "urgent" },
+  { daysOverdue: 14, level: "follow_up" },
+  { daysOverdue: 0, level: "friendly" },
 ];
 
 export function daysBetween(a: Date, b: Date): number {
@@ -55,12 +55,26 @@ export function daysUntil(target: Date | string, now: Date = new Date()): number
 // "Missing" = not yet received and the due date is in the past or any
 // status that the firm wants to chase (pending, requested, overdue).
 export function detectMissingDocuments(
-  requirements: Array<Pick<DocumentRequirement, 'id' | 'status' | 'dueDate' | 'documentType' | 'receivedAt'>>,
-  now: Date = new Date(),
-): Array<{ id: string; documentType: string; dueDate: Date; daysOverdue: number; isOverdue: boolean }> {
-  const out: Array<{ id: string; documentType: string; dueDate: Date; daysOverdue: number; isOverdue: boolean }> = [];
+  requirements: Array<
+    Pick<DocumentRequirement, "id" | "status" | "dueDate" | "documentType" | "receivedAt">
+  >,
+  now: Date = new Date()
+): Array<{
+  id: string;
+  documentType: string;
+  dueDate: Date;
+  daysOverdue: number;
+  isOverdue: boolean;
+}> {
+  const out: Array<{
+    id: string;
+    documentType: string;
+    dueDate: Date;
+    daysOverdue: number;
+    isOverdue: boolean;
+  }> = [];
   for (const r of requirements) {
-    if (r.status === 'received' || r.status === 'waived' || r.receivedAt) continue;
+    if (r.status === "received" || r.status === "waived" || r.receivedAt) continue;
     const due = new Date(r.dueDate);
     const overdueDays = daysBetween(due, now);
     out.push({
@@ -77,14 +91,14 @@ export function detectMissingDocuments(
 // Given the current level and recent send history, return the next level
 // to send. The escalation also takes into account how overdue the doc is —
 // a long-overdue requirement skips ahead even if no chases have been sent.
-export function nextChaseLevel(
-  previousLevel: ChaseLevel | null,
-  daysOverdue: number,
-): ChaseLevel {
+export function nextChaseLevel(previousLevel: ChaseLevel | null, daysOverdue: number): ChaseLevel {
   // Always honor the time-based floor first.
-  let floor: ChaseLevel = 'friendly';
+  let floor: ChaseLevel = "friendly";
   for (const t of ESCALATION_THRESHOLDS) {
-    if (daysOverdue >= t.daysOverdue) { floor = t.level; break; }
+    if (daysOverdue >= t.daysOverdue) {
+      floor = t.level;
+      break;
+    }
   }
   if (previousLevel === null) return floor;
   const idxPrev = CHASE_LEVELS.indexOf(previousLevel);
@@ -99,7 +113,7 @@ export function nextChaseLevel(
 // not yet "passed" — i.e. T <= offset.
 export function dueReminderOffsets(
   daysUntilDue: number,
-  reminderDays: readonly number[] = DEFAULT_REMINDER_DAYS,
+  reminderDays: readonly number[] = DEFAULT_REMINDER_DAYS
 ): number[] {
   // A reminder for offset O fires when daysUntilDue <= O. We return all
   // offsets that have been reached.
@@ -109,7 +123,7 @@ export function dueReminderOffsets(
 export function parseReminderDays(s: string | null | undefined): number[] {
   if (!s) return [...DEFAULT_REMINDER_DAYS];
   const out: number[] = [];
-  for (const part of s.split(',')) {
+  for (const part of s.split(",")) {
     const n = Number(part.trim());
     if (Number.isFinite(n) && n >= 0) out.push(n);
   }
@@ -117,7 +131,7 @@ export function parseReminderDays(s: string | null | undefined): number[] {
 }
 
 export function serializeReminderDays(days: readonly number[]): string {
-  return [...days].sort((a, b) => b - a).join(',');
+  return [...days].sort((a, b) => b - a).join(",");
 }
 
 // Decide whether we should chase a requirement right now. The caller passes
@@ -128,9 +142,14 @@ export function shouldChaseNow(
   requirement: { dueDate: Date | string; status: string; receivedAt: Date | string | null },
   lastChase: { sentAt: Date | string; chaseLevel: ChaseLevel } | null,
   reminderDays: readonly number[] = DEFAULT_REMINDER_DAYS,
-  now: Date = new Date(),
+  now: Date = new Date()
 ): boolean {
-  if (requirement.status === 'received' || requirement.status === 'waived' || requirement.receivedAt) return false;
+  if (
+    requirement.status === "received" ||
+    requirement.status === "waived" ||
+    requirement.receivedAt
+  )
+    return false;
   const dUntil = daysUntil(requirement.dueDate, now);
   const dueOffsets = dueReminderOffsets(dUntil, reminderDays);
   if (dueOffsets.length === 0) return false;
@@ -147,12 +166,12 @@ export function renderChaseMessage(
   documentType: DocumentType | string,
   dueDate: Date | string,
   companyName: string,
-  daysOverdue: number,
+  daysOverdue: number
 ): string {
   const due = new Date(dueDate).toISOString().slice(0, 10);
   const human = humanizeDocumentType(documentType);
   switch (level) {
-    case 'friendly':
+    case "friendly":
       return [
         `Hi ${companyName},`,
         ``,
@@ -160,8 +179,8 @@ export function renderChaseMessage(
         `Could you upload it whenever convenient? Reply here if you have any questions.`,
         ``,
         `— Muhasib.ai`,
-      ].join('\n');
-    case 'follow_up':
+      ].join("\n");
+    case "follow_up":
       return [
         `Hi ${companyName},`,
         ``,
@@ -169,8 +188,8 @@ export function renderChaseMessage(
         `Please upload it at your earliest convenience so we can keep your books current.`,
         ``,
         `— Muhasib.ai`,
-      ].join('\n');
-    case 'urgent':
+      ].join("\n");
+    case "urgent":
       return [
         `Hi ${companyName},`,
         ``,
@@ -178,8 +197,8 @@ export function renderChaseMessage(
         `Please upload it within the next 48 hours so we can stay ahead of any FTA filing risk.`,
         ``,
         `— Muhasib.ai`,
-      ].join('\n');
-    case 'final':
+      ].join("\n");
+    case "final":
       return [
         `Hi ${companyName},`,
         ``,
@@ -187,19 +206,19 @@ export function renderChaseMessage(
         `If we do not receive it in the next 24 hours, your account will be flagged as non-compliant and we will need to pause certain services.`,
         ``,
         `— Muhasib.ai`,
-      ].join('\n');
+      ].join("\n");
   }
 }
 
 export function humanizeDocumentType(t: string): string {
-  return t.replace(/_/g, ' ');
+  return t.replace(/_/g, " ");
 }
 
 // wa.me deep link. Accepts any phone format; strips non-digits. Returns null
 // if the phone is empty so the caller can fall back to email.
 export function whatsappDeepLink(phone: string | null | undefined, message: string): string | null {
   if (!phone) return null;
-  const digits = phone.replace(/\D/g, '');
+  const digits = phone.replace(/\D/g, "");
   if (digits.length < 6) return null;
   const encoded = encodeURIComponent(message);
   return `https://wa.me/${digits}?text=${encoded}`;
@@ -207,9 +226,14 @@ export function whatsappDeepLink(phone: string | null | undefined, message: stri
 
 // Compliance calendar deadline calc: returns the next event within `windowDays`.
 export function upcomingDeadlines(
-  events: Array<Pick<ComplianceEvent, 'id' | 'eventDate' | 'eventType' | 'description' | 'status' | 'reminderDays'>>,
+  events: Array<
+    Pick<
+      ComplianceEvent,
+      "id" | "eventDate" | "eventType" | "description" | "status" | "reminderDays"
+    >
+  >,
   windowDays: number,
-  now: Date = new Date(),
+  now: Date = new Date()
 ): Array<{
   id: string;
   eventType: string;
@@ -221,7 +245,7 @@ export function upcomingDeadlines(
 }> {
   const out = [];
   for (const e of events) {
-    if (e.status === 'completed' || e.status === 'dismissed') continue;
+    if (e.status === "completed" || e.status === "dismissed") continue;
     const dUntil = daysUntil(e.eventDate, now);
     if (dUntil > windowDays) continue;
     const reminderDays = parseReminderDays(e.reminderDays);
@@ -241,9 +265,14 @@ export function upcomingDeadlines(
 
 // Compute response rate / avg time-to-upload from a chase + requirement set.
 export function computeEffectiveness(
-  requirements: Array<Pick<DocumentRequirement, 'id' | 'status' | 'createdAt' | 'receivedAt'>>,
-  chases: Array<Pick<DocumentChase, 'requirementId' | 'sentAt' | 'responseReceived'>>,
-): { totalChased: number; totalReceived: number; responseRate: number; avgDaysToUpload: number | null } {
+  requirements: Array<Pick<DocumentRequirement, "id" | "status" | "createdAt" | "receivedAt">>,
+  chases: Array<Pick<DocumentChase, "requirementId" | "sentAt" | "responseReceived">>
+): {
+  totalChased: number;
+  totalReceived: number;
+  responseRate: number;
+  avgDaysToUpload: number | null;
+} {
   // Pre-group chases by requirementId in one O(N) pass so per-requirement
   // lookups are O(1) instead of an O(N*M) inner filter.
   const earliestSentByReq = new Map<string, number>();
@@ -258,7 +287,7 @@ export function computeEffectiveness(
   for (const r of requirements) {
     const sent = earliestSentByReq.get(r.id);
     if (sent === undefined) continue;
-    if (r.status === 'received' && r.receivedAt) {
+    if (r.status === "received" && r.receivedAt) {
       totalReceived++;
       const recv = new Date(r.receivedAt).getTime();
       uploadDelaysDays.push(Math.max(0, (recv - sent) / MS_PER_DAY));
@@ -266,7 +295,9 @@ export function computeEffectiveness(
   }
   const responseRate = totalChased === 0 ? 0 : totalReceived / totalChased;
   const avgDaysToUpload =
-    uploadDelaysDays.length === 0 ? null : uploadDelaysDays.reduce((a, b) => a + b, 0) / uploadDelaysDays.length;
+    uploadDelaysDays.length === 0
+      ? null
+      : uploadDelaysDays.reduce((a, b) => a + b, 0) / uploadDelaysDays.length;
   return { totalChased, totalReceived, responseRate, avgDaysToUpload };
 }
 
@@ -276,13 +307,20 @@ export function computeEffectiveness(
 // ──────────────────────────────────────────────────────────────────────
 
 export async function listRequirements(companyId: string): Promise<DocumentRequirement[]> {
-  return await db.select().from(documentRequirements)
+  return await db
+    .select()
+    .from(documentRequirements)
     .where(eq(documentRequirements.companyId, companyId))
     .orderBy(asc(documentRequirements.dueDate));
 }
 
-export async function getRequirement(companyId: string, id: string): Promise<DocumentRequirement | undefined> {
-  const [row] = await db.select().from(documentRequirements)
+export async function getRequirement(
+  companyId: string,
+  id: string
+): Promise<DocumentRequirement | undefined> {
+  const [row] = await db
+    .select()
+    .from(documentRequirements)
     .where(and(eq(documentRequirements.companyId, companyId), eq(documentRequirements.id, id)));
   return row;
 }
@@ -296,16 +334,19 @@ export async function createRequirement(input: {
   recurringIntervalDays?: number | null;
   notes?: string | null;
 }): Promise<DocumentRequirement> {
-  const [row] = await db.insert(documentRequirements).values({
-    companyId: input.companyId,
-    documentType: input.documentType,
-    description: input.description ?? null,
-    dueDate: new Date(input.dueDate),
-    isRecurring: input.isRecurring ?? false,
-    recurringIntervalDays: input.recurringIntervalDays ?? null,
-    notes: input.notes ?? null,
-    status: 'pending',
-  }).returning();
+  const [row] = await db
+    .insert(documentRequirements)
+    .values({
+      companyId: input.companyId,
+      documentType: input.documentType,
+      description: input.description ?? null,
+      dueDate: new Date(input.dueDate),
+      isRecurring: input.isRecurring ?? false,
+      recurringIntervalDays: input.recurringIntervalDays ?? null,
+      notes: input.notes ?? null,
+      status: "pending",
+    })
+    .returning();
   return row;
 }
 
@@ -322,19 +363,22 @@ export async function updateRequirement(
     receivedAt: Date | null;
     uploadedDocumentId: string | null;
     notes: string | null;
-  }>,
+  }>
 ): Promise<DocumentRequirement | undefined> {
   const setClause: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.documentType !== undefined) setClause.documentType = patch.documentType;
   if (patch.description !== undefined) setClause.description = patch.description;
   if (patch.dueDate !== undefined) setClause.dueDate = new Date(patch.dueDate);
   if (patch.isRecurring !== undefined) setClause.isRecurring = patch.isRecurring;
-  if (patch.recurringIntervalDays !== undefined) setClause.recurringIntervalDays = patch.recurringIntervalDays;
+  if (patch.recurringIntervalDays !== undefined)
+    setClause.recurringIntervalDays = patch.recurringIntervalDays;
   if (patch.status !== undefined) setClause.status = patch.status;
   if (patch.receivedAt !== undefined) setClause.receivedAt = patch.receivedAt;
-  if (patch.uploadedDocumentId !== undefined) setClause.uploadedDocumentId = patch.uploadedDocumentId;
+  if (patch.uploadedDocumentId !== undefined)
+    setClause.uploadedDocumentId = patch.uploadedDocumentId;
   if (patch.notes !== undefined) setClause.notes = patch.notes;
-  const [row] = await db.update(documentRequirements)
+  const [row] = await db
+    .update(documentRequirements)
     .set(setClause)
     .where(and(eq(documentRequirements.companyId, companyId), eq(documentRequirements.id, id)))
     .returning();
@@ -352,8 +396,11 @@ export async function updateRequirement(
 export async function markRequirementReceived(
   companyId: string,
   id: string,
-  uploadedDocumentId: string | null = null,
-): Promise<{ updated: DocumentRequirement | undefined; nextOccurrence: DocumentRequirement | null }> {
+  uploadedDocumentId: string | null = null
+): Promise<{
+  updated: DocumentRequirement | undefined;
+  nextOccurrence: DocumentRequirement | null;
+}> {
   return await db.transaction(async (tx: typeof db) => {
     const [existing] = await tx
       .select()
@@ -367,7 +414,7 @@ export async function markRequirementReceived(
     const [updated] = await tx
       .update(documentRequirements)
       .set({
-        status: 'received',
+        status: "received",
         receivedAt: new Date(),
         uploadedDocumentId,
         updatedAt: new Date(),
@@ -376,9 +423,9 @@ export async function markRequirementReceived(
         and(
           eq(documentRequirements.companyId, companyId),
           eq(documentRequirements.id, id),
-          ne(documentRequirements.status, 'received'),
-          ne(documentRequirements.status, 'waived'),
-        ),
+          ne(documentRequirements.status, "received"),
+          ne(documentRequirements.status, "waived")
+        )
       )
       .returning();
 
@@ -387,7 +434,11 @@ export async function markRequirementReceived(
     }
 
     let nextOccurrence: DocumentRequirement | null = null;
-    if (existing.isRecurring && existing.recurringIntervalDays && existing.recurringIntervalDays > 0) {
+    if (
+      existing.isRecurring &&
+      existing.recurringIntervalDays &&
+      existing.recurringIntervalDays > 0
+    ) {
       const nextDue = new Date(existing.dueDate);
       nextDue.setUTCDate(nextDue.getUTCDate() + existing.recurringIntervalDays);
       const [created] = await tx
@@ -400,7 +451,7 @@ export async function markRequirementReceived(
           isRecurring: true,
           recurringIntervalDays: existing.recurringIntervalDays,
           notes: existing.notes,
-          status: 'pending',
+          status: "pending",
         })
         .returning();
       nextOccurrence = created ?? null;
@@ -411,15 +462,21 @@ export async function markRequirementReceived(
 
 export async function listChasesForRequirement(
   companyId: string,
-  requirementId: string,
+  requirementId: string
 ): Promise<DocumentChase[]> {
-  return await db.select().from(documentChases)
-    .where(and(eq(documentChases.companyId, companyId), eq(documentChases.requirementId, requirementId)))
+  return await db
+    .select()
+    .from(documentChases)
+    .where(
+      and(eq(documentChases.companyId, companyId), eq(documentChases.requirementId, requirementId))
+    )
     .orderBy(desc(documentChases.sentAt));
 }
 
 export async function listAllChases(companyId: string): Promise<DocumentChase[]> {
-  return await db.select().from(documentChases)
+  return await db
+    .select()
+    .from(documentChases)
     .where(eq(documentChases.companyId, companyId))
     .orderBy(desc(documentChases.sentAt));
 }
@@ -431,20 +488,23 @@ export async function buildChaseQueue(
   companyId: string,
   companyName: string,
   recipient: { phone: string | null; email: string | null },
-  now: Date = new Date(),
-): Promise<Array<{
-  requirement: DocumentRequirement;
-  nextLevel: ChaseLevel;
-  message: string;
-  whatsappLink: string | null;
-  daysOverdue: number;
-}>> {
+  now: Date = new Date()
+): Promise<
+  Array<{
+    requirement: DocumentRequirement;
+    nextLevel: ChaseLevel;
+    message: string;
+    whatsappLink: string | null;
+    daysOverdue: number;
+  }>
+> {
   const reqs = await listRequirements(companyId);
   const allChases = await listAllChases(companyId);
   const lastByReq = new Map<string, DocumentChase>();
   for (const c of allChases) {
     const existing = lastByReq.get(c.requirementId);
-    if (!existing || new Date(c.sentAt) > new Date(existing.sentAt)) lastByReq.set(c.requirementId, c);
+    if (!existing || new Date(c.sentAt) > new Date(existing.sentAt))
+      lastByReq.set(c.requirementId, c);
   }
   const out: Array<{
     requirement: DocumentRequirement;
@@ -454,14 +514,17 @@ export async function buildChaseQueue(
     daysOverdue: number;
   }> = [];
   for (const r of reqs) {
-    if (r.status === 'received' || r.status === 'waived' || r.receivedAt) continue;
+    if (r.status === "received" || r.status === "waived" || r.receivedAt) continue;
     const last = lastByReq.get(r.id) ?? null;
-    if (!shouldChaseNow(
-      { dueDate: r.dueDate, status: r.status, receivedAt: r.receivedAt },
-      last ? { sentAt: last.sentAt, chaseLevel: last.chaseLevel as ChaseLevel } : null,
-      DEFAULT_REMINDER_DAYS,
-      now,
-    )) continue;
+    if (
+      !shouldChaseNow(
+        { dueDate: r.dueDate, status: r.status, receivedAt: r.receivedAt },
+        last ? { sentAt: last.sentAt, chaseLevel: last.chaseLevel as ChaseLevel } : null,
+        DEFAULT_REMINDER_DAYS,
+        now
+      )
+    )
+      continue;
     const dUntil = daysUntil(r.dueDate, now);
     const overdue = dUntil < 0 ? -dUntil : 0;
     const nextLevel = nextChaseLevel(last ? (last.chaseLevel as ChaseLevel) : null, overdue);
@@ -486,33 +549,44 @@ export async function recordChaseSend(input: {
   recipientPhone?: string | null;
   recipientEmail?: string | null;
 }): Promise<DocumentChase> {
-  const [row] = await db.insert(documentChases).values({
-    companyId: input.companyId,
-    requirementId: input.requirementId,
-    chaseLevel: input.chaseLevel,
-    sentVia: input.sentVia,
-    messageContent: input.messageContent,
-    recipientPhone: input.recipientPhone ?? null,
-    recipientEmail: input.recipientEmail ?? null,
-  }).returning();
+  const [row] = await db
+    .insert(documentChases)
+    .values({
+      companyId: input.companyId,
+      requirementId: input.requirementId,
+      chaseLevel: input.chaseLevel,
+      sentVia: input.sentVia,
+      messageContent: input.messageContent,
+      recipientPhone: input.recipientPhone ?? null,
+      recipientEmail: input.recipientEmail ?? null,
+    })
+    .returning();
   // Bump the requirement to "requested" so it shows up in the right column.
-  await db.update(documentRequirements)
-    .set({ status: sql`CASE WHEN status = 'received' OR status = 'waived' THEN status ELSE 'requested' END`, updatedAt: new Date() })
-    .where(and(
-      eq(documentRequirements.companyId, input.companyId),
-      eq(documentRequirements.id, input.requirementId),
-    ));
+  await db
+    .update(documentRequirements)
+    .set({
+      status: sql`CASE WHEN status = 'received' OR status = 'waived' THEN status ELSE 'requested' END`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(documentRequirements.companyId, input.companyId),
+        eq(documentRequirements.id, input.requirementId)
+      )
+    );
   return row;
 }
 
 export async function listComplianceEvents(
   companyId: string,
-  opts: { from?: Date; to?: Date } = {},
+  opts: { from?: Date; to?: Date } = {}
 ): Promise<ComplianceEvent[]> {
   const conds = [eq(complianceCalendar.companyId, companyId)];
   if (opts.from) conds.push(gte(complianceCalendar.eventDate, opts.from));
   if (opts.to) conds.push(lte(complianceCalendar.eventDate, opts.to));
-  return await db.select().from(complianceCalendar)
+  return await db
+    .select()
+    .from(complianceCalendar)
     .where(and(...conds))
     .orderBy(asc(complianceCalendar.eventDate));
 }
@@ -525,14 +599,17 @@ export async function createComplianceEvent(input: {
   reminderDays?: readonly number[];
   linkedRequirementId?: string | null;
 }): Promise<ComplianceEvent> {
-  const [row] = await db.insert(complianceCalendar).values({
-    companyId: input.companyId,
-    eventType: input.eventType,
-    description: input.description,
-    eventDate: new Date(input.eventDate),
-    reminderDays: serializeReminderDays(input.reminderDays ?? DEFAULT_REMINDER_DAYS),
-    linkedRequirementId: input.linkedRequirementId ?? null,
-  }).returning();
+  const [row] = await db
+    .insert(complianceCalendar)
+    .values({
+      companyId: input.companyId,
+      eventType: input.eventType,
+      description: input.description,
+      eventDate: new Date(input.eventDate),
+      reminderDays: serializeReminderDays(input.reminderDays ?? DEFAULT_REMINDER_DAYS),
+      linkedRequirementId: input.linkedRequirementId ?? null,
+    })
+    .returning();
   return row;
 }
 
@@ -542,9 +619,6 @@ export async function effectivenessReport(companyId: string): Promise<{
   responseRate: number;
   avgDaysToUpload: number | null;
 }> {
-  const [reqs, chases] = await Promise.all([
-    listRequirements(companyId),
-    listAllChases(companyId),
-  ]);
+  const [reqs, chases] = await Promise.all([listRequirements(companyId), listAllChases(companyId)]);
   return computeEffectiveness(reqs, chases);
 }

@@ -1,8 +1,8 @@
-import type { Express, Request, Response } from 'express';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { requireFeature } from '../middleware/featureGate';
-import { storage } from '../storage';
+import type { Express, Request, Response } from "express";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { requireFeature } from "../middleware/featureGate";
+import { storage } from "../storage";
 
 interface AccountBreakdown {
   accountId: string;
@@ -26,34 +26,36 @@ export function registerFinancialStatementRoutes(app: Express) {
   // =====================================
 
   // Profit & Loss (Income Statement)
-  app.get('/api/companies/:companyId/financial-statements/profit-loss', authMiddleware, requireCustomer, requireFeature('advancedReports'),
+  app.get(
+    "/api/companies/:companyId/financial-statements/profit-loss",
+    authMiddleware,
+    requireCustomer,
+    requireFeature("advancedReports"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const startDate = req.query.startDate ? new Date(req.query.startDate as string) : null;
       const endDate = req.query.endDate ? new Date(req.query.endDate as string) : null;
 
       if (!startDate || !endDate) {
-        return res.status(400).json({ message: 'startDate and endDate query params are required' });
+        return res.status(400).json({ message: "startDate and endDate query params are required" });
       }
 
       // Fetch all posted journal entries for this company
       const entries = await storage.getJournalEntriesByCompanyId(companyId);
-      const filteredEntries = entries.filter(e =>
-        e.status === 'posted' &&
-        new Date(e.date) >= startDate &&
-        new Date(e.date) <= endDate
+      const filteredEntries = entries.filter(
+        (e) => e.status === "posted" && new Date(e.date) >= startDate && new Date(e.date) <= endDate
       );
 
       // Batch-fetch all accounts for the company
       const allAccounts = await storage.getAccountsByCompanyId(companyId);
-      const accountMap = new Map(allAccounts.map(a => [a.id, a]));
+      const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
 
       // Group journal lines by account
       const grouped: GroupedAccounts = {};
@@ -64,7 +66,7 @@ export function registerFinancialStatementRoutes(app: Express) {
           const account = accountMap.get(line.accountId);
           if (!account) continue;
           // Only income and expense accounts go into P&L
-          if (account.type !== 'income' && account.type !== 'expense') continue;
+          if (account.type !== "income" && account.type !== "expense") continue;
 
           if (!grouped[line.accountId]) {
             grouped[line.accountId] = {
@@ -91,7 +93,7 @@ export function registerFinancialStatementRoutes(app: Express) {
         const account = accountMap.get(accountId);
         if (!account) continue;
 
-        if (account.type === 'income') {
+        if (account.type === "income") {
           const amount = data.creditTotal - data.debitTotal;
           totalRevenue += amount;
           revenueBreakdown.push({
@@ -100,7 +102,7 @@ export function registerFinancialStatementRoutes(app: Express) {
             accountName: data.accountName,
             amount,
           });
-        } else if (account.type === 'expense') {
+        } else if (account.type === "expense") {
           const amount = data.debitTotal - data.creditTotal;
           totalExpenses += amount;
           expenseBreakdown.push({
@@ -127,34 +129,38 @@ export function registerFinancialStatementRoutes(app: Express) {
           expenses: expenseBreakdown,
         },
       });
-    }));
+    })
+  );
 
   // Balance Sheet
-  app.get('/api/companies/:companyId/financial-statements/balance-sheet', authMiddleware, requireCustomer, requireFeature('advancedReports'),
+  app.get(
+    "/api/companies/:companyId/financial-statements/balance-sheet",
+    authMiddleware,
+    requireCustomer,
+    requireFeature("advancedReports"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const asOfDate = req.query.asOfDate ? new Date(req.query.asOfDate as string) : null;
       if (!asOfDate) {
-        return res.status(400).json({ message: 'asOfDate query param is required' });
+        return res.status(400).json({ message: "asOfDate query param is required" });
       }
 
       // Fetch all posted journal entries up to asOfDate
       const entries = await storage.getJournalEntriesByCompanyId(companyId);
-      const filteredEntries = entries.filter(e =>
-        e.status === 'posted' &&
-        new Date(e.date) <= asOfDate
+      const filteredEntries = entries.filter(
+        (e) => e.status === "posted" && new Date(e.date) <= asOfDate
       );
 
       // Batch-fetch all accounts
       const allAccounts = await storage.getAccountsByCompanyId(companyId);
-      const accountMap = new Map(allAccounts.map(a => [a.id, a]));
+      const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
 
       // Group by account
       const grouped: GroupedAccounts = {};
@@ -194,7 +200,7 @@ export function registerFinancialStatementRoutes(app: Express) {
         const account = accountMap.get(accountId);
         if (!account) continue;
 
-        if (account.type === 'asset') {
+        if (account.type === "asset") {
           // Assets have normal debit balance
           const amount = data.debitTotal - data.creditTotal;
           totalAssets += amount;
@@ -204,7 +210,7 @@ export function registerFinancialStatementRoutes(app: Express) {
             accountName: data.accountName,
             amount,
           });
-        } else if (account.type === 'liability') {
+        } else if (account.type === "liability") {
           // Liabilities have normal credit balance
           const amount = data.creditTotal - data.debitTotal;
           totalLiabilities += amount;
@@ -214,7 +220,7 @@ export function registerFinancialStatementRoutes(app: Express) {
             accountName: data.accountName,
             amount,
           });
-        } else if (account.type === 'equity') {
+        } else if (account.type === "equity") {
           // Equity has normal credit balance
           const amount = data.creditTotal - data.debitTotal;
           totalEquity += amount;
@@ -224,10 +230,10 @@ export function registerFinancialStatementRoutes(app: Express) {
             accountName: data.accountName,
             amount,
           });
-        } else if (account.type === 'income') {
-          retainedEarnings += (data.creditTotal - data.debitTotal);
-        } else if (account.type === 'expense') {
-          retainedEarnings -= (data.debitTotal - data.creditTotal);
+        } else if (account.type === "income") {
+          retainedEarnings += data.creditTotal - data.debitTotal;
+        } else if (account.type === "expense") {
+          retainedEarnings -= data.debitTotal - data.creditTotal;
         }
       }
 
@@ -235,9 +241,9 @@ export function registerFinancialStatementRoutes(app: Express) {
       totalEquity += retainedEarnings;
       if (retainedEarnings !== 0) {
         equityBreakdown.push({
-          accountId: 'retained-earnings',
-          accountCode: '3900',
-          accountName: 'Retained Earnings (Current Period)',
+          accountId: "retained-earnings",
+          accountCode: "3900",
+          accountName: "Retained Earnings (Current Period)",
           amount: retainedEarnings,
         });
       }
@@ -265,37 +271,40 @@ export function registerFinancialStatementRoutes(app: Express) {
         totalLiabilitiesAndEquity: Math.round((totalLiabilities + totalEquity) * 100) / 100,
         isBalanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
       });
-    }));
+    })
+  );
 
   // Cash Flow Statement
-  app.get('/api/companies/:companyId/financial-statements/cash-flow', authMiddleware, requireCustomer, requireFeature('advancedReports'),
+  app.get(
+    "/api/companies/:companyId/financial-statements/cash-flow",
+    authMiddleware,
+    requireCustomer,
+    requireFeature("advancedReports"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const startDate = req.query.startDate ? new Date(req.query.startDate as string) : null;
       const endDate = req.query.endDate ? new Date(req.query.endDate as string) : null;
 
       if (!startDate || !endDate) {
-        return res.status(400).json({ message: 'startDate and endDate query params are required' });
+        return res.status(400).json({ message: "startDate and endDate query params are required" });
       }
 
       // Fetch posted entries in date range
       const entries = await storage.getJournalEntriesByCompanyId(companyId);
-      const filteredEntries = entries.filter(e =>
-        e.status === 'posted' &&
-        new Date(e.date) >= startDate &&
-        new Date(e.date) <= endDate
+      const filteredEntries = entries.filter(
+        (e) => e.status === "posted" && new Date(e.date) >= startDate && new Date(e.date) <= endDate
       );
 
       // Batch-fetch all accounts
       const allAccounts = await storage.getAccountsByCompanyId(companyId);
-      const accountMap = new Map(allAccounts.map(a => [a.id, a]));
+      const accountMap = new Map(allAccounts.map((a) => [a.id, a]));
 
       // Classify cash flows by account sub-type and type
       const operating: AccountBreakdown[] = [];
@@ -344,41 +353,41 @@ export function registerFinancialStatementRoutes(app: Express) {
         };
 
         // Classify based on account type and sub-type
-        if (account.type === 'income' || account.type === 'expense') {
+        if (account.type === "income" || account.type === "expense") {
           // Operating activities: revenue and expenses
           // For income: credit balance is positive cash flow
           // For expense: debit balance is negative cash flow
-          if (account.type === 'income') {
+          if (account.type === "income") {
             item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
           } else {
             item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
           }
           operatingTotal += item.amount;
           operating.push(item);
-        } else if (account.type === 'asset' && account.subType === 'fixed_asset') {
+        } else if (account.type === "asset" && account.subType === "fixed_asset") {
           // Investing activities: fixed asset changes
           // Debit to fixed asset = cash outflow (investing)
           item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
           investingTotal += item.amount;
           investing.push(item);
-        } else if (account.type === 'liability' && account.subType === 'long_term_liability') {
+        } else if (account.type === "liability" && account.subType === "long_term_liability") {
           // Financing activities: long-term liability changes
           // Credit to liability = cash inflow (financing)
           item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
           financingTotal += item.amount;
           financing.push(item);
-        } else if (account.type === 'equity') {
+        } else if (account.type === "equity") {
           // Financing activities: equity changes
           item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
           financingTotal += item.amount;
           financing.push(item);
-        } else if (account.type === 'asset' && account.subType === 'current_asset') {
+        } else if (account.type === "asset" && account.subType === "current_asset") {
           // Operating activities: current asset changes (excluding cash)
           // Increase in current assets = cash outflow
           item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
           operatingTotal += item.amount;
           operating.push(item);
-        } else if (account.type === 'liability' && account.subType === 'current_liability') {
+        } else if (account.type === "liability" && account.subType === "current_liability") {
           // Operating activities: current liability changes
           // Increase in current liabilities = cash inflow
           item.amount = Math.round((data.creditTotal - data.debitTotal) * 100) / 100;
@@ -416,5 +425,6 @@ export function registerFinancialStatementRoutes(app: Express) {
         },
         netCashChange: Math.round(netCashChange * 100) / 100,
       });
-    }));
+    })
+  );
 }

@@ -1,8 +1,8 @@
-import webpush from 'web-push';
-import { storage } from '../storage';
-import { createLogger } from '../config/logger';
+import webpush from "web-push";
+import { storage } from "../storage";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('push-notification');
+const log = createLogger("push-notification");
 
 let initialized = false;
 
@@ -13,16 +13,16 @@ let initialized = false;
 export function initWebPush(): boolean {
   const publicKey = process.env.VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
-  const subject = process.env.VAPID_SUBJECT || 'mailto:support@muhasib.ai';
+  const subject = process.env.VAPID_SUBJECT || "mailto:support@muhasib.ai";
 
   if (!publicKey || !privateKey) {
-    log.warn('Web push not configured — VAPID keys not set');
+    log.warn("Web push not configured — VAPID keys not set");
     return false;
   }
 
   webpush.setVapidDetails(subject, publicKey, privateKey);
   initialized = true;
-  log.info('Web push initialized with VAPID keys');
+  log.info("Web push initialized with VAPID keys");
   return true;
 }
 
@@ -52,7 +52,7 @@ export async function sendPushNotification(
   payload: PushPayload
 ): Promise<{ sent: number; failed: number }> {
   if (!initialized) {
-    log.warn('Web push not initialized, skipping notification');
+    log.warn("Web push not initialized, skipping notification");
     return { sent: 0, failed: 0 };
   }
 
@@ -70,10 +70,10 @@ export async function sendPushNotification(
   const notificationPayload = JSON.stringify({
     title: payload.title,
     body: payload.body,
-    icon: payload.icon || '/icons/icon-192.png',
-    badge: payload.badge || '/icons/badge-72.png',
+    icon: payload.icon || "/icons/icon-192.png",
+    badge: payload.badge || "/icons/badge-72.png",
     data: {
-      url: payload.url || '/dashboard',
+      url: payload.url || "/dashboard",
     },
     tag: payload.tag,
   });
@@ -99,10 +99,13 @@ export async function sendPushNotification(
       failed++;
       // If subscription is expired/invalid, deactivate it
       if (error.statusCode === 404 || error.statusCode === 410) {
-        log.info({ subscriptionId: sub.id }, 'Push subscription expired, deactivating');
+        log.info({ subscriptionId: sub.id }, "Push subscription expired, deactivating");
         await storage.deactivatePushSubscription(sub.endpoint);
       } else {
-        log.error({ error: error.message, subscriptionId: sub.id }, 'Failed to send push notification');
+        log.error(
+          { error: error.message, subscriptionId: sub.id },
+          "Failed to send push notification"
+        );
       }
     }
   }

@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import express from 'express';
-import { asyncHandler } from '../../server/middleware/errorHandler';
+import { describe, it, expect } from "vitest";
+import express from "express";
+import { asyncHandler } from "../../server/middleware/errorHandler";
 
 // Repro for the "stuck at step 2" onboarding bug.
 //
@@ -26,7 +26,7 @@ function buildPatchRoute(updateCompany: (id: string, data: any) => Promise<any>)
   const app = express();
   app.use(express.json());
   app.patch(
-    '/api/companies/:id',
+    "/api/companies/:id",
     asyncHandler(async (req, res) => {
       const { id } = req.params;
       const updateData = { ...req.body };
@@ -35,35 +35,35 @@ function buildPatchRoute(updateCompany: (id: string, data: any) => Promise<any>)
         const company = await updateCompany(id, updateData);
         res.json(company);
       } catch (err: any) {
-        if (err?.code === '23505') {
+        if (err?.code === "23505") {
           return res.status(409).json({
-            message: 'That value is already taken by another tenant. Please pick a different one.',
-            field: err.constraint?.includes('name') ? 'name' : undefined,
+            message: "That value is already taken by another tenant. Please pick a different one.",
+            field: err.constraint?.includes("name") ? "name" : undefined,
           });
         }
         throw err;
       }
-    }),
+    })
   );
   return app;
 }
 
 async function call(
   app: express.Express,
-  method: 'PATCH',
+  method: "PATCH",
   path: string,
-  body: unknown,
+  body: unknown
 ): Promise<{ status: number; body: any }> {
   // Drive the express handler in-process via a node http request to a listening
   // socket — avoids pulling in supertest just for this test.
   const server = app.listen(0);
   try {
     const addr = server.address();
-    if (typeof addr === 'string' || !addr) throw new Error('no address');
+    if (typeof addr === "string" || !addr) throw new Error("no address");
     const url = `http://127.0.0.1:${addr.port}${path}`;
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
     const text = await res.text();
@@ -79,36 +79,38 @@ async function call(
   }
 }
 
-describe('Onboarding step 2 (PATCH /api/companies/:id) error handling', () => {
-  it('maps Postgres unique_violation (23505) on companies.name to 409 with actionable message', async () => {
+describe("Onboarding step 2 (PATCH /api/companies/:id) error handling", () => {
+  it("maps Postgres unique_violation (23505) on companies.name to 409 with actionable message", async () => {
     const app = buildPatchRoute(async () => {
-      const err: any = new Error('duplicate key value violates unique constraint "companies_name_unique"');
-      err.code = '23505';
-      err.constraint = 'companies_name_unique';
+      const err: any = new Error(
+        'duplicate key value violates unique constraint "companies_name_unique"'
+      );
+      err.code = "23505";
+      err.constraint = "companies_name_unique";
       throw err;
     });
 
-    const res = await call(app, 'PATCH', '/api/companies/c1', { name: 'Acme LLC' });
+    const res = await call(app, "PATCH", "/api/companies/c1", { name: "Acme LLC" });
 
     expect(res.status).toBe(409);
     expect(res.body.message).toMatch(/already taken/i);
-    expect(res.body.field).toBe('name');
+    expect(res.body.field).toBe("name");
   });
 
-  it('passes through non-unique-violation errors so the global error handler can deal with them', async () => {
+  it("passes through non-unique-violation errors so the global error handler can deal with them", async () => {
     const app = buildPatchRoute(async () => {
-      throw new Error('database connection lost');
+      throw new Error("database connection lost");
     });
     // We don't install a global error handler in this mini app; an unhandled
     // throw from asyncHandler should yield a 500.
-    const res = await call(app, 'PATCH', '/api/companies/c1', { name: 'Acme LLC' });
+    const res = await call(app, "PATCH", "/api/companies/c1", { name: "Acme LLC" });
     expect(res.status).toBe(500);
   });
 
-  it('returns the updated row on success', async () => {
+  it("returns the updated row on success", async () => {
     const app = buildPatchRoute(async (id, data) => ({ id, ...data }));
-    const res = await call(app, 'PATCH', '/api/companies/c1', { name: 'Acme LLC' });
+    const res = await call(app, "PATCH", "/api/companies/c1", { name: "Acme LLC" });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ id: 'c1', name: 'Acme LLC' });
+    expect(res.body).toEqual({ id: "c1", name: "Acme LLC" });
   });
 });

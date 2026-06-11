@@ -14,29 +14,29 @@
  * sync with the OCR/AI routes that already validate against the same list.
  */
 
-import type OpenAI from 'openai';
-import type { ClassifierMethod } from '../../shared/schema';
-import { createLogger } from '../config/logger';
+import type OpenAI from "openai";
+import type { ClassifierMethod } from "../../shared/schema";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('receipt-classifier');
+const log = createLogger("receipt-classifier");
 
 // =============================================
 // Types
 // =============================================
 
 export const STANDARD_CATEGORIES = [
-  'Office Supplies',
-  'Utilities',
-  'Travel',
-  'Meals',
-  'Rent',
-  'Marketing',
-  'Equipment',
-  'Professional Services',
-  'Insurance',
-  'Maintenance',
-  'Communication',
-  'Other',
+  "Office Supplies",
+  "Utilities",
+  "Travel",
+  "Meals",
+  "Rent",
+  "Marketing",
+  "Equipment",
+  "Professional Services",
+  "Insurance",
+  "Maintenance",
+  "Communication",
+  "Other",
 ] as const;
 
 export type StandardCategory = (typeof STANDARD_CATEGORIES)[number];
@@ -72,7 +72,7 @@ export interface ClassifyOptions {
   /** Minimum confidence we will accept from the internal pipeline. Below → OpenAI. */
   threshold: number;
   /** When 'openai_only', skip the deterministic pipeline entirely. */
-  mode: 'hybrid' | 'openai_only';
+  mode: "hybrid" | "openai_only";
 }
 
 export interface ClassificationResult {
@@ -96,79 +96,148 @@ export interface ClassificationResult {
 interface KeywordRule {
   category: StandardCategory;
   keywords: string[];
-  specificity: 'high' | 'medium' | 'low';
+  specificity: "high" | "medium" | "low";
 }
 
 const KEYWORD_RULES: KeywordRule[] = [
   // Utilities — UAE utility providers are highly distinctive.
   {
-    category: 'Utilities',
-    keywords: ['dewa', 'sewa', 'fewa', 'addc', 'aadc', 'tawreed'],
-    specificity: 'high',
+    category: "Utilities",
+    keywords: ["dewa", "sewa", "fewa", "addc", "aadc", "tawreed"],
+    specificity: "high",
   },
   // Communication — telecom + meeting/SaaS comms providers.
   {
-    category: 'Communication',
-    keywords: ['etisalat', ' du ', 'virgin mobile', 'stc', 'zoom', 'microsoft teams', 'slack', 'webex', 'internet'],
-    specificity: 'high',
+    category: "Communication",
+    keywords: [
+      "etisalat",
+      " du ",
+      "virgin mobile",
+      "stc",
+      "zoom",
+      "microsoft teams",
+      "slack",
+      "webex",
+      "internet",
+    ],
+    specificity: "high",
   },
   // Travel — UAE transport + ride-hail + airlines + tolls + parking.
   {
-    category: 'Travel',
+    category: "Travel",
     keywords: [
-      'emirates', 'flydubai', 'etihad', 'air arabia',
-      'uber', 'careem', 'rta', 'salik', 'taxi', 'parking',
-      'enoc', 'adnoc', 'eppco', 'fuel',
+      "emirates",
+      "flydubai",
+      "etihad",
+      "air arabia",
+      "uber",
+      "careem",
+      "rta",
+      "salik",
+      "taxi",
+      "parking",
+      "enoc",
+      "adnoc",
+      "eppco",
+      "fuel",
     ],
-    specificity: 'high',
+    specificity: "high",
   },
   // Meals — restaurants + UAE food-delivery aggregators.
   {
-    category: 'Meals',
-    keywords: ['restaurant', 'cafe', 'coffee', 'food', 'deliveroo', 'talabat', 'zomato', 'careem food', 'noon food'],
-    specificity: 'medium',
+    category: "Meals",
+    keywords: [
+      "restaurant",
+      "cafe",
+      "coffee",
+      "food",
+      "deliveroo",
+      "talabat",
+      "zomato",
+      "careem food",
+      "noon food",
+    ],
+    specificity: "medium",
   },
   // Rent / real estate.
   {
-    category: 'Rent',
-    keywords: ['rent', 'lease', 'ejari', 'real estate', 'property management', 'landlord'],
-    specificity: 'medium',
+    category: "Rent",
+    keywords: ["rent", "lease", "ejari", "real estate", "property management", "landlord"],
+    specificity: "medium",
   },
   // Marketing.
   {
-    category: 'Marketing',
-    keywords: ['google ads', 'meta ', 'facebook ads', 'instagram ads', 'linkedin ads', 'marketing', 'advertising', 'promotion'],
-    specificity: 'medium',
+    category: "Marketing",
+    keywords: [
+      "google ads",
+      "meta ",
+      "facebook ads",
+      "instagram ads",
+      "linkedin ads",
+      "marketing",
+      "advertising",
+      "promotion",
+    ],
+    specificity: "medium",
   },
   // Equipment — hardware vendors and computer/electronics keywords.
   {
-    category: 'Equipment',
-    keywords: ['apple', 'dell', 'hp ', 'lenovo', 'asus', 'samsung', 'computer', 'laptop', 'printer', 'monitor'],
-    specificity: 'medium',
+    category: "Equipment",
+    keywords: [
+      "apple",
+      "dell",
+      "hp ",
+      "lenovo",
+      "asus",
+      "samsung",
+      "computer",
+      "laptop",
+      "printer",
+      "monitor",
+    ],
+    specificity: "medium",
   },
   // Office Supplies.
   {
-    category: 'Office Supplies',
-    keywords: ['stationery', 'officeworks', 'paper', 'ink', 'toner', 'pens', 'office depot'],
-    specificity: 'medium',
+    category: "Office Supplies",
+    keywords: ["stationery", "officeworks", "paper", "ink", "toner", "pens", "office depot"],
+    specificity: "medium",
   },
   // Professional Services.
   {
-    category: 'Professional Services',
-    keywords: ['consultant', 'consulting', 'legal', 'lawyer', 'audit', 'advisory', 'accounting', 'bookkeeping', 'tax services'],
-    specificity: 'medium',
+    category: "Professional Services",
+    keywords: [
+      "consultant",
+      "consulting",
+      "legal",
+      "lawyer",
+      "audit",
+      "advisory",
+      "accounting",
+      "bookkeeping",
+      "tax services",
+    ],
+    specificity: "medium",
   },
   // Insurance — UAE Takaful providers.
   {
-    category: 'Insurance',
-    keywords: ['insurance', 'takaful', 'aman', 'daman', 'oman insurance', 'salama', 'noor takaful'],
-    specificity: 'high',
+    category: "Insurance",
+    keywords: ["insurance", "takaful", "aman", "daman", "oman insurance", "salama", "noor takaful"],
+    specificity: "high",
   },
   // Maintenance.
   {
-    category: 'Maintenance',
-    keywords: ['maintenance', 'repair', 'cleaning', 'plumber', 'electrician', 'handyman', 'service charge'],
-    specificity: 'low',
+    category: "Maintenance",
+    keywords: [
+      "maintenance",
+      "repair",
+      "cleaning",
+      "plumber",
+      "electrician",
+      "handyman",
+      "service charge",
+    ],
+    specificity: "low",
   },
 ];
 
@@ -177,17 +246,20 @@ const KEYWORD_RULES: KeywordRule[] = [
 // =============================================
 
 export function normalizeMerchant(raw: string | null | undefined): string {
-  if (!raw) return '';
+  if (!raw) return "";
   return raw
     .toLowerCase()
-    .replace(/\b(ltd|llc|inc|fzc|fzco|fz-llc|l\.l\.c\.?|trading|co\.?|company|corp(?:oration)?|gmbh|sa)\b/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(
+      /\b(ltd|llc|inc|fzc|fzco|fz-llc|l\.l\.c\.?|trading|co\.?|company|corp(?:oration)?|gmbh|sa)\b/g,
+      ""
+    )
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
 export function isStandardCategory(value: unknown): value is StandardCategory {
-  return typeof value === 'string' && (STANDARD_CATEGORIES as readonly string[]).includes(value);
+  return typeof value === "string" && (STANDARD_CATEGORIES as readonly string[]).includes(value);
 }
 
 // =============================================
@@ -196,7 +268,7 @@ export function isStandardCategory(value: unknown): value is StandardCategory {
 
 interface RuleMatch {
   rule: CompanyRuleSnapshot;
-  matchType: 'exact' | 'fuzzy';
+  matchType: "exact" | "fuzzy";
 }
 
 function matchAgainstRules(merchant: string, rules: CompanyRuleSnapshot[]): RuleMatch | null {
@@ -208,7 +280,7 @@ function matchAgainstRules(merchant: string, rules: CompanyRuleSnapshot[]): Rule
     if (!rule.merchantPattern) continue;
     if (rule.confidence <= 0.7 || rule.timesApplied <= 3) continue;
     if (normalizeMerchant(rule.merchantPattern) === normalized) {
-      return { rule, matchType: 'exact' };
+      return { rule, matchType: "exact" };
     }
   }
 
@@ -225,7 +297,7 @@ function matchAgainstRules(merchant: string, rules: CompanyRuleSnapshot[]): Rule
     const normalizedPattern = normalizeMerchant(pattern);
     if (!normalizedPattern) continue;
     if (normalized.includes(normalizedPattern) || normalizedPattern.includes(normalized)) {
-      return { rule, matchType: 'fuzzy' };
+      return { rule, matchType: "fuzzy" };
     }
   }
 
@@ -239,12 +311,12 @@ function matchAgainstRules(merchant: string, rules: CompanyRuleSnapshot[]): Rule
 interface KeywordHit {
   category: StandardCategory;
   hits: number;
-  specificity: 'high' | 'medium' | 'low';
+  specificity: "high" | "medium" | "low";
   matchedKeyword: string;
 }
 
 function matchKeywords(merchant: string, lineItems: string[] = []): KeywordHit | null {
-  const inner = [merchant, ...lineItems].join(' ').toLowerCase();
+  const inner = [merchant, ...lineItems].join(" ").toLowerCase();
   if (!inner.trim()) return null;
   // Pad with spaces so keywords that use leading/trailing spaces as a word
   // boundary (e.g. ' du ', 'hp ', 'meta ') match when the token sits at the
@@ -256,7 +328,7 @@ function matchKeywords(merchant: string, lineItems: string[] = []): KeywordHit |
 
   for (const rule of KEYWORD_RULES) {
     let hits = 0;
-    let firstMatch = '';
+    let firstMatch = "";
     for (const keyword of rule.keywords) {
       const k = keyword.toLowerCase();
       if (haystack.includes(k)) {
@@ -275,7 +347,8 @@ function matchKeywords(merchant: string, lineItems: string[] = []): KeywordHit |
     if (
       !best ||
       specificityRank(candidate.specificity) > specificityRank(best.specificity) ||
-      (specificityRank(candidate.specificity) === specificityRank(best.specificity) && candidate.hits > best.hits)
+      (specificityRank(candidate.specificity) === specificityRank(best.specificity) &&
+        candidate.hits > best.hits)
     ) {
       best = candidate;
     }
@@ -284,13 +357,12 @@ function matchKeywords(merchant: string, lineItems: string[] = []): KeywordHit |
   return best;
 }
 
-function specificityRank(s: 'high' | 'medium' | 'low'): number {
-  return s === 'high' ? 3 : s === 'medium' ? 2 : 1;
+function specificityRank(s: "high" | "medium" | "low"): number {
+  return s === "high" ? 3 : s === "medium" ? 2 : 1;
 }
 
 function keywordConfidence(hit: KeywordHit): number {
-  const base =
-    hit.specificity === 'high' ? 0.85 : hit.specificity === 'medium' ? 0.75 : 0.65;
+  const base = hit.specificity === "high" ? 0.85 : hit.specificity === "medium" ? 0.75 : 0.65;
   // Multi-hit bonus: each extra match adds 0.02, capped at +0.08.
   return Math.min(0.92, base + Math.min(0.08, (hit.hits - 1) * 0.02));
 }
@@ -312,7 +384,7 @@ interface NaiveBayesModel {
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length >= 2);
 }
@@ -363,9 +435,7 @@ function predictNaiveBayes(model: NaiveBayesModel, merchant: string): NaiveBayes
   for (const [category, count] of model.categoryCounts.entries()) {
     const prior = Math.log(count / model.totalExamples);
     const inner = model.wordCounts.get(category);
-    const totalWordsInCategory = inner
-      ? Array.from(inner.values()).reduce((s, n) => s + n, 0)
-      : 0;
+    const totalWordsInCategory = inner ? Array.from(inner.values()).reduce((s, n) => s + n, 0) : 0;
 
     let logLikelihood = 0;
     for (const token of tokens) {
@@ -422,13 +492,13 @@ export interface ClassifyReceiptParams {
  * to 'Other'). `accountId` is set when stage 1/2 matched a rule, null otherwise.
  */
 export async function classifyReceipt(
-  params: ClassifyReceiptParams,
+  params: ClassifyReceiptParams
 ): Promise<ClassificationResult> {
   const { merchant, model, options, openai, expenseAccountNames, openaiModel } = params;
   const lineItems = params.lineItems || [];
 
   // OpenAI-only mode: skip internal pipeline.
-  if (options.mode === 'openai_only') {
+  if (options.mode === "openai_only") {
     return await callOpenAIFallback(merchant, lineItems, openai, expenseAccountNames, openaiModel);
   }
 
@@ -436,12 +506,12 @@ export async function classifyReceipt(
   const ruleMatch = matchAgainstRules(merchant, model.rules);
   if (ruleMatch) {
     const rule = ruleMatch.rule;
-    const category: StandardCategory = isStandardCategory(rule.category) ? rule.category : 'Other';
+    const category: StandardCategory = isStandardCategory(rule.category) ? rule.category : "Other";
     return {
       category,
       accountId: rule.accountId,
       confidence: rule.confidence,
-      method: 'rule',
+      method: "rule",
       reason: `Matched company rule (${ruleMatch.matchType}) "${rule.merchantPattern || rule.descriptionPattern}" — applied ${rule.timesApplied}× / accepted ${rule.timesAccepted}×.`,
       matchedRuleId: rule.id,
     };
@@ -455,7 +525,7 @@ export async function classifyReceipt(
       category: keywordHit.category,
       accountId: null,
       confidence: keywordConfidence(keywordHit),
-      method: 'keyword',
+      method: "keyword",
       reason: `Keyword match "${keywordHit.matchedKeyword}" → ${keywordHit.category} (${keywordHit.specificity} specificity).`,
     };
   }
@@ -468,12 +538,12 @@ export async function classifyReceipt(
       const conf = statisticalConfidence(prediction, model.trainingExamples.length);
       const category: StandardCategory = isStandardCategory(prediction.category)
         ? prediction.category
-        : 'Other';
+        : "Other";
       const statResult: ClassificationResult = {
         category,
         accountId: null,
         confidence: conf,
-        method: 'statistical',
+        method: "statistical",
         reason: `Naive Bayes prediction over ${model.trainingExamples.length} training examples (margin ${prediction.margin.toFixed(2)}).`,
       };
       // Pick the more confident of keyword vs statistical.
@@ -492,14 +562,17 @@ export async function classifyReceipt(
   try {
     return await callOpenAIFallback(merchant, lineItems, openai, expenseAccountNames, openaiModel);
   } catch (err: any) {
-    log.warn({ err: err?.message || err, merchant }, 'OpenAI fallback failed — returning best internal result');
+    log.warn(
+      { err: err?.message || err, merchant },
+      "OpenAI fallback failed — returning best internal result"
+    );
     if (bestInternal) return bestInternal;
     return {
-      category: 'Other',
+      category: "Other",
       accountId: null,
       confidence: 0.3,
-      method: 'openai',
-      reason: 'OpenAI fallback failed and no internal match — defaulted to Other.',
+      method: "openai",
+      reason: "OpenAI fallback failed and no internal match — defaulted to Other.",
     };
   }
 }
@@ -513,38 +586,40 @@ async function callOpenAIFallback(
   lineItems: string[],
   openai: OpenAI | null,
   expenseAccountNames: string[] | undefined,
-  openaiModel: string | undefined,
+  openaiModel: string | undefined
 ): Promise<ClassificationResult> {
   if (!openai) {
-    log.warn({ merchant }, 'OpenAI fallback requested but client is not configured');
+    log.warn({ merchant }, "OpenAI fallback requested but client is not configured");
     return {
-      category: 'Other',
+      category: "Other",
       accountId: null,
       confidence: 0.3,
-      method: 'openai',
-      reason: 'OpenAI fallback requested but OPENAI_API_KEY is not configured.',
+      method: "openai",
+      reason: "OpenAI fallback requested but OPENAI_API_KEY is not configured.",
     };
   }
 
-  const itemsBlock = lineItems.length > 0 ? `\nLine items: ${lineItems.slice(0, 5).join(', ')}` : '';
-  const accountHint = expenseAccountNames && expenseAccountNames.length > 0
-    ? `\n\nIf relevant, the company has these expense accounts (for the reason text only — do not invent IDs): ${expenseAccountNames.slice(0, 30).join(', ')}.`
-    : '';
+  const itemsBlock =
+    lineItems.length > 0 ? `\nLine items: ${lineItems.slice(0, 5).join(", ")}` : "";
+  const accountHint =
+    expenseAccountNames && expenseAccountNames.length > 0
+      ? `\n\nIf relevant, the company has these expense accounts (for the reason text only — do not invent IDs): ${expenseAccountNames.slice(0, 30).join(", ")}.`
+      : "";
 
-  const prompt = `Categorize this UAE business receipt into exactly one of: ${STANDARD_CATEGORIES.join(', ')}.
+  const prompt = `Categorize this UAE business receipt into exactly one of: ${STANDARD_CATEGORIES.join(", ")}.
 Merchant: "${merchant}"${itemsBlock}${accountHint}
 
 Respond with strict JSON: {"category":"<one of the categories>","confidence":<0..1>,"reason":"<short>"}`;
 
   const completion = await openai.chat.completions.create({
-    model: openaiModel || 'gpt-3.5-turbo',
-    messages: [{ role: 'user', content: prompt }],
-    response_format: { type: 'json_object' },
+    model: openaiModel || "gpt-3.5-turbo",
+    messages: [{ role: "user", content: prompt }],
+    response_format: { type: "json_object" },
     temperature: 0.2,
     max_tokens: 200,
   });
 
-  const raw = completion.choices[0]?.message?.content || '{}';
+  const raw = completion.choices[0]?.message?.content || "{}";
   let parsed: { category?: string; confidence?: number; reason?: string };
   try {
     parsed = JSON.parse(raw);
@@ -552,17 +627,18 @@ Respond with strict JSON: {"category":"<one of the categories>","confidence":<0.
     parsed = {};
   }
 
-  const category: StandardCategory = isStandardCategory(parsed.category) ? parsed.category : 'Other';
-  const confidence = typeof parsed.confidence === 'number'
-    ? Math.max(0, Math.min(1, parsed.confidence))
-    : 0.7;
+  const category: StandardCategory = isStandardCategory(parsed.category)
+    ? parsed.category
+    : "Other";
+  const confidence =
+    typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0.7;
 
   return {
     category,
     accountId: null,
     confidence,
-    method: 'openai',
-    reason: parsed.reason ? String(parsed.reason).slice(0, 300) : 'OpenAI fallback classification.',
+    method: "openai",
+    reason: parsed.reason ? String(parsed.reason).slice(0, 300) : "OpenAI fallback classification.",
   };
 }
 

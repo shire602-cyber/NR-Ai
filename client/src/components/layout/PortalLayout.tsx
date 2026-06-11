@@ -1,33 +1,39 @@
-import { useLocation, Link } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation, Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, FileText, FolderOpen, BarChart2, MessageSquare, LogOut, Building2,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { apiRequest } from '@/lib/queryClient';
-import { removeToken } from '@/lib/auth';
+  LayoutDashboard,
+  FileText,
+  FolderOpen,
+  BarChart2,
+  MessageSquare,
+  LogOut,
+  Building2,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { apiRequest } from "@/lib/queryClient";
+import { removeToken } from "@/lib/auth";
 
 const NAV_ITEMS = [
-  { label: 'Dashboard',   href: '/client-portal/dashboard',   icon: LayoutDashboard },
-  { label: 'Invoices',    href: '/client-portal/invoices',    icon: FileText },
-  { label: 'Documents',   href: '/client-portal/documents',   icon: FolderOpen },
-  { label: 'Statements',  href: '/client-portal/statements',  icon: BarChart2 },
-  { label: 'Messages',    href: '/client-portal/messages',    icon: MessageSquare },
+  { label: "Dashboard", href: "/client-portal/dashboard", icon: LayoutDashboard },
+  { label: "Invoices", href: "/client-portal/invoices", icon: FileText },
+  { label: "Documents", href: "/client-portal/documents", icon: FolderOpen },
+  { label: "Statements", href: "/client-portal/statements", icon: BarChart2 },
+  { label: "Messages", href: "/client-portal/messages", icon: MessageSquare },
 ];
 
 export function PortalLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
 
   const { data: company } = useQuery({
-    queryKey: ['portal-company'],
-    queryFn: () => apiRequest('GET', '/api/client-portal/company'),
+    queryKey: ["portal-company"],
+    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
     staleTime: 5 * 60 * 1000,
   });
 
   function handleLogout() {
     removeToken();
-    navigate('/login');
+    navigate("/login");
   }
 
   return (
@@ -46,7 +52,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             )}
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">
-                {company?.name ?? 'My Company'}
+                {company?.name ?? "My Company"}
               </p>
               <p className="text-xs text-gray-500">Client Portal</p>
             </div>
@@ -56,18 +62,20 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1">
           {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
-            const active = location === href || location.startsWith(href + '/');
+            const active = location === href || location.startsWith(href + "/");
             return (
               <Link key={href} href={href}>
                 <a
                   className={[
-                    'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                     active
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900',
-                  ].join(' ')}
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+                  ].join(" ")}
                 >
-                  <Icon className={['w-4 h-4', active ? 'text-blue-600' : 'text-gray-400'].join(' ')} />
+                  <Icon
+                    className={["w-4 h-4", active ? "text-blue-600" : "text-gray-400"].join(" ")}
+                  />
                   {label}
                 </a>
               </Link>
@@ -94,7 +102,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         {/* Top bar */}
         <header className="h-14 flex items-center justify-between px-6 bg-white border-b border-gray-200">
           <h1 className="text-sm font-semibold text-gray-700">
-            {NAV_ITEMS.find(n => location.startsWith(n.href))?.label ?? 'Portal'}
+            {NAV_ITEMS.find((n) => location.startsWith(n.href))?.label ?? "Portal"}
           </h1>
           <span className="text-xs text-gray-400">NR Accounting — Client Portal</span>
         </header>
@@ -106,7 +114,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
               initial={false}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -16 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
             >
               {children}
             </motion.div>

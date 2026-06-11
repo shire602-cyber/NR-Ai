@@ -1,22 +1,35 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
-  Activity, AlertTriangle, CheckCircle2, XCircle,
-  ChevronUp, ChevronDown, ChevronsUpDown, Calendar,
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
+  Calendar,
   Building2,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { format } from 'date-fns';
-import { useTranslation } from '@/lib/i18n';
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { format } from "date-fns";
+import { useTranslation } from "@/lib/i18n";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type HealthStatus = 'healthy' | 'attention' | 'critical';
-type VatStatus = 'on-track' | 'due-soon' | 'overdue';
-type DeadlineStatus = 'upcoming' | 'due-soon' | 'overdue';
+type HealthStatus = "healthy" | "attention" | "critical";
+type VatStatus = "on-track" | "due-soon" | "overdue";
+type DeadlineStatus = "upcoming" | "due-soon" | "overdue";
 
 interface ClientHealth {
   companyId: string;
@@ -64,7 +77,7 @@ interface HealthData {
 interface Deadline {
   companyId: string;
   companyName: string;
-  type: 'vat' | 'corporate-tax' | 'audit';
+  type: "vat" | "corporate-tax" | "audit";
   dueDate: string;
   daysTilDue: number;
   status: DeadlineStatus;
@@ -74,31 +87,31 @@ interface DeadlinesData {
   deadlines: Deadline[];
 }
 
-type SortField = 'health' | 'name' | 'ar' | 'vat';
-type SortDir = 'asc' | 'desc';
+type SortField = "health" | "name" | "ar" | "vat";
+type SortDir = "asc" | "desc";
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
 function TrafficDot({ status }: { status: HealthStatus | VatStatus | DeadlineStatus }) {
   const colorMap: Record<string, string> = {
-    healthy: 'bg-green-500',
-    'on-track': 'bg-green-500',
-    upcoming: 'bg-green-500',
-    attention: 'bg-yellow-500',
-    'due-soon': 'bg-yellow-500',
-    critical: 'bg-red-500',
-    overdue: 'bg-red-500',
+    healthy: "bg-green-500",
+    "on-track": "bg-green-500",
+    upcoming: "bg-green-500",
+    attention: "bg-yellow-500",
+    "due-soon": "bg-yellow-500",
+    critical: "bg-red-500",
+    overdue: "bg-red-500",
   };
   return (
     <span
-      className={`inline-block w-2.5 h-2.5 rounded-full ${colorMap[status] ?? 'bg-gray-400'}`}
+      className={`inline-block w-2.5 h-2.5 rounded-full ${colorMap[status] ?? "bg-gray-400"}`}
       title={status}
     />
   );
 }
 
 function HealthBadge({ status }: { status: HealthStatus }) {
-  if (status === 'healthy') {
+  if (status === "healthy") {
     return (
       <Badge className="bg-green-100 text-green-800 border-green-200 gap-1">
         <CheckCircle2 className="w-3 h-3" />
@@ -106,7 +119,7 @@ function HealthBadge({ status }: { status: HealthStatus }) {
       </Badge>
     );
   }
-  if (status === 'attention') {
+  if (status === "attention") {
     return (
       <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 gap-1">
         <AlertTriangle className="w-3 h-3" />
@@ -123,62 +136,80 @@ function HealthBadge({ status }: { status: HealthStatus }) {
 }
 
 function DeadlineBadge({ status, daysTilDue }: { status: DeadlineStatus; daysTilDue: number }) {
-  if (status === 'overdue') {
-    return <Badge className="bg-red-100 text-red-800 border-red-200">{Math.abs(daysTilDue)}d overdue</Badge>;
+  if (status === "overdue") {
+    return (
+      <Badge className="bg-red-100 text-red-800 border-red-200">
+        {Math.abs(daysTilDue)}d overdue
+      </Badge>
+    );
   }
-  if (status === 'due-soon') {
-    return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">Due in {daysTilDue}d</Badge>;
+  if (status === "due-soon") {
+    return (
+      <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200">
+        Due in {daysTilDue}d
+      </Badge>
+    );
   }
   return <Badge variant="outline">In {daysTilDue}d</Badge>;
 }
 
-function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: SortField; sortDir: SortDir }) {
+function SortIcon({
+  field,
+  sortField,
+  sortDir,
+}: {
+  field: SortField;
+  sortField: SortField;
+  sortDir: SortDir;
+}) {
   if (field !== sortField) return <ChevronsUpDown className="w-3 h-3 ml-1 text-muted-foreground" />;
-  return sortDir === 'asc'
-    ? <ChevronUp className="w-3 h-3 ml-1" />
-    : <ChevronDown className="w-3 h-3 ml-1" />;
+  return sortDir === "asc" ? (
+    <ChevronUp className="w-3 h-3 ml-1" />
+  ) : (
+    <ChevronDown className="w-3 h-3 ml-1" />
+  );
 }
 
 const HEALTH_ORDER: Record<HealthStatus, number> = { critical: 0, attention: 1, healthy: 2 };
-const VAT_ORDER: Record<VatStatus, number> = { overdue: 0, 'due-soon': 1, 'on-track': 2 };
+const VAT_ORDER: Record<VatStatus, number> = { overdue: 0, "due-soon": 1, "on-track": 2 };
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
 
 export default function FirmHealth() {
   const [, navigate] = useLocation();
   const { t } = useTranslation();
-  const [sortField, setSortField] = useState<SortField>('health');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [sortField, setSortField] = useState<SortField>("health");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const { data: healthData, isLoading } = useQuery<HealthData>({
-    queryKey: ['/api/firm/health'],
+    queryKey: ["/api/firm/health"],
   });
 
   const { data: deadlinesData } = useQuery<DeadlinesData>({
-    queryKey: ['/api/firm/health/deadlines'],
+    queryKey: ["/api/firm/health/deadlines"],
   });
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
-      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {
       setSortField(field);
-      setSortDir('asc');
+      setSortDir("asc");
     }
   };
 
   const sortedClients = [...(healthData?.clients ?? [])].sort((a, b) => {
     let cmp = 0;
-    if (sortField === 'health') {
+    if (sortField === "health") {
       cmp = HEALTH_ORDER[a.overallHealth] - HEALTH_ORDER[b.overallHealth];
-    } else if (sortField === 'name') {
+    } else if (sortField === "name") {
       cmp = a.companyName.localeCompare(b.companyName);
-    } else if (sortField === 'ar') {
+    } else if (sortField === "ar") {
       cmp = a.arHealth.totalOutstanding - b.arHealth.totalOutstanding;
-    } else if (sortField === 'vat') {
+    } else if (sortField === "vat") {
       cmp = VAT_ORDER[a.vatStatus.status] - VAT_ORDER[b.vatStatus.status];
     }
-    return sortDir === 'asc' ? cmp : -cmp;
+    return sortDir === "asc" ? cmp : -cmp;
   });
 
   const summary = healthData?.summary;
@@ -207,7 +238,9 @@ export default function FirmHealth() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">{t.totalClients}</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              {t.totalClients}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">{summary?.totalClients ?? 0}</p>
@@ -222,7 +255,9 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-green-700 dark:text-green-400">{summary?.healthy ?? 0}</p>
+            <p className="text-3xl font-bold text-green-700 dark:text-green-400">
+              {summary?.healthy ?? 0}
+            </p>
           </CardContent>
         </Card>
 
@@ -234,7 +269,9 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-yellow-700 dark:text-yellow-400">{summary?.attention ?? 0}</p>
+            <p className="text-3xl font-bold text-yellow-700 dark:text-yellow-400">
+              {summary?.attention ?? 0}
+            </p>
           </CardContent>
         </Card>
 
@@ -246,7 +283,9 @@ export default function FirmHealth() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-red-700 dark:text-red-400">{summary?.critical ?? 0}</p>
+            <p className="text-3xl font-bold text-red-700 dark:text-red-400">
+              {summary?.critical ?? 0}
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -269,7 +308,7 @@ export default function FirmHealth() {
                   <TableRow>
                     <TableHead
                       className="cursor-pointer select-none"
-                      onClick={() => handleSort('health')}
+                      onClick={() => handleSort("health")}
                     >
                       <span className="flex items-center">
                         {t.overallHealth}
@@ -278,7 +317,7 @@ export default function FirmHealth() {
                     </TableHead>
                     <TableHead
                       className="cursor-pointer select-none"
-                      onClick={() => handleSort('name')}
+                      onClick={() => handleSort("name")}
                     >
                       <span className="flex items-center">
                         {t.client}
@@ -287,7 +326,7 @@ export default function FirmHealth() {
                     </TableHead>
                     <TableHead
                       className="cursor-pointer select-none"
-                      onClick={() => handleSort('vat')}
+                      onClick={() => handleSort("vat")}
                     >
                       <span className="flex items-center">
                         {t.vatStatus}
@@ -296,7 +335,7 @@ export default function FirmHealth() {
                     </TableHead>
                     <TableHead
                       className="cursor-pointer select-none"
-                      onClick={() => handleSort('ar')}
+                      onClick={() => handleSort("ar")}
                     >
                       <span className="flex items-center">
                         {t.arHealth}
@@ -309,7 +348,7 @@ export default function FirmHealth() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sortedClients.map(client => (
+                  {sortedClients.map((client) => (
                     <TableRow
                       key={client.companyId}
                       className="cursor-pointer hover:bg-muted/50"
@@ -331,8 +370,8 @@ export default function FirmHealth() {
                           <TrafficDot status={client.vatStatus.status} />
                           <span className="text-sm">
                             {client.vatStatus.nextDueDate
-                              ? format(new Date(client.vatStatus.nextDueDate), 'MMM d')
-                              : '—'}
+                              ? format(new Date(client.vatStatus.nextDueDate), "MMM d")
+                              : "—"}
                           </span>
                         </div>
                       </TableCell>
@@ -342,7 +381,7 @@ export default function FirmHealth() {
                           <span className="text-sm">
                             {client.arHealth.overdueCount > 0
                               ? `${client.arHealth.overdueCount} overdue`
-                              : 'Clear'}
+                              : "Clear"}
                           </span>
                         </div>
                       </TableCell>
@@ -352,7 +391,7 @@ export default function FirmHealth() {
                           <span className="text-sm">
                             {client.bankRecStatus.unreconciledCount > 0
                               ? `${client.bankRecStatus.unreconciledCount} unmatched`
-                              : 'Clear'}
+                              : "Clear"}
                           </span>
                         </div>
                       </TableCell>
@@ -360,14 +399,14 @@ export default function FirmHealth() {
                         <div className="flex items-center gap-2">
                           <TrafficDot status={client.trialBalanceStatus.status} />
                           <span className="text-sm">
-                            {client.trialBalanceStatus.balanced ? 'Balanced' : 'Off'}
+                            {client.trialBalanceStatus.balanced ? "Balanced" : "Off"}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {client.lastActivity
-                          ? format(new Date(client.lastActivity), 'MMM d, yyyy')
-                          : '—'}
+                          ? format(new Date(client.lastActivity), "MMM d, yyyy")
+                          : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -404,12 +443,14 @@ export default function FirmHealth() {
                     <TrafficDot status={dl.status} />
                     <div>
                       <p className="font-medium text-sm">{dl.companyName}</p>
-                      <p className="text-xs text-muted-foreground uppercase tracking-wide">{dl.type}</p>
+                      <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                        {dl.type}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">
-                      {format(new Date(dl.dueDate), 'MMM d, yyyy')}
+                      {format(new Date(dl.dueDate), "MMM d, yyyy")}
                     </span>
                     <DeadlineBadge status={dl.status} daysTilDue={dl.daysTilDue} />
                   </div>

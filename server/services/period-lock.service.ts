@@ -1,5 +1,5 @@
-import { isPeriodLocked } from './month-end.service';
-import { AppError } from '../middleware/errorHandler';
+import { isPeriodLocked } from "./month-end.service";
+import { AppError } from "../middleware/errorHandler";
 
 /**
  * Period lock guard for financial write paths.
@@ -15,7 +15,7 @@ import { AppError } from '../middleware/errorHandler';
  */
 export async function assertPeriodNotLocked(
   companyId: string,
-  date: Date | string | null | undefined,
+  date: Date | string | null | undefined
 ): Promise<void> {
   if (!companyId) return;
   if (!date) return;
@@ -28,11 +28,11 @@ export async function assertPeriodNotLocked(
   const locked = await isPeriodLocked(companyId, isoDate);
   if (!locked) return;
 
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
   const year = d.getUTCFullYear();
 
   throw new AppError(
     `Cannot post to locked period (${month}/${year}). Unlock the period first.`,
-    403,
+    403
   );
 }

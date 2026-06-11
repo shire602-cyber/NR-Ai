@@ -1,17 +1,17 @@
-import type { Express, Request, Response } from 'express';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { storage } from '../storage';
-import { pool } from '../db';
+import type { Express, Request, Response } from "express";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { storage } from "../storage";
+import { pool } from "../db";
 import {
   scanAndClassifyTransactions,
   autoPostHighConfidence,
   processUserFeedback,
   getAIGLStats,
-} from '../services/autonomous-gl.service';
-import { createLogger } from '../config/logger';
+} from "../services/autonomous-gl.service";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('ai-gl-routes');
+const log = createLogger("ai-gl-routes");
 
 export function registerAIGLRoutes(app: Express) {
   // =====================================
@@ -23,7 +23,7 @@ export function registerAIGLRoutes(app: Express) {
    * List queue items with account names joined.
    */
   app.get(
-    '/api/companies/:companyId/ai-gl/queue',
+    "/api/companies/:companyId/ai-gl/queue",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -33,7 +33,7 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       let query = `
@@ -56,7 +56,7 @@ export function registerAIGLRoutes(app: Express) {
         query += ` AND q.status = $${params.length}`;
       }
 
-      query += ' ORDER BY q.created_at DESC';
+      query += " ORDER BY q.created_at DESC";
 
       const { rows } = await pool.query(query, params);
       res.json(rows);
@@ -71,7 +71,7 @@ export function registerAIGLRoutes(app: Express) {
    * POST /api/companies/:companyId/ai-gl/queue/:id/accept
    */
   app.post(
-    '/api/companies/:companyId/ai-gl/queue/:id/accept',
+    "/api/companies/:companyId/ai-gl/queue/:id/accept",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -80,10 +80,10 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
-      const result = await processUserFeedback(id, 'accept', userId);
+      const result = await processUserFeedback(id, "accept", userId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }
@@ -100,7 +100,7 @@ export function registerAIGLRoutes(app: Express) {
    * POST /api/companies/:companyId/ai-gl/queue/:id/reject
    */
   app.post(
-    '/api/companies/:companyId/ai-gl/queue/:id/reject',
+    "/api/companies/:companyId/ai-gl/queue/:id/reject",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -109,10 +109,10 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
-      const result = await processUserFeedback(id, 'reject', userId);
+      const result = await processUserFeedback(id, "reject", userId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }
@@ -130,7 +130,7 @@ export function registerAIGLRoutes(app: Express) {
    * Body: { accountId: string }
    */
   app.post(
-    '/api/companies/:companyId/ai-gl/queue/:id/correct',
+    "/api/companies/:companyId/ai-gl/queue/:id/correct",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -139,15 +139,15 @@ export function registerAIGLRoutes(app: Express) {
       const { accountId } = req.body;
 
       if (!accountId) {
-        return res.status(400).json({ message: 'accountId is required' });
+        return res.status(400).json({ message: "accountId is required" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
-      const result = await processUserFeedback(id, 'correct', userId, accountId);
+      const result = await processUserFeedback(id, "correct", userId, accountId);
       if (!result.success) {
         return res.status(400).json({ message: result.message });
       }
@@ -165,7 +165,7 @@ export function registerAIGLRoutes(app: Express) {
    * Manually trigger a scan of unreconciled transactions.
    */
   app.post(
-    '/api/companies/:companyId/ai-gl/scan',
+    "/api/companies/:companyId/ai-gl/scan",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -174,10 +174,10 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
-      log.info({ companyId, userId }, 'Manual AI GL scan triggered');
+      log.info({ companyId, userId }, "Manual AI GL scan triggered");
 
       // Step 1: Scan and classify
       const scanResult = await scanAndClassifyTransactions(companyId);
@@ -201,7 +201,7 @@ export function registerAIGLRoutes(app: Express) {
    * GET /api/companies/:companyId/ai-gl/stats
    */
   app.get(
-    '/api/companies/:companyId/ai-gl/stats',
+    "/api/companies/:companyId/ai-gl/stats",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -210,7 +210,7 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const stats = await getAIGLStats(companyId);
@@ -228,7 +228,7 @@ export function registerAIGLRoutes(app: Express) {
    * Stores in admin_settings table.
    */
   app.put(
-    '/api/companies/:companyId/ai-gl/settings',
+    "/api/companies/:companyId/ai-gl/settings",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -238,7 +238,7 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       if (
@@ -247,7 +247,7 @@ export function registerAIGLRoutes(app: Express) {
         confidenceThreshold > 1.0
       ) {
         return res.status(400).json({
-          message: 'confidenceThreshold must be between 0.5 and 1.0',
+          message: "confidenceThreshold must be between 0.5 and 1.0",
         });
       }
 
@@ -256,15 +256,12 @@ export function registerAIGLRoutes(app: Express) {
         `INSERT INTO admin_settings (key, value)
          VALUES ($1, $2)
          ON CONFLICT (key) DO UPDATE SET value = $2`,
-        [
-          `ai_gl_confidence_threshold_${companyId}`,
-          String(confidenceThreshold),
-        ]
+        [`ai_gl_confidence_threshold_${companyId}`, String(confidenceThreshold)]
       );
 
-      log.info({ companyId, confidenceThreshold }, 'AI GL confidence threshold updated');
+      log.info({ companyId, confidenceThreshold }, "AI GL confidence threshold updated");
       res.json({
-        message: 'Settings updated',
+        message: "Settings updated",
         confidenceThreshold,
       });
     })

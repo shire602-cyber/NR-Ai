@@ -1,24 +1,37 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
-import { formatDistanceToNow } from 'date-fns';
-import { 
-  BarChart3, 
-  PieChart as PieChartIcon, 
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+} from "recharts";
+import { formatDistanceToNow } from "date-fns";
+import {
+  BarChart3,
+  PieChart as PieChartIcon,
   TrendingUp,
   Eye,
   MousePointer,
   AlertTriangle,
   Activity,
   Users,
-  Clock
-} from 'lucide-react';
+  Clock,
+} from "lucide-react";
 
 interface AnalyticsDashboard {
   summary: {
@@ -33,27 +46,27 @@ interface AnalyticsDashboard {
   featureMetrics: any[];
 }
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D'];
+const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D"];
 
 export default function Analytics() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState("overview");
 
   const { data: analytics, isLoading } = useQuery<AnalyticsDashboard>({
-    queryKey: ['/api/analytics/dashboard'],
+    queryKey: ["/api/analytics/dashboard"],
   });
 
-  const eventChartData = analytics?.eventsByName 
+  const eventChartData = analytics?.eventsByName
     ? Object.entries(analytics.eventsByName)
-        .map(([name, count]) => ({ name: name.replace(/_/g, ' '), count }))
+        .map(([name, count]) => ({ name: name.replace(/_/g, " "), count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 10)
     : [];
 
   const pageChartData = analytics?.pagesByUrl
     ? Object.entries(analytics.pagesByUrl)
-        .map(([url, count]) => ({ 
-          name: url.replace('/', '') || 'Home',
-          count 
+        .map(([url, count]) => ({
+          name: url.replace("/", "") || "Home",
+          count,
         }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 8)
@@ -66,7 +79,7 @@ export default function Analytics() {
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
         <div className="grid gap-6 md:grid-cols-4">
-          {[1, 2, 3, 4].map(i => (
+          {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-32" />
           ))}
         </div>
@@ -272,21 +285,26 @@ export default function Analytics() {
                 <ScrollArea className="h-[500px]">
                   <div className="space-y-2">
                     {analytics.recentEvents.map((event: any, index: number) => (
-                      <div 
-                        key={event.id || index} 
+                      <div
+                        key={event.id || index}
                         className="flex items-center justify-between p-3 rounded-lg border"
                       >
                         <div className="flex items-center gap-3">
-                          <div className={`w-2 h-2 rounded-full ${
-                            event.eventType === 'error' ? 'bg-red-500' :
-                            event.eventType === 'page_view' ? 'bg-blue-500' :
-                            event.eventType === 'feature_use' ? 'bg-green-500' :
-                            'bg-gray-500'
-                          }`} />
+                          <div
+                            className={`w-2 h-2 rounded-full ${
+                              event.eventType === "error"
+                                ? "bg-red-500"
+                                : event.eventType === "page_view"
+                                  ? "bg-blue-500"
+                                  : event.eventType === "feature_use"
+                                    ? "bg-green-500"
+                                    : "bg-gray-500"
+                            }`}
+                          />
                           <div>
-                            <div className="font-medium">{event.eventName?.replace(/_/g, ' ')}</div>
+                            <div className="font-medium">{event.eventName?.replace(/_/g, " ")}</div>
                             <div className="text-sm text-muted-foreground">
-                              {event.pageUrl || '-'}
+                              {event.pageUrl || "-"}
                             </div>
                           </div>
                         </div>

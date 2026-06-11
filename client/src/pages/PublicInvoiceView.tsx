@@ -1,8 +1,8 @@
-import { useParams } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { useParams } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -10,9 +10,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Download, FileText, AlertCircle, Clock } from 'lucide-react';
-import { apiUrl } from '@/lib/api';
+} from "@/components/ui/table";
+import { Download, FileText, AlertCircle, Clock } from "lucide-react";
+import { apiUrl } from "@/lib/api";
 
 interface PublicInvoiceData {
   invoice: {
@@ -44,9 +44,9 @@ interface PublicInvoiceData {
   };
 }
 
-function formatCurrency(amount: number, currency: string = 'AED'): string {
-  return new Intl.NumberFormat('en-AE', {
-    style: 'currency',
+function formatCurrency(amount: number, currency: string = "AED"): string {
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
     currency,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -54,25 +54,25 @@ function formatCurrency(amount: number, currency: string = 'AED'): string {
 }
 
 function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString('en-AE', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+  return new Date(date).toLocaleDateString("en-AE", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
   });
 }
 
 function getStatusColor(status: string): string {
   switch (status) {
-    case 'paid':
-      return 'bg-green-100 text-green-800';
-    case 'sent':
-      return 'bg-blue-100 text-blue-800';
-    case 'draft':
-      return 'bg-gray-100 text-gray-800';
-    case 'void':
-      return 'bg-red-100 text-red-800';
+    case "paid":
+      return "bg-green-100 text-green-800";
+    case "sent":
+      return "bg-blue-100 text-blue-800";
+    case "draft":
+      return "bg-gray-100 text-gray-800";
+    case "void":
+      return "bg-red-100 text-red-800";
     default:
-      return 'bg-gray-100 text-gray-800';
+      return "bg-gray-100 text-gray-800";
   }
 }
 
@@ -80,12 +80,12 @@ export default function PublicInvoiceView() {
   const { token } = useParams<{ token: string }>();
 
   const { data, isLoading, error } = useQuery<PublicInvoiceData>({
-    queryKey: ['public-invoice', token],
+    queryKey: ["public-invoice", token],
     queryFn: async () => {
       const res = await fetch(apiUrl(`/api/public/invoices/${token}`));
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || 'Failed to load invoice');
+        throw new Error(body.message || "Failed to load invoice");
       }
       return res.json();
     },
@@ -94,7 +94,7 @@ export default function PublicInvoiceView() {
   });
 
   const handleDownloadPDF = () => {
-    window.open(apiUrl(`/api/public/invoices/${token}/pdf`), '_blank');
+    window.open(apiUrl(`/api/public/invoices/${token}/pdf`), "_blank");
   };
 
   // Loading state
@@ -111,8 +111,8 @@ export default function PublicInvoiceView() {
 
   // Error state
   if (error || !data) {
-    const message = error instanceof Error ? error?.message : 'Invoice not found';
-    const isExpired = message.includes('expired');
+    const message = error instanceof Error ? error?.message : "Invoice not found";
+    const isExpired = message.includes("expired");
 
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -124,12 +124,12 @@ export default function PublicInvoiceView() {
               <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
             )}
             <h2 className="text-xl font-semibold mb-2">
-              {isExpired ? 'Link Expired' : 'Invoice Not Found'}
+              {isExpired ? "Link Expired" : "Invoice Not Found"}
             </h2>
             <p className="text-gray-500">
               {isExpired
-                ? 'This invoice link has expired. Please contact the sender for a new link.'
-                : 'This invoice link is invalid or has been removed.'}
+                ? "This invoice link has expired. Please contact the sender for a new link."
+                : "This invoice link is invalid or has been removed."}
             </p>
           </CardContent>
         </Card>
@@ -161,9 +161,7 @@ export default function PublicInvoiceView() {
                 )}
               </div>
               <div className="text-right">
-                <h2 className="text-lg font-bold">
-                  {isVATRegistered ? 'TAX INVOICE' : 'INVOICE'}
-                </h2>
+                <h2 className="text-lg font-bold">{isVATRegistered ? "TAX INVOICE" : "INVOICE"}</h2>
                 {isVATRegistered && company.trnVatNumber && (
                   <p className="text-blue-100 text-sm mt-1">TRN: {company.trnVatNumber}</p>
                 )}
@@ -206,7 +204,9 @@ export default function PublicInvoiceView() {
                   <TableRow className="bg-blue-700 hover:bg-blue-700">
                     <TableHead className="text-white font-semibold">Description</TableHead>
                     <TableHead className="text-white font-semibold text-center">Qty</TableHead>
-                    <TableHead className="text-white font-semibold text-center">Unit Price</TableHead>
+                    <TableHead className="text-white font-semibold text-center">
+                      Unit Price
+                    </TableHead>
                     <TableHead className="text-white font-semibold text-center">VAT</TableHead>
                     <TableHead className="text-white font-semibold text-right">Amount</TableHead>
                   </TableRow>
@@ -216,7 +216,7 @@ export default function PublicInvoiceView() {
                     const lineTotal = line.quantity * line.unitPrice;
                     const vatPercent = ((line.vatRate ?? 0.05) * 100).toFixed(0);
                     return (
-                      <TableRow key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                      <TableRow key={index} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
                         <TableCell className="font-medium">{line.description}</TableCell>
                         <TableCell className="text-center">{line.quantity}</TableCell>
                         <TableCell className="text-center">

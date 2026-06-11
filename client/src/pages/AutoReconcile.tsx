@@ -1,17 +1,24 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { format, parseISO } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Progress } from '@/components/ui/progress';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency } from '@/lib/format';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { format, parseISO } from "date-fns";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency } from "@/lib/format";
 import {
   Sparkles,
   Link2,
@@ -26,13 +33,13 @@ import {
   Check,
   Unlink,
   ChevronRight,
-} from 'lucide-react';
+} from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 interface ReconcileMatch {
   bankTransactionId: string;
-  matchedType: 'journal_entry' | 'invoice' | 'receipt';
+  matchedType: "journal_entry" | "invoice" | "receipt";
   matchedId: string;
   confidence: number;
   matchReason: string;
@@ -55,20 +62,46 @@ interface AutoReconcileResult {
 // ─── Config ────────────────────────────────────────────────────────────────
 
 const matchTypeConfig = {
-  journal_entry: { icon: BookOpen, label: 'Journal Entry', color: 'text-purple-600', bg: 'bg-purple-100' },
-  invoice: { icon: FileText, label: 'Invoice', color: 'text-blue-600', bg: 'bg-blue-100' },
-  receipt: { icon: Receipt, label: 'Receipt', color: 'text-green-600', bg: 'bg-green-100' },
+  journal_entry: {
+    icon: BookOpen,
+    label: "Journal Entry",
+    color: "text-purple-600",
+    bg: "bg-purple-100",
+  },
+  invoice: { icon: FileText, label: "Invoice", color: "text-blue-600", bg: "bg-blue-100" },
+  receipt: { icon: Receipt, label: "Receipt", color: "text-green-600", bg: "bg-green-100" },
 };
 
 function getConfidenceStyle(confidence: number) {
-  if (confidence >= 80) return { textColor: 'text-green-600', barClass: '[&>div]:bg-green-500', badge: 'bg-green-100 text-green-800', label: 'High' };
-  if (confidence >= 60) return { textColor: 'text-amber-600', barClass: '[&>div]:bg-amber-500', badge: 'bg-amber-100 text-amber-800', label: 'Medium' };
-  return { textColor: 'text-red-500', barClass: '[&>div]:bg-red-500', badge: 'bg-red-100 text-red-800', label: 'Low' };
+  if (confidence >= 80)
+    return {
+      textColor: "text-green-600",
+      barClass: "[&>div]:bg-green-500",
+      badge: "bg-green-100 text-green-800",
+      label: "High",
+    };
+  if (confidence >= 60)
+    return {
+      textColor: "text-amber-600",
+      barClass: "[&>div]:bg-amber-500",
+      badge: "bg-amber-100 text-amber-800",
+      label: "Medium",
+    };
+  return {
+    textColor: "text-red-500",
+    barClass: "[&>div]:bg-red-500",
+    badge: "bg-red-100 text-red-800",
+    label: "Low",
+  };
 }
 
 function formatDate(dateStr?: string) {
-  if (!dateStr) return '—';
-  try { return format(parseISO(dateStr), 'dd MMM yyyy'); } catch { return dateStr; }
+  if (!dateStr) return "—";
+  try {
+    return format(parseISO(dateStr), "dd MMM yyyy");
+  } catch {
+    return dateStr;
+  }
 }
 
 // ─── Component ────────────────────────────────────────────────────────────
@@ -81,20 +114,22 @@ export default function AutoReconcile() {
   const [hasScanned, setHasScanned] = useState(false);
 
   const scanMutation = useMutation({
-    mutationFn: async () => apiRequest('POST', `/api/companies/${companyId}/auto-reconcile`),
+    mutationFn: async () => apiRequest("POST", `/api/companies/${companyId}/auto-reconcile`),
     onSuccess: (data: AutoReconcileResult) => {
       setResult(data);
       setHasScanned(true);
       // Pre-select high confidence matches
-      const highConf = new Set(data.matches.filter((m) => m.confidence >= 75).map((m) => m.bankTransactionId));
+      const highConf = new Set(
+        data.matches.filter((m) => m.confidence >= 75).map((m) => m.bankTransactionId)
+      );
       setSelectedMatches(highConf);
       toast({
-        title: 'Scan complete',
+        title: "Scan complete",
         description: `Found ${data.matches.length} potential match(es) for ${data.totalUnreconciled} unreconciled transaction(s).`,
       });
     },
     onError: (error: Error) => {
-      toast({ title: 'Scan failed', description: error?.message, variant: 'destructive' });
+      toast({ title: "Scan failed", description: error?.message, variant: "destructive" });
     },
   });
 
@@ -103,37 +138,51 @@ export default function AutoReconcile() {
       if (!result) return;
       const matchesToApply = result.matches
         .filter((m) => selectedMatches.has(m.bankTransactionId))
-        .map((m) => ({ bankTransactionId: m.bankTransactionId, matchedType: m.matchedType, matchedId: m.matchedId }));
-      return apiRequest('POST', `/api/companies/${companyId}/auto-reconcile/apply`, { matches: matchesToApply });
+        .map((m) => ({
+          bankTransactionId: m.bankTransactionId,
+          matchedType: m.matchedType,
+          matchedId: m.matchedId,
+        }));
+      return apiRequest("POST", `/api/companies/${companyId}/auto-reconcile/apply`, {
+        matches: matchesToApply,
+      });
     },
     onSuccess: (data: any) => {
-      toast({ title: 'Reconciliation applied', description: data.message });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'bank-statements'] });
+      toast({ title: "Reconciliation applied", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       scanMutation.mutate();
     },
     onError: (error: Error) => {
-      toast({ title: 'Apply failed', description: error?.message, variant: 'destructive' });
+      toast({ title: "Apply failed", description: error?.message, variant: "destructive" });
     },
   });
 
   const toggleMatch = (id: string) => {
     setSelectedMatches((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
-  const selectAll = () => result && setSelectedMatches(new Set(result.matches.map((m) => m.bankTransactionId)));
+  const selectAll = () =>
+    result && setSelectedMatches(new Set(result.matches.map((m) => m.bankTransactionId)));
   const deselectAll = () => setSelectedMatches(new Set());
-  const selectHighConf = () => result && setSelectedMatches(new Set(result.matches.filter((m) => m.confidence >= 75).map((m) => m.bankTransactionId)));
+  const selectHighConf = () =>
+    result &&
+    setSelectedMatches(
+      new Set(result.matches.filter((m) => m.confidence >= 75).map((m) => m.bankTransactionId))
+    );
 
   if (isLoadingCompany) {
     return (
       <div className="p-6 space-y-6">
         <Skeleton className="h-10 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28" />)}
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-28" />
+          ))}
         </div>
       </div>
     );
@@ -144,7 +193,9 @@ export default function AutoReconcile() {
       <div className="p-6">
         <Card>
           <CardContent className="pt-6 text-center">
-            <p className="text-muted-foreground">Please create a company first to use auto-reconciliation.</p>
+            <p className="text-muted-foreground">
+              Please create a company first to use auto-reconciliation.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -172,7 +223,7 @@ export default function AutoReconcile() {
           ) : (
             <ArrowRightLeft className="h-4 w-4 mr-2" />
           )}
-          {scanMutation.isPending ? 'Scanning...' : 'Run Auto-Reconcile'}
+          {scanMutation.isPending ? "Scanning..." : "Run Auto-Reconcile"}
         </Button>
       </div>
 
@@ -257,7 +308,7 @@ export default function AutoReconcile() {
                   ) : (
                     <Check className="h-4 w-4 mr-2" />
                   )}
-                  Apply {selectedMatches.size > 0 ? `(${selectedMatches.size})` : ''}
+                  Apply {selectedMatches.size > 0 ? `(${selectedMatches.size})` : ""}
                 </Button>
               </div>
             </div>
@@ -287,9 +338,9 @@ export default function AutoReconcile() {
                     return (
                       <TableRow
                         key={match.bankTransactionId}
-                        className={isSelected ? 'bg-primary/5' : ''}
+                        className={isSelected ? "bg-primary/5" : ""}
                         onClick={() => toggleMatch(match.bankTransactionId)}
-                        style={{ cursor: 'pointer' }}
+                        style={{ cursor: "pointer" }}
                       >
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           <Checkbox
@@ -302,12 +353,14 @@ export default function AutoReconcile() {
                         <TableCell>
                           <div className="space-y-0.5">
                             <div className="font-medium text-sm truncate max-w-[200px]">
-                              {match.bankDescription || match.bankTransactionId.slice(0, 8) + '...'}
+                              {match.bankDescription || match.bankTransactionId.slice(0, 8) + "..."}
                             </div>
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               <span>{formatDate(match.bankDate)}</span>
                               {match.bankAmount != null && (
-                                <span className={`font-mono font-medium ${match.bankAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                <span
+                                  className={`font-mono font-medium ${match.bankAmount >= 0 ? "text-green-600" : "text-red-600"}`}
+                                >
                                   {formatCurrency(match.bankAmount)}
                                 </span>
                               )}
@@ -327,9 +380,11 @@ export default function AutoReconcile() {
                               <TypeIcon className={`h-3 w-3 ${typeConfig.color}`} />
                             </div>
                             <div className="space-y-0.5 min-w-0">
-                              <div className="text-xs font-medium text-muted-foreground">{typeConfig.label}</div>
+                              <div className="text-xs font-medium text-muted-foreground">
+                                {typeConfig.label}
+                              </div>
                               <div className="font-medium text-sm truncate max-w-[200px]">
-                                {match.matchedDescription || match.matchedId.slice(0, 8) + '...'}
+                                {match.matchedDescription || match.matchedId.slice(0, 8) + "..."}
                               </div>
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                                 <span>{formatDate(match.matchedDate)}</span>
@@ -350,11 +405,16 @@ export default function AutoReconcile() {
                               <span className={`text-sm font-bold ${confStyle.textColor}`}>
                                 {match.confidence}%
                               </span>
-                              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confStyle.badge}`}>
+                              <span
+                                className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${confStyle.badge}`}
+                              >
                                 {confStyle.label}
                               </span>
                             </div>
-                            <Progress value={match.confidence} className={`h-1.5 ${confStyle.barClass}`} />
+                            <Progress
+                              value={match.confidence}
+                              className={`h-1.5 ${confStyle.barClass}`}
+                            />
                           </div>
                         </TableCell>
 
@@ -405,8 +465,8 @@ export default function AutoReconcile() {
                   <XCircle className="h-12 w-12 text-orange-500 mx-auto" />
                   <h3 className="text-lg font-semibold">No Matches Found</h3>
                   <p className="text-muted-foreground text-sm max-w-md mx-auto">
-                    {result.totalUnreconciled} unreconciled transaction(s) found, but no automatic matches
-                    could be determined. Try reconciling manually in Bank Reconciliation.
+                    {result.totalUnreconciled} unreconciled transaction(s) found, but no automatic
+                    matches could be determined. Try reconciling manually in Bank Reconciliation.
                   </p>
                 </>
               )}

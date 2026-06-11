@@ -4,7 +4,7 @@
  * shared/vat-workpaper-grid.ts).
  */
 
-export type CtWorkpaperRowType = 'revenue' | 'expense';
+export type CtWorkpaperRowType = "revenue" | "expense";
 
 export interface CtWorkpaperRow {
   id: string;
@@ -21,17 +21,17 @@ export interface CtWorkpaperTotals {
 }
 
 function compactKey(value: string | undefined): string {
-  return String(value ?? '')
+  return String(value ?? "")
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 
 function parseDelimitedLine(line: string): string[] {
-  if (line.includes('\t')) return line.split('\t').map((cell) => cell.trim());
+  if (line.includes("\t")) return line.split("\t").map((cell) => cell.trim());
   const cells: string[] = [];
-  let current = '';
+  let current = "";
   let inQuotes = false;
   for (let i = 0; i < line.length; i += 1) {
     const ch = line[i];
@@ -40,9 +40,9 @@ function parseDelimitedLine(line: string): string[] {
       i += 1;
     } else if (ch === '"') {
       inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) {
+    } else if (ch === "," && !inQuotes) {
       cells.push(current.trim());
-      current = '';
+      current = "";
     } else {
       current += ch;
     }
@@ -52,7 +52,7 @@ function parseDelimitedLine(line: string): string[] {
 }
 
 function moneyFromCell(value: string | undefined): number {
-  const normalized = String(value ?? '').replace(/[^\d.-]/g, '');
+  const normalized = String(value ?? "").replace(/[^\d.-]/g, "");
   const amount = Number(normalized);
   return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : 0;
 }
@@ -60,21 +60,21 @@ function moneyFromCell(value: string | undefined): number {
 export function normalizeCtRowType(value: string | undefined): CtWorkpaperRowType {
   const normalized = compactKey(value);
   if (
-    normalized.includes('revenue') ||
-    normalized.includes('income') ||
-    normalized.includes('sales') ||
-    normalized === 'rev'
+    normalized.includes("revenue") ||
+    normalized.includes("income") ||
+    normalized.includes("sales") ||
+    normalized === "rev"
   ) {
-    return 'revenue';
+    return "revenue";
   }
-  return 'expense';
+  return "expense";
 }
 
 const HEADER_ALIASES: Record<string, string[]> = {
-  type: ['type', 'row type', 'category'],
-  label: ['label', 'description', 'item', 'line item', 'account', 'name'],
-  amount: ['amount', 'amount aed', 'value', 'total'],
-  notes: ['notes', 'memo', 'remarks', 'comment'],
+  type: ["type", "row type", "category"],
+  label: ["label", "description", "item", "line item", "account", "name"],
+  amount: ["amount", "amount aed", "value", "total"],
+  notes: ["notes", "memo", "remarks", "comment"],
 };
 
 function headerIndex(headerCells: string[], field: keyof typeof HEADER_ALIASES): number {
@@ -84,7 +84,7 @@ function headerIndex(headerCells: string[], field: keyof typeof HEADER_ALIASES):
 
 function hasRecognisedHeader(cells: string[]): boolean {
   return (Object.keys(HEADER_ALIASES) as Array<keyof typeof HEADER_ALIASES>).some(
-    (key) => headerIndex(cells, key) >= 0,
+    (key) => headerIndex(cells, key) >= 0
   );
 }
 
@@ -92,7 +92,7 @@ function pickCell(
   cells: string[],
   headerCells: string[] | null,
   field: keyof typeof HEADER_ALIASES,
-  fallbackIndex: number,
+  fallbackIndex: number
 ): string | undefined {
   if (headerCells) {
     const index = headerIndex(headerCells, field);
@@ -119,25 +119,27 @@ export function parseCtPasteRows(text: string): CtWorkpaperRow[] {
   return rows
     .map((line, index) => {
       const cells = parseDelimitedLine(line);
-      const label = pickCell(cells, headerCells, 'label', 1) ?? '';
-      const amount = moneyFromCell(pickCell(cells, headerCells, 'amount', 2));
+      const label = pickCell(cells, headerCells, "label", 1) ?? "";
+      const amount = moneyFromCell(pickCell(cells, headerCells, "amount", 2));
       return {
         id: `import-${Date.now()}-${index}`,
-        type: normalizeCtRowType(pickCell(cells, headerCells, 'type', 0)),
+        type: normalizeCtRowType(pickCell(cells, headerCells, "type", 0)),
         label: label || `Imported row ${index + 1}`,
         amount,
-        notes: pickCell(cells, headerCells, 'notes', 3) || undefined,
+        notes: pickCell(cells, headerCells, "notes", 3) || undefined,
       };
     })
     .filter((row) => row.label.trim().length > 0 && row.amount !== 0);
 }
 
-export function computeCtTotals(rows: Array<Pick<CtWorkpaperRow, 'type' | 'amount'>>): CtWorkpaperTotals {
+export function computeCtTotals(
+  rows: Array<Pick<CtWorkpaperRow, "type" | "amount">>
+): CtWorkpaperTotals {
   const totalRevenue = rows
-    .filter((row) => row.type === 'revenue')
+    .filter((row) => row.type === "revenue")
     .reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
   const totalExpenses = rows
-    .filter((row) => row.type === 'expense')
+    .filter((row) => row.type === "expense")
     .reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
   return {
     totalRevenue: Math.round(totalRevenue * 100) / 100,

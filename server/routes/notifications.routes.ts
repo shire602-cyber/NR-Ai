@@ -10,73 +10,105 @@ export function registerNotificationRoutes(app: Express) {
   // =====================================
 
   // Get user notifications
-  app.get("/api/notifications", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
-    const notifications = await storage.getNotificationsByUserId(userId);
-    const unreadCount = await storage.getUnreadNotificationCount(userId);
-    res.json({ notifications, unreadCount });
-  }));
+  app.get(
+    "/api/notifications",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const notifications = await storage.getNotificationsByUserId(userId);
+      const unreadCount = await storage.getUnreadNotificationCount(userId);
+      res.json({ notifications, unreadCount });
+    })
+  );
 
   // Get active UAE regulatory news for the in-app news tab.
-  app.get("/api/regulatory-news", authMiddleware, asyncHandler(async (_req: Request, res: Response) => {
-    const news = await storage.getRegulatoryNews();
-    res.json(news);
-  }));
+  app.get(
+    "/api/regulatory-news",
+    authMiddleware,
+    asyncHandler(async (_req: Request, res: Response) => {
+      const news = await storage.getRegulatoryNews();
+      res.json(news);
+    })
+  );
 
-  // Mark notification as read
-  app.patch("/api/notifications/:id/read", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const notification = await storage.markNotificationAsRead(id);
-    res.json(notification);
-  }));
+  // Mark notification as read (only the owner's row can match)
+  app.patch(
+    "/api/notifications/:id/read",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user?.id;
+      const notification = await storage.markNotificationAsRead(id, userId);
+      if (!notification) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      res.json(notification);
+    })
+  );
 
   // Mark all notifications as read
-  app.post("/api/notifications/read-all", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
-    await storage.markAllNotificationsAsRead(userId);
-    res.json({ message: 'All notifications marked as read' });
-  }));
+  app.post(
+    "/api/notifications/read-all",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      await storage.markAllNotificationsAsRead(userId);
+      res.json({ message: "All notifications marked as read" });
+    })
+  );
 
-  // Dismiss notification
-  app.patch("/api/notifications/:id/dismiss", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const notification = await storage.dismissNotification(id);
-    res.json(notification);
-  }));
+  // Dismiss notification (only the owner's row can match)
+  app.patch(
+    "/api/notifications/:id/dismiss",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const userId = (req as any).user?.id;
+      const notification = await storage.dismissNotification(id, userId);
+      if (!notification) {
+        return res.status(404).json({ message: "Notification not found" });
+      }
+      res.json(notification);
+    })
+  );
 
   // Create notification (for current user only - system notifications should be created server-side)
-  app.post("/api/notifications", authMiddleware, asyncHandler(async (req: Request, res: Response) => {
-    const userId = (req as any).user?.id;
+  app.post(
+    "/api/notifications",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
 
-    // Validate input with comprehensive schema
-    const validationSchema = z.object({
-      companyId: z.string().uuid().optional(),
-      type: z.enum(['deadline', 'payment_due', 'overdue', 'regulatory', 'referral', 'system']),
-      title: z.string().min(1).max(200),
-      message: z.string().min(1).max(2000),
-      priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal'),
-      actionUrl: z.string().url().optional().nullable(),
-      relatedEntityType: z.string().max(50).optional().nullable(),
-      relatedEntityId: z.string().uuid().optional().nullable(),
-    });
+      // Validate input with comprehensive schema
+      const validationSchema = z.object({
+        companyId: z.string().uuid().optional(),
+        type: z.enum(["deadline", "payment_due", "overdue", "regulatory", "referral", "system"]),
+        title: z.string().min(1).max(200),
+        message: z.string().min(1).max(2000),
+        priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
+        actionUrl: z.string().url().optional().nullable(),
+        relatedEntityType: z.string().max(50).optional().nullable(),
+        relatedEntityId: z.string().uuid().optional().nullable(),
+      });
 
-    const validated = validationSchema.parse(req.body);
+      const validated = validationSchema.parse(req.body);
 
-    // Verify user has access to the company if specified
-    if (validated.companyId) {
-      const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied to this company' });
+      // Verify user has access to the company if specified
+      if (validated.companyId) {
+        const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Access denied to this company" });
+        }
       }
-    }
 
-    // Users can only create notifications for themselves
-    const notification = await storage.createNotification({
-      ...validated,
-      userId,
-      isRead: false,
-      isDismissed: false,
-    });
-    res.json(notification);
-  }));
+      // Users can only create notifications for themselves
+      const notification = await storage.createNotification({
+        ...validated,
+        userId,
+        isRead: false,
+        isDismissed: false,
+      });
+      res.json(notification);
+    })
+  );
 }

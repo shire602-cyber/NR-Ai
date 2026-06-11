@@ -1,13 +1,13 @@
-import { Skeleton } from '@/components/ui/skeleton';
+import { Skeleton } from "@/components/ui/skeleton";
 
-export type PageSkeletonVariant = 'list' | 'detail' | 'dashboard' | 'form' | 'minimal';
+export type PageSkeletonVariant = "list" | "detail" | "dashboard" | "form" | "minimal";
 
 interface PageSkeletonProps {
   variant?: PageSkeletonVariant;
 }
 
-export function PageSkeleton({ variant = 'list' }: PageSkeletonProps) {
-  if (variant === 'minimal') {
+export function PageSkeleton({ variant = "list" }: PageSkeletonProps) {
+  if (variant === "minimal") {
     return (
       <div className="space-y-3" aria-busy="true" aria-live="polite">
         <Skeleton className="h-8 w-1/3" />
@@ -16,7 +16,7 @@ export function PageSkeleton({ variant = 'list' }: PageSkeletonProps) {
     );
   }
 
-  if (variant === 'dashboard') {
+  if (variant === "dashboard") {
     return (
       <div className="space-y-6" aria-busy="true" aria-live="polite">
         <div className="space-y-2">
@@ -40,7 +40,7 @@ export function PageSkeleton({ variant = 'list' }: PageSkeletonProps) {
     );
   }
 
-  if (variant === 'detail') {
+  if (variant === "detail") {
     return (
       <div className="space-y-6" aria-busy="true" aria-live="polite">
         <div className="flex items-center justify-between">
@@ -64,7 +64,7 @@ export function PageSkeleton({ variant = 'list' }: PageSkeletonProps) {
     );
   }
 
-  if (variant === 'form') {
+  if (variant === "form") {
     return (
       <div className="space-y-6 max-w-3xl" aria-busy="true" aria-live="polite">
         <div className="space-y-2">

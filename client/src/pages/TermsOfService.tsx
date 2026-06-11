@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
-import { LegalLayout } from '@/components/LegalLayout';
+import { useEffect } from "react";
+import { LegalLayout } from "@/components/LegalLayout";
 
 export default function TermsOfService() {
   useEffect(() => {
-    document.title = 'Terms of Service | Muhasib.ai';
+    document.title = "Terms of Service | Muhasib.ai";
   }, []);
 
   return (
@@ -17,15 +17,20 @@ export default function TermsOfService() {
 
       <h2>1. Eligibility</h2>
       <p>
-        You must be at least 18 years old and authorised to bind your business to these Terms.
-        The Service is intended for use by businesses and accounting professionals operating in or
-        with the United Arab Emirates.
+        You must be at least 18 years old and authorised to bind your business to these Terms. The
+        Service is intended for use by businesses and accounting professionals operating in or with
+        the United Arab Emirates.
       </p>
 
       <h2>2. Accounts and Security</h2>
       <ul>
-        <li>You are responsible for maintaining the confidentiality of your account credentials.</li>
-        <li>You must notify us immediately of any unauthorised access at <a href="mailto:security@muhasib.ai">security@muhasib.ai</a>.</li>
+        <li>
+          You are responsible for maintaining the confidentiality of your account credentials.
+        </li>
+        <li>
+          You must notify us immediately of any unauthorised access at{" "}
+          <a href="mailto:security@muhasib.ai">security@muhasib.ai</a>.
+        </li>
         <li>You are responsible for all activity under your account.</li>
       </ul>
 
@@ -50,9 +55,9 @@ export default function TermsOfService() {
       <p>
         You retain ownership of all data and content you upload (<strong>"Customer Data"</strong>).
         You grant us a limited licence to host, process, and display Customer Data solely as needed
-        to provide the Service. You are responsible for the accuracy and lawfulness of Customer Data,
-        including ensuring you have the right to upload third-party data such as customer or vendor
-        information.
+        to provide the Service. You are responsible for the accuracy and lawfulness of Customer
+        Data, including ensuring you have the right to upload third-party data such as customer or
+        vendor information.
       </p>
 
       <h2>6. Tax and Accounting Disclaimer</h2>
@@ -87,10 +92,10 @@ export default function TermsOfService() {
 
       <h2>10. Limitation of Liability</h2>
       <p>
-        To the maximum extent permitted by law, NRA's aggregate liability under these Terms shall not
-        exceed the fees you paid in the twelve (12) months preceding the event giving rise to the
-        claim. We are not liable for indirect, incidental, or consequential damages, including loss
-        of profits or business interruption.
+        To the maximum extent permitted by law, NRA's aggregate liability under these Terms shall
+        not exceed the fees you paid in the twelve (12) months preceding the event giving rise to
+        the claim. We are not liable for indirect, incidental, or consequential damages, including
+        loss of profits or business interruption.
       </p>
 
       <h2>11. Indemnification</h2>
