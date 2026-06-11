@@ -118,6 +118,9 @@ export function registerApiKeyRoutes(app: Express) {
       if (isActive !== undefined) updateData.isActive = isActive;
 
       const updated = await storage.updateApiKey(id, updateData);
+      if (!updated) {
+        return res.status(404).json({ message: 'API key not found' });
+      }
       const { keyHash: _hash, ...safeKey } = updated;
 
       res.json({

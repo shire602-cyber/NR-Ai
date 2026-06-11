@@ -1,13 +1,21 @@
 # External Dependencies — Owner Action List
 
-_Status notes from the owner, 2026-06-11._
+_Updated 2026-06-11: every credential-blocked integration is now **fully built
+and wired** — the software side is done. Each item below activates the moment
+its environment variables are set on Railway. Log in as an admin and call
+`GET /api/admin/integration-status` to see live readiness, the exact env var
+names still missing, and what each one unlocks._
 
-| # | Item | Status / decision | What unblocks it | What I (Claude) do once unblocked |
+| # | Item | Software status | What the owner inputs (Railway env vars) | What happens when set |
 |---|---|---|---|---|
-| 1 | Billing / Stripe | **Deferred — Stripe account pending approvals; keep for last** | Stripe live keys + pricing decisions | Rehab billing module, checkout, customer portal; flip `BILLING_ENFORCEMENT=true` |
-| 2 | Live bank feeds | **Lean (leantech.me) not working for the owner — need alternatives** | Pick a provider, get sandbox creds. UAE-capable candidates to evaluate: **Tarabut** (Bahrain/UAE open banking, strong CBUAE alignment), **Dapi** (UAE-founded, payments+data), **Salt Edge** (global aggregator with MENA coverage), **Fintech Galaxy / FINX** (regional open-finance platform). Verify current UAE bank coverage + pricing before choosing | Implement the chosen provider behind the existing `open-banking.service` adapter; the connect/callback/sync endpoints and E2E pipeline already exist |
-| 3 | Email delivery | **Owner can do anytime** | Create a Resend (simplest), Postmark, or AWS SES account; set `SMTP_*`/provider API key env vars on Railway | Wire the mailer, verify password-reset + invoice-send + payment-chasing emails end-to-end, add an E2E hook |
-| 4 | Domain & branding | **Kept for last — new domain purchase needed** | Buy domain (e.g. muhasib.ai), point DNS at Railway | Custom domain config, `__Host-` cookies, SEO/OG URLs, canonical redirects |
-| 5 | Push notifications | Listed for later | Decision to ship mobile/web push + VAPID keypair (I can generate) | Rehab `push` module + service worker; notification preferences already have a page |
-| 6 | Webhooks (outbound) | Listed for later | Decision: which events do customers/integrators need? | Rehab `webhooks` module with signing + retries + delivery log UI |
-| 7 | API keys (public API) | Listed for later | Decision: expose a public API? Scope + rate limits | Rehab `api-keys` module, scoped keys, docs page |
+| 1 | Billing / Stripe | **Prepared** — plans, checkout, customer portal, webhook handler (signature-verified, idempotent via `stripe_events`), usage counters, client paywall all shipped. Gates fail OPEN until enforcement is flipped, so nothing is blocked today | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, the 8 `STRIPE_PRICE_*` IDs (see integration-status), then `BILLING_ENFORCEMENT=true` **last**, once a test checkout works | Checkout + customer portal go live; plan limits and feature tiers start enforcing |
+| 2 | Live bank feeds | **Prepared** — `open-banking.service` adapter with connect/callback/sync endpoints and E2E pipeline | Pick a provider and paste its creds. UAE-capable candidates: **Tarabut**, **Dapi**, **Salt Edge**, **Fintech Galaxy / FINX** (Lean ruled out by owner). Verify UAE bank coverage + pricing before choosing | Bank connections, automatic transaction sync, reconciliation feed |
+| 3 | Email delivery | **Prepared** — `email.service` auto-detects Resend or SMTP; password-reset, invoice-send, payment-chasing templates ready | Either `RESEND_API_KEY` (simplest) or `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM` | Outbound email starts sending immediately — no deploy needed |
+| 4 | Domain & branding | Deferred by owner (domain purchase pending) | Buy domain (e.g. muhasib.ai), point DNS at Railway | Custom domain config, `__Host-` cookies, SEO/OG URLs, canonical redirects |
+| 5 | Push notifications | **Prepared** — subscribe/unsubscribe endpoints, `push_subscriptions` table, notification-preferences page (EN/AR) | `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` — generate locally with `npx web-push generate-vapid-keys` | Browser push for invoice reminders, payments received, VAT deadlines |
+| 6 | Webhooks (outbound) | **Live now — no keys needed.** Endpoint CRUD, HMAC signing secret per endpoint, delivery log, failure counter, test-fire endpoint | Nothing — customers register their own consumer URLs in Developer Settings | Already working |
+| 7 | API keys (public API) | **Live now — no keys needed.** Scoped keys, raw key shown exactly once, hash-only storage, Developer Settings page | Nothing | Already working |
+
+New pages shipped with this work: **Developer Settings** (API keys + webhooks),
+**Notification Preferences**, **Subscription** — all in the Settings group of
+the sidebar, EN + AR.

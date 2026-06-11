@@ -16,6 +16,7 @@ interface SubscriptionData {
     aiCreditsUsedThisMonth: number;
   };
   limits: Record<string, number>;
+  enforcement?: boolean;
 }
 
 interface UsageData {
@@ -95,13 +96,16 @@ export function useSubscription() {
 
   // No billing system deployed (endpoint missing/erroring) means features
   // must fail OPEN — a paywall with a dead upgrade button is worse than no
-  // paywall. Gates only apply once the API reports a real plan.
+  // paywall. Same when the API reports enforcement off (BILLING_ENFORCEMENT
+  // unset server-side): gates only apply once billing is actually live.
   const billingUnavailable = (subError || subData === null) && !subData;
+  const enforcementOff = subData ? subData.enforcement !== true : false;
+  const gatesOpen = billingUnavailable || enforcementOff;
   const tierName = subData?.subscription?.planId || "free";
-  const isFreeTier = !billingUnavailable && tierName === "free";
+  const isFreeTier = !gatesOpen && tierName === "free";
 
   function canAccess(feature: string): boolean {
-    if (billingUnavailable) return true;
+    if (gatesOpen) return true;
     const features = TIER_FEATURES[tierName] || TIER_FEATURES.free;
     return !!features[feature];
   }

@@ -39,7 +39,11 @@ export function registerBillingRoutes(app: Express) {
       }
 
       const limits = getTierLimits(subscription.planId);
-      res.json({ subscription, limits });
+      // Mirrors server/middleware/featureGate.ts: until BILLING_ENFORCEMENT=true
+      // the client paywall must fail open too, or the UI blocks features the
+      // API happily serves.
+      const enforcement = process.env.BILLING_ENFORCEMENT === 'true';
+      res.json({ subscription, limits, enforcement });
     })
   );
 

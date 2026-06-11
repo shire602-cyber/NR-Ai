@@ -114,9 +114,8 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
   }
 
   // Record event
-  await storage.createStripeEvent({
-    stripeEventId: event.id,
-    eventType: event.type,
+  await storage.createStripeEvent(event.id, event.type);
+  void ({
     payload: JSON.stringify(event.data),
   });
 

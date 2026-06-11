@@ -463,6 +463,13 @@
       "when": 1771500000000,
       "tag": "0066_document_versions",
       "breakpoints": false
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1771600000000,
+      "tag": "0067_integrations",
+      "breakpoints": false
     }
   ]
 }

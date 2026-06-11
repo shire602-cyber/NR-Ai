@@ -34,7 +34,7 @@ const ROUTES = [
   '/expense-claims', '/inventory', '/integrations', '/integrations-hub', '/whatsapp',
   '/document-chasing', '/notifications', '/reminders', '/company-profile',
   '/settings/company', '/team', '/document-vault', '/month-end', '/backup-restore',
-  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/financial-statements', '/reconciliation-rules', '/invoice-templates', '/document-versions', '/task-center', '/news-feed',
+  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/financial-statements', '/reconciliation-rules', '/invoice-templates', '/document-versions', '/developer-settings', '/notification-preferences', '/subscription', '/task-center', '/news-feed',
   '/admin/dashboard', '/admin/clients', '/admin/invitations', '/admin/import',
   '/admin/activity-logs', '/admin/users', '/admin',
   '/firm/command-center', '/firm/clients', '/firm/staff', '/firm/health',
@@ -43,9 +43,7 @@ const ROUTES = [
 
 // API endpoints that are allowed to 4xx without failing a route (documented
 // gaps, not regressions). Keep this list short and justified.
-const TOLERATED_API = [
-  /\/billing\/(subscription|usage)$/, // billing module not deployed — gates fail open
-];
+const TOLERATED_API = [];
 
 const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpected error/i;
 const NOT_FOUND = (t) => /not found/i.test(t) && t.trim().length < 300 && !/no [a-z ]*found/i.test(t);
@@ -729,6 +727,68 @@ async function main() {
     }
   } catch (e) {
     await fail('docver-flow', { crash: e.message.slice(0, 150) });
+  }
+
+  // ── 9i. Integrations prepared: status endpoint, API keys, webhooks,
+  //       notification preferences, billing endpoints all answer ───────────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+
+    const status = await (await page.request.get(`${BASE}/api/admin/integration-status`)).json();
+    const keys = (status?.integrations ?? []).map((i) => i.key).sort();
+    for (const expected of ['apiKeys', 'email', 'openBanking', 'push', 'stripe', 'tokenEncryption', 'webhooks']) {
+      if (!keys.includes(expected)) {
+        await fail('integration-status', { detail: `missing ${expected} in ${keys.join(',')}` });
+        break;
+      }
+    }
+
+    // API key lifecycle: create returns the raw key exactly once.
+    const keyRes = await page.request.post(`${BASE}/api/companies/${companyId}/api-keys`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: { name: 'E2E key', scopes: 'read' },
+    });
+    const created = await keyRes.json().catch(() => ({}));
+    if (keyRes.status() !== 201 || !created?.key || created?.keyHash) {
+      await fail('api-key create', { detail: `status ${keyRes.status()}: ${JSON.stringify(created).slice(0, 120)}` });
+    } else {
+      const list = await (await page.request.get(`${BASE}/api/companies/${companyId}/api-keys`)).json();
+      if (!Array.isArray(list) || list.some((k) => k.keyHash) || list.length < 1) {
+        await fail('api-key list', { detail: 'list missing or leaks keyHash' });
+      }
+    }
+
+    // Webhook endpoint registration (delivery needs a consumer URL — config only).
+    const whRes = await page.request.post(`${BASE}/api/companies/${companyId}/webhooks`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: { url: 'https://example.com/hooks/muhasib', events: 'invoice.created' },
+    });
+    if (whRes.status() !== 201) {
+      await fail('webhook create', { detail: `status ${whRes.status()}: ${(await whRes.text()).slice(0, 150)}` });
+    }
+
+    // Notification preferences upsert round-trip.
+    const prefRes = await page.request.put(`${BASE}/api/notification-preferences`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: { pushEnabled: false, weeklyDigest: true },
+    });
+    if (prefRes.status() >= 300) {
+      await fail('notification prefs', { detail: `status ${prefRes.status()}: ${(await prefRes.text()).slice(0, 150)}` });
+    } else {
+      const prefs = await prefRes.json();
+      if (prefs?.pushEnabled !== false || prefs?.weeklyDigest !== true) {
+        await fail('notification prefs roundtrip', { detail: JSON.stringify(prefs).slice(0, 120) });
+      }
+    }
+
+    // Billing endpoints answer with the seeded free subscription.
+    const sub = await (await page.request.get(`${BASE}/api/companies/${companyId}/billing/subscription`)).json();
+    if (!sub?.subscription?.planId) {
+      await fail('billing subscription', { detail: JSON.stringify(sub).slice(0, 120) });
+    }
+  } catch (e) {
+    await fail('integrations-flow', { crash: e.message.slice(0, 150) });
   }
 
   // ── 10. Account-type matrix: every kind of account must work ──────────────

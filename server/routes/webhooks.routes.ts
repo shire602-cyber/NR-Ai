@@ -122,6 +122,9 @@ export function registerWebhookRoutes(app: Express) {
       if (isActive !== undefined) updateData.isActive = isActive;
 
       const updated = await storage.updateWebhookEndpoint(id, updateData);
+      if (!updated) {
+        return res.status(404).json({ message: 'Webhook endpoint not found' });
+      }
       const { secret, ...safeEndpoint } = updated;
 
       res.json({

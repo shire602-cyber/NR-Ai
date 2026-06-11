@@ -990,6 +990,115 @@ export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;
 export type DocumentVersion = typeof documentVersions.$inferSelect;
 
 // ===========================
+// API Keys (public API access)
+// ===========================
+export const apiKeys = pgTable("api_keys", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").notNull(),
+  keyPrefix: text("key_prefix").notNull(),
+  scopes: text("scopes").notNull().default("read"),
+  isActive: boolean("is_active").notNull().default(true),
+  lastUsedAt: timestamp("last_used_at"),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_api_keys_company_id").on(table.companyId),
+  keyHashIdx: index("idx_api_keys_key_hash").on(table.keyHash),
+}));
+
+export const insertApiKeySchema = createInsertSchema(apiKeys).omit({ id: true, createdAt: true });
+export type InsertApiKey = z.infer<typeof insertApiKeySchema>;
+export type ApiKey = typeof apiKeys.$inferSelect;
+
+// ===========================
+// Webhook Endpoints + Deliveries (outbound integrations)
+// ===========================
+export const webhookEndpoints = pgTable("webhook_endpoints", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  secret: text("secret").notNull(),
+  events: text("events").notNull(), // comma-separated event names, or '*'
+  isActive: boolean("is_active").notNull().default(true),
+  failureCount: integer("failure_count").notNull().default(0),
+  lastTriggeredAt: timestamp("last_triggered_at"),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_webhook_endpoints_company_id").on(table.companyId),
+}));
+
+export const insertWebhookEndpointSchema = createInsertSchema(webhookEndpoints).omit({ id: true, createdAt: true });
+export type InsertWebhookEndpoint = z.infer<typeof insertWebhookEndpointSchema>;
+export type WebhookEndpoint = typeof webhookEndpoints.$inferSelect;
+
+export const webhookDeliveries = pgTable("webhook_deliveries", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  webhookEndpointId: uuid("webhook_endpoint_id").notNull().references(() => webhookEndpoints.id, { onDelete: "cascade" }),
+  event: text("event").notNull(),
+  payload: text("payload"),
+  responseStatus: integer("response_status"),
+  responseBody: text("response_body"),
+  success: boolean("success").notNull().default(false),
+  attemptNumber: integer("attempt_number").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  endpointIdx: index("idx_webhook_deliveries_endpoint").on(table.webhookEndpointId),
+}));
+
+export const insertWebhookDeliverySchema = createInsertSchema(webhookDeliveries).omit({ id: true, createdAt: true });
+export type InsertWebhookDelivery = z.infer<typeof insertWebhookDeliverySchema>;
+export type WebhookDelivery = typeof webhookDeliveries.$inferSelect;
+
+// ===========================
+// Push Subscriptions + Notification Preferences
+// ===========================
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull(),
+  p256dhKey: text("p256dh_key").notNull(),
+  authKey: text("auth_key").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  userIdIdx: index("idx_push_subscriptions_user_id").on(table.userId),
+}));
+
+export const insertPushSubscriptionSchema = createInsertSchema(pushSubscriptions).omit({ id: true, createdAt: true });
+export type InsertPushSubscription = z.infer<typeof insertPushSubscriptionSchema>;
+export type PushSubscription = typeof pushSubscriptions.$inferSelect;
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  pushEnabled: boolean("push_enabled").notNull().default(true),
+  emailEnabled: boolean("email_enabled").notNull().default(true),
+  invoiceReminders: boolean("invoice_reminders").notNull().default(true),
+  paymentReceived: boolean("payment_received").notNull().default(true),
+  vatDeadlines: boolean("vat_deadlines").notNull().default(true),
+  weeklyDigest: boolean("weekly_digest").notNull().default(false),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertNotificationPreferencesSchema = createInsertSchema(notificationPreferences).omit({ id: true, updatedAt: true });
+export type InsertNotificationPreferences = z.infer<typeof insertNotificationPreferencesSchema>;
+export type NotificationPreferences = typeof notificationPreferences.$inferSelect;
+
+// ===========================
+// Stripe webhook event ledger (idempotency)
+// ===========================
+export const stripeEvents = pgTable("stripe_events", {
+  id: text("id").primaryKey(), // Stripe event id (evt_...)
+  type: text("type").notNull(),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+});
+
+export type StripeEvent = typeof stripeEvents.$inferSelect;
+
+// ===========================
 // Invoice Payments
 // ===========================
 export const invoicePayments = pgTable("invoice_payments", {
@@ -2157,7 +2266,6 @@ export const userSubscriptions = pgTable("user_subscriptions", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   planId: uuid("plan_id").notNull().references(() => subscriptionPlans.id),
   status: text("status").notNull().default("active"), // active | cancelled | expired | trial
-  billingCycle: text("billing_cycle").notNull().default("monthly"), // monthly | yearly
   currentPeriodStart: timestamp("current_period_start").notNull(),
   currentPeriodEnd: timestamp("current_period_end").notNull(),
   cancelledAt: timestamp("cancelled_at"),
@@ -2951,6 +3059,14 @@ export const subscriptions = pgTable("subscriptions", {
   // Plan Details
   planId: text("plan_id").notNull(), // free | starter | professional | enterprise
   planName: text("plan_name").notNull(),
+  billingCycle: text("billing_cycle").notNull().default("monthly"), // monthly | yearly
+  maxCompanies: integer("max_companies"),
+  invoicesCreatedThisMonth: integer("invoices_created_this_month").notNull().default(0),
+  receiptsCreatedThisMonth: integer("receipts_created_this_month").notNull().default(0),
+  aiCreditsUsedThisMonth: integer("ai_credits_used_this_month").notNull().default(0),
+  maxStorageMb: integer("max_storage_mb"),
+  aiCreditsPerMonth: integer("ai_credits_per_month"),
+  usagePeriodStart: timestamp("usage_period_start"),
   
   // Billing
   status: text("status").notNull().default("active"), // active | cancelled | past_due | trialing
