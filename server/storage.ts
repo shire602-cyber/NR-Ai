@@ -16,6 +16,7 @@ import type {
   CostCenter, InsertCostCenter,
   ReconciliationRule, InsertReconciliationRule,
   InvoiceTemplate, InsertInvoiceTemplate,
+  BankConnection, InsertBankConnection,
   Receipt, InsertReceipt,
   CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
@@ -91,6 +92,7 @@ import {
   costCenters,
   reconciliationRules,
   invoiceTemplates,
+  bankConnections,
   receipts,
   customerContacts,
   waitlist,
@@ -2165,6 +2167,65 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteLinesByQuoteId(quoteId: string): Promise<void> {
     await db.delete(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+  }
+
+  // Bank connections
+  async getBankConnectionsByCompanyId(companyId: string): Promise<BankConnection[]> {
+    return await db
+      .select()
+      .from(bankConnections)
+      .where(eq(bankConnections.companyId, companyId))
+      .orderBy(desc(bankConnections.createdAt));
+  }
+
+  async getBankConnection(id: string): Promise<BankConnection | undefined> {
+    const [connection] = await db
+      .select()
+      .from(bankConnections)
+      .where(eq(bankConnections.id, id))
+      .limit(1);
+    return connection;
+  }
+
+  async createBankConnection(data: InsertBankConnection): Promise<BankConnection> {
+    const [connection] = await db.insert(bankConnections).values(data).returning();
+    return connection;
+  }
+
+  async updateBankConnection(id: string, data: Partial<InsertBankConnection>): Promise<BankConnection | undefined> {
+    const [connection] = await db
+      .update(bankConnections)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(bankConnections.id, id))
+      .returning();
+    return connection;
+  }
+
+  async updateBankConnectionTokens(
+    id: string,
+    tokens: {
+      accessToken?: string;
+      refreshToken?: string | null;
+      tokenExpiresAt?: Date | null;
+      status?: string;
+      lastError?: string | null;
+    },
+  ): Promise<void> {
+    await db
+      .update(bankConnections)
+      .set({
+        ...(tokens.accessToken !== undefined ? { accessToken: tokens.accessToken } : {}),
+        ...(tokens.refreshToken !== undefined ? { refreshToken: tokens.refreshToken } : {}),
+        ...(tokens.tokenExpiresAt !== undefined ? { tokenExpiresAt: tokens.tokenExpiresAt } : {}),
+        ...(tokens.status !== undefined ? { status: tokens.status } : {}),
+        ...(tokens.lastError !== undefined ? { lastError: tokens.lastError } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(bankConnections.id, id));
+  }
+
+  async deleteBankConnection(id: string): Promise<void> {
+    await db.delete(bankConnections).where(eq(bankConnections.id, id));
   }
 
   // Invoice templates

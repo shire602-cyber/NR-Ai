@@ -452,6 +452,50 @@ async function main() {
     await fail('invoice-template-flow', { crash: e.message.slice(0, 150) });
   }
 
+  // ── 9c. Bank import flow: manual connection → CSV statement import →
+  //       transactions land → reconciliation auto-match tags them ───────────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const connRes = await page.request.post(`${BASE}/api/companies/${companyId}/bank-connections`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: { provider: 'manual', connectionType: 'statement', bankName: 'Emirates NBD', accountName: 'Current AED' },
+    });
+    if (connRes.status() !== 201) {
+      await fail('bank-import connection', { detail: `status ${connRes.status()}: ${(await connRes.text()).slice(0, 200)}` });
+    } else {
+      const conn = await connRes.json();
+      const csv = [
+        'date,description,amount,reference',
+        '2026-06-01,SALARY TRANSFER JUNE,-15000.00,SAL-001',
+        '2026-06-02,Customer payment Acme,5250.00,RCPT-77',
+        '2026-06-03,DEWA utility bill,-820.50,DEWA-9',
+      ].join('\n');
+      const importRes = await page.request.post(
+        `${BASE}/api/companies/${companyId}/bank-connections/${conn.id}/import`,
+        { headers: { 'x-csrf-token': csrfToken ?? '' }, data: { csvContent: csv } },
+      );
+      if (importRes.status() >= 300) {
+        await fail('bank-import import', { detail: `status ${importRes.status()}: ${(await importRes.text()).slice(0, 250)}` });
+      } else {
+        const result = await importRes.json();
+        if ((result?.imported ?? result?.count ?? 0) < 3) {
+          await fail('bank-import count', { detail: `expected 3 imported, got ${JSON.stringify(result).slice(0, 150)}` });
+        }
+        // The SALARY rule from flow 9 should now match one transaction.
+        const matchRes = await page.request.post(`${BASE}/api/companies/${companyId}/reconciliation-rules/auto-match`, {
+          headers: { 'x-csrf-token': csrfToken ?? '' },
+        });
+        const match = await matchRes.json().catch(() => ({}));
+        if (matchRes.status() >= 300 || (match?.matched ?? 0) < 1) {
+          await fail('bank-import auto-match', { detail: `status ${matchRes.status()}, matched ${match?.matched}` });
+        }
+      }
+    }
+  } catch (e) {
+    await fail('bank-import-flow', { crash: e.message.slice(0, 150) });
+  }
+
   // ── 10. Account-type matrix: every kind of account must work ──────────────
   // (a) 'client' userType: flat workspace sidebar — dashboard, documents,
   //     reports must render with no admin/firm assumptions leaking in.
