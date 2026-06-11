@@ -24,7 +24,11 @@ router.get(
   asyncHandler(async (req, res) => {
     const { id: userId, firmRole } = req.user as Express.User;
 
-    const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+    const accessibleIds = await getAccessibleCompanyIds(
+      userId,
+      firmRole ?? "",
+      (req as any).user?.isAdmin === true
+    );
 
     let rows;
     if (accessibleIds === null) {

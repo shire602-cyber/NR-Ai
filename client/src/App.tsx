@@ -11,6 +11,7 @@ import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
 import { useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { canAccessNraCenter } from "@shared/access";
 import { Button } from "@/components/ui/button";
 import { User, Building2, ArrowLeft, Search } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -423,7 +424,8 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Guard: firm routes require firmRole (firm_owner or firm_admin) in JWT
+// Guard: NRA Center routes — platform admins and firm staff only (canonical
+// model in shared/access.ts, mirrored server-side by requireNraAccess()).
 function FirmRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
 
@@ -437,7 +439,7 @@ function FirmRoute({ children }: { children: React.ReactNode }) {
         actionLabel="Sign in"
       />
     );
-  if (user.firmRole !== "firm_owner" && user.firmRole !== "firm_admin") {
+  if (!canAccessNraCenter(user)) {
     return (
       <AccessRedirect
         title="NRA firm access required"

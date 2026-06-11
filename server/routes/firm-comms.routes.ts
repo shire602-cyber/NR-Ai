@@ -100,7 +100,11 @@ export function registerFirmCommsRoutes(app: Express): void {
         limit = "50",
       } = req.query as Record<string, string>;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
 
       if (accessibleIds !== null && accessibleIds.length === 0) {
         return res.json({ data: [], total: 0, page: 1, limit: 50 });
@@ -160,7 +164,11 @@ export function registerFirmCommsRoutes(app: Express): void {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
@@ -183,7 +191,11 @@ export function registerFirmCommsRoutes(app: Express): void {
       const { id: userId, firmRole } = (req as any).user;
       const validated = sendEmailSchema.parse(req.body);
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       if (accessibleIds !== null && !accessibleIds.includes(validated.companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
@@ -334,7 +346,11 @@ export function registerFirmCommsRoutes(app: Express): void {
       const { id: userId, firmRole } = (req as any).user;
       const validated = sendWhatsAppSchema.parse(req.body);
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       if (accessibleIds !== null && !accessibleIds.includes(validated.companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
@@ -481,7 +497,11 @@ export function registerFirmCommsRoutes(app: Express): void {
       const { id: userId, firmRole } = (req as any).user;
       const { daysAhead, dryRun } = bulkRemindSchema.parse(req.body);
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       if (accessibleIds !== null && accessibleIds.length === 0) {
         return res.json({ sent: 0, failed: 0, results: [], preview: [] });
       }

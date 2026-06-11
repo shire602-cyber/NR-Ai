@@ -159,7 +159,11 @@ export function registerCompanyRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const companies = await storage.getAccessibleCompanies(userId, firmRole);
+      const companies = await storage.getAccessibleCompanies(
+        userId,
+        firmRole,
+        (req as any).user?.isAdmin === true
+      );
       res.json(companies);
     })
   );

@@ -51,6 +51,7 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
+import { canAccessNraCenter } from "@shared/access";
 import { useTranslation, useI18n } from "@/lib/i18n";
 import { useRTL } from "@/components/RTLProvider";
 import { removeToken } from "@/lib/auth";
@@ -234,18 +235,17 @@ export function AppSidebar() {
 
   const isAdmin = currentUser?.isAdmin === true;
   const userType = currentUser?.userType || "customer";
-  const firmRole = currentUser?.firmRole ?? null;
 
-  const hasFirmRole = firmRole === "firm_owner" || firmRole === "firm_admin";
+  const showNraCenter = canAccessNraCenter(currentUser);
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(
     () => [
       ...CUSTOMER_GROUPS,
-      ...(hasFirmRole ? [NRA_GROUP] : []),
+      ...(showNraCenter ? [NRA_GROUP] : []),
       ...(isAdmin ? [ADMIN_GROUP] : []),
     ],
-    [hasFirmRole, isAdmin]
+    [showNraCenter, isAdmin]
   );
 
   // Initialize expanded group: active route's group takes precedence, then localStorage
