@@ -13,7 +13,6 @@
     "server/routes/billing.routes.ts",
     "server/routes/document-versions.routes.ts",
     "server/routes/employees.routes.ts",
-    "server/routes/invoice-templates.routes.ts",
     "server/routes/push.routes.ts",
     "server/routes/webhooks.routes.ts",
     "server/services/bank-import.service.ts",

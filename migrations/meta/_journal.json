@@ -442,6 +442,13 @@
       "when": 1771200000000,
       "tag": "0063_reconciliation_rules",
       "breakpoints": false
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1771300000000,
+      "tag": "0064_invoice_templates",
+      "breakpoints": false
     }
   ]
 }
