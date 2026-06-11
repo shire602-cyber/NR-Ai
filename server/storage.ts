@@ -18,6 +18,12 @@ import type {
   InvoiceTemplate, InsertInvoiceTemplate,
   BankConnection, InsertBankConnection,
   DocumentVersion, InsertDocumentVersion,
+  ApiKey, InsertApiKey,
+  WebhookEndpoint, InsertWebhookEndpoint,
+  WebhookDelivery, InsertWebhookDelivery,
+  PushSubscription, InsertPushSubscription,
+  NotificationPreferences, InsertNotificationPreferences,
+  StripeEvent,
   Receipt, InsertReceipt,
   CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
@@ -95,6 +101,12 @@ import {
   invoiceTemplates,
   bankConnections,
   documentVersions,
+  apiKeys,
+  webhookEndpoints,
+  webhookDeliveries,
+  pushSubscriptions,
+  notificationPreferences,
+  stripeEvents,
   receipts,
   customerContacts,
   waitlist,
@@ -2170,6 +2182,141 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteLinesByQuoteId(quoteId: string): Promise<void> {
     await db.delete(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+  }
+
+  // API keys
+  async getApiKeysByCompanyId(companyId: string): Promise<ApiKey[]> {
+    return await db.select().from(apiKeys).where(eq(apiKeys.companyId, companyId)).orderBy(desc(apiKeys.createdAt));
+  }
+
+  async createApiKey(data: InsertApiKey): Promise<ApiKey> {
+    const [key] = await db.insert(apiKeys).values(data).returning();
+    return key;
+  }
+
+  async updateApiKey(id: string, data: Partial<InsertApiKey>): Promise<ApiKey | undefined> {
+    const [key] = await db.update(apiKeys).set(data).where(eq(apiKeys.id, id)).returning();
+    return key;
+  }
+
+  async deleteApiKey(id: string): Promise<void> {
+    await db.delete(apiKeys).where(eq(apiKeys.id, id));
+  }
+
+  // Webhook endpoints + deliveries
+  async getWebhookEndpointsByCompanyId(companyId: string): Promise<WebhookEndpoint[]> {
+    return await db.select().from(webhookEndpoints).where(eq(webhookEndpoints.companyId, companyId)).orderBy(desc(webhookEndpoints.createdAt));
+  }
+
+  async getWebhookEndpoint(id: string): Promise<WebhookEndpoint | undefined> {
+    const [endpoint] = await db.select().from(webhookEndpoints).where(eq(webhookEndpoints.id, id)).limit(1);
+    return endpoint;
+  }
+
+  async getActiveWebhookEndpointsForEvent(companyId: string, event: string): Promise<WebhookEndpoint[]> {
+    const all = await db
+      .select()
+      .from(webhookEndpoints)
+      .where(and(eq(webhookEndpoints.companyId, companyId), eq(webhookEndpoints.isActive, true)));
+    return all.filter((endpoint: WebhookEndpoint) => {
+      const events = endpoint.events.split(',').map((e: string) => e.trim());
+      return events.includes('*') || events.includes(event);
+    });
+  }
+
+  async createWebhookEndpoint(data: InsertWebhookEndpoint): Promise<WebhookEndpoint> {
+    const [endpoint] = await db.insert(webhookEndpoints).values(data).returning();
+    return endpoint;
+  }
+
+  async updateWebhookEndpoint(id: string, data: Partial<InsertWebhookEndpoint>): Promise<WebhookEndpoint | undefined> {
+    const [endpoint] = await db.update(webhookEndpoints).set(data).where(eq(webhookEndpoints.id, id)).returning();
+    return endpoint;
+  }
+
+  async incrementWebhookFailureCount(id: string): Promise<void> {
+    await db
+      .update(webhookEndpoints)
+      .set({ failureCount: sql`${webhookEndpoints.failureCount} + 1` })
+      .where(eq(webhookEndpoints.id, id));
+  }
+
+  async deleteWebhookEndpoint(id: string): Promise<void> {
+    await db.delete(webhookEndpoints).where(eq(webhookEndpoints.id, id));
+  }
+
+  async createWebhookDelivery(data: InsertWebhookDelivery): Promise<WebhookDelivery> {
+    const [delivery] = await db.insert(webhookDeliveries).values(data).returning();
+    return delivery;
+  }
+
+  async getWebhookDeliveriesByEndpointId(endpointId: string, limit = 50): Promise<WebhookDelivery[]> {
+    return await db
+      .select()
+      .from(webhookDeliveries)
+      .where(eq(webhookDeliveries.webhookEndpointId, endpointId))
+      .orderBy(desc(webhookDeliveries.createdAt))
+      .limit(limit);
+  }
+
+  // Push subscriptions + notification preferences
+  async createPushSubscription(data: InsertPushSubscription): Promise<PushSubscription> {
+    const [sub] = await db.insert(pushSubscriptions).values(data).returning();
+    return sub;
+  }
+
+  async getPushSubscriptionsByUserId(userId: string): Promise<PushSubscription[]> {
+    return await db
+      .select()
+      .from(pushSubscriptions)
+      .where(and(eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.isActive, true)));
+  }
+
+  async deactivatePushSubscription(id: string): Promise<void> {
+    await db.update(pushSubscriptions).set({ isActive: false }).where(eq(pushSubscriptions.id, id));
+  }
+
+  async getNotificationPreferences(userId: string): Promise<NotificationPreferences | undefined> {
+    const [prefs] = await db
+      .select()
+      .from(notificationPreferences)
+      .where(eq(notificationPreferences.userId, userId))
+      .limit(1);
+    return prefs;
+  }
+
+  async upsertNotificationPreferences(
+    userId: string,
+    data: Partial<InsertNotificationPreferences>,
+  ): Promise<NotificationPreferences> {
+    const { userId: _ignored, ...patch } = data as Record<string, unknown>;
+    const [prefs] = await db
+      .insert(notificationPreferences)
+      .values({ userId, ...patch })
+      .onConflictDoUpdate({
+        target: notificationPreferences.userId,
+        set: { ...patch, updatedAt: new Date() },
+      })
+      .returning();
+    return prefs;
+  }
+
+  async getUserCountByCompanyId(companyId: string): Promise<number> {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(companyUsers)
+      .where(eq(companyUsers.companyId, companyId));
+    return Number(row?.count ?? 0);
+  }
+
+  // Stripe webhook event ledger (idempotency)
+  async getStripeEvent(id: string): Promise<StripeEvent | undefined> {
+    const [event] = await db.select().from(stripeEvents).where(eq(stripeEvents.id, id)).limit(1);
+    return event;
+  }
+
+  async createStripeEvent(id: string, type: string): Promise<void> {
+    await db.insert(stripeEvents).values({ id, type }).onConflictDoNothing();
   }
 
   // Document versions

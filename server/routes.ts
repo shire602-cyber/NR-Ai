@@ -64,6 +64,11 @@ import { registerReconciliationRuleRoutes } from './routes/reconciliation-rules.
 import { registerInvoiceTemplateRoutes } from './routes/invoice-templates.routes';
 import { registerBankRoutes } from './routes/bank.routes';
 import { registerDocumentVersionRoutes } from './routes/document-versions.routes';
+import { registerApiKeyRoutes } from './routes/api-keys.routes';
+import { registerBillingRoutes } from './routes/billing.routes';
+import { registerPushRoutes } from './routes/push.routes';
+import { registerWebhookRoutes } from './routes/webhooks.routes';
+import { registerIntegrationStatusRoutes } from './routes/integration-status.routes';
 import { registerAdminHealthRoutes } from './routes/admin-health.routes';
 import { registerBankStatementRoutes } from './routes/bank-statements.routes';
 import { registerExchangeRateRoutes } from './routes/exchange-rates.routes';
@@ -128,6 +133,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerInvoiceTemplateRoutes(app);
   registerBankRoutes(app);
   registerDocumentVersionRoutes(app);
+  registerApiKeyRoutes(app);
+  registerBillingRoutes(app);
+  registerPushRoutes(app);
+  registerWebhookRoutes(app);
+  registerIntegrationStatusRoutes(app);
 
   // ─── Reporting & Analytics ──────────────────────────────
   registerDashboardRoutes(app);
