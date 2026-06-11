@@ -2,7 +2,6 @@
   "intentionallyUnregisteredRouteModules": [
     "api-keys",
     "billing",
-    "document-versions",
     "push",
     "webhooks"
   ]

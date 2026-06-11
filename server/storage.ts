@@ -17,6 +17,7 @@ import type {
   ReconciliationRule, InsertReconciliationRule,
   InvoiceTemplate, InsertInvoiceTemplate,
   BankConnection, InsertBankConnection,
+  DocumentVersion, InsertDocumentVersion,
   Receipt, InsertReceipt,
   CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
@@ -93,6 +94,7 @@ import {
   reconciliationRules,
   invoiceTemplates,
   bankConnections,
+  documentVersions,
   receipts,
   customerContacts,
   waitlist,
@@ -2168,6 +2170,36 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteLinesByQuoteId(quoteId: string): Promise<void> {
     await db.delete(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+  }
+
+  // Document versions
+  async getDocumentVersions(companyId: string, documentType: string, documentId: string): Promise<DocumentVersion[]> {
+    return await db
+      .select()
+      .from(documentVersions)
+      .where(and(
+        eq(documentVersions.companyId, companyId),
+        eq(documentVersions.documentType, documentType),
+        eq(documentVersions.documentId, documentId),
+      ))
+      .orderBy(desc(documentVersions.version));
+  }
+
+  async getDocumentVersionCount(companyId: string, documentType: string, documentId: string): Promise<number> {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(documentVersions)
+      .where(and(
+        eq(documentVersions.companyId, companyId),
+        eq(documentVersions.documentType, documentType),
+        eq(documentVersions.documentId, documentId),
+      ));
+    return Number(row?.count ?? 0);
+  }
+
+  async createDocumentVersion(data: InsertDocumentVersion): Promise<DocumentVersion> {
+    const [version] = await db.insert(documentVersions).values(data).returning();
+    return version;
   }
 
   // Bank connections

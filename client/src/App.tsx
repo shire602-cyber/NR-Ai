@@ -97,6 +97,7 @@ const CostCenters = lazy(() => import('@/pages/CostCenters'));
 const FinancialStatements = lazy(() => import('@/pages/FinancialStatements'));
 const ReconciliationRules = lazy(() => import('@/pages/ReconciliationRules'));
 const InvoiceTemplates = lazy(() => import('@/pages/InvoiceTemplates'));
+const DocumentVersions = lazy(() => import('@/pages/DocumentVersions'));
 const ExchangeRates = lazy(() => import('@/pages/ExchangeRates'));
 const RecurringInvoices = lazy(() => import('@/pages/RecurringInvoices'));
 const PaymentChasing = lazy(() => import('@/pages/PaymentChasing'));
@@ -565,6 +566,7 @@ function Router() {
           <Route path="/financial-statements" component={FinancialStatements} />
           <Route path="/reconciliation-rules" component={ReconciliationRules} />
           <Route path="/invoice-templates" component={InvoiceTemplates} />
+          <Route path="/document-versions" component={DocumentVersions} />
           <Route path="/exchange-rates" component={ExchangeRates} />
           <Route path="/payroll" component={Payroll} />
           <Route path="/bill-pay" component={BillPay} />
