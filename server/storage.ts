@@ -153,6 +153,7 @@ import { eq, and, desc, lt, lte, gt, gte, isNull, isNotNull, or, sql, inArray } 
 import Decimal from "decimal.js";
 import { statusFromPayments, isTerminal, type InvoiceStatus } from "./services/invoice-state-machine";
 import { ACCOUNT_CODES } from "./constants";
+import { decryptSecret, encryptSecret } from "./services/secret-vault";
 
 // Default cap on list-endpoint queries. Without this, a single tenant with
 // runaway invoice/journal volume can pull tens of MB into memory. Pages that
@@ -2170,12 +2171,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Bank connections
+  private decryptBankConnection<T extends BankConnection | undefined>(connection: T): T {
+    if (!connection) return connection;
+    return {
+      ...connection,
+      accessToken: decryptSecret(connection.accessToken),
+      refreshToken: decryptSecret(connection.refreshToken),
+    } as T;
+  }
+
   async getBankConnectionsByCompanyId(companyId: string): Promise<BankConnection[]> {
-    return await db
+    const rows = await db
       .select()
       .from(bankConnections)
       .where(eq(bankConnections.companyId, companyId))
       .orderBy(desc(bankConnections.createdAt));
+    return rows.map((row: BankConnection) => this.decryptBankConnection(row));
   }
 
   async getBankConnection(id: string): Promise<BankConnection | undefined> {
@@ -2184,21 +2195,31 @@ export class DatabaseStorage implements IStorage {
       .from(bankConnections)
       .where(eq(bankConnections.id, id))
       .limit(1);
-    return connection;
+    return this.decryptBankConnection(connection);
   }
 
   async createBankConnection(data: InsertBankConnection): Promise<BankConnection> {
-    const [connection] = await db.insert(bankConnections).values(data).returning();
-    return connection;
+    const [connection] = await db
+      .insert(bankConnections)
+      .values({
+        ...data,
+        accessToken: encryptSecret(data.accessToken ?? null),
+        refreshToken: encryptSecret(data.refreshToken ?? null),
+      })
+      .returning();
+    return this.decryptBankConnection(connection);
   }
 
   async updateBankConnection(id: string, data: Partial<InsertBankConnection>): Promise<BankConnection | undefined> {
+    const patch: Partial<InsertBankConnection> = { ...data };
+    if ('accessToken' in patch) patch.accessToken = encryptSecret(patch.accessToken ?? null);
+    if ('refreshToken' in patch) patch.refreshToken = encryptSecret(patch.refreshToken ?? null);
     const [connection] = await db
       .update(bankConnections)
-      .set({ ...data, updatedAt: new Date() })
+      .set({ ...patch, updatedAt: new Date() })
       .where(eq(bankConnections.id, id))
       .returning();
-    return connection;
+    return this.decryptBankConnection(connection);
   }
 
   async updateBankConnectionTokens(
@@ -2214,8 +2235,8 @@ export class DatabaseStorage implements IStorage {
     await db
       .update(bankConnections)
       .set({
-        ...(tokens.accessToken !== undefined ? { accessToken: tokens.accessToken } : {}),
-        ...(tokens.refreshToken !== undefined ? { refreshToken: tokens.refreshToken } : {}),
+        ...(tokens.accessToken !== undefined ? { accessToken: encryptSecret(tokens.accessToken) } : {}),
+        ...(tokens.refreshToken !== undefined ? { refreshToken: encryptSecret(tokens.refreshToken) } : {}),
         ...(tokens.tokenExpiresAt !== undefined ? { tokenExpiresAt: tokens.tokenExpiresAt } : {}),
         ...(tokens.status !== undefined ? { status: tokens.status } : {}),
         ...(tokens.lastError !== undefined ? { lastError: tokens.lastError } : {}),
