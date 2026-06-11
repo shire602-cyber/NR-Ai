@@ -676,6 +676,11 @@ export interface IStorage {
   // Corporate Tax Returns
   getCorporateTaxReturnsByCompanyId(companyId: string): Promise<CorporateTaxReturn[]>;
   getCorporateTaxReturn(id: string): Promise<CorporateTaxReturn | undefined>;
+  getCtLossBroughtForward(
+    companyId: string,
+    periodStart: Date,
+    excludeReturnId?: string
+  ): Promise<number>;
   createCorporateTaxReturn(data: InsertCorporateTaxReturn): Promise<CorporateTaxReturn>;
   updateCorporateTaxReturn(
     id: string,
@@ -3493,6 +3498,34 @@ export class DatabaseStorage implements IStorage {
       .from(corporateTaxReturns)
       .where(eq(corporateTaxReturns.id, id));
     return taxReturn || undefined;
+  }
+
+  /**
+   * Opening tax-loss pool for a CT period: the closing carryforward of the
+   * company's most recent earlier return (Art. 37 FDL 47/2022). Excludes the
+   * return being computed so recomputes are idempotent.
+   */
+  async getCtLossBroughtForward(
+    companyId: string,
+    periodStart: Date,
+    excludeReturnId?: string
+  ): Promise<number> {
+    const rows = await db
+      .select({
+        lossCarriedForward: corporateTaxReturns.lossCarriedForward,
+        id: corporateTaxReturns.id,
+      })
+      .from(corporateTaxReturns)
+      .where(
+        and(
+          eq(corporateTaxReturns.companyId, companyId),
+          lt(corporateTaxReturns.taxPeriodEnd, periodStart)
+        )
+      )
+      .orderBy(desc(corporateTaxReturns.taxPeriodEnd))
+      .limit(2);
+    const prior = rows.find((r: { id: string }) => r.id !== excludeReturnId);
+    return Number(prior?.lossCarriedForward ?? 0) || 0;
   }
 
   async createCorporateTaxReturn(data: InsertCorporateTaxReturn): Promise<CorporateTaxReturn> {

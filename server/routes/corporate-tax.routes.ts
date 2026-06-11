@@ -10,7 +10,12 @@ import {
   ctReturnExportFilename,
   parseCtWorkbookRows,
 } from "../services/ct-workpaper-export.service";
-import { computeCtLiability, computeCtTotals } from "../../shared/ct-workpaper";
+import {
+  computeCtComputation,
+  computeCtLiability,
+  computeCtTotals,
+  type CtBridgeAdjustment,
+} from "../../shared/ct-workpaper";
 
 const CT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 const CT_IMPORT_MAX_ROWS = 2000;
@@ -121,6 +126,77 @@ export function registerCorporateTaxRoutes(app: Express) {
       );
 
       res.status(201).json(taxReturn);
+    })
+  );
+
+  // Compute the full taxable-profit bridge: disallowable add-backs,
+  // deductions, small business relief, and loss carryforward pulled from the
+  // company's prior return. Persists the schedule on the return so the UI
+  // and Excel export show the exact same numbers.
+  app.post(
+    "/api/corporate-tax/returns/:id/compute",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user.id;
+      const ctReturn = await storage.getCorporateTaxReturn(req.params.id);
+      if (!ctReturn) {
+        return res.status(404).json({ message: "Corporate tax return not found" });
+      }
+      const hasAccess = await storage.hasCompanyAccess(userId, ctReturn.companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      if (ctReturn.status !== "draft") {
+        return res.status(400).json({ message: "Only draft returns can be recomputed" });
+      }
+
+      const adjustments: CtBridgeAdjustment[] = Array.isArray(req.body?.adjustments)
+        ? req.body.adjustments
+        : ((ctReturn.workpaper as any)?.adjustments ?? []);
+      const smallBusinessReliefElected =
+        typeof req.body?.smallBusinessReliefElected === "boolean"
+          ? req.body.smallBusinessReliefElected
+          : ctReturn.smallBusinessRelief === true;
+      const relatedPartyNotes =
+        typeof req.body?.relatedPartyNotes === "string"
+          ? req.body.relatedPartyNotes
+          : ctReturn.relatedPartyNotes;
+
+      // Loss pool: closing carryforward of the latest earlier return.
+      const lossBroughtForward = await storage.getCtLossBroughtForward(
+        ctReturn.companyId,
+        ctReturn.taxPeriodStart,
+        ctReturn.id
+      );
+
+      const computation = computeCtComputation({
+        totalRevenue: Number(ctReturn.totalRevenue) || 0,
+        totalExpenses: Number(ctReturn.totalExpenses) || 0,
+        totalDeductions: Number(ctReturn.totalDeductions) || 0,
+        adjustments,
+        lossBroughtForward,
+        smallBusinessReliefElected,
+        exemptionThreshold: Number(ctReturn.exemptionThreshold) || UAE_CT_EXEMPTION_THRESHOLD,
+        taxRate: Number(ctReturn.taxRate) || 0.09,
+      });
+
+      const updated = await storage.updateCorporateTaxReturn(ctReturn.id, {
+        taxableIncome: computation.taxableIncome,
+        taxPayable: computation.taxPayable,
+        lossBroughtForward: computation.lossBroughtForward,
+        lossCarriedForward: computation.lossCarriedForward,
+        smallBusinessRelief: computation.smallBusinessRelief.applied,
+        relatedPartyNotes: relatedPartyNotes ?? null,
+        workpaper: {
+          ...((ctReturn.workpaper as Record<string, unknown>) ?? {}),
+          adjustments,
+          computation,
+          computedAt: new Date().toISOString(),
+        },
+      } as any);
+
+      res.json({ return: updated, computation });
     })
   );
 

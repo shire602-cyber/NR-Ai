@@ -163,25 +163,48 @@ function addComputationSheet(
   const headerRow = sheet.addRow(["Item", "Amount (AED)"]);
   styleHeaderRow(headerRow);
 
-  const liability = computeCtLiability({
-    totalRevenue: money(ctReturn.totalRevenue),
-    totalExpenses: money(ctReturn.totalExpenses),
-    totalDeductions: money(ctReturn.totalDeductions),
-    exemptionThreshold: money(ctReturn.exemptionThreshold),
-    taxRate: Number(ctReturn.taxRate ?? 0.09),
-  });
+  // Prefer the persisted bridge (full FDL 47/2022 schedule: add-backs, small
+  // business relief, loss carryforward) when the return has been computed;
+  // fall back to the simple liability formula for legacy returns.
+  const computation = (ctReturn.workpaper as any)?.computation as
+    | { bridge?: Array<{ label: string; amount: number }>; taxRate?: number }
+    | undefined;
 
-  const lines: Array<[string, number | string, boolean?]> = [
-    ["Total revenue", money(ctReturn.totalRevenue)],
-    ["Total expenses", money(ctReturn.totalExpenses)],
-    ["Accounting profit / (loss)", money(ctReturn.totalRevenue) - money(ctReturn.totalExpenses)],
-    ["Deductions / adjustments", money(ctReturn.totalDeductions)],
-    ["Taxable income", liability.taxableIncome, true],
-    ["Small-business relief threshold", liability.exemptionThreshold],
-    ["Income above threshold", liability.taxableAmount],
-    [`Corporate tax rate`, `${(liability.taxRate * 100).toFixed(0)}%`],
-    ["Corporate tax payable", liability.taxPayable, true],
-  ];
+  let lines: Array<[string, number | string, boolean?]>;
+  if (computation?.bridge?.length) {
+    const emphasizedLabels = /taxable income$|corporate tax payable/i;
+    lines = computation.bridge.map(
+      (line) =>
+        [line.label, line.amount, emphasizedLabels.test(line.label)] as [string, number, boolean]
+    );
+    lines.splice(lines.length - 1, 0, [
+      "Corporate tax rate",
+      `${((computation.taxRate ?? Number(ctReturn.taxRate ?? 0.09)) * 100).toFixed(0)}%`,
+    ]);
+  } else {
+    const liability = computeCtLiability({
+      totalRevenue: money(ctReturn.totalRevenue),
+      totalExpenses: money(ctReturn.totalExpenses),
+      totalDeductions: money(ctReturn.totalDeductions),
+      exemptionThreshold: money(ctReturn.exemptionThreshold),
+      taxRate: Number(ctReturn.taxRate ?? 0.09),
+    });
+    lines = [
+      ["Total revenue", money(ctReturn.totalRevenue)],
+      ["Total expenses", money(ctReturn.totalExpenses)],
+      ["Accounting profit / (loss)", money(ctReturn.totalRevenue) - money(ctReturn.totalExpenses)],
+      ["Deductions / adjustments", money(ctReturn.totalDeductions)],
+      ["Taxable income", liability.taxableIncome, true],
+      ["Small-business relief threshold", liability.exemptionThreshold],
+      ["Income above threshold", liability.taxableAmount],
+      [`Corporate tax rate`, `${(liability.taxRate * 100).toFixed(0)}%`],
+      ["Corporate tax payable", liability.taxPayable, true],
+    ];
+  }
+
+  if (ctReturn.relatedPartyNotes) {
+    lines.push(["Related-party / transfer-pricing notes", ctReturn.relatedPartyNotes]);
+  }
 
   for (const [label, amount, emphasized] of lines) {
     const row = sheet.addRow([label, amount]);
