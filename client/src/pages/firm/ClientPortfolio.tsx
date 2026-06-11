@@ -2126,6 +2126,19 @@ function VatWorkspaceDialog({
 
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const approveAllDraftsMutation = useMutation({
+    mutationFn: () =>
+      apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/bulk-status`, { to: 'approved' }),
+    onSuccess: (result: { updated: number }) => {
+      invalidateWorkspace();
+      toast({
+        title: result.updated > 0 ? `${result.updated} draft rows approved` : 'No draft rows to approve',
+        description: result.updated > 0 ? 'Totals recalculated — approved rows now flow into the VAT 201.' : undefined,
+      });
+    },
+    onError: (e: any) => toast({ variant: 'destructive', title: 'Bulk approve failed', description: e?.message }),
+  });
+
   const pullFromBooksMutation = useMutation({
     mutationFn: () =>
       apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/pull-from-books`),
@@ -2295,7 +2308,22 @@ function VatWorkspaceDialog({
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Draft / excluded</p>
-                  <p className="font-semibold">{draftRows.length} / {excludedRows.length}</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold">{draftRows.length} / {excludedRows.length}</p>
+                    {draftRows.length > 0 && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[11px]"
+                        onClick={() => approveAllDraftsMutation.mutate()}
+                        disabled={approveAllDraftsMutation.isPending}
+                        data-testid="button-approve-all-drafts"
+                      >
+                        <Check className="w-3 h-3 mr-1" />
+                        Approve all
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Evidence-backed</p>

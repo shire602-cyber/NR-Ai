@@ -15,6 +15,7 @@ import { resolveAccessibleClientIds } from '../services/firm-command-center.serv
 import {
   addVatWorkpaperRow,
   addVatWorkpaperRowsBulk,
+  bulkUpdateVatWorkpaperRowStatus,
   createVatWorkpaper,
   pullVatWorkpaperRowsFromBooks,
   generateVatReturnFromWorkpaper,
@@ -446,6 +447,37 @@ export function registerFirmVatWorkspaceRoutes(app: Express): void {
       });
 
       res.status(201).json({ created: created.length });
+    }),
+  );
+
+  // Review queue: approve (or exclude) all draft rows in one action.
+  router.post(
+    '/:id/rows/bulk-status',
+    asyncHandler(async (req: Request, res: Response) => {
+      const parsed = uuidParamSchema.safeParse(req.params);
+      if (!parsed.success) return res.status(400).json({ message: 'Invalid VAT workpaper id' });
+      const detail = await requireWorkpaperAccess(req, res, parsed.data.id);
+      if (!detail) return;
+
+      const bodySchema = z.object({
+        to: z.enum(['approved', 'excluded']),
+        rowIds: z.array(z.string().uuid()).max(2000).optional(),
+      });
+      const body = bodySchema.parse(req.body);
+
+      const result = await bulkUpdateVatWorkpaperRowStatus(parsed.data.id, (req as any).user.id, body);
+
+      await recordAudit({
+        userId: (req as any).user?.id,
+        companyId: detail.workpaper.companyId,
+        action: 'firm_vat_workpaper_rows_bulk_status',
+        entityType: 'vat_workpaper',
+        entityId: detail.workpaper.id,
+        after: { to: body.to, updated: result.updated },
+        req,
+      });
+
+      res.json(result);
     }),
   );
 
