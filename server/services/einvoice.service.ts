@@ -29,6 +29,20 @@ function formatDate(date: Date | string): string {
  * customization for UAE e-invoicing. Includes seller/buyer parties, tax totals,
  * invoice lines, and monetary totals.
  */
+/**
+ * UAE VAT category codes (UNCL5305 subset used by PINT AE):
+ * S standard 5% · Z zero-rated · E exempt · O out of scope.
+ */
+export function vatCategoryFor(line: Pick<InvoiceLine, 'vatSupplyType' | 'vatRate'>): 'S' | 'Z' | 'E' | 'O' {
+  switch (line.vatSupplyType) {
+    case 'zero_rated': return 'Z';
+    case 'exempt': return 'E';
+    case 'out_of_scope': return 'O';
+    default:
+      return (line.vatRate ?? UAE_VAT_RATE) === 0 ? 'Z' : 'S';
+  }
+}
+
 export function generateEInvoiceXML(
   invoice: Invoice,
   lines: InvoiceLine[],
@@ -45,7 +59,9 @@ export function generateEInvoiceXML(
       const lineExtension = line.quantity * line.unitPrice;
       const vatRate = line.vatRate ?? UAE_VAT_RATE;
       const vatAmount = lineExtension * vatRate;
-      const vatPercent = (vatRate * 100).toFixed(2);
+      const category = vatCategoryFor(line);
+      const vatPercent = (category === 'S' ? vatRate * 100 : 0).toFixed(2);
+      void vatAmount;
 
       return `
     <cac:InvoiceLine>
@@ -55,7 +71,7 @@ export function generateEInvoiceXML(
       <cac:Item>
         <cbc:Name>${escapeXml(line.description)}</cbc:Name>
         <cac:ClassifiedTaxCategory>
-          <cbc:ID>S</cbc:ID>
+          <cbc:ID>${category}</cbc:ID>
           <cbc:Percent>${vatPercent}</cbc:Percent>
           <cac:TaxScheme>
             <cbc:ID>VAT</cbc:ID>
@@ -69,26 +85,30 @@ export function generateEInvoiceXML(
     })
     .join('');
 
-  // Calculate tax breakdown (grouped by VAT rate)
-  const taxByRate = new Map<number, { taxable: number; tax: number }>();
+  // Tax breakdown grouped by (VAT category, rate) — Z/E/O lines must not be
+  // declared under the standard-rated category.
+  const taxByGroup = new Map<string, { category: string; rate: number; taxable: number; tax: number }>();
   for (const line of lines) {
-    const vatRate = line.vatRate ?? UAE_VAT_RATE;
+    const category = vatCategoryFor(line);
+    const vatRate = category === 'S' ? (line.vatRate ?? UAE_VAT_RATE) : 0;
     const lineExtension = line.quantity * line.unitPrice;
-    const existing = taxByRate.get(vatRate) || { taxable: 0, tax: 0 };
+    const key = `${category}:${vatRate}`;
+    const existing = taxByGroup.get(key) || { category, rate: vatRate, taxable: 0, tax: 0 };
     existing.taxable += lineExtension;
     existing.tax += lineExtension * vatRate;
-    taxByRate.set(vatRate, existing);
+    taxByGroup.set(key, existing);
   }
 
-  const taxSubtotalsXml = Array.from(taxByRate.entries())
-    .map(([rate, amounts]) => {
+  const taxSubtotalsXml = Array.from(taxByGroup.values())
+    .map(({ category, rate, taxable, tax }) => {
       const vatPercent = (rate * 100).toFixed(2);
+      const amounts = { taxable, tax };
       return `
       <cac:TaxSubtotal>
         <cbc:TaxableAmount currencyID="${escapeXml(currency)}">${amounts.taxable.toFixed(2)}</cbc:TaxableAmount>
         <cbc:TaxAmount currencyID="${escapeXml(currency)}">${amounts.tax.toFixed(2)}</cbc:TaxAmount>
         <cac:TaxCategory>
-          <cbc:ID>S</cbc:ID>
+          <cbc:ID>${category}</cbc:ID>
           <cbc:Percent>${vatPercent}</cbc:Percent>
           <cac:TaxScheme>
             <cbc:ID>VAT</cbc:ID>
@@ -179,4 +199,89 @@ export function generateEInvoiceXML(
   const hash = crypto.createHash('sha256').update(xml).digest('hex');
 
   return { xml, uuid, hash };
+}
+
+
+export interface EInvoiceIssue {
+  field: string;
+  message: string;
+}
+
+const TRN_RE = /^[0-9]{15}$/;
+
+/**
+ * Pre-submission validation: every issue here would cause an ASP/FTA
+ * rejection. Surfaced to the UI as fix-it errors before generation.
+ */
+export function validateForEInvoicing(
+  invoice: Invoice,
+  lines: InvoiceLine[],
+  company: Company,
+): EInvoiceIssue[] {
+  const issues: EInvoiceIssue[] = [];
+
+  if (!company.trnVatNumber) {
+    issues.push({ field: 'company.trnVatNumber', message: 'Supplier TRN is required for e-invoicing' });
+  } else if (!TRN_RE.test(company.trnVatNumber)) {
+    issues.push({ field: 'company.trnVatNumber', message: 'Supplier TRN must be exactly 15 digits' });
+  }
+  if (!company.name) {
+    issues.push({ field: 'company.name', message: 'Supplier legal name is required' });
+  }
+  if (!invoice.number) {
+    issues.push({ field: 'invoice.number', message: 'Invoice number is required' });
+  }
+  if (!invoice.date) {
+    issues.push({ field: 'invoice.date', message: 'Invoice issue date is required' });
+  }
+  if (!invoice.customerName) {
+    issues.push({ field: 'invoice.customerName', message: 'Buyer name is required' });
+  }
+  if (invoice.customerTrn && !TRN_RE.test(invoice.customerTrn)) {
+    issues.push({ field: 'invoice.customerTrn', message: 'Buyer TRN must be exactly 15 digits when provided' });
+  }
+  if (lines.length === 0) {
+    issues.push({ field: 'lines', message: 'At least one invoice line is required' });
+  }
+
+  let lineSum = 0;
+  let lineVat = 0;
+  lines.forEach((line, i) => {
+    if (!line.description) {
+      issues.push({ field: `lines[${i}].description`, message: 'Line description is required' });
+    }
+    if (!(line.quantity > 0)) {
+      issues.push({ field: `lines[${i}].quantity`, message: 'Line quantity must be positive' });
+    }
+    if (line.unitPrice < 0) {
+      issues.push({ field: `lines[${i}].unitPrice`, message: 'Line unit price cannot be negative' });
+    }
+    const ext = line.quantity * line.unitPrice;
+    lineSum += ext;
+    lineVat += vatCategoryFor(line) === 'S' ? ext * (line.vatRate ?? UAE_VAT_RATE) : 0;
+  });
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  if (lines.length > 0) {
+    if (Math.abs(round2(lineSum) - round2(invoice.subtotal)) > 0.05) {
+      issues.push({
+        field: 'invoice.subtotal',
+        message: `Line totals (${round2(lineSum).toFixed(2)}) do not match the invoice subtotal (${round2(invoice.subtotal).toFixed(2)})`,
+      });
+    }
+    if (Math.abs(round2(lineVat) - round2(invoice.vatAmount)) > 0.05) {
+      issues.push({
+        field: 'invoice.vatAmount',
+        message: `Line VAT (${round2(lineVat).toFixed(2)}) does not match the invoice VAT amount (${round2(invoice.vatAmount).toFixed(2)})`,
+      });
+    }
+  }
+  if (Math.abs(round2(invoice.subtotal + invoice.vatAmount) - round2(invoice.total)) > 0.05) {
+    issues.push({
+      field: 'invoice.total',
+      message: 'Subtotal plus VAT does not equal the invoice total',
+    });
+  }
+
+  return issues;
 }

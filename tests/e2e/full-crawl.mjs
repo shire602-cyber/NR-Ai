@@ -639,6 +639,67 @@ async function main() {
     await fail('backup-flow', { crash: e.message.slice(0, 150) });
   }
 
+  // ── 9g. E-invoicing: validation gate blocks until TRN set, then PINT AE
+  //       XML generates with correct per-line VAT categories ────────────────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const invRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: {
+        customerName: 'EInvoice Customer LLC',
+        date: new Date().toISOString().slice(0, 10),
+        currency: 'AED',
+        subtotal: 1300,
+        vatAmount: 50,
+        total: 1350,
+        status: 'sent',
+        lines: [
+          { description: 'Consulting', quantity: 2, unitPrice: 500, vatRate: 0.05, vatSupplyType: 'standard_rated' },
+          { description: 'Export shipment', quantity: 1, unitPrice: 300, vatRate: 0, vatSupplyType: 'zero_rated' },
+        ],
+      },
+    });
+    if (invRes.status() >= 300) {
+      await fail('einvoice create-invoice', { detail: `status ${invRes.status()}: ${(await invRes.text()).slice(0, 200)}` });
+    } else {
+      const invoice = await invRes.json();
+
+      // Company has no TRN yet → the gate must refuse generation with issues.
+      const blocked = await page.request.post(`${BASE}/api/invoices/${invoice.id}/generate-einvoice`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+      });
+      if (blocked.status() !== 422) {
+        await fail('einvoice gate', { detail: `expected 422 without TRN, got ${blocked.status()}` });
+      }
+
+      await page.request.patch(`${BASE}/api/companies/${companyId}`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+        data: { trnVatNumber: '100123456700003' },
+      });
+
+      const check = await (await page.request.get(`${BASE}/api/invoices/${invoice.id}/einvoice/validate`)).json();
+      if (!check?.valid) {
+        await fail('einvoice validate', { detail: `still invalid: ${JSON.stringify(check?.issues ?? []).slice(0, 200)}` });
+      } else {
+        const genRes = await page.request.post(`${BASE}/api/invoices/${invoice.id}/generate-einvoice`, {
+          headers: { 'x-csrf-token': csrfToken ?? '' },
+        });
+        const gen = await genRes.json().catch(() => ({}));
+        if (genRes.status() >= 300 || gen?.status !== 'generated' || !gen?.hash) {
+          await fail('einvoice generate', { detail: `status ${genRes.status()}: ${JSON.stringify(gen).slice(0, 150)}` });
+        } else {
+          const xml = await (await page.request.get(`${BASE}/api/invoices/${invoice.id}/einvoice-xml`)).text();
+          if (!xml.includes('<cbc:ID>S</cbc:ID>') || !xml.includes('<cbc:ID>Z</cbc:ID>')) {
+            await fail('einvoice categories', { detail: 'expected both S and Z VAT categories in the XML' });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    await fail('einvoice-flow', { crash: e.message.slice(0, 150) });
+  }
+
   // ── 10. Account-type matrix: every kind of account must work ──────────────
   // (a) 'client' userType: flat workspace sidebar — dashboard, documents,
   //     reports must render with no admin/firm assumptions leaking in.
