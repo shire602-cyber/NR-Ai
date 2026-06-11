@@ -7,7 +7,7 @@ import { authMiddleware, requireCustomer } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
 import { insertInvoiceSchema, type Invoice } from '../../shared/schema';
 import { generateInvoicePDF } from '../services/pdf-invoice.service';
-import { generateEInvoiceXML } from '../services/einvoice.service';
+import { generateEInvoiceXML, validateForEInvoicing } from '../services/einvoice.service';
 import { hasSmtpConfig, sendInvoiceEmail, sendPaymentReminderEmail } from '../services/email.service';
 import { createAndEmitNotification } from '../services/socket.service';
 import { db } from '../db';
@@ -714,6 +714,24 @@ export function registerInvoiceRoutes(app: Express) {
   // =====================================
 
   // Customer-only: Generate e-invoice XML for an invoice
+  // Pre-submission validation: returns the fix-it list without generating.
+  app.get("/api/invoices/:id/einvoice/validate", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = (req as any).user.id;
+
+    const invoice = await findInvoiceForUser(userId, id);
+    if (!invoice) {
+      return res.status(404).json({ message: 'Invoice not found' });
+    }
+    const lines = await storage.getInvoiceLinesByInvoiceId(id);
+    const company = await storage.getCompany(invoice.companyId);
+    if (!company) {
+      return res.status(404).json({ message: 'Company not found' });
+    }
+    const issues = validateForEInvoicing(invoice, lines, company);
+    res.json({ valid: issues.length === 0, issues });
+  }));
+
   app.post("/api/invoices/:id/generate-einvoice", authMiddleware, requireCustomer, asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const userId = (req as any).user.id;
@@ -727,6 +745,16 @@ export function registerInvoiceRoutes(app: Express) {
     const company = await storage.getCompany(invoice.companyId);
     if (!company) {
       return res.status(404).json({ message: 'Company not found' });
+    }
+
+    // A payload an ASP/FTA would reject must never be generated and stored.
+    const issues = validateForEInvoicing(invoice, lines, company);
+    if (issues.length > 0) {
+      return res.status(422).json({
+        message: 'Invoice is not e-invoicing ready',
+        code: 'EINVOICE_VALIDATION_FAILED',
+        issues,
+      });
     }
 
     const customer = invoice.customerName
