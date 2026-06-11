@@ -296,6 +296,15 @@ function clampThreshold(value: number): number {
   return Math.min(MAX_ACCURACY_THRESHOLD, Math.max(MIN_ACCURACY_THRESHOLD, value));
 }
 
+// Auto-posting mutates the books, so its floor is stricter than the general
+// classification threshold: never below 0.8 regardless of configuration.
+const MIN_AUTOPOST_THRESHOLD = 0.8;
+
+function clampAutopostThreshold(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_CLASSIFIER_CONFIG.autopostThreshold;
+  return Math.min(MAX_ACCURACY_THRESHOLD, Math.max(MIN_AUTOPOST_THRESHOLD, value));
+}
+
 export async function getClassifierConfig(companyId: string): Promise<ClassifierConfig> {
   const company = await storage.getCompany(companyId);
   if (!company) return { ...DEFAULT_CLASSIFIER_CONFIG };
@@ -308,6 +317,10 @@ export async function getClassifierConfig(companyId: string): Promise<Classifier
         ? clampThreshold(cfg.accuracyThreshold)
         : DEFAULT_CLASSIFIER_CONFIG.accuracyThreshold,
     autopilotEnabled: !!cfg.autopilotEnabled,
+    autopostThreshold:
+      typeof cfg.autopostThreshold === "number"
+        ? clampAutopostThreshold(cfg.autopostThreshold)
+        : DEFAULT_CLASSIFIER_CONFIG.autopostThreshold,
   };
 }
 
@@ -325,6 +338,9 @@ export async function setClassifierConfig(
   }
   if (typeof patch.autopilotEnabled === "boolean")
     sanitizedPatch.autopilotEnabled = patch.autopilotEnabled;
+  if (typeof patch.autopostThreshold === "number") {
+    sanitizedPatch.autopostThreshold = clampAutopostThreshold(patch.autopostThreshold);
+  }
   const next: ClassifierConfig = { ...current, ...sanitizedPatch };
   await pool.query(`UPDATE companies SET classifier_config = $1::jsonb WHERE id = $2`, [
     JSON.stringify(next),

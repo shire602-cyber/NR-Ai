@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { recordAudit } from "./audit.service";
 
 const log = createLogger("autonomous-gl");
 
@@ -443,6 +444,20 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
 
       draftedEntryIds.push(journalEntryId);
       posted++;
+
+      await recordAudit({
+        companyId,
+        action: "ai_gl_draft_created",
+        entityType: "journal_entry",
+        entityId: journalEntryId,
+        extra: {
+          queueItemId: item.id,
+          confidence: Number(item.ai_confidence),
+          reason: item.ai_reason,
+          description: item.description,
+          amount: Number(item.amount),
+        },
+      });
     } catch (err: any) {
       log.error({ err, queueItemId: item.id }, "Failed to draft queue item");
       errors.push(`Failed to draft item ${item.id}: ${err.message}`);
@@ -676,6 +691,20 @@ export async function processUserFeedback(
         item.ai_reason,
       ]
     );
+
+    await recordAudit({
+      userId,
+      companyId: item.company_id,
+      action: "ai_gl_suggestion_accepted",
+      entityType: "journal_entry",
+      entityId: journalEntryId,
+      extra: {
+        queueItemId: item.id,
+        confidence: Number(item.ai_confidence),
+        description: item.description,
+        amount: Number(item.amount),
+      },
+    });
 
     return { success: true, message: "Transaction accepted and posted to GL" };
   }
