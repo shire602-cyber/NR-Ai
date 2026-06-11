@@ -3,6 +3,28 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import crypto from "crypto";
+import { db } from "../db";
+import {
+  accounts as accountsTable,
+  invoiceLines as invoiceLinesTable,
+  invoices as invoicesTable,
+  journalEntries as journalEntriesTable,
+  journalLines as journalLinesTable,
+  receipts as receiptsTable,
+  vatReturns as vatReturnsTable,
+} from "../../shared/schema";
+
+// JSON snapshots serialize Date columns as ISO strings; Drizzle timestamp
+// columns require Date objects. Any value that is exactly an ISO timestamp
+// string is coerced back.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+function coerceDates<T extends Record<string, unknown>>(row: T): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const [k, v] of Object.entries(out)) {
+    if (typeof v === 'string' && ISO_DATE.test(v)) out[k] = new Date(v);
+  }
+  return out as T;
+}
 
 export function registerBackupRoutes(app: Express) {
   // =====================================
@@ -318,12 +340,53 @@ export function registerBackupRoutes(app: Express) {
         description: `Restored from backup: ${backup.name}`,
       });
 
-      // For now, return success with info about what would be restored
-      // Full data restoration requires careful transaction handling
+      // Recovery restore: transactionally re-insert snapshot rows that no
+      // longer exist (matched by primary key). Existing rows are never
+      // touched and never deleted, so data created after the backup is safe
+      // and foreign keys from tables outside the snapshot cannot break.
+      const snapshot = JSON.parse(backup.dataSnapshot ?? '{}');
+      if (backup.checksum) {
+        const actual = crypto.createHash('sha256').update(backup.dataSnapshot ?? '').digest('hex');
+        if (actual !== backup.checksum) {
+          return res.status(409).json({ message: 'Backup integrity check failed — checksum mismatch' });
+        }
+      }
+      const data = snapshot?.data ?? {};
+      const restored: Record<string, number> = {};
+
+      await db.transaction(async (tx: typeof db) => {
+        const insertMissing = async (label: string, table: any, rows: unknown[] | undefined) => {
+          if (!Array.isArray(rows) || rows.length === 0) {
+            restored[label] = 0;
+            return;
+          }
+          const result = await tx
+            .insert(table)
+            .values(rows.map((row) => coerceDates(row as Record<string, unknown>)) as any)
+            .onConflictDoNothing()
+            .returning({ id: (table as any).id });
+          restored[label] = result.length;
+        };
+
+        // FK-safe order: parents before children.
+        await insertMissing('accounts', accountsTable, data.accounts);
+        await insertMissing('journalEntries', journalEntriesTable, data.journalEntries);
+        await insertMissing('journalLines', journalLinesTable, data.journalLines);
+        await insertMissing('invoices', invoicesTable, data.invoices);
+        await insertMissing('invoiceLines', invoiceLinesTable, data.invoiceLines);
+        await insertMissing('receipts', receiptsTable, data.receipts);
+        await insertMissing('vatReturns', vatReturnsTable, data.vatReturns);
+      });
+
+      const totalRestored = Object.values(restored).reduce((sum, n) => sum + n, 0);
       res.json({
         success: true,
-        message: 'Pre-restore backup created successfully. Data restoration is ready.',
+        message: totalRestored > 0
+          ? `Restore complete: ${totalRestored} missing record(s) recovered from the backup.`
+          : 'Restore complete: all backed-up records already exist — nothing was missing.',
         preRestoreBackupId: preRestoreBackup.id,
+        restored,
+        totalRestored,
         restoredFrom: {
           id: backup.id,
           name: backup.name,

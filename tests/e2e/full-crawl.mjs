@@ -589,6 +589,56 @@ async function main() {
     await fail('vat-wp-flow', { crash: e.message.slice(0, 150) });
   }
 
+  // ── 9f. Backup → delete → restore: the disaster-recovery promise ─────────
+  // Journal entries are protected by FTA 5-year retention (good!), so the
+  // recovery marker is an unreferenced ledger account.
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const marker = `Restore Marker ${Date.now()}`;
+    const acctRes = await page.request.post(`${BASE}/api/companies/${companyId}/accounts`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: { companyId, code: `9${Date.now() % 100000}`, nameEn: marker, type: 'expense', isActive: true },
+    });
+    if (acctRes.status() >= 300) {
+      await fail('backup-flow marker', { detail: `status ${acctRes.status()}: ${(await acctRes.text()).slice(0, 200)}` });
+    } else {
+      const acct = await acctRes.json();
+      const backupRes = await page.request.post(`${BASE}/api/companies/${companyId}/backups`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+        data: { name: 'E2E disaster-recovery proof' },
+      });
+      const backup = await backupRes.json().catch(() => ({}));
+      if (backupRes.status() >= 300 || !backup?.id) {
+        await fail('backup-flow create', { detail: `status ${backupRes.status()}: ${JSON.stringify(backup).slice(0, 150)}` });
+      } else {
+        const delRes = await page.request.delete(`${BASE}/api/accounts/${acct.id}`, {
+          headers: { 'x-csrf-token': csrfToken ?? '' },
+        });
+        if (delRes.status() >= 300) {
+          await fail('backup-flow delete', { detail: `status ${delRes.status()}: ${(await delRes.text()).slice(0, 150)}` });
+        } else {
+          const restoreRes = await page.request.post(`${BASE}/api/backups/${backup.id}/restore`, {
+            headers: { 'x-csrf-token': csrfToken ?? '' },
+            data: { confirmRestore: true },
+          });
+          const restore = await restoreRes.json().catch(() => ({}));
+          if (restoreRes.status() >= 300 || (restore?.totalRestored ?? 0) < 1) {
+            await fail('backup-flow restore', { detail: `status ${restoreRes.status()}, restored ${restore?.totalRestored}: ${JSON.stringify(restore?.restored ?? {}).slice(0, 150)}` });
+          } else {
+            const accountsAfter = await (await page.request.get(`${BASE}/api/companies/${companyId}/accounts`)).json();
+            const recovered = Array.isArray(accountsAfter) && accountsAfter.some((a) => a.nameEn === marker);
+            if (!recovered) {
+              await fail('backup-flow verify', { detail: 'restored account not found in chart of accounts' });
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    await fail('backup-flow', { crash: e.message.slice(0, 150) });
+  }
+
   // ── 10. Account-type matrix: every kind of account must work ──────────────
   // (a) 'client' userType: flat workspace sidebar — dashboard, documents,
   //     reports must render with no admin/firm assumptions leaking in.
