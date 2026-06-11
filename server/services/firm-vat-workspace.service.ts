@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import { db } from '../db';
 import { ConflictError, NotFoundError, ValidationError } from '../errors';
@@ -817,6 +817,41 @@ export async function pullVatWorkpaperRowsFromBooks(workpaperId: string, actorUs
   return { created: created.length, skippedExisting: existingSourceIds.size };
 }
 
+
+/**
+ * Bulk status transition for workpaper rows — the review queue's
+ * "approve all drafts" action. One UPDATE, one recalculation.
+ */
+export async function bulkUpdateVatWorkpaperRowStatus(
+  workpaperId: string,
+  actorUserId: string,
+  input: { to: 'approved' | 'excluded'; rowIds?: string[] },
+): Promise<{ updated: number }> {
+  const workpaper = await getWorkpaperOrThrow(workpaperId);
+  await assertWorkpaperEditable(workpaper);
+
+  const conditions = [
+    eq(vatWorkpaperRows.workpaperId, workpaperId),
+    eq(vatWorkpaperRows.status, 'draft'),
+  ];
+  if (input.rowIds && input.rowIds.length > 0) {
+    conditions.push(inArray(vatWorkpaperRows.id, input.rowIds));
+  }
+
+  const updated = await db
+    .update(vatWorkpaperRows)
+    .set({
+      status: input.to,
+      reviewedBy: actorUserId,
+      reviewedAt: new Date(),
+      updatedAt: new Date(),
+    } as any)
+    .where(and(...conditions))
+    .returning({ id: vatWorkpaperRows.id });
+
+  if (updated.length > 0) await recalculateVatWorkpaper(workpaperId);
+  return { updated: updated.length };
+}
 
 export async function updateVatWorkpaperStatus(
   workpaperId: string,

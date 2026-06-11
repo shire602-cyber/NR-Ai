@@ -541,6 +541,54 @@ async function main() {
     await fail('ct-flow', { crash: e.message.slice(0, 150) });
   }
 
+  // ── 9e. VAT workpaper review queue: draft rows → bulk approve → totals ────
+  try {
+    if (clientId) {
+      const wpRes = await page.request.post(`${BASE}/api/firm/vat-workpapers`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+        data: {
+          companyId: clientId,
+          periodStart: '2026-04-01',
+          periodEnd: '2026-06-30',
+        },
+      });
+      if (wpRes.status() >= 300) {
+        await fail('vat-wp create', { detail: `status ${wpRes.status()}: ${(await wpRes.text()).slice(0, 200)}` });
+      } else {
+        const wp = await wpRes.json();
+        for (const row of [
+          { rowCategory: 'standard_sale', invoiceNumber: 'INV-D1', emirate: 'dubai', taxableAmount: 1000, vatAmount: 50, status: 'draft', sourceMethod: 'generated' },
+          { rowCategory: 'standard_expense', invoiceNumber: 'BILL-D2', emirate: 'dubai', taxableAmount: 400, vatAmount: 20, status: 'draft', sourceMethod: 'generated' },
+        ]) {
+          const rowRes = await page.request.post(`${BASE}/api/firm/vat-workpapers/${wp.id}/rows`, {
+            headers: { 'x-csrf-token': csrfToken ?? '' },
+            data: row,
+          });
+          if (rowRes.status() >= 300) {
+            await fail('vat-wp add-row', { detail: `status ${rowRes.status()}: ${(await rowRes.text()).slice(0, 200)}` });
+          }
+        }
+        const bulkRes = await page.request.post(`${BASE}/api/firm/vat-workpapers/${wp.id}/rows/bulk-status`, {
+          headers: { 'x-csrf-token': csrfToken ?? '' },
+          data: { to: 'approved' },
+        });
+        const bulk = await bulkRes.json().catch(() => ({}));
+        if (bulkRes.status() >= 300 || (bulk?.updated ?? 0) !== 2) {
+          await fail('vat-wp bulk-approve', { detail: `status ${bulkRes.status()}, updated ${bulk?.updated}` });
+        } else {
+          const detail = await (await page.request.get(`${BASE}/api/firm/vat-workpapers/${wp.id}`)).json();
+          const outputVat = Number(detail?.totals?.box8TotalVat ?? 0);
+          const inputVat = Number(detail?.totals?.box11TotalVat ?? 0);
+          if (outputVat !== 50 || inputVat !== 20) {
+            await fail('vat-wp totals', { detail: `expected 50/20, got ${outputVat}/${inputVat}` });
+          }
+        }
+      }
+    }
+  } catch (e) {
+    await fail('vat-wp-flow', { crash: e.message.slice(0, 150) });
+  }
+
   // ── 10. Account-type matrix: every kind of account must work ──────────────
   // (a) 'client' userType: flat workspace sidebar — dashboard, documents,
   //     reports must render with no admin/firm assumptions leaking in.
