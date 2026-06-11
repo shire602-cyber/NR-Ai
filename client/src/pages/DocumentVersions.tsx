@@ -1,52 +1,63 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { History, FileText, Search, ChevronDown, ChevronRight, Clock, User } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  History,
-  FileText,
-  Search,
-  ChevronDown,
-  ChevronRight,
-  Clock,
-  User,
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiUrl } from '@/lib/api';
-import { format } from 'date-fns';
-import type { DocumentVersion } from '@shared/schema';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiUrl } from "@/lib/api";
+import { format } from "date-fns";
+import type { DocumentVersion } from "@shared/schema";
 
 const DOCUMENT_TYPES = [
-  { value: 'invoice', label: 'Invoice' },
-  { value: 'quote', label: 'Quote' },
-  { value: 'credit_note', label: 'Credit Note' },
-  { value: 'purchase_order', label: 'Purchase Order' },
-  { value: 'receipt', label: 'Receipt' },
+  { value: "invoice", label: "Invoice" },
+  { value: "quote", label: "Quote" },
+  { value: "credit_note", label: "Credit Note" },
+  { value: "purchase_order", label: "Purchase Order" },
+  { value: "receipt", label: "Receipt" },
 ] as const;
 
 export default function DocumentVersions() {
   const { companyId: selectedCompanyId } = useDefaultCompany();
-  const [documentType, setDocumentType] = useState<string>('');
-  const [documentId, setDocumentId] = useState('');
+  const [documentType, setDocumentType] = useState<string>("");
+  const [documentId, setDocumentId] = useState("");
   const [searchTriggered, setSearchTriggered] = useState(false);
   const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 
   const canSearch = !!selectedCompanyId && !!documentType && !!documentId.trim();
 
-  const { data: versions = [], isLoading, isError } = useQuery<DocumentVersion[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'document-versions', documentType, documentId],
+  const {
+    data: versions = [],
+    isLoading,
+    isError,
+  } = useQuery<DocumentVersion[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "document-versions", documentType, documentId],
     queryFn: async () => {
       if (!selectedCompanyId || !documentType || !documentId.trim()) return [];
       const res = await fetch(
-        apiUrl(`/api/companies/${selectedCompanyId}/document-versions/${documentType}/${documentId.trim()}`),
-        { credentials: 'include' }
+        apiUrl(
+          `/api/companies/${selectedCompanyId}/document-versions/${documentType}/${documentId.trim()}`
+        ),
+        { credentials: "include" }
       );
-      if (!res.ok) throw new Error('Failed to fetch document versions');
+      if (!res.ok) throw new Error("Failed to fetch document versions");
       return res.json();
     },
     enabled: canSearch && searchTriggered,
@@ -59,17 +70,17 @@ export default function DocumentVersions() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === "Enter") {
       handleSearch();
     }
   };
 
   const toggleExpand = (versionId: string) => {
-    setExpandedVersionId(prev => (prev === versionId ? null : versionId));
+    setExpandedVersionId((prev) => (prev === versionId ? null : versionId));
   };
 
   const formatSnapshotData = (data: string | null): string => {
-    if (!data) return 'No snapshot data';
+    if (!data) return "No snapshot data";
     try {
       return JSON.stringify(JSON.parse(data), null, 2);
     } catch {
@@ -155,15 +166,13 @@ export default function DocumentVersions() {
               Version History
               {versions.length > 0 && (
                 <Badge variant="secondary" className="ml-2">
-                  {versions.length} version{versions.length !== 1 ? 's' : ''}
+                  {versions.length} version{versions.length !== 1 ? "s" : ""}
                 </Badge>
               )}
             </CardTitle>
             <CardDescription>
-              {documentType && (
-                <span className="capitalize">{documentType.replace('_', ' ')}</span>
-              )}
-              {' '}&mdash; {documentId}
+              {documentType && <span className="capitalize">{documentType.replace("_", " ")}</span>}{" "}
+              &mdash; {documentId}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -180,9 +189,7 @@ export default function DocumentVersions() {
               <div className="text-center py-12 text-muted-foreground">
                 <History className="h-12 w-12 mx-auto mb-3 opacity-40" />
                 <p className="text-lg font-medium">No versions found</p>
-                <p className="text-sm">
-                  No version history exists for this document yet.
-                </p>
+                <p className="text-sm">No version history exists for this document yet.</p>
               </div>
             ) : (
               <Table>
@@ -215,13 +222,13 @@ export default function DocumentVersions() {
                             <div className="flex items-center gap-1.5">
                               <User className="h-3.5 w-3.5 text-muted-foreground" />
                               <span className="text-sm truncate max-w-[120px]">
-                                {version.changedBy || 'System'}
+                                {version.changedBy || "System"}
                               </span>
                             </div>
                           </TableCell>
                           <TableCell>
                             <span className="text-sm">
-                              {format(new Date(version.createdAt), 'MMM d, yyyy HH:mm')}
+                              {format(new Date(version.createdAt), "MMM d, yyyy HH:mm")}
                             </span>
                           </TableCell>
                           <TableCell>

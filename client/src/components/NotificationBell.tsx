@@ -1,20 +1,20 @@
-import { useState } from 'react';
-import { Bell, CheckCheck, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { useState } from "react";
+import { Bell, CheckCheck, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { useNotifications, type AppNotification } from '@/hooks/useNotifications';
-import { useLocation } from 'wouter';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dropdown-menu";
+import { useNotifications, type AppNotification } from "@/hooks/useNotifications";
+import { useLocation } from "wouter";
+import { cn } from "@/lib/utils";
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'just now';
+  if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
@@ -22,9 +22,9 @@ function timeAgo(iso: string): string {
 }
 
 function priorityDot(priority: string) {
-  if (priority === 'urgent') return 'bg-red-500';
-  if (priority === 'high') return 'bg-orange-400';
-  return 'bg-blue-400';
+  if (priority === "urgent") return "bg-red-500";
+  if (priority === "high") return "bg-orange-400";
+  return "bg-blue-400";
 }
 
 export function NotificationBell() {
@@ -50,11 +50,7 @@ export function NotificationBell() {
           size="sm"
           className="relative"
           data-testid="button-notifications"
-          aria-label={
-            unreadCount > 0
-              ? `Notifications, ${unreadCount} unread`
-              : 'Notifications'
-          }
+          aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : "Notifications"}
         >
           <Bell className="w-4 h-4" aria-hidden="true" />
           {unreadCount > 0 && (
@@ -63,7 +59,7 @@ export function NotificationBell() {
               aria-hidden="true"
               className="absolute -top-1 -right-1 h-4 min-w-[1rem] px-1 text-[10px] flex items-center justify-center"
             >
-              {unreadCount > 99 ? '99+' : unreadCount}
+              {unreadCount > 99 ? "99+" : unreadCount}
             </Badge>
           )}
         </Button>
@@ -94,14 +90,14 @@ export function NotificationBell() {
                 key={n.id}
                 onClick={() => handleClick(n)}
                 className={cn(
-                  'flex items-start gap-2 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors border-b last:border-0',
-                  !n.isRead && 'bg-muted/30'
+                  "flex items-start gap-2 px-3 py-2.5 cursor-pointer hover:bg-muted/50 transition-colors border-b last:border-0",
+                  !n.isRead && "bg-muted/30"
                 )}
               >
                 <span
                   className={cn(
-                    'mt-1.5 h-2 w-2 flex-shrink-0 rounded-full',
-                    n.isRead ? 'bg-transparent' : priorityDot(n.priority)
+                    "mt-1.5 h-2 w-2 flex-shrink-0 rounded-full",
+                    n.isRead ? "bg-transparent" : priorityDot(n.priority)
                   )}
                 />
                 <div className="flex-1 min-w-0">
@@ -135,7 +131,10 @@ export function NotificationBell() {
               variant="ghost"
               size="sm"
               className="w-full text-xs"
-              onClick={() => { navigate('/notifications'); setOpen(false); }}
+              onClick={() => {
+                navigate("/notifications");
+                setOpen(false);
+              }}
             >
               View all notifications
             </Button>

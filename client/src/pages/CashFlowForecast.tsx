@@ -1,14 +1,27 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency } from '@/lib/format';
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatCurrency } from "@/lib/format";
 import {
   TrendingUp,
   TrendingDown,
@@ -21,7 +34,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Wallet,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface WeeklyProjection {
   week: number;
@@ -50,7 +63,7 @@ interface MonthlyCashHistory {
 export default function CashFlowForecast() {
   const { t, locale } = useTranslation();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
-  const [forecastDays, setForecastDays] = useState('90');
+  const [forecastDays, setForecastDays] = useState("90");
 
   const {
     data: forecast,
@@ -62,10 +75,7 @@ export default function CashFlowForecast() {
     enabled: !!companyId,
   });
 
-  const {
-    data: history,
-    isLoading: isLoadingHistory,
-  } = useQuery<MonthlyCashHistory[]>({
+  const { data: history, isLoading: isLoadingHistory } = useQuery<MonthlyCashHistory[]>({
     queryKey: [`/api/companies/${companyId}/cashflow/history?months=6`],
     enabled: !!companyId,
   });
@@ -99,10 +109,10 @@ export default function CashFlowForecast() {
 
   const getInsightIcon = (insight: string) => {
     const lower = insight.toLowerCase();
-    if (lower.includes('warning') || lower.includes('negative') || lower.includes('drop below')) {
+    if (lower.includes("warning") || lower.includes("negative") || lower.includes("drop below")) {
       return <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />;
     }
-    if (lower.includes('positive') || lower.includes('improve')) {
+    if (lower.includes("positive") || lower.includes("improve")) {
       return <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />;
     }
     return <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />;
@@ -110,18 +120,28 @@ export default function CashFlowForecast() {
 
   const getInsightBadge = (insight: string) => {
     const lower = insight.toLowerCase();
-    if (lower.includes('warning') || lower.includes('negative')) {
-      return <Badge variant="destructive" className="text-xs">Risk</Badge>;
+    if (lower.includes("warning") || lower.includes("negative")) {
+      return (
+        <Badge variant="destructive" className="text-xs">
+          Risk
+        </Badge>
+      );
     }
-    if (lower.includes('positive') || lower.includes('improve')) {
+    if (lower.includes("positive") || lower.includes("improve")) {
       return <Badge className="bg-green-100 text-green-800 text-xs">Positive</Badge>;
     }
-    return <Badge variant="secondary" className="text-xs">Info</Badge>;
+    return (
+      <Badge variant="secondary" className="text-xs">
+        Info
+      </Badge>
+    );
   };
 
   // Calculate summary stats from projections
-  const totalProjectedInflows = forecast?.projections.reduce((s, p) => s + p.expectedInflows, 0) || 0;
-  const totalProjectedOutflows = forecast?.projections.reduce((s, p) => s + p.expectedOutflows, 0) || 0;
+  const totalProjectedInflows =
+    forecast?.projections.reduce((s, p) => s + p.expectedInflows, 0) || 0;
+  const totalProjectedOutflows =
+    forecast?.projections.reduce((s, p) => s + p.expectedOutflows, 0) || 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -155,7 +175,7 @@ export default function CashFlowForecast() {
             onClick={() => refetchForecast()}
             disabled={isFetchingForecast}
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isFetchingForecast ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 mr-2 ${isFetchingForecast ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
@@ -178,8 +198,10 @@ export default function CashFlowForecast() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className={`text-3xl font-bold ${forecast.currentBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(forecast.currentBalance, 'AED', locale)}
+              <div
+                className={`text-3xl font-bold ${forecast.currentBalance >= 0 ? "text-green-600" : "text-red-600"}`}
+              >
+                {formatCurrency(forecast.currentBalance, "AED", locale)}
               </div>
             </CardContent>
           </Card>
@@ -193,7 +215,7 @@ export default function CashFlowForecast() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">
-                {formatCurrency(totalProjectedInflows, 'AED', locale)}
+                {formatCurrency(totalProjectedInflows, "AED", locale)}
               </div>
             </CardContent>
           </Card>
@@ -207,7 +229,7 @@ export default function CashFlowForecast() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">
-                {formatCurrency(totalProjectedOutflows, 'AED', locale)}
+                {formatCurrency(totalProjectedOutflows, "AED", locale)}
               </div>
             </CardContent>
           </Card>
@@ -283,22 +305,22 @@ export default function CashFlowForecast() {
                       <TableCell className="text-right">
                         <span className="text-green-600 flex items-center justify-end gap-1">
                           <TrendingUp className="h-3 w-3" />
-                          {formatCurrency(proj.expectedInflows, 'AED', locale)}
+                          {formatCurrency(proj.expectedInflows, "AED", locale)}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
                         <span className="text-red-600 flex items-center justify-end gap-1">
                           <TrendingDown className="h-3 w-3" />
-                          {formatCurrency(proj.expectedOutflows, 'AED', locale)}
+                          {formatCurrency(proj.expectedOutflows, "AED", locale)}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
                         <span
                           className={`font-semibold ${
-                            proj.projectedBalance >= 0 ? 'text-green-600' : 'text-red-600'
+                            proj.projectedBalance >= 0 ? "text-green-600" : "text-red-600"
                           }`}
                         >
-                          {formatCurrency(proj.projectedBalance, 'AED', locale)}
+                          {formatCurrency(proj.projectedBalance, "AED", locale)}
                         </span>
                       </TableCell>
                     </TableRow>
@@ -350,18 +372,18 @@ export default function CashFlowForecast() {
                         {h.month} {h.year}
                       </TableCell>
                       <TableCell className="text-right text-green-600">
-                        {formatCurrency(h.totalInflows, 'AED', locale)}
+                        {formatCurrency(h.totalInflows, "AED", locale)}
                       </TableCell>
                       <TableCell className="text-right text-red-600">
-                        {formatCurrency(h.totalOutflows, 'AED', locale)}
+                        {formatCurrency(h.totalOutflows, "AED", locale)}
                       </TableCell>
                       <TableCell className="text-right">
                         <span
                           className={`font-semibold ${
-                            h.netCashFlow >= 0 ? 'text-green-600' : 'text-red-600'
+                            h.netCashFlow >= 0 ? "text-green-600" : "text-red-600"
                           }`}
                         >
-                          {formatCurrency(h.netCashFlow, 'AED', locale)}
+                          {formatCurrency(h.netCashFlow, "AED", locale)}
                         </span>
                       </TableCell>
                     </TableRow>

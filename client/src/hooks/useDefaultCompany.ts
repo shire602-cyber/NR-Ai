@@ -1,4 +1,4 @@
-import { useActiveCompany } from '@/components/ActiveCompanyProvider';
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 /**
  * Returns the user's currently-active company. For NRA firm staff this honours
@@ -10,8 +10,7 @@ import { useActiveCompany } from '@/components/ActiveCompanyProvider';
  * call sites continue to work without changes.
  */
 export function useDefaultCompany() {
-  const { company, companyId, companies, isLoading, error, hasNoCompanies } =
-    useActiveCompany();
+  const { company, companyId, companies, isLoading, error, hasNoCompanies } = useActiveCompany();
   return {
     company,
     companyId,

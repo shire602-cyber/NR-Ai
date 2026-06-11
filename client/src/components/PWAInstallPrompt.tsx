@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Download, X, Smartphone } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { showInstallPrompt, onInstallPromptAvailable, isStandalone } from '@/lib/pwa';
+import { useState, useEffect, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Download, X, Smartphone } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { showInstallPrompt, onInstallPromptAvailable, isStandalone } from "@/lib/pwa";
 
-const SESSION_DISMISSED_KEY = 'muhasib-pwa-prompt-dismissed';
+const SESSION_DISMISSED_KEY = "muhasib-pwa-prompt-dismissed";
 
 /**
  * PWA Install Prompt Banner
@@ -39,7 +39,7 @@ export function PWAInstallPrompt() {
 
   const handleInstall = useCallback(async () => {
     const outcome = await showInstallPrompt();
-    if (outcome === 'accepted') {
+    if (outcome === "accepted") {
       setVisible(false);
       setCanShow(false);
     }
@@ -47,7 +47,7 @@ export function PWAInstallPrompt() {
 
   const handleDismiss = useCallback(() => {
     setVisible(false);
-    sessionStorage.setItem(SESSION_DISMISSED_KEY, 'true');
+    sessionStorage.setItem(SESSION_DISMISSED_KEY, "true");
   }, []);
 
   if (!canShow) return null;
@@ -59,7 +59,7 @@ export function PWAInstallPrompt() {
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 100, opacity: 0 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          transition={{ type: "spring", damping: 25, stiffness: 300 }}
           className="fixed bottom-4 left-4 right-4 z-50 mx-auto max-w-md md:left-auto md:right-4 md:mx-0"
         >
           <div className="rounded-xl border bg-card p-4 shadow-lg">
@@ -71,20 +71,14 @@ export function PWAInstallPrompt() {
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-sm text-foreground">
-                  Install Muhasib.ai
-                </h3>
+                <h3 className="font-semibold text-sm text-foreground">Install Muhasib.ai</h3>
                 <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
                   Add to your home screen for quick access and offline support.
                 </p>
 
                 {/* Actions */}
                 <div className="mt-3 flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={handleInstall}
-                    className="h-8 gap-1.5 text-xs"
-                  >
+                  <Button size="sm" onClick={handleInstall} className="h-8 gap-1.5 text-xs">
                     <Download className="h-3.5 w-3.5" />
                     Install
                   </Button>

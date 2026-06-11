@@ -13,7 +13,7 @@ const UAE_OFFSET_MS = 4 * 60 * 60 * 1000;
  */
 export function uaeDayStart(date: string | Date): Date {
   const ymd = toYmd(date);
-  return new Date(Date.parse(ymd + 'T00:00:00Z') - UAE_OFFSET_MS);
+  return new Date(Date.parse(ymd + "T00:00:00Z") - UAE_OFFSET_MS);
 }
 
 /**
@@ -22,19 +22,19 @@ export function uaeDayStart(date: string | Date): Date {
  */
 export function uaeDayEnd(date: string | Date): Date {
   const ymd = toYmd(date);
-  return new Date(Date.parse(ymd + 'T00:00:00Z') + 24 * 60 * 60 * 1000 - 1 - UAE_OFFSET_MS);
+  return new Date(Date.parse(ymd + "T00:00:00Z") + 24 * 60 * 60 * 1000 - 1 - UAE_OFFSET_MS);
 }
 
 function toYmd(date: string | Date): string {
-  if (typeof date === 'string') {
+  if (typeof date === "string") {
     // Allow full ISO strings — keep only the date portion.
     return date.length >= 10 ? date.slice(0, 10) : date;
   }
   // Use UTC components so parsing 'YYYY-MM-DD' (which becomes UTC midnight)
   // round-trips back to the same date.
   const y = date.getUTCFullYear();
-  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const d = String(date.getUTCDate()).padStart(2, '0');
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
 
@@ -61,7 +61,7 @@ export function uaeYmdParts(date: Date): { year: number; month: number; day: num
  */
 export function uaeMonthStart(date: Date): Date {
   const { year, month } = uaeYmdParts(date);
-  const ymd = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const ymd = `${year}-${String(month + 1).padStart(2, "0")}-01`;
   return uaeDayStart(ymd);
 }
 
@@ -73,7 +73,7 @@ export function uaeMonthEnd(date: Date): Date {
   const { year, month } = uaeYmdParts(date);
   // Day 0 of next month = last day of this month.
   const d = new Date(Date.UTC(year, month + 1, 0));
-  const ymd = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  const ymd = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
   return uaeDayEnd(ymd);
 }
 
@@ -82,7 +82,7 @@ export function uaeMonthEnd(date: Date): Date {
  */
 export function uaeTodayStart(now: Date = new Date()): Date {
   const { year, month, day } = uaeYmdParts(now);
-  const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const ymd = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   return uaeDayStart(ymd);
 }
 

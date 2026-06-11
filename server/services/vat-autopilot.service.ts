@@ -14,14 +14,14 @@
  * those pure helpers using `pool.query` (matching the rest of the codebase).
  */
 
-import { randomUUID } from 'node:crypto';
-import { pool } from '../db';
-import { UAE_VAT_RATE } from '../constants';
+import { randomUUID } from "node:crypto";
+import { pool } from "../db";
+import { UAE_VAT_RATE } from "../constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type VatFrequency = 'monthly' | 'quarterly';
-export type VatPeriodStatus = 'draft' | 'ready' | 'submitted' | 'accepted';
+export type VatFrequency = "monthly" | "quarterly";
+export type VatPeriodStatus = "draft" | "ready" | "submitted" | "accepted";
 
 export interface VatPeriod {
   start: Date;
@@ -31,8 +31,8 @@ export interface VatPeriod {
 }
 
 export interface DeadlineStatus {
-  daysUntilDue: number;       // negative = overdue
-  level: 'ok' | 'warning' | 'critical' | 'overdue';
+  daysUntilDue: number; // negative = overdue
+  level: "ok" | "warning" | "critical" | "overdue";
   isOverdue: boolean;
 }
 
@@ -47,8 +47,8 @@ export interface VatBoxBreakdown {
   totalOutputVat: number;
   // Input VAT side
   totalExpenses: number;
-  inputVatGross: number;          // before partial-exemption apportionment
-  inputVatRecoverable: number;    // after apportionment
+  inputVatGross: number; // before partial-exemption apportionment
+  inputVatRecoverable: number; // after apportionment
   inputVatIrrecoverable: number;
   reverseChargeVatRecoverable: number;
   totalInputVat: number;
@@ -84,20 +84,32 @@ export interface VatAutopilotCalculation {
 
 export interface Vat201BoxValues {
   // Standard-rated sales by emirate (only the company's emirate is populated)
-  box1aAbuDhabiAmount: number; box1aAbuDhabiVat: number;
-  box1bDubaiAmount: number; box1bDubaiVat: number;
-  box1cSharjahAmount: number; box1cSharjahVat: number;
-  box1dAjmanAmount: number; box1dAjmanVat: number;
-  box1eUmmAlQuwainAmount: number; box1eUmmAlQuwainVat: number;
-  box1fRasAlKhaimahAmount: number; box1fRasAlKhaimahVat: number;
-  box1gFujairahAmount: number; box1gFujairahVat: number;
-  box3ReverseChargeAmount: number; box3ReverseChargeVat: number;
+  box1aAbuDhabiAmount: number;
+  box1aAbuDhabiVat: number;
+  box1bDubaiAmount: number;
+  box1bDubaiVat: number;
+  box1cSharjahAmount: number;
+  box1cSharjahVat: number;
+  box1dAjmanAmount: number;
+  box1dAjmanVat: number;
+  box1eUmmAlQuwainAmount: number;
+  box1eUmmAlQuwainVat: number;
+  box1fRasAlKhaimahAmount: number;
+  box1fRasAlKhaimahVat: number;
+  box1gFujairahAmount: number;
+  box1gFujairahVat: number;
+  box3ReverseChargeAmount: number;
+  box3ReverseChargeVat: number;
   box4ZeroRatedAmount: number;
   box5ExemptAmount: number;
-  box8TotalAmount: number; box8TotalVat: number;
-  box9ExpensesAmount: number; box9ExpensesVat: number;
-  box10ReverseChargeAmount: number; box10ReverseChargeVat: number;
-  box11TotalAmount: number; box11TotalVat: number;
+  box8TotalAmount: number;
+  box8TotalVat: number;
+  box9ExpensesAmount: number;
+  box9ExpensesVat: number;
+  box10ReverseChargeAmount: number;
+  box10ReverseChargeVat: number;
+  box11TotalAmount: number;
+  box11TotalVat: number;
   box12TotalDueTax: number;
   box13RecoverableTax: number;
   box14PayableTax: number;
@@ -106,7 +118,7 @@ export interface Vat201BoxValues {
 export interface VatPeriodSummary {
   id: string | null;
   companyId: string;
-  periodStart: string;       // ISO date
+  periodStart: string; // ISO date
   periodEnd: string;
   dueDate: string;
   frequency: VatFrequency;
@@ -126,7 +138,7 @@ export interface DueDateView {
   dueDate: Date;
   status: VatPeriodStatus;
   daysUntilDue: number;
-  level: DeadlineStatus['level'];
+  level: DeadlineStatus["level"];
 }
 
 // ─── Pure helpers (testable without a DB) ────────────────────────────────────
@@ -149,11 +161,9 @@ export function round2(n: number): number {
  * midnight to stay timezone-agnostic.
  */
 export function computeDueDate(periodEnd: Date): Date {
-  const due = new Date(Date.UTC(
-    periodEnd.getUTCFullYear(),
-    periodEnd.getUTCMonth(),
-    periodEnd.getUTCDate(),
-  ));
+  const due = new Date(
+    Date.UTC(periodEnd.getUTCFullYear(), periodEnd.getUTCMonth(), periodEnd.getUTCDate())
+  );
   due.setUTCDate(due.getUTCDate() + FILING_DAYS_AFTER_PERIOD_END);
   return due;
 }
@@ -172,9 +182,9 @@ export function computeDueDate(periodEnd: Date): Date {
 export function detectPeriod(
   frequency: VatFrequency,
   periodStartMonth: number,
-  referenceDate: Date = new Date(),
+  referenceDate: Date = new Date()
 ): VatPeriod {
-  const startMonth0 = ((periodStartMonth - 1) % 12 + 12) % 12; // 0-indexed, robust to negatives
+  const startMonth0 = (((periodStartMonth - 1) % 12) + 12) % 12; // 0-indexed, robust to negatives
   const refYear = referenceDate.getUTCFullYear();
   const refMonth0 = referenceDate.getUTCMonth();
 
@@ -182,13 +192,13 @@ export function detectPeriod(
   let periodStartMonth0: number;
   let lengthMonths: number;
 
-  if (frequency === 'monthly') {
+  if (frequency === "monthly") {
     periodStartYear = refYear;
     periodStartMonth0 = refMonth0;
     lengthMonths = 1;
   } else {
     // Find which quarter, anchored at startMonth0, the reference date falls in.
-    const monthsSinceAnchor = ((refMonth0 - startMonth0) % 12 + 12) % 12;
+    const monthsSinceAnchor = (((refMonth0 - startMonth0) % 12) + 12) % 12;
     const quarterIndex = Math.floor(monthsSinceAnchor / QUARTER_LENGTH_MONTHS);
     periodStartMonth0 = (startMonth0 + quarterIndex * QUARTER_LENGTH_MONTHS) % 12;
     // Year may roll back when the anchor month is later in the year than ref.
@@ -217,10 +227,10 @@ export function listRecentPeriods(
   frequency: VatFrequency,
   periodStartMonth: number,
   count: number,
-  referenceDate: Date = new Date(),
+  referenceDate: Date = new Date()
 ): VatPeriod[] {
   const periods: VatPeriod[] = [];
-  const stepMonths = frequency === 'monthly' ? 1 : QUARTER_LENGTH_MONTHS;
+  const stepMonths = frequency === "monthly" ? 1 : QUARTER_LENGTH_MONTHS;
   let cursor = referenceDate;
   for (let i = 0; i < count; i++) {
     const period = detectPeriod(frequency, periodStartMonth, cursor);
@@ -242,11 +252,11 @@ export function listRecentPeriods(
 export function deadlineStatus(dueDate: Date, now: Date = new Date()): DeadlineStatus {
   const ms = dueDate.getTime() - now.getTime();
   const daysUntilDue = Math.ceil(ms / (24 * 60 * 60 * 1000));
-  let level: DeadlineStatus['level'];
-  if (daysUntilDue < 0) level = 'overdue';
-  else if (daysUntilDue <= 3) level = 'critical';
-  else if (daysUntilDue <= 7) level = 'warning';
-  else level = 'ok';
+  let level: DeadlineStatus["level"];
+  if (daysUntilDue < 0) level = "overdue";
+  else if (daysUntilDue <= 3) level = "critical";
+  else if (daysUntilDue <= 7) level = "warning";
+  else level = "ok";
   return { daysUntilDue, level, isOverdue: daysUntilDue < 0 };
 }
 
@@ -266,7 +276,7 @@ interface InvoiceLineForVat {
   quantity: number;
   unitPrice: number;
   vatRate: number | null;
-  vatSupplyType?: 'standard_rated' | 'zero_rated' | 'exempt' | 'out_of_scope' | null;
+  vatSupplyType?: "standard_rated" | "zero_rated" | "exempt" | "out_of_scope" | null;
 }
 
 /**
@@ -293,15 +303,15 @@ export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
   for (const line of lines) {
     const lineAmount = (line.quantity || 0) * (line.unitPrice || 0);
     const rate = line.vatRate ?? UAE_VAT_RATE;
-    const supply = line.vatSupplyType || 'standard_rated';
+    const supply = line.vatSupplyType || "standard_rated";
     // Explicit supply type wins over rate-based inference. An exempt supply
     // with rate 0 must land in the exempt bucket, not zero-rated — they map
     // to different boxes on the FTA 201 form.
-    if (supply === 'out_of_scope') {
+    if (supply === "out_of_scope") {
       outOfScopeAmount += lineAmount;
-    } else if (supply === 'exempt') {
+    } else if (supply === "exempt") {
       exemptAmount += lineAmount;
-    } else if (supply === 'zero_rated' || rate === 0) {
+    } else if (supply === "zero_rated" || rate === 0) {
       zeroRatedAmount += lineAmount;
     } else {
       standardRatedAmount += lineAmount;
@@ -322,7 +332,10 @@ export function aggregateInvoiceLines(lines: InvoiceLineForVat[]): {
  * `exemptRatio` is the fraction of supplies that are exempt (0..1). Returns a
  * pair of {recoverable, irrecoverable} that sum to the input.
  */
-export function applyPartialExemption(inputVatGross: number, exemptRatio: number): {
+export function applyPartialExemption(
+  inputVatGross: number,
+  exemptRatio: number
+): {
   recoverable: number;
   irrecoverable: number;
   recoverableRatio: number;
@@ -352,26 +365,35 @@ export function buildVat201Boxes(
     totalExpenses: number;
     inputVatRecoverable: number;
   },
-  emirate: string,
+  emirate: string
 ): Vat201BoxValues {
   const boxes: Vat201BoxValues = {
-    box1aAbuDhabiAmount: 0, box1aAbuDhabiVat: 0,
-    box1bDubaiAmount: 0, box1bDubaiVat: 0,
-    box1cSharjahAmount: 0, box1cSharjahVat: 0,
-    box1dAjmanAmount: 0, box1dAjmanVat: 0,
-    box1eUmmAlQuwainAmount: 0, box1eUmmAlQuwainVat: 0,
-    box1fRasAlKhaimahAmount: 0, box1fRasAlKhaimahVat: 0,
-    box1gFujairahAmount: 0, box1gFujairahVat: 0,
+    box1aAbuDhabiAmount: 0,
+    box1aAbuDhabiVat: 0,
+    box1bDubaiAmount: 0,
+    box1bDubaiVat: 0,
+    box1cSharjahAmount: 0,
+    box1cSharjahVat: 0,
+    box1dAjmanAmount: 0,
+    box1dAjmanVat: 0,
+    box1eUmmAlQuwainAmount: 0,
+    box1eUmmAlQuwainVat: 0,
+    box1fRasAlKhaimahAmount: 0,
+    box1fRasAlKhaimahVat: 0,
+    box1gFujairahAmount: 0,
+    box1gFujairahVat: 0,
     box3ReverseChargeAmount: round2(components.reverseChargeAmount),
     box3ReverseChargeVat: round2(components.reverseChargeVat),
     box4ZeroRatedAmount: round2(components.zeroRatedAmount),
     box5ExemptAmount: round2(components.exemptAmount),
-    box8TotalAmount: 0, box8TotalVat: 0,
+    box8TotalAmount: 0,
+    box8TotalVat: 0,
     box9ExpensesAmount: round2(components.totalExpenses),
     box9ExpensesVat: round2(components.inputVatRecoverable),
     box10ReverseChargeAmount: round2(components.reverseChargeAmount),
     box10ReverseChargeVat: round2(components.reverseChargeVatRecoverable),
-    box11TotalAmount: 0, box11TotalVat: 0,
+    box11TotalAmount: 0,
+    box11TotalVat: 0,
     box12TotalDueTax: 0,
     box13RecoverableTax: 0,
     box14PayableTax: 0,
@@ -380,31 +402,31 @@ export function buildVat201Boxes(
   const stdAmt = round2(components.standardRatedAmount);
   const stdVat = round2(components.standardRatedVat);
   switch (emirate) {
-    case 'abu_dhabi':
+    case "abu_dhabi":
       boxes.box1aAbuDhabiAmount = stdAmt;
       boxes.box1aAbuDhabiVat = stdVat;
       break;
-    case 'sharjah':
+    case "sharjah":
       boxes.box1cSharjahAmount = stdAmt;
       boxes.box1cSharjahVat = stdVat;
       break;
-    case 'ajman':
+    case "ajman":
       boxes.box1dAjmanAmount = stdAmt;
       boxes.box1dAjmanVat = stdVat;
       break;
-    case 'umm_al_quwain':
+    case "umm_al_quwain":
       boxes.box1eUmmAlQuwainAmount = stdAmt;
       boxes.box1eUmmAlQuwainVat = stdVat;
       break;
-    case 'ras_al_khaimah':
+    case "ras_al_khaimah":
       boxes.box1fRasAlKhaimahAmount = stdAmt;
       boxes.box1fRasAlKhaimahVat = stdVat;
       break;
-    case 'fujairah':
+    case "fujairah":
       boxes.box1gFujairahAmount = stdAmt;
       boxes.box1gFujairahVat = stdVat;
       break;
-    case 'dubai':
+    case "dubai":
     default:
       boxes.box1bDubaiAmount = stdAmt;
       boxes.box1bDubaiVat = stdVat;
@@ -412,10 +434,14 @@ export function buildVat201Boxes(
   }
 
   // Box 8 totals output side; Box 11 totals input side; Boxes 12-14 net it out.
-  boxes.box8TotalAmount = round2(stdAmt + components.zeroRatedAmount + components.exemptAmount + components.reverseChargeAmount);
+  boxes.box8TotalAmount = round2(
+    stdAmt + components.zeroRatedAmount + components.exemptAmount + components.reverseChargeAmount
+  );
   boxes.box8TotalVat = round2(stdVat + components.reverseChargeVat);
   boxes.box11TotalAmount = round2(components.totalExpenses + components.reverseChargeAmount);
-  boxes.box11TotalVat = round2(components.inputVatRecoverable + components.reverseChargeVatRecoverable);
+  boxes.box11TotalVat = round2(
+    components.inputVatRecoverable + components.reverseChargeVatRecoverable
+  );
   boxes.box12TotalDueTax = boxes.box8TotalVat;
   boxes.box13RecoverableTax = boxes.box11TotalVat;
   boxes.box14PayableTax = round2(boxes.box12TotalDueTax - boxes.box13RecoverableTax);
@@ -433,7 +459,7 @@ export function buildVat201Boxes(
 export function reconcile(
   calculated: { outputVat: number; inputVat: number },
   ledger: { outputVat: number; inputVat: number },
-  toleranceAed = 0.01,
+  toleranceAed = 0.01
 ): ReconciliationResult {
   const outputVatDelta = round2(calculated.outputVat - ledger.outputVat);
   const inputVatDelta = round2(calculated.inputVat - ledger.inputVat);
@@ -444,7 +470,8 @@ export function reconcile(
     inputVatLedger: round2(ledger.inputVat),
     inputVatCalculated: round2(calculated.inputVat),
     inputVatDelta,
-    hasDiscrepancy: Math.abs(outputVatDelta) > toleranceAed || Math.abs(inputVatDelta) > toleranceAed,
+    hasDiscrepancy:
+      Math.abs(outputVatDelta) > toleranceAed || Math.abs(inputVatDelta) > toleranceAed,
     toleranceAed,
   };
 }
@@ -470,32 +497,47 @@ export interface SavedAdjustment {
  * naive `if (adj.box in next)` check.
  */
 export const VAT201_BOX_KEYS: ReadonlyArray<keyof Vat201BoxValues> = [
-  'box1aAbuDhabiAmount', 'box1aAbuDhabiVat',
-  'box1bDubaiAmount', 'box1bDubaiVat',
-  'box1cSharjahAmount', 'box1cSharjahVat',
-  'box1dAjmanAmount', 'box1dAjmanVat',
-  'box1eUmmAlQuwainAmount', 'box1eUmmAlQuwainVat',
-  'box1fRasAlKhaimahAmount', 'box1fRasAlKhaimahVat',
-  'box1gFujairahAmount', 'box1gFujairahVat',
-  'box3ReverseChargeAmount', 'box3ReverseChargeVat',
-  'box4ZeroRatedAmount',
-  'box5ExemptAmount',
-  'box8TotalAmount', 'box8TotalVat',
-  'box9ExpensesAmount', 'box9ExpensesVat',
-  'box10ReverseChargeAmount', 'box10ReverseChargeVat',
-  'box11TotalAmount', 'box11TotalVat',
-  'box12TotalDueTax',
-  'box13RecoverableTax',
-  'box14PayableTax',
+  "box1aAbuDhabiAmount",
+  "box1aAbuDhabiVat",
+  "box1bDubaiAmount",
+  "box1bDubaiVat",
+  "box1cSharjahAmount",
+  "box1cSharjahVat",
+  "box1dAjmanAmount",
+  "box1dAjmanVat",
+  "box1eUmmAlQuwainAmount",
+  "box1eUmmAlQuwainVat",
+  "box1fRasAlKhaimahAmount",
+  "box1fRasAlKhaimahVat",
+  "box1gFujairahAmount",
+  "box1gFujairahVat",
+  "box3ReverseChargeAmount",
+  "box3ReverseChargeVat",
+  "box4ZeroRatedAmount",
+  "box5ExemptAmount",
+  "box8TotalAmount",
+  "box8TotalVat",
+  "box9ExpensesAmount",
+  "box9ExpensesVat",
+  "box10ReverseChargeAmount",
+  "box10ReverseChargeVat",
+  "box11TotalAmount",
+  "box11TotalVat",
+  "box12TotalDueTax",
+  "box13RecoverableTax",
+  "box14PayableTax",
 ];
 
 const VAT201_BOX_KEY_SET: ReadonlySet<string> = new Set(VAT201_BOX_KEYS);
 
 export function isValidVat201BoxKey(value: unknown): value is keyof Vat201BoxValues {
-  return typeof value === 'string' && VAT201_BOX_KEY_SET.has(value);
+  return typeof value === "string" && VAT201_BOX_KEY_SET.has(value);
 }
 
-export function applyAdjustments(boxes: Vat201BoxValues, adjustments: SavedAdjustment[]): Vat201BoxValues {
+export function applyAdjustments(
+  boxes: Vat201BoxValues,
+  adjustments: SavedAdjustment[]
+): Vat201BoxValues {
   const next: Vat201BoxValues = { ...boxes };
   for (const adj of adjustments) {
     // Strict allow-list — `box in next` would also match inherited prototype
@@ -507,15 +549,26 @@ export function applyAdjustments(boxes: Vat201BoxValues, adjustments: SavedAdjus
   }
   // Re-derive totals after adjustment so Box 8/11/12/13/14 stay consistent.
   next.box8TotalVat = round2(
-    next.box1aAbuDhabiVat + next.box1bDubaiVat + next.box1cSharjahVat +
-    next.box1dAjmanVat + next.box1eUmmAlQuwainVat + next.box1fRasAlKhaimahVat +
-    next.box1gFujairahVat + next.box3ReverseChargeVat,
+    next.box1aAbuDhabiVat +
+      next.box1bDubaiVat +
+      next.box1cSharjahVat +
+      next.box1dAjmanVat +
+      next.box1eUmmAlQuwainVat +
+      next.box1fRasAlKhaimahVat +
+      next.box1gFujairahVat +
+      next.box3ReverseChargeVat
   );
   next.box8TotalAmount = round2(
-    next.box1aAbuDhabiAmount + next.box1bDubaiAmount + next.box1cSharjahAmount +
-    next.box1dAjmanAmount + next.box1eUmmAlQuwainAmount + next.box1fRasAlKhaimahAmount +
-    next.box1gFujairahAmount + next.box4ZeroRatedAmount + next.box5ExemptAmount +
-    next.box3ReverseChargeAmount,
+    next.box1aAbuDhabiAmount +
+      next.box1bDubaiAmount +
+      next.box1cSharjahAmount +
+      next.box1dAjmanAmount +
+      next.box1eUmmAlQuwainAmount +
+      next.box1fRasAlKhaimahAmount +
+      next.box1gFujairahAmount +
+      next.box4ZeroRatedAmount +
+      next.box5ExemptAmount +
+      next.box3ReverseChargeAmount
   );
   next.box11TotalAmount = round2(next.box9ExpensesAmount + next.box10ReverseChargeAmount);
   next.box11TotalVat = round2(next.box9ExpensesVat + next.box10ReverseChargeVat);
@@ -531,7 +584,7 @@ interface CompanyVatConfig {
   id: string;
   emirate: string;
   trnVatNumber: string | null;
-  vatFilingFrequency: string | null;        // 'Monthly' | 'Quarterly' | 'Annually'
+  vatFilingFrequency: string | null; // 'Monthly' | 'Quarterly' | 'Annually'
   vatPeriodStartMonth: number;
   vatAutoCalculate: boolean;
   exemptSupplyRatio: number;
@@ -546,7 +599,7 @@ async function loadCompanyConfig(companyId: string): Promise<CompanyVatConfig | 
             COALESCE(exempt_supply_ratio, 0) AS exempt_supply_ratio
      FROM companies
      WHERE id = $1`,
-    [companyId],
+    [companyId]
   );
   if (res.rows.length === 0) return null;
   const r = res.rows[0] as Record<string, unknown>;
@@ -562,7 +615,7 @@ async function loadCompanyConfig(companyId: string): Promise<CompanyVatConfig | 
 }
 
 export function frequencyFromCompany(value: string | null | undefined): VatFrequency {
-  return value === 'Monthly' ? 'monthly' : 'quarterly';
+  return value === "Monthly" ? "monthly" : "quarterly";
 }
 
 /**
@@ -574,14 +627,14 @@ export function frequencyFromCompany(value: string | null | undefined): VatFrequ
 export async function calculateVatReturn(
   companyId: string,
   period?: VatPeriod,
-  now: Date = new Date(),
+  now: Date = new Date()
 ): Promise<VatAutopilotCalculation> {
   const company = await loadCompanyConfig(companyId);
   if (!company) {
     throw new Error(`Company ${companyId} not found`);
   }
   if (!company.trnVatNumber) {
-    throw new Error('Company must have a TRN/VAT number to calculate a VAT return');
+    throw new Error("Company must have a TRN/VAT number to calculate a VAT return");
   }
 
   const frequency = frequencyFromCompany(company.vatFilingFrequency);
@@ -601,19 +654,21 @@ export async function calculateVatReturn(
      WHERE i.company_id = $1
        AND i.date >= $2 AND i.date <= $3
        AND i.status NOT IN ('void','draft','cancelled')`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end],
+    [companyId, resolvedPeriod.start, resolvedPeriod.end]
   );
 
   const invoiceIdSet = new Set<string>();
-  const lines: InvoiceLineForVat[] = (invoiceLineRes.rows as Array<Record<string, unknown>>).map(row => {
-    invoiceIdSet.add(String(row.invoice_id));
-    return {
-      quantity: Number(row.quantity) || 0,
-      unitPrice: Number(row.unit_price) || 0,
-      vatRate: row.vat_rate === null ? null : Number(row.vat_rate),
-      vatSupplyType: row.vat_supply_type as InvoiceLineForVat['vatSupplyType'],
-    };
-  });
+  const lines: InvoiceLineForVat[] = (invoiceLineRes.rows as Array<Record<string, unknown>>).map(
+    (row) => {
+      invoiceIdSet.add(String(row.invoice_id));
+      return {
+        quantity: Number(row.quantity) || 0,
+        unitPrice: Number(row.unit_price) || 0,
+        vatRate: row.vat_rate === null ? null : Number(row.vat_rate),
+        vatSupplyType: row.vat_supply_type as InvoiceLineForVat["vatSupplyType"],
+      };
+    }
+  );
   const sales = aggregateInvoiceLines(lines);
 
   // ── Purchases side ────────────────────────────────────────────────────────
@@ -630,7 +685,7 @@ export async function calculateVatReturn(
        AND posted = true
        AND COALESCE(date, created_at) >= $2
        AND COALESCE(date, created_at) <= $3`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end],
+    [companyId, resolvedPeriod.start, resolvedPeriod.end]
   );
 
   let totalExpenses = 0;
@@ -641,12 +696,12 @@ export async function calculateVatReturn(
     const amount = Number(row.amount) || 0;
     const vat = Number(row.vat_amount) || 0;
     const rate = Number(row.exchange_rate) || 1;
-    const currency = String(row.currency || 'AED');
+    const currency = String(row.currency || "AED");
     // Convert to AED if the receipt is in foreign currency. Receipts already
     // store base_currency_amount but only on insertion — for safety we
     // recompute when the source currency isn't AED.
-    const aedAmount = currency === 'AED' ? amount : convertToAed(amount, rate);
-    const aedVat = currency === 'AED' ? vat : convertToAed(vat, rate);
+    const aedAmount = currency === "AED" ? amount : convertToAed(amount, rate);
+    const aedVat = currency === "AED" ? vat : convertToAed(vat, rate);
     if (row.reverse_charge) {
       receiptReverseChargeAmount += aedAmount;
       receiptReverseChargeVat += aedVat;
@@ -670,13 +725,13 @@ export async function calculateVatReturn(
          AND reverse_charge = true
          AND bill_date >= $2 AND bill_date <= $3
          AND status NOT IN ('void','cancelled','draft')`,
-      [companyId, resolvedPeriod.start, resolvedPeriod.end],
+      [companyId, resolvedPeriod.start, resolvedPeriod.end]
     );
     billReverseChargeAmount = Number(billRes.rows[0]?.amount || 0);
     billReverseChargeVat = Number(billRes.rows[0]?.vat || 0);
   } catch (err) {
     // PG SQLSTATE 42P01 = undefined_table. Anything else is a real error.
-    if ((err as { code?: string })?.code !== '42P01') throw err;
+    if ((err as { code?: string })?.code !== "42P01") throw err;
   }
 
   const reverseChargeAmount = receiptReverseChargeAmount + billReverseChargeAmount;
@@ -717,21 +772,21 @@ export async function calculateVatReturn(
        AND je.date >= $2 AND je.date <= $3
        AND a.is_vat_account = true
      GROUP BY a.vat_type`,
-    [companyId, resolvedPeriod.start, resolvedPeriod.end],
+    [companyId, resolvedPeriod.start, resolvedPeriod.end]
   );
   let outputLedger = 0;
   let inputLedger = 0;
   for (const row of ledgerRes.rows as Array<Record<string, unknown>>) {
-    const vatType = String(row.vat_type || '');
+    const vatType = String(row.vat_type || "");
     const credit = Number(row.credit_total) || 0;
     const debit = Number(row.debit_total) || 0;
-    if (vatType === 'output') outputLedger += credit - debit;
-    else if (vatType === 'input') inputLedger += debit - credit;
+    if (vatType === "output") outputLedger += credit - debit;
+    else if (vatType === "input") inputLedger += debit - credit;
   }
 
   const reconciliation = reconcile(
     { outputVat: totalOutputVat, inputVat: totalInputVat },
-    { outputVat: outputLedger, inputVat: inputLedger },
+    { outputVat: outputLedger, inputVat: inputLedger }
   );
 
   const vat201 = buildVat201Boxes(
@@ -746,7 +801,7 @@ export async function calculateVatReturn(
       totalExpenses: boxes.totalExpenses,
       inputVatRecoverable: boxes.inputVatRecoverable,
     },
-    company.emirate,
+    company.emirate
   );
 
   return {
@@ -769,9 +824,7 @@ export async function calculateVatReturn(
  * dashboard can show last-calculated totals without re-running aggregation.
  * Upserts on (company_id, period_start, period_end).
  */
-export async function upsertCalculatedPeriod(
-  calc: VatAutopilotCalculation,
-): Promise<string> {
+export async function upsertCalculatedPeriod(calc: VatAutopilotCalculation): Promise<string> {
   const res = await pool.query(
     `INSERT INTO vat_return_periods
        (company_id, period_start, period_end, due_date, frequency,
@@ -793,7 +846,7 @@ export async function upsertCalculatedPeriod(
       calc.boxes.totalOutputVat,
       calc.boxes.totalInputVat,
       calc.boxes.netVatPayable,
-    ],
+    ]
   );
   return String(res.rows[0].id);
 }
@@ -806,7 +859,7 @@ export async function upsertCalculatedPeriod(
 export async function listPeriodsForCompany(
   companyId: string,
   now: Date = new Date(),
-  recentCount = 8,
+  recentCount = 8
 ): Promise<VatPeriodSummary[]> {
   const company = await loadCompanyConfig(companyId);
   if (!company) return [];
@@ -823,7 +876,7 @@ export async function listPeriodsForCompany(
      WHERE company_id = $1
      ORDER BY period_end DESC
      LIMIT $2`,
-    [companyId, recentCount * 2],
+    [companyId, recentCount * 2]
   );
 
   interface StoredPeriodRow {
@@ -845,7 +898,7 @@ export async function listPeriodsForCompany(
     storedByKey.set(key, row);
   }
 
-  const summaries: VatPeriodSummary[] = synthetic.map(p => {
+  const summaries: VatPeriodSummary[] = synthetic.map((p) => {
     const key = `${p.start.toISOString()}::${p.end.toISOString()}`;
     const row = storedByKey.get(key);
     if (row) storedByKey.delete(key);
@@ -856,7 +909,7 @@ export async function listPeriodsForCompany(
       periodEnd: p.end.toISOString(),
       dueDate: p.dueDate.toISOString(),
       frequency,
-      status: (row?.status as VatPeriodStatus) || 'draft',
+      status: (row?.status as VatPeriodStatus) || "draft",
       outputVat: Number(row?.output_vat) || 0,
       inputVat: Number(row?.input_vat) || 0,
       netVatPayable: Number(row?.net_vat_payable) || 0,
@@ -906,7 +959,7 @@ export async function addAdjustment(input: {
   // Reject NaN / Infinity — `typeof NaN === 'number'` so the route-level
   // typeof check isn't sufficient; persisting them corrupts the audit trail.
   if (!Number.isFinite(input.amount)) {
-    throw new Error('Adjustment amount must be a finite number');
+    throw new Error("Adjustment amount must be a finite number");
   }
   if (!isValidVat201BoxKey(input.box)) {
     throw new Error(`Unknown VAT 201 box key: ${input.box}`);
@@ -927,10 +980,10 @@ export async function addAdjustment(input: {
        AND company_id = $2
        AND status IN ('draft','ready')
      RETURNING id`,
-    [input.periodId, input.companyId, JSON.stringify(adjustment)],
+    [input.periodId, input.companyId, JSON.stringify(adjustment)]
   );
   if (res.rows.length === 0) {
-    throw new Error('Period not found or no longer editable');
+    throw new Error("Period not found or no longer editable");
   }
   return adjustment;
 }
@@ -946,7 +999,10 @@ export async function addAdjustment(input: {
  * if the caller forgot to verify ownership at the route.
  */
 const STATUS_RANK: Record<VatPeriodStatus, number> = {
-  draft: 0, ready: 1, submitted: 2, accepted: 3,
+  draft: 0,
+  ready: 1,
+  submitted: 2,
+  accepted: 3,
 };
 
 export async function updatePeriodStatus(input: {
@@ -959,7 +1015,7 @@ export async function updatePeriodStatus(input: {
   const cur = await pool.query(
     `SELECT id, company_id, status FROM vat_return_periods
      WHERE id = $1 AND company_id = $2`,
-    [input.periodId, input.companyId],
+    [input.periodId, input.companyId]
   );
   if (cur.rows.length === 0) return null;
   const currentStatus = cur.rows[0].status as VatPeriodStatus;
@@ -970,7 +1026,7 @@ export async function updatePeriodStatus(input: {
   if (new_rank < cur_rank || new_rank > cur_rank + 1) {
     throw new Error(`Cannot transition VAT period from '${currentStatus}' to '${input.newStatus}'`);
   }
-  const setSubmitted = input.newStatus === 'submitted' || input.newStatus === 'accepted';
+  const setSubmitted = input.newStatus === "submitted" || input.newStatus === "accepted";
   await pool.query(
     `UPDATE vat_return_periods
      SET status = $2,
@@ -986,12 +1042,12 @@ export async function updatePeriodStatus(input: {
       input.userId,
       input.ftaReferenceNumber ?? null,
       input.companyId,
-    ],
+    ]
   );
   // Return refreshed summary
   const companyId = String(cur.rows[0].company_id);
   const summaries = await listPeriodsForCompany(companyId);
-  return summaries.find(s => s.id === input.periodId) || null;
+  return summaries.find((s) => s.id === input.periodId) || null;
 }
 
 /**
@@ -1000,7 +1056,7 @@ export async function updatePeriodStatus(input: {
  */
 export async function listDueDates(
   companyIds: string[],
-  now: Date = new Date(),
+  now: Date = new Date()
 ): Promise<DueDateView[]> {
   if (companyIds.length === 0) return [];
   const companyRes = await pool.query(
@@ -1009,14 +1065,14 @@ export async function listDueDates(
             COALESCE(vat_period_start_month, 1) AS vat_period_start_month
      FROM companies
      WHERE id = ANY($1::uuid[])`,
-    [companyIds],
+    [companyIds]
   );
   const periodRes = await pool.query(
     `SELECT id, company_id, period_end, due_date, status
      FROM vat_return_periods
      WHERE company_id = ANY($1::uuid[])
        AND status IN ('draft','ready')`,
-    [companyIds],
+    [companyIds]
   );
   const storedByCompany = new Map<string, any>();
   for (const row of periodRes.rows) {
@@ -1033,7 +1089,7 @@ export async function listDueDates(
     const stored = storedByCompany.get(cid);
     let periodEnd: Date;
     let dueDate: Date;
-    let status: VatPeriodStatus = 'draft';
+    let status: VatPeriodStatus = "draft";
     if (stored) {
       periodEnd = new Date(stored.period_end);
       dueDate = new Date(stored.due_date);

@@ -8,7 +8,7 @@ createRoot(document.getElementById("root")!).render(<App />);
 // Register the service worker after the React app has mounted so the initial
 // render isn't blocked by network registration.
 if (import.meta.env.PROD) {
-  window.addEventListener('load', () => {
+  window.addEventListener("load", () => {
     void registerServiceWorker();
   });
 }

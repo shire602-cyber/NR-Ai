@@ -15,26 +15,26 @@
  * we still record the best internal result so the receipt is never lost.
  */
 
-import OpenAI from 'openai';
-import { storage } from '../storage';
-import { pool } from '../db';
-import { getEnv } from '../config/env';
-import { createLogger } from '../config/logger';
-import { assertPeriodNotLocked } from './period-lock.service';
+import OpenAI from "openai";
+import { storage } from "../storage";
+import { pool } from "../db";
+import { getEnv } from "../config/env";
+import { createLogger } from "../config/logger";
+import { assertPeriodNotLocked } from "./period-lock.service";
 import {
   classifyReceipt,
   type ClassificationResult,
   type StandardCategory,
-} from './receipt-classifier.service';
+} from "./receipt-classifier.service";
 import {
   getModel,
   getClassifierConfig,
   invalidateModel,
   applyAccuracyFailsafe,
-} from './training-data.service';
-import type { Account } from '../../shared/schema';
+} from "./training-data.service";
+import type { Account } from "../../shared/schema";
 
-const log = createLogger('receipt-autopilot');
+const log = createLogger("receipt-autopilot");
 
 // =============================================
 // Public types
@@ -100,24 +100,24 @@ export function __setOpenAIForTests(client: OpenAI | null): void {
  */
 export async function classifyOcrReceipt(
   companyId: string,
-  ocr: Pick<OcrReceipt, 'merchant' | 'amount' | 'lineItems'>,
+  ocr: Pick<OcrReceipt, "merchant" | "amount" | "lineItems">,
   prefetched?: {
-    config?: { accuracyThreshold: number; mode: 'hybrid' | 'openai_only' };
+    config?: { accuracyThreshold: number; mode: "hybrid" | "openai_only" };
     accounts?: Account[];
-  },
+  }
 ): Promise<ClassificationResult> {
   const config = prefetched?.config ?? (await getClassifierConfig(companyId));
   const model = await getModel(companyId);
 
   const accounts = prefetched?.accounts ?? (await storage.getAccountsByCompanyId(companyId));
   const expenseAccountNames = accounts
-    .filter((a) => a.type === 'expense' && a.isActive && !a.isArchived)
+    .filter((a) => a.type === "expense" && a.isActive && !a.isArchived)
     .map((a) => a.nameEn);
 
   return classifyReceipt({
     merchant: ocr.merchant,
     amount: ocr.amount,
-    lineItems: (ocr.lineItems || []).map((li) => li?.description || '').filter(Boolean),
+    lineItems: (ocr.lineItems || []).map((li) => li?.description || "").filter(Boolean),
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
     openai: getOpenAI(),
@@ -135,18 +135,18 @@ export async function classifyOcrReceipt(
 export async function runAutopilot(
   companyId: string,
   uploadedBy: string,
-  ocr: OcrReceipt,
+  ocr: OcrReceipt
 ): Promise<AutopilotResult> {
   const config = await getClassifierConfig(companyId);
   const accounts = await storage.getAccountsByCompanyId(companyId);
   const expenseAccounts = accounts.filter(
-    (a) => a.type === 'expense' && a.isActive && !a.isArchived,
+    (a) => a.type === "expense" && a.isActive && !a.isArchived
   );
   const expenseAccountNames = expenseAccounts.map((a) => a.nameEn);
 
   // Defensive: the route already validates, but if a caller passes a non-string
   // merchant we must not crash on slice() / toLowerCase().
-  const merchantSafe = typeof ocr.merchant === 'string' ? ocr.merchant : '';
+  const merchantSafe = typeof ocr.merchant === "string" ? ocr.merchant : "";
   const netAmount = Number(ocr.amount) || 0;
   const vatAmount = Number(ocr.vatAmount) || 0;
   const grossAmount = Number(ocr.total) > 0 ? Number(ocr.total) : netAmount + vatAmount;
@@ -156,7 +156,7 @@ export async function runAutopilot(
   const classification = await classifyReceipt({
     merchant: merchantSafe,
     amount: netAmount,
-    lineItems: (ocr.lineItems || []).map((li) => li?.description || '').filter(Boolean),
+    lineItems: (ocr.lineItems || []).map((li) => li?.description || "").filter(Boolean),
     model,
     options: { threshold: config.accuracyThreshold, mode: config.mode },
     openai: getOpenAI(),
@@ -171,8 +171,7 @@ export async function runAutopilot(
   // the receipt can still be classified (and queued for review when picking
   // also fails).
   const ruleAccountStillActive =
-    classification.accountId &&
-    expenseAccounts.some((a) => a.id === classification.accountId);
+    classification.accountId && expenseAccounts.some((a) => a.id === classification.accountId);
   const expenseAccountId = ruleAccountStillActive
     ? classification.accountId
     : pickExpenseAccountForCategory(expenseAccounts, classification.category);
@@ -185,7 +184,7 @@ export async function runAutopilot(
     date: new Date(ocr.date),
     amount: netAmount,
     vatAmount,
-    currency: ocr.currency || 'AED',
+    currency: ocr.currency || "AED",
     category: classification.category,
     accountId: expenseAccountId,
     paymentAccountId,
@@ -225,7 +224,7 @@ export async function runAutopilot(
   // they were AED, which is a real correctness bug the user can't easily spot.
   // Foreign-currency receipts go to manual review until the autopilot grows
   // an FX path.
-  const isAed = (ocr.currency || 'AED').toUpperCase() === 'AED';
+  const isAed = (ocr.currency || "AED").toUpperCase() === "AED";
   const shouldAutoPost =
     config.autopilotEnabled &&
     classification.confidence >= 0.9 &&
@@ -262,7 +261,7 @@ export async function runAutopilot(
   } catch (err: any) {
     log.error(
       { err: err?.message || err, receiptId: receipt.id },
-      'Auto-post failed before JE creation — leaving receipt for manual review',
+      "Auto-post failed before JE creation — leaving receipt for manual review"
     );
     return {
       receiptId: receipt.id,
@@ -290,7 +289,7 @@ export async function runAutopilot(
   } catch (err: any) {
     log.error(
       { err: err?.message || err, receiptId: receipt.id, journalEntryId },
-      'Auto-post: JE created but receipt link update failed — manual repair needed',
+      "Auto-post: JE created but receipt link update failed — manual repair needed"
     );
   }
 
@@ -302,12 +301,12 @@ export async function runAutopilot(
       // attacker-controlled rule id.
       await pool.query(
         `UPDATE ai_company_rules SET times_applied = times_applied + 1, updated_at = now() WHERE id = $1 AND company_id = $2`,
-        [classification.matchedRuleId, companyId],
+        [classification.matchedRuleId, companyId]
       );
     } catch (err: any) {
       log.warn(
         { err: err?.message || err, ruleId: classification.matchedRuleId },
-        'Auto-post: rule times_applied bump failed — non-fatal',
+        "Auto-post: rule times_applied bump failed — non-fatal"
       );
     }
   }
@@ -330,7 +329,7 @@ export async function recordClassificationFeedback(
   companyId: string,
   classificationId: string,
   wasAccepted: boolean,
-  userSelectedAccountId?: string | null,
+  userSelectedAccountId?: string | null
 ): Promise<void> {
   await storage.updateTransactionClassification(classificationId, companyId, {
     wasAccepted,
@@ -355,7 +354,15 @@ interface AutoPostInput {
 }
 
 async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
-  const { companyId, uploadedBy, ocr, expenseAccountId, paymentAccountId, accounts, classification } = input;
+  const {
+    companyId,
+    uploadedBy,
+    ocr,
+    expenseAccountId,
+    paymentAccountId,
+    accounts,
+    classification,
+  } = input;
   const txnDate = new Date(ocr.date);
   await assertPeriodNotLocked(companyId, txnDate);
 
@@ -371,18 +378,39 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
   // Try to find a "VAT Input" / "Input VAT" / "Recoverable VAT" account so we
   // split the entry. If we can't find one, the gross goes to the expense.
   const vatInputAccount = accounts.find(
-    (a) => a.isVatAccount && a.vatType === 'input' && a.isActive && !a.isArchived,
+    (a) => a.isVatAccount && a.vatType === "input" && a.isActive && !a.isArchived
   );
 
-  const merchantLabel = typeof ocr.merchant === 'string' ? ocr.merchant : '';
-  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
+  const merchantLabel = typeof ocr.merchant === "string" ? ocr.merchant : "";
+  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> =
+    [];
   if (vatInputAccount && vat > 0) {
     lines.push({ accountId: expenseAccountId, debit: net, credit: 0, description: merchantLabel });
-    lines.push({ accountId: vatInputAccount.id, debit: vat, credit: 0, description: `Input VAT — ${merchantLabel}` });
-    lines.push({ accountId: paymentAccountId, debit: 0, credit: total, description: merchantLabel });
+    lines.push({
+      accountId: vatInputAccount.id,
+      debit: vat,
+      credit: 0,
+      description: `Input VAT — ${merchantLabel}`,
+    });
+    lines.push({
+      accountId: paymentAccountId,
+      debit: 0,
+      credit: total,
+      description: merchantLabel,
+    });
   } else {
-    lines.push({ accountId: expenseAccountId, debit: total, credit: 0, description: merchantLabel });
-    lines.push({ accountId: paymentAccountId, debit: 0, credit: total, description: merchantLabel });
+    lines.push({
+      accountId: expenseAccountId,
+      debit: total,
+      credit: 0,
+      description: merchantLabel,
+    });
+    lines.push({
+      accountId: paymentAccountId,
+      debit: 0,
+      credit: total,
+      description: merchantLabel,
+    });
   }
 
   const entryNumber = await storage.generateEntryNumber(companyId, txnDate);
@@ -392,13 +420,13 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
       entryNumber,
       date: txnDate,
       memo: `Receipt Autopilot: ${merchantLabel} (${classification.method}, ${(classification.confidence * 100).toFixed(0)}% conf)`,
-      status: 'posted',
-      source: 'system',
+      status: "posted",
+      source: "system",
       createdBy: uploadedBy,
       postedBy: uploadedBy,
       postedAt: new Date(),
     },
-    lines,
+    lines
   );
   return entry.id;
 }
@@ -409,7 +437,7 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
 
 function pickExpenseAccountForCategory(
   expenseAccounts: Account[],
-  category: StandardCategory,
+  category: StandardCategory
 ): string | null {
   if (expenseAccounts.length === 0) return null;
   const lower = category.toLowerCase();
@@ -418,18 +446,18 @@ function pickExpenseAccountForCategory(
   if (direct) return direct.id;
   // Category-specific synonym fallbacks.
   const synonymMap: Record<StandardCategory, string[]> = {
-    'Office Supplies': ['supplies', 'stationery'],
-    'Utilities': ['utility', 'utilities', 'water', 'electricity'],
-    'Travel': ['travel', 'transport', 'fuel'],
-    'Meals': ['meals', 'entertainment', 'food'],
-    'Rent': ['rent'],
-    'Marketing': ['marketing', 'advertising', 'promotion'],
-    'Equipment': ['equipment', 'hardware'],
-    'Professional Services': ['professional', 'consulting', 'legal'],
-    'Insurance': ['insurance'],
-    'Maintenance': ['maintenance', 'repairs'],
-    'Communication': ['communication', 'telephone', 'internet'],
-    'Other': ['miscellaneous', 'other expense', 'general expense'],
+    "Office Supplies": ["supplies", "stationery"],
+    Utilities: ["utility", "utilities", "water", "electricity"],
+    Travel: ["travel", "transport", "fuel"],
+    Meals: ["meals", "entertainment", "food"],
+    Rent: ["rent"],
+    Marketing: ["marketing", "advertising", "promotion"],
+    Equipment: ["equipment", "hardware"],
+    "Professional Services": ["professional", "consulting", "legal"],
+    Insurance: ["insurance"],
+    Maintenance: ["maintenance", "repairs"],
+    Communication: ["communication", "telephone", "internet"],
+    Other: ["miscellaneous", "other expense", "general expense"],
   };
   const syns = synonymMap[category];
   for (const syn of syns) {
@@ -444,16 +472,16 @@ function pickExpenseAccountForCategory(
 function pickPaymentAccount(accounts: Account[]): string | null {
   // Prefer cash, then bank.
   const cash = accounts.find(
-    (a) => a.type === 'asset' && a.isActive && !a.isArchived && /cash/i.test(a.nameEn),
+    (a) => a.type === "asset" && a.isActive && !a.isArchived && /cash/i.test(a.nameEn)
   );
   if (cash) return cash.id;
   const bank = accounts.find(
-    (a) => a.type === 'asset' && a.isActive && !a.isArchived && /bank/i.test(a.nameEn),
+    (a) => a.type === "asset" && a.isActive && !a.isArchived && /bank/i.test(a.nameEn)
   );
   if (bank) return bank.id;
   // Generic current asset fallback.
   const fallback = accounts.find(
-    (a) => a.type === 'asset' && a.subType === 'current_asset' && a.isActive && !a.isArchived,
+    (a) => a.type === "asset" && a.subType === "current_asset" && a.isActive && !a.isArchived
   );
   return fallback?.id ?? null;
 }

@@ -1,5 +1,5 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useToast } from '@/hooks/use-toast';
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 interface OptimisticListMutationOptions<TVars, TItem> {
   /** Query key for the list cache to update. */
@@ -24,7 +24,7 @@ interface OptimisticListMutationOptions<TVars, TItem> {
  * doesn't have to repeat the dance.
  */
 export function useOptimisticListMutation<TVars, TItem extends { id: string }>(
-  opts: OptimisticListMutationOptions<TVars, TItem>,
+  opts: OptimisticListMutationOptions<TVars, TItem>
 ) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -44,16 +44,16 @@ export function useOptimisticListMutation<TVars, TItem extends { id: string }>(
       return { previous };
     },
     onError: (error: unknown, _vars, context) => {
-      if (context && typeof context === 'object' && 'previous' in context) {
+      if (context && typeof context === "object" && "previous" in context) {
         const ctx = context as { previous: TItem[] | undefined };
         if (ctx.previous) {
           queryClient.setQueryData(opts.queryKey, ctx.previous);
         }
       }
       toast({
-        variant: 'destructive',
-        title: opts.errorTitle ?? 'Action failed',
-        description: (error as Error)?.message ?? 'Please try again.',
+        variant: "destructive",
+        title: opts.errorTitle ?? "Action failed",
+        description: (error as Error)?.message ?? "Please try again.",
       });
     },
     onSuccess: () => {

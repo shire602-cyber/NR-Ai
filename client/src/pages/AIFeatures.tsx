@@ -1,31 +1,64 @@
-import { useState, useEffect } from 'react';
-import { useLocation } from 'wouter';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency, formatDate } from '@/lib/format';
-import { 
-  Sparkles, AlertTriangle, TrendingUp, TrendingDown, 
-  Check, X, FileWarning, DollarSign, RefreshCw, 
-  Brain, Zap, ShieldAlert, LineChart, Upload,
-  Clock, ChevronRight, CheckCircle2, AlertCircle,
-  ArrowUpRight, ArrowDownRight, Target, Lightbulb
-} from 'lucide-react';
-import { 
-  ResponsiveContainer, LineChart as RechartsLineChart, Line, 
-  XAxis, YAxis, Tooltip, Legend, AreaChart, Area, BarChart, Bar
-} from 'recharts';
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency, formatDate } from "@/lib/format";
+import {
+  Sparkles,
+  AlertTriangle,
+  TrendingUp,
+  TrendingDown,
+  Check,
+  X,
+  FileWarning,
+  DollarSign,
+  RefreshCw,
+  Brain,
+  Zap,
+  ShieldAlert,
+  LineChart,
+  Upload,
+  Clock,
+  ChevronRight,
+  CheckCircle2,
+  AlertCircle,
+  ArrowUpRight,
+  ArrowDownRight,
+  Target,
+  Lightbulb,
+} from "lucide-react";
+import {
+  ResponsiveContainer,
+  LineChart as RechartsLineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+} from "recharts";
 
 type AnomalyAlert = {
   id: string;
@@ -55,123 +88,149 @@ export default function AIFeatures() {
   const { companyId } = useDefaultCompany();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState("overview");
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const [selectedAlert, setSelectedAlert] = useState<AnomalyAlert | null>(null);
-  const [resolutionNote, setResolutionNote] = useState('');
+  const [resolutionNote, setResolutionNote] = useState("");
   const [categorizationOpen, setCategorizationOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const { data: anomalyAlerts, isLoading: alertsLoading, refetch: refetchAlerts } = useQuery<AnomalyAlert[]>({
-    queryKey: ['/api/companies', companyId, 'anomaly-alerts'],
+  const {
+    data: anomalyAlerts,
+    isLoading: alertsLoading,
+    refetch: refetchAlerts,
+  } = useQuery<AnomalyAlert[]>({
+    queryKey: ["/api/companies", companyId, "anomaly-alerts"],
     enabled: !!companyId,
   });
 
   const { data: forecasts, isLoading: forecastsLoading } = useQuery<CashFlowForecast[]>({
-    queryKey: ['/api/companies', companyId, 'forecasts'],
+    queryKey: ["/api/companies", companyId, "forecasts"],
     enabled: !!companyId,
   });
 
   const detectAnomaliesMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('POST', '/api/ai/detect-anomalies', { companyId });
+      return apiRequest("POST", "/api/ai/detect-anomalies", { companyId });
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'anomaly-alerts'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "anomaly-alerts"] });
       toast({
-        title: 'Scan Complete',
+        title: "Scan Complete",
         description: `Found ${data?.summary?.totalAnomalies || 0} potential issues`,
       });
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
-        description: error?.message || 'Failed to scan for anomalies',
-        variant: 'destructive',
+        title: "Error",
+        description: error?.message || "Failed to scan for anomalies",
+        variant: "destructive",
       });
     },
   });
 
   const generateForecastMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('POST', '/api/ai/forecast-cashflow', { companyId, forecastMonths: 3 });
+      return apiRequest("POST", "/api/ai/forecast-cashflow", { companyId, forecastMonths: 3 });
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'forecasts'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "forecasts"] });
       toast({
-        title: 'Forecast Generated',
-        description: 'Cash flow predictions have been updated',
+        title: "Forecast Generated",
+        description: "Cash flow predictions have been updated",
       });
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
-        description: error?.message || 'Failed to generate forecast',
-        variant: 'destructive',
+        title: "Error",
+        description: error?.message || "Failed to generate forecast",
+        variant: "destructive",
       });
     },
   });
 
   const resolveAlertMutation = useMutation({
     mutationFn: async ({ alertId, note }: { alertId: string; note?: string }) => {
-      return apiRequest('POST', `/api/anomaly-alerts/${alertId}/resolve`, { note });
+      return apiRequest("POST", `/api/anomaly-alerts/${alertId}/resolve`, { note });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/companies', companyId, 'anomaly-alerts'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "anomaly-alerts"] });
       setResolveDialogOpen(false);
       setSelectedAlert(null);
-      setResolutionNote('');
+      setResolutionNote("");
       toast({
-        title: 'Alert Resolved',
-        description: 'The anomaly has been marked as resolved',
+        title: "Alert Resolved",
+        description: "The anomaly has been marked as resolved",
       });
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
-        description: error?.message || 'Failed to resolve alert',
-        variant: 'destructive',
+        title: "Error",
+        description: error?.message || "Failed to resolve alert",
+        variant: "destructive",
       });
     },
   });
 
-  const unresolvedAlerts = anomalyAlerts?.filter(a => !a.isResolved) || [];
-  const criticalAlerts = unresolvedAlerts.filter(a => a.severity === 'critical' || a.severity === 'high');
-  const forecastData = forecasts?.map(f => ({
-    month: formatDate(f.forecastDate, 'MMM'),
-    inflow: f.predictedInflow,
-    outflow: f.predictedOutflow,
-    balance: f.predictedBalance,
-    confidence: (f.confidenceLevel || 0) * 100,
-  })) || [];
+  const unresolvedAlerts = anomalyAlerts?.filter((a) => !a.isResolved) || [];
+  const criticalAlerts = unresolvedAlerts.filter(
+    (a) => a.severity === "critical" || a.severity === "high"
+  );
+  const forecastData =
+    forecasts?.map((f) => ({
+      month: formatDate(f.forecastDate, "MMM"),
+      inflow: f.predictedInflow,
+      outflow: f.predictedOutflow,
+      balance: f.predictedBalance,
+      confidence: (f.confidenceLevel || 0) * 100,
+    })) || [];
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
-      case 'critical': return 'bg-red-500';
-      case 'high': return 'bg-orange-500';
-      case 'medium': return 'bg-yellow-500';
-      default: return 'bg-blue-500';
+      case "critical":
+        return "bg-red-500";
+      case "high":
+        return "bg-orange-500";
+      case "medium":
+        return "bg-yellow-500";
+      default:
+        return "bg-blue-500";
     }
   };
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case 'duplicate': return FileWarning;
-      case 'unusual_amount': return DollarSign;
-      case 'timing': return Clock;
-      case 'potential_fraud': return ShieldAlert;
-      default: return AlertTriangle;
+      case "duplicate":
+        return FileWarning;
+      case "unusual_amount":
+        return DollarSign;
+      case "timing":
+        return Clock;
+      case "potential_fraud":
+        return ShieldAlert;
+      default:
+        return AlertTriangle;
     }
   };
 
-  const FeatureCard = ({ icon: Icon, title, description, onClick, loading, buttonText, color }: any) => (
+  const FeatureCard = ({
+    icon: Icon,
+    title,
+    description,
+    onClick,
+    loading,
+    buttonText,
+    color,
+  }: any) => (
     <Card className="hover-elevate active-elevate-2 transition-all duration-300">
       <CardHeader className="flex flex-row items-center gap-4">
-        <div className={`w-12 h-12 rounded-lg ${color} bg-opacity-15 dark:bg-opacity-25 flex items-center justify-center`}>
-          <Icon className={`w-6 h-6 ${color.replace('bg-', 'text-')}`} />
+        <div
+          className={`w-12 h-12 rounded-lg ${color} bg-opacity-15 dark:bg-opacity-25 flex items-center justify-center`}
+        >
+          <Icon className={`w-6 h-6 ${color.replace("bg-", "text-")}`} />
         </div>
         <div className="flex-1">
           <CardTitle className="text-lg">{title}</CardTitle>
@@ -179,11 +238,11 @@ export default function AIFeatures() {
         </div>
       </CardHeader>
       <CardContent>
-        <Button 
-          onClick={onClick} 
+        <Button
+          onClick={onClick}
           disabled={loading}
           className="w-full"
-          data-testid={`button-${title.toLowerCase().replace(/\s+/g, '-')}`}
+          data-testid={`button-${title.toLowerCase().replace(/\s+/g, "-")}`}
         >
           {loading ? (
             <>
@@ -203,7 +262,10 @@ export default function AIFeatures() {
 
   return (
     <div className="space-y-8">
-      <div className={`${mounted ? 'animate-in fade-in slide-in-from-top-4' : ''}`} style={{ animationDuration: '500ms' }}>
+      <div
+        className={`${mounted ? "animate-in fade-in slide-in-from-top-4" : ""}`}
+        style={{ animationDuration: "500ms" }}
+      >
         <div className="relative overflow-hidden rounded-2xl p-8 mb-8 bg-gradient-to-br from-primary/10 via-transparent to-accent/5 dark:from-primary/5 dark:via-transparent dark:to-accent/10 border border-primary/10 dark:border-primary/5">
           <div className="relative z-10">
             <div className="flex items-start justify-between flex-wrap gap-6">
@@ -221,19 +283,17 @@ export default function AIFeatures() {
                   AI Financial Automation
                 </h1>
                 <p className="text-muted-foreground">
-                  Leverage advanced AI to automate transaction categorization, detect anomalies, 
+                  Leverage advanced AI to automate transaction categorization, detect anomalies,
                   reconcile bank statements, and forecast cash flow.
                 </p>
               </div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
-                  <Badge variant={unresolvedAlerts.length > 0 ? 'destructive' : 'secondary'}>
+                  <Badge variant={unresolvedAlerts.length > 0 ? "destructive" : "secondary"}>
                     {unresolvedAlerts.length} Active Alerts
                   </Badge>
                   {criticalAlerts.length > 0 && (
-                    <Badge variant="destructive">
-                      {criticalAlerts.length} Critical
-                    </Badge>
+                    <Badge variant="destructive">{criticalAlerts.length} Critical</Badge>
                   )}
                 </div>
               </div>
@@ -264,51 +324,84 @@ export default function AIFeatures() {
 
         <TabsContent value="overview" className="space-y-6">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            <Card className={`${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDuration: '400ms' }}>
+            <Card
+              className={`${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
+              style={{ animationDuration: "400ms" }}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Active Alerts</CardTitle>
-                <AlertTriangle className={`w-5 h-5 ${unresolvedAlerts.length > 0 ? 'text-orange-500' : 'text-muted-foreground'}`} />
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Active Alerts
+                </CardTitle>
+                <AlertTriangle
+                  className={`w-5 h-5 ${unresolvedAlerts.length > 0 ? "text-orange-500" : "text-muted-foreground"}`}
+                />
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold" data-testid="text-active-alerts">{unresolvedAlerts.length}</div>
+                <div className="text-3xl font-bold" data-testid="text-active-alerts">
+                  {unresolvedAlerts.length}
+                </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {criticalAlerts.length > 0 ? `${criticalAlerts.length} require attention` : 'No critical issues'}
+                  {criticalAlerts.length > 0
+                    ? `${criticalAlerts.length} require attention`
+                    : "No critical issues"}
                 </p>
               </CardContent>
             </Card>
 
-            <Card className={`${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDuration: '500ms' }}>
+            <Card
+              className={`${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
+              style={{ animationDuration: "500ms" }}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Resolved Today</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Resolved Today
+                </CardTitle>
                 <CheckCircle2 className="w-5 h-5 text-green-500" />
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold" data-testid="text-resolved-today">
-                  {anomalyAlerts?.filter(a => a.isResolved).length || 0}
+                  {anomalyAlerts?.filter((a) => a.isResolved).length || 0}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Issues addressed</p>
               </CardContent>
             </Card>
 
-            <Card className={`${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDuration: '600ms' }}>
+            <Card
+              className={`${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
+              style={{ animationDuration: "600ms" }}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Forecast Months</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Forecast Months
+                </CardTitle>
                 <LineChart className="w-5 h-5 text-primary" />
               </CardHeader>
               <CardContent>
-                <div className="text-3xl font-bold" data-testid="text-forecast-months">{forecasts?.length || 0}</div>
+                <div className="text-3xl font-bold" data-testid="text-forecast-months">
+                  {forecasts?.length || 0}
+                </div>
                 <p className="text-xs text-muted-foreground mt-1">Predicted ahead</p>
               </CardContent>
             </Card>
 
-            <Card className={`${mounted ? 'animate-in fade-in slide-in-from-bottom-4' : ''}`} style={{ animationDuration: '700ms' }}>
+            <Card
+              className={`${mounted ? "animate-in fade-in slide-in-from-bottom-4" : ""}`}
+              style={{ animationDuration: "700ms" }}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">AI Confidence</CardTitle>
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  AI Confidence
+                </CardTitle>
                 <Brain className="w-5 h-5 text-purple-500" />
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold" data-testid="text-ai-confidence">
-                  {forecastData.length > 0 ? Math.round(forecastData.reduce((a, b) => a + b.confidence, 0) / forecastData.length) : 0}%
+                  {forecastData.length > 0
+                    ? Math.round(
+                        forecastData.reduce((a, b) => a + b.confidence, 0) / forecastData.length
+                      )
+                    : 0}
+                  %
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Average prediction accuracy</p>
               </CardContent>
@@ -340,27 +433,41 @@ export default function AIFeatures() {
             <Card>
               <CardHeader>
                 <CardTitle>Cash Flow Prediction</CardTitle>
-                <CardDescription>Projected inflows and outflows for the next 3 months</CardDescription>
+                <CardDescription>
+                  Projected inflows and outflows for the next 3 months
+                </CardDescription>
               </CardHeader>
               <CardContent className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={forecastData}>
                     <defs>
                       <linearGradient id="inflowGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="outflowGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="hsl(0, 84%, 60%)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <XAxis dataKey="month" />
                     <YAxis />
                     <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                     <Legend />
-                    <Area type="monotone" dataKey="inflow" stroke="hsl(142, 76%, 36%)" fill="url(#inflowGradient)" name="Inflow" />
-                    <Area type="monotone" dataKey="outflow" stroke="hsl(0, 84%, 60%)" fill="url(#outflowGradient)" name="Outflow" />
+                    <Area
+                      type="monotone"
+                      dataKey="inflow"
+                      stroke="hsl(142, 76%, 36%)"
+                      fill="url(#inflowGradient)"
+                      name="Inflow"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="outflow"
+                      stroke="hsl(0, 84%, 60%)"
+                      fill="url(#outflowGradient)"
+                      name="Outflow"
+                    />
                   </AreaChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -374,7 +481,7 @@ export default function AIFeatures() {
               <h2 className="text-xl font-semibold">Anomaly Alerts</h2>
               <p className="text-muted-foreground">AI-detected issues requiring review</p>
             </div>
-            <Button 
+            <Button
               onClick={() => detectAnomaliesMutation.mutate()}
               disabled={detectAnomaliesMutation.isPending}
               data-testid="button-scan-anomalies"
@@ -404,8 +511,8 @@ export default function AIFeatures() {
                 <CheckCircle2 className="w-12 h-12 text-green-500 mb-4" />
                 <h3 className="text-lg font-semibold">All Clear</h3>
                 <p className="text-muted-foreground">No anomalies detected in your transactions</p>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="mt-4"
                   onClick={() => detectAnomaliesMutation.mutate()}
                   disabled={detectAnomaliesMutation.isPending}
@@ -423,13 +530,25 @@ export default function AIFeatures() {
                   <Card key={alert.id} className="hover-elevate">
                     <CardContent className="p-6">
                       <div className="flex items-start gap-4">
-                        <div className={`w-10 h-10 rounded-lg ${getSeverityColor(alert.severity)} bg-opacity-15 flex items-center justify-center flex-shrink-0`}>
-                          <TypeIcon className={`w-5 h-5 ${getSeverityColor(alert.severity).replace('bg-', 'text-')}`} />
+                        <div
+                          className={`w-10 h-10 rounded-lg ${getSeverityColor(alert.severity)} bg-opacity-15 flex items-center justify-center flex-shrink-0`}
+                        >
+                          <TypeIcon
+                            className={`w-5 h-5 ${getSeverityColor(alert.severity).replace("bg-", "text-")}`}
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-semibold truncate">{alert.title}</h3>
-                            <Badge variant={alert.severity === 'critical' ? 'destructive' : alert.severity === 'high' ? 'destructive' : 'secondary'}>
+                            <Badge
+                              variant={
+                                alert.severity === "critical"
+                                  ? "destructive"
+                                  : alert.severity === "high"
+                                    ? "destructive"
+                                    : "secondary"
+                              }
+                            >
                               {alert.severity}
                             </Badge>
                           </div>
@@ -474,9 +593,11 @@ export default function AIFeatures() {
           <div className="flex justify-between items-center">
             <div>
               <h2 className="text-xl font-semibold">Cash Flow Forecast</h2>
-              <p className="text-muted-foreground">AI-powered predictions based on your financial history</p>
+              <p className="text-muted-foreground">
+                AI-powered predictions based on your financial history
+              </p>
             </div>
-            <Button 
+            <Button
               onClick={() => generateForecastMutation.mutate()}
               disabled={generateForecastMutation.isPending}
               data-testid="button-generate-forecast"
@@ -507,7 +628,7 @@ export default function AIFeatures() {
                   <Card key={forecast.id} className="hover-elevate">
                     <CardHeader className="pb-2">
                       <CardTitle className="text-lg flex items-center gap-2">
-                        {formatDate(forecast.forecastDate, 'MMMM yyyy')}
+                        {formatDate(forecast.forecastDate, "MMMM yyyy")}
                         {forecast.confidenceLevel && (
                           <Badge variant="outline" className="text-xs">
                             {Math.round(forecast.confidenceLevel * 100)}% conf
@@ -537,7 +658,9 @@ export default function AIFeatures() {
                       <div className="border-t pt-4">
                         <div className="flex justify-between items-center">
                           <span className="text-sm font-medium">Net Balance</span>
-                          <span className={`text-lg font-bold ${forecast.predictedBalance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          <span
+                            className={`text-lg font-bold ${forecast.predictedBalance >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                          >
                             {formatCurrency(forecast.predictedBalance)}
                           </span>
                         </div>
@@ -558,8 +681,18 @@ export default function AIFeatures() {
                       <YAxis />
                       <Tooltip formatter={(value) => formatCurrency(Number(value))} />
                       <Legend />
-                      <Bar dataKey="inflow" fill="hsl(142, 76%, 36%)" name="Inflow" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="outflow" fill="hsl(0, 84%, 60%)" name="Outflow" radius={[4, 4, 0, 0]} />
+                      <Bar
+                        dataKey="inflow"
+                        fill="hsl(142, 76%, 36%)"
+                        name="Inflow"
+                        radius={[4, 4, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="outflow"
+                        fill="hsl(0, 84%, 60%)"
+                        name="Outflow"
+                        radius={[4, 4, 0, 0]}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>
@@ -570,8 +703,10 @@ export default function AIFeatures() {
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <LineChart className="w-12 h-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-semibold">No Forecasts Yet</h3>
-                <p className="text-muted-foreground mb-4">Generate AI-powered cash flow predictions</p>
-                <Button 
+                <p className="text-muted-foreground mb-4">
+                  Generate AI-powered cash flow predictions
+                </p>
+                <Button
                   onClick={() => generateForecastMutation.mutate()}
                   disabled={generateForecastMutation.isPending}
                   data-testid="button-first-forecast"
@@ -620,9 +755,9 @@ export default function AIFeatures() {
                     Batch processing support
                   </li>
                 </ul>
-                <Button 
-                  variant="outline" 
-                  className="w-full" 
+                <Button
+                  variant="outline"
+                  className="w-full"
                   onClick={() => setCategorizationOpen(true)}
                   data-testid="button-smart-categorization"
                 >
@@ -659,10 +794,10 @@ export default function AIFeatures() {
                     One-click reconciliation
                   </li>
                 </ul>
-                <Button 
-                  variant="outline" 
-                  className="w-full" 
-                  onClick={() => navigate('/bank-reconciliation')}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => navigate("/bank-reconciliation")}
                   data-testid="button-bank-reconciliation"
                 >
                   <Upload className="w-4 h-4 mr-2" />
@@ -734,10 +869,10 @@ export default function AIFeatures() {
                     Real-time notifications
                   </li>
                 </ul>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full"
-                  onClick={() => setActiveTab('anomalies')}
+                  onClick={() => setActiveTab("anomalies")}
                   data-testid="button-view-alerts"
                 >
                   <AlertCircle className="w-4 h-4 mr-2" />
@@ -753,9 +888,7 @@ export default function AIFeatures() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Resolve Alert</DialogTitle>
-            <DialogDescription>
-              Mark this anomaly as reviewed and resolved
-            </DialogDescription>
+            <DialogDescription>Mark this anomaly as reviewed and resolved</DialogDescription>
           </DialogHeader>
           {selectedAlert && (
             <div className="space-y-4">
@@ -783,12 +916,12 @@ export default function AIFeatures() {
             <Button variant="outline" onClick={() => setResolveDialogOpen(false)}>
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={() => {
                 if (selectedAlert) {
-                  resolveAlertMutation.mutate({ 
-                    alertId: selectedAlert.id, 
-                    note: resolutionNote 
+                  resolveAlertMutation.mutate({
+                    alertId: selectedAlert.id,
+                    note: resolutionNote,
                   });
                 }
               }}
@@ -810,15 +943,13 @@ export default function AIFeatures() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Smart Categorization Settings</DialogTitle>
-            <DialogDescription>
-              Configure how AI categorizes your transactions
-            </DialogDescription>
+            <DialogDescription>Configure how AI categorizes your transactions</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <Alert>
               <Sparkles className="h-4 w-4" />
               <AlertDescription>
-                Smart Categorization is configured to learn from your corrections automatically. 
+                Smart Categorization is configured to learn from your corrections automatically.
                 Just keep correcting miscategorized transactions and the AI will improve over time.
               </AlertDescription>
             </Alert>
@@ -844,19 +975,21 @@ export default function AIFeatures() {
             <Button variant="outline" onClick={() => setCategorizationOpen(false)}>
               Close
             </Button>
-            <Button onClick={() => {
-              setCategorizationOpen(false);
-              toast({
-                title: 'Settings Saved',
-                description: 'Smart categorization is active and learning from your corrections',
-              });
-            }} data-testid="button-save-categorization">
+            <Button
+              onClick={() => {
+                setCategorizationOpen(false);
+                toast({
+                  title: "Settings Saved",
+                  description: "Smart categorization is active and learning from your corrections",
+                });
+              }}
+              data-testid="button-save-categorization"
+            >
               Got It
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }

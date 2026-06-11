@@ -1,8 +1,11 @@
-import type { Express, Request, Response } from 'express';
-import { authMiddleware, requireCustomer } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { storage } from '../storage';
-import { generateCashFlowForecast, getCashFlowHistory } from '../services/cashflow-forecast.service';
+import type { Express, Request, Response } from "express";
+import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { storage } from "../storage";
+import {
+  generateCashFlowForecast,
+  getCashFlowHistory,
+} from "../services/cashflow-forecast.service";
 
 export function registerCashFlowRoutes(app: Express) {
   // =====================================
@@ -15,7 +18,7 @@ export function registerCashFlowRoutes(app: Express) {
    * Query params: days (default 90)
    */
   app.get(
-    '/api/companies/:companyId/cashflow/forecast',
+    "/api/companies/:companyId/cashflow/forecast",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -26,7 +29,7 @@ export function registerCashFlowRoutes(app: Express) {
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const forecast = await generateCashFlowForecast(companyId, days);
@@ -40,7 +43,7 @@ export function registerCashFlowRoutes(app: Express) {
    * Query params: months (default 6)
    */
   app.get(
-    '/api/companies/:companyId/cashflow/history',
+    "/api/companies/:companyId/cashflow/history",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
@@ -51,7 +54,7 @@ export function registerCashFlowRoutes(app: Express) {
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: 'Access denied' });
+        return res.status(403).json({ message: "Access denied" });
       }
 
       const history = await getCashFlowHistory(companyId, months);

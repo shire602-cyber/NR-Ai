@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Environment variable validation schema.
@@ -6,19 +6,19 @@ import { z } from 'zod';
  * If validation fails, the server will NOT start.
  */
 const sameSiteSchema = z.preprocess(
-  (value) => (typeof value === 'string' ? value.toLowerCase() : value),
-  z.enum(['strict', 'lax', 'none']).optional(),
+  (value) => (typeof value === "string" ? value.toLowerCase() : value),
+  z.enum(["strict", "lax", "none"]).optional()
 );
 
 const envSchema = z.object({
   // === Required ===
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
-  SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 characters"),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
 
   // === Server ===
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).default('5000'),
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+  PORT: z.string().transform(Number).pipe(z.number().int().min(1).max(65535)).default("5000"),
   FRONTEND_URL: z.string().url().optional(),
   CORS_ORIGIN: z.string().optional(),
   AUTH_COOKIE_SAMESITE: sameSiteSchema,
@@ -32,7 +32,7 @@ const envSchema = z.object({
 
   // === AI / OpenAI ===
   OPENAI_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().default('gpt-3.5-turbo'),
+  AI_MODEL: z.string().default("gpt-3.5-turbo"),
 
   // === Support contact surfaced in AI prompts (optional) ===
   SUPPORT_CONTACT_NAME: z.string().optional(),
@@ -74,13 +74,13 @@ const envSchema = z.object({
   LEAN_API_BASE_URL: z.string().optional(),
 
   // === Logging ===
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 
   // === Database / migrations ===
   AUTO_MIGRATE_ON_BOOT: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((v) => v === 'true'),
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 
   // === Email / SMTP (optional — features gracefully degrade if not set) ===
   SMTP_HOST: z.string().optional(),
@@ -115,11 +115,11 @@ export function validateEnv(): Env {
   if (!result.success) {
     const errors = result.error.flatten().fieldErrors;
     const errorMessages = Object.entries(errors)
-      .map(([key, msgs]) => `  ${key}: ${(msgs || []).join(', ')}`)
-      .join('\n');
+      .map(([key, msgs]) => `  ${key}: ${(msgs || []).join(", ")}`)
+      .join("\n");
 
     process.stderr.write(`\nEnvironment validation failed:\n\n${errorMessages}\n\n`);
-    process.stderr.write('Please check your .env file or environment variables.\n');
+    process.stderr.write("Please check your .env file or environment variables.\n");
     process.exit(1);
   }
 
@@ -143,19 +143,19 @@ export function getEnv(): Env {
  * Check if we're in production mode.
  */
 export function isProduction(): boolean {
-  return getEnv().NODE_ENV === 'production';
+  return getEnv().NODE_ENV === "production";
 }
 
 /**
  * Check if we're in development mode.
  */
 export function isDevelopment(): boolean {
-  return getEnv().NODE_ENV === 'development';
+  return getEnv().NODE_ENV === "development";
 }
 
 /**
  * Check if we're in test mode.
  */
 export function isTest(): boolean {
-  return getEnv().NODE_ENV === 'test';
+  return getEnv().NODE_ENV === "test";
 }

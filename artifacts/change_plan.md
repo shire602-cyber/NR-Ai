@@ -22,17 +22,21 @@ Seven ordered steps, each independently buildable and reversible. Steps 1-3 hand
 ### Step 1: Add customType import and define helper functions
 
 #### Goal
+
 Introduce the 3 numeric column helper functions (`monetaryColumn`, `rateColumn`, `quantityColumn`) that will replace all `real()` calls. No behavioral change yet.
 
 #### Files Touched
+
 - `shared/schema.ts`
 
 #### Planned Changes
+
 1. **Line 1**: Add `customType` to the import from `drizzle-orm/pg-core`:
    ```
    import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, customType } from "drizzle-orm/pg-core";
    ```
 2. **After line 4** (after all imports, before the first type definition): Insert 3 helper functions:
+
    ```
    // Exact decimal column helpers — PostgreSQL numeric with JS number mapping
    function monetaryColumn(name: string) {
@@ -61,19 +65,24 @@ Introduce the 3 numeric column helper functions (`monetaryColumn`, `rateColumn`,
    ```
 
 #### Why This Step Exists
+
 Helper functions must exist before any `real()` → helper replacement can happen. Adding them first with no usage lets us validate they compile before committing to 154 replacements.
 
 #### Risks
+
 - `customType` API mismatch: the type generic or function signature might not match. Mitigated by the verified `.d.ts` inspection showing the exact API.
 
 #### Validation
+
 - `npm run build` passes (helpers defined but unused is not a TS error)
 - The 3 functions exist in `schema.ts`
 
 #### Tests
+
 - TypeScript compilation (build gate)
 
 #### Reversibility
+
 Remove the 3 functions and revert the import line.
 
 ---
@@ -81,9 +90,11 @@ Remove the 3 functions and revert the import line.
 ### Step 2: Replace all 154 `real()` calls with helper functions
 
 #### Goal
+
 Swap every `real()` column definition to its exact-decimal equivalent. This is the core migration — largest single step.
 
 #### Files Touched
+
 - `shared/schema.ts`
 
 #### Planned Changes
@@ -153,6 +164,7 @@ Swap every `real()` column definition to its exact-decimal equivalent. This is t
 **Execution approach**: Work table-by-table top-to-bottom through the file. Each `real("column_name")` becomes the appropriate helper call with the same column name string, preserving all chained modifiers (`.notNull()`, `.default()`, etc.).
 
 Example:
+
 ```
 // Before:
 debit: real("debit").notNull().default(0),
@@ -161,23 +173,28 @@ debit: monetaryColumn("debit").notNull().default(0),
 ```
 
 #### Why This Step Exists
+
 Core objective of the task contract — eliminate IEEE 754 rounding on all financial columns.
 
 #### Risks
+
 - Miscategorization: assigning a monetary column as rate or vice versa. Mitigated by the explicit mapping table above.
 - Missing a column: a `real()` call is overlooked. Mitigated by post-step grep verification.
 - Chain breakage: a modifier doesn't chain after `customType`. Mitigated by build gate.
 
 #### Validation
+
 1. `grep -c 'real(' shared/schema.ts` returns exactly 0
 2. `grep -c 'monetaryColumn\|rateColumn\|quantityColumn' shared/schema.ts` returns exactly 154
 3. `npm run build` passes
 
 #### Tests
+
 - TypeScript compilation (build gate)
 - Grep count verification
 
 #### Reversibility
+
 Global find-replace: `monetaryColumn(` → `real(`, `rateColumn(` → `real(`, `quantityColumn(` → `real(`. Restore original defaults for any that differ (none do — defaults are preserved).
 
 ---
@@ -185,13 +202,17 @@ Global find-replace: `monetaryColumn(` → `real(`, `rateColumn(` → `real(`, `
 ### Step 3: Remove `real` from imports
 
 #### Goal
+
 Clean up the now-unused `real` import to prevent future accidental usage.
 
 #### Files Touched
+
 - `shared/schema.ts`
 
 #### Planned Changes
+
 Line 1: Remove `real` from the import destructuring:
+
 ```
 // Before:
 import { pgTable, text, varchar, integer, real, boolean, timestamp, uuid, unique, customType } from "drizzle-orm/pg-core";
@@ -200,18 +221,23 @@ import { pgTable, text, varchar, integer, boolean, timestamp, uuid, unique, cust
 ```
 
 #### Why This Step Exists
+
 Unused imports are noise. Removing `real` also acts as a verification that zero `real()` calls remain.
 
 #### Risks
+
 None — if `real` is still used, `npm run build` will fail, catching the mistake.
 
 #### Validation
+
 - `npm run build` passes (confirms no remaining `real()` usage)
 
 #### Tests
+
 - TypeScript compilation (build gate)
 
 #### Reversibility
+
 Re-add `real` to the import.
 
 ---
@@ -219,13 +245,17 @@ Re-add `real` to the import.
 ### Step 4: Fix `receipts.date` from text to timestamp
 
 #### Goal
+
 Change the `date` column on the `receipts` table from `text` to `timestamp` for proper date operations.
 
 #### Files Touched
+
 - `shared/schema.ts`
 
 #### Planned Changes
+
 At line ~311 (the `receipts` table definition), change:
+
 ```
 // Before:
 date: text("date"),
@@ -236,18 +266,23 @@ date: timestamp("date"),
 `timestamp` is already imported on line 1. No additional imports needed. Column remains nullable (no `.notNull()`).
 
 #### Why This Step Exists
+
 Task contract section 3.4 — receipts dates stored as text strings cannot be indexed, sorted, or compared as dates.
 
 #### Risks
+
 - `createInsertSchema(receipts)` Zod schema changes from `z.string()` to `z.date()` for this field. If any route handler passes a plain string for `receipts.date`, it may fail Zod validation. **Mitigated**: Drizzle's `createInsertSchema` for timestamp columns generates `z.string().pipe(z.coerce.date())` or similar, and route handlers already pass Date objects or ISO strings which Drizzle handles.
 
 #### Validation
+
 - `npm run build` passes
 
 #### Tests
+
 - TypeScript compilation (build gate)
 
 #### Reversibility
+
 Change `timestamp("date")` back to `text("date")`.
 
 ---
@@ -255,15 +290,19 @@ Change `timestamp("date")` back to `text("date")`.
 ### Step 5: Add 10 unique constraints
 
 #### Goal
+
 Add composite unique constraints to 10 tables to prevent duplicate records.
 
 #### Files Touched
+
 - `shared/schema.ts`
 
 #### Planned Changes
+
 For each table, change the closing `});` to include a 3rd argument with the constraint. Exact edit per table:
 
 **1. `companyUsers`** (closing at line ~104):
+
 ```
 // Before:
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -276,6 +315,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **2. `journalEntries`** (closing at line ~181):
+
 ```
 // Before:
   updatedAt: timestamp("updated_at"),
@@ -288,6 +328,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **3. `invoices`** (closing at line ~246):
+
 ```
 // Before:
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -300,6 +341,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **4. `subscriptions`** (closing at line ~1843):
+
 ```
 // Before:
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -312,6 +354,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **5. `quotes`** (closing at line ~1964):
+
 ```
 // Before:
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -324,6 +367,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **6. `creditNotes`** (closing at line ~2013):
+
 ```
 // Before:
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -336,6 +380,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **7. `purchaseOrders`** (closing at line ~2062):
+
 ```
 // Before:
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -348,6 +393,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **8. `employees`** (closing at line ~2251):
+
 ```
 // Before:
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -360,6 +406,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **9. `costCenters`** (closing at line ~2452):
+
 ```
 // Before:
   updatedAt: timestamp("updated_at"),
@@ -372,6 +419,7 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 **10. `fixedAssets`** (closing at line ~2513):
+
 ```
 // Before:
   updatedAt: timestamp("updated_at"),
@@ -384,21 +432,26 @@ For each table, change the closing `});` to include a 3rd argument with the cons
 ```
 
 #### Why This Step Exists
+
 Task contract section 3.2 — prevents duplicate document numbers and relationship records. The `journalEntries` constraint (contract section 3.3) provides the DB-level safety net for the race condition fix.
 
 #### Risks
+
 - Column name typo in `.on()` call → build error (caught by gate)
 - Existing `accounts` table's 3rd argument pattern may have changed → verified it hasn't (line 133-135)
 
 #### Validation
+
 - `npm run build` passes
 - `grep -c 'unique(' shared/schema.ts` returns 11 (1 existing `accounts` + 10 new)
 
 #### Tests
+
 - TypeScript compilation (build gate)
 - Grep count verification
 
 #### Reversibility
+
 Remove the 3rd argument from each of the 10 tables, reverting `}));` back to `});`.
 
 ---
@@ -406,14 +459,17 @@ Remove the 3rd argument from each of the 10 tables, reverting `}));` back to `})
 ### Step 6: Add `createJournalEntryWithLines` method to storage
 
 #### Goal
+
 Create a transactional method that atomically generates an entry number, creates a journal entry, and creates its lines — all inside a single `db.transaction()`. This eliminates the race condition on entry number generation.
 
 #### Files Touched
+
 - `server/storage.ts`
 
 #### Planned Changes
 
 **1. IStorage interface** (around line 253): Add new method signature after `generateEntryNumber`:
+
 ```typescript
 createJournalEntryWithLines(
   companyId: string,
@@ -424,6 +480,7 @@ createJournalEntryWithLines(
 ```
 
 **2. DatabaseStorage class** (after `generateEntryNumber` method, around line 1090): Add implementation:
+
 ```typescript
 async createJournalEntryWithLines(
   companyId: string,
@@ -469,6 +526,7 @@ async createJournalEntryWithLines(
 ```
 
 **3. `generateEntryNumber`** (line 1073): Add optional `tx` parameter for cases where callers have their own transaction:
+
 ```typescript
 // Interface:
 generateEntryNumber(companyId: string, date: Date, tx?: any): Promise<string>;
@@ -481,23 +539,28 @@ async generateEntryNumber(companyId: string, date: Date, tx?: any): Promise<stri
 ```
 
 #### Why This Step Exists
+
 - The race condition fix requires entry number generation and journal entry creation in the same transaction.
 - Route files import `storage` not `db`, so they cannot call `db.transaction()` directly.
 - A single transactional method follows the existing receipt-creation pattern (storage.ts line 1244).
 - The `tx` param on `generateEntryNumber` is kept for future flexibility (e.g., receipt creation refactoring).
 
 #### Risks
+
 - Transaction typing: `tx: any` is used per existing convention (line 830, 1244). Type safety is weak but consistent.
 - `InsertJournalEntry` Omit type: must correctly exclude `entryNumber`, `companyId`, `date` — validated by build gate.
 
 #### Validation
+
 - `npm run build` passes
 - New method exists and is callable from routes via `storage.createJournalEntryWithLines(...)`
 
 #### Tests
+
 - TypeScript compilation (build gate)
 
 #### Reversibility
+
 Remove the new method from the interface and class. Revert `generateEntryNumber` to remove `tx` param.
 
 ---
@@ -505,9 +568,11 @@ Remove the new method from the interface and class. Revert `generateEntryNumber`
 ### Step 7: Update all 7 call sites to use `createJournalEntryWithLines`
 
 #### Goal
+
 Replace the 3-step pattern (generateEntryNumber → createJournalEntry → createJournalLine loop) with a single `storage.createJournalEntryWithLines()` call at all 7 sites.
 
 #### Files Touched
+
 - `server/routes/journal.routes.ts` (2 sites)
 - `server/routes/invoices.routes.ts` (2 sites)
 - `server/routes/credit-notes.routes.ts` (1 site)
@@ -517,31 +582,52 @@ Replace the 3-step pattern (generateEntryNumber → createJournalEntry → creat
 
 **Site 1: `journal.routes.ts` ~line 83** — Journal entry creation
 Replace:
+
 ```typescript
 const entryNumber = await storage.generateEntryNumber(companyId, entryDate);
 const entry = await storage.createJournalEntry({
-  ...entryData, date: entryDate, companyId, createdBy: userId, entryNumber,
-  status: isPosting ? 'posted' : 'draft', source: entryData.source || 'manual',
+  ...entryData,
+  date: entryDate,
+  companyId,
+  createdBy: userId,
+  entryNumber,
+  status: isPosting ? "posted" : "draft",
+  source: entryData.source || "manual",
   sourceId: entryData.sourceId || null,
-  postedBy: isPosting ? userId : null, postedAt: isPosting ? new Date() : null,
+  postedBy: isPosting ? userId : null,
+  postedAt: isPosting ? new Date() : null,
 });
 for (const line of lines) {
-  await storage.createJournalLine({ entryId: entry.id, accountId: line.accountId,
-    debit: Number(line.debit) || 0, credit: Number(line.credit) || 0,
-    description: line.description || null });
+  await storage.createJournalLine({
+    entryId: entry.id,
+    accountId: line.accountId,
+    debit: Number(line.debit) || 0,
+    credit: Number(line.credit) || 0,
+    description: line.description || null,
+  });
 }
 ```
+
 With:
+
 ```typescript
 const { entry } = await storage.createJournalEntryWithLines(
-  companyId, entryDate,
-  { createdBy: userId, status: isPosting ? 'posted' : 'draft',
-    source: entryData.source || 'manual', sourceId: entryData.sourceId || null,
-    postedBy: isPosting ? userId : null, postedAt: isPosting ? new Date() : null,
-    memo: entryData.memo },
-  lines.map(line => ({
-    accountId: line.accountId, debit: Number(line.debit) || 0,
-    credit: Number(line.credit) || 0, description: line.description || null,
+  companyId,
+  entryDate,
+  {
+    createdBy: userId,
+    status: isPosting ? "posted" : "draft",
+    source: entryData.source || "manual",
+    sourceId: entryData.sourceId || null,
+    postedBy: isPosting ? userId : null,
+    postedAt: isPosting ? new Date() : null,
+    memo: entryData.memo,
+  },
+  lines.map((line) => ({
+    accountId: line.accountId,
+    debit: Number(line.debit) || 0,
+    credit: Number(line.credit) || 0,
+    description: line.description || null,
   }))
 );
 ```
@@ -565,43 +651,49 @@ Replace the `generateEntryNumber` → `createJournalEntry` → 2 `createJournalL
 Replace the `generateEntryNumber` → `createJournalEntry` → N `createJournalLine` calls with `createJournalEntryWithLines`. Build the lines array based on accumulated depreciation, disposal price, book value, and gain/loss.
 
 #### Why This Step Exists
+
 This is what closes the race condition. Each call site currently has a window between entry number generation and journal entry insertion where a concurrent request can produce a duplicate number. The new method eliminates that window by running both inside a single transaction.
 
 #### Risks
+
 - Behavioral change in error handling: if a journal line creation fails, the entire transaction rolls back (previously, the entry would persist with partial lines). This is actually BETTER behavior — no orphaned entries.
 - Each call site has slightly different logic for building entry data and lines — must carefully preserve all fields. Mitigated by build gate and code review.
 - The `entry` return value must still provide `entry.id`, `entry.entryNumber`, etc. — verified by the return type.
 
 #### Validation
+
 - `npm run build` passes
 - `grep -c 'generateEntryNumber' server/routes/ server/services/` decreases (ideally to 0 in route files, but `generateEntryNumber` is still used by the receipt creation inline code in storage.ts)
 - Each call site now has exactly one `createJournalEntryWithLines` call instead of the 3-step pattern
 
 #### Tests
+
 - TypeScript compilation (build gate)
 - Manual: create a journal entry → verify entry number generated correctly
 
 #### Reversibility
+
 Revert each call site to the 3-step pattern. Since `generateEntryNumber`, `createJournalEntry`, and `createJournalLine` still exist unchanged, the old code works as before.
 
 ---
 
 ## 4. Files Not To Touch
 
-| File | Reason |
-|------|--------|
+| File                                             | Reason                                                                                                 |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
 | `server/storage.ts` line 1244 (receipt creation) | Already uses the correct in-transaction pattern. Optional cleanup only — not required for correctness. |
-| All frontend files (`client/`) | TypeScript types remain `number`. No UI changes needed. |
-| Zod insert schemas | Auto-derived from Drizzle table definitions. Update automatically. |
-| `server/routes/auth.routes.ts` | Subscription creation defaults are not in scope. |
-| `server/middleware/featureGate.ts` | No numeric columns or entry number generation. |
-| `server/config/env.ts` | No schema or storage changes. |
-| `server/index.ts` | No schema or storage changes. |
-| Test files (`tests/`) | No existing tests to modify. New tests are recommended but not blocking. |
+| All frontend files (`client/`)                   | TypeScript types remain `number`. No UI changes needed.                                                |
+| Zod insert schemas                               | Auto-derived from Drizzle table definitions. Update automatically.                                     |
+| `server/routes/auth.routes.ts`                   | Subscription creation defaults are not in scope.                                                       |
+| `server/middleware/featureGate.ts`               | No numeric columns or entry number generation.                                                         |
+| `server/config/env.ts`                           | No schema or storage changes.                                                                          |
+| `server/index.ts`                                | No schema or storage changes.                                                                          |
+| Test files (`tests/`)                            | No existing tests to modify. New tests are recommended but not blocking.                               |
 
 ## 5. Dependency Policy
 
 **No new dependencies**. All changes use existing imports:
+
 - `customType` from `drizzle-orm/pg-core` (already installed)
 - `unique` from `drizzle-orm/pg-core` (already imported)
 - `timestamp` from `drizzle-orm/pg-core` (already imported)

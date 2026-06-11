@@ -5,30 +5,30 @@
  * for the enhanced admin dashboard.
  */
 
-import type { Request, Response } from 'express';
-import { Router } from 'express';
-import type { Express } from 'express';
+import type { Request, Response } from "express";
+import { Router } from "express";
+import type { Express } from "express";
 
-import { storage } from '../storage';
-import { authMiddleware, adminMiddleware } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { createLogger } from '../config/logger';
+import { storage } from "../storage";
+import { authMiddleware, adminMiddleware } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { createLogger } from "../config/logger";
 
-const logger = createLogger('admin-health-routes');
+const logger = createLogger("admin-health-routes");
 
 export function registerAdminHealthRoutes(app: Express): void {
   const router = Router();
 
   // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
-  router.use('/admin', authMiddleware as any);
-  router.use('/admin', adminMiddleware as any);
+  router.use("/admin", authMiddleware as any);
+  router.use("/admin", adminMiddleware as any);
 
   // =========================================
   // GET /api/admin/clients/health-overview
   // Returns health status for all client companies
   // =========================================
   router.get(
-    '/admin/clients/health-overview',
+    "/admin/clients/health-overview",
     asyncHandler(async (req: Request, res: Response) => {
       const companies = await storage.getAllCompanies();
 
@@ -42,14 +42,14 @@ export function registerAdminHealthRoutes(app: Express): void {
             const now = new Date();
             const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
             const overdueInvoices = invoices.filter((inv) => {
-              if (inv.status === 'paid' || inv.status === 'void') return false;
+              if (inv.status === "paid" || inv.status === "void") return false;
               const invoiceDate = inv.date ? new Date(inv.date) : null;
               return invoiceDate && invoiceDate < thirtyDaysAgo;
             });
 
             // Count overdue compliance tasks
             const overdueTasks = complianceTasksList.filter((task) => {
-              if (task.status === 'completed' || task.status === 'cancelled') return false;
+              if (task.status === "completed" || task.status === "cancelled") return false;
               const dueDate = task.dueDate ? new Date(task.dueDate) : null;
               return dueDate && dueDate < now;
             });
@@ -57,13 +57,13 @@ export function registerAdminHealthRoutes(app: Express): void {
             const totalOverdue = overdueInvoices.length + overdueTasks.length;
 
             // Determine health status
-            let status: 'healthy' | 'attention' | 'critical';
+            let status: "healthy" | "attention" | "critical";
             if (totalOverdue === 0) {
-              status = 'healthy';
+              status = "healthy";
             } else if (totalOverdue <= 3) {
-              status = 'attention';
+              status = "attention";
             } else {
-              status = 'critical';
+              status = "critical";
             }
 
             // Find last activity (most recent invoice or task update)
@@ -80,15 +80,14 @@ export function registerAdminHealthRoutes(app: Express): void {
             // Find next deadline from compliance tasks
             const upcomingTasks = complianceTasksList
               .filter((task) => {
-                if (task.status === 'completed' || task.status === 'cancelled') return false;
+                if (task.status === "completed" || task.status === "cancelled") return false;
                 const dueDate = task.dueDate ? new Date(task.dueDate) : null;
                 return dueDate && dueDate >= now;
               })
               .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
 
-            const nextDeadline = upcomingTasks.length > 0
-              ? new Date(upcomingTasks[0].dueDate).toISOString()
-              : null;
+            const nextDeadline =
+              upcomingTasks.length > 0 ? new Date(upcomingTasks[0].dueDate).toISOString() : null;
 
             return {
               companyId: company.id,
@@ -99,11 +98,14 @@ export function registerAdminHealthRoutes(app: Express): void {
               nextDeadline,
             };
           } catch (err: any) {
-            logger.error({ companyId: company.id, error: err.message }, 'Error computing health for company');
+            logger.error(
+              { companyId: company.id, error: err.message },
+              "Error computing health for company"
+            );
             return {
               companyId: company.id,
               companyName: company.name,
-              status: 'attention' as const,
+              status: "attention" as const,
               outstandingInvoices: 0,
               lastActivity: null,
               nextDeadline: null,
@@ -121,7 +123,7 @@ export function registerAdminHealthRoutes(app: Express): void {
   // Returns upcoming deadlines across all clients (next 90 days)
   // =========================================
   router.get(
-    '/admin/deadlines',
+    "/admin/deadlines",
     asyncHandler(async (req: Request, res: Response) => {
       const companies = await storage.getAllCompanies();
       const now = new Date();
@@ -142,7 +144,7 @@ export function registerAdminHealthRoutes(app: Express): void {
           // Get compliance tasks deadlines
           const tasks = await storage.getComplianceTasks(company.id);
           for (const task of tasks) {
-            if (task.status === 'completed' || task.status === 'cancelled') continue;
+            if (task.status === "completed" || task.status === "cancelled") continue;
             const dueDate = task.dueDate ? new Date(task.dueDate) : null;
             if (!dueDate) continue;
             if (dueDate > ninetyDaysFromNow) continue;
@@ -152,18 +154,29 @@ export function registerAdminHealthRoutes(app: Express): void {
             );
 
             // Map category to deadline type label
-            let deadlineType = 'Other';
+            let deadlineType = "Other";
             switch (task.category) {
-              case 'vat_filing': deadlineType = 'VAT Filing'; break;
-              case 'corporate_tax': deadlineType = 'Corporate Tax'; break;
-              case 'document_upload': deadlineType = 'Document Upload'; break;
-              case 'payment': deadlineType = 'Payment'; break;
-              case 'review': deadlineType = 'Review'; break;
-              default: deadlineType = task.category || 'Other';
+              case "vat_filing":
+                deadlineType = "VAT Filing";
+                break;
+              case "corporate_tax":
+                deadlineType = "Corporate Tax";
+                break;
+              case "document_upload":
+                deadlineType = "Document Upload";
+                break;
+              case "payment":
+                deadlineType = "Payment";
+                break;
+              case "review":
+                deadlineType = "Review";
+                break;
+              default:
+                deadlineType = task.category || "Other";
             }
 
-            let status = task.status || 'pending';
-            if (daysRemaining < 0) status = 'overdue';
+            let status = task.status || "pending";
+            if (daysRemaining < 0) status = "overdue";
 
             allDeadlines.push({
               clientName: company.name,
@@ -178,7 +191,7 @@ export function registerAdminHealthRoutes(app: Express): void {
           // Get VAT return deadlines
           const vatReturns = await storage.getVatReturnsByCompanyId(company.id);
           for (const vr of vatReturns) {
-            if (vr.status === 'filed' || vr.status === 'submitted') continue;
+            if (vr.status === "filed" || vr.status === "submitted") continue;
             const dueDate = vr.dueDate ? new Date(vr.dueDate) : null;
             if (!dueDate) continue;
             if (dueDate > ninetyDaysFromNow) continue;
@@ -187,20 +200,23 @@ export function registerAdminHealthRoutes(app: Express): void {
               (dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
             );
 
-            let status = vr.status || 'draft';
-            if (daysRemaining < 0) status = 'overdue';
+            let status = vr.status || "draft";
+            if (daysRemaining < 0) status = "overdue";
 
             allDeadlines.push({
               clientName: company.name,
               companyId: company.id,
-              deadlineType: 'VAT Filing',
+              deadlineType: "VAT Filing",
               dueDate: dueDate.toISOString(),
               daysRemaining,
               status,
             });
           }
         } catch (err: any) {
-          logger.error({ companyId: company.id, error: err.message }, 'Error fetching deadlines for company');
+          logger.error(
+            { companyId: company.id, error: err.message },
+            "Error fetching deadlines for company"
+          );
         }
       }
 
@@ -212,5 +228,5 @@ export function registerAdminHealthRoutes(app: Express): void {
   );
 
   // Mount under /api
-  app.use('/api', router);
+  app.use("/api", router);
 }

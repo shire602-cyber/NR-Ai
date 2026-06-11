@@ -1,6 +1,6 @@
-import { pool } from '../db';
-import { storage } from '../storage';
-import { detectAnomalies } from './anomaly-detection.service';
+import { pool } from "../db";
+import { storage } from "../storage";
+import { detectAnomalies } from "./anomaly-detection.service";
 
 // ===========================
 // Month-End Close Automation
@@ -11,7 +11,7 @@ export interface ChecklistItem {
   id: number;
   title: string;
   description: string;
-  status: 'complete' | 'incomplete';
+  status: "complete" | "incomplete";
   details?: string;
 }
 
@@ -85,17 +85,18 @@ export async function getCloseChecklist(
        AND transaction_date <= $3::date`,
     [companyId, periodStart, periodEnd]
   );
-  const bankTotal = parseInt(bankResult.rows[0]?.total || '0');
-  const bankReconciled = parseInt(bankResult.rows[0]?.reconciled || '0');
+  const bankTotal = parseInt(bankResult.rows[0]?.total || "0");
+  const bankReconciled = parseInt(bankResult.rows[0]?.reconciled || "0");
   const bankUnreconciled = bankTotal - bankReconciled;
   checklist.push({
     id: 1,
-    title: 'Bank Reconciliation Complete',
-    description: 'All bank transactions for the period are reconciled',
-    status: bankTotal === 0 || bankUnreconciled === 0 ? 'complete' : 'incomplete',
-    details: bankTotal === 0
-      ? 'No bank transactions in this period'
-      : `${bankReconciled}/${bankTotal} reconciled (${bankUnreconciled} remaining)`,
+    title: "Bank Reconciliation Complete",
+    description: "All bank transactions for the period are reconciled",
+    status: bankTotal === 0 || bankUnreconciled === 0 ? "complete" : "incomplete",
+    details:
+      bankTotal === 0
+        ? "No bank transactions in this period"
+        : `${bankReconciled}/${bankTotal} reconciled (${bankUnreconciled} remaining)`,
   });
 
   // 2. All invoices posted (non-draft)
@@ -109,17 +110,18 @@ export async function getCloseChecklist(
        AND date <= $3::date`,
     [companyId, periodStart, periodEnd]
   );
-  const invTotal = parseInt(invoiceResult.rows[0]?.total || '0');
-  const invPosted = parseInt(invoiceResult.rows[0]?.posted || '0');
+  const invTotal = parseInt(invoiceResult.rows[0]?.total || "0");
+  const invPosted = parseInt(invoiceResult.rows[0]?.posted || "0");
   const invDrafts = invTotal - invPosted;
   checklist.push({
     id: 2,
-    title: 'All Invoices Posted',
-    description: 'No draft invoices remain for the period',
-    status: invTotal === 0 || invDrafts === 0 ? 'complete' : 'incomplete',
-    details: invTotal === 0
-      ? 'No invoices in this period'
-      : `${invPosted}/${invTotal} posted (${invDrafts} drafts remaining)`,
+    title: "All Invoices Posted",
+    description: "No draft invoices remain for the period",
+    status: invTotal === 0 || invDrafts === 0 ? "complete" : "incomplete",
+    details:
+      invTotal === 0
+        ? "No invoices in this period"
+        : `${invPosted}/${invTotal} posted (${invDrafts} drafts remaining)`,
   });
 
   // 3. All receipts categorized
@@ -133,17 +135,18 @@ export async function getCloseChecklist(
        AND date <= $3`,
     [companyId, periodStart, periodEnd]
   );
-  const recTotal = parseInt(receiptResult.rows[0]?.total || '0');
-  const recCategorized = parseInt(receiptResult.rows[0]?.categorized || '0');
+  const recTotal = parseInt(receiptResult.rows[0]?.total || "0");
+  const recCategorized = parseInt(receiptResult.rows[0]?.categorized || "0");
   const recUncategorized = recTotal - recCategorized;
   checklist.push({
     id: 3,
-    title: 'All Receipts Categorized',
-    description: 'Every receipt has an assigned expense account',
-    status: recTotal === 0 || recUncategorized === 0 ? 'complete' : 'incomplete',
-    details: recTotal === 0
-      ? 'No receipts in this period'
-      : `${recCategorized}/${recTotal} categorized (${recUncategorized} remaining)`,
+    title: "All Receipts Categorized",
+    description: "Every receipt has an assigned expense account",
+    status: recTotal === 0 || recUncategorized === 0 ? "complete" : "incomplete",
+    details:
+      recTotal === 0
+        ? "No receipts in this period"
+        : `${recCategorized}/${recTotal} categorized (${recUncategorized} remaining)`,
   });
 
   // 4. Anomaly scan clean
@@ -152,20 +155,21 @@ export async function getCloseChecklist(
     const criticalCount = anomalyResult.summary.critical;
     checklist.push({
       id: 4,
-      title: 'Anomaly Scan Clean',
-      description: 'No critical anomalies detected in transactions',
-      status: criticalCount === 0 ? 'complete' : 'incomplete',
-      details: criticalCount === 0
-        ? `Scan clean (${anomalyResult.summary.total} non-critical items)`
-        : `${criticalCount} critical anomalies require attention`,
+      title: "Anomaly Scan Clean",
+      description: "No critical anomalies detected in transactions",
+      status: criticalCount === 0 ? "complete" : "incomplete",
+      details:
+        criticalCount === 0
+          ? `Scan clean (${anomalyResult.summary.total} non-critical items)`
+          : `${criticalCount} critical anomalies require attention`,
     });
   } catch {
     checklist.push({
       id: 4,
-      title: 'Anomaly Scan Clean',
-      description: 'No critical anomalies detected in transactions',
-      status: 'incomplete',
-      details: 'Unable to run anomaly scan',
+      title: "Anomaly Scan Clean",
+      description: "No critical anomalies detected in transactions",
+      status: "incomplete",
+      details: "Unable to run anomaly scan",
     });
   }
 
@@ -187,15 +191,16 @@ export async function getCloseChecklist(
          AND created_at <= $3::date`,
       [companyId, periodStart, periodEnd]
     );
-    const pendingCount = parseInt(queueResult.rows[0]?.pending || '0');
+    const pendingCount = parseInt(queueResult.rows[0]?.pending || "0");
     checklist.push({
       id: 5,
-      title: 'AI Inbox Clear',
-      description: 'All AI-suggested entries reviewed and processed',
-      status: pendingCount === 0 ? 'complete' : 'incomplete',
-      details: pendingCount === 0
-        ? 'All AI suggestions processed'
-        : `${pendingCount} items pending review`,
+      title: "AI Inbox Clear",
+      description: "All AI-suggested entries reviewed and processed",
+      status: pendingCount === 0 ? "complete" : "incomplete",
+      details:
+        pendingCount === 0
+          ? "All AI suggestions processed"
+          : `${pendingCount} items pending review`,
     });
   } else {
     // Fallback: check unreviewed classifications
@@ -208,15 +213,16 @@ export async function getCloseChecklist(
          AND created_at <= $3::date`,
       [companyId, periodStart, periodEnd]
     );
-    const pendingCount = parseInt(classResult.rows[0]?.pending || '0');
+    const pendingCount = parseInt(classResult.rows[0]?.pending || "0");
     checklist.push({
       id: 5,
-      title: 'AI Inbox Clear',
-      description: 'All AI-suggested classifications reviewed',
-      status: pendingCount === 0 ? 'complete' : 'incomplete',
-      details: pendingCount === 0
-        ? 'All AI suggestions processed'
-        : `${pendingCount} classifications pending review`,
+      title: "AI Inbox Clear",
+      description: "All AI-suggested classifications reviewed",
+      status: pendingCount === 0 ? "complete" : "incomplete",
+      details:
+        pendingCount === 0
+          ? "All AI suggestions processed"
+          : `${pendingCount} classifications pending review`,
     });
   }
 
@@ -249,24 +255,25 @@ export async function getCloseChecklist(
          AND (disposal_date IS NULL OR disposal_date > $3::date)`,
       [companyId, periodEnd, periodStart]
     );
-    const depTotal = parseInt(depResult.rows[0]?.total || '0');
-    const depPosted = parseInt(depResult.rows[0]?.posted || '0');
+    const depTotal = parseInt(depResult.rows[0]?.total || "0");
+    const depPosted = parseInt(depResult.rows[0]?.posted || "0");
     checklist.push({
       id: 6,
-      title: 'Depreciation Entries Posted',
-      description: 'Monthly depreciation has been recorded for all active fixed assets',
-      status: depTotal === 0 || depPosted >= depTotal ? 'complete' : 'incomplete',
-      details: depTotal === 0
-        ? 'No active fixed assets'
-        : `${depPosted}/${depTotal} assets depreciated for this period`,
+      title: "Depreciation Entries Posted",
+      description: "Monthly depreciation has been recorded for all active fixed assets",
+      status: depTotal === 0 || depPosted >= depTotal ? "complete" : "incomplete",
+      details:
+        depTotal === 0
+          ? "No active fixed assets"
+          : `${depPosted}/${depTotal} assets depreciated for this period`,
     });
   } else {
     checklist.push({
       id: 6,
-      title: 'Depreciation Entries Posted',
-      description: 'Monthly depreciation has been recorded for all active fixed assets',
-      status: 'complete',
-      details: 'Fixed assets module not configured',
+      title: "Depreciation Entries Posted",
+      description: "Monthly depreciation has been recorded for all active fixed assets",
+      status: "complete",
+      details: "Fixed assets module not configured",
     });
   }
 
@@ -280,15 +287,16 @@ export async function getCloseChecklist(
        AND status != 'draft'`,
     [companyId, periodStart, periodEnd]
   );
-  const vatCount = parseInt(vatResult.rows[0]?.total || '0');
+  const vatCount = parseInt(vatResult.rows[0]?.total || "0");
   checklist.push({
     id: 7,
-    title: 'VAT Return Prepared',
-    description: 'VAT 201 return has been prepared or filed for the period',
-    status: vatCount > 0 ? 'complete' : 'incomplete',
-    details: vatCount > 0
-      ? `${vatCount} VAT return(s) prepared`
-      : 'No VAT return prepared for this period',
+    title: "VAT Return Prepared",
+    description: "VAT 201 return has been prepared or filed for the period",
+    status: vatCount > 0 ? "complete" : "incomplete",
+    details:
+      vatCount > 0
+        ? `${vatCount} VAT return(s) prepared`
+        : "No VAT return prepared for this period",
   });
 
   return checklist;
@@ -315,10 +323,10 @@ export async function generateClosingEntries(
     [companyId, periodEnd]
   );
   const closeRow = existingClose.rows[0];
-  if (closeRow && closeRow.status === 'locked') {
+  if (closeRow && closeRow.status === "locked") {
     throw new Error(
-      `Period ending ${periodEnd} is already closed (closing entry ${closeRow.closing_entry_id || 'unknown'}). ` +
-      `Unlock the period before generating new closing entries.`
+      `Period ending ${periodEnd} is already closed (closing entry ${closeRow.closing_entry_id || "unknown"}). ` +
+        `Unlock the period before generating new closing entries.`
     );
   }
 
@@ -339,7 +347,7 @@ export async function generateClosingEntries(
   if (existingClosingResult.rows.length > 0) {
     throw new Error(
       `Closing entries already exist for period ending ${periodEnd} (entry ${existingClosingResult.rows[0].entry_number}). ` +
-      `Reverse the existing closing entry before re-running.`
+        `Reverse the existing closing entry before re-running.`
     );
   }
 
@@ -400,13 +408,15 @@ export async function generateClosingEntries(
   );
 
   if (retainedResult.rows.length === 0) {
-    throw new Error('No retained earnings equity account found. Please create one before closing the period.');
+    throw new Error(
+      "No retained earnings equity account found. Please create one before closing the period."
+    );
   }
 
   const retainedAccount = retainedResult.rows[0];
 
   // Build the closing entry lines
-  const lines: ClosingJournalEntry['lines'] = [];
+  const lines: ClosingJournalEntry["lines"] = [];
   let totalDebits = 0;
   let totalCredits = 0;
 
@@ -487,7 +497,7 @@ export async function generateClosingEntries(
   }
 
   if (lines.length === 0) {
-    throw new Error('No revenue or expense balances found for this period. Nothing to close.');
+    throw new Error("No revenue or expense balances found for this period. Nothing to close.");
   }
 
   // Format period for memo
@@ -510,8 +520,8 @@ export async function generateClosingEntries(
       entryNumber,
       date: periodEndDate,
       memo,
-      status: 'posted',
-      source: 'system',
+      status: "posted",
+      source: "system",
       createdBy: userId,
       postedBy: userId,
       postedAt: new Date(),
@@ -564,10 +574,7 @@ export async function lockPeriod(
  * A month_end_close row locks ONLY the month it represents (the calendar month
  * ending at period_end). Locking February must not retroactively close January.
  */
-export async function isPeriodLocked(
-  companyId: string,
-  date: string
-): Promise<boolean> {
+export async function isPeriodLocked(companyId: string, date: string): Promise<boolean> {
   await ensureMonthEndTable();
 
   const result = await pool.query(
@@ -610,9 +617,7 @@ export async function unlockPeriod(
 /**
  * List all locked periods for a company.
  */
-export async function listLockedPeriods(
-  companyId: string
-): Promise<MonthEndCloseRecord[]> {
+export async function listLockedPeriods(companyId: string): Promise<MonthEndCloseRecord[]> {
   await ensureMonthEndTable();
 
   const result = await pool.query(
@@ -628,9 +633,7 @@ export async function listLockedPeriods(
 /**
  * Get the history of month-end close records for a company.
  */
-export async function getCloseHistory(
-  companyId: string
-): Promise<MonthEndCloseRecord[]> {
+export async function getCloseHistory(companyId: string): Promise<MonthEndCloseRecord[]> {
   await ensureMonthEndTable();
 
   const result = await pool.query(
@@ -659,8 +662,8 @@ export async function aiValidation(
 ): Promise<{ ready: boolean; summary: string; checklist: ChecklistItem[] }> {
   const checklist = await getCloseChecklist(companyId, periodStart, periodEnd);
 
-  const incompleteItems = checklist.filter((item) => item.status === 'incomplete');
-  const completeCount = checklist.filter((item) => item.status === 'complete').length;
+  const incompleteItems = checklist.filter((item) => item.status === "incomplete");
+  const completeCount = checklist.filter((item) => item.status === "complete").length;
   const totalCount = checklist.length;
 
   let summary: string;
@@ -672,11 +675,12 @@ export async function aiValidation(
   } else {
     ready = false;
     const issues = incompleteItems.map((item) => {
-      const detail = item.details ? ` (${item.details})` : '';
+      const detail = item.details ? ` (${item.details})` : "";
       return `${item.title}${detail}`;
     });
-    summary = `Not ready to close: ${completeCount}/${totalCount} checks passed. Outstanding issues:\n` +
-      issues.map((issue) => `- ${issue}`).join('\n');
+    summary =
+      `Not ready to close: ${completeCount}/${totalCount} checks passed. Outstanding issues:\n` +
+      issues.map((issue) => `- ${issue}`).join("\n");
   }
 
   return { ready, summary, checklist };

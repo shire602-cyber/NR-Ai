@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { format } from 'date-fns';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { format } from "date-fns";
 import {
   Users,
   Plus,
@@ -16,12 +16,12 @@ import {
   Banknote,
   ChevronLeft,
   Eye,
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -29,22 +29,31 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   Form,
   FormControl,
@@ -52,15 +61,15 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
-import { Separator } from '@/components/ui/separator';
-import { useTranslation } from '@/lib/i18n';
-import { useToast } from '@/hooks/use-toast';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { formatCurrency } from '@/lib/format';
-import { getAuthHeaders } from '@/lib/auth';
-import { apiUrl } from '@/lib/api';
+} from "@/components/ui/form";
+import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/lib/i18n";
+import { useToast } from "@/hooks/use-toast";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatCurrency } from "@/lib/format";
+import { getAuthHeaders } from "@/lib/auth";
+import { apiUrl } from "@/lib/api";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -153,7 +162,7 @@ interface GratuityResult {
 
 const employeeFormSchema = z.object({
   employeeNumber: z.string().optional(),
-  fullName: z.string().min(1, 'Full name is required'),
+  fullName: z.string().min(1, "Full name is required"),
   fullNameAr: z.string().optional(),
   nationality: z.string().optional(),
   passportNumber: z.string().optional(),
@@ -166,11 +175,11 @@ const employeeFormSchema = z.object({
   department: z.string().optional(),
   designation: z.string().optional(),
   joinDate: z.string().optional(),
-  basicSalary: z.coerce.number().min(0, 'Basic salary must be >= 0'),
+  basicSalary: z.coerce.number().min(0, "Basic salary must be >= 0"),
   housingAllowance: z.coerce.number().min(0).default(0),
   transportAllowance: z.coerce.number().min(0).default(0),
   otherAllowance: z.coerce.number().min(0).default(0),
-  status: z.string().default('active'),
+  status: z.string().default("active"),
 });
 
 type EmployeeFormData = z.infer<typeof employeeFormSchema>;
@@ -193,8 +202,18 @@ type PayrollItemEditData = z.infer<typeof payrollItemEditSchema>;
 // ─── Month names ─────────────────────────────────────────
 
 const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
 ];
 
 // ─── Component ───────────────────────────────────────────
@@ -213,12 +232,12 @@ export default function Payroll() {
   const [editItemDialogOpen, setEditItemDialogOpen] = useState(false);
 
   // Gratuity
-  const [gratuityEmployeeId, setGratuityEmployeeId] = useState<string>('');
-  const [gratuityTerminationDate, setGratuityTerminationDate] = useState<string>('');
+  const [gratuityEmployeeId, setGratuityEmployeeId] = useState<string>("");
+  const [gratuityTerminationDate, setGratuityTerminationDate] = useState<string>("");
   const [gratuityResult, setGratuityResult] = useState<GratuityResult | null>(null);
 
   // Search
-  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [employeeSearch, setEmployeeSearch] = useState("");
   const [employeeToDelete, setEmployeeToDelete] = useState<string | null>(null);
 
   // ─── Queries ─────────────────────────────────────────
@@ -238,32 +257,32 @@ export default function Payroll() {
     enabled: !!viewingRunId,
   });
 
-  const viewingRun = payrollRuns.find(r => r.id === viewingRunId);
+  const viewingRun = payrollRuns.find((r) => r.id === viewingRunId);
 
   // ─── Forms ───────────────────────────────────────────
 
   const employeeForm = useForm<EmployeeFormData>({
     resolver: zodResolver(employeeFormSchema),
     defaultValues: {
-      employeeNumber: '',
-      fullName: '',
-      fullNameAr: '',
-      nationality: '',
-      passportNumber: '',
-      visaNumber: '',
-      laborCardNumber: '',
-      bankName: '',
-      bankAccountNumber: '',
-      iban: '',
-      routingCode: '',
-      department: '',
-      designation: '',
-      joinDate: '',
+      employeeNumber: "",
+      fullName: "",
+      fullNameAr: "",
+      nationality: "",
+      passportNumber: "",
+      visaNumber: "",
+      laborCardNumber: "",
+      bankName: "",
+      bankAccountNumber: "",
+      iban: "",
+      routingCode: "",
+      department: "",
+      designation: "",
+      joinDate: "",
       basicSalary: 0,
       housingAllowance: 0,
       transportAllowance: 0,
       otherAllowance: 0,
-      status: 'active',
+      status: "active",
     },
   });
 
@@ -280,7 +299,7 @@ export default function Payroll() {
     defaultValues: {
       overtime: 0,
       deductions: 0,
-      deductionNotes: '',
+      deductionNotes: "",
     },
   });
 
@@ -288,82 +307,94 @@ export default function Payroll() {
 
   const createEmployeeMutation = useMutation({
     mutationFn: (data: EmployeeFormData) =>
-      apiRequest('POST', `/api/companies/${companyId}/employees`, data),
+      apiRequest("POST", `/api/companies/${companyId}/employees`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
-      toast({ title: 'Employee Created', description: 'The employee has been added successfully.' });
+      toast({
+        title: "Employee Created",
+        description: "The employee has been added successfully.",
+      });
       setEmployeeDialogOpen(false);
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const updateEmployeeMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<EmployeeFormData> }) =>
-      apiRequest('PATCH', `/api/employees/${id}`, data),
+      apiRequest("PATCH", `/api/employees/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
-      toast({ title: 'Employee Updated', description: 'The employee has been updated successfully.' });
+      toast({
+        title: "Employee Updated",
+        description: "The employee has been updated successfully.",
+      });
       setEmployeeDialogOpen(false);
       setEditingEmployee(null);
       employeeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const deleteEmployeeMutation = useMutation({
-    mutationFn: (id: string) => apiRequest('DELETE', `/api/employees/${id}`),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/employees/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
-      toast({ title: 'Employee Deleted', description: 'The employee has been removed.' });
+      toast({ title: "Employee Deleted", description: "The employee has been removed." });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const createPayrollRunMutation = useMutation({
     mutationFn: (data: PayrollRunFormData) =>
-      apiRequest('POST', `/api/companies/${companyId}/payroll-runs`, data),
+      apiRequest("POST", `/api/companies/${companyId}/payroll-runs`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
-      toast({ title: 'Payroll Run Created', description: 'The payroll run has been created as draft.' });
+      toast({
+        title: "Payroll Run Created",
+        description: "The payroll run has been created as draft.",
+      });
       setPayrollRunDialogOpen(false);
       payrollRunForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const calculatePayrollMutation = useMutation({
-    mutationFn: (runId: string) =>
-      apiRequest('POST', `/api/payroll-runs/${runId}/calculate`),
+    mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/calculate`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
-      toast({ title: 'Payroll Calculated', description: 'Payroll items have been generated from active employees.' });
+      toast({
+        title: "Payroll Calculated",
+        description: "Payroll items have been generated from active employees.",
+      });
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const approvePayrollMutation = useMutation({
-    mutationFn: (runId: string) =>
-      apiRequest('POST', `/api/payroll-runs/${runId}/approve`),
+    mutationFn: (runId: string) => apiRequest("POST", `/api/payroll-runs/${runId}/approve`),
     onMutate: async (runId: string) => {
       const queryKey = [`/api/companies/${companyId}/payroll-runs`] as const;
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<any[]>(queryKey);
-      queryClient.setQueryData<any[]>(queryKey, (old) =>
-        old?.map((run: any) => (run.id === runId ? { ...run, status: 'approved' } : run)) ?? [],
+      queryClient.setQueryData<any[]>(
+        queryKey,
+        (old) =>
+          old?.map((run: any) => (run.id === runId ? { ...run, status: "approved" } : run)) ?? []
       );
       return { previous, queryKey };
     },
@@ -371,13 +402,16 @@ export default function Payroll() {
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
-      toast({ title: 'Payroll Approved', description: 'The payroll run has been approved and items marked as paid.' });
+      toast({
+        title: "Payroll Approved",
+        description: "The payroll run has been approved and items marked as paid.",
+      });
     },
     onError: (error: Error, _runId, context: any) => {
       if (context?.previous && context?.queryKey) {
         queryClient.setQueryData(context.queryKey, context.previous);
       }
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
@@ -386,29 +420,29 @@ export default function Payroll() {
 
   const updatePayrollItemMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: PayrollItemEditData }) =>
-      apiRequest('PATCH', `/api/payroll-items/${id}`, data),
+      apiRequest("PATCH", `/api/payroll-items/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/payroll-runs`] });
       if (viewingRunId) {
         queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewingRunId}/items`] });
       }
-      toast({ title: 'Item Updated', description: 'Payroll item has been updated.' });
+      toast({ title: "Item Updated", description: "Payroll item has been updated." });
       setEditItemDialogOpen(false);
       setEditingItemId(null);
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const calculateGratuityMutation = useMutation({
     mutationFn: (data: { employeeId: string; terminationDate?: string }) =>
-      apiRequest('POST', `/api/companies/${companyId}/payroll/gratuity-calculator`, data),
+      apiRequest("POST", `/api/companies/${companyId}/payroll/gratuity-calculator`, data),
     onSuccess: (data: GratuityResult) => {
       setGratuityResult(data);
     },
     onError: (error: Error) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
@@ -417,25 +451,25 @@ export default function Payroll() {
   const handleOpenCreateEmployee = () => {
     setEditingEmployee(null);
     employeeForm.reset({
-      employeeNumber: '',
-      fullName: '',
-      fullNameAr: '',
-      nationality: '',
-      passportNumber: '',
-      visaNumber: '',
-      laborCardNumber: '',
-      bankName: '',
-      bankAccountNumber: '',
-      iban: '',
-      routingCode: '',
-      department: '',
-      designation: '',
-      joinDate: '',
+      employeeNumber: "",
+      fullName: "",
+      fullNameAr: "",
+      nationality: "",
+      passportNumber: "",
+      visaNumber: "",
+      laborCardNumber: "",
+      bankName: "",
+      bankAccountNumber: "",
+      iban: "",
+      routingCode: "",
+      department: "",
+      designation: "",
+      joinDate: "",
       basicSalary: 0,
       housingAllowance: 0,
       transportAllowance: 0,
       otherAllowance: 0,
-      status: 'active',
+      status: "active",
     });
     setEmployeeDialogOpen(true);
   };
@@ -443,20 +477,20 @@ export default function Payroll() {
   const handleOpenEditEmployee = (emp: Employee) => {
     setEditingEmployee(emp);
     employeeForm.reset({
-      employeeNumber: emp.employee_number || '',
+      employeeNumber: emp.employee_number || "",
       fullName: emp.full_name,
-      fullNameAr: emp.full_name_ar || '',
-      nationality: emp.nationality || '',
-      passportNumber: emp.passport_number || '',
-      visaNumber: emp.visa_number || '',
-      laborCardNumber: emp.labor_card_number || '',
-      bankName: emp.bank_name || '',
-      bankAccountNumber: emp.bank_account_number || '',
-      iban: emp.iban || '',
-      routingCode: emp.routing_code || '',
-      department: emp.department || '',
-      designation: emp.designation || '',
-      joinDate: emp.join_date ? emp.join_date.split('T')[0] : '',
+      fullNameAr: emp.full_name_ar || "",
+      nationality: emp.nationality || "",
+      passportNumber: emp.passport_number || "",
+      visaNumber: emp.visa_number || "",
+      laborCardNumber: emp.labor_card_number || "",
+      bankName: emp.bank_name || "",
+      bankAccountNumber: emp.bank_account_number || "",
+      iban: emp.iban || "",
+      routingCode: emp.routing_code || "",
+      department: emp.department || "",
+      designation: emp.designation || "",
+      joinDate: emp.join_date ? emp.join_date.split("T")[0] : "",
       basicSalary: parseFloat(emp.basic_salary) || 0,
       housingAllowance: parseFloat(emp.housing_allowance) || 0,
       transportAllowance: parseFloat(emp.transport_allowance) || 0,
@@ -483,7 +517,7 @@ export default function Payroll() {
     payrollItemForm.reset({
       overtime: parseFloat(item.overtime) || 0,
       deductions: parseFloat(item.deductions) || 0,
-      deductionNotes: item.deduction_notes || '',
+      deductionNotes: item.deduction_notes || "",
     });
     setEditItemDialogOpen(true);
   };
@@ -500,15 +534,15 @@ export default function Payroll() {
       });
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err?.message || 'Failed to generate SIF');
+        throw new Error(err?.message || "Failed to generate SIF");
       }
       const blob = await response.blob();
-      const disposition = response.headers.get('Content-Disposition');
+      const disposition = response.headers.get("Content-Disposition");
       const filenameMatch = disposition?.match(/filename="(.+)"/);
-      const filename = filenameMatch ? filenameMatch[1] : 'payroll.SIF';
+      const filename = filenameMatch ? filenameMatch[1] : "payroll.SIF";
 
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       document.body.appendChild(a);
@@ -516,15 +550,15 @@ export default function Payroll() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      toast({ title: 'SIF Downloaded', description: 'WPS SIF file has been downloaded.' });
+      toast({ title: "SIF Downloaded", description: "WPS SIF file has been downloaded." });
     } catch (err: any) {
-      toast({ title: 'Error', description: err?.message, variant: 'destructive' });
+      toast({ title: "Error", description: err?.message, variant: "destructive" });
     }
   };
 
   const handleCalculateGratuity = () => {
     if (!gratuityEmployeeId) {
-      toast({ title: 'Error', description: 'Please select an employee.', variant: 'destructive' });
+      toast({ title: "Error", description: "Please select an employee.", variant: "destructive" });
       return;
     }
     calculateGratuityMutation.mutate({
@@ -537,26 +571,26 @@ export default function Payroll() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'active':
+      case "active":
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Active</Badge>;
-      case 'inactive':
+      case "inactive":
         return <Badge variant="secondary">Inactive</Badge>;
-      case 'draft':
+      case "draft":
         return <Badge variant="outline">Draft</Badge>;
-      case 'calculated':
+      case "calculated":
         return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Calculated</Badge>;
-      case 'approved':
+      case "approved":
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Approved</Badge>;
-      case 'pending':
+      case "pending":
         return <Badge variant="outline">Pending</Badge>;
-      case 'paid':
+      case "paid":
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Paid</Badge>;
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
-  const filteredEmployees = employees.filter(emp => {
+  const filteredEmployees = employees.filter((emp) => {
     if (!employeeSearch) return true;
     const q = employeeSearch.toLowerCase();
     return (
@@ -572,7 +606,7 @@ export default function Payroll() {
   if (isLoadingCompany) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">{t.loading || 'Loading...'}</div>
+        <div className="text-muted-foreground">{t.loading || "Loading..."}</div>
       </div>
     );
   }
@@ -606,22 +640,24 @@ export default function Payroll() {
                 </CardTitle>
                 <CardDescription className="mt-1 space-x-4">
                   <span>{viewingRun.employee_count} employees</span>
-                  <span>Net: {formatCurrency(parseFloat(viewingRun.total_net) || 0, 'AED', locale)}</span>
+                  <span>
+                    Net: {formatCurrency(parseFloat(viewingRun.total_net) || 0, "AED", locale)}
+                  </span>
                   <span>{getStatusBadge(viewingRun.status)}</span>
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {viewingRun.status === 'draft' && (
+                {viewingRun.status === "draft" && (
                   <Button
                     onClick={() => calculatePayrollMutation.mutate(viewingRunId)}
                     disabled={calculatePayrollMutation.isPending}
                     className="flex items-center gap-2"
                   >
                     <Calculator className="w-4 h-4" />
-                    {calculatePayrollMutation.isPending ? 'Calculating...' : 'Calculate'}
+                    {calculatePayrollMutation.isPending ? "Calculating..." : "Calculate"}
                   </Button>
                 )}
-                {viewingRun.status === 'calculated' && (
+                {viewingRun.status === "calculated" && (
                   <>
                     <Button
                       onClick={() => calculatePayrollMutation.mutate(viewingRunId)}
@@ -638,11 +674,11 @@ export default function Payroll() {
                       className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
                     >
                       <CheckCircle className="w-4 h-4" />
-                      {approvePayrollMutation.isPending ? 'Approving...' : 'Approve'}
+                      {approvePayrollMutation.isPending ? "Approving..." : "Approve"}
                     </Button>
                   </>
                 )}
-                {(viewingRun.status === 'calculated' || viewingRun.status === 'approved') && (
+                {(viewingRun.status === "calculated" || viewingRun.status === "approved") && (
                   <Button
                     variant="outline"
                     onClick={() => handleDownloadSIF(viewingRunId)}
@@ -661,19 +697,27 @@ export default function Payroll() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">Total Basic</div>
-                <div className="text-lg font-semibold">{formatCurrency(parseFloat(viewingRun.total_basic) || 0, 'AED', locale)}</div>
+                <div className="text-lg font-semibold">
+                  {formatCurrency(parseFloat(viewingRun.total_basic) || 0, "AED", locale)}
+                </div>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">Total Allowances</div>
-                <div className="text-lg font-semibold">{formatCurrency(parseFloat(viewingRun.total_allowances) || 0, 'AED', locale)}</div>
+                <div className="text-lg font-semibold">
+                  {formatCurrency(parseFloat(viewingRun.total_allowances) || 0, "AED", locale)}
+                </div>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">Total Deductions</div>
-                <div className="text-lg font-semibold text-red-600">{formatCurrency(parseFloat(viewingRun.total_deductions) || 0, 'AED', locale)}</div>
+                <div className="text-lg font-semibold text-red-600">
+                  {formatCurrency(parseFloat(viewingRun.total_deductions) || 0, "AED", locale)}
+                </div>
               </div>
               <div className="rounded-lg border p-3">
                 <div className="text-sm text-muted-foreground">Total Net Pay</div>
-                <div className="text-lg font-semibold text-green-600">{formatCurrency(parseFloat(viewingRun.total_net) || 0, 'AED', locale)}</div>
+                <div className="text-lg font-semibold text-green-600">
+                  {formatCurrency(parseFloat(viewingRun.total_net) || 0, "AED", locale)}
+                </div>
               </div>
             </div>
 
@@ -704,7 +748,8 @@ export default function Payroll() {
                   </TableHeader>
                   <TableBody>
                     {payrollItems.map((item) => {
-                      const allowances = (parseFloat(item.housing_allowance) || 0) +
+                      const allowances =
+                        (parseFloat(item.housing_allowance) || 0) +
                         (parseFloat(item.transport_allowance) || 0) +
                         (parseFloat(item.other_allowance) || 0);
                       return (
@@ -713,19 +758,33 @@ export default function Payroll() {
                             <div>
                               {item.employee_name}
                               {item.employee_number && (
-                                <div className="text-xs text-muted-foreground">#{item.employee_number}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  #{item.employee_number}
+                                </div>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-muted-foreground">{item.department || '-'}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(parseFloat(item.basic_salary) || 0, 'AED', locale)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(allowances, 'AED', locale)}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(parseFloat(item.overtime) || 0, 'AED', locale)}</TableCell>
-                          <TableCell className="text-right text-red-600">{formatCurrency(parseFloat(item.deductions) || 0, 'AED', locale)}</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(parseFloat(item.net_salary) || 0, 'AED', locale)}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {item.department || "-"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(parseFloat(item.basic_salary) || 0, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(allowances, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(parseFloat(item.overtime) || 0, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right text-red-600">
+                            {formatCurrency(parseFloat(item.deductions) || 0, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {formatCurrency(parseFloat(item.net_salary) || 0, "AED", locale)}
+                          </TableCell>
                           <TableCell>{getStatusBadge(item.status)}</TableCell>
                           <TableCell className="text-right">
-                            {viewingRun.status !== 'approved' && (
+                            {viewingRun.status !== "approved" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -751,11 +810,16 @@ export default function Payroll() {
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle>Edit Payroll Item</DialogTitle>
-              <DialogDescription>Adjust overtime and deductions for this employee.</DialogDescription>
+              <DialogDescription>
+                Adjust overtime and deductions for this employee.
+              </DialogDescription>
             </DialogHeader>
 
             <Form {...payrollItemForm}>
-              <form onSubmit={payrollItemForm.handleSubmit(handleItemEditSubmit)} className="space-y-4">
+              <form
+                onSubmit={payrollItemForm.handleSubmit(handleItemEditSubmit)}
+                className="space-y-4"
+              >
                 <FormField
                   control={payrollItemForm.control}
                   name="overtime"
@@ -791,7 +855,11 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Deduction Notes</FormLabel>
                       <FormControl>
-                        <Input placeholder="Reason for deduction" {...field} value={field.value || ''} />
+                        <Input
+                          placeholder="Reason for deduction"
+                          {...field}
+                          value={field.value || ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -799,11 +867,15 @@ export default function Payroll() {
                 />
 
                 <div className="flex justify-end gap-2 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setEditItemDialogOpen(false)}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setEditItemDialogOpen(false)}
+                  >
                     Cancel
                   </Button>
                   <Button type="submit" disabled={updatePayrollItemMutation.isPending}>
-                    {updatePayrollItemMutation.isPending ? 'Saving...' : 'Save'}
+                    {updatePayrollItemMutation.isPending ? "Saving..." : "Save"}
                   </Button>
                 </div>
               </form>
@@ -854,7 +926,7 @@ export default function Payroll() {
                 <div>
                   <CardTitle>Employees</CardTitle>
                   <CardDescription>
-                    {employees.length} employee{employees.length !== 1 ? 's' : ''} registered
+                    {employees.length} employee{employees.length !== 1 ? "s" : ""} registered
                   </CardDescription>
                 </div>
                 <Button onClick={handleOpenCreateEmployee} className="flex items-center gap-2">
@@ -876,7 +948,9 @@ export default function Payroll() {
                 <div className="text-center py-8 text-muted-foreground">Loading employees...</div>
               ) : filteredEmployees.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  {employeeSearch ? 'No employees match your search.' : 'No employees yet. Add your first employee to get started.'}
+                  {employeeSearch
+                    ? "No employees match your search."
+                    : "No employees yet. Add your first employee to get started."}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -899,15 +973,19 @@ export default function Payroll() {
                             <div>
                               {emp.full_name}
                               {emp.full_name_ar && (
-                                <div className="text-xs text-muted-foreground">{emp.full_name_ar}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {emp.full_name_ar}
+                                </div>
                               )}
                             </div>
                           </TableCell>
-                          <TableCell className="text-muted-foreground">{emp.employee_number || '-'}</TableCell>
-                          <TableCell>{emp.department || '-'}</TableCell>
-                          <TableCell>{emp.designation || '-'}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {emp.employee_number || "-"}
+                          </TableCell>
+                          <TableCell>{emp.department || "-"}</TableCell>
+                          <TableCell>{emp.designation || "-"}</TableCell>
                           <TableCell className="text-right font-mono">
-                            {formatCurrency(parseFloat(emp.total_salary) || 0, 'AED', locale)}
+                            {formatCurrency(parseFloat(emp.total_salary) || 0, "AED", locale)}
                           </TableCell>
                           <TableCell>{getStatusBadge(emp.status)}</TableCell>
                           <TableCell className="text-right">
@@ -949,10 +1027,13 @@ export default function Payroll() {
                 <div>
                   <CardTitle>Payroll Runs</CardTitle>
                   <CardDescription>
-                    {payrollRuns.length} payroll run{payrollRuns.length !== 1 ? 's' : ''}
+                    {payrollRuns.length} payroll run{payrollRuns.length !== 1 ? "s" : ""}
                   </CardDescription>
                 </div>
-                <Button onClick={() => setPayrollRunDialogOpen(true)} className="flex items-center gap-2">
+                <Button
+                  onClick={() => setPayrollRunDialogOpen(true)}
+                  className="flex items-center gap-2"
+                >
                   <Plus className="w-4 h-4" />
                   New Payroll Run
                 </Button>
@@ -960,7 +1041,9 @@ export default function Payroll() {
             </CardHeader>
             <CardContent>
               {isLoadingRuns ? (
-                <div className="text-center py-8 text-muted-foreground">Loading payroll runs...</div>
+                <div className="text-center py-8 text-muted-foreground">
+                  Loading payroll runs...
+                </div>
               ) : payrollRuns.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   No payroll runs yet. Create your first payroll run to get started.
@@ -986,11 +1069,13 @@ export default function Payroll() {
                           </TableCell>
                           <TableCell className="text-right">{run.employee_count}</TableCell>
                           <TableCell className="text-right font-mono">
-                            {formatCurrency(parseFloat(run.total_net) || 0, 'AED', locale)}
+                            {formatCurrency(parseFloat(run.total_net) || 0, "AED", locale)}
                           </TableCell>
                           <TableCell>{getStatusBadge(run.status)}</TableCell>
                           <TableCell className="text-muted-foreground whitespace-nowrap">
-                            {run.created_at ? format(new Date(run.created_at), 'MMM dd, yyyy') : '-'}
+                            {run.created_at
+                              ? format(new Date(run.created_at), "MMM dd, yyyy")
+                              : "-"}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
@@ -1002,7 +1087,7 @@ export default function Payroll() {
                               >
                                 <Eye className="w-4 h-4" />
                               </Button>
-                              {run.status === 'draft' && (
+                              {run.status === "draft" && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1013,7 +1098,7 @@ export default function Payroll() {
                                   <Calculator className="w-4 h-4" />
                                 </Button>
                               )}
-                              {run.status === 'calculated' && (
+                              {run.status === "calculated" && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1025,7 +1110,7 @@ export default function Payroll() {
                                   <CheckCircle className="w-4 h-4" />
                                 </Button>
                               )}
-                              {(run.status === 'calculated' || run.status === 'approved') && (
+                              {(run.status === "calculated" || run.status === "approved") && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1057,8 +1142,8 @@ export default function Payroll() {
                   End-of-Service Gratuity
                 </CardTitle>
                 <CardDescription>
-                  Calculate gratuity per UAE labor law. 21 days per year for the first 5 years,
-                  30 days per year thereafter. Maximum 2 years total salary.
+                  Calculate gratuity per UAE labor law. 21 days per year for the first 5 years, 30
+                  days per year thereafter. Maximum 2 years total salary.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1077,7 +1162,7 @@ export default function Payroll() {
                     <SelectContent>
                       {employees.map((emp) => (
                         <SelectItem key={emp.id} value={emp.id}>
-                          {emp.full_name} {emp.employee_number ? `(#${emp.employee_number})` : ''}
+                          {emp.full_name} {emp.employee_number ? `(#${emp.employee_number})` : ""}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -1103,7 +1188,7 @@ export default function Payroll() {
                   className="w-full flex items-center gap-2"
                 >
                   <Calculator className="w-4 h-4" />
-                  {calculateGratuityMutation.isPending ? 'Calculating...' : 'Calculate Gratuity'}
+                  {calculateGratuityMutation.isPending ? "Calculating..." : "Calculate Gratuity"}
                 </Button>
               </CardContent>
             </Card>
@@ -1123,29 +1208,47 @@ export default function Payroll() {
                     <>
                       <div className="grid grid-cols-2 gap-2 text-sm">
                         <div className="text-muted-foreground">Join Date</div>
-                        <div className="font-medium">{gratuityResult.joinDate ? format(new Date(gratuityResult.joinDate), 'MMM dd, yyyy') : '-'}</div>
+                        <div className="font-medium">
+                          {gratuityResult.joinDate
+                            ? format(new Date(gratuityResult.joinDate), "MMM dd, yyyy")
+                            : "-"}
+                        </div>
 
                         <div className="text-muted-foreground">Termination Date</div>
-                        <div className="font-medium">{format(new Date(gratuityResult.terminationDate), 'MMM dd, yyyy')}</div>
+                        <div className="font-medium">
+                          {format(new Date(gratuityResult.terminationDate), "MMM dd, yyyy")}
+                        </div>
 
                         <div className="text-muted-foreground">Years of Service</div>
                         <div className="font-medium">{gratuityResult.yearsOfService} years</div>
 
                         <div className="text-muted-foreground">Basic Salary</div>
-                        <div className="font-medium">{formatCurrency(gratuityResult.basicSalary, 'AED', locale)}</div>
+                        <div className="font-medium">
+                          {formatCurrency(gratuityResult.basicSalary, "AED", locale)}
+                        </div>
 
                         <div className="text-muted-foreground">Daily Wage (Basic / 30)</div>
-                        <div className="font-medium">{formatCurrency(gratuityResult.dailyWage, 'AED', locale)}</div>
+                        <div className="font-medium">
+                          {formatCurrency(gratuityResult.dailyWage, "AED", locale)}
+                        </div>
                       </div>
 
                       <Separator />
 
                       <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="text-muted-foreground">First 5 years ({gratuityResult.firstFiveYears} yrs x 21 days)</div>
-                        <div className="font-medium">{formatCurrency(gratuityResult.firstFiveYearsGratuity, 'AED', locale)}</div>
+                        <div className="text-muted-foreground">
+                          First 5 years ({gratuityResult.firstFiveYears} yrs x 21 days)
+                        </div>
+                        <div className="font-medium">
+                          {formatCurrency(gratuityResult.firstFiveYearsGratuity, "AED", locale)}
+                        </div>
 
-                        <div className="text-muted-foreground">After 5 years ({gratuityResult.remainingYears} yrs x 30 days)</div>
-                        <div className="font-medium">{formatCurrency(gratuityResult.remainingYearsGratuity, 'AED', locale)}</div>
+                        <div className="text-muted-foreground">
+                          After 5 years ({gratuityResult.remainingYears} yrs x 30 days)
+                        </div>
+                        <div className="font-medium">
+                          {formatCurrency(gratuityResult.remainingYearsGratuity, "AED", locale)}
+                        </div>
                       </div>
 
                       <Separator />
@@ -1153,14 +1256,16 @@ export default function Payroll() {
                       <div className="grid grid-cols-2 gap-2">
                         <div className="text-lg font-semibold">Total Gratuity</div>
                         <div className="text-lg font-bold text-green-600">
-                          {formatCurrency(gratuityResult.totalGratuity, 'AED', locale)}
+                          {formatCurrency(gratuityResult.totalGratuity, "AED", locale)}
                         </div>
                       </div>
 
                       {gratuityResult.isCapped && (
                         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                          Gratuity capped at 2 years total salary ({formatCurrency(gratuityResult.maxGratuity || 0, 'AED', locale)}).
-                          Uncapped amount: {formatCurrency(gratuityResult.uncappedGratuity || 0, 'AED', locale)}.
+                          Gratuity capped at 2 years total salary (
+                          {formatCurrency(gratuityResult.maxGratuity || 0, "AED", locale)}).
+                          Uncapped amount:{" "}
+                          {formatCurrency(gratuityResult.uncappedGratuity || 0, "AED", locale)}.
                         </div>
                       )}
                     </>
@@ -1176,16 +1281,18 @@ export default function Payroll() {
       <Dialog open={employeeDialogOpen} onOpenChange={setEmployeeDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingEmployee ? 'Edit Employee' : 'Add Employee'}</DialogTitle>
+            <DialogTitle>{editingEmployee ? "Edit Employee" : "Add Employee"}</DialogTitle>
             <DialogDescription>
-              {editingEmployee ? 'Update employee details.' : 'Add a new employee to payroll.'}
+              {editingEmployee ? "Update employee details." : "Add a new employee to payroll."}
             </DialogDescription>
           </DialogHeader>
 
           <Form {...employeeForm}>
             <form onSubmit={employeeForm.handleSubmit(handleEmployeeSubmit)} className="space-y-4">
               {/* Personal Information */}
-              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Personal Information</div>
+              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                Personal Information
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={employeeForm.control}
@@ -1207,7 +1314,12 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Full Name (Arabic)</FormLabel>
                       <FormControl>
-                        <Input placeholder="الاسم الكامل" dir="rtl" {...field} value={field.value || ''} />
+                        <Input
+                          placeholder="الاسم الكامل"
+                          dir="rtl"
+                          {...field}
+                          value={field.value || ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1223,7 +1335,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Employee Number</FormLabel>
                       <FormControl>
-                        <Input placeholder="EMP-001" {...field} value={field.value || ''} />
+                        <Input placeholder="EMP-001" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1236,7 +1348,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Nationality</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., UAE" {...field} value={field.value || ''} />
+                        <Input placeholder="e.g., UAE" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1249,7 +1361,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Join Date</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} value={field.value || ''} />
+                        <Input type="date" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1258,7 +1370,9 @@ export default function Payroll() {
               </div>
 
               {/* Work Information */}
-              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">Work Information</div>
+              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
+                Work Information
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={employeeForm.control}
@@ -1267,7 +1381,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Department</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Finance" {...field} value={field.value || ''} />
+                        <Input placeholder="e.g., Finance" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1280,7 +1394,11 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Designation</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Accountant" {...field} value={field.value || ''} />
+                        <Input
+                          placeholder="e.g., Accountant"
+                          {...field}
+                          value={field.value || ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1289,7 +1407,9 @@ export default function Payroll() {
               </div>
 
               {/* Identity Documents */}
-              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">Identity & Documents</div>
+              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
+                Identity & Documents
+              </div>
               <div className="grid grid-cols-3 gap-4">
                 <FormField
                   control={employeeForm.control}
@@ -1298,7 +1418,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Passport Number</FormLabel>
                       <FormControl>
-                        <Input placeholder="Passport #" {...field} value={field.value || ''} />
+                        <Input placeholder="Passport #" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1311,7 +1431,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Visa Number</FormLabel>
                       <FormControl>
-                        <Input placeholder="Visa #" {...field} value={field.value || ''} />
+                        <Input placeholder="Visa #" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1324,7 +1444,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Labor Card Number</FormLabel>
                       <FormControl>
-                        <Input placeholder="Labor Card #" {...field} value={field.value || ''} />
+                        <Input placeholder="Labor Card #" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1333,7 +1453,9 @@ export default function Payroll() {
               </div>
 
               {/* Banking Details */}
-              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">Banking Details</div>
+              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
+                Banking Details
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={employeeForm.control}
@@ -1342,7 +1464,11 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Bank Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Emirates NBD" {...field} value={field.value || ''} />
+                        <Input
+                          placeholder="e.g., Emirates NBD"
+                          {...field}
+                          value={field.value || ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1355,7 +1481,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Account Number</FormLabel>
                       <FormControl>
-                        <Input placeholder="Account #" {...field} value={field.value || ''} />
+                        <Input placeholder="Account #" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1370,7 +1496,7 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>IBAN</FormLabel>
                       <FormControl>
-                        <Input placeholder="AE..." {...field} value={field.value || ''} />
+                        <Input placeholder="AE..." {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1383,7 +1509,11 @@ export default function Payroll() {
                     <FormItem>
                       <FormLabel>Routing Code</FormLabel>
                       <FormControl>
-                        <Input placeholder="Bank routing code" {...field} value={field.value || ''} />
+                        <Input
+                          placeholder="Bank routing code"
+                          {...field}
+                          value={field.value || ""}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -1392,7 +1522,9 @@ export default function Payroll() {
               </div>
 
               {/* Salary */}
-              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">Salary Details (AED)</div>
+              <div className="text-sm font-semibold text-muted-foreground uppercase tracking-wider pt-2">
+                Salary Details (AED)
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={employeeForm.control}
@@ -1474,18 +1606,22 @@ export default function Payroll() {
               />
 
               <div className="flex justify-end gap-2 pt-4">
-                <Button type="button" variant="outline" onClick={() => setEmployeeDialogOpen(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setEmployeeDialogOpen(false)}
+                >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   disabled={createEmployeeMutation.isPending || updateEmployeeMutation.isPending}
                 >
-                  {(createEmployeeMutation.isPending || updateEmployeeMutation.isPending)
-                    ? 'Saving...'
+                  {createEmployeeMutation.isPending || updateEmployeeMutation.isPending
+                    ? "Saving..."
                     : editingEmployee
-                      ? 'Save Changes'
-                      : 'Add Employee'}
+                      ? "Save Changes"
+                      : "Add Employee"}
                 </Button>
               </div>
             </form>
@@ -1504,14 +1640,20 @@ export default function Payroll() {
           </DialogHeader>
 
           <Form {...payrollRunForm}>
-            <form onSubmit={payrollRunForm.handleSubmit(handlePayrollRunSubmit)} className="space-y-4">
+            <form
+              onSubmit={payrollRunForm.handleSubmit(handlePayrollRunSubmit)}
+              className="space-y-4"
+            >
               <FormField
                 control={payrollRunForm.control}
                 name="periodMonth"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Month *</FormLabel>
-                    <Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)}>
+                    <Select
+                      onValueChange={(v) => field.onChange(parseInt(v))}
+                      value={String(field.value)}
+                    >
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue placeholder="Select month" />
@@ -1545,11 +1687,15 @@ export default function Payroll() {
               />
 
               <div className="flex justify-end gap-2 pt-4">
-                <Button type="button" variant="outline" onClick={() => setPayrollRunDialogOpen(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setPayrollRunDialogOpen(false)}
+                >
                   Cancel
                 </Button>
                 <Button type="submit" disabled={createPayrollRunMutation.isPending}>
-                  {createPayrollRunMutation.isPending ? 'Creating...' : 'Create Run'}
+                  {createPayrollRunMutation.isPending ? "Creating..." : "Create Run"}
                 </Button>
               </div>
             </form>
@@ -1557,7 +1703,12 @@ export default function Payroll() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!employeeToDelete} onOpenChange={(open) => { if (!open) setEmployeeToDelete(null); }}>
+      <AlertDialog
+        open={!!employeeToDelete}
+        onOpenChange={(open) => {
+          if (!open) setEmployeeToDelete(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Employee?</AlertDialogTitle>

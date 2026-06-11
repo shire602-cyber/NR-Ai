@@ -1,17 +1,17 @@
-import { useEffect, useState, type ComponentProps } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { useI18n } from '@/lib/i18n';
+import { useEffect, useState, type ComponentProps } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useI18n } from "@/lib/i18n";
 import {
   MessageCircle,
   Clock,
@@ -32,8 +32,8 @@ import {
   Trash2,
   AlertTriangle,
   CheckCircle2,
-} from 'lucide-react';
-import { SiWhatsapp } from 'react-icons/si';
+} from "lucide-react";
+import { SiWhatsapp } from "react-icons/si";
 import {
   Dialog,
   DialogContent,
@@ -49,13 +49,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import type { WhatsappMessage, Invoice, CustomerContact, Notification } from '@shared/schema';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { WhatsappMessage, Invoice, CustomerContact, Notification } from "@shared/schema";
 import {
   MESSAGE_TEMPLATES,
   fillTemplate,
@@ -63,7 +58,7 @@ import {
   openWhatsApp,
   pickWhatsAppNumber,
   type MessageTemplate,
-} from '@/lib/whatsapp-templates';
+} from "@/lib/whatsapp-templates";
 import {
   draftWithWhatsAppBridge,
   openWhatsAppWithLoggedFallback,
@@ -71,30 +66,79 @@ import {
   registerWhatsAppBridgeSession,
   updateWhatsAppBridgeJobStatus,
   type WhatsAppBridgePing,
-} from '@/lib/whatsapp-bridge';
+} from "@/lib/whatsapp-bridge";
 
 // ─── Rules ────────────────────────────────────────────────
 
 interface WhatsAppRule {
   id: string;
   name: string;
-  type: 'before_due' | 'on_due' | 'after_due' | 'on_invoice' | 'on_event';
+  type: "before_due" | "on_due" | "after_due" | "on_invoice" | "on_event";
   daysOffset: number; // negative = before, 0 = on, positive = after
   templateId: string;
   enabled: boolean;
 }
 
 const DEFAULT_RULES: WhatsAppRule[] = [
-  { id: 'rule_1', name: 'Invoice Created', type: 'on_invoice', daysOffset: 0, templateId: 'invoice_with_link', enabled: true },
-  { id: 'rule_2', name: '3 days before due', type: 'before_due', daysOffset: -3, templateId: 'payment_reminder', enabled: true },
-  { id: 'rule_3', name: 'On due date', type: 'on_due', daysOffset: 0, templateId: 'payment_reminder', enabled: true },
-  { id: 'rule_4', name: '7 days overdue', type: 'after_due', daysOffset: 7, templateId: 'payment_overdue', enabled: true },
-  { id: 'rule_5', name: '14 days overdue', type: 'after_due', daysOffset: 14, templateId: 'payment_overdue', enabled: false },
-  { id: 'rule_6', name: 'New client welcome', type: 'on_invoice', daysOffset: 0, templateId: 'welcome_client', enabled: false },
-  { id: 'rule_7', name: 'VAT deadline (7 days)', type: 'before_due', daysOffset: -7, templateId: 'vat_deadline_reminder', enabled: true },
+  {
+    id: "rule_1",
+    name: "Invoice Created",
+    type: "on_invoice",
+    daysOffset: 0,
+    templateId: "invoice_with_link",
+    enabled: true,
+  },
+  {
+    id: "rule_2",
+    name: "3 days before due",
+    type: "before_due",
+    daysOffset: -3,
+    templateId: "payment_reminder",
+    enabled: true,
+  },
+  {
+    id: "rule_3",
+    name: "On due date",
+    type: "on_due",
+    daysOffset: 0,
+    templateId: "payment_reminder",
+    enabled: true,
+  },
+  {
+    id: "rule_4",
+    name: "7 days overdue",
+    type: "after_due",
+    daysOffset: 7,
+    templateId: "payment_overdue",
+    enabled: true,
+  },
+  {
+    id: "rule_5",
+    name: "14 days overdue",
+    type: "after_due",
+    daysOffset: 14,
+    templateId: "payment_overdue",
+    enabled: false,
+  },
+  {
+    id: "rule_6",
+    name: "New client welcome",
+    type: "on_invoice",
+    daysOffset: 0,
+    templateId: "welcome_client",
+    enabled: false,
+  },
+  {
+    id: "rule_7",
+    name: "VAT deadline (7 days)",
+    type: "before_due",
+    daysOffset: -7,
+    templateId: "vat_deadline_reminder",
+    enabled: true,
+  },
 ];
 
-type WhatsAppBadgeVariant = ComponentProps<typeof Badge>['variant'];
+type WhatsAppBadgeVariant = ComponentProps<typeof Badge>["variant"];
 
 interface WhatsAppBridgeStatus {
   connected: boolean;
@@ -121,7 +165,14 @@ interface WhatsAppBridgeStatus {
 }
 
 interface WhatsAppDispatchOptions {
-  kind?: 'direct_message' | 'invoice' | 'document_request' | 'payment_chase' | 'vat_submission_proof' | 'broadcast' | 'custom';
+  kind?:
+    | "direct_message"
+    | "invoice"
+    | "document_request"
+    | "payment_chase"
+    | "vat_submission_proof"
+    | "broadcast"
+    | "custom";
   recipientName?: string | null;
   sourceType?: string | null;
   sourceId?: string | null;
@@ -135,51 +186,54 @@ export default function WhatsAppDashboard() {
   const { locale } = useI18n();
   const { toast } = useToast();
   const { company: currentCompany } = useDefaultCompany();
-  const isRTL = locale === 'ar';
-  const en = locale === 'en';
+  const isRTL = locale === "ar";
+  const en = locale === "en";
 
   // State
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showSendDialog, setShowSendDialog] = useState(false);
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [showBroadcastDialog, setShowBroadcastDialog] = useState(false);
-  const [sendTo, setSendTo] = useState('');
-  const [sendMessage, setSendMessage] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState<string>('');
-  const [selectedInvoice, setSelectedInvoice] = useState<string>('');
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
-  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [sendTo, setSendTo] = useState("");
+  const [sendMessage, setSendMessage] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState<string>("");
+  const [selectedInvoice, setSelectedInvoice] = useState<string>("");
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [broadcastMessage, setBroadcastMessage] = useState("");
   const [rules, setRules] = useState<WhatsAppRule[]>(DEFAULT_RULES);
   const [bridgePing, setBridgePing] = useState<WhatsAppBridgePing>({ available: false });
   const [bridgeChecking, setBridgeChecking] = useState(false);
 
   // Data queries
   const { data: messages = [], isLoading: messagesLoading } = useQuery<WhatsappMessage[]>({
-    queryKey: ['/api/integrations/whatsapp/messages'],
+    queryKey: ["/api/integrations/whatsapp/messages"],
   });
 
   const { data: invoices = [] } = useQuery<Invoice[]>({
-    queryKey: ['/api/companies', currentCompany?.id, 'invoices'],
-    queryFn: () => apiRequest('GET', `/api/companies/${currentCompany?.id}/invoices`),
+    queryKey: ["/api/companies", currentCompany?.id, "invoices"],
+    queryFn: () => apiRequest("GET", `/api/companies/${currentCompany?.id}/invoices`),
     enabled: !!currentCompany?.id,
   });
 
   const { data: customers = [] } = useQuery<CustomerContact[]>({
-    queryKey: ['/api/companies', currentCompany?.id, 'customer-contacts'],
-    queryFn: () => apiRequest('GET', `/api/companies/${currentCompany?.id}/customer-contacts`),
+    queryKey: ["/api/companies", currentCompany?.id, "customer-contacts"],
+    queryFn: () => apiRequest("GET", `/api/companies/${currentCompany?.id}/customer-contacts`),
     enabled: !!currentCompany?.id,
   });
 
   const { data: bridgeStatus, refetch: refetchBridgeStatus } = useQuery<WhatsAppBridgeStatus>({
-    queryKey: ['/api/integrations/whatsapp/bridge/status'],
+    queryKey: ["/api/integrations/whatsapp/bridge/status"],
   });
 
   // Notifications for pending actions
-  const { data: notificationsData } = useQuery<{ notifications: Notification[]; unreadCount: number }>({
-    queryKey: ['/api/notifications'],
+  const { data: notificationsData } = useQuery<{
+    notifications: Notification[];
+    unreadCount: number;
+  }>({
+    queryKey: ["/api/notifications"],
   });
   const pendingActions = (notificationsData?.notifications || []).filter(
-    (n) => n.type === 'payment_due' && !n.isDismissed && !n.isRead
+    (n) => n.type === "payment_due" && !n.isDismissed && !n.isRead
   );
 
   const checkBridge = async (showToast = false) => {
@@ -192,18 +246,18 @@ export default function WhatsAppDashboard() {
         await refetchBridgeStatus();
         if (showToast) {
           toast({
-            title: en ? 'WhatsApp Bridge detected' : 'تم العثور على جسر واتساب',
+            title: en ? "WhatsApp Bridge detected" : "تم العثور على جسر واتساب",
             description: en
-              ? 'Messages can be drafted in WhatsApp Web for staff review.'
-              : 'يمكن تجهيز الرسائل في واتساب ويب للمراجعة.',
+              ? "Messages can be drafted in WhatsApp Web for staff review."
+              : "يمكن تجهيز الرسائل في واتساب ويب للمراجعة.",
           });
         }
       } else if (showToast) {
         toast({
-          title: en ? 'Bridge extension not detected' : 'لم يتم العثور على الإضافة',
+          title: en ? "Bridge extension not detected" : "لم يتم العثور على الإضافة",
           description: en
-            ? 'We will use the safe WhatsApp Desktop/Web handoff instead.'
-            : 'سنستخدم فتح واتساب الآمن بدلاً من ذلك.',
+            ? "We will use the safe WhatsApp Desktop/Web handoff instead."
+            : "سنستخدم فتح واتساب الآمن بدلاً من ذلك.",
         });
       }
     } finally {
@@ -217,7 +271,7 @@ export default function WhatsAppDashboard() {
   }, [currentCompany?.id]);
 
   // Filter messages
-  const filteredMessages = messages.filter(msg => {
+  const filteredMessages = messages.filter((msg) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -229,74 +283,81 @@ export default function WhatsAppDashboard() {
 
   // Helpers
   const getCustomerName = (phone: string) => {
-    const customer = customers.find(
-      (c) => c.phone === phone || c.whatsappNumber === phone,
-    );
+    const customer = customers.find((c) => c.phone === phone || c.whatsappNumber === phone);
     return customer?.name || phone;
   };
 
   const formatTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString(en ? 'en-AE' : 'ar-AE', {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    return new Date(dateStr).toLocaleString(en ? "en-AE" : "ar-AE", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
-  const getMessageDeliveryMeta = (msg: WhatsappMessage): { label: string; variant: WhatsAppBadgeVariant } => {
-    if (msg.direction !== 'outbound') {
-      return { label: en ? 'Received' : 'مستلم', variant: 'secondary' };
+  const getMessageDeliveryMeta = (
+    msg: WhatsappMessage
+  ): { label: string; variant: WhatsAppBadgeVariant } => {
+    if (msg.direction !== "outbound") {
+      return { label: en ? "Received" : "مستلم", variant: "secondary" };
     }
 
-    const status = (msg.status || '').toLowerCase();
+    const status = (msg.status || "").toLowerCase();
     const isPersonalLink =
-      msg.from === 'personal' ||
-      msg.waMessageId?.startsWith('personal_') ||
-      msg.waMessageId?.startsWith('chase_');
+      msg.from === "personal" ||
+      msg.waMessageId?.startsWith("personal_") ||
+      msg.waMessageId?.startsWith("chase_");
 
-    if (isPersonalLink || status === 'logged') {
-      return { label: en ? 'Logged' : 'مسجل', variant: 'neutral' };
+    if (isPersonalLink || status === "logged") {
+      return { label: en ? "Logged" : "مسجل", variant: "neutral" };
     }
 
-    if (status === 'queued') {
-      return { label: en ? 'Queued' : 'في الانتظار', variant: 'secondary' };
+    if (status === "queued") {
+      return { label: en ? "Queued" : "في الانتظار", variant: "secondary" };
     }
 
-    if (status === 'drafted') {
-      return { label: en ? 'Drafted' : 'مسودة', variant: 'info' };
+    if (status === "drafted") {
+      return { label: en ? "Drafted" : "مسودة", variant: "info" };
     }
 
-    if (status === 'sent_unverified') {
-      return { label: en ? 'Sent, unverified' : 'مرسل غير مؤكد', variant: 'warning' };
+    if (status === "sent_unverified") {
+      return { label: en ? "Sent, unverified" : "مرسل غير مؤكد", variant: "warning" };
     }
 
-    if (status === 'failed') {
-      return { label: en ? 'Failed' : 'فشل', variant: 'danger' };
+    if (status === "failed") {
+      return { label: en ? "Failed" : "فشل", variant: "danger" };
     }
 
-    if (status === 'delivered' || status === 'processed') {
-      return { label: en ? 'Delivered' : 'تم التسليم', variant: 'success' };
+    if (status === "delivered" || status === "processed") {
+      return { label: en ? "Delivered" : "تم التسليم", variant: "success" };
     }
 
-    return { label: en ? 'Sent' : 'مرسل', variant: 'info' };
+    return { label: en ? "Sent" : "مرسل", variant: "info" };
   };
 
-  const logAndOpen = async (phone: string, message: string, options: WhatsAppDispatchOptions = {}) => {
+  const logAndOpen = async (
+    phone: string,
+    message: string,
+    options: WhatsAppDispatchOptions = {}
+  ) => {
     const normalized = formatPhoneForWhatsApp(phone);
     if (!normalized) {
       toast({
-        title: en ? 'Invalid WhatsApp number' : 'رقم واتساب غير صالح',
-        variant: 'destructive',
+        title: en ? "Invalid WhatsApp number" : "رقم واتساب غير صالح",
+        variant: "destructive",
       });
       return;
     }
 
     let bridgeJobId: string | undefined;
     try {
-      const created = await apiRequest('POST', '/api/integrations/whatsapp/bridge/jobs', {
+      const created = await apiRequest("POST", "/api/integrations/whatsapp/bridge/jobs", {
         companyId: currentCompany?.id,
         to: phone,
         recipientName: options.recipientName || null,
         message,
-        kind: options.kind || 'direct_message',
+        kind: options.kind || "direct_message",
         sourceType: options.sourceType || null,
         sourceId: options.sourceId || null,
         attachmentUrl: options.attachmentUrl || null,
@@ -304,7 +365,7 @@ export default function WhatsAppDashboard() {
       });
       bridgeJobId = created?.job?.id;
       if (!bridgeJobId) {
-        throw new Error('Bridge job was not created');
+        throw new Error("Bridge job was not created");
       }
 
       const draft = await draftWithWhatsAppBridge({
@@ -317,40 +378,45 @@ export default function WhatsAppDashboard() {
       });
 
       if (draft.ok && bridgeJobId) {
-        await updateWhatsAppBridgeJobStatus(bridgeJobId, 'drafted', 'drafted').catch(() => {});
+        await updateWhatsAppBridgeJobStatus(bridgeJobId, "drafted", "drafted").catch(() => {});
         setBridgePing({
           available: true,
           extensionId: draft.extensionId || bridgePing.extensionId,
           version: draft.version || bridgePing.version,
         });
         toast({
-          title: en ? 'Draft opened in WhatsApp Web' : 'تم فتح المسودة في واتساب ويب',
+          title: en ? "Draft opened in WhatsApp Web" : "تم فتح المسودة في واتساب ويب",
           description: en
-            ? 'Review the message in WhatsApp Web, then press send there.'
-            : 'راجع الرسالة في واتساب ويب ثم أرسلها من هناك.',
+            ? "Review the message in WhatsApp Web, then press send there."
+            : "راجع الرسالة في واتساب ويب ثم أرسلها من هناك.",
         });
       } else {
         await openWhatsAppWithLoggedFallback(normalized, message, bridgeJobId);
         toast({
-          title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...',
+          title: en ? "Opening WhatsApp..." : "جاري فتح واتساب...",
           description: en
-            ? 'Bridge extension was not detected; using Desktop/Web handoff.'
-            : 'لم يتم العثور على الإضافة؛ سيتم فتح واتساب مباشرة.',
+            ? "Bridge extension was not detected; using Desktop/Web handoff."
+            : "لم يتم العثور على الإضافة؛ سيتم فتح واتساب مباشرة.",
         });
       }
     } catch (error: any) {
-      await apiRequest('POST', '/api/integrations/whatsapp/log-message', { to: normalized, message }).catch(() => {});
+      await apiRequest("POST", "/api/integrations/whatsapp/log-message", {
+        to: normalized,
+        message,
+      }).catch(() => {});
       openWhatsApp(normalized, message);
       toast({
-        title: en ? 'Opening WhatsApp...' : 'جاري فتح واتساب...',
+        title: en ? "Opening WhatsApp..." : "جاري فتح واتساب...",
         description: error?.message
-          ? (en ? 'Bridge queue failed, so we used the safe handoff.' : 'تعذر إنشاء مهمة الجسر، لذلك استخدمنا الفتح الآمن.')
+          ? en
+            ? "Bridge queue failed, so we used the safe handoff."
+            : "تعذر إنشاء مهمة الجسر، لذلك استخدمنا الفتح الآمن."
           : undefined,
       });
     } finally {
       setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
-        queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/bridge/status'] });
+        queryClient.invalidateQueries({ queryKey: ["/api/integrations/whatsapp/messages"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/integrations/whatsapp/bridge/status"] });
       }, 1000);
     }
   };
@@ -360,104 +426,143 @@ export default function WhatsAppDashboard() {
   const handleSendMessage = () => {
     let phone = sendTo;
     if (selectedCustomer) {
-      const cust = customers.find(c => c.id === selectedCustomer);
+      const cust = customers.find((c) => c.id === selectedCustomer);
       const wa = cust ? pickWhatsAppNumber(cust) : null;
       if (wa) phone = wa;
       else {
-        toast({ title: en ? 'No phone number' : 'لا يوجد رقم', variant: 'destructive' });
+        toast({ title: en ? "No phone number" : "لا يوجد رقم", variant: "destructive" });
         return;
       }
     }
-    if (!phone.trim()) { toast({ title: en ? 'Phone required' : 'رقم الهاتف مطلوب', variant: 'destructive' }); return; }
-    if (!sendMessage.trim()) { toast({ title: en ? 'Message required' : 'الرسالة مطلوبة', variant: 'destructive' }); return; }
+    if (!phone.trim()) {
+      toast({ title: en ? "Phone required" : "رقم الهاتف مطلوب", variant: "destructive" });
+      return;
+    }
+    if (!sendMessage.trim()) {
+      toast({ title: en ? "Message required" : "الرسالة مطلوبة", variant: "destructive" });
+      return;
+    }
 
-    const selectedContact = selectedCustomer ? customers.find(c => c.id === selectedCustomer) : null;
+    const selectedContact = selectedCustomer
+      ? customers.find((c) => c.id === selectedCustomer)
+      : null;
     void logAndOpen(phone, sendMessage, {
-      kind: selectedTemplate === 'document_request' ? 'document_request' : 'direct_message',
+      kind: selectedTemplate === "document_request" ? "document_request" : "direct_message",
       recipientName: selectedContact?.name || null,
     });
-    setSendTo(''); setSendMessage(''); setSelectedCustomer(''); setSelectedTemplate('');
+    setSendTo("");
+    setSendMessage("");
+    setSelectedCustomer("");
+    setSelectedTemplate("");
     setShowSendDialog(false);
   };
 
   const handleSendInvoice = () => {
-    if (!selectedInvoice) { toast({ title: en ? 'Select an invoice' : 'اختر فاتورة', variant: 'destructive' }); return; }
-    const inv = invoices.find(i => i.id === selectedInvoice);
+    if (!selectedInvoice) {
+      toast({ title: en ? "Select an invoice" : "اختر فاتورة", variant: "destructive" });
+      return;
+    }
+    const inv = invoices.find((i) => i.id === selectedInvoice);
     if (!inv) return;
-    const cust = customers.find(c => c.name === inv.customerName);
+    const cust = customers.find((c) => c.name === inv.customerName);
     const recipient = cust ? pickWhatsAppNumber(cust) : null;
-    if (!recipient) { toast({ title: en ? 'No phone number' : 'لا يوجد رقم', variant: 'destructive' }); return; }
+    if (!recipient) {
+      toast({ title: en ? "No phone number" : "لا يوجد رقم", variant: "destructive" });
+      return;
+    }
 
     const invoiceDate = new Date(inv.date);
     const dueDate = new Date(invoiceDate);
     dueDate.setDate(dueDate.getDate() + (cust!.paymentTerms || 30));
 
-    const tpl = MESSAGE_TEMPLATES.find(t => t.id === (selectedTemplate || 'invoice_new'));
-    const templateStr = en ? (tpl?.template || '') : (tpl?.templateAr || '');
+    const tpl = MESSAGE_TEMPLATES.find((t) => t.id === (selectedTemplate || "invoice_new"));
+    const templateStr = en ? tpl?.template || "" : tpl?.templateAr || "";
     const message = fillTemplate(templateStr, {
-      customer_name: inv.customerName || 'Customer',
+      customer_name: inv.customerName || "Customer",
       invoice_number: inv.number,
       amount: `AED ${inv.total.toFixed(2)}`,
-      due_date: dueDate.toLocaleDateString(en ? 'en-AE' : 'ar-AE'),
-      company_name: currentCompany?.name || 'Our Company',
+      due_date: dueDate.toLocaleDateString(en ? "en-AE" : "ar-AE"),
+      company_name: currentCompany?.name || "Our Company",
     });
 
     void logAndOpen(recipient, message, {
-      kind: 'invoice',
+      kind: "invoice",
       recipientName: inv.customerName,
-      sourceType: 'invoice',
+      sourceType: "invoice",
       sourceId: inv.id,
       attachmentLabel: `Invoice ${inv.number}`,
     });
-    setSelectedInvoice(''); setSelectedTemplate(''); setShowInvoiceDialog(false);
+    setSelectedInvoice("");
+    setSelectedTemplate("");
+    setShowInvoiceDialog(false);
   };
 
   const handleBroadcast = () => {
-    if (!broadcastMessage.trim()) { toast({ title: en ? 'Message required' : 'الرسالة مطلوبة', variant: 'destructive' }); return; }
+    if (!broadcastMessage.trim()) {
+      toast({ title: en ? "Message required" : "الرسالة مطلوبة", variant: "destructive" });
+      return;
+    }
     const recipients = customers
       .map((c) => ({ customer: c, number: pickWhatsAppNumber(c) }))
       .filter((r): r is { customer: CustomerContact; number: string } => !!r.number);
-    if (recipients.length === 0) { toast({ title: en ? 'No customers with phone numbers' : 'لا يوجد عملاء بأرقام', variant: 'destructive' }); return; }
+    if (recipients.length === 0) {
+      toast({
+        title: en ? "No customers with phone numbers" : "لا يوجد عملاء بأرقام",
+        variant: "destructive",
+      });
+      return;
+    }
 
     recipients.forEach((r, i) => {
-      const tpl = MESSAGE_TEMPLATES.find(t => t.id === 'news_update');
-      const templateStr = en ? (tpl?.template || '') : (tpl?.templateAr || '');
+      const tpl = MESSAGE_TEMPLATES.find((t) => t.id === "news_update");
+      const templateStr = en ? tpl?.template || "" : tpl?.templateAr || "";
       const msg = fillTemplate(templateStr, {
         customer_name: r.customer.name,
         message: broadcastMessage,
-        company_name: currentCompany?.name || 'Our Company',
+        company_name: currentCompany?.name || "Our Company",
       });
 
       setTimeout(() => {
         void logAndOpen(r.number, msg, {
-          kind: 'broadcast',
+          kind: "broadcast",
           recipientName: r.customer.name,
-          sourceType: 'broadcast',
+          sourceType: "broadcast",
         });
       }, i * 900);
     });
 
-    toast({ title: en ? `Opening WhatsApp for ${recipients.length} customer(s)...` : `جاري فتح واتساب لـ ${recipients.length} عميل...` });
-    setBroadcastMessage(''); setShowBroadcastDialog(false);
-    setTimeout(() => {
-      queryClient.invalidateQueries({ queryKey: ['/api/integrations/whatsapp/messages'] });
-    }, recipients.length * 800 + 1000);
+    toast({
+      title: en
+        ? `Opening WhatsApp for ${recipients.length} customer(s)...`
+        : `جاري فتح واتساب لـ ${recipients.length} عميل...`,
+    });
+    setBroadcastMessage("");
+    setShowBroadcastDialog(false);
+    setTimeout(
+      () => {
+        queryClient.invalidateQueries({ queryKey: ["/api/integrations/whatsapp/messages"] });
+      },
+      recipients.length * 800 + 1000
+    );
   };
 
   const handleQuickMessage = (customer: CustomerContact) => {
     const wa = pickWhatsAppNumber(customer);
-    if (!wa) { toast({ title: en ? 'No phone number' : 'لا يوجد رقم', variant: 'destructive' }); return; }
+    if (!wa) {
+      toast({ title: en ? "No phone number" : "لا يوجد رقم", variant: "destructive" });
+      return;
+    }
     setSelectedCustomer(customer.id);
     setSendTo(wa);
-    setSendMessage('');
+    setSendMessage("");
     setShowSendDialog(true);
   };
 
   const toggleRule = (ruleId: string) => {
-    setRules(prev => prev.map(r => r.id === ruleId ? { ...r, enabled: !r.enabled } : r));
+    setRules((prev) => prev.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r)));
     // Save rules to backend
-    apiRequest('POST', '/api/integrations/whatsapp/save-rules', {
-      rules: rules.map(r => r.id === ruleId ? { ...r, enabled: !r.enabled } : r),
+    apiRequest("POST", "/api/integrations/whatsapp/save-rules", {
+      rules: rules.map((r) => (r.id === ruleId ? { ...r, enabled: !r.enabled } : r)),
     }).catch(() => {});
   };
 
@@ -471,57 +576,60 @@ export default function WhatsAppDashboard() {
       const cust = customers.find((c) => c.name === inv.customerName);
       const wa = cust ? pickWhatsAppNumber(cust) : null;
       if (cust && wa) {
-        const tpl = MESSAGE_TEMPLATES.find((t) => t.id === 'payment_reminder');
+        const tpl = MESSAGE_TEMPLATES.find((t) => t.id === "payment_reminder");
         const invoiceDate = new Date(inv.date);
         const dueDate = new Date(invoiceDate);
         dueDate.setDate(dueDate.getDate() + (cust.paymentTerms || 30));
 
-        const templateStr = en ? (tpl?.template || '') : (tpl?.templateAr || '');
+        const templateStr = en ? tpl?.template || "" : tpl?.templateAr || "";
         const message = fillTemplate(templateStr, {
-          customer_name: inv.customerName || 'Customer',
+          customer_name: inv.customerName || "Customer",
           invoice_number: inv.number,
           amount: `AED ${inv.total.toFixed(2)}`,
-          due_date: dueDate.toLocaleDateString(en ? 'en-AE' : 'ar-AE'),
-          company_name: currentCompany?.name || 'Our Company',
+          due_date: dueDate.toLocaleDateString(en ? "en-AE" : "ar-AE"),
+          company_name: currentCompany?.name || "Our Company",
         });
 
         void logAndOpen(wa, message, {
-          kind: 'payment_chase',
+          kind: "payment_chase",
           recipientName: inv.customerName,
-          sourceType: 'invoice',
+          sourceType: "invoice",
           sourceId: inv.id,
         });
       } else {
-        toast({ title: en ? 'No phone number for this customer' : 'لا يوجد رقم هاتف لهذا العميل', variant: 'destructive' });
+        toast({
+          title: en ? "No phone number for this customer" : "لا يوجد رقم هاتف لهذا العميل",
+          variant: "destructive",
+        });
       }
     }
 
     // Mark notification as read
-    apiRequest('PATCH', `/api/notifications/${notification.id}/read`, {}).catch(() => {});
-    queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+    apiRequest("PATCH", `/api/notifications/${notification.id}/read`, {}).catch(() => {});
+    queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
   };
 
   const dismissNotification = (notificationId: string) => {
-    apiRequest('PATCH', `/api/notifications/${notificationId}/dismiss`, {}).catch(() => {});
-    queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
+    apiRequest("PATCH", `/api/notifications/${notificationId}/dismiss`, {}).catch(() => {});
+    queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
   };
 
   const applyTemplate = (templateId: string) => {
-    const tpl = MESSAGE_TEMPLATES.find(t => t.id === templateId);
+    const tpl = MESSAGE_TEMPLATES.find((t) => t.id === templateId);
     if (!tpl) return;
 
     const custName = selectedCustomer
-      ? customers.find(c => c.id === selectedCustomer)?.name || ''
-      : '';
+      ? customers.find((c) => c.id === selectedCustomer)?.name || ""
+      : "";
 
     const templateStr = en ? tpl.template : tpl.templateAr;
     const msg = fillTemplate(templateStr, {
-      customer_name: custName || (en ? '[Customer Name]' : '[اسم العميل]'),
-      message: en ? '[Your message here]' : '[رسالتك هنا]',
-      company_name: currentCompany?.name || 'Our Company',
-      invoice_number: '[INV-XXX]',
-      amount: '[AED X,XXX.XX]',
-      due_date: '[Date]',
+      customer_name: custName || (en ? "[Customer Name]" : "[اسم العميل]"),
+      message: en ? "[Your message here]" : "[رسالتك هنا]",
+      company_name: currentCompany?.name || "Our Company",
+      invoice_number: "[INV-XXX]",
+      amount: "[AED X,XXX.XX]",
+      due_date: "[Date]",
     });
     setSendMessage(msg);
   };
@@ -530,14 +638,19 @@ export default function WhatsAppDashboard() {
   const selectedInvoiceCustomer = selectedInvoiceRecord
     ? customers.find((customer) => customer.name === selectedInvoiceRecord.customerName)
     : null;
-  const selectedInvoicePhone = selectedInvoiceCustomer ? pickWhatsAppNumber(selectedInvoiceCustomer) : null;
+  const selectedInvoicePhone = selectedInvoiceCustomer
+    ? pickWhatsAppNumber(selectedInvoiceCustomer)
+    : null;
   const bridgeDetected = Boolean(bridgePing.available || bridgeStatus?.connected);
   const recentBridgeJobs = bridgeStatus?.recentJobs ?? [];
 
   // ─── Render ─────────────────────────────────────────────
 
   return (
-    <div className={`container max-w-6xl mx-auto py-6 px-4 space-y-6 ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+    <div
+      className={`container max-w-6xl mx-auto py-6 px-4 space-y-6 ${isRTL ? "rtl" : "ltr"}`}
+      dir={isRTL ? "rtl" : "ltr"}
+    >
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
@@ -545,11 +658,11 @@ export default function WhatsAppDashboard() {
             <SiWhatsapp className="w-6 h-6 text-green-500" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">{en ? 'WhatsApp' : 'واتساب'}</h1>
+            <h1 className="text-2xl font-bold">{en ? "WhatsApp" : "واتساب"}</h1>
             <p className="text-sm text-muted-foreground">
               {en
-                ? 'Prepare messages, invoice reminders, and broadcasts for WhatsApp Desktop/Web. Sending is confirmed inside WhatsApp.'
-                : 'جهّز الرسائل وتذكيرات الفواتير والبث لواتساب. يتم تأكيد الإرسال داخل واتساب.'}
+                ? "Prepare messages, invoice reminders, and broadcasts for WhatsApp Desktop/Web. Sending is confirmed inside WhatsApp."
+                : "جهّز الرسائل وتذكيرات الفواتير والبث لواتساب. يتم تأكيد الإرسال داخل واتساب."}
             </p>
           </div>
         </div>
@@ -560,12 +673,12 @@ export default function WhatsAppDashboard() {
             <DialogTrigger asChild>
               <Button variant="outline" data-testid="button-broadcast">
                 <Megaphone className="w-4 h-4 mr-2" />
-                {en ? 'Broadcast News' : 'بث أخبار'}
+                {en ? "Broadcast News" : "بث أخبار"}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{en ? 'Broadcast to All Clients' : 'بث لجميع العملاء'}</DialogTitle>
+                <DialogTitle>{en ? "Broadcast to All Clients" : "بث لجميع العملاء"}</DialogTitle>
                 <DialogDescription>
                   {en
                     ? `Prepare a news or announcement message for ${customers.filter((c) => pickWhatsAppNumber(c)).length} customer(s) with phone numbers`
@@ -574,7 +687,7 @@ export default function WhatsAppDashboard() {
               </DialogHeader>
               <div className="space-y-4">
                 <Textarea
-                  placeholder={en ? 'Type your announcement...' : 'اكتب إعلانك...'}
+                  placeholder={en ? "Type your announcement..." : "اكتب إعلانك..."}
                   value={broadcastMessage}
                   onChange={(e) => setBroadcastMessage(e.target.value)}
                   rows={5}
@@ -582,12 +695,18 @@ export default function WhatsAppDashboard() {
                 />
                 <p className="text-xs text-muted-foreground">
                   {en
-                    ? 'This will open WhatsApp for each customer. Your browser may ask to allow popups.'
-                    : 'سيتم فتح واتساب لكل عميل. قد يطلب المتصفح السماح بالنوافذ المنبثقة.'}
+                    ? "This will open WhatsApp for each customer. Your browser may ask to allow popups."
+                    : "سيتم فتح واتساب لكل عميل. قد يطلب المتصفح السماح بالنوافذ المنبثقة."}
                 </p>
-                <Button onClick={handleBroadcast} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-send-broadcast">
+                <Button
+                  onClick={handleBroadcast}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  data-testid="button-send-broadcast"
+                >
                   <Megaphone className="w-4 h-4 mr-2" />
-                  {en ? `Open ${customers.filter((c) => pickWhatsAppNumber(c)).length} WhatsApp chat(s)` : `فتح ${customers.filter((c) => pickWhatsAppNumber(c)).length} محادثة واتساب`}
+                  {en
+                    ? `Open ${customers.filter((c) => pickWhatsAppNumber(c)).length} WhatsApp chat(s)`
+                    : `فتح ${customers.filter((c) => pickWhatsAppNumber(c)).length} محادثة واتساب`}
                 </Button>
               </div>
             </DialogContent>
@@ -596,14 +715,14 @@ export default function WhatsAppDashboard() {
           <Button
             variant="outline"
             onClick={() => {
-              setSelectedTemplate('document_request');
-              applyTemplate('document_request');
+              setSelectedTemplate("document_request");
+              applyTemplate("document_request");
               setShowSendDialog(true);
             }}
             data-testid="button-document-request-whatsapp"
           >
             <FileText className="w-4 h-4 mr-2" />
-            {en ? 'Document Request' : 'طلب مستندات'}
+            {en ? "Document Request" : "طلب مستندات"}
           </Button>
 
           {/* Invoice Reminder */}
@@ -611,27 +730,29 @@ export default function WhatsAppDashboard() {
             <DialogTrigger asChild>
               <Button variant="outline" data-testid="button-send-invoice">
                 <Receipt className="w-4 h-4 mr-2" />
-                {en ? 'Invoice Reminder' : 'تذكير فاتورة'}
+                {en ? "Invoice Reminder" : "تذكير فاتورة"}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{en ? 'Prepare Invoice Reminder' : 'تجهيز تذكير فاتورة'}</DialogTitle>
+                <DialogTitle>{en ? "Prepare Invoice Reminder" : "تجهيز تذكير فاتورة"}</DialogTitle>
                 <DialogDescription>
-                  {en ? 'Select an invoice and template, then open WhatsApp to confirm the send.' : 'اختر فاتورة وقالباً ثم افتح واتساب لتأكيد الإرسال.'}
+                  {en
+                    ? "Select an invoice and template, then open WhatsApp to confirm the send."
+                    : "اختر فاتورة وقالباً ثم افتح واتساب لتأكيد الإرسال."}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label className="mb-1.5 block">{en ? 'Invoice' : 'الفاتورة'}</Label>
+                  <Label className="mb-1.5 block">{en ? "Invoice" : "الفاتورة"}</Label>
                   <Select value={selectedInvoice} onValueChange={setSelectedInvoice}>
                     <SelectTrigger data-testid="select-invoice">
-                      <SelectValue placeholder={en ? 'Select an invoice' : 'اختر فاتورة'} />
+                      <SelectValue placeholder={en ? "Select an invoice" : "اختر فاتورة"} />
                     </SelectTrigger>
                     <SelectContent>
                       {invoices
-                        .filter(inv => inv.status !== 'paid')
-                        .map(inv => (
+                        .filter((inv) => inv.status !== "paid")
+                        .map((inv) => (
                           <SelectItem key={inv.id} value={inv.id}>
                             {inv.number} - {inv.customerName} - AED {inv.total.toFixed(2)}
                           </SelectItem>
@@ -641,13 +762,18 @@ export default function WhatsAppDashboard() {
                 </div>
 
                 <div>
-                  <Label className="mb-1.5 block">{en ? 'Template' : 'القالب'}</Label>
-                  <Select value={selectedTemplate || 'invoice_new'} onValueChange={setSelectedTemplate}>
+                  <Label className="mb-1.5 block">{en ? "Template" : "القالب"}</Label>
+                  <Select
+                    value={selectedTemplate || "invoice_new"}
+                    onValueChange={setSelectedTemplate}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {MESSAGE_TEMPLATES.filter(t => ['invoice', 'payment'].includes(t.category)).map(tpl => (
+                      {MESSAGE_TEMPLATES.filter((t) =>
+                        ["invoice", "payment"].includes(t.category)
+                      ).map((tpl) => (
                         <SelectItem key={tpl.id} value={tpl.id}>
                           {en ? tpl.name : tpl.nameAr}
                         </SelectItem>
@@ -658,14 +784,23 @@ export default function WhatsAppDashboard() {
 
                 {selectedInvoiceRecord ? (
                   <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
-                    <p><strong>{en ? 'Customer' : 'العميل'}:</strong> {selectedInvoiceRecord.customerName}</p>
-                    <p><strong>{en ? 'Amount' : 'المبلغ'}:</strong> AED {selectedInvoiceRecord.total.toFixed(2)}</p>
-                    <p><strong>{en ? 'Phone' : 'الهاتف'}:</strong> {selectedInvoicePhone || (en ? 'No phone' : 'لا يوجد رقم')}</p>
+                    <p>
+                      <strong>{en ? "Customer" : "العميل"}:</strong>{" "}
+                      {selectedInvoiceRecord.customerName}
+                    </p>
+                    <p>
+                      <strong>{en ? "Amount" : "المبلغ"}:</strong> AED{" "}
+                      {selectedInvoiceRecord.total.toFixed(2)}
+                    </p>
+                    <p>
+                      <strong>{en ? "Phone" : "الهاتف"}:</strong>{" "}
+                      {selectedInvoicePhone || (en ? "No phone" : "لا يوجد رقم")}
+                    </p>
                     {!selectedInvoicePhone ? (
                       <p className="text-xs text-destructive">
                         {en
-                          ? 'Add a WhatsApp number to this customer before opening an invoice reminder.'
-                          : 'أضف رقم واتساب لهذا العميل قبل فتح تذكير الفاتورة.'}
+                          ? "Add a WhatsApp number to this customer before opening an invoice reminder."
+                          : "أضف رقم واتساب لهذا العميل قبل فتح تذكير الفاتورة."}
                       </p>
                     ) : null}
                   </div>
@@ -678,7 +813,7 @@ export default function WhatsAppDashboard() {
                   data-testid="button-open-whatsapp-invoice"
                 >
                   <SiWhatsapp className="w-4 h-4 mr-2" />
-                  {en ? 'Open in WhatsApp' : 'فتح في واتساب'}
+                  {en ? "Open in WhatsApp" : "فتح في واتساب"}
                 </Button>
               </div>
             </DialogContent>
@@ -689,27 +824,32 @@ export default function WhatsAppDashboard() {
             <DialogTrigger asChild>
               <Button className="bg-green-600 hover:bg-green-700" data-testid="button-send-message">
                 <Send className="w-4 h-4 mr-2" />
-                {en ? 'Prepare Message' : 'تجهيز رسالة'}
+                {en ? "Prepare Message" : "تجهيز رسالة"}
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>{en ? 'Prepare WhatsApp Message' : 'تجهيز رسالة واتساب'}</DialogTitle>
+                <DialogTitle>{en ? "Prepare WhatsApp Message" : "تجهيز رسالة واتساب"}</DialogTitle>
                 <DialogDescription>
-                  {en ? 'Compose a message. It will open in WhatsApp Desktop/Web and be logged here; delivery is not verified by Muhasib.' : 'اكتب الرسالة. ستفتح في واتساب ويتم تسجيلها هنا؛ لا يتحقق محاسب من التسليم.'}
+                  {en
+                    ? "Compose a message. It will open in WhatsApp Desktop/Web and be logged here; delivery is not verified by Muhasib."
+                    : "اكتب الرسالة. ستفتح في واتساب ويتم تسجيلها هنا؛ لا يتحقق محاسب من التسليم."}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label className="mb-1.5 block">{en ? 'Customer' : 'العميل'}</Label>
-                  <Select value={selectedCustomer} onValueChange={(val) => {
-                    setSelectedCustomer(val);
-                    const cust = customers.find(c => c.id === val);
-                    const wa = cust ? pickWhatsAppNumber(cust) : null;
-                    if (wa) setSendTo(wa);
-                  }}>
+                  <Label className="mb-1.5 block">{en ? "Customer" : "العميل"}</Label>
+                  <Select
+                    value={selectedCustomer}
+                    onValueChange={(val) => {
+                      setSelectedCustomer(val);
+                      const cust = customers.find((c) => c.id === val);
+                      const wa = cust ? pickWhatsAppNumber(cust) : null;
+                      if (wa) setSendTo(wa);
+                    }}
+                  >
                     <SelectTrigger data-testid="select-customer">
-                      <SelectValue placeholder={en ? 'Select a customer' : 'اختر عميل'} />
+                      <SelectValue placeholder={en ? "Select a customer" : "اختر عميل"} />
                     </SelectTrigger>
                     <SelectContent>
                       {customers
@@ -724,23 +864,36 @@ export default function WhatsAppDashboard() {
                 </div>
 
                 <div>
-                  <Label className="mb-1.5 block">{en ? 'Or enter phone number' : 'أو أدخل رقم الهاتف'}</Label>
+                  <Label className="mb-1.5 block">
+                    {en ? "Or enter phone number" : "أو أدخل رقم الهاتف"}
+                  </Label>
                   <Input
-                    placeholder={en ? 'e.g. 971501234567' : 'مثال: 971501234567'}
+                    placeholder={en ? "e.g. 971501234567" : "مثال: 971501234567"}
                     value={sendTo}
-                    onChange={(e) => { setSendTo(e.target.value); setSelectedCustomer(''); }}
+                    onChange={(e) => {
+                      setSendTo(e.target.value);
+                      setSelectedCustomer("");
+                    }}
                     data-testid="input-phone"
                   />
                 </div>
 
                 <div>
-                  <Label className="mb-1.5 block">{en ? 'Template (optional)' : 'قالب (اختياري)'}</Label>
-                  <Select value={selectedTemplate} onValueChange={(val) => { setSelectedTemplate(val); applyTemplate(val); }}>
+                  <Label className="mb-1.5 block">
+                    {en ? "Template (optional)" : "قالب (اختياري)"}
+                  </Label>
+                  <Select
+                    value={selectedTemplate}
+                    onValueChange={(val) => {
+                      setSelectedTemplate(val);
+                      applyTemplate(val);
+                    }}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder={en ? 'Choose a template...' : 'اختر قالب...'} />
+                      <SelectValue placeholder={en ? "Choose a template..." : "اختر قالب..."} />
                     </SelectTrigger>
                     <SelectContent>
-                      {MESSAGE_TEMPLATES.map(tpl => (
+                      {MESSAGE_TEMPLATES.map((tpl) => (
                         <SelectItem key={tpl.id} value={tpl.id}>
                           {en ? tpl.name : tpl.nameAr}
                         </SelectItem>
@@ -750,9 +903,9 @@ export default function WhatsAppDashboard() {
                 </div>
 
                 <div>
-                  <Label className="mb-1.5 block">{en ? 'Message' : 'الرسالة'}</Label>
+                  <Label className="mb-1.5 block">{en ? "Message" : "الرسالة"}</Label>
                   <Textarea
-                    placeholder={en ? 'Type your message...' : 'اكتب رسالتك...'}
+                    placeholder={en ? "Type your message..." : "اكتب رسالتك..."}
                     value={sendMessage}
                     onChange={(e) => setSendMessage(e.target.value)}
                     rows={6}
@@ -760,9 +913,13 @@ export default function WhatsAppDashboard() {
                   />
                 </div>
 
-                <Button onClick={handleSendMessage} className="w-full bg-green-600 hover:bg-green-700" data-testid="button-open-whatsapp">
+                <Button
+                  onClick={handleSendMessage}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  data-testid="button-open-whatsapp"
+                >
                   <SiWhatsapp className="w-4 h-4 mr-2" />
-                  {en ? 'Open in WhatsApp' : 'فتح في واتساب'}
+                  {en ? "Open in WhatsApp" : "فتح في واتساب"}
                 </Button>
               </div>
             </DialogContent>
@@ -775,13 +932,17 @@ export default function WhatsAppDashboard() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant={bridgeDetected ? 'success' : 'warning'} dot>
+                <Badge variant={bridgeDetected ? "success" : "warning"} dot>
                   {bridgeDetected
-                    ? (en ? 'Bridge ready' : 'الجسر جاهز')
-                    : (en ? 'Bridge not detected' : 'لم يتم العثور على الجسر')}
+                    ? en
+                      ? "Bridge ready"
+                      : "الجسر جاهز"
+                    : en
+                      ? "Bridge not detected"
+                      : "لم يتم العثور على الجسر"}
                 </Badge>
                 <Badge variant="neutral">
-                  {en ? 'Human-confirmed send' : 'إرسال بمراجعة الموظف'}
+                  {en ? "Human-confirmed send" : "إرسال بمراجعة الموظف"}
                 </Badge>
                 {bridgePing.version || bridgeStatus?.activeSession?.extensionVersion ? (
                   <Badge variant="outline">
@@ -791,12 +952,13 @@ export default function WhatsAppDashboard() {
               </div>
               <p className="text-sm text-muted-foreground max-w-3xl">
                 {en
-                  ? 'NR queues an audited WhatsApp job and opens a reviewed draft in WhatsApp Web. If the Chrome bridge is missing or outdated, the browser handoff still opens WhatsApp Web directly and staff confirm send status after pressing Send.'
-                  : 'ينشئ NR مهمة واتساب مسجلة ويفتح مسودة للمراجعة في واتساب ويب. إذا كانت إضافة كروم غير موجودة أو قديمة، يتم فتح واتساب ويب مباشرة ويؤكد الموظف حالة الإرسال بعد الضغط على إرسال.'}
+                  ? "NR queues an audited WhatsApp job and opens a reviewed draft in WhatsApp Web. If the Chrome bridge is missing or outdated, the browser handoff still opens WhatsApp Web directly and staff confirm send status after pressing Send."
+                  : "ينشئ NR مهمة واتساب مسجلة ويفتح مسودة للمراجعة في واتساب ويب. إذا كانت إضافة كروم غير موجودة أو قديمة، يتم فتح واتساب ويب مباشرة ويؤكد الموظف حالة الإرسال بعد الضغط على إرسال."}
               </p>
               {recentBridgeJobs.length > 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  {en ? 'Latest bridge job' : 'آخر مهمة'}: {recentBridgeJobs[0].kind} · {recentBridgeJobs[0].deliveryStatus}
+                  {en ? "Latest bridge job" : "آخر مهمة"}: {recentBridgeJobs[0].kind} ·{" "}
+                  {recentBridgeJobs[0].deliveryStatus}
                 </p>
               ) : null}
             </div>
@@ -808,15 +970,23 @@ export default function WhatsAppDashboard() {
                 data-testid="button-check-whatsapp-bridge"
               >
                 <CheckCircle2 className="h-4 w-4 mr-2" />
-                {bridgeChecking ? (en ? 'Checking...' : 'جاري الفحص...') : (en ? 'Check Bridge' : 'فحص الجسر')}
+                {bridgeChecking
+                  ? en
+                    ? "Checking..."
+                    : "جاري الفحص..."
+                  : en
+                    ? "Check Bridge"
+                    : "فحص الجسر"}
               </Button>
               <Button
                 variant="outline"
-                onClick={() => window.open('https://web.whatsapp.com/', '_blank', 'noopener,noreferrer')}
+                onClick={() =>
+                  window.open("https://web.whatsapp.com/", "_blank", "noopener,noreferrer")
+                }
                 data-testid="button-open-whatsapp-web"
               >
                 <ExternalLink className="h-4 w-4 mr-2" />
-                {en ? 'Open WhatsApp Web' : 'فتح واتساب ويب'}
+                {en ? "Open WhatsApp Web" : "فتح واتساب ويب"}
               </Button>
             </div>
           </div>
@@ -828,19 +998,19 @@ export default function WhatsAppDashboard() {
         <TabsList>
           <TabsTrigger value="messages">
             <MessageCircle className="w-4 h-4 mr-1.5" />
-            {en ? 'Messages' : 'الرسائل'}
+            {en ? "Messages" : "الرسائل"}
           </TabsTrigger>
           <TabsTrigger value="customers">
             <Users className="w-4 h-4 mr-1.5" />
-            {en ? 'Customers' : 'العملاء'}
+            {en ? "Customers" : "العملاء"}
           </TabsTrigger>
           <TabsTrigger value="rules">
             <Settings2 className="w-4 h-4 mr-1.5" />
-            {en ? 'Rules' : 'القواعد'}
+            {en ? "Rules" : "القواعد"}
           </TabsTrigger>
           <TabsTrigger value="templates">
             <FileText className="w-4 h-4 mr-1.5" />
-            {en ? 'Templates' : 'القوالب'}
+            {en ? "Templates" : "القوالب"}
           </TabsTrigger>
         </TabsList>
 
@@ -849,7 +1019,7 @@ export default function WhatsAppDashboard() {
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder={en ? 'Search messages...' : 'بحث في الرسائل...'}
+              placeholder={en ? "Search messages..." : "بحث في الرسائل..."}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -867,20 +1037,30 @@ export default function WhatsAppDashboard() {
                 <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mb-4">
                   <SiWhatsapp className="w-8 h-8 text-green-500" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">{en ? 'No messages yet' : 'لا توجد رسائل بعد'}</h3>
+                <h3 className="text-lg font-semibold mb-2">
+                  {en ? "No messages yet" : "لا توجد رسائل بعد"}
+                </h3>
                 <p className="text-muted-foreground mb-6 max-w-md">
-                  {en ? 'Start by preparing a message, invoice reminder, or broadcast for your clients' : 'ابدأ بتجهيز رسالة أو تذكير فاتورة أو بث لعملائك'}
+                  {en
+                    ? "Start by preparing a message, invoice reminder, or broadcast for your clients"
+                    : "ابدأ بتجهيز رسالة أو تذكير فاتورة أو بث لعملائك"}
                 </p>
-                <Button onClick={() => setShowSendDialog(true)} className="bg-green-600 hover:bg-green-700">
+                <Button
+                  onClick={() => setShowSendDialog(true)}
+                  className="bg-green-600 hover:bg-green-700"
+                >
                   <Send className="w-4 h-4 mr-2" />
-                  {en ? 'Prepare Message' : 'تجهيز رسالة'}
+                  {en ? "Prepare Message" : "تجهيز رسالة"}
                 </Button>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-2">
               {filteredMessages
-                .sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime())
+                .sort(
+                  (a, b) =>
+                    new Date(b.createdAt || "").getTime() - new Date(a.createdAt || "").getTime()
+                )
                 .map((msg) => {
                   const delivery = getMessageDeliveryMeta(msg);
 
@@ -895,25 +1075,32 @@ export default function WhatsAppDashboard() {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="font-medium text-sm">
-                                  {msg.direction === 'outbound'
-                                    ? `→ ${getCustomerName(msg.to || '')}`
-                                    : `← ${getCustomerName(msg.from || '')}`}
+                                  {msg.direction === "outbound"
+                                    ? `→ ${getCustomerName(msg.to || "")}`
+                                    : `← ${getCustomerName(msg.from || "")}`}
                                 </span>
                                 <Badge variant={delivery.variant} className="text-xs">
                                   {delivery.label}
                                 </Badge>
                               </div>
-                              <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">{msg.content}</p>
+                              <p className="text-sm text-muted-foreground line-clamp-2 whitespace-pre-line">
+                                {msg.content}
+                              </p>
                               <div className="flex items-center gap-2 mt-1.5">
                                 <Clock className="w-3 h-3 text-muted-foreground" />
                                 <span className="text-xs text-muted-foreground">
-                                  {msg.createdAt ? formatTime(String(msg.createdAt)) : ''}
+                                  {msg.createdAt ? formatTime(String(msg.createdAt)) : ""}
                                 </span>
                               </div>
                             </div>
                           </div>
                           {msg.to && (
-                            <Button variant="ghost" size="sm" className="text-green-600 shrink-0" onClick={() => openWhatsApp(msg.to!, '')}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-green-600 shrink-0"
+                              onClick={() => openWhatsApp(msg.to!, "")}
+                            >
                               <ExternalLink className="w-4 h-4" />
                             </Button>
                           )}
@@ -949,7 +1136,7 @@ export default function WhatsAppDashboard() {
                           </p>
                         ) : (
                           <p className="text-sm text-muted-foreground italic">
-                            {en ? 'No phone' : 'لا يوجد رقم'}
+                            {en ? "No phone" : "لا يوجد رقم"}
                           </p>
                         )}
                       </div>
@@ -973,10 +1160,12 @@ export default function WhatsAppDashboard() {
                 <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                   <Users className="w-12 h-12 text-muted-foreground mb-3" />
                   <p className="text-muted-foreground">
-                    {en ? 'No customers yet. Add contacts to message them via WhatsApp.' : 'لا يوجد عملاء بعد. أضف جهات اتصال لمراسلتهم عبر واتساب.'}
+                    {en
+                      ? "No customers yet. Add contacts to message them via WhatsApp."
+                      : "لا يوجد عملاء بعد. أضف جهات اتصال لمراسلتهم عبر واتساب."}
                   </p>
                   <Button asChild className="mt-4" variant="outline">
-                    <a href="/contacts">{en ? 'Add contacts' : 'أضف جهات اتصال'}</a>
+                    <a href="/contacts">{en ? "Add contacts" : "أضف جهات اتصال"}</a>
                   </Button>
                 </CardContent>
               </Card>
@@ -993,13 +1182,15 @@ export default function WhatsAppDashboard() {
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-orange-500" />
                   <CardTitle className="text-lg">
-                    {en ? `Pending Actions (${pendingActions.length})` : `إجراءات معلقة (${pendingActions.length})`}
+                    {en
+                      ? `Pending Actions (${pendingActions.length})`
+                      : `إجراءات معلقة (${pendingActions.length})`}
                   </CardTitle>
                 </div>
                 <CardDescription>
                   {en
-                    ? 'These notifications were created by the scheduler. Open a pre-filled WhatsApp message, review it, then confirm the send in WhatsApp.'
-                    : 'تم إنشاء هذه الإشعارات بواسطة المجدول. افتح رسالة واتساب جاهزة وراجعها ثم أكد الإرسال داخل واتساب.'}
+                    ? "These notifications were created by the scheduler. Open a pre-filled WhatsApp message, review it, then confirm the send in WhatsApp."
+                    : "تم إنشاء هذه الإشعارات بواسطة المجدول. افتح رسالة واتساب جاهزة وراجعها ثم أكد الإرسال داخل واتساب."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -1007,7 +1198,9 @@ export default function WhatsAppDashboard() {
                   const relatedInv = notification.relatedEntityId
                     ? invoices.find((i) => i.id === notification.relatedEntityId)
                     : null;
-                  const cust = relatedInv ? customers.find((c) => c.name === relatedInv.customerName) : null;
+                  const cust = relatedInv
+                    ? customers.find((c) => c.name === relatedInv.customerName)
+                    : null;
 
                   return (
                     <div
@@ -1015,21 +1208,33 @@ export default function WhatsAppDashboard() {
                       className="flex items-center justify-between p-3 border rounded-lg bg-background hover:bg-accent/50 transition-colors"
                     >
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                          notification.priority === 'urgent' ? 'bg-red-500/10' :
-                          notification.priority === 'high' ? 'bg-orange-500/10' : 'bg-yellow-500/10'
-                        }`}>
-                          <CreditCard className={`w-4 h-4 ${
-                            notification.priority === 'urgent' ? 'text-red-600' :
-                            notification.priority === 'high' ? 'text-orange-600' : 'text-yellow-600'
-                          }`} />
+                        <div
+                          className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                            notification.priority === "urgent"
+                              ? "bg-red-500/10"
+                              : notification.priority === "high"
+                                ? "bg-orange-500/10"
+                                : "bg-yellow-500/10"
+                          }`}
+                        >
+                          <CreditCard
+                            className={`w-4 h-4 ${
+                              notification.priority === "urgent"
+                                ? "text-red-600"
+                                : notification.priority === "high"
+                                  ? "text-orange-600"
+                                  : "text-yellow-600"
+                            }`}
+                          />
                         </div>
                         <div className="min-w-0">
                           <p className="font-medium text-sm truncate">{notification.title}</p>
-                          <p className="text-xs text-muted-foreground truncate">{notification.message}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {notification.message}
+                          </p>
                           {relatedInv && (
                             <p className="text-xs text-muted-foreground mt-0.5">
-                              {relatedInv.customerName} {cust?.phone ? `(${cust.phone})` : ''}
+                              {relatedInv.customerName} {cust?.phone ? `(${cust.phone})` : ""}
                             </p>
                           )}
                         </div>
@@ -1042,7 +1247,7 @@ export default function WhatsAppDashboard() {
                             onClick={() => handleActionNotification(notification)}
                           >
                             <SiWhatsapp className="w-3.5 h-3.5 mr-1" />
-                            {en ? 'Open' : 'فتح'}
+                            {en ? "Open" : "فتح"}
                           </Button>
                         )}
                         <Button
@@ -1050,7 +1255,7 @@ export default function WhatsAppDashboard() {
                           size="sm"
                           className="text-muted-foreground h-8 w-8 p-0"
                           onClick={() => dismissNotification(notification.id)}
-                          title={en ? 'Dismiss' : 'تجاهل'}
+                          title={en ? "Dismiss" : "تجاهل"}
                         >
                           <CheckCircle2 className="w-4 h-4" />
                         </Button>
@@ -1072,32 +1277,44 @@ export default function WhatsAppDashboard() {
           {/* Reminder Rules */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">{en ? 'Reminder Rules' : 'قواعد التذكيرات'}</CardTitle>
+              <CardTitle className="text-lg">{en ? "Reminder Rules" : "قواعد التذكيرات"}</CardTitle>
               <CardDescription>
                 {en
-                  ? 'Configure when WhatsApp reminders should be triggered. When a rule matches, you\'ll be prompted to send via WhatsApp.'
-                  : 'حدد متى يجب تفعيل تذكيرات واتساب. عند تطابق قاعدة، سيتم إعلامك للإرسال عبر واتساب.'}
+                  ? "Configure when WhatsApp reminders should be triggered. When a rule matches, you'll be prompted to send via WhatsApp."
+                  : "حدد متى يجب تفعيل تذكيرات واتساب. عند تطابق قاعدة، سيتم إعلامك للإرسال عبر واتساب."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {rules.map((rule) => {
-                const tpl = MESSAGE_TEMPLATES.find(t => t.id === rule.templateId);
+                const tpl = MESSAGE_TEMPLATES.find((t) => t.id === rule.templateId);
                 const Icon = tpl?.icon || Bell;
                 return (
-                  <div key={rule.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors">
+                  <div
+                    key={rule.id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-accent/50 transition-colors"
+                  >
                     <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${rule.enabled ? 'bg-green-500/10' : 'bg-muted'}`}>
-                        <Icon className={`w-5 h-5 ${rule.enabled ? 'text-green-600' : 'text-muted-foreground'}`} />
+                      <div
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center ${rule.enabled ? "bg-green-500/10" : "bg-muted"}`}
+                      >
+                        <Icon
+                          className={`w-5 h-5 ${rule.enabled ? "text-green-600" : "text-muted-foreground"}`}
+                        />
                       </div>
                       <div>
                         <p className="font-medium text-sm">{rule.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {en ? 'Template' : 'القالب'}: {en ? tpl?.name : tpl?.nameAr}
-                          {rule.type === 'before_due' && ` • ${Math.abs(rule.daysOffset)} ${en ? 'days before due' : 'أيام قبل الاستحقاق'}`}
-                          {rule.type === 'on_due' && ` • ${en ? 'On due date' : 'في تاريخ الاستحقاق'}`}
-                          {rule.type === 'after_due' && ` • ${rule.daysOffset} ${en ? 'days after due' : 'أيام بعد الاستحقاق'}`}
-                          {rule.type === 'on_invoice' && ` • ${en ? 'When invoice is created' : 'عند إنشاء الفاتورة'}`}
-                          {rule.type === 'on_event' && ` • ${en ? 'When event occurs' : 'عند حدوث الحدث'}`}
+                          {en ? "Template" : "القالب"}: {en ? tpl?.name : tpl?.nameAr}
+                          {rule.type === "before_due" &&
+                            ` • ${Math.abs(rule.daysOffset)} ${en ? "days before due" : "أيام قبل الاستحقاق"}`}
+                          {rule.type === "on_due" &&
+                            ` • ${en ? "On due date" : "في تاريخ الاستحقاق"}`}
+                          {rule.type === "after_due" &&
+                            ` • ${rule.daysOffset} ${en ? "days after due" : "أيام بعد الاستحقاق"}`}
+                          {rule.type === "on_invoice" &&
+                            ` • ${en ? "When invoice is created" : "عند إنشاء الفاتورة"}`}
+                          {rule.type === "on_event" &&
+                            ` • ${en ? "When event occurs" : "عند حدوث الحدث"}`}
                         </p>
                       </div>
                     </div>
@@ -1113,8 +1330,8 @@ export default function WhatsAppDashboard() {
               <div className="pt-2">
                 <p className="text-xs text-muted-foreground">
                   {en
-                    ? '* Rules will prompt you to send messages — they open WhatsApp on your device. No messages are sent automatically.'
-                    : '* القواعد ستطلب منك إرسال الرسائل — تفتح واتساب على جهازك. لا يتم إرسال رسائل تلقائياً.'}
+                    ? "* Rules will prompt you to send messages — they open WhatsApp on your device. No messages are sent automatically."
+                    : "* القواعد ستطلب منك إرسال الرسائل — تفتح واتساب على جهازك. لا يتم إرسال رسائل تلقائياً."}
                 </p>
               </div>
             </CardContent>
@@ -1136,13 +1353,33 @@ export default function WhatsAppDashboard() {
                       <div>
                         <CardTitle className="text-base">{en ? tpl.name : tpl.nameAr}</CardTitle>
                         <Badge variant="outline" className="text-xs mt-1">
-                          {tpl.category === 'invoice' ? (en ? 'Invoice' : 'فاتورة') :
-                           tpl.category === 'payment' ? (en ? 'Payment' : 'دفع') :
-                           tpl.category === 'onboarding' ? (en ? 'Onboarding' : 'تسجيل') :
-                           tpl.category === 'service' ? (en ? 'Service' : 'خدمة') :
-                           tpl.category === 'alert' ? (en ? 'Alert' : 'تنبيه') :
-                           tpl.category === 'engagement' ? (en ? 'Engagement' : 'تواصل') :
-                           (en ? 'Other' : 'أخرى')}
+                          {tpl.category === "invoice"
+                            ? en
+                              ? "Invoice"
+                              : "فاتورة"
+                            : tpl.category === "payment"
+                              ? en
+                                ? "Payment"
+                                : "دفع"
+                              : tpl.category === "onboarding"
+                                ? en
+                                  ? "Onboarding"
+                                  : "تسجيل"
+                                : tpl.category === "service"
+                                  ? en
+                                    ? "Service"
+                                    : "خدمة"
+                                  : tpl.category === "alert"
+                                    ? en
+                                      ? "Alert"
+                                      : "تنبيه"
+                                    : tpl.category === "engagement"
+                                      ? en
+                                        ? "Engagement"
+                                        : "تواصل"
+                                      : en
+                                        ? "Other"
+                                        : "أخرى"}
                         </Badge>
                       </div>
                     </div>
@@ -1162,7 +1399,7 @@ export default function WhatsAppDashboard() {
                       }}
                     >
                       <Send className="w-3 h-3 mr-1.5" />
-                      {en ? 'Use Template' : 'استخدم القالب'}
+                      {en ? "Use Template" : "استخدم القالب"}
                     </Button>
                   </CardContent>
                 </Card>

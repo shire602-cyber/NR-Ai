@@ -1,28 +1,35 @@
-import { useState, useEffect } from 'react';
-import { useForm } from 'react-hook-form';
-import { useMutation } from '@tanstack/react-query';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatPercent } from '@/lib/format';
-import { apiRequest } from '@/lib/queryClient';
-import { Sparkles, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatPercent } from "@/lib/format";
+import { apiRequest } from "@/lib/queryClient";
+import { Sparkles, ArrowRight, CheckCircle2 } from "lucide-react";
 
 const categorizeSchema = z.object({
   companyId: z.string().uuid(),
-  description: z.string().min(3, 'Description must be at least 3 characters'),
-  amount: z.coerce.number().min(0.01, 'Amount must be positive'),
-  currency: z.string().default('AED'),
+  description: z.string().min(3, "Description must be at least 3 characters"),
+  amount: z.coerce.number().min(0.01, "Amount must be positive"),
+  currency: z.string().default("AED"),
 });
 
 type CategorizeFormData = z.infer<typeof categorizeSchema>;
@@ -36,35 +43,34 @@ export default function AICategorize() {
   const form = useForm<CategorizeFormData>({
     resolver: zodResolver(categorizeSchema),
     defaultValues: {
-      companyId: companyId || '',
-      description: '',
+      companyId: companyId || "",
+      description: "",
       amount: 0,
-      currency: 'AED',
+      currency: "AED",
     },
   });
 
   // Update form's companyId when it's loaded
   useEffect(() => {
     if (companyId) {
-      form.setValue('companyId', companyId);
+      form.setValue("companyId", companyId);
     }
   }, [companyId, form]);
 
   const categorizeMutation = useMutation({
-    mutationFn: (data: CategorizeFormData) => 
-      apiRequest('POST', '/api/ai/categorize', data),
+    mutationFn: (data: CategorizeFormData) => apiRequest("POST", "/api/ai/categorize", data),
     onSuccess: (data) => {
       setResult(data);
       toast({
-        title: 'Categorization complete',
-        description: 'AI has suggested an account for your transaction.',
+        title: "Categorization complete",
+        description: "AI has suggested an account for your transaction.",
       });
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Categorization failed',
-        description: error?.message || 'Please try again.',
+        variant: "destructive",
+        title: "Categorization failed",
+        description: error?.message || "Please try again.",
       });
     },
   });
@@ -74,17 +80,17 @@ export default function AICategorize() {
   };
 
   const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 0.8) return 'text-green-600 dark:text-green-400';
-    if (confidence >= 0.5) return 'text-amber-600 dark:text-amber-400';
-    return 'text-red-600 dark:text-red-400';
+    if (confidence >= 0.8) return "text-green-600 dark:text-green-400";
+    if (confidence >= 0.5) return "text-amber-600 dark:text-amber-400";
+    return "text-red-600 dark:text-red-400";
   };
 
   const examples = [
-    { description: 'Uber ride to client meeting', expected: 'Marketing Expense' },
-    { description: 'Facebook Ads campaign', expected: 'Marketing Expense' },
-    { description: 'Monthly office rent payment', expected: 'Rent Expense' },
-    { description: 'DEWA electricity bill', expected: 'Utilities Expense' },
-    { description: 'Office stationery supplies', expected: 'Office Supplies' },
+    { description: "Uber ride to client meeting", expected: "Marketing Expense" },
+    { description: "Facebook Ads campaign", expected: "Marketing Expense" },
+    { description: "Monthly office rent payment", expected: "Rent Expense" },
+    { description: "DEWA electricity bill", expected: "Utilities Expense" },
+    { description: "Office stationery supplies", expected: "Office Supplies" },
   ];
 
   return (
@@ -103,9 +109,7 @@ export default function AICategorize() {
         <Card>
           <CardHeader>
             <CardTitle>Transaction Details</CardTitle>
-            <CardDescription>
-              Enter transaction information for AI categorization
-            </CardDescription>
+            <CardDescription>Enter transaction information for AI categorization</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
@@ -140,8 +144,10 @@ export default function AICategorize() {
                           step="0.01"
                           placeholder="100.00"
                           className="font-mono"
-                          value={field.value ?? ''} 
-                          onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : '')}
+                          value={field.value ?? ""}
+                          onChange={(e) =>
+                            field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                          }
                           data-testid="input-amount"
                         />
                       </FormControl>
@@ -166,9 +172,7 @@ export default function AICategorize() {
         <Card>
           <CardHeader>
             <CardTitle>AI Suggestion</CardTitle>
-            <CardDescription>
-              Account recommendation with confidence score
-            </CardDescription>
+            <CardDescription>Account recommendation with confidence score</CardDescription>
           </CardHeader>
           <CardContent>
             {categorizeMutation.isPending ? (
@@ -182,7 +186,10 @@ export default function AICategorize() {
                 <div className="flex items-start justify-between gap-4 p-4 border rounded-lg bg-muted/50">
                   <div className="flex-1 min-w-0">
                     <div className="text-xs text-muted-foreground mb-1">{t.suggestedAccount}</div>
-                    <div className="font-semibold text-lg truncate" data-testid="text-suggested-account">
+                    <div
+                      className="font-semibold text-lg truncate"
+                      data-testid="text-suggested-account"
+                    >
                       {result.suggestedAccountName}
                     </div>
                     <div className="font-mono text-sm text-muted-foreground">
@@ -195,26 +202,35 @@ export default function AICategorize() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{t.confidence}</span>
-                    <span className={`text-lg font-bold font-mono ${getConfidenceColor(result.confidence)}`} data-testid="text-confidence">
+                    <span
+                      className={`text-lg font-bold font-mono ${getConfidenceColor(result.confidence)}`}
+                      data-testid="text-confidence"
+                    >
                       {formatPercent(result.confidence, locale)}
                     </span>
                   </div>
-                  <Progress 
-                    value={result.confidence * 100} 
-                    className="h-2"
-                  />
+                  <Progress value={result.confidence * 100} className="h-2" />
                   {result.confidence >= 0.8 && (
-                    <Badge variant="outline" className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400">
+                    <Badge
+                      variant="outline"
+                      className="bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                    >
                       High Confidence
                     </Badge>
                   )}
                   {result.confidence >= 0.5 && result.confidence < 0.8 && (
-                    <Badge variant="outline" className="bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400">
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+                    >
                       Medium Confidence
                     </Badge>
                   )}
                   {result.confidence < 0.5 && (
-                    <Badge variant="outline" className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400">
+                    <Badge
+                      variant="outline"
+                      className="bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                    >
                       Low Confidence
                     </Badge>
                   )}
@@ -222,7 +238,9 @@ export default function AICategorize() {
 
                 <div className="pt-4 border-t">
                   <div className="text-sm text-muted-foreground mb-2">Reasoning</div>
-                  <p className="text-sm" data-testid="text-reason">{result.reason}</p>
+                  <p className="text-sm" data-testid="text-reason">
+                    {result.reason}
+                  </p>
                 </div>
               </div>
             ) : (
@@ -248,8 +266,8 @@ export default function AICategorize() {
               <button
                 key={index}
                 onClick={() => {
-                  form.setValue('description', example.description);
-                  form.setValue('amount', 100);
+                  form.setValue("description", example.description);
+                  form.setValue("amount", 100);
                 }}
                 className="flex items-start justify-between gap-3 p-4 border rounded-lg hover-elevate text-left"
                 data-testid={`example-${index}`}

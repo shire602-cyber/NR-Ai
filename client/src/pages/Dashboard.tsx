@@ -1,33 +1,54 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge, StatusBadge } from '@/components/ui/badge';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency, formatDate } from '@/lib/format';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
-  TrendingUp, TrendingDown, AlertCircle, FileText,
-  Plus, Receipt, BookOpen, Sparkles, ArrowRight, Clock, CheckCircle2,
-  BarChart3, ArrowUpRight, Wallet, Coins,
-} from 'lucide-react';
+  TrendingUp,
+  TrendingDown,
+  AlertCircle,
+  FileText,
+  Plus,
+  Receipt,
+  BookOpen,
+  Sparkles,
+  ArrowRight,
+  Clock,
+  CheckCircle2,
+  BarChart3,
+  ArrowUpRight,
+  Wallet,
+  Coins,
+} from "lucide-react";
 import {
-  ResponsiveContainer, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, AreaChart, Area, BarChart, Bar,
-} from 'recharts';
-import { Link } from 'wouter';
-import { motion } from 'framer-motion';
-import { MeshGradient } from '@/components/ui/mesh-gradient';
-import ClientDashboard from './ClientDashboard';
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  Tooltip,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+} from "recharts";
+import { Link } from "wouter";
+import { motion } from "framer-motion";
+import { MeshGradient } from "@/components/ui/mesh-gradient";
+import ClientDashboard from "./ClientDashboard";
 
 const CHART_COLORS = {
-  primary: 'hsl(var(--chart-1))',
-  accent: 'hsl(var(--chart-2))',
-  warning: 'hsl(var(--chart-3))',
-  info: 'hsl(var(--chart-4))',
-  muted: 'hsl(var(--chart-5))',
+  primary: "hsl(var(--chart-1))",
+  accent: "hsl(var(--chart-2))",
+  warning: "hsl(var(--chart-3))",
+  info: "hsl(var(--chart-4))",
+  muted: "hsl(var(--chart-5))",
 };
 
 const PIE_PALETTE = [
@@ -47,7 +68,8 @@ function useCountUp(target: number, duration = 1400): number {
 
   useEffect(() => {
     const reduceMotion =
-      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const effectiveDuration = reduceMotion ? 0 : duration;
     const from = fromRef.current;
     const start = performance.now();
@@ -74,7 +96,7 @@ function useCountUp(target: number, duration = 1400): number {
 export default function Dashboard() {
   const { data: user, isLoading } = useCurrentUser();
   if (isLoading) return null;
-  if (user?.userType === 'client') return <ClientDashboard />;
+  if (user?.userType === "client") return <ClientDashboard />;
   return <CustomerDashboard />;
 }
 
@@ -84,32 +106,38 @@ interface KpiCardProps {
   label: string;
   value: string;
   delta?: number;
-  trend?: 'up' | 'down' | 'flat';
+  trend?: "up" | "down" | "flat";
   spark?: number[];
-  accent: 'primary' | 'success' | 'warning' | 'info';
+  accent: "primary" | "success" | "warning" | "info";
   isLoading?: boolean;
   delay?: number;
 }
 
-function KpiCard({ label, value, delta, trend, spark, accent, isLoading, delay = 0 }: KpiCardProps) {
+function KpiCard({
+  label,
+  value,
+  delta,
+  trend,
+  spark,
+  accent,
+  isLoading,
+  delay = 0,
+}: KpiCardProps) {
   const accentClasses = {
-    primary: 'text-foreground',
-    success: 'text-success-subtle-foreground',
-    warning: 'text-warning-subtle-foreground',
-    info:    'text-info-subtle-foreground',
+    primary: "text-foreground",
+    success: "text-success-subtle-foreground",
+    warning: "text-warning-subtle-foreground",
+    info: "text-info-subtle-foreground",
   }[accent];
 
   const sparkColor = {
-    primary: 'hsl(var(--chart-1))',
-    success: 'hsl(var(--success))',
-    warning: 'hsl(var(--warning))',
-    info:    'hsl(var(--info))',
+    primary: "hsl(var(--chart-1))",
+    success: "hsl(var(--success))",
+    warning: "hsl(var(--warning))",
+    info: "hsl(var(--info))",
   }[accent];
 
-  const sparkData = useMemo(
-    () => (spark ?? []).map((v, i) => ({ i, v })),
-    [spark],
-  );
+  const sparkData = useMemo(() => (spark ?? []).map((v, i) => ({ i, v })), [spark]);
 
   return (
     <motion.div
@@ -126,17 +154,21 @@ function KpiCard({ label, value, delta, trend, spark, accent, isLoading, delay =
             {delta !== undefined && (
               <div
                 className={
-                  'inline-flex items-center gap-0.5 text-[11px] font-mono font-semibold tabular-nums px-1.5 py-0.5 rounded ' +
-                  (trend === 'up'
-                    ? 'bg-success-subtle text-success-subtle-foreground'
-                    : trend === 'down'
-                      ? 'bg-danger-subtle text-danger-subtle-foreground'
-                      : 'bg-neutral-subtle text-neutral-subtle-foreground')
+                  "inline-flex items-center gap-0.5 text-[11px] font-mono font-semibold tabular-nums px-1.5 py-0.5 rounded " +
+                  (trend === "up"
+                    ? "bg-success-subtle text-success-subtle-foreground"
+                    : trend === "down"
+                      ? "bg-danger-subtle text-danger-subtle-foreground"
+                      : "bg-neutral-subtle text-neutral-subtle-foreground")
                 }
               >
-                {trend === 'up'   ? <TrendingUp className="w-3 h-3" /> :
-                 trend === 'down' ? <TrendingDown className="w-3 h-3" /> : null}
-                {delta > 0 ? '+' : ''}{delta.toFixed(1)}%
+                {trend === "up" ? (
+                  <TrendingUp className="w-3 h-3" />
+                ) : trend === "down" ? (
+                  <TrendingDown className="w-3 h-3" />
+                ) : null}
+                {delta > 0 ? "+" : ""}
+                {delta.toFixed(1)}%
               </div>
             )}
           </div>
@@ -145,8 +177,13 @@ function KpiCard({ label, value, delta, trend, spark, accent, isLoading, delay =
             {isLoading ? (
               <Skeleton className="h-9 w-32" />
             ) : (
-              <div className={'font-mono font-semibold tracking-tight tabular-nums text-[26px] leading-none ' + accentClasses}
-                   data-testid={`text-${label.toLowerCase().replace(/\s+/g,'-')}`}>
+              <div
+                className={
+                  "font-mono font-semibold tracking-tight tabular-nums text-[26px] leading-none " +
+                  accentClasses
+                }
+                data-testid={`text-${label.toLowerCase().replace(/\s+/g, "-")}`}
+              >
                 {value}
               </div>
             )}
@@ -156,8 +193,8 @@ function KpiCard({ label, value, delta, trend, spark, accent, isLoading, delay =
                   <AreaChart data={sparkData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
                     <defs>
                       <linearGradient id={`spark-${accent}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%"   stopColor={sparkColor} stopOpacity={0.45} />
-                        <stop offset="100%" stopColor={sparkColor} stopOpacity={0}    />
+                        <stop offset="0%" stopColor={sparkColor} stopOpacity={0.45} />
+                        <stop offset="100%" stopColor={sparkColor} stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <Area
@@ -186,9 +223,17 @@ function ScoreRing({ score }: { score: number }) {
   const r = 26;
   const c = 2 * Math.PI * r;
   const color =
-    score >= 80 ? 'hsl(var(--success))' : score >= 50 ? 'hsl(var(--warning))' : 'hsl(var(--destructive))';
+    score >= 80
+      ? "hsl(var(--success))"
+      : score >= 50
+        ? "hsl(var(--warning))"
+        : "hsl(var(--destructive))";
   return (
-    <div className="relative w-16 h-16 shrink-0" role="img" aria-label={`Audit readiness score ${score} out of 100`}>
+    <div
+      className="relative w-16 h-16 shrink-0"
+      role="img"
+      aria-label={`Audit readiness score ${score} out of 100`}
+    >
       <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
         <circle cx={32} cy={32} r={r} fill="none" stroke="hsl(var(--border))" strokeWidth={5} />
         <circle
@@ -210,10 +255,30 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-function FilingStatusBadge({ status, t }: { status?: 'up_to_date' | 'due_soon' | 'overdue'; t: Record<string, string> }) {
-  if (status === 'overdue') return <Badge variant="danger" dot>{t.overdue ?? 'Overdue'}</Badge>;
-  if (status === 'due_soon') return <Badge variant="warning" dot>{t.dueSoon ?? 'Due soon'}</Badge>;
-  return <Badge variant="success" dot>{t.onTrack ?? 'On track'}</Badge>;
+function FilingStatusBadge({
+  status,
+  t,
+}: {
+  status?: "up_to_date" | "due_soon" | "overdue";
+  t: Record<string, string>;
+}) {
+  if (status === "overdue")
+    return (
+      <Badge variant="danger" dot>
+        {t.overdue ?? "Overdue"}
+      </Badge>
+    );
+  if (status === "due_soon")
+    return (
+      <Badge variant="warning" dot>
+        {t.dueSoon ?? "Due soon"}
+      </Badge>
+    );
+  return (
+    <Badge variant="success" dot>
+      {t.onTrack ?? "On track"}
+    </Badge>
+  );
 }
 
 /**
@@ -222,12 +287,15 @@ function FilingStatusBadge({ status, t }: { status?: 'up_to_date' | 'due_soon' |
  * (server/routes/compliance-dashboard.routes.ts).
  */
 const ISSUE_ACTIONS: Record<string, { href: string; cta: string }> = {
-  'No VAT returns filed': { href: '/vat-filing', cta: 'File VAT 201' },
-  'No chart of accounts configured': { href: '/chart-of-accounts', cta: 'Set up accounts' },
-  'No journal entries in the last 90 days': { href: '/journal', cta: 'Post an entry' },
-  'No bank reconciliation rules configured': { href: '/bank-reconciliation', cta: 'Set up reconciliation' },
-  'Bank reconciliation not set up': { href: '/bank-reconciliation', cta: 'Set up reconciliation' },
-  'No completed data backups': { href: '/backup-restore', cta: 'Run a backup' },
+  "No VAT returns filed": { href: "/vat-filing", cta: "File VAT 201" },
+  "No chart of accounts configured": { href: "/chart-of-accounts", cta: "Set up accounts" },
+  "No journal entries in the last 90 days": { href: "/journal", cta: "Post an entry" },
+  "No bank reconciliation rules configured": {
+    href: "/bank-reconciliation",
+    cta: "Set up reconciliation",
+  },
+  "Bank reconciliation not set up": { href: "/bank-reconciliation", cta: "Set up reconciliation" },
+  "No completed data backups": { href: "/backup-restore", cta: "Run a backup" },
 };
 
 function FixItRow({ issue }: { issue: string }) {
@@ -240,7 +308,11 @@ function FixItRow({ issue }: { issue: string }) {
       </div>
       {action && (
         <Link href={action.href}>
-          <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent shrink-0 -me-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-accent hover:text-accent shrink-0 -me-2"
+          >
             {action.cta} <ArrowRight className="w-3.5 h-3.5" />
           </Button>
         </Link>
@@ -260,7 +332,10 @@ function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
     >
       <Link href={href}>
         <div className="group relative h-full p-5 rounded-xl border border-card-border bg-card hover-lift cursor-pointer overflow-hidden transition-colors">
-          <div aria-hidden className="absolute -inset-px rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-accent/8 via-transparent to-primary/5 pointer-events-none" />
+          <div
+            aria-hidden
+            className="absolute -inset-px rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-br from-accent/8 via-transparent to-primary/5 pointer-events-none"
+          />
           <div className="relative">
             <div className="flex items-center gap-2.5">
               <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-foreground/5 text-foreground/80 ring-1 ring-border/60 group-hover:bg-accent/10 group-hover:text-accent group-hover:ring-accent/30 transition-colors">
@@ -268,8 +343,12 @@ function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
               </div>
               <ArrowUpRight className="ms-auto w-4 h-4 text-muted-foreground/50 group-hover:text-accent group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform duration-200" />
             </div>
-            <div className="mt-4 font-semibold text-[14px] tracking-tight text-foreground">{title}</div>
-            <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">{description}</div>
+            <div className="mt-4 font-semibold text-[14px] tracking-tight text-foreground">
+              {title}
+            </div>
+            <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">
+              {description}
+            </div>
           </div>
         </div>
       </Link>
@@ -279,7 +358,15 @@ function QuickAction({ icon: Icon, title, description, href, delay = 0 }: any) {
 
 // ─── Section header ──────────────────────────────────────────────────────────
 
-function SectionHeader({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: React.ReactNode }) {
+function SectionHeader({
+  eyebrow,
+  title,
+  action,
+}: {
+  eyebrow?: string;
+  title: string;
+  action?: React.ReactNode;
+}) {
   return (
     <div className="flex items-end justify-between gap-4 mb-4">
       <div>
@@ -304,33 +391,33 @@ function CustomerDashboard() {
   const { companyId: selectedCompanyId } = useDefaultCompany();
 
   const { data: stats, isLoading: statsLoading } = useQuery<any>({
-    queryKey: ['/api/companies', selectedCompanyId, 'dashboard/stats'],
+    queryKey: ["/api/companies", selectedCompanyId, "dashboard/stats"],
     enabled: !!selectedCompanyId,
     retry: 1,
   });
 
   const { data: recentInvoices, isLoading: invoicesLoading } = useQuery<any[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'invoices'],
+    queryKey: ["/api/companies", selectedCompanyId, "invoices"],
     enabled: !!selectedCompanyId,
   });
 
   const { data: journalEntries } = useQuery<any[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'journal'],
+    queryKey: ["/api/companies", selectedCompanyId, "journal"],
     enabled: !!selectedCompanyId,
   });
 
   const { data: expenseData, isLoading: expenseLoading } = useQuery<any[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'dashboard/expense-breakdown'],
+    queryKey: ["/api/companies", selectedCompanyId, "dashboard/expense-breakdown"],
     enabled: !!selectedCompanyId,
   });
 
   const { data: monthlyTrends, isLoading: trendsLoading } = useQuery<any[]>({
-    queryKey: ['/api/companies', selectedCompanyId, 'dashboard/monthly-trends'],
+    queryKey: ["/api/companies", selectedCompanyId, "dashboard/monthly-trends"],
     enabled: !!selectedCompanyId,
   });
 
   const { data: compliance } = useQuery<any>({
-    queryKey: ['/api/companies', selectedCompanyId, 'compliance/overview'],
+    queryKey: ["/api/companies", selectedCompanyId, "compliance/overview"],
     enabled: !!selectedCompanyId,
     retry: 1,
   });
@@ -338,9 +425,9 @@ function CustomerDashboard() {
   // Derive deltas + sparklines from monthlyTrends, gracefully handling empty data
   const sparks = useMemo(() => {
     const trends = monthlyTrends ?? [];
-    const revenueSeries = trends.map(t => Number(t?.revenue ?? 0));
-    const expenseSeries = trends.map(t => Number(t?.expenses ?? 0));
-    const profitSeries = trends.map(t => Number(t?.revenue ?? 0) - Number(t?.expenses ?? 0));
+    const revenueSeries = trends.map((t) => Number(t?.revenue ?? 0));
+    const expenseSeries = trends.map((t) => Number(t?.expenses ?? 0));
+    const profitSeries = trends.map((t) => Number(t?.revenue ?? 0) - Number(t?.expenses ?? 0));
 
     const pctChange = (series: number[]) => {
       if (series.length < 2) return undefined;
@@ -351,13 +438,13 @@ function CustomerDashboard() {
     };
 
     return {
-      revenue:  { series: revenueSeries, delta: pctChange(revenueSeries) },
+      revenue: { series: revenueSeries, delta: pctChange(revenueSeries) },
       expenses: { series: expenseSeries, delta: pctChange(expenseSeries) },
-      profit:   { series: profitSeries,  delta: pctChange(profitSeries) },
+      profit: { series: profitSeries, delta: pctChange(profitSeries) },
     };
   }, [monthlyTrends]);
 
-  const monthLabel = new Date().toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+  const monthLabel = new Date().toLocaleDateString(locale, { month: "long", year: "numeric" });
   const profit = (stats?.revenue || 0) - (stats?.expenses || 0);
   const margin = stats?.revenue > 0 ? (profit / stats.revenue) * 100 : 0;
   const animatedProfit = useCountUp(statsLoading ? 0 : profit);
@@ -385,7 +472,8 @@ function CustomerDashboard() {
               <span className="text-foreground italic">overview.</span>
             </h1>
             <p className="mt-5 max-w-xl text-[14.5px] text-muted-foreground leading-relaxed">
-              {t.dashboard ?? 'Dashboard'} · A real-time portrait of revenue, expenses, and outstanding receivables — built for UAE businesses.
+              {t.dashboard ?? "Dashboard"} · A real-time portrait of revenue, expenses, and
+              outstanding receivables — built for UAE businesses.
             </p>
           </div>
 
@@ -395,8 +483,8 @@ function CustomerDashboard() {
                 <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
                   Net Profit · This Month
                 </div>
-                <Badge variant={profit >= 0 ? 'success' : 'danger'} dot>
-                  {profit >= 0 ? 'Positive' : 'Negative'}
+                <Badge variant={profit >= 0 ? "success" : "danger"} dot>
+                  {profit >= 0 ? "Positive" : "Negative"}
                 </Badge>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
@@ -405,14 +493,23 @@ function CustomerDashboard() {
                 ) : (
                   <>
                     <span className="font-display text-[36px] md:text-[44px] leading-none tracking-tight tabular-nums text-foreground">
-                      {formatCurrency(animatedProfit, 'AED', locale)}
+                      {formatCurrency(animatedProfit, "AED", locale)}
                     </span>
                   </>
                 )}
               </div>
               <div className="mt-2 text-[12px] text-muted-foreground">
                 {statsLoading ? null : (
-                  <>Margin <span className="font-mono tabular-nums font-medium text-foreground">{margin.toFixed(1)}%</span> · Revenue <span className="font-mono tabular-nums">{formatCurrency(stats?.revenue || 0, 'AED', locale)}</span></>
+                  <>
+                    Margin{" "}
+                    <span className="font-mono tabular-nums font-medium text-foreground">
+                      {margin.toFixed(1)}%
+                    </span>{" "}
+                    · Revenue{" "}
+                    <span className="font-mono tabular-nums">
+                      {formatCurrency(stats?.revenue || 0, "AED", locale)}
+                    </span>
+                  </>
                 )}
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -438,9 +535,15 @@ function CustomerDashboard() {
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           label="Revenue"
-          value={formatCurrency(stats?.revenue || 0, 'AED', locale)}
+          value={formatCurrency(stats?.revenue || 0, "AED", locale)}
           delta={sparks.revenue.delta}
-          trend={sparks.revenue.delta === undefined ? undefined : sparks.revenue.delta >= 0 ? 'up' : 'down'}
+          trend={
+            sparks.revenue.delta === undefined
+              ? undefined
+              : sparks.revenue.delta >= 0
+                ? "up"
+                : "down"
+          }
           spark={sparks.revenue.series}
           accent="success"
           isLoading={statsLoading}
@@ -448,9 +551,15 @@ function CustomerDashboard() {
         />
         <KpiCard
           label="Expenses"
-          value={formatCurrency(stats?.expenses || 0, 'AED', locale)}
+          value={formatCurrency(stats?.expenses || 0, "AED", locale)}
           delta={sparks.expenses.delta}
-          trend={sparks.expenses.delta === undefined ? undefined : sparks.expenses.delta >= 0 ? 'down' : 'up'}
+          trend={
+            sparks.expenses.delta === undefined
+              ? undefined
+              : sparks.expenses.delta >= 0
+                ? "down"
+                : "up"
+          }
           spark={sparks.expenses.series}
           accent="warning"
           isLoading={statsLoading}
@@ -458,9 +567,11 @@ function CustomerDashboard() {
         />
         <KpiCard
           label="Profit"
-          value={formatCurrency(profit, 'AED', locale)}
+          value={formatCurrency(profit, "AED", locale)}
           delta={sparks.profit.delta}
-          trend={sparks.profit.delta === undefined ? undefined : sparks.profit.delta >= 0 ? 'up' : 'down'}
+          trend={
+            sparks.profit.delta === undefined ? undefined : sparks.profit.delta >= 0 ? "up" : "down"
+          }
           spark={sparks.profit.series}
           accent="primary"
           isLoading={statsLoading}
@@ -468,7 +579,7 @@ function CustomerDashboard() {
         />
         <KpiCard
           label="Outstanding"
-          value={formatCurrency(stats?.outstanding || 0, 'AED', locale)}
+          value={formatCurrency(stats?.outstanding || 0, "AED", locale)}
           accent="info"
           isLoading={statsLoading}
           delay={0.2}
@@ -483,12 +594,16 @@ function CustomerDashboard() {
           transition={{ duration: 0.4, delay: 0.2 }}
         >
           <SectionHeader
-            eyebrow={(t as any).complianceEyebrow ?? 'Compliance'}
-            title={(t as any).filingPulse ?? 'Filing pulse'}
+            eyebrow={(t as any).complianceEyebrow ?? "Compliance"}
+            title={(t as any).filingPulse ?? "Filing pulse"}
             action={
               <Link href="/compliance-calendar">
-                <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent -me-2">
-                  {(t as any).calendarLink ?? 'Calendar'} <ArrowRight className="w-3.5 h-3.5" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-accent hover:text-accent -me-2"
+                >
+                  {(t as any).calendarLink ?? "Calendar"} <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </Link>
             }
@@ -500,12 +615,12 @@ function CustomerDashboard() {
                 <ScoreRing score={compliance.auditReadiness?.score ?? 0} />
                 <div className="min-w-0">
                   <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-                    {(t as any).auditReadiness ?? 'Audit readiness'}
+                    {(t as any).auditReadiness ?? "Audit readiness"}
                   </div>
                   <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">
                     {(compliance.auditReadiness?.issues?.length ?? 0) === 0
-                      ? 'No open items — audit-ready books.'
-                      : `${compliance.auditReadiness.issues.length} open item${compliance.auditReadiness.issues.length === 1 ? '' : 's'} to resolve`}
+                      ? "No open items — audit-ready books."
+                      : `${compliance.auditReadiness.issues.length} open item${compliance.auditReadiness.issues.length === 1 ? "" : "s"} to resolve`}
                   </div>
                 </div>
               </div>
@@ -519,13 +634,23 @@ function CustomerDashboard() {
                   <FilingStatusBadge status={compliance.vatStatus?.filingStatus} t={t as any} />
                 </div>
                 <div className="mt-2 font-mono tabular-nums text-[14px] text-foreground">
-                  {compliance.vatStatus?.nextDue
-                    ? <>{(t as any).nextDue ?? 'Next due'} {formatDate(compliance.vatStatus.nextDue, locale)}</>
-                    : ((t as any).noReturnFiledYet ?? 'No return filed yet')}
+                  {compliance.vatStatus?.nextDue ? (
+                    <>
+                      {(t as any).nextDue ?? "Next due"}{" "}
+                      {formatDate(compliance.vatStatus.nextDue, locale)}
+                    </>
+                  ) : (
+                    ((t as any).noReturnFiledYet ?? "No return filed yet")
+                  )}
                 </div>
                 <Link href="/vat-filing">
-                  <Button variant="ghost" size="sm" className="mt-2 -ms-3 gap-1 text-accent hover:text-accent">
-                    {(t as any).openVatWorkspace ?? 'Open VAT workspace'} <ArrowRight className="w-3.5 h-3.5" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 -ms-3 gap-1 text-accent hover:text-accent"
+                  >
+                    {(t as any).openVatWorkspace ?? "Open VAT workspace"}{" "}
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
               </div>
@@ -534,18 +659,28 @@ function CustomerDashboard() {
               <div className="p-5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-                    {(t as any).corporateTaxLabel ?? 'Corporate tax'}
+                    {(t as any).corporateTaxLabel ?? "Corporate tax"}
                   </div>
                   <FilingStatusBadge status={compliance.corporateTaxStatus?.status} t={t as any} />
                 </div>
                 <div className="mt-2 font-mono tabular-nums text-[14px] text-foreground">
-                  {compliance.corporateTaxStatus?.nextDue
-                    ? <>{(t as any).nextDue ?? 'Next due'} {formatDate(compliance.corporateTaxStatus.nextDue, locale)}</>
-                    : ((t as any).noReturnFiledYet ?? 'No return filed yet')}
+                  {compliance.corporateTaxStatus?.nextDue ? (
+                    <>
+                      {(t as any).nextDue ?? "Next due"}{" "}
+                      {formatDate(compliance.corporateTaxStatus.nextDue, locale)}
+                    </>
+                  ) : (
+                    ((t as any).noReturnFiledYet ?? "No return filed yet")
+                  )}
                 </div>
                 <Link href="/corporate-tax">
-                  <Button variant="ghost" size="sm" className="mt-2 -ms-3 gap-1 text-accent hover:text-accent">
-                    {(t as any).openTaxWorkpaper ?? 'Open tax workpaper'} <ArrowRight className="w-3.5 h-3.5" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2 -ms-3 gap-1 text-accent hover:text-accent"
+                  >
+                    {(t as any).openTaxWorkpaper ?? "Open tax workpaper"}{" "}
+                    <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
               </div>
@@ -555,7 +690,7 @@ function CustomerDashboard() {
             {(compliance.auditReadiness?.issues?.length ?? 0) > 0 && (
               <div className="border-t border-border/60">
                 <div className="px-5 pt-3 pb-1 text-[10.5px] uppercase tracking-[0.14em] font-semibold text-muted-foreground/80">
-                  {(t as any).raiseYourScore ?? 'Raise your score'}
+                  {(t as any).raiseYourScore ?? "Raise your score"}
                 </div>
                 <div className="divide-y divide-border/40 pb-1.5">
                   {compliance.auditReadiness.issues.map((issue: string) => (
@@ -569,74 +704,111 @@ function CustomerDashboard() {
       )}
 
       {/* ── AI Insights — refined ────────────────────────────────────────── */}
-      {!statsLoading && stats && (stats.revenue > 0 || stats.expenses > 0 || stats.outstanding > 0) && (
-        <motion.section
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.25 }}
-        >
-          <Card className="overflow-hidden border-card-border">
-            <div className="relative p-5 md:p-6">
-              <div aria-hidden className="absolute inset-0 bg-spotlight pointer-events-none" />
-              <div className="relative flex items-start gap-4">
-                <div className="relative flex-shrink-0">
-                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-accent/15 to-accent/5 ring-1 ring-accent/25 flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-accent" />
+      {!statsLoading &&
+        stats &&
+        (stats.revenue > 0 || stats.expenses > 0 || stats.outstanding > 0) && (
+          <motion.section
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.25 }}
+          >
+            <Card className="overflow-hidden border-card-border">
+              <div className="relative p-5 md:p-6">
+                <div aria-hidden className="absolute inset-0 bg-spotlight pointer-events-none" />
+                <div className="relative flex items-start gap-4">
+                  <div className="relative flex-shrink-0">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-accent/15 to-accent/5 ring-1 ring-accent/25 flex items-center justify-center">
+                      <Sparkles className="w-5 h-5 text-accent" />
+                    </div>
+                    <span
+                      aria-hidden
+                      className="absolute -inset-1 rounded-xl bg-accent/10 animate-ping-soft opacity-70"
+                    />
                   </div>
-                  <span aria-hidden className="absolute -inset-1 rounded-xl bg-accent/10 animate-ping-soft opacity-70" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold tracking-tight text-[15px]">Financial Insights</h3>
-                    <Badge variant="info" dot>Real-time</Badge>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold tracking-tight text-[15px]">
+                        Financial Insights
+                      </h3>
+                      <Badge variant="info" dot>
+                        Real-time
+                      </Badge>
+                    </div>
+                    <p className="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed text-pretty">
+                      {stats.revenue > 0 && stats.expenses > 0 && (
+                        <>
+                          Your profit margin is{" "}
+                          <span className="font-mono font-semibold text-foreground">
+                            {margin.toFixed(1)}%
+                          </span>
+                          .
+                          {stats.outstanding > 0 && (
+                            <>
+                              {" "}
+                              You have{" "}
+                              <span className="font-mono font-semibold text-warning-subtle-foreground">
+                                {formatCurrency(stats.outstanding, "AED", locale)}
+                              </span>{" "}
+                              in outstanding invoices that need attention.
+                            </>
+                          )}
+                        </>
+                      )}
+                      {stats.revenue === 0 && stats.expenses === 0 && stats.outstanding > 0 && (
+                        <>
+                          You have{" "}
+                          <span className="font-mono font-semibold text-warning-subtle-foreground">
+                            {formatCurrency(stats.outstanding, "AED", locale)}
+                          </span>{" "}
+                          in outstanding invoices.
+                        </>
+                      )}
+                    </p>
+                    <Link href="/ai-cfo">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="mt-3 -ms-3 gap-1.5 text-accent hover:text-accent"
+                      >
+                        Talk to AI CFO <ArrowRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
                   </div>
-                  <p className="mt-1.5 text-[13.5px] text-muted-foreground leading-relaxed text-pretty">
-                    {stats.revenue > 0 && stats.expenses > 0 && (
-                      <>
-                        Your profit margin is <span className="font-mono font-semibold text-foreground">{margin.toFixed(1)}%</span>.
-                        {stats.outstanding > 0 && (
-                          <> You have <span className="font-mono font-semibold text-warning-subtle-foreground">{formatCurrency(stats.outstanding, 'AED', locale)}</span> in outstanding invoices that need attention.</>
-                        )}
-                      </>
-                    )}
-                    {stats.revenue === 0 && stats.expenses === 0 && stats.outstanding > 0 && (
-                      <>You have <span className="font-mono font-semibold text-warning-subtle-foreground">{formatCurrency(stats.outstanding, 'AED', locale)}</span> in outstanding invoices.</>
-                    )}
-                  </p>
-                  <Link href="/ai-cfo">
-                    <Button size="sm" variant="ghost" className="mt-3 -ms-3 gap-1.5 text-accent hover:text-accent">
-                      Talk to AI CFO <ArrowRight className="w-3.5 h-3.5" />
-                    </Button>
-                  </Link>
                 </div>
               </div>
-            </div>
-          </Card>
-        </motion.section>
-      )}
+            </Card>
+          </motion.section>
+        )}
 
       {/* ── Charts row ───────────────────────────────────────────────────── */}
       <section>
         <SectionHeader
           eyebrow="Trends"
           title="Revenue vs Expenses"
-          action={<Badge variant="outline" className="font-mono">Last 6 months</Badge>}
+          action={
+            <Badge variant="outline" className="font-mono">
+              Last 6 months
+            </Badge>
+          }
         />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Card className="lg:col-span-2 border-card-border">
             <CardContent className="p-5">
               {trendsLoading ? (
                 <Skeleton className="h-[300px] w-full" />
-              ) : (monthlyTrends && monthlyTrends.length > 0) ? (
+              ) : monthlyTrends && monthlyTrends.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={monthlyTrends} margin={{ top: 12, right: 8, bottom: 0, left: -16 }}>
+                  <AreaChart
+                    data={monthlyTrends}
+                    margin={{ top: 12, right: 8, bottom: 0, left: -16 }}
+                  >
                     <defs>
                       <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%"   stopColor={CHART_COLORS.accent} stopOpacity={0.32} />
+                        <stop offset="0%" stopColor={CHART_COLORS.accent} stopOpacity={0.32} />
                         <stop offset="100%" stopColor={CHART_COLORS.accent} stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="exp" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%"   stopColor={CHART_COLORS.warning} stopOpacity={0.28} />
+                        <stop offset="0%" stopColor={CHART_COLORS.warning} stopOpacity={0.28} />
                         <stop offset="100%" stopColor={CHART_COLORS.warning} stopOpacity={0} />
                       </linearGradient>
                     </defs>
@@ -646,7 +818,7 @@ function CustomerDashboard() {
                       fontSize={11}
                       tickLine={false}
                       axisLine={false}
-                      tick={{ fontFamily: 'var(--font-mono)' }}
+                      tick={{ fontFamily: "var(--font-mono)" }}
                     />
                     <YAxis
                       stroke="hsl(var(--muted-foreground))"
@@ -654,19 +826,23 @@ function CustomerDashboard() {
                       tickLine={false}
                       axisLine={false}
                       tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-                      tick={{ fontFamily: 'var(--font-mono)' }}
+                      tick={{ fontFamily: "var(--font-mono)" }}
                     />
                     <Tooltip
-                      cursor={{ stroke: 'hsl(var(--border))', strokeWidth: 1, strokeDasharray: '3 3' }}
-                      contentStyle={{
-                        backgroundColor: 'hsl(var(--popover))',
-                        border: '1px solid hsl(var(--popover-border))',
-                        borderRadius: '8px',
-                        fontSize: '12px',
-                        fontFamily: 'var(--font-mono)',
-                        boxShadow: 'var(--shadow-md)',
+                      cursor={{
+                        stroke: "hsl(var(--border))",
+                        strokeWidth: 1,
+                        strokeDasharray: "3 3",
                       }}
-                      formatter={(value: any) => formatCurrency(value, 'AED', locale)}
+                      contentStyle={{
+                        backgroundColor: "hsl(var(--popover))",
+                        border: "1px solid hsl(var(--popover-border))",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontFamily: "var(--font-mono)",
+                        boxShadow: "var(--shadow-md)",
+                      }}
+                      formatter={(value: any) => formatCurrency(value, "AED", locale)}
                     />
                     <Area
                       type="monotone"
@@ -702,13 +878,13 @@ function CustomerDashboard() {
           <Card className="border-card-border">
             <CardHeader className="pb-2">
               <CardTitle className="text-[13px] font-semibold tracking-tight text-muted-foreground uppercase tracking-[0.12em]">
-                {t.expenseBreakdown ?? 'Expense Breakdown'}
+                {t.expenseBreakdown ?? "Expense Breakdown"}
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0 px-3">
               {expenseLoading ? (
                 <Skeleton className="h-[260px] w-full" />
-              ) : (expenseData && expenseData.length > 0) ? (
+              ) : expenseData && expenseData.length > 0 ? (
                 <>
                   <ResponsiveContainer width="100%" height={200}>
                     <PieChart>
@@ -729,14 +905,14 @@ function CustomerDashboard() {
                       </Pie>
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: 'hsl(var(--popover))',
-                          border: '1px solid hsl(var(--popover-border))',
-                          borderRadius: '8px',
-                          fontSize: '12px',
-                          fontFamily: 'var(--font-mono)',
-                          boxShadow: 'var(--shadow-md)',
+                          backgroundColor: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--popover-border))",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                          fontFamily: "var(--font-mono)",
+                          boxShadow: "var(--shadow-md)",
                         }}
-                        formatter={(value: any) => formatCurrency(value, 'AED', locale)}
+                        formatter={(value: any) => formatCurrency(value, "AED", locale)}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -744,11 +920,14 @@ function CustomerDashboard() {
                     {expenseData.slice(0, 5).map((entry: any, i: number) => (
                       <li key={i} className="flex items-center justify-between gap-2 text-[12px]">
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: PIE_PALETTE[i % PIE_PALETTE.length] }} />
+                          <span
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ background: PIE_PALETTE[i % PIE_PALETTE.length] }}
+                          />
                           <span className="truncate text-foreground/80">{entry.name}</span>
                         </div>
                         <span className="font-mono tabular-nums text-foreground/90">
-                          {formatCurrency(entry.value, 'AED', locale)}
+                          {formatCurrency(entry.value, "AED", locale)}
                         </span>
                       </li>
                     ))}
@@ -772,10 +951,34 @@ function CustomerDashboard() {
       <section>
         <SectionHeader eyebrow="Shortcuts" title="Quick actions" />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <QuickAction icon={Plus}      title="Create Invoice"  description="Generate UAE-compliant tax invoices in seconds"   href="/invoices" delay={0.05} />
-          <QuickAction icon={Receipt}   title="Scan Receipt"    description="OCR receipts straight into your books"            href="/receipts" delay={0.10} />
-          <QuickAction icon={BookOpen}  title="Journal Entry"   description="Record manual double-entry transactions"          href="/journal"  delay={0.15} />
-          <QuickAction icon={BarChart3} title="View Reports"    description="P&L, balance sheet, cash flow — exportable"      href="/reports"  delay={0.20} />
+          <QuickAction
+            icon={Plus}
+            title="Create Invoice"
+            description="Generate UAE-compliant tax invoices in seconds"
+            href="/invoices"
+            delay={0.05}
+          />
+          <QuickAction
+            icon={Receipt}
+            title="Scan Receipt"
+            description="OCR receipts straight into your books"
+            href="/receipts"
+            delay={0.1}
+          />
+          <QuickAction
+            icon={BookOpen}
+            title="Journal Entry"
+            description="Record manual double-entry transactions"
+            href="/journal"
+            delay={0.15}
+          />
+          <QuickAction
+            icon={BarChart3}
+            title="View Reports"
+            description="P&L, balance sheet, cash flow — exportable"
+            href="/reports"
+            delay={0.2}
+          />
         </div>
       </section>
 
@@ -787,10 +990,14 @@ function CustomerDashboard() {
             <CardHeader className="flex-row items-center justify-between space-y-0 pb-3 border-b border-border/60">
               <CardTitle className="flex items-center gap-2 text-[13px] uppercase tracking-[0.12em] font-semibold text-muted-foreground">
                 <FileText className="w-3.5 h-3.5" />
-                {t.recentInvoices ?? 'Recent invoices'}
+                {t.recentInvoices ?? "Recent invoices"}
               </CardTitle>
               <Link href="/invoices">
-                <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent -me-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-accent hover:text-accent -me-2"
+                >
                   View all <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </Link>
@@ -798,7 +1005,9 @@ function CustomerDashboard() {
             <CardContent className="pt-3">
               {invoicesLoading ? (
                 <div className="space-y-2">
-                  {[1,2,3].map(i => <Skeleton key={i} className="h-14 w-full" />)}
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-14 w-full" />
+                  ))}
                 </div>
               ) : recentInvoices && recentInvoices.length > 0 ? (
                 <ul className="divide-y divide-border/50">
@@ -849,7 +1058,11 @@ function CustomerDashboard() {
                 Recent activity
               </CardTitle>
               <Link href="/journal">
-                <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent -me-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1 text-accent hover:text-accent -me-2"
+                >
                   View all <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </Link>
@@ -864,7 +1077,7 @@ function CustomerDashboard() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[13.5px] font-medium tracking-tight text-foreground truncate">
-                          {entry.memo || 'Journal entry'}
+                          {entry.memo || "Journal entry"}
                         </div>
                         <div className="text-[11.5px] text-muted-foreground font-mono tabular-nums">
                           {formatDate(entry.date, locale)}
@@ -894,7 +1107,11 @@ function CustomerDashboard() {
 // ─── Empty state ─────────────────────────────────────────────────────────────
 
 function EmptyState({
-  icon: Icon, title, body, actionLabel, actionHref,
+  icon: Icon,
+  title,
+  body,
+  actionLabel,
+  actionHref,
 }: {
   icon: any;
   title: string;
@@ -908,7 +1125,9 @@ function EmptyState({
         <Icon className="w-5 h-5" strokeWidth={1.75} />
       </div>
       <div className="text-[14px] font-medium text-foreground tracking-tight">{title}</div>
-      <div className="text-[12.5px] text-muted-foreground mt-0.5 max-w-xs leading-relaxed">{body}</div>
+      <div className="text-[12.5px] text-muted-foreground mt-0.5 max-w-xs leading-relaxed">
+        {body}
+      </div>
       {actionLabel && actionHref && (
         <Link href={actionHref}>
           <Button variant="outline" size="sm" className="gap-1.5 mt-4">

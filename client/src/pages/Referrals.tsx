@@ -1,29 +1,29 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest } from '@/lib/queryClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { formatDistanceToNow } from 'date-fns';
-import { 
-  Gift, 
-  Users, 
-  Link2, 
-  Copy, 
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { formatDistanceToNow } from "date-fns";
+import {
+  Gift,
+  Users,
+  Link2,
+  Copy,
   Share2,
   Trophy,
   CheckCircle,
   Clock,
   DollarSign,
   ArrowRight,
-  Sparkles
-} from 'lucide-react';
-import type { ReferralCode, Referral } from '@shared/schema';
+  Sparkles,
+} from "lucide-react";
+import type { ReferralCode, Referral } from "@shared/schema";
 
 interface ReferralStats {
   code: string | null;
@@ -39,11 +39,11 @@ export default function Referrals() {
   const [copied, setCopied] = useState(false);
 
   const { data: referralCode, isLoading: codeLoading } = useQuery<ReferralCode>({
-    queryKey: ['/api/referral/my-code'],
+    queryKey: ["/api/referral/my-code"],
   });
 
   const { data: stats, isLoading: statsLoading } = useQuery<ReferralStats>({
-    queryKey: ['/api/referral/stats'],
+    queryKey: ["/api/referral/stats"],
   });
 
   const copyToClipboard = async () => {
@@ -51,10 +51,10 @@ export default function Referrals() {
     try {
       await navigator.clipboard.writeText(referralLink);
       setCopied(true);
-      toast({ title: 'Link copied to clipboard!' });
+      toast({ title: "Link copied to clipboard!" });
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      toast({ title: 'Failed to copy', variant: 'destructive' });
+      toast({ title: "Failed to copy", variant: "destructive" });
     }
   };
 
@@ -63,8 +63,8 @@ export default function Referrals() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Join Muhasib.ai',
-          text: 'Get 20% off your first month with my referral link!',
+          title: "Join Muhasib.ai",
+          text: "Get 20% off your first month with my referral link!",
           url: referralLink,
         });
       } catch (err) {
@@ -77,14 +77,34 @@ export default function Referrals() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'rewarded':
-        return <Badge className="bg-green-500"><Trophy className="w-3 h-3 mr-1" />Rewarded</Badge>;
-      case 'qualified':
-        return <Badge className="bg-blue-500"><CheckCircle className="w-3 h-3 mr-1" />Qualified</Badge>;
-      case 'signed_up':
-        return <Badge className="bg-amber-500"><Users className="w-3 h-3 mr-1" />Signed Up</Badge>;
-      case 'pending':
-        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
+      case "rewarded":
+        return (
+          <Badge className="bg-green-500">
+            <Trophy className="w-3 h-3 mr-1" />
+            Rewarded
+          </Badge>
+        );
+      case "qualified":
+        return (
+          <Badge className="bg-blue-500">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Qualified
+          </Badge>
+        );
+      case "signed_up":
+        return (
+          <Badge className="bg-amber-500">
+            <Users className="w-3 h-3 mr-1" />
+            Signed Up
+          </Badge>
+        );
+      case "pending":
+        return (
+          <Badge variant="secondary">
+            <Clock className="w-3 h-3 mr-1" />
+            Pending
+          </Badge>
+        );
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -102,7 +122,7 @@ export default function Referrals() {
 
       {isLoading ? (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map(i => (
+          {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-32" />
           ))}
         </div>
@@ -169,15 +189,15 @@ export default function Referrals() {
                 <CardTitle>Your Referral Link</CardTitle>
               </div>
               <CardDescription>
-                Share this link with friends. They get {referralCode?.refereeRewardValue || 20}% off, 
-                you get AED {referralCode?.referrerRewardValue || 50} credit!
+                Share this link with friends. They get {referralCode?.refereeRewardValue || 20}%
+                off, you get AED {referralCode?.referrerRewardValue || 50} credit!
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1 relative">
                   <Input
-                    value={`${window.location.origin}/register?ref=${referralCode?.code || ''}`}
+                    value={`${window.location.origin}/register?ref=${referralCode?.code || ""}`}
                     readOnly
                     className="pr-10 bg-background"
                     data-testid="input-referral-link"
@@ -185,9 +205,13 @@ export default function Referrals() {
                   <Link2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 </div>
                 <div className="flex gap-2">
-                  <Button onClick={copyToClipboard} variant="outline" data-testid="button-copy-link">
+                  <Button
+                    onClick={copyToClipboard}
+                    variant="outline"
+                    data-testid="button-copy-link"
+                  >
                     <Copy className="w-4 h-4 mr-2" />
-                    {copied ? 'Copied!' : 'Copy'}
+                    {copied ? "Copied!" : "Copy"}
                   </Button>
                   <Button onClick={shareReferral} data-testid="button-share-link">
                     <Share2 className="w-4 h-4 mr-2" />
@@ -200,7 +224,7 @@ export default function Referrals() {
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-medium">Your Referral Code</span>
                   <Badge variant="outline" className="font-mono text-lg px-3">
-                    {referralCode?.code || 'Loading...'}
+                    {referralCode?.code || "Loading..."}
                   </Badge>
                 </div>
               </div>
@@ -246,7 +270,8 @@ export default function Referrals() {
                     <div>
                       <h4 className="font-medium">Both Get Rewarded</h4>
                       <p className="text-sm text-muted-foreground">
-                        They get {referralCode?.refereeRewardValue || 20}% off, you get AED {referralCode?.referrerRewardValue || 50} credit
+                        They get {referralCode?.refereeRewardValue || 20}% off, you get AED{" "}
+                        {referralCode?.referrerRewardValue || 50} credit
                       </p>
                     </div>
                   </div>
@@ -271,15 +296,13 @@ export default function Referrals() {
                 ) : (
                   <div className="space-y-3">
                     {stats.recentReferrals.map((referral) => (
-                      <div 
-                        key={referral.id} 
+                      <div
+                        key={referral.id}
                         className="flex items-center justify-between p-3 rounded-lg border"
                         data-testid={`referral-${referral.id}`}
                       >
                         <div>
-                          <div className="font-medium">
-                            {referral.refereeEmail || 'Anonymous'}
-                          </div>
+                          <div className="font-medium">{referral.refereeEmail || "Anonymous"}</div>
                           <div className="text-sm text-muted-foreground">
                             {formatDistanceToNow(new Date(referral.createdAt), { addSuffix: true })}
                           </div>
@@ -307,7 +330,7 @@ export default function Referrals() {
                       {Math.min(stats?.successfulReferrals || 0, 5)}/5
                     </span>
                   </div>
-                  <Progress value={Math.min((stats?.successfulReferrals || 0) / 5 * 100, 100)} />
+                  <Progress value={Math.min(((stats?.successfulReferrals || 0) / 5) * 100, 100)} />
                 </div>
                 <div>
                   <div className="flex justify-between mb-2">
@@ -316,7 +339,7 @@ export default function Referrals() {
                       {Math.min(stats?.successfulReferrals || 0, 10)}/10
                     </span>
                   </div>
-                  <Progress value={Math.min((stats?.successfulReferrals || 0) / 10 * 100, 100)} />
+                  <Progress value={Math.min(((stats?.successfulReferrals || 0) / 10) * 100, 100)} />
                 </div>
                 <div>
                   <div className="flex justify-between mb-2">
@@ -325,7 +348,7 @@ export default function Referrals() {
                       {Math.min(stats?.successfulReferrals || 0, 25)}/25
                     </span>
                   </div>
-                  <Progress value={Math.min((stats?.successfulReferrals || 0) / 25 * 100, 100)} />
+                  <Progress value={Math.min(((stats?.successfulReferrals || 0) / 25) * 100, 100)} />
                 </div>
               </div>
             </CardContent>

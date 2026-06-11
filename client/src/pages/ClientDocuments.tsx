@@ -1,25 +1,45 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useParams, Link } from 'wouter';
-import { format, differenceInDays, parseISO } from 'date-fns';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { 
-  Upload, 
-  FileText, 
-  Download, 
-  Trash2, 
-  Search, 
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useParams, Link } from "wouter";
+import { format, differenceInDays, parseISO } from "date-fns";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  Upload,
+  FileText,
+  Download,
+  Trash2,
+  Search,
   AlertTriangle,
   Clock,
   CheckCircle2,
@@ -29,8 +49,8 @@ import {
   Plus,
   Eye,
   Filter,
-  ArrowLeft
-} from 'lucide-react';
+  ArrowLeft,
+} from "lucide-react";
 
 interface Document {
   id: string;
@@ -58,36 +78,36 @@ interface Company {
 }
 
 const DOCUMENT_CATEGORIES = [
-  { value: 'invoice', label: 'Invoice' },
-  { value: 'bill', label: 'Bill/Expense' },
-  { value: 'receipt', label: 'Receipt' },
-  { value: 'quote', label: 'Quote/Quotation' },
-  { value: 'purchase_order', label: 'Purchase Order' },
-  { value: 'trade_license', label: 'Trade License' },
-  { value: 'contract', label: 'Contract' },
-  { value: 'tax_certificate', label: 'Tax Certificate' },
-  { value: 'audit_report', label: 'Audit Report' },
-  { value: 'bank_statement', label: 'Bank Statement' },
-  { value: 'insurance', label: 'Insurance' },
-  { value: 'visa', label: 'Visa/Emirates ID' },
-  { value: 'vat_return', label: 'VAT Return' },
-  { value: 'other', label: 'Other' },
+  { value: "invoice", label: "Invoice" },
+  { value: "bill", label: "Bill/Expense" },
+  { value: "receipt", label: "Receipt" },
+  { value: "quote", label: "Quote/Quotation" },
+  { value: "purchase_order", label: "Purchase Order" },
+  { value: "trade_license", label: "Trade License" },
+  { value: "contract", label: "Contract" },
+  { value: "tax_certificate", label: "Tax Certificate" },
+  { value: "audit_report", label: "Audit Report" },
+  { value: "bank_statement", label: "Bank Statement" },
+  { value: "insurance", label: "Insurance" },
+  { value: "visa", label: "Visa/Emirates ID" },
+  { value: "vat_return", label: "VAT Return" },
+  { value: "other", label: "Other" },
 ];
 
 export default function ClientDocuments() {
   const { id: clientId } = useParams<{ id: string }>();
   const { toast } = useToast();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [newDocument, setNewDocument] = useState({
-    name: '',
-    nameAr: '',
-    category: 'other',
-    description: '',
-    expiryDate: '',
+    name: "",
+    nameAr: "",
+    category: "other",
+    description: "",
+    expiryDate: "",
     reminderDays: 30,
   });
 
@@ -114,7 +134,7 @@ export default function ClientDocuments() {
       fileSize: number;
       mimeType: string;
     }) => {
-      return apiRequest('POST', `/api/companies/${clientId}/documents`, {
+      return apiRequest("POST", `/api/companies/${clientId}/documents`, {
         ...data,
         fileUrl: `/uploads/${data.fileName}`,
       });
@@ -122,40 +142,39 @@ export default function ClientDocuments() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/documents`] });
       toast({
-        title: 'Upload Successful',
-        description: 'Document has been saved',
+        title: "Upload Successful",
+        description: "Document has been saved",
       });
       setUploadDialogOpen(false);
       resetForm();
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'Upload Failed',
+        variant: "destructive",
+        title: "Upload Failed",
         description: error?.message,
       });
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (documentId: string) => 
-      apiRequest('DELETE', `/api/documents/${documentId}`),
+    mutationFn: (documentId: string) => apiRequest("DELETE", `/api/documents/${documentId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${clientId}/documents`] });
       toast({
-        title: 'Deleted',
-        description: 'Document has been deleted',
+        title: "Deleted",
+        description: "Document has been deleted",
       });
     },
   });
 
   const resetForm = () => {
     setNewDocument({
-      name: '',
-      nameAr: '',
-      category: 'other',
-      description: '',
-      expiryDate: '',
+      name: "",
+      nameAr: "",
+      category: "other",
+      description: "",
+      expiryDate: "",
       reminderDays: 30,
     });
     setSelectedFile(null);
@@ -164,9 +183,9 @@ export default function ClientDocuments() {
   const handleUpload = async () => {
     if (!newDocument.name) {
       toast({
-        variant: 'destructive',
-        title: 'Missing Information',
-        description: 'Please enter document name',
+        variant: "destructive",
+        title: "Missing Information",
+        description: "Please enter document name",
       });
       return;
     }
@@ -180,9 +199,9 @@ export default function ClientDocuments() {
         description: newDocument.description,
         expiryDate: newDocument.expiryDate,
         reminderDays: newDocument.reminderDays,
-        fileName: selectedFile?.name || 'document.pdf',
+        fileName: selectedFile?.name || "document.pdf",
         fileSize: selectedFile?.size || 0,
-        mimeType: selectedFile?.type || 'application/pdf',
+        mimeType: selectedFile?.type || "application/pdf",
       });
     } finally {
       setIsUploading(false);
@@ -192,40 +211,47 @@ export default function ClientDocuments() {
   const getExpiryStatus = (expiryDate: string | null) => {
     if (!expiryDate) return null;
     const days = differenceInDays(parseISO(expiryDate), new Date());
-    if (days < 0) return { status: 'expired', color: 'destructive', days: Math.abs(days) };
-    if (days <= 30) return { status: 'expiring_soon', color: 'warning', days };
-    return { status: 'valid', color: 'default', days };
+    if (days < 0) return { status: "expired", color: "destructive", days: Math.abs(days) };
+    if (days <= 30) return { status: "expiring_soon", color: "warning", days };
+    return { status: "valid", color: "default", days };
   };
 
-  const filteredDocuments = documents?.filter(doc => {
-    if (doc.isArchived) return false;
-    if (categoryFilter !== 'all' && doc.category !== categoryFilter) return false;
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      return doc.name.toLowerCase().includes(query) || 
-             doc.fileName.toLowerCase().includes(query) ||
-             doc.description?.toLowerCase().includes(query);
-    }
-    return true;
-  }) || [];
+  const filteredDocuments =
+    documents?.filter((doc) => {
+      if (doc.isArchived) return false;
+      if (categoryFilter !== "all" && doc.category !== categoryFilter) return false;
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        return (
+          doc.name.toLowerCase().includes(query) ||
+          doc.fileName.toLowerCase().includes(query) ||
+          doc.description?.toLowerCase().includes(query)
+        );
+      }
+      return true;
+    }) || [];
 
-  const expiringDocs = documents?.filter(doc => {
-    if (!doc.expiryDate || doc.isArchived) return false;
-    const days = differenceInDays(parseISO(doc.expiryDate), new Date());
-    return days >= 0 && days <= 30;
-  }) || [];
+  const expiringDocs =
+    documents?.filter((doc) => {
+      if (!doc.expiryDate || doc.isArchived) return false;
+      const days = differenceInDays(parseISO(doc.expiryDate), new Date());
+      return days >= 0 && days <= 30;
+    }) || [];
 
-  const expiredDocs = documents?.filter(doc => {
-    if (!doc.expiryDate || doc.isArchived) return false;
-    return differenceInDays(parseISO(doc.expiryDate), new Date()) < 0;
-  }) || [];
+  const expiredDocs =
+    documents?.filter((doc) => {
+      if (!doc.expiryDate || doc.isArchived) return false;
+      return differenceInDays(parseISO(doc.expiryDate), new Date()) < 0;
+    }) || [];
 
   if (isLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
         </div>
         <Skeleton className="h-96" />
       </div>
@@ -243,11 +269,9 @@ export default function ClientDocuments() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">
-              Documents - {company?.name || 'Client'}
+              Documents - {company?.name || "Client"}
             </h1>
-            <p className="text-muted-foreground">
-              Manage documents for this client
-            </p>
+            <p className="text-muted-foreground">Manage documents for this client</p>
           </div>
         </div>
         <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-document">
@@ -267,7 +291,7 @@ export default function ClientDocuments() {
           </CardContent>
         </Card>
 
-        <Card className={expiringDocs.length > 0 ? 'border-yellow-500' : ''}>
+        <Card className={expiringDocs.length > 0 ? "border-yellow-500" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
             <Clock className="w-4 h-4 text-yellow-500" />
@@ -278,7 +302,7 @@ export default function ClientDocuments() {
           </CardContent>
         </Card>
 
-        <Card className={expiredDocs.length > 0 ? 'border-red-500' : ''}>
+        <Card className={expiredDocs.length > 0 ? "border-red-500" : ""}>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Expired</CardTitle>
             <AlertTriangle className="w-4 h-4 text-red-500" />
@@ -310,7 +334,7 @@ export default function ClientDocuments() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Categories</SelectItem>
-                {DOCUMENT_CATEGORIES.map(cat => (
+                {DOCUMENT_CATEGORIES.map((cat) => (
                   <SelectItem key={cat.value} value={cat.value}>
                     {cat.label}
                   </SelectItem>
@@ -344,8 +368,8 @@ export default function ClientDocuments() {
                 <TableBody>
                   {filteredDocuments.map((doc) => {
                     const expiryStatus = getExpiryStatus(doc.expiryDate);
-                    const category = DOCUMENT_CATEGORIES.find(c => c.value === doc.category);
-                    
+                    const category = DOCUMENT_CATEGORIES.find((c) => c.value === doc.category);
+
                     return (
                       <TableRow key={doc.id} data-testid={`row-document-${doc.id}`}>
                         <TableCell>
@@ -364,7 +388,7 @@ export default function ClientDocuments() {
                           {doc.expiryDate ? (
                             <div className="flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {format(parseISO(doc.expiryDate), 'dd MMM yyyy')}
+                              {format(parseISO(doc.expiryDate), "dd MMM yyyy")}
                             </div>
                           ) : (
                             <span className="text-muted-foreground">-</span>
@@ -372,26 +396,37 @@ export default function ClientDocuments() {
                         </TableCell>
                         <TableCell>
                           {expiryStatus ? (
-                            <Badge variant={expiryStatus.status === 'expired' ? 'destructive' : expiryStatus.status === 'expiring_soon' ? 'secondary' : 'default'}>
-                              {expiryStatus.status === 'expired' && `Expired ${expiryStatus.days}d ago`}
-                              {expiryStatus.status === 'expiring_soon' && `Expires in ${expiryStatus.days}d`}
-                              {expiryStatus.status === 'valid' && (
-                                <><CheckCircle2 className="w-3 h-3 mr-1" />Valid</>
+                            <Badge
+                              variant={
+                                expiryStatus.status === "expired"
+                                  ? "destructive"
+                                  : expiryStatus.status === "expiring_soon"
+                                    ? "secondary"
+                                    : "default"
+                              }
+                            >
+                              {expiryStatus.status === "expired" &&
+                                `Expired ${expiryStatus.days}d ago`}
+                              {expiryStatus.status === "expiring_soon" &&
+                                `Expires in ${expiryStatus.days}d`}
+                              {expiryStatus.status === "valid" && (
+                                <>
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  Valid
+                                </>
                               )}
                             </Badge>
                           ) : (
                             <Badge variant="outline">No Expiry</Badge>
                           )}
                         </TableCell>
-                        <TableCell>
-                          {format(parseISO(doc.createdAt), 'dd MMM yyyy')}
-                        </TableCell>
+                        <TableCell>{format(parseISO(doc.createdAt), "dd MMM yyyy")}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button
                               size="icon"
                               variant="ghost"
-                              onClick={() => window.open(doc.fileUrl, '_blank')}
+                              onClick={() => window.open(doc.fileUrl, "_blank")}
                               data-testid={`button-view-${doc.id}`}
                             >
                               <Eye className="w-4 h-4" />
@@ -400,7 +435,7 @@ export default function ClientDocuments() {
                               size="icon"
                               variant="ghost"
                               onClick={() => {
-                                const link = document.createElement('a');
+                                const link = document.createElement("a");
                                 link.href = doc.fileUrl;
                                 link.download = doc.fileName;
                                 link.click();
@@ -414,7 +449,7 @@ export default function ClientDocuments() {
                               variant="ghost"
                               className="text-destructive hover:text-destructive"
                               onClick={() => {
-                                if (confirm('Are you sure you want to delete this document?')) {
+                                if (confirm("Are you sure you want to delete this document?")) {
                                   deleteMutation.mutate(doc.id);
                                 }
                               }}
@@ -467,15 +502,15 @@ export default function ClientDocuments() {
 
             <div className="space-y-2">
               <Label>Category</Label>
-              <Select 
-                value={newDocument.category} 
+              <Select
+                value={newDocument.category}
                 onValueChange={(val) => setNewDocument({ ...newDocument, category: val })}
               >
                 <SelectTrigger data-testid="select-document-category">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {DOCUMENT_CATEGORIES.map(cat => (
+                  {DOCUMENT_CATEGORIES.map((cat) => (
                     <SelectItem key={cat.value} value={cat.value}>
                       {cat.label}
                     </SelectItem>
@@ -509,7 +544,9 @@ export default function ClientDocuments() {
                 <Input
                   type="number"
                   value={newDocument.reminderDays}
-                  onChange={(e) => setNewDocument({ ...newDocument, reminderDays: parseInt(e.target.value) || 30 })}
+                  onChange={(e) =>
+                    setNewDocument({ ...newDocument, reminderDays: parseInt(e.target.value) || 30 })
+                  }
                   min="1"
                   max="365"
                   data-testid="input-reminder-days"
@@ -533,10 +570,20 @@ export default function ClientDocuments() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setUploadDialogOpen(false); resetForm(); }}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUploadDialogOpen(false);
+                resetForm();
+              }}
+            >
               Cancel
             </Button>
-            <Button onClick={handleUpload} disabled={isUploading} data-testid="button-submit-upload">
+            <Button
+              onClick={handleUpload}
+              disabled={isUploading}
+              data-testid="button-submit-upload"
+            >
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />

@@ -1,9 +1,9 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { 
-  Mail, 
-  Plus, 
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Mail,
+  Plus,
   Search,
   MoreHorizontal,
   RefreshCw,
@@ -14,104 +14,151 @@ import {
   Send,
   Building2,
   Copy,
-  ExternalLink
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { format, formatDistanceToNow, isAfter } from 'date-fns';
-import type { Invitation, Company } from '@shared/schema';
+  ExternalLink,
+} from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { format, formatDistanceToNow, isAfter } from "date-fns";
+import type { Invitation, Company } from "@shared/schema";
 
 export default function UserInvitations() {
   const { toast } = useToast();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
 
   const { data: invitations = [], isLoading } = useQuery<Invitation[]>({
-    queryKey: ['/api/admin/invitations'],
+    queryKey: ["/api/admin/invitations"],
   });
 
   const { data: clients = [] } = useQuery<Company[]>({
-    queryKey: ['/api/admin/clients'],
+    queryKey: ["/api/admin/clients"],
   });
 
   const createInvitationMutation = useMutation({
-    mutationFn: async (data: { email: string; companyId?: string; role: string; userType: string }) => {
-      return apiRequest('POST', '/api/admin/invitations', data);
+    mutationFn: async (data: {
+      email: string;
+      companyId?: string;
+      role: string;
+      userType: string;
+    }) => {
+      return apiRequest("POST", "/api/admin/invitations", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
-      toast({ title: 'Invitation sent successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
+      toast({ title: "Invitation sent successfully" });
       setInviteDialogOpen(false);
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to send invitation', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to send invitation",
+        description: error?.message,
+      });
     },
   });
 
   const revokeInvitationMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('PATCH', `/api/admin/invitations/${id}/revoke`);
+      return apiRequest("PATCH", `/api/admin/invitations/${id}/revoke`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
-      toast({ title: 'Invitation revoked' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
+      toast({ title: "Invitation revoked" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to revoke invitation', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to revoke invitation",
+        description: error?.message,
+      });
     },
   });
 
   const resendInvitationMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('POST', `/api/admin/invitations/${id}/resend`);
+      return apiRequest("POST", `/api/admin/invitations/${id}/resend`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
-      toast({ title: 'Invitation resent successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
+      toast({ title: "Invitation resent successfully" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to resend invitation', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to resend invitation",
+        description: error?.message,
+      });
     },
   });
 
   const deleteInvitationMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('DELETE', `/api/admin/invitations/${id}`);
+      return apiRequest("DELETE", `/api/admin/invitations/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/invitations'] });
-      toast({ title: 'Invitation deleted' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
+      toast({ title: "Invitation deleted" });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to delete invitation', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Failed to delete invitation",
+        description: error?.message,
+      });
     },
   });
 
-  const filteredInvitations = invitations.filter(inv => {
+  const filteredInvitations = invitations.filter((inv) => {
     const matchesSearch = inv.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || inv.status === statusFilter;
+    const matchesStatus = statusFilter === "all" || inv.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
   const getStatusBadge = (invitation: Invitation) => {
     const isExpired = invitation.expiresAt && isAfter(new Date(), new Date(invitation.expiresAt));
-    
-    if (invitation.status === 'accepted') {
+
+    if (invitation.status === "accepted") {
       return <Badge className="bg-green-500/10 text-green-500 border-green-500/20">Accepted</Badge>;
     }
-    if (invitation.status === 'revoked') {
+    if (invitation.status === "revoked") {
       return <Badge variant="destructive">Revoked</Badge>;
     }
     if (isExpired) {
@@ -123,22 +170,22 @@ export default function UserInvitations() {
   const handleSendInvitation = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const email = formData.get('email') as string;
-    const role = formData.get('role') as string;
-    const userType = formData.get('userType') as string;
-    
+    const email = formData.get("email") as string;
+    const role = formData.get("role") as string;
+    const userType = formData.get("userType") as string;
+
     createInvitationMutation.mutate({
       email,
       companyId: selectedCompanyId || undefined,
-      role: role || 'client',
-      userType: userType || 'client',
+      role: role || "client",
+      userType: userType || "client",
     });
   };
 
   const copyInviteLink = (token: string) => {
     const link = `${window.location.origin}/register?invite=${token}`;
     navigator.clipboard.writeText(link);
-    toast({ title: 'Invitation link copied to clipboard' });
+    toast({ title: "Invitation link copied to clipboard" });
   };
 
   if (isLoading) {
@@ -149,8 +196,8 @@ export default function UserInvitations() {
     );
   }
 
-  const pendingCount = invitations.filter(i => i.status === 'pending').length;
-  const acceptedCount = invitations.filter(i => i.status === 'accepted').length;
+  const pendingCount = invitations.filter((i) => i.status === "pending").length;
+  const acceptedCount = invitations.filter((i) => i.status === "accepted").length;
 
   return (
     <div className="space-y-6">
@@ -167,81 +214,91 @@ export default function UserInvitations() {
         }
       />
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Send Client Invitation</DialogTitle>
-              <DialogDescription>
-                Invite a new user to access the client portal. They will receive a link to register.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSendInvitation} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address *</Label>
-                <Input 
-                  id="email" 
-                  name="email" 
-                  type="email" 
-                  placeholder="client@example.com"
-                  required 
-                  data-testid="input-invite-email" 
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="company">Assign to Client (optional)</Label>
-                <Select value={selectedCompanyId || "none"} onValueChange={(value) => setSelectedCompanyId(value === "none" ? "" : value)}>
-                  <SelectTrigger data-testid="select-invite-company">
-                    <SelectValue placeholder="Select a client company" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No company assigned</SelectItem>
-                    {clients.map((client) => (
-                      <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  If assigned, the user will have access to this client's data.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="userType">User Type *</Label>
-                <Select name="userType" defaultValue="client">
-                  <SelectTrigger data-testid="select-invite-usertype">
-                    <SelectValue placeholder="Select user type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="client">Client (NR-managed portal access)</SelectItem>
-                    <SelectItem value="customer">Customer (full SaaS bookkeeping)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Client: Simplified portal for NR-managed clients. Customer: Full self-service access.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="role">Access Level</Label>
-                <Select name="role" defaultValue="client">
-                  <SelectTrigger data-testid="select-invite-role">
-                    <SelectValue placeholder="Select access level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="client">Standard (view their company only)</SelectItem>
-                    <SelectItem value="staff">Staff (admin access)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={createInvitationMutation.isPending} data-testid="button-submit-invite">
-                  <Send className="w-4 h-4 mr-2" />
-                  {createInvitationMutation.isPending ? 'Sending...' : 'Send Invitation'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Client Invitation</DialogTitle>
+            <DialogDescription>
+              Invite a new user to access the client portal. They will receive a link to register.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSendInvitation} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email Address *</Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                placeholder="client@example.com"
+                required
+                data-testid="input-invite-email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="company">Assign to Client (optional)</Label>
+              <Select
+                value={selectedCompanyId || "none"}
+                onValueChange={(value) => setSelectedCompanyId(value === "none" ? "" : value)}
+              >
+                <SelectTrigger data-testid="select-invite-company">
+                  <SelectValue placeholder="Select a client company" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No company assigned</SelectItem>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                If assigned, the user will have access to this client's data.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="userType">User Type *</Label>
+              <Select name="userType" defaultValue="client">
+                <SelectTrigger data-testid="select-invite-usertype">
+                  <SelectValue placeholder="Select user type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client">Client (NR-managed portal access)</SelectItem>
+                  <SelectItem value="customer">Customer (full SaaS bookkeeping)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Client: Simplified portal for NR-managed clients. Customer: Full self-service
+                access.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="role">Access Level</Label>
+              <Select name="role" defaultValue="client">
+                <SelectTrigger data-testid="select-invite-role">
+                  <SelectValue placeholder="Select access level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="client">Standard (view their company only)</SelectItem>
+                  <SelectItem value="staff">Staff (admin access)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={createInvitationMutation.isPending}
+                data-testid="button-submit-invite"
+              >
+                <Send className="w-4 h-4 mr-2" />
+                {createInvitationMutation.isPending ? "Sending..." : "Send Invitation"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -315,10 +372,11 @@ export default function UserInvitations() {
               </TableHeader>
               <TableBody>
                 {filteredInvitations.map((invitation) => {
-                  const client = clients.find(c => c.id === invitation.companyId);
-                  const isExpired = invitation.expiresAt && isAfter(new Date(), new Date(invitation.expiresAt));
-                  const canResend = invitation.status === 'pending' || isExpired;
-                  
+                  const client = clients.find((c) => c.id === invitation.companyId);
+                  const isExpired =
+                    invitation.expiresAt && isAfter(new Date(), new Date(invitation.expiresAt));
+                  const canResend = invitation.status === "pending" || isExpired;
+
                   return (
                     <TableRow key={invitation.id} data-testid={`row-invite-${invitation.id}`}>
                       <TableCell className="font-medium">{invitation.email}</TableCell>
@@ -333,39 +391,47 @@ export default function UserInvitations() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={invitation.role === 'staff' ? 'default' : 'secondary'}>
+                        <Badge variant={invitation.role === "staff" ? "default" : "secondary"}>
                           {invitation.role}
                         </Badge>
                       </TableCell>
                       <TableCell>{getStatusBadge(invitation)}</TableCell>
                       <TableCell>
                         {invitation.expiresAt ? (
-                          <span className={isExpired ? 'text-destructive' : ''}>
-                            {formatDistanceToNow(new Date(invitation.expiresAt), { addSuffix: true })}
+                          <span className={isExpired ? "text-destructive" : ""}>
+                            {formatDistanceToNow(new Date(invitation.expiresAt), {
+                              addSuffix: true,
+                            })}
                           </span>
-                        ) : '-'}
+                        ) : (
+                          "-"
+                        )}
                       </TableCell>
                       <TableCell>
-                        {invitation.createdAt 
-                          ? format(new Date(invitation.createdAt), 'MMM d, yyyy')
-                          : '-'}
+                        {invitation.createdAt
+                          ? format(new Date(invitation.createdAt), "MMM d, yyyy")
+                          : "-"}
                       </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" data-testid={`button-actions-invite-${invitation.id}`}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              data-testid={`button-actions-invite-${invitation.id}`}
+                            >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {invitation.status === 'pending' && !isExpired && (
+                            {invitation.status === "pending" && !isExpired && (
                               <DropdownMenuItem onClick={() => copyInviteLink(invitation.token)}>
                                 <Copy className="w-4 h-4 mr-2" />
                                 Copy Invite Link
                               </DropdownMenuItem>
                             )}
                             {canResend && (
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 onClick={() => resendInvitationMutation.mutate(invitation.id)}
                                 disabled={resendInvitationMutation.isPending}
                               >
@@ -373,10 +439,10 @@ export default function UserInvitations() {
                                 Resend Invitation
                               </DropdownMenuItem>
                             )}
-                            {invitation.status === 'pending' && (
+                            {invitation.status === "pending" && (
                               <>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem 
+                                <DropdownMenuItem
                                   className="text-destructive"
                                   onClick={() => revokeInvitationMutation.mutate(invitation.id)}
                                   disabled={revokeInvitationMutation.isPending}
@@ -386,10 +452,10 @@ export default function UserInvitations() {
                                 </DropdownMenuItem>
                               </>
                             )}
-                            <DropdownMenuItem 
+                            <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => {
-                                if (confirm('Delete this invitation?')) {
+                                if (confirm("Delete this invitation?")) {
                                   deleteInvitationMutation.mutate(invitation.id);
                                 }
                               }}
@@ -406,9 +472,9 @@ export default function UserInvitations() {
                 {filteredInvitations.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      {searchTerm || statusFilter !== 'all' 
-                        ? 'No invitations match your filters' 
-                        : 'No invitations sent yet'}
+                      {searchTerm || statusFilter !== "all"
+                        ? "No invitations match your filters"
+                        : "No invitations sent yet"}
                     </TableCell>
                   </TableRow>
                 )}

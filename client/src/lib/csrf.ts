@@ -41,7 +41,7 @@ export function clearCsrfToken(): void {
 
 export async function withCsrfHeader(
   method: string,
-  headers: Record<string, string>,
+  headers: Record<string, string>
 ): Promise<Record<string, string>> {
   if (!isStateChangingMethod(method)) return headers;
   const token = await getCsrfToken();

@@ -1,11 +1,11 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { 
-  Settings, 
-  Users, 
-  DollarSign, 
-  Shield, 
+import { PageHeader } from "@/components/ui/page-header";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  Settings,
+  Users,
+  DollarSign,
+  Shield,
   Activity,
   Database,
   Bell,
@@ -28,110 +28,148 @@ import {
   FileText,
   Building2,
   CreditCard,
-  Loader2
-} from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import type { AdminSetting, SubscriptionPlan, User, Company, AuditLog } from '@shared/schema';
+  Loader2,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  CardFooter,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { AdminSetting, SubscriptionPlan, User, Company, AuditLog } from "@shared/schema";
 
 export default function Admin() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState('overview');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState("overview");
+  const [searchTerm, setSearchTerm] = useState("");
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [newPlanDialogOpen, setNewPlanDialogOpen] = useState(false);
   const [editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
-  
+
   // System settings state
   const [systemSettings, setSystemSettings] = useState({
-    defaultCurrency: 'AED',
-    defaultVatRate: '5',
-    freeAiCredits: '50',
-    trialPeriod: '14',
+    defaultCurrency: "AED",
+    defaultVatRate: "5",
+    freeAiCredits: "50",
+    trialPeriod: "14",
     aiCategorization: true,
     ocrScanning: true,
     whatsappIntegration: false,
     smartAssistant: true,
     referralProgram: true,
-    supportEmail: '',
-    fromEmail: '',
+    supportEmail: "",
+    fromEmail: "",
     sendWelcomeEmail: true,
     paymentReminders: true,
   });
 
   // Fetch admin data
   const { data: settings = [], isLoading: settingsLoading } = useQuery<AdminSetting[]>({
-    queryKey: ['/api/admin/settings'],
+    queryKey: ["/api/admin/settings"],
   });
 
   useEffect(() => {
     if (settings.length === 0) return;
-    const settingsMap = settings.reduce((acc: Record<string, string>, setting: AdminSetting) => {
-      acc[setting.key] = setting.value;
-      return acc;
-    }, {} as Record<string, string>);
+    const settingsMap = settings.reduce(
+      (acc: Record<string, string>, setting: AdminSetting) => {
+        acc[setting.key] = setting.value;
+        return acc;
+      },
+      {} as Record<string, string>
+    );
 
-    setSystemSettings(prev => ({
+    setSystemSettings((prev) => ({
       ...prev,
-      defaultCurrency: settingsMap['system.defaultCurrency'] || prev.defaultCurrency,
-      defaultVatRate: settingsMap['system.defaultVatRate'] || prev.defaultVatRate,
-      freeAiCredits: settingsMap['system.freeAiCredits'] || prev.freeAiCredits,
-      trialPeriod: settingsMap['system.trialPeriod'] || prev.trialPeriod,
-      aiCategorization: 'feature.aiCategorization' in settingsMap
-        ? settingsMap['feature.aiCategorization'] === 'true'
-        : prev.aiCategorization,
-      ocrScanning: 'feature.ocrScanning' in settingsMap
-        ? settingsMap['feature.ocrScanning'] === 'true'
-        : prev.ocrScanning,
-      whatsappIntegration: 'feature.whatsappIntegration' in settingsMap
-        ? settingsMap['feature.whatsappIntegration'] === 'true'
-        : prev.whatsappIntegration,
-      smartAssistant: 'feature.smartAssistant' in settingsMap
-        ? settingsMap['feature.smartAssistant'] === 'true'
-        : prev.smartAssistant,
-      referralProgram: 'feature.referralProgram' in settingsMap
-        ? settingsMap['feature.referralProgram'] === 'true'
-        : prev.referralProgram,
-      supportEmail: settingsMap['notification.supportEmail'] || prev.supportEmail,
-      fromEmail: settingsMap['notification.fromEmail'] || prev.fromEmail,
-      sendWelcomeEmail: 'notification.sendWelcomeEmail' in settingsMap
-        ? settingsMap['notification.sendWelcomeEmail'] === 'true'
-        : prev.sendWelcomeEmail,
-      paymentReminders: 'notification.paymentReminders' in settingsMap
-        ? settingsMap['notification.paymentReminders'] === 'true'
-        : prev.paymentReminders,
+      defaultCurrency: settingsMap["system.defaultCurrency"] || prev.defaultCurrency,
+      defaultVatRate: settingsMap["system.defaultVatRate"] || prev.defaultVatRate,
+      freeAiCredits: settingsMap["system.freeAiCredits"] || prev.freeAiCredits,
+      trialPeriod: settingsMap["system.trialPeriod"] || prev.trialPeriod,
+      aiCategorization:
+        "feature.aiCategorization" in settingsMap
+          ? settingsMap["feature.aiCategorization"] === "true"
+          : prev.aiCategorization,
+      ocrScanning:
+        "feature.ocrScanning" in settingsMap
+          ? settingsMap["feature.ocrScanning"] === "true"
+          : prev.ocrScanning,
+      whatsappIntegration:
+        "feature.whatsappIntegration" in settingsMap
+          ? settingsMap["feature.whatsappIntegration"] === "true"
+          : prev.whatsappIntegration,
+      smartAssistant:
+        "feature.smartAssistant" in settingsMap
+          ? settingsMap["feature.smartAssistant"] === "true"
+          : prev.smartAssistant,
+      referralProgram:
+        "feature.referralProgram" in settingsMap
+          ? settingsMap["feature.referralProgram"] === "true"
+          : prev.referralProgram,
+      supportEmail: settingsMap["notification.supportEmail"] || prev.supportEmail,
+      fromEmail: settingsMap["notification.fromEmail"] || prev.fromEmail,
+      sendWelcomeEmail:
+        "notification.sendWelcomeEmail" in settingsMap
+          ? settingsMap["notification.sendWelcomeEmail"] === "true"
+          : prev.sendWelcomeEmail,
+      paymentReminders:
+        "notification.paymentReminders" in settingsMap
+          ? settingsMap["notification.paymentReminders"] === "true"
+          : prev.paymentReminders,
     }));
   }, [settings]);
 
   const { data: plans = [], isLoading: plansLoading } = useQuery<SubscriptionPlan[]>({
-    queryKey: ['/api/admin/plans'],
+    queryKey: ["/api/admin/plans"],
   });
 
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
-    queryKey: ['/api/admin/users'],
+    queryKey: ["/api/admin/users"],
   });
 
   const { data: companies = [], isLoading: companiesLoading } = useQuery<Company[]>({
-    queryKey: ['/api/admin/companies'],
+    queryKey: ["/api/admin/companies"],
   });
 
   const { data: auditLogs = [], isLoading: logsLoading } = useQuery<AuditLog[]>({
-    queryKey: ['/api/admin/audit-logs'],
+    queryKey: ["/api/admin/audit-logs"],
   });
 
   const { data: stats } = useQuery<{
@@ -143,21 +181,21 @@ export default function Admin() {
     monthlyRevenue: number;
     aiCreditsUsed: number;
   }>({
-    queryKey: ['/api/admin/stats'],
+    queryKey: ["/api/admin/stats"],
   });
 
   // Mutations
   const updateSettingMutation = useMutation({
     mutationFn: async (setting: { key: string; value: string }) => {
-      return apiRequest('PUT', '/api/admin/settings', setting);
+      return apiRequest("PUT", "/api/admin/settings", setting);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/settings'] });
-      toast({ title: 'Setting updated successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
+      toast({ title: "Setting updated successfully" });
       setEditSettingDialog(null);
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update setting' });
+      toast({ variant: "destructive", title: "Failed to update setting" });
     },
   });
 
@@ -165,126 +203,133 @@ export default function Admin() {
   const saveSystemSettingsMutation = useMutation({
     mutationFn: async (settingsToSave: typeof systemSettings) => {
       const settings = [
-        { key: 'system.defaultCurrency', value: settingsToSave.defaultCurrency },
-        { key: 'system.defaultVatRate', value: settingsToSave.defaultVatRate },
-        { key: 'system.freeAiCredits', value: settingsToSave.freeAiCredits },
-        { key: 'system.trialPeriod', value: settingsToSave.trialPeriod },
-        { key: 'feature.aiCategorization', value: settingsToSave.aiCategorization.toString() },
-        { key: 'feature.ocrScanning', value: settingsToSave.ocrScanning.toString() },
-        { key: 'feature.whatsappIntegration', value: settingsToSave.whatsappIntegration.toString() },
-        { key: 'feature.smartAssistant', value: settingsToSave.smartAssistant.toString() },
-        { key: 'feature.referralProgram', value: settingsToSave.referralProgram.toString() },
-        { key: 'notification.supportEmail', value: settingsToSave.supportEmail },
-        { key: 'notification.fromEmail', value: settingsToSave.fromEmail },
-        { key: 'notification.sendWelcomeEmail', value: settingsToSave.sendWelcomeEmail.toString() },
-        { key: 'notification.paymentReminders', value: settingsToSave.paymentReminders.toString() },
+        { key: "system.defaultCurrency", value: settingsToSave.defaultCurrency },
+        { key: "system.defaultVatRate", value: settingsToSave.defaultVatRate },
+        { key: "system.freeAiCredits", value: settingsToSave.freeAiCredits },
+        { key: "system.trialPeriod", value: settingsToSave.trialPeriod },
+        { key: "feature.aiCategorization", value: settingsToSave.aiCategorization.toString() },
+        { key: "feature.ocrScanning", value: settingsToSave.ocrScanning.toString() },
+        {
+          key: "feature.whatsappIntegration",
+          value: settingsToSave.whatsappIntegration.toString(),
+        },
+        { key: "feature.smartAssistant", value: settingsToSave.smartAssistant.toString() },
+        { key: "feature.referralProgram", value: settingsToSave.referralProgram.toString() },
+        { key: "notification.supportEmail", value: settingsToSave.supportEmail },
+        { key: "notification.fromEmail", value: settingsToSave.fromEmail },
+        { key: "notification.sendWelcomeEmail", value: settingsToSave.sendWelcomeEmail.toString() },
+        { key: "notification.paymentReminders", value: settingsToSave.paymentReminders.toString() },
       ];
-      
+
       // Save all settings in parallel
       await Promise.all(
-        settings.map(setting => apiRequest('PUT', '/api/admin/settings', setting))
+        settings.map((setting) => apiRequest("PUT", "/api/admin/settings", setting))
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/settings'] });
-      toast({ title: 'System settings saved successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
+      toast({ title: "System settings saved successfully" });
     },
     onError: (error: any) => {
-      toast({ 
-        variant: 'destructive', 
-        title: 'Failed to save settings',
-        description: error?.message || 'Please try again'
+      toast({
+        variant: "destructive",
+        title: "Failed to save settings",
+        description: error?.message || "Please try again",
       });
     },
   });
 
   const createPlanMutation = useMutation({
     mutationFn: async (plan: Partial<SubscriptionPlan>) => {
-      return apiRequest('POST', '/api/admin/plans', plan);
+      return apiRequest("POST", "/api/admin/plans", plan);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/plans'] });
-      toast({ title: 'Plan created successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
+      toast({ title: "Plan created successfully" });
       setNewPlanDialogOpen(false);
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to create plan' });
+      toast({ variant: "destructive", title: "Failed to create plan" });
     },
   });
 
   const updatePlanMutation = useMutation({
     mutationFn: async (plan: Partial<SubscriptionPlan> & { id: string }) => {
-      return apiRequest('PUT', `/api/admin/plans/${plan.id}`, plan);
+      return apiRequest("PUT", `/api/admin/plans/${plan.id}`, plan);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/plans'] });
-      toast({ title: 'Plan updated successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
+      toast({ title: "Plan updated successfully" });
       setEditingPlan(null);
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update plan' });
+      toast({ variant: "destructive", title: "Failed to update plan" });
     },
   });
 
   const deletePlanMutation = useMutation({
     mutationFn: async (id: string) => {
-      return apiRequest('DELETE', `/api/admin/plans/${id}`);
+      return apiRequest("DELETE", `/api/admin/plans/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/plans'] });
-      toast({ title: 'Plan deleted successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
+      toast({ title: "Plan deleted successfully" });
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to delete plan' });
+      toast({ variant: "destructive", title: "Failed to delete plan" });
     },
   });
 
   const updateUserMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<User> }) => {
-      return apiRequest('PATCH', `/api/admin/users/${id}`, data);
+      return apiRequest("PATCH", `/api/admin/users/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/users'] });
-      toast({ title: 'User updated successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({ title: "User updated successfully" });
       setEditingUser(null);
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update user' });
+      toast({ variant: "destructive", title: "Failed to update user" });
     },
   });
 
   const updateCompanyMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Company> }) => {
-      return apiRequest('PATCH', `/api/admin/companies/${id}`, data);
+      return apiRequest("PATCH", `/api/admin/companies/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/companies'] });
-      toast({ title: 'Company updated successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/companies"] });
+      toast({ title: "Company updated successfully" });
       setEditingCompany(null);
     },
     onError: () => {
-      toast({ variant: 'destructive', title: 'Failed to update company' });
+      toast({ variant: "destructive", title: "Failed to update company" });
     },
   });
 
   // Filter functions
-  const filteredUsers = users.filter(user => 
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredUsers = users.filter(
+    (user) =>
+      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredCompanies = companies.filter(company =>
+  const filteredCompanies = companies.filter((company) =>
     company.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Group settings by category
-  const settingsByCategory = settings.reduce((acc, setting) => {
-    if (!acc[setting.category]) {
-      acc[setting.category] = [];
-    }
-    acc[setting.category].push(setting);
-    return acc;
-  }, {} as Record<string, AdminSetting[]>);
+  const settingsByCategory = settings.reduce(
+    (acc, setting) => {
+      if (!acc[setting.category]) {
+        acc[setting.category] = [];
+      }
+      acc[setting.category].push(setting);
+      return acc;
+    },
+    {} as Record<string, AdminSetting[]>
+  );
 
   return (
     <div className="space-y-6">
@@ -345,7 +390,9 @@ export default function Admin() {
                 <Users className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid="stat-total-users">{stats?.totalUsers || 0}</div>
+                <div className="text-2xl font-bold" data-testid="stat-total-users">
+                  {stats?.totalUsers || 0}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   <span className="text-green-600">+12%</span> from last month
                 </p>
@@ -358,7 +405,9 @@ export default function Admin() {
                 <Building2 className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid="stat-total-companies">{stats?.totalCompanies || 0}</div>
+                <div className="text-2xl font-bold" data-testid="stat-total-companies">
+                  {stats?.totalCompanies || 0}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   <span className="text-green-600">+8%</span> from last month
                 </p>
@@ -386,7 +435,9 @@ export default function Admin() {
                 <Activity className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold" data-testid="stat-ai-credits">{stats?.aiCreditsUsed || 0}</div>
+                <div className="text-2xl font-bold" data-testid="stat-ai-credits">
+                  {stats?.aiCreditsUsed || 0}
+                </div>
                 <p className="text-xs text-muted-foreground">This month</p>
               </CardContent>
             </Card>
@@ -405,28 +456,36 @@ export default function Admin() {
                     <CheckCircle className="w-4 h-4 text-green-600" />
                     <span>Database</span>
                   </div>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Healthy</Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    Healthy
+                  </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
                     <span>API Services</span>
                   </div>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Operational</Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    Operational
+                  </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CheckCircle className="w-4 h-4 text-green-600" />
                     <span>AI Services (OpenAI)</span>
                   </div>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Connected</Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                    Connected
+                  </Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-600" />
                     <span>WhatsApp Integration</span>
                   </div>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Needs Config</Badge>
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                    Needs Config
+                  </Badge>
                 </div>
               </CardContent>
             </Card>
@@ -437,37 +496,50 @@ export default function Admin() {
                 <CardDescription>Common administrative tasks</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start" 
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
                   data-testid="button-backup-db"
                   onClick={() => {
-                    toast({ title: 'Backup Started', description: 'Database backup is in progress...' });
+                    toast({
+                      title: "Backup Started",
+                      description: "Database backup is in progress...",
+                    });
                     setTimeout(() => {
-                      toast({ title: 'Backup Complete', description: 'Database has been backed up successfully.' });
+                      toast({
+                        title: "Backup Complete",
+                        description: "Database has been backed up successfully.",
+                      });
                     }, 2000);
                   }}
                 >
                   <Database className="w-4 h-4 mr-2" />
                   Backup Database
                 </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start" 
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
                   data-testid="button-send-newsletter"
                   onClick={() => {
-                    toast({ title: 'Newsletter', description: 'Newsletter feature will be available soon. Configure email settings first.' });
+                    toast({
+                      title: "Newsletter",
+                      description:
+                        "Newsletter feature will be available soon. Configure email settings first.",
+                    });
                   }}
                 >
                   <Bell className="w-4 h-4 mr-2" />
                   Send Newsletter
                 </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start" 
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
                   data-testid="button-generate-report"
                   onClick={() => {
-                    toast({ title: 'Generating Report', description: 'Usage report is being generated...' });
+                    toast({
+                      title: "Generating Report",
+                      description: "Usage report is being generated...",
+                    });
                     setTimeout(() => {
                       const reportData = {
                         generatedAt: new Date().toISOString(),
@@ -479,28 +551,39 @@ export default function Admin() {
                         monthlyRevenue: stats?.monthlyRevenue || 0,
                         aiCreditsUsed: stats?.aiCreditsUsed || 0,
                       };
-                      const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
+                      const blob = new Blob([JSON.stringify(reportData, null, 2)], {
+                        type: "application/json",
+                      });
                       const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
+                      const a = document.createElement("a");
                       a.href = url;
-                      a.download = `usage-report-${new Date().toISOString().split('T')[0]}.json`;
+                      a.download = `usage-report-${new Date().toISOString().split("T")[0]}.json`;
                       a.click();
                       URL.revokeObjectURL(url);
-                      toast({ title: 'Report Generated', description: 'Usage report has been downloaded.' });
+                      toast({
+                        title: "Report Generated",
+                        description: "Usage report has been downloaded.",
+                      });
                     }, 1500);
                   }}
                 >
                   <FileText className="w-4 h-4 mr-2" />
                   Generate Usage Report
                 </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start" 
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
                   data-testid="button-sync-integrations"
                   onClick={() => {
-                    toast({ title: 'Syncing Integrations', description: 'Checking all integration connections...' });
+                    toast({
+                      title: "Syncing Integrations",
+                      description: "Checking all integration connections...",
+                    });
                     setTimeout(() => {
-                      toast({ title: 'Sync Complete', description: 'All integrations are up to date.' });
+                      toast({
+                        title: "Sync Complete",
+                        description: "All integrations are up to date.",
+                      });
                     }, 2000);
                   }}
                 >
@@ -522,13 +605,17 @@ export default function Admin() {
                 {auditLogs.slice(0, 5).map((log) => (
                   <div key={log.id} className="flex items-center gap-4">
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      {log.action === 'create' && <Plus className="w-4 h-4 text-green-600" />}
-                      {log.action === 'update' && <Edit2 className="w-4 h-4 text-blue-600" />}
-                      {log.action === 'delete' && <Trash2 className="w-4 h-4 text-red-600" />}
-                      {log.action === 'login' && <Users className="w-4 h-4 text-muted-foreground" />}
+                      {log.action === "create" && <Plus className="w-4 h-4 text-green-600" />}
+                      {log.action === "update" && <Edit2 className="w-4 h-4 text-blue-600" />}
+                      {log.action === "delete" && <Trash2 className="w-4 h-4 text-red-600" />}
+                      {log.action === "login" && (
+                        <Users className="w-4 h-4 text-muted-foreground" />
+                      )}
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium">{log.action} {log.resourceType}</p>
+                      <p className="text-sm font-medium">
+                        {log.action} {log.resourceType}
+                      </p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(log.createdAt).toLocaleString()}
                       </p>
@@ -557,9 +644,11 @@ export default function Admin() {
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
                   <DialogTitle>Create New Plan</DialogTitle>
-                  <DialogDescription>Add a new subscription plan for your customers</DialogDescription>
+                  <DialogDescription>
+                    Add a new subscription plan for your customers
+                  </DialogDescription>
                 </DialogHeader>
-                <PlanForm 
+                <PlanForm
                   onSubmit={(data) => createPlanMutation.mutate(data)}
                   isPending={createPlanMutation.isPending}
                 />
@@ -580,12 +669,12 @@ export default function Admin() {
               </Card>
             ) : (
               plans.map((plan) => (
-                <Card key={plan.id} className={!plan.isActive ? 'opacity-60' : ''}>
+                <Card key={plan.id} className={!plan.isActive ? "opacity-60" : ""}>
                   <CardHeader>
                     <div className="flex items-center justify-between gap-2">
                       <CardTitle className="text-lg">{plan.name}</CardTitle>
-                      <Badge variant={plan.isActive ? 'default' : 'secondary'}>
-                        {plan.isActive ? 'Active' : 'Inactive'}
+                      <Badge variant={plan.isActive ? "default" : "secondary"}>
+                        {plan.isActive ? "Active" : "Inactive"}
                       </Badge>
                     </div>
                     <CardDescription>{plan.description}</CardDescription>
@@ -598,11 +687,11 @@ export default function Admin() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Max Companies</span>
-                        <span>{plan.maxCompanies || 'Unlimited'}</span>
+                        <span>{plan.maxCompanies || "Unlimited"}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Max Users</span>
-                        <span>{plan.maxUsers || 'Unlimited'}</span>
+                        <span>{plan.maxUsers || "Unlimited"}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">AI Credits/Month</span>
@@ -610,14 +699,14 @@ export default function Admin() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">WhatsApp Integration</span>
-                        <span>{plan.hasWhatsappIntegration ? 'Yes' : 'No'}</span>
+                        <span>{plan.hasWhatsappIntegration ? "Yes" : "No"}</span>
                       </div>
                     </div>
                   </CardContent>
                   <CardFooter className="gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       className="flex-1"
                       onClick={() => setEditingPlan(plan)}
                       data-testid={`button-edit-plan-${plan.id}`}
@@ -625,8 +714,8 @@ export default function Admin() {
                       <Edit2 className="w-4 h-4 mr-2" />
                       Edit
                     </Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       size="sm"
                       onClick={() => deletePlanMutation.mutate(plan.id)}
                       data-testid={`button-delete-plan-${plan.id}`}
@@ -647,7 +736,7 @@ export default function Admin() {
                 <DialogDescription>Modify subscription plan details</DialogDescription>
               </DialogHeader>
               {editingPlan && (
-                <PlanForm 
+                <PlanForm
                   initialData={editingPlan}
                   onSubmit={(data) => updatePlanMutation.mutate({ ...data, id: editingPlan.id })}
                   isPending={updatePlanMutation.isPending}
@@ -715,17 +804,19 @@ export default function Admin() {
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {companies.filter(c => c.id).length} companies
+                            {companies.filter((c) => c.id).length} companies
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="bg-green-50 text-green-700">Active</Badge>
+                          <Badge variant="outline" className="bg-green-50 text-green-700">
+                            Active
+                          </Badge>
                         </TableCell>
                         <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             data-testid={`button-view-user-${user.id}`}
                             onClick={() => setEditingUser(user)}
                           >
@@ -748,36 +839,55 @@ export default function Admin() {
                 <DialogDescription>Update user information</DialogDescription>
               </DialogHeader>
               {editingUser && (
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.currentTarget);
-                  updateUserMutation.mutate({
-                    id: editingUser.id,
-                    data: {
-                      name: formData.get('name') as string,
-                      email: formData.get('email') as string,
-                      isAdmin: formData.get('isAdmin') === 'on',
-                    }
-                  });
-                }}>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.currentTarget);
+                    updateUserMutation.mutate({
+                      id: editingUser.id,
+                      data: {
+                        name: formData.get("name") as string,
+                        email: formData.get("email") as string,
+                        isAdmin: formData.get("isAdmin") === "on",
+                      },
+                    });
+                  }}
+                >
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="edit-user-name">Name</Label>
-                      <Input id="edit-user-name" name="name" defaultValue={editingUser.name} required />
+                      <Input
+                        id="edit-user-name"
+                        name="name"
+                        defaultValue={editingUser.name}
+                        required
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="edit-user-email">Email</Label>
-                      <Input id="edit-user-email" name="email" type="email" defaultValue={editingUser.email} required />
+                      <Input
+                        id="edit-user-email"
+                        name="email"
+                        type="email"
+                        defaultValue={editingUser.email}
+                        required
+                      />
                     </div>
                     <div className="flex items-center gap-2">
-                      <Switch id="edit-user-admin" name="isAdmin" defaultChecked={editingUser.isAdmin || false} />
+                      <Switch
+                        id="edit-user-admin"
+                        name="isAdmin"
+                        defaultChecked={editingUser.isAdmin || false}
+                      />
                       <Label htmlFor="edit-user-admin">Admin User</Label>
                     </div>
                   </div>
                   <DialogFooter className="mt-4">
-                    <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
+                    <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>
+                      Cancel
+                    </Button>
                     <Button type="submit" disabled={updateUserMutation.isPending}>
-                      {updateUserMutation.isPending ? 'Saving...' : 'Save Changes'}
+                      {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -816,13 +926,13 @@ export default function Admin() {
                     filteredCompanies.map((company) => (
                       <TableRow key={company.id}>
                         <TableCell className="font-medium">{company.name}</TableCell>
-                        <TableCell>{company.trnVatNumber || '-'}</TableCell>
+                        <TableCell>{company.trnVatNumber || "-"}</TableCell>
                         <TableCell>{company.baseCurrency}</TableCell>
                         <TableCell>{new Date(company.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell className="text-right">
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             data-testid={`button-view-company-${company.id}`}
                             onClick={() => setEditingCompany(company)}
                           >
@@ -845,26 +955,37 @@ export default function Admin() {
                 <DialogDescription>Update company information</DialogDescription>
               </DialogHeader>
               {editingCompany && (
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.currentTarget);
-                  updateCompanyMutation.mutate({
-                    id: editingCompany.id,
-                    data: {
-                      name: formData.get('name') as string,
-                      trnVatNumber: formData.get('trnVatNumber') as string || null,
-                      baseCurrency: formData.get('baseCurrency') as string,
-                    }
-                  });
-                }}>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.currentTarget);
+                    updateCompanyMutation.mutate({
+                      id: editingCompany.id,
+                      data: {
+                        name: formData.get("name") as string,
+                        trnVatNumber: (formData.get("trnVatNumber") as string) || null,
+                        baseCurrency: formData.get("baseCurrency") as string,
+                      },
+                    });
+                  }}
+                >
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="edit-company-name">Company Name</Label>
-                      <Input id="edit-company-name" name="name" defaultValue={editingCompany.name} required />
+                      <Input
+                        id="edit-company-name"
+                        name="name"
+                        defaultValue={editingCompany.name}
+                        required
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="edit-company-trn">TRN/VAT Number</Label>
-                      <Input id="edit-company-trn" name="trnVatNumber" defaultValue={editingCompany.trnVatNumber || ''} />
+                      <Input
+                        id="edit-company-trn"
+                        name="trnVatNumber"
+                        defaultValue={editingCompany.trnVatNumber || ""}
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="edit-company-currency">Base Currency</Label>
@@ -883,9 +1004,11 @@ export default function Admin() {
                     </div>
                   </div>
                   <DialogFooter className="mt-4">
-                    <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>Cancel</Button>
+                    <Button type="button" variant="outline" onClick={() => setEditingCompany(null)}>
+                      Cancel
+                    </Button>
                     <Button type="submit" disabled={updateCompanyMutation.isPending}>
-                      {updateCompanyMutation.isPending ? 'Saving...' : 'Save Changes'}
+                      {updateCompanyMutation.isPending ? "Saving..." : "Save Changes"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -912,48 +1035,64 @@ export default function Admin() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">AI Transaction Categorization</p>
-                      <p className="text-sm text-muted-foreground">Use AI to automatically categorize transactions</p>
+                      <p className="text-sm text-muted-foreground">
+                        Use AI to automatically categorize transactions
+                      </p>
                     </div>
-                    <Switch 
+                    <Switch
                       checked={systemSettings.aiCategorization}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, aiCategorization: checked }))}
-                      data-testid="switch-ai-categorization" 
+                      onCheckedChange={(checked) =>
+                        setSystemSettings((prev) => ({ ...prev, aiCategorization: checked }))
+                      }
+                      data-testid="switch-ai-categorization"
                     />
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">OCR Receipt Scanning</p>
-                      <p className="text-sm text-muted-foreground">Extract data from receipt images</p>
+                      <p className="text-sm text-muted-foreground">
+                        Extract data from receipt images
+                      </p>
                     </div>
-                    <Switch 
+                    <Switch
                       checked={systemSettings.ocrScanning}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, ocrScanning: checked }))}
-                      data-testid="switch-ocr-scanning" 
+                      onCheckedChange={(checked) =>
+                        setSystemSettings((prev) => ({ ...prev, ocrScanning: checked }))
+                      }
+                      data-testid="switch-ocr-scanning"
                     />
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">WhatsApp Integration</p>
-                      <p className="text-sm text-muted-foreground">Allow WhatsApp receipt ingestion</p>
+                      <p className="text-sm text-muted-foreground">
+                        Allow WhatsApp receipt ingestion
+                      </p>
                     </div>
-                    <Switch 
+                    <Switch
                       checked={systemSettings.whatsappIntegration}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, whatsappIntegration: checked }))}
-                      data-testid="switch-whatsapp-integration" 
+                      onCheckedChange={(checked) =>
+                        setSystemSettings((prev) => ({ ...prev, whatsappIntegration: checked }))
+                      }
+                      data-testid="switch-whatsapp-integration"
                     />
                   </div>
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Smart Assistant</p>
-                      <p className="text-sm text-muted-foreground">Natural language financial queries</p>
+                      <p className="text-sm text-muted-foreground">
+                        Natural language financial queries
+                      </p>
                     </div>
-                    <Switch 
+                    <Switch
                       checked={systemSettings.smartAssistant}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, smartAssistant: checked }))}
-                      data-testid="switch-smart-assistant" 
+                      onCheckedChange={(checked) =>
+                        setSystemSettings((prev) => ({ ...prev, smartAssistant: checked }))
+                      }
+                      data-testid="switch-smart-assistant"
                     />
                   </div>
                   <Separator />
@@ -962,10 +1101,12 @@ export default function Admin() {
                       <p className="font-medium">Referral Program</p>
                       <p className="text-sm text-muted-foreground">Enable user referral rewards</p>
                     </div>
-                    <Switch 
+                    <Switch
                       checked={systemSettings.referralProgram}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, referralProgram: checked }))}
-                      data-testid="switch-referral-program" 
+                      onCheckedChange={(checked) =>
+                        setSystemSettings((prev) => ({ ...prev, referralProgram: checked }))
+                      }
+                      data-testid="switch-referral-program"
                     />
                   </div>
                 </CardContent>
@@ -981,9 +1122,11 @@ export default function Admin() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label>Default Currency</Label>
-                      <Select 
+                      <Select
                         value={systemSettings.defaultCurrency}
-                        onValueChange={(value) => setSystemSettings(prev => ({ ...prev, defaultCurrency: value }))}
+                        onValueChange={(value) =>
+                          setSystemSettings((prev) => ({ ...prev, defaultCurrency: value }))
+                        }
                       >
                         <SelectTrigger data-testid="select-default-currency">
                           <SelectValue />
@@ -999,34 +1142,40 @@ export default function Admin() {
                     </div>
                     <div className="space-y-2">
                       <Label>Default VAT Rate (%)</Label>
-                      <Input 
-                        type="number" 
+                      <Input
+                        type="number"
                         value={systemSettings.defaultVatRate}
-                        onChange={(e) => setSystemSettings(prev => ({ ...prev, defaultVatRate: e.target.value }))}
-                        data-testid="input-vat-rate" 
+                        onChange={(e) =>
+                          setSystemSettings((prev) => ({ ...prev, defaultVatRate: e.target.value }))
+                        }
+                        data-testid="input-vat-rate"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label>AI Credits Per Free User</Label>
-                      <Input 
-                        type="number" 
+                      <Input
+                        type="number"
                         value={systemSettings.freeAiCredits}
-                        onChange={(e) => setSystemSettings(prev => ({ ...prev, freeAiCredits: e.target.value }))}
-                        data-testid="input-free-ai-credits" 
+                        onChange={(e) =>
+                          setSystemSettings((prev) => ({ ...prev, freeAiCredits: e.target.value }))
+                        }
+                        data-testid="input-free-ai-credits"
                       />
                     </div>
                     <div className="space-y-2">
                       <Label>Trial Period (Days)</Label>
-                      <Input 
-                        type="number" 
+                      <Input
+                        type="number"
                         value={systemSettings.trialPeriod}
-                        onChange={(e) => setSystemSettings(prev => ({ ...prev, trialPeriod: e.target.value }))}
-                        data-testid="input-trial-period" 
+                        onChange={(e) =>
+                          setSystemSettings((prev) => ({ ...prev, trialPeriod: e.target.value }))
+                        }
+                        data-testid="input-trial-period"
                       />
                     </div>
                   </div>
-                  <Button 
-                    className="mt-4" 
+                  <Button
+                    className="mt-4"
                     data-testid="button-save-system-settings"
                     onClick={() => saveSystemSettingsMutation.mutate(systemSettings)}
                     disabled={saveSystemSettingsMutation.isPending}
@@ -1055,33 +1204,41 @@ export default function Admin() {
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <Label>Support Email</Label>
-                    <Input 
-                      type="email" 
-                      placeholder="support@muhasib.ai" 
+                    <Input
+                      type="email"
+                      placeholder="support@muhasib.ai"
                       value={systemSettings.supportEmail}
-                      onChange={(e) => setSystemSettings(prev => ({ ...prev, supportEmail: e.target.value }))}
-                      data-testid="input-support-email" 
+                      onChange={(e) =>
+                        setSystemSettings((prev) => ({ ...prev, supportEmail: e.target.value }))
+                      }
+                      data-testid="input-support-email"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label>From Email (Notifications)</Label>
-                    <Input 
-                      type="email" 
-                      placeholder="noreply@muhasib.ai" 
+                    <Input
+                      type="email"
+                      placeholder="noreply@muhasib.ai"
                       value={systemSettings.fromEmail}
-                      onChange={(e) => setSystemSettings(prev => ({ ...prev, fromEmail: e.target.value }))}
-                      data-testid="input-from-email" 
+                      onChange={(e) =>
+                        setSystemSettings((prev) => ({ ...prev, fromEmail: e.target.value }))
+                      }
+                      data-testid="input-from-email"
                     />
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Send Welcome Email</p>
-                      <p className="text-sm text-muted-foreground">Email new users upon registration</p>
+                      <p className="text-sm text-muted-foreground">
+                        Email new users upon registration
+                      </p>
                     </div>
-                    <Switch 
+                    <Switch
                       checked={systemSettings.sendWelcomeEmail}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, sendWelcomeEmail: checked }))}
-                      data-testid="switch-welcome-email" 
+                      onCheckedChange={(checked) =>
+                        setSystemSettings((prev) => ({ ...prev, sendWelcomeEmail: checked }))
+                      }
+                      data-testid="switch-welcome-email"
                     />
                   </div>
                   <div className="flex items-center justify-between">
@@ -1089,14 +1246,16 @@ export default function Admin() {
                       <p className="font-medium">Payment Reminder Emails</p>
                       <p className="text-sm text-muted-foreground">Send late payment reminders</p>
                     </div>
-                    <Switch 
+                    <Switch
                       checked={systemSettings.paymentReminders}
-                      onCheckedChange={(checked) => setSystemSettings(prev => ({ ...prev, paymentReminders: checked }))}
-                      data-testid="switch-payment-reminders" 
+                      onCheckedChange={(checked) =>
+                        setSystemSettings((prev) => ({ ...prev, paymentReminders: checked }))
+                      }
+                      data-testid="switch-payment-reminders"
                     />
                   </div>
-                  <Button 
-                    className="mt-4" 
+                  <Button
+                    className="mt-4"
                     onClick={() => saveSystemSettingsMutation.mutate(systemSettings)}
                     disabled={saveSystemSettingsMutation.isPending}
                   >
@@ -1134,15 +1293,25 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700">Not Configured</Badge>
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700">
+                    Not Configured
+                  </Badge>
                 </div>
                 <div className="space-y-2">
                   <Label>Stripe Public Key</Label>
-                  <Input type="password" placeholder="pk_live_..." data-testid="input-stripe-public" />
+                  <Input
+                    type="password"
+                    placeholder="pk_live_..."
+                    data-testid="input-stripe-public"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Stripe Secret Key</Label>
-                  <Input type="password" placeholder="sk_live_..." data-testid="input-stripe-secret" />
+                  <Input
+                    type="password"
+                    placeholder="sk_live_..."
+                    data-testid="input-stripe-secret"
+                  />
                 </div>
                 <Button className="w-full" data-testid="button-save-stripe">
                   <Save className="w-4 h-4 mr-2" />
@@ -1164,16 +1333,19 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">Prepared links</Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700">
+                    Prepared links
+                  </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   WhatsApp messages are prepared as links and opened in WhatsApp for final sending.
-                  Provider delivery is not verified unless a WhatsApp Business API provider is configured.
+                  Provider delivery is not verified unless a WhatsApp Business API provider is
+                  configured.
                 </p>
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => window.location.href = '/whatsapp'}
+                  onClick={() => (window.location.href = "/whatsapp")}
                 >
                   Go to WhatsApp
                 </Button>
@@ -1193,7 +1365,9 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">Connected</Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700">
+                    Connected
+                  </Badge>
                 </div>
                 <div className="space-y-2">
                   <Label>API Key</Label>
@@ -1232,7 +1406,9 @@ export default function Admin() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">Connected</Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700">
+                    Connected
+                  </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Google Sheets integration is configured and ready to use.
@@ -1309,21 +1485,23 @@ export default function Admin() {
                             {new Date(log.createdAt).toLocaleString()}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={
-                              log.action === 'create' ? 'default' :
-                              log.action === 'delete' ? 'destructive' :
-                              'secondary'
-                            }>
+                            <Badge
+                              variant={
+                                log.action === "create"
+                                  ? "default"
+                                  : log.action === "delete"
+                                    ? "destructive"
+                                    : "secondary"
+                              }
+                            >
                               {log.action}
                             </Badge>
                           </TableCell>
                           <TableCell>{log.resourceType}</TableCell>
-                          <TableCell>{log.userId || 'System'}</TableCell>
-                          <TableCell className="max-w-xs truncate">
-                            {log.details || '-'}
-                          </TableCell>
+                          <TableCell>{log.userId || "System"}</TableCell>
+                          <TableCell className="max-w-xs truncate">{log.details || "-"}</TableCell>
                           <TableCell className="text-muted-foreground">
-                            {log.ipAddress || '-'}
+                            {log.ipAddress || "-"}
                           </TableCell>
                         </TableRow>
                       ))
@@ -1340,29 +1518,31 @@ export default function Admin() {
 }
 
 // Plan Form Component
-function PlanForm({ 
-  initialData, 
+function PlanForm({
+  initialData,
   onSubmit,
-  isPending 
-}: { 
+  isPending,
+}: {
   initialData?: SubscriptionPlan;
   onSubmit: (data: Partial<SubscriptionPlan>) => void;
   isPending: boolean;
 }) {
-  const [formData, setFormData] = useState<Partial<SubscriptionPlan>>(initialData || {
-    name: '',
-    description: '',
-    priceMonthly: 0,
-    priceYearly: 0,
-    currency: 'AED',
-    maxCompanies: 1,
-    maxUsers: 1,
-    aiCreditsPerMonth: 100,
-    hasWhatsappIntegration: false,
-    hasAdvancedReports: false,
-    hasApiAccess: false,
-    isActive: true,
-  });
+  const [formData, setFormData] = useState<Partial<SubscriptionPlan>>(
+    initialData || {
+      name: "",
+      description: "",
+      priceMonthly: 0,
+      priceYearly: 0,
+      currency: "AED",
+      maxCompanies: 1,
+      maxUsers: 1,
+      aiCreditsPerMonth: 100,
+      hasWhatsappIntegration: false,
+      hasAdvancedReports: false,
+      hasApiAccess: false,
+      isActive: true,
+    }
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1376,7 +1556,7 @@ function PlanForm({
           <Label htmlFor="name">Plan Name</Label>
           <Input
             id="name"
-            value={formData.name || ''}
+            value={formData.name || ""}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             required
             data-testid="input-plan-name"
@@ -1404,7 +1584,7 @@ function PlanForm({
         <Label htmlFor="description">Description</Label>
         <Textarea
           id="description"
-          value={formData.description || ''}
+          value={formData.description || ""}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
           data-testid="input-plan-description"
         />
@@ -1461,7 +1641,9 @@ function PlanForm({
             id="aiCredits"
             type="number"
             value={formData.aiCreditsPerMonth || 100}
-            onChange={(e) => setFormData({ ...formData, aiCreditsPerMonth: parseInt(e.target.value) })}
+            onChange={(e) =>
+              setFormData({ ...formData, aiCreditsPerMonth: parseInt(e.target.value) })
+            }
             data-testid="input-ai-credits"
           />
         </div>
@@ -1472,7 +1654,9 @@ function PlanForm({
           <Label>WhatsApp Integration</Label>
           <Switch
             checked={formData.hasWhatsappIntegration || false}
-            onCheckedChange={(checked) => setFormData({ ...formData, hasWhatsappIntegration: checked })}
+            onCheckedChange={(checked) =>
+              setFormData({ ...formData, hasWhatsappIntegration: checked })
+            }
             data-testid="switch-plan-whatsapp"
           />
         </div>

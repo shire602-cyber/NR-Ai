@@ -1,8 +1,8 @@
-import type { Request } from 'express';
-import { storage } from '../storage';
-import { createLogger } from '../config/logger';
+import type { Request } from "express";
+import { storage } from "../storage";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('audit');
+const log = createLogger("audit");
 
 interface AuditParams {
   userId?: string | null;
@@ -34,10 +34,10 @@ export async function recordAudit(params: AuditParams): Promise<void> {
       ...(extra ?? {}),
     });
     const ipAddress =
-      (req?.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ||
+      (req?.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ||
       req?.socket?.remoteAddress ||
       null;
-    const userAgent = (req?.headers['user-agent'] as string | undefined) || null;
+    const userAgent = (req?.headers["user-agent"] as string | undefined) || null;
     await storage.createAuditLog({
       userId: userId || null,
       action,
@@ -48,6 +48,6 @@ export async function recordAudit(params: AuditParams): Promise<void> {
       userAgent,
     } as any);
   } catch (err) {
-    log.error({ err: (err as Error).message }, 'failed to record audit log');
+    log.error({ err: (err as Error).message }, "failed to record audit log");
   }
 }

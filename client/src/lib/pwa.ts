@@ -8,7 +8,7 @@
 
 interface BeforeInstallPromptEvent extends Event {
   readonly platforms: string[];
-  readonly userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
+  readonly userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
   prompt(): Promise<void>;
 }
 
@@ -21,7 +21,7 @@ let deferredPrompt: BeforeInstallPromptEvent | null = null;
 let swRegistration: ServiceWorkerRegistration | null = null;
 const updateCallbacks: UpdateCallback[] = [];
 const installPromptCallbacks: InstallPromptCallback[] = [];
-const SESSION_MARKER_KEY = 'muhasib_session_marker';
+const SESSION_MARKER_KEY = "muhasib_session_marker";
 
 // ─── Service Worker Registration ────────────────────────────────────────────
 
@@ -30,26 +30,26 @@ const SESSION_MARKER_KEY = 'muhasib_session_marker';
  * Should be called once on app startup (e.g., in main.tsx).
  */
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
-  if (!('serviceWorker' in navigator)) {
-    console.info('[PWA] Service workers not supported');
+  if (!("serviceWorker" in navigator)) {
+    console.info("[PWA] Service workers not supported");
     return null;
   }
 
   try {
-    const registration = await navigator.serviceWorker.register('/sw.js', {
-      scope: '/',
+    const registration = await navigator.serviceWorker.register("/sw.js", {
+      scope: "/",
     });
 
     swRegistration = registration;
     syncSessionMarkerToServiceWorker();
 
     // Detect updates
-    registration.addEventListener('updatefound', () => {
+    registration.addEventListener("updatefound", () => {
       const newWorker = registration.installing;
       if (!newWorker) return;
 
-      newWorker.addEventListener('statechange', () => {
-        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+      newWorker.addEventListener("statechange", () => {
+        if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
           // New content available - notify callbacks
           updateCallbacks.forEach((cb) => cb(registration));
         }
@@ -57,15 +57,15 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
     });
 
     // Handle controller change (new SW activated)
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
       // Optionally reload when new SW takes over
       // window.location.reload();
     });
 
-    console.info('[PWA] Service worker registered successfully');
+    console.info("[PWA] Service worker registered successfully");
     return registration;
   } catch (error) {
-    console.error('[PWA] Service worker registration failed:', error);
+    console.error("[PWA] Service worker registration failed:", error);
     return null;
   }
 }
@@ -87,7 +87,7 @@ export async function checkForUpdates(): Promise<boolean> {
     // Check if there's a waiting worker (update available)
     return swRegistration.waiting !== null;
   } catch (error) {
-    console.error('[PWA] Update check failed:', error);
+    console.error("[PWA] Update check failed:", error);
     return false;
   }
 }
@@ -101,11 +101,15 @@ export function applyUpdate(): void {
     return;
   }
 
-  swRegistration.waiting.postMessage({ type: 'SKIP_WAITING' });
+  swRegistration.waiting.postMessage({ type: "SKIP_WAITING" });
   // Reload after the new SW takes over
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    window.location.reload();
-  }, { once: true });
+  navigator.serviceWorker.addEventListener(
+    "controllerchange",
+    () => {
+      window.location.reload();
+    },
+    { once: true }
+  );
 }
 
 /**
@@ -126,7 +130,7 @@ export function onUpdateAvailable(callback: UpdateCallback): () => void {
  * Must be called early (before the browser fires beforeinstallprompt).
  */
 export function setupInstallPrompt(): void {
-  window.addEventListener('beforeinstallprompt', (e) => {
+  window.addEventListener("beforeinstallprompt", (e) => {
     // Prevent the default mini-infobar
     e.preventDefault();
     deferredPrompt = e as BeforeInstallPromptEvent;
@@ -136,9 +140,9 @@ export function setupInstallPrompt(): void {
   });
 
   // Detect if app was successfully installed
-  window.addEventListener('appinstalled', () => {
+  window.addEventListener("appinstalled", () => {
     deferredPrompt = null;
-    console.info('[PWA] App installed successfully');
+    console.info("[PWA] App installed successfully");
   });
 }
 
@@ -146,7 +150,7 @@ export function setupInstallPrompt(): void {
  * Shows the native install prompt if available.
  * Returns the user's choice or null if the prompt isn't available.
  */
-export async function showInstallPrompt(): Promise<'accepted' | 'dismissed' | null> {
+export async function showInstallPrompt(): Promise<"accepted" | "dismissed" | null> {
   if (!deferredPrompt) {
     return null;
   }
@@ -160,7 +164,7 @@ export async function showInstallPrompt(): Promise<'accepted' | 'dismissed' | nu
 
     return outcome;
   } catch (error) {
-    console.error('[PWA] Install prompt failed:', error);
+    console.error("[PWA] Install prompt failed:", error);
     return null;
   }
 }
@@ -200,16 +204,17 @@ export async function queueForSync(request: {
   headers: Record<string, string>;
   body?: string;
 }): Promise<void> {
-  if (typeof navigator === 'undefined' || !navigator.serviceWorker?.controller) {
+  if (typeof navigator === "undefined" || !navigator.serviceWorker?.controller) {
     return;
   }
 
   navigator.serviceWorker.controller.postMessage({
-    type: 'QUEUE_REQUEST',
+    type: "QUEUE_REQUEST",
     request: {
       url: request.url,
       method: request.method,
-      contentType: request.headers['Content-Type'] || request.headers['content-type'] || 'application/json',
+      contentType:
+        request.headers["Content-Type"] || request.headers["content-type"] || "application/json",
       body: request.body,
       sessionMarker: getSessionMarker(),
     },
@@ -226,14 +231,14 @@ export async function clearAllCaches(): Promise<void> {
     return;
   }
 
-  navigator.serviceWorker.controller.postMessage({ type: 'CLEAR_CACHE' });
+  navigator.serviceWorker.controller.postMessage({ type: "CLEAR_CACHE" });
 }
 
 export function rotatePwaSessionMarker(): string {
   const marker = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
   sessionStorage.setItem(SESSION_MARKER_KEY, marker);
   navigator.serviceWorker.controller?.postMessage({
-    type: 'SET_SESSION_MARKER',
+    type: "SET_SESSION_MARKER",
     sessionMarker: marker,
   });
   return marker;
@@ -242,7 +247,7 @@ export function rotatePwaSessionMarker(): string {
 export function clearPwaSessionMarker(): void {
   sessionStorage.removeItem(SESSION_MARKER_KEY);
   navigator.serviceWorker.controller?.postMessage({
-    type: 'SET_SESSION_MARKER',
+    type: "SET_SESSION_MARKER",
     sessionMarker: null,
   });
 }
@@ -251,7 +256,7 @@ function syncSessionMarkerToServiceWorker(): void {
   const marker = sessionStorage.getItem(SESSION_MARKER_KEY);
   if (!marker) return;
   navigator.serviceWorker.controller?.postMessage({
-    type: 'SET_SESSION_MARKER',
+    type: "SET_SESSION_MARKER",
     sessionMarker: marker,
   });
 }
@@ -268,26 +273,24 @@ function getSessionMarker(): string {
  * Returns the current online status.
  */
 export function isOnline(): boolean {
-  if (typeof navigator === 'undefined') return true;
-  return typeof navigator.onLine === 'boolean' ? navigator.onLine : true;
+  if (typeof navigator === "undefined") return true;
+  return typeof navigator.onLine === "boolean" ? navigator.onLine : true;
 }
 
 /**
  * Registers callbacks for online/offline events.
  * Returns an unsubscribe function.
  */
-export function onConnectivityChange(
-  callback: (online: boolean) => void
-): () => void {
+export function onConnectivityChange(callback: (online: boolean) => void): () => void {
   const onOnline = () => callback(true);
   const onOffline = () => callback(false);
 
-  window.addEventListener('online', onOnline);
-  window.addEventListener('offline', onOffline);
+  window.addEventListener("online", onOnline);
+  window.addEventListener("offline", onOffline);
 
   return () => {
-    window.removeEventListener('online', onOnline);
-    window.removeEventListener('offline', onOffline);
+    window.removeEventListener("online", onOnline);
+    window.removeEventListener("offline", onOffline);
   };
 }
 
@@ -298,7 +301,7 @@ export function onConnectivityChange(
  */
 export function isStandalone(): boolean {
   return (
-    window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia("(display-mode: standalone)").matches ||
     (window.navigator as any).standalone === true
   );
 }

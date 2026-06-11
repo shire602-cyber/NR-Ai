@@ -1,8 +1,8 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from "drizzle-orm";
 
-import { db } from '../db';
-import { ConflictError, NotFoundError, ValidationError } from '../errors';
-import { assertPeriodNotLocked } from './period-lock.service';
+import { db } from "../db";
+import { ConflictError, NotFoundError, ValidationError } from "../errors";
+import { assertPeriodNotLocked } from "./period-lock.service";
 import {
   companies,
   vatReturns,
@@ -11,24 +11,24 @@ import {
   vatWorkpapers,
   type VatWorkpaper,
   type VatWorkpaperRow,
-} from '../../shared/schema';
+} from "../../shared/schema";
 
 export const VAT_WORKPAPER_CATEGORIES = [
-  'standard_sale',
-  'tourist_refund',
-  'reverse_charge_output',
-  'zero_rated_sale',
-  'exempt_sale',
-  'import',
-  'import_adjustment',
-  'standard_expense',
-  'reverse_charge_input',
-  'manual_adjustment',
+  "standard_sale",
+  "tourist_refund",
+  "reverse_charge_output",
+  "zero_rated_sale",
+  "exempt_sale",
+  "import",
+  "import_adjustment",
+  "standard_expense",
+  "reverse_charge_input",
+  "manual_adjustment",
 ] as const;
 
-export type VatWorkpaperCategory = typeof VAT_WORKPAPER_CATEGORIES[number];
-export type VatWorkpaperRowStatus = 'draft' | 'approved' | 'excluded';
-export type VatWorkpaperSourceMethod = 'manual' | 'ocr' | 'import' | 'generated';
+export type VatWorkpaperCategory = (typeof VAT_WORKPAPER_CATEGORIES)[number];
+export type VatWorkpaperRowStatus = "draft" | "approved" | "excluded";
+export type VatWorkpaperSourceMethod = "manual" | "ocr" | "import" | "generated";
 
 type Vat201Totals = Record<string, number>;
 
@@ -61,58 +61,58 @@ export interface VatWorkpaperAttachmentInput {
 }
 
 const EMIRATE_BOX_PREFIX: Record<string, string> = {
-  abu_dhabi: 'box1aAbuDhabi',
-  dubai: 'box1bDubai',
-  sharjah: 'box1cSharjah',
-  ajman: 'box1dAjman',
-  umm_al_quwain: 'box1eUmmAlQuwain',
-  ras_al_khaimah: 'box1fRasAlKhaimah',
-  fujairah: 'box1gFujairah',
+  abu_dhabi: "box1aAbuDhabi",
+  dubai: "box1bDubai",
+  sharjah: "box1cSharjah",
+  ajman: "box1dAjman",
+  umm_al_quwain: "box1eUmmAlQuwain",
+  ras_al_khaimah: "box1fRasAlKhaimah",
+  fujairah: "box1gFujairah",
 };
 
 const OUTPUT_AMOUNT_BOXES = [
-  'box1aAbuDhabiAmount',
-  'box1bDubaiAmount',
-  'box1cSharjahAmount',
-  'box1dAjmanAmount',
-  'box1eUmmAlQuwainAmount',
-  'box1fRasAlKhaimahAmount',
-  'box1gFujairahAmount',
-  'box2TouristRefundAmount',
-  'box3ReverseChargeAmount',
-  'box4ZeroRatedAmount',
-  'box5ExemptAmount',
-  'box6ImportsAmount',
-  'box7ImportsAdjAmount',
+  "box1aAbuDhabiAmount",
+  "box1bDubaiAmount",
+  "box1cSharjahAmount",
+  "box1dAjmanAmount",
+  "box1eUmmAlQuwainAmount",
+  "box1fRasAlKhaimahAmount",
+  "box1gFujairahAmount",
+  "box2TouristRefundAmount",
+  "box3ReverseChargeAmount",
+  "box4ZeroRatedAmount",
+  "box5ExemptAmount",
+  "box6ImportsAmount",
+  "box7ImportsAdjAmount",
 ] as const;
 
 const OUTPUT_VAT_BOXES = [
-  'box1aAbuDhabiVat',
-  'box1bDubaiVat',
-  'box1cSharjahVat',
-  'box1dAjmanVat',
-  'box1eUmmAlQuwainVat',
-  'box1fRasAlKhaimahVat',
-  'box1gFujairahVat',
-  'box2TouristRefundVat',
-  'box3ReverseChargeVat',
-  'box6ImportsVat',
-  'box7ImportsAdjVat',
+  "box1aAbuDhabiVat",
+  "box1bDubaiVat",
+  "box1cSharjahVat",
+  "box1dAjmanVat",
+  "box1eUmmAlQuwainVat",
+  "box1fRasAlKhaimahVat",
+  "box1gFujairahVat",
+  "box2TouristRefundVat",
+  "box3ReverseChargeVat",
+  "box6ImportsVat",
+  "box7ImportsAdjVat",
 ] as const;
 
 const OUTPUT_ADJ_BOXES = [
-  'box1aAbuDhabiAdj',
-  'box1bDubaiAdj',
-  'box1cSharjahAdj',
-  'box1dAjmanAdj',
-  'box1eUmmAlQuwainAdj',
-  'box1fRasAlKhaimahAdj',
-  'box1gFujairahAdj',
+  "box1aAbuDhabiAdj",
+  "box1bDubaiAdj",
+  "box1cSharjahAdj",
+  "box1dAjmanAdj",
+  "box1eUmmAlQuwainAdj",
+  "box1fRasAlKhaimahAdj",
+  "box1gFujairahAdj",
 ] as const;
 
-const INPUT_AMOUNT_BOXES = ['box9ExpensesAmount', 'box10ReverseChargeAmount'] as const;
-const INPUT_VAT_BOXES = ['box9ExpensesVat', 'box10ReverseChargeVat'] as const;
-const INPUT_ADJ_BOXES = ['box9ExpensesAdj'] as const;
+const INPUT_AMOUNT_BOXES = ["box9ExpensesAmount", "box10ReverseChargeAmount"] as const;
+const INPUT_VAT_BOXES = ["box9ExpensesVat", "box10ReverseChargeVat"] as const;
+const INPUT_ADJ_BOXES = ["box9ExpensesAdj"] as const;
 
 const ALL_TOTAL_KEYS = [
   ...OUTPUT_AMOUNT_BOXES,
@@ -121,27 +121,27 @@ const ALL_TOTAL_KEYS = [
   ...INPUT_AMOUNT_BOXES,
   ...INPUT_VAT_BOXES,
   ...INPUT_ADJ_BOXES,
-  'box8TotalAmount',
-  'box8TotalVat',
-  'box8TotalAdj',
-  'box11TotalAmount',
-  'box11TotalVat',
-  'box11TotalAdj',
-  'box12TotalDueTax',
-  'box13RecoverableTax',
-  'box14PayableTax',
+  "box8TotalAmount",
+  "box8TotalVat",
+  "box8TotalAdj",
+  "box11TotalAmount",
+  "box11TotalVat",
+  "box11TotalAdj",
+  "box12TotalDueTax",
+  "box13RecoverableTax",
+  "box14PayableTax",
 ] as const;
 
 const DERIVED_TOTAL_KEYS = new Set([
-  'box8TotalAmount',
-  'box8TotalVat',
-  'box8TotalAdj',
-  'box11TotalAmount',
-  'box11TotalVat',
-  'box11TotalAdj',
-  'box12TotalDueTax',
-  'box13RecoverableTax',
-  'box14PayableTax',
+  "box8TotalAmount",
+  "box8TotalVat",
+  "box8TotalAdj",
+  "box11TotalAmount",
+  "box11TotalVat",
+  "box11TotalAdj",
+  "box12TotalDueTax",
+  "box13RecoverableTax",
+  "box14PayableTax",
 ]);
 
 export function emptyVat201Totals(): Vat201Totals {
@@ -166,14 +166,14 @@ function add(totals: Vat201Totals, key: string, value: unknown): void {
 }
 
 function requireAuditReasonForOverride(input: VatWorkpaperRowInput): void {
-  if (input.rowCategory === 'manual_adjustment' && !input.auditReason?.trim()) {
-    throw new ValidationError('Manual VAT adjustments require an audit reason');
+  if (input.rowCategory === "manual_adjustment" && !input.auditReason?.trim()) {
+    throw new ValidationError("Manual VAT adjustments require an audit reason");
   }
 }
 
 function normalizeEmirate(emirate: string | null | undefined): string {
-  const normalized = (emirate || 'dubai').toLowerCase().replace(/\s+/g, '_');
-  return EMIRATE_BOX_PREFIX[normalized] ? normalized : 'dubai';
+  const normalized = (emirate || "dubai").toLowerCase().replace(/\s+/g, "_");
+  return EMIRATE_BOX_PREFIX[normalized] ? normalized : "dubai";
 }
 
 export function mapVatWorkpaperRowToBox(input: {
@@ -181,49 +181,65 @@ export function mapVatWorkpaperRowToBox(input: {
   emirate?: string | null;
   vat201Box?: string | null;
 }): string {
-  if (input.rowCategory === 'manual_adjustment') {
-    if (!input.vat201Box) throw new ValidationError('Manual adjustment rows require a VAT 201 box');
-    if (!ALL_TOTAL_KEYS.includes(input.vat201Box as any) || DERIVED_TOTAL_KEYS.has(input.vat201Box)) {
-      throw new ValidationError('Manual adjustment VAT 201 box is not supported');
+  if (input.rowCategory === "manual_adjustment") {
+    if (!input.vat201Box) throw new ValidationError("Manual adjustment rows require a VAT 201 box");
+    if (
+      !ALL_TOTAL_KEYS.includes(input.vat201Box as any) ||
+      DERIVED_TOTAL_KEYS.has(input.vat201Box)
+    ) {
+      throw new ValidationError("Manual adjustment VAT 201 box is not supported");
     }
     return input.vat201Box;
   }
 
   switch (input.rowCategory) {
-    case 'standard_sale':
+    case "standard_sale":
       return `${EMIRATE_BOX_PREFIX[normalizeEmirate(input.emirate)]}Amount`;
-    case 'tourist_refund':
-      return 'box2TouristRefundAmount';
-    case 'reverse_charge_output':
-      return 'box3ReverseChargeAmount';
-    case 'zero_rated_sale':
-      return 'box4ZeroRatedAmount';
-    case 'exempt_sale':
-      return 'box5ExemptAmount';
-    case 'import':
-      return 'box6ImportsAmount';
-    case 'import_adjustment':
-      return 'box7ImportsAdjAmount';
-    case 'standard_expense':
-      return 'box9ExpensesAmount';
-    case 'reverse_charge_input':
-      return 'box10ReverseChargeAmount';
+    case "tourist_refund":
+      return "box2TouristRefundAmount";
+    case "reverse_charge_output":
+      return "box3ReverseChargeAmount";
+    case "zero_rated_sale":
+      return "box4ZeroRatedAmount";
+    case "exempt_sale":
+      return "box5ExemptAmount";
+    case "import":
+      return "box6ImportsAmount";
+    case "import_adjustment":
+      return "box7ImportsAdjAmount";
+    case "standard_expense":
+      return "box9ExpensesAmount";
+    case "reverse_charge_input":
+      return "box10ReverseChargeAmount";
     default:
-      throw new ValidationError('Unsupported VAT workpaper row category');
+      throw new ValidationError("Unsupported VAT workpaper row category");
   }
 }
 
-export function calculateVatWorkpaperTotals(rows: Array<Pick<VatWorkpaperRow, 'rowCategory' | 'vat201Box' | 'emirate' | 'taxableAmount' | 'vatAmount' | 'adjustmentAmount' | 'status'>>): Vat201Totals {
+export function calculateVatWorkpaperTotals(
+  rows: Array<
+    Pick<
+      VatWorkpaperRow,
+      | "rowCategory"
+      | "vat201Box"
+      | "emirate"
+      | "taxableAmount"
+      | "vatAmount"
+      | "adjustmentAmount"
+      | "status"
+    >
+  >
+): Vat201Totals {
   const totals = emptyVat201Totals();
 
   for (const row of rows) {
-    if (row.status !== 'approved') continue;
+    if (row.status !== "approved") continue;
     const category = row.rowCategory as VatWorkpaperCategory;
     const taxableAmount = toMoney(row.taxableAmount);
     const vatAmount = toMoney(row.vatAmount);
     const adjustmentAmount = toMoney(row.adjustmentAmount);
 
-    if (category === 'manual_adjustment') {
+    if (category === "manual_adjustment") {
       add(totals, row.vat201Box, adjustmentAmount || vatAmount || taxableAmount);
       continue;
     }
@@ -235,23 +251,27 @@ export function calculateVatWorkpaperTotals(rows: Array<Pick<VatWorkpaperRow, 'r
     });
     add(totals, amountBox, taxableAmount);
 
-    if (amountBox.endsWith('Amount')) {
-      const vatBox = amountBox.replace(/Amount$/, 'Vat');
+    if (amountBox.endsWith("Amount")) {
+      const vatBox = amountBox.replace(/Amount$/, "Vat");
       if (ALL_TOTAL_KEYS.includes(vatBox as any)) add(totals, vatBox, vatAmount);
     }
 
-    if (category === 'standard_sale') {
-      const adjBox = amountBox.replace(/Amount$/, 'Adj');
+    if (category === "standard_sale") {
+      const adjBox = amountBox.replace(/Amount$/, "Adj");
       add(totals, adjBox, adjustmentAmount);
-    } else if (category === 'standard_expense') {
-      add(totals, 'box9ExpensesAdj', adjustmentAmount);
+    } else if (category === "standard_expense") {
+      add(totals, "box9ExpensesAdj", adjustmentAmount);
     }
   }
 
-  totals.box8TotalAmount = toMoney(OUTPUT_AMOUNT_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
+  totals.box8TotalAmount = toMoney(
+    OUTPUT_AMOUNT_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0)
+  );
   totals.box8TotalVat = toMoney(OUTPUT_VAT_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
   totals.box8TotalAdj = toMoney(OUTPUT_ADJ_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
-  totals.box11TotalAmount = toMoney(INPUT_AMOUNT_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
+  totals.box11TotalAmount = toMoney(
+    INPUT_AMOUNT_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0)
+  );
   totals.box11TotalVat = toMoney(INPUT_VAT_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
   totals.box11TotalAdj = toMoney(INPUT_ADJ_BOXES.reduce((sum, key) => sum + (totals[key] ?? 0), 0));
   totals.box12TotalDueTax = totals.box8TotalVat;
@@ -273,13 +293,16 @@ async function getWorkpaperOrThrow(workpaperId: string): Promise<VatWorkpaper> {
     .from(vatWorkpapers)
     .where(eq(vatWorkpapers.id, workpaperId))
     .limit(1);
-  if (!workpaper) throw new NotFoundError('VAT workpaper');
+  if (!workpaper) throw new NotFoundError("VAT workpaper");
   return workpaper;
 }
 
 async function assertWorkpaperEditable(workpaper: VatWorkpaper): Promise<void> {
-  if (workpaper.status === 'locked' || workpaper.status === 'filed') {
-    throw new ConflictError('VAT workpaper is locked and cannot be changed', 'VAT_WORKPAPER_LOCKED');
+  if (workpaper.status === "locked" || workpaper.status === "filed") {
+    throw new ConflictError(
+      "VAT workpaper is locked and cannot be changed",
+      "VAT_WORKPAPER_LOCKED"
+    );
   }
   await assertPeriodNotLocked(workpaper.companyId, workpaper.periodEnd);
 }
@@ -287,7 +310,7 @@ async function assertWorkpaperEditable(workpaper: VatWorkpaper): Promise<void> {
 export async function listVatWorkpapers(companyIds: string[], companyId?: string) {
   if (companyIds.length === 0) return [];
   if (companyId && !companyIds.includes(companyId)) {
-    throw new NotFoundError('VAT workpaper');
+    throw new NotFoundError("VAT workpaper");
   }
 
   const scopedCompanyIds = companyId ? [companyId] : companyIds;
@@ -310,11 +333,11 @@ export async function listVatWorkpapers(companyIds: string[], companyId?: string
     })
     .from(vatWorkpapers)
     .innerJoin(companies, eq(companies.id, vatWorkpapers.companyId))
-    .where(eq(companies.companyType, 'client'))
+    .where(eq(companies.companyType, "client"))
     .orderBy(desc(vatWorkpapers.periodEnd), desc(vatWorkpapers.updatedAt));
 
   return (rows as Array<{ companyId: string }>).filter((row: { companyId: string }) =>
-    scopedCompanyIds.includes(row.companyId),
+    scopedCompanyIds.includes(row.companyId)
   );
 }
 
@@ -359,8 +382,9 @@ export async function createVatWorkpaper(input: {
 }) {
   const periodStart = parseDate(input.periodStart);
   const periodEnd = parseDate(input.periodEnd);
-  if (!periodStart || !periodEnd) throw new ValidationError('Valid VAT period dates are required');
-  if (periodEnd < periodStart) throw new ValidationError('VAT period end must be after period start');
+  if (!periodStart || !periodEnd) throw new ValidationError("Valid VAT period dates are required");
+  if (periodEnd < periodStart)
+    throw new ValidationError("VAT period end must be after period start");
   await assertPeriodNotLocked(input.companyId, periodEnd);
 
   const dueDate = parseDate(input.dueDate) ?? defaultVatDueDate(periodEnd);
@@ -371,8 +395,8 @@ export async function createVatWorkpaper(input: {
       and(
         eq(vatWorkpapers.companyId, input.companyId),
         eq(vatWorkpapers.periodStart, periodStart),
-        eq(vatWorkpapers.periodEnd, periodEnd),
-      ),
+        eq(vatWorkpapers.periodEnd, periodEnd)
+      )
     )
     .limit(1);
   if (existing) return existing;
@@ -393,10 +417,13 @@ export async function createVatWorkpaper(input: {
   return created;
 }
 
-function normalizeRowInput(input: VatWorkpaperRowInput, defaults?: Partial<VatWorkpaperRowInput>): VatWorkpaperRowInput {
+function normalizeRowInput(
+  input: VatWorkpaperRowInput,
+  defaults?: Partial<VatWorkpaperRowInput>
+): VatWorkpaperRowInput {
   const merged = { ...defaults, ...input };
   if (!VAT_WORKPAPER_CATEGORIES.includes(merged.rowCategory as VatWorkpaperCategory)) {
-    throw new ValidationError('Unsupported VAT workpaper row category');
+    throw new ValidationError("Unsupported VAT workpaper row category");
   }
   requireAuditReasonForOverride(merged as VatWorkpaperRowInput);
   return merged as VatWorkpaperRowInput;
@@ -405,12 +432,12 @@ function normalizeRowInput(input: VatWorkpaperRowInput, defaults?: Partial<VatWo
 export async function addVatWorkpaperRow(
   workpaperId: string,
   actorUserId: string,
-  input: VatWorkpaperRowInput,
+  input: VatWorkpaperRowInput
 ) {
   const workpaper = await getWorkpaperOrThrow(workpaperId);
   await assertWorkpaperEditable(workpaper);
   const row = normalizeRowInput(input);
-  const status = row.status ?? (row.sourceMethod === 'ocr' ? 'draft' : 'approved');
+  const status = row.status ?? (row.sourceMethod === "ocr" ? "draft" : "approved");
   const vat201Box = mapVatWorkpaperRowToBox({
     rowCategory: row.rowCategory,
     emirate: row.emirate,
@@ -438,13 +465,13 @@ export async function addVatWorkpaperRow(
       adjustmentAmount,
       grossAmount,
       status,
-      sourceMethod: row.sourceMethod ?? 'manual',
+      sourceMethod: row.sourceMethod ?? "manual",
       sourceDocumentType: row.sourceDocumentType ?? null,
       sourceDocumentId: row.sourceDocumentId ?? null,
       notes: row.notes ?? null,
       auditReason: row.auditReason ?? null,
-      reviewedBy: status === 'approved' || status === 'excluded' ? actorUserId : null,
-      reviewedAt: status === 'approved' || status === 'excluded' ? new Date() : null,
+      reviewedBy: status === "approved" || status === "excluded" ? actorUserId : null,
+      reviewedAt: status === "approved" || status === "excluded" ? new Date() : null,
       createdBy: actorUserId,
     } as any)
     .returning();
@@ -457,7 +484,7 @@ export async function updateVatWorkpaperRow(
   workpaperId: string,
   rowId: string,
   actorUserId: string,
-  input: Partial<VatWorkpaperRowInput>,
+  input: Partial<VatWorkpaperRowInput>
 ) {
   const workpaper = await getWorkpaperOrThrow(workpaperId);
   await assertWorkpaperEditable(workpaper);
@@ -466,7 +493,7 @@ export async function updateVatWorkpaperRow(
     .from(vatWorkpaperRows)
     .where(and(eq(vatWorkpaperRows.id, rowId), eq(vatWorkpaperRows.workpaperId, workpaperId)))
     .limit(1);
-  if (!existing) throw new NotFoundError('VAT workpaper row');
+  if (!existing) throw new NotFoundError("VAT workpaper row");
 
   const merged = normalizeRowInput(
     {
@@ -475,7 +502,7 @@ export async function updateVatWorkpaperRow(
       emirate: input.emirate ?? existing.emirate,
       auditReason: input.auditReason ?? existing.auditReason,
     },
-    existing as unknown as VatWorkpaperRowInput,
+    existing as unknown as VatWorkpaperRowInput
   );
 
   const status = input.status ?? (existing.status as VatWorkpaperRowStatus);
@@ -490,28 +517,28 @@ export async function updateVatWorkpaperRow(
     vat201Box,
   };
   for (const key of [
-    'rowCategory',
-    'invoiceNumber',
-    'counterpartyName',
-    'counterpartyTrn',
-    'emirate',
-    'sourceMethod',
-    'sourceDocumentType',
-    'sourceDocumentId',
-    'notes',
-    'auditReason',
+    "rowCategory",
+    "invoiceNumber",
+    "counterpartyName",
+    "counterpartyTrn",
+    "emirate",
+    "sourceMethod",
+    "sourceDocumentType",
+    "sourceDocumentId",
+    "notes",
+    "auditReason",
   ] as const) {
     if (key in input) update[key] = input[key] ?? null;
   }
-  if ('documentDate' in input) update.documentDate = parseDate(input.documentDate);
-  if ('taxableAmount' in input) update.taxableAmount = toMoney(input.taxableAmount);
-  if ('vatAmount' in input) update.vatAmount = toMoney(input.vatAmount);
-  if ('adjustmentAmount' in input) update.adjustmentAmount = toMoney(input.adjustmentAmount);
-  if ('grossAmount' in input) update.grossAmount = toMoney(input.grossAmount);
-  if ('status' in input) {
+  if ("documentDate" in input) update.documentDate = parseDate(input.documentDate);
+  if ("taxableAmount" in input) update.taxableAmount = toMoney(input.taxableAmount);
+  if ("vatAmount" in input) update.vatAmount = toMoney(input.vatAmount);
+  if ("adjustmentAmount" in input) update.adjustmentAmount = toMoney(input.adjustmentAmount);
+  if ("grossAmount" in input) update.grossAmount = toMoney(input.grossAmount);
+  if ("status" in input) {
     update.status = status;
-    update.reviewedBy = status === 'approved' || status === 'excluded' ? actorUserId : null;
-    update.reviewedAt = status === 'approved' || status === 'excluded' ? new Date() : null;
+    update.reviewedBy = status === "approved" || status === "excluded" ? actorUserId : null;
+    update.reviewedAt = status === "approved" || status === "excluded" ? new Date() : null;
   }
 
   const [updated] = await db
@@ -528,12 +555,12 @@ export async function scanVatWorkpaperEvidence(
   workpaperId: string,
   actorUserId: string,
   attachment: VatWorkpaperAttachmentInput,
-  draftRow: VatWorkpaperRowInput,
+  draftRow: VatWorkpaperRowInput
 ) {
   const row = await addVatWorkpaperRow(workpaperId, actorUserId, {
     ...draftRow,
-    status: 'draft',
-    sourceMethod: 'ocr',
+    status: "draft",
+    sourceMethod: "ocr",
   });
 
   const [createdAttachment] = await db
@@ -575,7 +602,7 @@ export async function recalculateVatWorkpaper(workpaperId: string) {
 export async function addVatWorkpaperRowsBulk(
   workpaperId: string,
   actorUserId: string,
-  inputs: VatWorkpaperRowInput[],
+  inputs: VatWorkpaperRowInput[]
 ) {
   const workpaper = await getWorkpaperOrThrow(workpaperId);
   await assertWorkpaperEditable(workpaper);
@@ -583,7 +610,7 @@ export async function addVatWorkpaperRowsBulk(
 
   const values = inputs.map((input) => {
     const row = normalizeRowInput(input);
-    const status = row.status ?? (row.sourceMethod === 'ocr' ? 'draft' : 'approved');
+    const status = row.status ?? (row.sourceMethod === "ocr" ? "draft" : "approved");
     const vat201Box = mapVatWorkpaperRowToBox({
       rowCategory: row.rowCategory,
       emirate: row.emirate,
@@ -608,13 +635,13 @@ export async function addVatWorkpaperRowsBulk(
       adjustmentAmount,
       grossAmount,
       status,
-      sourceMethod: row.sourceMethod ?? 'manual',
+      sourceMethod: row.sourceMethod ?? "manual",
       sourceDocumentType: row.sourceDocumentType ?? null,
       sourceDocumentId: row.sourceDocumentId ?? null,
       notes: row.notes ?? null,
       auditReason: row.auditReason ?? null,
-      reviewedBy: status === 'approved' || status === 'excluded' ? actorUserId : null,
-      reviewedAt: status === 'approved' || status === 'excluded' ? new Date() : null,
+      reviewedBy: status === "approved" || status === "excluded" ? actorUserId : null,
+      reviewedAt: status === "approved" || status === "excluded" ? new Date() : null,
       createdBy: actorUserId,
     };
   });
@@ -657,7 +684,7 @@ export interface BookReceipt {
   reverseCharge?: boolean | null;
 }
 
-const PULL_AUDIT_NOTE = 'Pulled from books';
+const PULL_AUDIT_NOTE = "Pulled from books";
 
 function withinPeriod(value: Date | string | null | undefined, start: Date, end: Date): boolean {
   const date = parseDate(value ?? null);
@@ -681,7 +708,15 @@ export function mapBooksToVatWorkpaperRows(input: {
   existingSourceIds: Set<string>;
   defaultVatRate?: number;
 }): VatWorkpaperRowInput[] {
-  const { invoices, invoiceLines, receipts, companyEmirate, periodStart, periodEnd, existingSourceIds } = input;
+  const {
+    invoices,
+    invoiceLines,
+    receipts,
+    companyEmirate,
+    periodStart,
+    periodEnd,
+    existingSourceIds,
+  } = input;
   const vatRateFallback = input.defaultVatRate ?? 0.05;
   const rows: VatWorkpaperRowInput[] = [];
 
@@ -694,7 +729,8 @@ export function mapBooksToVatWorkpaperRows(input: {
 
   for (const invoice of invoices) {
     if (existingSourceIds.has(invoice.id)) continue;
-    if (invoice.status === 'void' || invoice.status === 'draft' || invoice.status === 'cancelled') continue;
+    if (invoice.status === "void" || invoice.status === "draft" || invoice.status === "cancelled")
+      continue;
     if (!withinPeriod(invoice.date, periodStart, periodEnd)) continue;
 
     let standardAmount = 0;
@@ -703,12 +739,12 @@ export function mapBooksToVatWorkpaperRows(input: {
     let exemptAmount = 0;
     for (const line of linesByInvoice.get(invoice.id) ?? []) {
       const lineAmount = toMoney(line.quantity * line.unitPrice);
-      const supplyType = line.vatSupplyType || 'standard_rated';
+      const supplyType = line.vatSupplyType || "standard_rated";
       // Explicit supply type wins; the 0%-rate fallback only catches lines
       // that weren't tagged (an exempt line also carries a 0% rate).
-      if (supplyType === 'exempt') {
+      if (supplyType === "exempt") {
         exemptAmount += lineAmount;
-      } else if (supplyType === 'zero_rated' || line.vatRate === 0) {
+      } else if (supplyType === "zero_rated" || line.vatRate === 0) {
         zeroRatedAmount += lineAmount;
       } else {
         standardAmount += lineAmount;
@@ -722,20 +758,35 @@ export function mapBooksToVatWorkpaperRows(input: {
       counterpartyName: invoice.customerName ?? null,
       counterpartyTrn: invoice.customerTrn ?? null,
       emirate: companyEmirate,
-      status: 'draft' as const,
-      sourceMethod: 'generated' as const,
-      sourceDocumentType: 'invoice',
+      status: "draft" as const,
+      sourceMethod: "generated" as const,
+      sourceDocumentType: "invoice",
       sourceDocumentId: invoice.id,
       notes: PULL_AUDIT_NOTE,
     };
     if (standardAmount > 0 || standardVat > 0) {
-      rows.push({ ...base, rowCategory: 'standard_sale', taxableAmount: toMoney(standardAmount), vatAmount: toMoney(standardVat) });
+      rows.push({
+        ...base,
+        rowCategory: "standard_sale",
+        taxableAmount: toMoney(standardAmount),
+        vatAmount: toMoney(standardVat),
+      });
     }
     if (zeroRatedAmount > 0) {
-      rows.push({ ...base, rowCategory: 'zero_rated_sale', taxableAmount: toMoney(zeroRatedAmount), vatAmount: 0 });
+      rows.push({
+        ...base,
+        rowCategory: "zero_rated_sale",
+        taxableAmount: toMoney(zeroRatedAmount),
+        vatAmount: 0,
+      });
     }
     if (exemptAmount > 0) {
-      rows.push({ ...base, rowCategory: 'exempt_sale', taxableAmount: toMoney(exemptAmount), vatAmount: 0 });
+      rows.push({
+        ...base,
+        rowCategory: "exempt_sale",
+        taxableAmount: toMoney(exemptAmount),
+        vatAmount: 0,
+      });
     }
   }
 
@@ -745,7 +796,7 @@ export function mapBooksToVatWorkpaperRows(input: {
     if (!withinPeriod(receipt.date ?? receipt.createdAt, periodStart, periodEnd)) continue;
 
     rows.push({
-      rowCategory: receipt.reverseCharge ? 'reverse_charge_input' : 'standard_expense',
+      rowCategory: receipt.reverseCharge ? "reverse_charge_input" : "standard_expense",
       invoiceNumber: null,
       documentDate: receipt.date ?? receipt.createdAt ?? null,
       counterpartyName: receipt.merchant ?? null,
@@ -753,9 +804,9 @@ export function mapBooksToVatWorkpaperRows(input: {
       emirate: companyEmirate,
       taxableAmount: toMoney(receipt.amount),
       vatAmount: toMoney(receipt.vatAmount),
-      status: 'draft',
-      sourceMethod: 'generated',
-      sourceDocumentType: 'receipt',
+      status: "draft",
+      sourceMethod: "generated",
+      sourceDocumentType: "receipt",
       sourceDocumentId: receipt.id,
       notes: PULL_AUDIT_NOTE,
     });
@@ -777,7 +828,7 @@ export async function pullVatWorkpaperRowsFromBooks(workpaperId: string, actorUs
   const periodStart = parseDate(workpaper.periodStart);
   const periodEnd = parseDate(workpaper.periodEnd);
   if (!periodStart || !periodEnd) {
-    throw new ValidationError('VAT workpaper has no period to pull documents for');
+    throw new ValidationError("VAT workpaper has no period to pull documents for");
   }
 
   const [company] = await db
@@ -793,15 +844,17 @@ export async function pullVatWorkpaperRowsFromBooks(workpaperId: string, actorUs
   const existingSourceIds = new Set<string>(
     existing
       .map((row: { sourceDocumentId: string | null }) => row.sourceDocumentId)
-      .filter((id: string | null): id is string => !!id),
+      .filter((id: string | null): id is string => !!id)
   );
 
-  const { storage } = await import('../storage');
+  const { storage } = await import("../storage");
   const [invoices, receipts] = await Promise.all([
     storage.getInvoicesByCompanyId(workpaper.companyId),
     storage.getReceiptsByCompanyId(workpaper.companyId),
   ]);
-  const invoiceLines = await storage.getInvoiceLinesByInvoiceIds(invoices.map((invoice: BookInvoice) => invoice.id));
+  const invoiceLines = await storage.getInvoiceLinesByInvoiceIds(
+    invoices.map((invoice: BookInvoice) => invoice.id)
+  );
 
   const rows = mapBooksToVatWorkpaperRows({
     invoices,
@@ -817,7 +870,6 @@ export async function pullVatWorkpaperRowsFromBooks(workpaperId: string, actorUs
   return { created: created.length, skippedExisting: existingSourceIds.size };
 }
 
-
 /**
  * Bulk status transition for workpaper rows — the review queue's
  * "approve all drafts" action. One UPDATE, one recalculation.
@@ -825,14 +877,14 @@ export async function pullVatWorkpaperRowsFromBooks(workpaperId: string, actorUs
 export async function bulkUpdateVatWorkpaperRowStatus(
   workpaperId: string,
   actorUserId: string,
-  input: { to: 'approved' | 'excluded'; rowIds?: string[] },
+  input: { to: "approved" | "excluded"; rowIds?: string[] }
 ): Promise<{ updated: number }> {
   const workpaper = await getWorkpaperOrThrow(workpaperId);
   await assertWorkpaperEditable(workpaper);
 
   const conditions = [
     eq(vatWorkpaperRows.workpaperId, workpaperId),
-    eq(vatWorkpaperRows.status, 'draft'),
+    eq(vatWorkpaperRows.status, "draft"),
   ];
   if (input.rowIds && input.rowIds.length > 0) {
     conditions.push(inArray(vatWorkpaperRows.id, input.rowIds));
@@ -855,18 +907,21 @@ export async function bulkUpdateVatWorkpaperRowStatus(
 
 export async function updateVatWorkpaperStatus(
   workpaperId: string,
-  status: 'draft' | 'in_review' | 'ready' | 'generated' | 'filed' | 'locked',
-  data?: { reviewerUserId?: string | null; notes?: string | null },
+  status: "draft" | "in_review" | "ready" | "generated" | "filed" | "locked",
+  data?: { reviewerUserId?: string | null; notes?: string | null }
 ) {
   const workpaper = await getWorkpaperOrThrow(workpaperId);
-  if (workpaper.status === 'locked' && status !== 'locked') {
-    throw new ConflictError('VAT workpaper is locked and cannot be reopened', 'VAT_WORKPAPER_LOCKED');
+  if (workpaper.status === "locked" && status !== "locked") {
+    throw new ConflictError(
+      "VAT workpaper is locked and cannot be reopened",
+      "VAT_WORKPAPER_LOCKED"
+    );
   }
-  if (status !== 'locked' && status !== 'filed') await assertWorkpaperEditable(workpaper);
+  if (status !== "locked" && status !== "filed") await assertWorkpaperEditable(workpaper);
 
   const update: Record<string, unknown> = { status, updatedAt: new Date() };
-  if (data && 'reviewerUserId' in data) update.reviewerUserId = data.reviewerUserId ?? null;
-  if (data && 'notes' in data) update.notes = data.notes ?? null;
+  if (data && "reviewerUserId" in data) update.reviewerUserId = data.reviewerUserId ?? null;
+  if (data && "notes" in data) update.notes = data.notes ?? null;
 
   const [updated] = await db
     .update(vatWorkpapers)
@@ -886,8 +941,8 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
     periodStart: workpaper.periodStart,
     periodEnd: workpaper.periodEnd,
     dueDate: workpaper.dueDate,
-    status: 'pending_review',
-    vatStagger: 'quarterly',
+    status: "pending_review",
+    vatStagger: "quarterly",
     box1aAbuDhabiAmount: totals.box1aAbuDhabiAmount,
     box1aAbuDhabiVat: totals.box1aAbuDhabiVat,
     box1aAbuDhabiAdj: totals.box1aAbuDhabiAdj,
@@ -949,7 +1004,7 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
     box7ExpensesTouristRefund: totals.box2TouristRefundVat,
     box8TotalInputTax: totals.box11TotalVat,
     box9NetTax: totals.box14PayableTax,
-    notes: 'Generated from NRA VAT Submission Workspace. No FTA submission was performed.',
+    notes: "Generated from NRA VAT Submission Workspace. No FTA submission was performed.",
     createdBy: actorUserId,
     updatedAt: new Date(),
   };
@@ -973,7 +1028,7 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
   const [updatedWorkpaper] = await db
     .update(vatWorkpapers)
     .set({
-      status: 'generated',
+      status: "generated",
       generatedVatReturnId: vatReturnId,
       totalsSnapshot: totals,
       updatedAt: new Date(),

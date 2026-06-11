@@ -1,31 +1,31 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-export const WHATSAPP_BRIDGE_PROVIDER = 'whatsapp_web_extension' as const;
+export const WHATSAPP_BRIDGE_PROVIDER = "whatsapp_web_extension" as const;
 
 export const WHATSAPP_BRIDGE_JOB_KINDS = [
-  'direct_message',
-  'invoice',
-  'document_request',
-  'payment_chase',
-  'vat_submission_proof',
-  'broadcast',
-  'custom',
+  "direct_message",
+  "invoice",
+  "document_request",
+  "payment_chase",
+  "vat_submission_proof",
+  "broadcast",
+  "custom",
 ] as const;
 
 export const WHATSAPP_BRIDGE_JOB_STATUSES = [
-  'queued',
-  'drafted',
-  'sent_unverified',
-  'failed',
-  'cancelled',
-  'expired',
+  "queued",
+  "drafted",
+  "sent_unverified",
+  "failed",
+  "cancelled",
+  "expired",
 ] as const;
 
 export const WHATSAPP_BRIDGE_DELIVERY_STATUSES = [
-  'logged',
-  'drafted',
-  'sent_unverified',
-  'failed',
+  "logged",
+  "drafted",
+  "sent_unverified",
+  "failed",
 ] as const;
 
 export const createBridgeJobSchema = z.object({
@@ -33,10 +33,10 @@ export const createBridgeJobSchema = z.object({
   to: z.string().min(1).max(64),
   recipientName: z.string().max(200).optional().nullable(),
   message: z.string().min(1).max(5000),
-  kind: z.enum(WHATSAPP_BRIDGE_JOB_KINDS).default('direct_message'),
+  kind: z.enum(WHATSAPP_BRIDGE_JOB_KINDS).default("direct_message"),
   sourceType: z.string().max(80).optional().nullable(),
   sourceId: z.string().uuid().optional().nullable(),
-  attachmentUrl: z.string().url().optional().nullable().or(z.literal('')),
+  attachmentUrl: z.string().url().optional().nullable().or(z.literal("")),
   attachmentLabel: z.string().max(200).optional().nullable(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -60,27 +60,27 @@ export type BridgeStatusUpdateInput = z.infer<typeof bridgeStatusUpdateSchema>;
 export type CreateBridgeSessionInput = z.infer<typeof createBridgeSessionSchema>;
 
 export function normalizeWhatsAppBridgePhone(raw: string): string {
-  let cleaned = (raw || '').replace(/[^\d]/g, '');
-  if (!cleaned) return '';
+  let cleaned = (raw || "").replace(/[^\d]/g, "");
+  if (!cleaned) return "";
 
-  if (cleaned.length === 10 && cleaned.startsWith('05')) {
+  if (cleaned.length === 10 && cleaned.startsWith("05")) {
     cleaned = `971${cleaned.slice(1)}`;
-  } else if (cleaned.length === 9 && cleaned.startsWith('5')) {
+  } else if (cleaned.length === 9 && cleaned.startsWith("5")) {
     cleaned = `971${cleaned}`;
-  } else if (cleaned.startsWith('00')) {
+  } else if (cleaned.startsWith("00")) {
     cleaned = cleaned.slice(2);
-  } else if (cleaned.startsWith('0')) {
+  } else if (cleaned.startsWith("0")) {
     cleaned = cleaned.slice(1);
   }
 
-  if (cleaned.length < 8 || cleaned.length > 15) return '';
+  if (cleaned.length < 8 || cleaned.length > 15) return "";
   return cleaned;
 }
 
 export function buildWhatsAppWebDraftUrl(phone: string, message: string): string {
   const normalized = normalizeWhatsAppBridgePhone(phone);
   if (!normalized) {
-    throw new Error('Invalid WhatsApp phone number');
+    throw new Error("Invalid WhatsApp phone number");
   }
 
   const encoded = encodeURIComponent(message);
@@ -88,7 +88,7 @@ export function buildWhatsAppWebDraftUrl(phone: string, message: string): string
 }
 
 export function cleanBridgeJobMetadata(input: CreateBridgeJobInput): Record<string, unknown> {
-  const metadata = input.metadata && typeof input.metadata === 'object' ? input.metadata : {};
+  const metadata = input.metadata && typeof input.metadata === "object" ? input.metadata : {};
   return {
     ...metadata,
     sourceType: input.sourceType || null,
@@ -96,6 +96,6 @@ export function cleanBridgeJobMetadata(input: CreateBridgeJobInput): Record<stri
     attachmentUrl: input.attachmentUrl || null,
     attachmentLabel: input.attachmentLabel || null,
     provider: WHATSAPP_BRIDGE_PROVIDER,
-    deliveryTruth: 'human_confirmed_in_whatsapp_web',
+    deliveryTruth: "human_confirmed_in_whatsapp_web",
   };
 }

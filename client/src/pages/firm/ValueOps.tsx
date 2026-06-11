@@ -1,7 +1,7 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { PageHeader } from "@/components/ui/page-header";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
   AlertTriangle,
   ArrowRight,
@@ -20,18 +20,13 @@ import {
   Sparkles,
   TrendingUp,
   UploadCloud,
-} from 'lucide-react';
+} from "lucide-react";
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Progress } from '@/components/ui/progress';
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -39,29 +34,29 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { apiRequest } from '@/lib/queryClient';
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiRequest } from "@/lib/queryClient";
 
-type Priority = 'critical' | 'high' | 'medium' | 'low';
+type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
-  | 'audit_defense'
-  | 'bank_close'
-  | 'penalty_prevention'
-  | 'cash_recovery'
-  | 'nra_profitability'
-  | 'compliance_risk'
-  | 'ai_review'
-  | 'whatsapp_cockpit'
-  | 'monthly_cfo_pack'
-  | 'migration_concierge';
+  | "audit_defense"
+  | "bank_close"
+  | "penalty_prevention"
+  | "cash_recovery"
+  | "nra_profitability"
+  | "compliance_risk"
+  | "ai_review"
+  | "whatsapp_cockpit"
+  | "monthly_cfo_pack"
+  | "migration_concierge";
 type ReviewItemKind =
-  | 'bank_match'
-  | 'receipt_posting'
-  | 'anomaly'
-  | 'vat_review'
-  | 'trial_balance'
-  | 'document_request';
+  | "bank_match"
+  | "receipt_posting"
+  | "anomaly"
+  | "vat_review"
+  | "trial_balance"
+  | "document_request";
 
 interface ValueOpsClient {
   companyId: string;
@@ -171,7 +166,7 @@ interface ClientAuditPack {
   } | null;
   evidence: Array<{
     label: string;
-    status: 'ready' | 'attention' | 'missing';
+    status: "ready" | "attention" | "missing";
     count: number;
     detail: string;
   }>;
@@ -194,39 +189,39 @@ interface ClientCfoPack {
 }
 
 const laneConfig: Record<ValueLane, { label: string; icon: typeof ShieldCheck }> = {
-  audit_defense: { label: 'Audit defense', icon: ShieldCheck },
-  bank_close: { label: 'Bank close', icon: Landmark },
-  penalty_prevention: { label: 'Penalty prevention', icon: AlertTriangle },
-  cash_recovery: { label: 'Cash recovery', icon: Banknote },
-  nra_profitability: { label: 'NRA profitability', icon: BriefcaseBusiness },
-  compliance_risk: { label: 'Compliance risk', icon: ClipboardCheck },
-  ai_review: { label: 'AI review', icon: Bot },
-  whatsapp_cockpit: { label: 'WhatsApp cockpit', icon: MessageCircle },
-  monthly_cfo_pack: { label: 'CFO pack', icon: FileText },
-  migration_concierge: { label: 'Migration concierge', icon: UploadCloud },
+  audit_defense: { label: "Audit defense", icon: ShieldCheck },
+  bank_close: { label: "Bank close", icon: Landmark },
+  penalty_prevention: { label: "Penalty prevention", icon: AlertTriangle },
+  cash_recovery: { label: "Cash recovery", icon: Banknote },
+  nra_profitability: { label: "NRA profitability", icon: BriefcaseBusiness },
+  compliance_risk: { label: "Compliance risk", icon: ClipboardCheck },
+  ai_review: { label: "AI review", icon: Bot },
+  whatsapp_cockpit: { label: "WhatsApp cockpit", icon: MessageCircle },
+  monthly_cfo_pack: { label: "CFO pack", icon: FileText },
+  migration_concierge: { label: "Migration concierge", icon: UploadCloud },
 };
 
 const reviewKindConfig: Record<ReviewItemKind, { label: string; icon: typeof ShieldCheck }> = {
-  bank_match: { label: 'Bank match', icon: Landmark },
-  receipt_posting: { label: 'Receipt posting', icon: FileText },
-  anomaly: { label: 'Anomaly', icon: AlertTriangle },
-  vat_review: { label: 'VAT review', icon: ClipboardCheck },
-  trial_balance: { label: 'Trial balance', icon: Gauge },
-  document_request: { label: 'Document request', icon: MessageCircle },
+  bank_match: { label: "Bank match", icon: Landmark },
+  receipt_posting: { label: "Receipt posting", icon: FileText },
+  anomaly: { label: "Anomaly", icon: AlertTriangle },
+  vat_review: { label: "VAT review", icon: ClipboardCheck },
+  trial_balance: { label: "Trial balance", icon: Gauge },
+  document_request: { label: "Document request", icon: MessageCircle },
 };
 
 function formatAed(value: number): string {
-  return new Intl.NumberFormat('en-AE', {
-    style: 'currency',
-    currency: 'AED',
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
+    currency: "AED",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value || 0);
 }
 
 function formatDate(value: string | null | undefined): string {
-  if (!value) return '—';
-  return new Intl.DateTimeFormat('en-AE', { dateStyle: 'medium' }).format(new Date(value));
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("en-AE", { dateStyle: "medium" }).format(new Date(value));
 }
 
 function formatPercent(value: number): string {
@@ -235,36 +230,39 @@ function formatPercent(value: number): string {
 
 function priorityClass(priority: Priority): string {
   switch (priority) {
-    case 'critical':
-      return 'bg-red-100 text-red-800 border-red-200';
-    case 'high':
-      return 'bg-orange-100 text-orange-800 border-orange-200';
-    case 'medium':
-      return 'bg-amber-100 text-amber-800 border-amber-200';
-    case 'low':
-      return 'bg-slate-100 text-slate-800 border-slate-200';
+    case "critical":
+      return "bg-red-100 text-red-800 border-red-200";
+    case "high":
+      return "bg-orange-100 text-orange-800 border-orange-200";
+    case "medium":
+      return "bg-amber-100 text-amber-800 border-amber-200";
+    case "low":
+      return "bg-slate-100 text-slate-800 border-slate-200";
   }
 }
 
-function evidenceClass(status: ClientAuditPack['evidence'][number]['status']): string {
+function evidenceClass(status: ClientAuditPack["evidence"][number]["status"]): string {
   switch (status) {
-    case 'ready':
-      return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-    case 'attention':
-      return 'bg-amber-100 text-amber-800 border-amber-200';
-    case 'missing':
-      return 'bg-red-100 text-red-800 border-red-200';
+    case "ready":
+      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+    case "attention":
+      return "bg-amber-100 text-amber-800 border-amber-200";
+    case "missing":
+      return "bg-red-100 text-red-800 border-red-200";
   }
 }
 
-function ScoreBar({ label, value, inverse = false }: { label: string; value: number; inverse?: boolean }) {
+function ScoreBar({
+  label,
+  value,
+  inverse = false,
+}: {
+  label: string;
+  value: number;
+  inverse?: boolean;
+}) {
   const risk = inverse ? 100 - value : value;
-  const color =
-    risk >= 75
-      ? 'text-red-600'
-      : risk >= 50
-        ? 'text-amber-600'
-        : 'text-emerald-600';
+  const color = risk >= 75 ? "text-red-600" : risk >= 50 ? "text-amber-600" : "text-emerald-600";
   return (
     <div className="space-y-1">
       <div className="flex justify-between gap-2 text-xs">
@@ -276,7 +274,15 @@ function ScoreBar({ label, value, inverse = false }: { label: string; value: num
   );
 }
 
-function MetricCard({ title, value, icon: Icon }: { title: string; value: string; icon: typeof Gauge }) {
+function MetricCard({
+  title,
+  value,
+  icon: Icon,
+}: {
+  title: string;
+  value: string;
+  icon: typeof Gauge;
+}) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -292,37 +298,44 @@ function MetricCard({ title, value, icon: Icon }: { title: string; value: string
 
 export default function ValueOps() {
   const [location, navigate] = useLocation();
-  const [selectedPack, setSelectedPack] = useState<{ companyId: string; type: 'audit' | 'cfo' } | null>(null);
+  const [selectedPack, setSelectedPack] = useState<{
+    companyId: string;
+    type: "audit" | "cfo";
+  } | null>(null);
 
   const dashboardQuery = useQuery<ValueOpsDashboard>({
-    queryKey: ['/api/firm/value-ops'],
+    queryKey: ["/api/firm/value-ops"],
   });
 
   const reviewQueueQuery = useQuery<FirmReviewItem[]>({
-    queryKey: ['/api/firm/value-ops/review-queue'],
+    queryKey: ["/api/firm/value-ops/review-queue"],
   });
 
   useEffect(() => {
-    const [, queryString] = location.split('?');
-    const client = new URLSearchParams(queryString ?? '').get('client');
-    if (client) setSelectedPack({ companyId: client, type: 'audit' });
+    const [, queryString] = location.split("?");
+    const client = new URLSearchParams(queryString ?? "").get("client");
+    if (client) setSelectedPack({ companyId: client, type: "audit" });
   }, [location]);
 
   const selectedClient = useMemo(
-    () => dashboardQuery.data?.clients.find((client) => client.companyId === selectedPack?.companyId) ?? null,
-    [dashboardQuery.data?.clients, selectedPack?.companyId],
+    () =>
+      dashboardQuery.data?.clients.find((client) => client.companyId === selectedPack?.companyId) ??
+      null,
+    [dashboardQuery.data?.clients, selectedPack?.companyId]
   );
 
   const auditPackQuery = useQuery<ClientAuditPack>({
-    queryKey: ['/api/firm/value-ops/audit-pack', selectedPack?.companyId],
-    queryFn: () => apiRequest('GET', `/api/firm/value-ops/clients/${selectedPack?.companyId}/audit-pack`),
-    enabled: selectedPack?.type === 'audit' && !!selectedPack.companyId,
+    queryKey: ["/api/firm/value-ops/audit-pack", selectedPack?.companyId],
+    queryFn: () =>
+      apiRequest("GET", `/api/firm/value-ops/clients/${selectedPack?.companyId}/audit-pack`),
+    enabled: selectedPack?.type === "audit" && !!selectedPack.companyId,
   });
 
   const cfoPackQuery = useQuery<ClientCfoPack>({
-    queryKey: ['/api/firm/value-ops/cfo-pack', selectedPack?.companyId],
-    queryFn: () => apiRequest('GET', `/api/firm/value-ops/clients/${selectedPack?.companyId}/cfo-pack`),
-    enabled: selectedPack?.type === 'cfo' && !!selectedPack.companyId,
+    queryKey: ["/api/firm/value-ops/cfo-pack", selectedPack?.companyId],
+    queryFn: () =>
+      apiRequest("GET", `/api/firm/value-ops/clients/${selectedPack?.companyId}/cfo-pack`),
+    enabled: selectedPack?.type === "cfo" && !!selectedPack.companyId,
   });
 
   const data = dashboardQuery.data;
@@ -359,10 +372,26 @@ export default function ValueOps() {
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard title="Cash at risk" value={formatAed(data.summary.cashAtRisk)} icon={Banknote} />
-        <MetricCard title="Penalty-risk clients" value={`${data.summary.penaltyRiskClients}`} icon={AlertTriangle} />
-        <MetricCard title="Reviewer queue" value={`${data.summary.reviewerQueueItems}`} icon={Bot} />
-        <MetricCard title="NRA service AR" value={formatAed(data.summary.nraServiceAr)} icon={BriefcaseBusiness} />
+        <MetricCard
+          title="Cash at risk"
+          value={formatAed(data.summary.cashAtRisk)}
+          icon={Banknote}
+        />
+        <MetricCard
+          title="Penalty-risk clients"
+          value={`${data.summary.penaltyRiskClients}`}
+          icon={AlertTriangle}
+        />
+        <MetricCard
+          title="Reviewer queue"
+          value={`${data.summary.reviewerQueueItems}`}
+          icon={Bot}
+        />
+        <MetricCard
+          title="NRA service AR"
+          value={formatAed(data.summary.nraServiceAr)}
+          icon={BriefcaseBusiness}
+        />
       </div>
 
       <Tabs defaultValue="board" className="space-y-4">
@@ -392,7 +421,7 @@ export default function ValueOps() {
                       <span>{formatAed(opportunity.impactAed)}</span>
                     </div>
                     <div className="min-h-5 truncate text-xs text-muted-foreground">
-                      {opportunity.topClient ?? 'No priority client'}
+                      {opportunity.topClient ?? "No priority client"}
                     </div>
                   </CardContent>
                 </Card>
@@ -439,10 +468,16 @@ export default function ValueOps() {
                         <TableCell>
                           <div className="font-medium">{item.title}</div>
                           <div className="text-xs text-muted-foreground">{item.explanation}</div>
-                          <div className="mt-1 text-xs text-muted-foreground">{item.suggestedAction}</div>
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {item.suggestedAction}
+                          </div>
                         </TableCell>
-                        <TableCell className="text-right">{formatPercent(item.confidence)}</TableCell>
-                        <TableCell className="text-right">{item.amountAed > 0 ? formatAed(item.amountAed) : '—'}</TableCell>
+                        <TableCell className="text-right">
+                          {formatPercent(item.confidence)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {item.amountAed > 0 ? formatAed(item.amountAed) : "—"}
+                        </TableCell>
                         <TableCell>{formatDate(item.dueDate)}</TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => navigate(item.href)}>
@@ -538,7 +573,9 @@ export default function ValueOps() {
                     <TableRow key={client.companyId}>
                       <TableCell>
                         <div className="font-medium">{client.companyName}</div>
-                        <div className="text-xs text-muted-foreground">{client.trn ?? 'No TRN'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {client.trn ?? "No TRN"}
+                        </div>
                       </TableCell>
                       <TableCell className="min-w-[140px]">
                         <ScoreBar label="Defense" value={client.scores.auditDefense} inverse />
@@ -549,14 +586,20 @@ export default function ValueOps() {
                       <TableCell className="min-w-[140px]">
                         <ScoreBar label="Compliance" value={client.scores.complianceRisk} />
                       </TableCell>
-                      <TableCell className="text-right">{formatAed(client.money.overdueAr)}</TableCell>
-                      <TableCell className="text-right">{client.workload.reviewerQueueItems}</TableCell>
+                      <TableCell className="text-right">
+                        {formatAed(client.money.overdueAr)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {client.workload.reviewerQueueItems}
+                      </TableCell>
                       <TableCell>
                         <div className="flex justify-end gap-1">
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => setSelectedPack({ companyId: client.companyId, type: 'audit' })}
+                            onClick={() =>
+                              setSelectedPack({ companyId: client.companyId, type: "audit" })
+                            }
                           >
                             <FileArchive className="mr-1 h-4 w-4" />
                             Audit
@@ -564,7 +607,9 @@ export default function ValueOps() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => setSelectedPack({ companyId: client.companyId, type: 'cfo' })}
+                            onClick={() =>
+                              setSelectedPack({ companyId: client.companyId, type: "cfo" })
+                            }
                           >
                             <PackageOpen className="mr-1 h-4 w-4" />
                             CFO
@@ -591,15 +636,15 @@ export default function ValueOps() {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>
-              {selectedPack?.type === 'audit' ? 'Audit Defense Pack' : 'Monthly CFO Pack'}
-              {selectedClient ? ` · ${selectedClient.companyName}` : ''}
+              {selectedPack?.type === "audit" ? "Audit Defense Pack" : "Monthly CFO Pack"}
+              {selectedClient ? ` · ${selectedClient.companyName}` : ""}
             </DialogTitle>
           </DialogHeader>
 
-          {selectedPack?.type === 'audit' && (
+          {selectedPack?.type === "audit" && (
             <AuditPackView pack={auditPackQuery.data} loading={auditPackQuery.isLoading} />
           )}
-          {selectedPack?.type === 'cfo' && (
+          {selectedPack?.type === "cfo" && (
             <CfoPackView pack={cfoPackQuery.data} loading={cfoPackQuery.isLoading} />
           )}
         </DialogContent>
@@ -609,15 +654,17 @@ export default function ValueOps() {
 }
 
 function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boolean }) {
-  if (loading) return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
-  if (!pack) return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
+  if (loading)
+    return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
+  if (!pack)
+    return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div className="rounded-md border p-3">
           <div className="text-xs text-muted-foreground">VAT status</div>
-          <div className="font-medium">{pack.vatReturn?.status ?? 'No return'}</div>
+          <div className="font-medium">{pack.vatReturn?.status ?? "No return"}</div>
         </div>
         <div className="rounded-md border p-3">
           <div className="text-xs text-muted-foreground">Due date</div>
@@ -631,7 +678,10 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
 
       <div className="space-y-2">
         {pack.evidence.map((item) => (
-          <div key={item.label} className="flex items-start justify-between gap-3 rounded-md border p-3">
+          <div
+            key={item.label}
+            className="flex items-start justify-between gap-3 rounded-md border p-3"
+          >
             <div>
               <div className="font-medium">{item.label}</div>
               <div className="text-sm text-muted-foreground">{item.detail}</div>
@@ -664,8 +714,10 @@ function AuditPackView({ pack, loading }: { pack?: ClientAuditPack; loading: boo
 }
 
 function CfoPackView({ pack, loading }: { pack?: ClientCfoPack; loading: boolean }) {
-  if (loading) return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
-  if (!pack) return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
+  if (loading)
+    return <div className="py-10 text-center text-muted-foreground">Loading pack...</div>;
+  if (!pack)
+    return <div className="py-10 text-center text-muted-foreground">No pack available.</div>;
 
   return (
     <div className="space-y-4">

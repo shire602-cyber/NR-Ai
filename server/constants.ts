@@ -9,7 +9,7 @@ export const UAE_VAT_RATE = 0.05;
 export const UAE_CT_EXEMPTION_THRESHOLD = 375_000;
 
 /** Default reporting/invoice currency for UAE-based businesses. */
-export const DEFAULT_CURRENCY = 'AED';
+export const DEFAULT_CURRENCY = "AED";
 
 /**
  * System-account codes from the default UAE Chart of Accounts.
@@ -19,15 +19,15 @@ export const DEFAULT_CURRENCY = 'AED';
  */
 export const ACCOUNT_CODES = {
   /** Accounts Receivable (current asset). */
-  AR: '1040',
+  AR: "1040",
   /** Accounts Payable (current liability). */
-  AP: '2020',
+  AP: "2020",
   /** Output VAT payable (current liability). Same code as AP in default UAE COA. */
-  VAT_OUTPUT: '2020',
+  VAT_OUTPUT: "2020",
   /** Sales Revenue (income). */
-  REVENUE: '4010',
+  REVENUE: "4010",
   /** Service Revenue (alternate revenue account some firms use). */
-  REVENUE_ALT: '4020',
+  REVENUE_ALT: "4020",
 } as const;
 
 export type AccountCode = (typeof ACCOUNT_CODES)[keyof typeof ACCOUNT_CODES];
@@ -46,9 +46,9 @@ export const RECEIPT_STATUS = {
  * (Google Sheets imports/exports, etc.).
  */
 export const INTEGRATION_SYNC_STATUS = {
-  PENDING: 'pending',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
+  PENDING: "pending",
+  COMPLETED: "completed",
+  FAILED: "failed",
 } as const;
 
 export type IntegrationSyncStatus =

@@ -12,6 +12,7 @@ Eliminate four classes of data-integrity bugs that can silently corrupt financia
 ## 2. Business Context
 
 Muhasib.ai is a UAE accounting SaaS competing with Wafeq and Naqood. Financial data correctness is non-negotiable for:
+
 - **UAE FTA VAT compliance**: VAT return boxes must sum to exact fils (1/100 AED). Float rounding can cause VAT mismatch penalties.
 - **Audit trail integrity**: Duplicate journal entry numbers or invoices violate UAE Commercial Companies Law record-keeping requirements.
 - **Customer trust**: Rounding errors on invoices, payroll, or bank reconciliation erode confidence in a financial platform.
@@ -22,13 +23,13 @@ Muhasib.ai is a UAE accounting SaaS competing with Wafeq and Naqood. Financial d
 
 Replace all 154 `real()` column definitions in `shared/schema.ts` with `numeric()` using these precision rules:
 
-| Column category | Precision | Scale | Rationale |
-|----------------|-----------|-------|-----------|
-| Monetary amounts (subtotal, total, vatAmount, salary, price, fee, etc.) | 15 | 2 | AED has 2 decimal places; 15 digits covers trillions |
-| VAT/tax rates (vatRate, taxRate, confidenceLevel) | 10 | 6 | Rates need 6 decimal places (e.g., 0.050000) |
-| Quantities (quantity) | 15 | 4 | Fractional quantities (e.g., 2.5 hours) |
-| Exchange rates (rate) | 10 | 6 | FX rates need 6 decimal places |
-| Percentages/scores (aiConfidence, matchConfidence, conversionRate, errorRate, changePercent) | 10 | 6 | Scores/percentages with precision |
+| Column category                                                                              | Precision | Scale | Rationale                                            |
+| -------------------------------------------------------------------------------------------- | --------- | ----- | ---------------------------------------------------- |
+| Monetary amounts (subtotal, total, vatAmount, salary, price, fee, etc.)                      | 15        | 2     | AED has 2 decimal places; 15 digits covers trillions |
+| VAT/tax rates (vatRate, taxRate, confidenceLevel)                                            | 10        | 6     | Rates need 6 decimal places (e.g., 0.050000)         |
+| Quantities (quantity)                                                                        | 15        | 4     | Fractional quantities (e.g., 2.5 hours)              |
+| Exchange rates (rate)                                                                        | 10        | 6     | FX rates need 6 decimal places                       |
+| Percentages/scores (aiConfidence, matchConfidence, conversionRate, errorRate, changePercent) | 10        | 6     | Scores/percentages with precision                    |
 
 **Full column inventory by table** (154 columns):
 
@@ -75,26 +76,28 @@ Replace all 154 `real()` column definitions in `shared/schema.ts` with `numeric(
 
 Add these 9 composite unique constraints:
 
-| Table | Columns | Constraint Name |
-|-------|---------|----------------|
-| `invoices` | (companyId, number) | `invoices_company_number_unique` |
-| `quotes` | (companyId, number) | `quotes_company_number_unique` |
-| `creditNotes` | (companyId, number) | `credit_notes_company_number_unique` |
-| `purchaseOrders` | (companyId, number) | `purchase_orders_company_number_unique` |
-| `employees` | (companyId, employeeNumber) | `employees_company_number_unique` |
-| `costCenters` | (companyId, code) | `cost_centers_company_code_unique` |
-| `fixedAssets` | (companyId, assetCode) | `fixed_assets_company_code_unique` |
-| `companyUsers` | (companyId, userId) | `company_users_company_user_unique` |
-| `subscriptions` | (companyId) | `subscriptions_company_unique` |
+| Table            | Columns                     | Constraint Name                         |
+| ---------------- | --------------------------- | --------------------------------------- |
+| `invoices`       | (companyId, number)         | `invoices_company_number_unique`        |
+| `quotes`         | (companyId, number)         | `quotes_company_number_unique`          |
+| `creditNotes`    | (companyId, number)         | `credit_notes_company_number_unique`    |
+| `purchaseOrders` | (companyId, number)         | `purchase_orders_company_number_unique` |
+| `employees`      | (companyId, employeeNumber) | `employees_company_number_unique`       |
+| `costCenters`    | (companyId, code)           | `cost_centers_company_code_unique`      |
+| `fixedAssets`    | (companyId, assetCode)      | `fixed_assets_company_code_unique`      |
+| `companyUsers`   | (companyId, userId)         | `company_users_company_user_unique`     |
+| `subscriptions`  | (companyId)                 | `subscriptions_company_unique`          |
 
 ### 3.3 Race Condition Fix
 
 `generateEntryNumber()` in `server/storage.ts` (lines 1073-1090) must be wrapped in a serializable transaction or use PostgreSQL advisory locks to guarantee unique entry numbers under concurrent requests.
 
 Current vulnerable pattern:
+
 ```
 SELECT count(*) → compute next number → return
 ```
+
 Two concurrent requests can get the same count and generate the same entry number.
 
 ### 3.4 Receipts Date Type Fix
@@ -135,6 +138,7 @@ Change `receipts.date` from `text("date")` (line 311 of schema.ts) to `timestamp
 ## 7. Constraints
 
 ### 7.1 Technical Constraints
+
 - **Drizzle ORM**: Must use Drizzle's `numeric(name, { precision, scale })` syntax — NOT raw SQL
 - **PostgreSQL**: Target is PostgreSQL (via Neon/Railway). `numeric` is a native PG type with exact arithmetic.
 - **Drizzle Push**: Schema changes are applied via `npm run db:push` (Drizzle Kit). No manual SQL migration files.
@@ -142,11 +146,13 @@ Change `receipts.date` from `text("date")` (line 311 of schema.ts) to `timestamp
 - **Drizzle `numeric` returns strings**: In JavaScript, `numeric` columns are returned as strings by the PG driver. Existing `Number()` casts in route handlers handle this. No additional conversion code needed.
 
 ### 7.2 Style Constraints
+
 - Follow existing naming convention: `camelCase` for JS property names, `snake_case` for DB column names
 - Unique constraint names follow pattern: `{table}_{descriptive}_unique`
 - No new files created for this phase
 
 ### 7.3 Rollout Constraints
+
 - All changes in a single commit on the existing branch `claude/epic-varahamihira`
 - `drizzle-orm/pg-core` `numeric` import added alongside existing imports on line 1
 
@@ -165,21 +171,25 @@ Change `receipts.date` from `text("date")` (line 311 of schema.ts) to `timestamp
 ## 9. Edge Cases
 
 ### 9.1 Numeric Precision
+
 - Values exceeding `numeric(15,2)` capacity (> 9,999,999,999,999.99) — PostgreSQL will reject the insert. Acceptable behavior for an accounting app (no valid transaction exceeds 10 trillion AED).
 - Negative values — `numeric` handles negatives correctly. No special handling needed.
 - Zero values — `numeric(15,2)` stores `0.00` correctly. Default values of `0` will be stored as `0.00`.
 
 ### 9.2 Unique Constraints
+
 - **Existing duplicate data**: If production DB already has duplicate (companyId, number) pairs, `db:push` will fail. This is a deployment concern — duplicates must be resolved before applying the constraint. The task contract only covers the schema definition.
 - **NULL values in unique columns**: PostgreSQL treats NULLs as distinct in unique constraints. `employees.employeeNumber` or `fixedAssets.assetCode` could be NULL — two rows with NULL are allowed. Acceptable behavior.
 - **`subscriptions.companyId` single-column unique**: This prevents a company from having multiple active subscriptions. Correct business rule.
 
 ### 9.3 Race Condition
+
 - **Serializable transaction retry**: PostgreSQL serializable transactions can throw `40001` (serialization failure). The implementation must catch and retry.
 - **Advisory lock scope**: If using advisory locks, the lock key must be scoped to `companyId` to avoid cross-company blocking.
 - **Concurrent requests across different companies**: Must NOT block each other.
 
 ### 9.4 Receipts Date Migration
+
 - **Existing text dates in DB**: Existing rows have dates as text strings (e.g., "2024-01-15"). Drizzle `db:push` with `ALTER COLUMN ... TYPE timestamp USING date::timestamp` would handle conversion, but Drizzle Kit may or may not auto-generate the `USING` clause. Deployment may need manual intervention.
 - **NULL dates**: `receipts.date` is nullable in current schema. Must remain nullable after type change.
 
@@ -220,12 +230,14 @@ None. All requirements are fully specified.
 ## 14. Codebase Context Snapshot
 
 ### Affected Modules and Files
-| File | Changes |
-|------|---------|
-| `shared/schema.ts` (~2540 lines) | 154 column type changes, 9 unique constraints, 1 date type fix, 1 new import |
-| `server/storage.ts` (~3650 lines) | 1 method rewrite (generateEntryNumber, lines 1073-1090) |
+
+| File                              | Changes                                                                      |
+| --------------------------------- | ---------------------------------------------------------------------------- |
+| `shared/schema.ts` (~2540 lines)  | 154 column type changes, 9 unique constraints, 1 date type fix, 1 new import |
+| `server/storage.ts` (~3650 lines) | 1 method rewrite (generateEntryNumber, lines 1073-1090)                      |
 
 ### Existing Patterns in Affected Areas
+
 - Column definitions follow `propertyName: type("db_column_name").modifiers()` pattern
 - Unique constraints use `(t) => [unique("name").on(t.col1, t.col2)]` in 3rd argument of `pgTable()`
 - Only one existing composite unique: `accounts` table has `companyCodeUnique` on `(companyId, code)`
@@ -233,17 +245,20 @@ None. All requirements are fully specified.
 - `numeric` is NOT currently imported but IS available from `drizzle-orm/pg-core`
 
 ### Pre-existing Tech Debt / Fragile Areas
+
 - `generateEntryNumber` is called from multiple route handlers including bulk operations — race condition risk is real, not theoretical
 - Some tables have deeply nested relationships (invoices → invoiceLines, quotes → quoteLines) but cascade deletes handle this
 - VAT return table has 48 monetary columns — highest density of `real()` columns in a single table
 
 ### Current Test Coverage Baseline
+
 - 2 test files exist: `tests/unit/env.test.ts`, `tests/unit/middleware.test.ts`
 - No integration tests
 - No schema-level tests
 - No test framework config (jest/vitest) found at project root
 
 ### Relevant Dependency State
+
 - `drizzle-orm`: installed (version in node_modules, provides `numeric` function)
 - `drizzle-kit`: installed (provides `db:push` command)
 - `@neondatabase/serverless`: installed (PostgreSQL driver)

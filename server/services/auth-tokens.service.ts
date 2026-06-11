@@ -1,26 +1,22 @@
-import crypto from 'node:crypto';
-import { and, eq, lt } from 'drizzle-orm';
-import jwt from 'jsonwebtoken';
+import crypto from "node:crypto";
+import { and, eq, lt } from "drizzle-orm";
+import jwt from "jsonwebtoken";
 
-import { db } from '../db';
-import {
-  tokenBlacklist,
-  passwordResetTokens,
-  emailVerificationTokens,
-} from '../../shared/schema';
-import { createLogger } from '../config/logger';
+import { db } from "../db";
+import { tokenBlacklist, passwordResetTokens, emailVerificationTokens } from "../../shared/schema";
+import { createLogger } from "../config/logger";
 
-const log = createLogger('auth-tokens');
+const log = createLogger("auth-tokens");
 
 const RESET_TOKEN_TTL_HOURS = 24;
 const VERIFY_TOKEN_TTL_HOURS = 24 * 7;
 
 export function hashToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 export function generateRandomToken(byteLength = 32): string {
-  return crypto.randomBytes(byteLength).toString('hex');
+  return crypto.randomBytes(byteLength).toString("hex");
 }
 
 // ───────────────────────── JWT blacklist ─────────────────────────
@@ -42,10 +38,7 @@ function getTokenExpiry(token: string): Date {
 export async function blacklistToken(token: string): Promise<void> {
   const tokenHash = hashToken(token);
   const expiresAt = getTokenExpiry(token);
-  await db
-    .insert(tokenBlacklist)
-    .values({ tokenHash, expiresAt })
-    .onConflictDoNothing();
+  await db.insert(tokenBlacklist).values({ tokenHash, expiresAt }).onConflictDoNothing();
 }
 
 export async function isTokenBlacklisted(token: string): Promise<boolean> {
@@ -65,7 +58,7 @@ export async function purgeExpiredBlacklistEntries(): Promise<number> {
     const count = (result?.rowCount as number | undefined) ?? 0;
     return count;
   } catch (err) {
-    log.error({ err }, 'Failed to purge expired blacklist entries');
+    log.error({ err }, "Failed to purge expired blacklist entries");
     return 0;
   }
 }
@@ -80,9 +73,7 @@ export async function createPasswordResetToken(userId: string): Promise<string> 
   return token;
 }
 
-export async function consumePasswordResetToken(
-  token: string,
-): Promise<string | null> {
+export async function consumePasswordResetToken(token: string): Promise<string | null> {
   const tokenHash = hashToken(token);
   const [row] = await db
     .select()
@@ -105,7 +96,7 @@ export async function purgeExpiredPasswordResetTokens(): Promise<number> {
       .where(lt(passwordResetTokens.expiresAt, new Date()));
     return (result?.rowCount as number | undefined) ?? 0;
   } catch (err) {
-    log.error({ err }, 'Failed to purge expired password reset tokens');
+    log.error({ err }, "Failed to purge expired password reset tokens");
     return 0;
   }
 }
@@ -120,9 +111,7 @@ export async function createEmailVerificationToken(userId: string): Promise<stri
   return token;
 }
 
-export async function consumeEmailVerificationToken(
-  token: string,
-): Promise<string | null> {
+export async function consumeEmailVerificationToken(token: string): Promise<string | null> {
   const tokenHash = hashToken(token);
   const [row] = await db
     .select()
@@ -130,14 +119,10 @@ export async function consumeEmailVerificationToken(
     .where(eq(emailVerificationTokens.tokenHash, tokenHash));
   if (!row) return null;
   if (row.expiresAt.getTime() < Date.now()) {
-    await db
-      .delete(emailVerificationTokens)
-      .where(eq(emailVerificationTokens.id, row.id));
+    await db.delete(emailVerificationTokens).where(eq(emailVerificationTokens.id, row.id));
     return null;
   }
-  await db
-    .delete(emailVerificationTokens)
-    .where(eq(emailVerificationTokens.id, row.id));
+  await db.delete(emailVerificationTokens).where(eq(emailVerificationTokens.id, row.id));
   return row.userId;
 }
 
@@ -148,7 +133,7 @@ export async function purgeExpiredEmailVerificationTokens(): Promise<number> {
       .where(lt(emailVerificationTokens.expiresAt, new Date()));
     return (result?.rowCount as number | undefined) ?? 0;
   } catch (err) {
-    log.error({ err }, 'Failed to purge expired email verification tokens');
+    log.error({ err }, "Failed to purge expired email verification tokens");
     return 0;
   }
 }

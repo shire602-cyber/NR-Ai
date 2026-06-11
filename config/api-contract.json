@@ -18,7 +18,12 @@
     {
       "name": "firm value ops",
       "file": "server/routes/firm-value-ops.routes.ts",
-      "mustContain": ["app.use('/api/firm/value-ops', router)", "'/'", "'/action-brief'", "'/review-queue'"]
+      "mustContain": [
+        "app.use('/api/firm/value-ops', router)",
+        "'/'",
+        "'/action-brief'",
+        "'/review-queue'"
+      ]
     },
     {
       "name": "firm command center dashboard",
@@ -28,7 +33,12 @@
     {
       "name": "firm growth opportunities",
       "file": "server/routes/firm-growth.routes.ts",
-      "mustContain": ["app.use('/api/firm/growth-opportunities', router)", "'/'", "'/refresh'", "'/:id'"]
+      "mustContain": [
+        "app.use('/api/firm/growth-opportunities', router)",
+        "'/'",
+        "'/refresh'",
+        "'/:id'"
+      ]
     },
     {
       "name": "firm vat workspace",

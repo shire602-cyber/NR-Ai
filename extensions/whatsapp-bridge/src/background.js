@@ -1,22 +1,22 @@
-const JOB_STORAGE_KEY = 'nrWhatsappBridgeJobs';
+const JOB_STORAGE_KEY = "nrWhatsappBridgeJobs";
 const APP_HOSTS = new Set([
-  'nr-ai-staging.up.railway.app',
-  'nr-ai-production.up.railway.app',
-  'nr-ai.up.railway.app',
-  'localhost',
-  '127.0.0.1',
+  "nr-ai-staging.up.railway.app",
+  "nr-ai-production.up.railway.app",
+  "nr-ai.up.railway.app",
+  "localhost",
+  "127.0.0.1",
 ]);
 
 function scriptForUrl(url) {
   let parsed;
   try {
-    parsed = new URL(url || '');
+    parsed = new URL(url || "");
   } catch {
     return null;
   }
 
-  if (APP_HOSTS.has(parsed.hostname)) return 'src/app-bridge.js';
-  if (parsed.hostname === 'web.whatsapp.com') return 'src/whatsapp-web.js';
+  if (APP_HOSTS.has(parsed.hostname)) return "src/app-bridge.js";
+  if (parsed.hostname === "web.whatsapp.com") return "src/whatsapp-web.js";
   return null;
 }
 
@@ -35,20 +35,20 @@ async function injectBridgeScript(tabId, url) {
 }
 
 function normalizePhone(raw) {
-  let cleaned = String(raw || '').replace(/[^\d]/g, '');
-  if (!cleaned) return '';
-  if (cleaned.length === 10 && cleaned.startsWith('05')) cleaned = `971${cleaned.slice(1)}`;
-  else if (cleaned.length === 9 && cleaned.startsWith('5')) cleaned = `971${cleaned}`;
-  else if (cleaned.startsWith('00')) cleaned = cleaned.slice(2);
-  else if (cleaned.startsWith('0')) cleaned = cleaned.slice(1);
-  if (cleaned.length < 8 || cleaned.length > 15) return '';
+  let cleaned = String(raw || "").replace(/[^\d]/g, "");
+  if (!cleaned) return "";
+  if (cleaned.length === 10 && cleaned.startsWith("05")) cleaned = `971${cleaned.slice(1)}`;
+  else if (cleaned.length === 9 && cleaned.startsWith("5")) cleaned = `971${cleaned}`;
+  else if (cleaned.startsWith("00")) cleaned = cleaned.slice(2);
+  else if (cleaned.startsWith("0")) cleaned = cleaned.slice(1);
+  if (cleaned.length < 8 || cleaned.length > 15) return "";
   return cleaned;
 }
 
 function buildWhatsAppUrl(job) {
   const phone = normalizePhone(job.phone);
-  if (!phone) throw new Error('Invalid WhatsApp phone number');
-  const text = encodeURIComponent(String(job.message || '').slice(0, 5000));
+  if (!phone) throw new Error("Invalid WhatsApp phone number");
+  const text = encodeURIComponent(String(job.message || "").slice(0, 5000));
   return `https://web.whatsapp.com/send?phone=${phone}&text=${text}&app_absent=0`;
 }
 
@@ -69,12 +69,12 @@ async function appendJob(job, status) {
 
 async function openDraft(job) {
   if (!job?.jobId || !job?.phone || !job?.message) {
-    throw new Error('Bridge job is missing phone, message, or id');
+    throw new Error("Bridge job is missing phone, message, or id");
   }
 
   const url = buildWhatsAppUrl(job);
-  const storedJob = await appendJob(job, 'draft_opening');
-  const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
+  const storedJob = await appendJob(job, "draft_opening");
+  const tabs = await chrome.tabs.query({ url: "https://web.whatsapp.com/*" });
   const target = tabs.find((tab) => tab.id);
 
   if (target?.id) {
@@ -84,56 +84,58 @@ async function openDraft(job) {
     await chrome.tabs.create({ active: true, url });
   }
 
-  await appendJob(storedJob, 'drafted');
+  await appendJob(storedJob, "drafted");
   return {
     ok: true,
-    mode: 'extension',
-    message: 'Draft opened in WhatsApp Web',
+    mode: "extension",
+    message: "Draft opened in WhatsApp Web",
     extensionId: chrome.runtime.id,
     version: chrome.runtime.getManifest().version,
   };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== 'NR_WHATSAPP_DRAFT_JOB') return false;
+  if (message?.type !== "NR_WHATSAPP_DRAFT_JOB") return false;
 
   openDraft(message.payload)
     .then(sendResponse)
-    .catch((error) => sendResponse({
-      ok: false,
-      mode: 'extension',
-      error: error?.message || 'Could not open WhatsApp Web',
-    }));
+    .catch((error) =>
+      sendResponse({
+        ok: false,
+        mode: "extension",
+        error: error?.message || "Could not open WhatsApp Web",
+      })
+    );
   return true;
 });
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  const senderUrl = sender?.url || sender?.origin || '';
-  let senderHost = '';
+  const senderUrl = sender?.url || sender?.origin || "";
+  let senderHost = "";
   try {
     senderHost = new URL(senderUrl).hostname;
   } catch {
     sendResponse({
       ok: false,
-      mode: 'extension',
-      error: 'Unsupported sender',
+      mode: "extension",
+      error: "Unsupported sender",
     });
     return false;
   }
 
-  if (!APP_HOSTS.has(senderHost) || message?.type !== 'NR_WHATSAPP_BRIDGE_EXTERNAL_REQUEST') {
+  if (!APP_HOSTS.has(senderHost) || message?.type !== "NR_WHATSAPP_BRIDGE_EXTERNAL_REQUEST") {
     sendResponse({
       ok: false,
-      mode: 'extension',
-      error: 'Unsupported sender',
+      mode: "extension",
+      error: "Unsupported sender",
     });
     return false;
   }
 
-  if (message.command === 'ping') {
+  if (message.command === "ping") {
     sendResponse({
       ok: true,
-      mode: 'extension',
+      mode: "extension",
       payload: {
         available: true,
         extensionId: chrome.runtime.id,
@@ -143,26 +145,30 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     return false;
   }
 
-  if (message.command !== 'draft') {
+  if (message.command !== "draft") {
     sendResponse({
       ok: false,
-      mode: 'extension',
-      error: 'Unknown bridge command',
+      mode: "extension",
+      error: "Unknown bridge command",
     });
     return false;
   }
 
   openDraft(message.payload)
-    .then((result) => sendResponse({
-      ok: true,
-      mode: 'extension',
-      payload: result,
-    }))
-    .catch((error) => sendResponse({
-      ok: false,
-      mode: 'extension',
-      error: error?.message || 'Could not open WhatsApp Web',
-    }));
+    .then((result) =>
+      sendResponse({
+        ok: true,
+        mode: "extension",
+        payload: result,
+      })
+    )
+    .catch((error) =>
+      sendResponse({
+        ok: false,
+        mode: "extension",
+        error: error?.message || "Could not open WhatsApp Web",
+      })
+    );
   return true;
 });
 
@@ -181,7 +187,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const url = changeInfo.url || tab.url;
-  if (changeInfo.status === 'loading' || changeInfo.status === 'complete' || changeInfo.url) {
+  if (changeInfo.status === "loading" || changeInfo.status === "complete" || changeInfo.url) {
     injectBridgeScript(tabId, url);
   }
 });

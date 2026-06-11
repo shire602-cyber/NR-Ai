@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { apiUrl } from '@/lib/api';
+import { useState, useEffect } from "react";
+import { apiUrl } from "@/lib/api";
 
 export interface HealthResponse {
   ok: boolean;
@@ -27,7 +27,7 @@ export function useHealthCheck(pollIntervalMs: number = 30000): HealthStatus {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        const response = await fetch(apiUrl('/health'), {
+        const response = await fetch(apiUrl("/health"), {
           signal: controller.signal,
         });
 

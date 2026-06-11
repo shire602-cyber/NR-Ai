@@ -1,27 +1,68 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
-  Building2, Plus, Search, LayoutGrid, List,
-  ChevronRight, Users, Calendar,
-  BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
-  Calculator, CheckCircle2, Clock, FileText, TrendingUp,
-  UserCheck, Target, RefreshCw, Copy, ScanLine, Check, XCircle, Download,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useToast } from '@/hooks/use-toast';
-import { apiUrl } from '@/lib/api';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+  Building2,
+  Plus,
+  Search,
+  LayoutGrid,
+  List,
+  ChevronRight,
+  Users,
+  Calendar,
+  BookOpen,
+  Upload,
+  AlertTriangle,
+  Receipt,
+  FolderOpen,
+  Calculator,
+  CheckCircle2,
+  Clock,
+  FileText,
+  TrendingUp,
+  UserCheck,
+  Target,
+  RefreshCw,
+  Copy,
+  ScanLine,
+  Check,
+  XCircle,
+  Download,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { apiUrl } from "@/lib/api";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   parseVatPasteRows,
   vat201CopyGroups,
@@ -29,9 +70,9 @@ import {
   vatRowCategories,
   vatRowCategoryLabel,
   type VatRowCategory,
-} from '@/lib/vat-workpaper-grid';
-import { format } from 'date-fns';
-import type { Company } from '@shared/schema';
+} from "@/lib/vat-workpaper-grid";
+import { format } from "date-fns";
+import type { Company } from "@shared/schema";
 import {
   CLIENT_SERVICE_OPTIONS,
   DEFAULT_CLIENT_SERVICE_CODES,
@@ -39,8 +80,8 @@ import {
   serviceLabels,
   type ClientServiceCode,
   type ClientServicePlan,
-} from '@shared/client-services';
-import { useActiveCompany } from '@/components/ActiveCompanyProvider';
+} from "@shared/client-services";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 interface ClientStats {
   invoiceCount: number;
@@ -56,10 +97,11 @@ interface ClientStats {
   assignedStaff: { id: string; name: string; email: string; role: string }[];
 }
 
-type ClientWithStats = Company & ClientStats & {
-  serviceScope?: ClientServiceCode[];
-  servicePlan?: ClientServicePlan;
-};
+type ClientWithStats = Company &
+  ClientStats & {
+    serviceScope?: ClientServiceCode[];
+    servicePlan?: ClientServicePlan;
+  };
 
 interface FirmOverview {
   totalClients: number;
@@ -75,8 +117,8 @@ interface ImportResult {
   errors: { row: number; name: string; error: string }[];
 }
 
-type BookkeeperPriority = 'on_track' | 'attention' | 'critical';
-type BookkeeperInterventionLevel = 'low' | 'medium' | 'high';
+type BookkeeperPriority = "on_track" | "attention" | "critical";
+type BookkeeperInterventionLevel = "low" | "medium" | "high";
 
 interface BookkeeperClient {
   companyId: string;
@@ -105,7 +147,7 @@ interface BookkeeperClient {
     periodEnd: string | null;
     dueDate: string | null;
     daysTilDue: number | null;
-    status: BookkeeperPriority | 'filed';
+    status: BookkeeperPriority | "filed";
     payableTax: number | null;
     blockers: string[];
   };
@@ -114,7 +156,7 @@ interface BookkeeperClient {
     periodEnd: string | null;
     dueDate: string | null;
     daysTilDue: number | null;
-    status: BookkeeperPriority | 'filed';
+    status: BookkeeperPriority | "filed";
     taxPayable: number | null;
     blockers: string[];
   };
@@ -152,13 +194,13 @@ interface BookkeeperVatCohort {
     priority: BookkeeperPriority;
     dueDate: string | null;
     daysTilDue: number | null;
-    status: BookkeeperPriority | 'filed';
+    status: BookkeeperPriority | "filed";
     blockers: string[];
     nextBestAction: string;
   }[];
 }
 
-type BookkeeperQueueKey = 'vat' | 'corporateTax' | 'bookkeeping' | 'accounting';
+type BookkeeperQueueKey = "vat" | "corporateTax" | "bookkeeping" | "accounting";
 
 interface BookkeeperQueueItem {
   companyId: string;
@@ -216,7 +258,7 @@ interface BookkeeperDashboard {
   clients: BookkeeperClient[];
 }
 
-type GrowthOpportunityStatus = 'open' | 'accepted' | 'snoozed' | 'dismissed' | 'completed';
+type GrowthOpportunityStatus = "open" | "accepted" | "snoozed" | "dismissed" | "completed";
 
 interface GrowthOpportunity {
   id: string;
@@ -228,7 +270,7 @@ interface GrowthOpportunity {
   reason: string;
   estimatedValue: number;
   confidence: number;
-  priority: 'critical' | 'high' | 'medium' | 'low';
+  priority: "critical" | "high" | "medium" | "low";
   status: GrowthOpportunityStatus;
   ownerUserId: string | null;
   dueDate: string | null;
@@ -275,8 +317,8 @@ interface VatWorkpaperRow {
   vatAmount: number;
   adjustmentAmount: number;
   grossAmount: number;
-  status: 'draft' | 'approved' | 'excluded';
-  sourceMethod: 'manual' | 'ocr' | 'import' | 'generated';
+  status: "draft" | "approved" | "excluded";
+  sourceMethod: "manual" | "ocr" | "import" | "generated";
   notes: string | null;
   auditReason: string | null;
 }
@@ -300,90 +342,97 @@ interface VatWorkpaperDetail {
 }
 
 function formatAed(amount: number) {
-  return new Intl.NumberFormat('en-AE', {
-    style: 'currency',
-    currency: 'AED',
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
+    currency: "AED",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
 }
 
 function formatDateShort(date: string | null | undefined) {
-  if (!date) return '—';
-  return format(new Date(date), 'MMM d');
+  if (!date) return "—";
+  return format(new Date(date), "MMM d");
 }
 
 function formatPeriod(start: string | null | undefined, end: string | null | undefined) {
-  if (!start || !end) return 'No period';
+  if (!start || !end) return "No period";
   return `${formatDateShort(start)} - ${formatDateShort(end)}`;
 }
 
 function formatDays(days: number | null | undefined) {
-  if (days === null || days === undefined) return 'No date';
+  if (days === null || days === undefined) return "No date";
   if (days < 0) return `${Math.abs(days)}d overdue`;
-  if (days === 0) return 'Due today';
+  if (days === 0) return "Due today";
   return `${days}d left`;
 }
 
 function inputDate(date: string | null | undefined) {
-  if (!date) return '';
+  if (!date) return "";
   const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return '';
-  return format(parsed, 'yyyy-MM-dd');
+  if (Number.isNaN(parsed.getTime())) return "";
+  return format(parsed, "yyyy-MM-dd");
 }
 
 function copyText(value: unknown) {
-  void navigator.clipboard?.writeText(String(value ?? '0'));
+  void navigator.clipboard?.writeText(String(value ?? "0"));
 }
 
 async function readFileAsBase64(file: File) {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () => reject(reader.error ?? new Error('Could not read evidence file'));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read evidence file"));
     reader.readAsDataURL(file);
   });
-  return dataUrl.split(',')[1] ?? '';
+  return dataUrl.split(",")[1] ?? "";
 }
 
 async function readEvidenceText(file: File) {
   const name = file.name.toLowerCase();
   const type = file.type.toLowerCase();
-  const isTextLike = type.startsWith('text/') || name.endsWith('.csv') || name.endsWith('.txt') || name.endsWith('.json');
-  if (!isTextLike || file.size > 500_000) return '';
+  const isTextLike =
+    type.startsWith("text/") ||
+    name.endsWith(".csv") ||
+    name.endsWith(".txt") ||
+    name.endsWith(".json");
+  if (!isTextLike || file.size > 500_000) return "";
   return file.text();
 }
 
-function priorityClass(priority: BookkeeperPriority | 'filed') {
-  if (priority === 'filed' || priority === 'on_track') return 'bg-green-100 text-green-800 border-green-200';
-  if (priority === 'critical') return 'bg-red-100 text-red-800 border-red-200';
-  return 'bg-amber-100 text-amber-800 border-amber-200';
+function priorityClass(priority: BookkeeperPriority | "filed") {
+  if (priority === "filed" || priority === "on_track")
+    return "bg-green-100 text-green-800 border-green-200";
+  if (priority === "critical") return "bg-red-100 text-red-800 border-red-200";
+  return "bg-amber-100 text-amber-800 border-amber-200";
 }
 
-function priorityLabel(priority: BookkeeperPriority | 'filed') {
-  if (priority === 'on_track') return 'On track';
-  if (priority === 'attention') return 'Attention';
-  if (priority === 'critical') return 'Critical';
-  return 'Filed';
+function priorityLabel(priority: BookkeeperPriority | "filed") {
+  if (priority === "on_track") return "On track";
+  if (priority === "attention") return "Attention";
+  if (priority === "critical") return "Critical";
+  return "Filed";
 }
 
-function priorityScore(priority: BookkeeperPriority | 'filed') {
-  if (priority === 'critical') return 3;
-  if (priority === 'attention') return 2;
+function priorityScore(priority: BookkeeperPriority | "filed") {
+  if (priority === "critical") return 3;
+  if (priority === "attention") return 2;
   return 1;
 }
 
-function PriorityBadge({ priority }: { priority: BookkeeperPriority | 'filed' }) {
+function PriorityBadge({ priority }: { priority: BookkeeperPriority | "filed" }) {
   return <Badge className={priorityClass(priority)}>{priorityLabel(priority)}</Badge>;
 }
 
-function servicesForClient(client: Pick<BookkeeperClient, 'serviceScope'> | Pick<ClientWithStats, 'serviceScope'>): ClientServiceCode[] {
+function servicesForClient(
+  client: Pick<BookkeeperClient, "serviceScope"> | Pick<ClientWithStats, "serviceScope">
+): ClientServiceCode[] {
   return client.serviceScope?.length ? client.serviceScope : DEFAULT_CLIENT_SERVICE_CODES;
 }
 
 function hasClientService(
-  client: Pick<BookkeeperClient, 'serviceScope'> | Pick<ClientWithStats, 'serviceScope'>,
-  service: ClientServiceCode,
+  client: Pick<BookkeeperClient, "serviceScope"> | Pick<ClientWithStats, "serviceScope">,
+  service: ClientServiceCode
 ) {
   return clientHasService(servicesForClient(client), service);
 }
@@ -396,13 +445,16 @@ function ServiceScopeBadges({
   compact?: boolean;
 }) {
   const activeServices = services?.length ? [...services] : DEFAULT_CLIENT_SERVICE_CODES;
-  const labels = compact ? serviceLabels(activeServices) : activeServices.map(service => (
-    CLIENT_SERVICE_OPTIONS.find(option => option.code === service)?.label ?? service
-  ));
+  const labels = compact
+    ? serviceLabels(activeServices)
+    : activeServices.map(
+        (service) =>
+          CLIENT_SERVICE_OPTIONS.find((option) => option.code === service)?.label ?? service
+      );
 
   return (
     <div className="flex flex-wrap gap-1">
-      {labels.map(label => (
+      {labels.map((label) => (
         <Badge key={label} variant="outline" className="text-[11px]">
           {label}
         </Badge>
@@ -412,23 +464,25 @@ function ServiceScopeBadges({
 }
 
 function interventionClass(level: BookkeeperInterventionLevel) {
-  if (level === 'high') return 'bg-red-100 text-red-800 border-red-200';
-  if (level === 'medium') return 'bg-amber-100 text-amber-800 border-amber-200';
-  return 'bg-green-100 text-green-800 border-green-200';
+  if (level === "high") return "bg-red-100 text-red-800 border-red-200";
+  if (level === "medium") return "bg-amber-100 text-amber-800 border-amber-200";
+  return "bg-green-100 text-green-800 border-green-200";
 }
 
-function fallbackIntervention(client: BookkeeperClient): NonNullable<BookkeeperClient['intervention']> {
+function fallbackIntervention(
+  client: BookkeeperClient
+): NonNullable<BookkeeperClient["intervention"]> {
   const score = Math.min(
     100,
-    priorityScore(client.priority) * 18
-      + (client.assignedStaff.length === 0 ? 12 : 0)
-      + (client.bookkeeping.status !== 'on_track' ? 12 : 0)
-      + (client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28 ? 10 : 0)
-      + (client.corporateTax.daysTilDue !== null && client.corporateTax.daysTilDue <= 90 ? 6 : 0),
+    priorityScore(client.priority) * 18 +
+      (client.assignedStaff.length === 0 ? 12 : 0) +
+      (client.bookkeeping.status !== "on_track" ? 12 : 0) +
+      (client.vat.daysTilDue !== null && client.vat.daysTilDue <= 28 ? 10 : 0) +
+      (client.corporateTax.daysTilDue !== null && client.corporateTax.daysTilDue <= 90 ? 6 : 0)
   );
-  const level: BookkeeperInterventionLevel = score >= 65 ? 'high' : score >= 35 ? 'medium' : 'low';
+  const level: BookkeeperInterventionLevel = score >= 65 ? "high" : score >= 35 ? "medium" : "low";
   const reasons = [
-    client.assignedStaff.length === 0 ? 'No owner assigned' : '',
+    client.assignedStaff.length === 0 ? "No owner assigned" : "",
     ...client.vat.blockers,
     ...client.corporateTax.blockers,
     ...client.bookkeeping.blockers,
@@ -438,7 +492,7 @@ function fallbackIntervention(client: BookkeeperClient): NonNullable<BookkeeperC
     score,
     level,
     title: client.nextBestAction,
-    reasons: (reasons.length > 0 ? reasons : ['No active intervention signals']).slice(0, 5),
+    reasons: (reasons.length > 0 ? reasons : ["No active intervention signals"]).slice(0, 5),
     ownerAction: client.nextBestAction,
     deadlineLabel: primaryDeadline(client).label,
     exposureAed: Math.round(Math.max(0, client.bookkeeping.openAr)),
@@ -450,52 +504,69 @@ function clientIntervention(client: BookkeeperClient) {
 }
 
 function blockerPreview(blockers: string[]) {
-  if (blockers.length === 0) return 'No blockers';
+  if (blockers.length === 0) return "No blockers";
   if (blockers.length === 1) return blockers[0];
   return `${blockers[0]} +${blockers.length - 1}`;
 }
 
 const queueConfig: Record<BookkeeperQueueKey, { label: string; icon: typeof Calendar }> = {
-  vat: { label: 'VAT', icon: Calendar },
-  corporateTax: { label: 'Corporate Tax', icon: Calculator },
-  bookkeeping: { label: 'Bookkeeping', icon: TrendingUp },
-  accounting: { label: 'Accounting', icon: CheckCircle2 },
+  vat: { label: "VAT", icon: Calendar },
+  corporateTax: { label: "Corporate Tax", icon: Calculator },
+  bookkeeping: { label: "Bookkeeping", icon: TrendingUp },
+  accounting: { label: "Accounting", icon: CheckCircle2 },
 };
 
 function ownerPreview(names: string[]) {
-  if (names.length === 0) return 'Unassigned';
+  if (names.length === 0) return "Unassigned";
   if (names.length === 1) return names[0];
   return `${names[0]} +${names.length - 1}`;
 }
 
 function primaryDeadline(client: BookkeeperClient) {
   const candidates = [
-    hasClientService(client, 'vat') && client.vat.status !== 'filed'
+    hasClientService(client, "vat") && client.vat.status !== "filed"
       ? {
-          label: 'VAT',
+          label: "VAT",
           dueDate: client.vat.dueDate,
           daysTilDue: client.vat.daysTilDue,
-          metric: client.vat.payableTax !== null ? formatAed(client.vat.payableTax) : client.vat.cohortLabel,
+          metric:
+            client.vat.payableTax !== null
+              ? formatAed(client.vat.payableTax)
+              : client.vat.cohortLabel,
         }
       : null,
-    hasClientService(client, 'corporate_tax') && client.corporateTax.status !== 'filed'
+    hasClientService(client, "corporate_tax") && client.corporateTax.status !== "filed"
       ? {
-          label: 'CT',
+          label: "CT",
           dueDate: client.corporateTax.dueDate,
           daysTilDue: client.corporateTax.daysTilDue,
-          metric: client.corporateTax.taxPayable !== null ? formatAed(client.corporateTax.taxPayable) : 'Readiness',
+          metric:
+            client.corporateTax.taxPayable !== null
+              ? formatAed(client.corporateTax.taxPayable)
+              : "Readiness",
         }
       : null,
-  ].filter(Boolean) as Array<{ label: string; dueDate: string | null; daysTilDue: number | null; metric: string }>;
+  ].filter(Boolean) as Array<{
+    label: string;
+    dueDate: string | null;
+    daysTilDue: number | null;
+    metric: string;
+  }>;
 
   candidates.sort((a, b) => (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999));
-  const fallbackLabel = hasClientService(client, 'bookkeeping') ? 'Close' : hasClientService(client, 'accounting') ? 'Accounting' : 'Profile';
-  return candidates[0] ?? {
-    label: fallbackLabel,
-    dueDate: client.vat.dueDate,
-    daysTilDue: client.vat.daysTilDue,
-    metric: `${client.bookkeeping.closeProgress}% close-ready`,
-  };
+  const fallbackLabel = hasClientService(client, "bookkeeping")
+    ? "Close"
+    : hasClientService(client, "accounting")
+      ? "Accounting"
+      : "Profile";
+  return (
+    candidates[0] ?? {
+      label: fallbackLabel,
+      dueDate: client.vat.dueDate,
+      daysTilDue: client.vat.daysTilDue,
+      metric: `${client.bookkeeping.closeProgress}% close-ready`,
+    }
+  );
 }
 
 function productionItem(client: BookkeeperClient, labelOverride?: string) {
@@ -505,15 +576,18 @@ function productionItem(client: BookkeeperClient, labelOverride?: string) {
     label: labelOverride ?? deadline.label,
     dueDate: deadline.dueDate,
     daysTilDue: deadline.daysTilDue,
-    metric: labelOverride === 'Close' ? `${client.bookkeeping.closeProgress}% close-ready` : deadline.metric,
+    metric:
+      labelOverride === "Close"
+        ? `${client.bookkeeping.closeProgress}% close-ready`
+        : deadline.metric,
   };
 }
 
 function sortProductionItems(items: ReturnType<typeof productionItem>[]) {
   return items.sort((a, b) => {
     const priorityDelta =
-      (b.client.priority === 'critical' ? 3 : b.client.priority === 'attention' ? 2 : 1)
-      - (a.client.priority === 'critical' ? 3 : a.client.priority === 'attention' ? 2 : 1);
+      (b.client.priority === "critical" ? 3 : b.client.priority === "attention" ? 2 : 1) -
+      (a.client.priority === "critical" ? 3 : a.client.priority === "attention" ? 2 : 1);
     if (priorityDelta !== 0) return priorityDelta;
     return (a.daysTilDue ?? 99999) - (b.daysTilDue ?? 99999);
   });
@@ -532,60 +606,78 @@ function OperationsBriefDialog({
   onOpenBooks: (companyId: string) => void;
   onViewProfile: (companyId: string) => void;
 }) {
-  const lanes = client ? [
-    {
-      key: 'vat',
-      service: 'vat' as const,
-      title: 'VAT',
-      icon: Calendar,
-      status: client.vat.status,
-      due: `${formatDateShort(client.vat.dueDate)} · ${formatDays(client.vat.daysTilDue)}`,
-      period: formatPeriod(client.vat.periodStart, client.vat.periodEnd),
-      metric: client.vat.payableTax !== null ? formatAed(client.vat.payableTax) : client.vat.cohortLabel,
-      blockers: client.vat.blockers,
-    },
-    {
-      key: 'corporate-tax',
-      service: 'corporate_tax' as const,
-      title: 'Corporate Tax',
-      icon: Calculator,
-      status: client.corporateTax.status,
-      due: `${formatDateShort(client.corporateTax.dueDate)} · ${formatDays(client.corporateTax.daysTilDue)}`,
-      period: formatPeriod(client.corporateTax.periodStart, client.corporateTax.periodEnd),
-      metric: client.corporateTax.taxPayable !== null ? formatAed(client.corporateTax.taxPayable) : 'Readiness',
-      blockers: client.corporateTax.blockers,
-    },
-    {
-      key: 'bookkeeping',
-      service: 'bookkeeping' as const,
-      title: 'Bookkeeping',
-      icon: TrendingUp,
-      status: client.bookkeeping.status,
-      due: `${client.bookkeeping.closeProgress}% close-ready`,
-      period: client.bookkeeping.daysSinceActivity === null ? 'No activity date' : `${client.bookkeeping.daysSinceActivity}d since activity`,
-      metric: `${client.bookkeeping.unpostedReceiptCount} receipts · ${client.bookkeeping.unreconciledBankCount} bank lines`,
-      blockers: client.bookkeeping.blockers,
-    },
-    {
-      key: 'accounting',
-      service: 'accounting' as const,
-      title: 'Accounting',
-      icon: CheckCircle2,
-      status: client.accounting.status,
-      due: client.accounting.trialBalanceBalanced ? 'Balanced' : 'Needs review',
-      period: client.accounting.discrepancy > 0 ? formatAed(client.accounting.discrepancy) : 'No variance',
-      metric: client.accounting.trialBalanceBalanced ? 'Trial balance clean' : 'Trial balance variance',
-      blockers: client.accounting.blockers,
-    },
-  ].filter(lane => hasClientService(client, lane.service)) : [];
+  const lanes = client
+    ? [
+        {
+          key: "vat",
+          service: "vat" as const,
+          title: "VAT",
+          icon: Calendar,
+          status: client.vat.status,
+          due: `${formatDateShort(client.vat.dueDate)} · ${formatDays(client.vat.daysTilDue)}`,
+          period: formatPeriod(client.vat.periodStart, client.vat.periodEnd),
+          metric:
+            client.vat.payableTax !== null
+              ? formatAed(client.vat.payableTax)
+              : client.vat.cohortLabel,
+          blockers: client.vat.blockers,
+        },
+        {
+          key: "corporate-tax",
+          service: "corporate_tax" as const,
+          title: "Corporate Tax",
+          icon: Calculator,
+          status: client.corporateTax.status,
+          due: `${formatDateShort(client.corporateTax.dueDate)} · ${formatDays(client.corporateTax.daysTilDue)}`,
+          period: formatPeriod(client.corporateTax.periodStart, client.corporateTax.periodEnd),
+          metric:
+            client.corporateTax.taxPayable !== null
+              ? formatAed(client.corporateTax.taxPayable)
+              : "Readiness",
+          blockers: client.corporateTax.blockers,
+        },
+        {
+          key: "bookkeeping",
+          service: "bookkeeping" as const,
+          title: "Bookkeeping",
+          icon: TrendingUp,
+          status: client.bookkeeping.status,
+          due: `${client.bookkeeping.closeProgress}% close-ready`,
+          period:
+            client.bookkeeping.daysSinceActivity === null
+              ? "No activity date"
+              : `${client.bookkeeping.daysSinceActivity}d since activity`,
+          metric: `${client.bookkeeping.unpostedReceiptCount} receipts · ${client.bookkeeping.unreconciledBankCount} bank lines`,
+          blockers: client.bookkeeping.blockers,
+        },
+        {
+          key: "accounting",
+          service: "accounting" as const,
+          title: "Accounting",
+          icon: CheckCircle2,
+          status: client.accounting.status,
+          due: client.accounting.trialBalanceBalanced ? "Balanced" : "Needs review",
+          period:
+            client.accounting.discrepancy > 0
+              ? formatAed(client.accounting.discrepancy)
+              : "No variance",
+          metric: client.accounting.trialBalanceBalanced
+            ? "Trial balance clean"
+            : "Trial balance variance",
+          blockers: client.accounting.blockers,
+        },
+      ].filter((lane) => hasClientService(client, lane.service))
+    : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>{client?.companyName ?? 'Client Operations Brief'}</DialogTitle>
+          <DialogTitle>{client?.companyName ?? "Client Operations Brief"}</DialogTitle>
           <DialogDescription>
-            {client ? `${ownerPreview(client.assignedStaff.map(staff => staff.name))} · ${client.nextBestAction}` : 'Operational status'}
+            {client
+              ? `${ownerPreview(client.assignedStaff.map((staff) => staff.name))} · ${client.nextBestAction}`
+              : "Operational status"}
           </DialogDescription>
         </DialogHeader>
 
@@ -594,11 +686,15 @@ function OperationsBriefDialog({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <div className="rounded-md border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Priority</p>
-                <div className="mt-1"><PriorityBadge priority={client.priority} /></div>
+                <div className="mt-1">
+                  <PriorityBadge priority={client.priority} />
+                </div>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Owner</p>
-                <p className="text-sm font-medium mt-1 truncate">{ownerPreview(client.assignedStaff.map(staff => staff.name))}</p>
+                <p className="text-sm font-medium mt-1 truncate">
+                  {ownerPreview(client.assignedStaff.map((staff) => staff.name))}
+                </p>
               </div>
               <div className="rounded-md border bg-muted/20 p-3">
                 <p className="text-xs text-muted-foreground">Last activity</p>
@@ -615,7 +711,7 @@ function OperationsBriefDialog({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {lanes.map(lane => {
+              {lanes.map((lane) => {
                 const Icon = lane.icon;
                 return (
                   <div key={lane.key} className="rounded-md border p-3">
@@ -643,7 +739,7 @@ function OperationsBriefDialog({
                       {lane.blockers.length === 0 ? (
                         <p className="text-xs text-muted-foreground">No blockers.</p>
                       ) : (
-                        lane.blockers.slice(0, 4).map(blocker => (
+                        lane.blockers.slice(0, 4).map((blocker) => (
                           <div key={blocker} className="flex items-start gap-2 text-xs">
                             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-amber-600 shrink-0" />
                             <span>{blocker}</span>
@@ -659,7 +755,11 @@ function OperationsBriefDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => client && onViewProfile(client.companyId)} disabled={!client}>
+          <Button
+            variant="outline"
+            onClick={() => client && onViewProfile(client.companyId)}
+            disabled={!client}
+          >
             <ChevronRight className="w-4 h-4 mr-2" />
             Profile
           </Button>
@@ -686,61 +786,86 @@ function BookkeeperCommandCenter({
   onOpenBrief: (companyId: string) => void;
   onManageStaff: () => void;
 }) {
-  const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>('vat');
+  const [activeQueue, setActiveQueue] = useState<BookkeeperQueueKey>("vat");
   const dashboardClients = useMemo(() => dashboard?.clients ?? [], [dashboard?.clients]);
-  const workloadOwners = useMemo(() => dashboard?.workload?.owners ?? [], [dashboard?.workload?.owners]);
+  const workloadOwners = useMemo(
+    () => dashboard?.workload?.owners ?? [],
+    [dashboard?.workload?.owners]
+  );
   const priorityClients = dashboardClients.slice(0, 5);
   const activeQueueItems = dashboard?.queues?.[activeQueue] ?? [];
   const productionBuckets = useMemo(() => {
-    const deadlineItems = sortProductionItems(dashboardClients.map(client => productionItem(client)));
+    const deadlineItems = sortProductionItems(
+      dashboardClients.map((client) => productionItem(client))
+    );
     return [
       {
-        key: 'overdue',
-        title: 'Overdue / Due Now',
+        key: "overdue",
+        title: "Overdue / Due Now",
         icon: AlertTriangle,
-        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue <= 0).slice(0, 5),
+        items: deadlineItems
+          .filter((item) => item.daysTilDue !== null && item.daysTilDue <= 0)
+          .slice(0, 5),
       },
       {
-        key: 'week',
-        title: 'This Week',
+        key: "week",
+        title: "This Week",
         icon: Clock,
-        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue > 0 && item.daysTilDue <= 7).slice(0, 5),
+        items: deadlineItems
+          .filter((item) => item.daysTilDue !== null && item.daysTilDue > 0 && item.daysTilDue <= 7)
+          .slice(0, 5),
       },
       {
-        key: 'month',
-        title: 'Next 28 Days',
+        key: "month",
+        title: "Next 28 Days",
         icon: Calendar,
-        items: deadlineItems.filter(item => item.daysTilDue !== null && item.daysTilDue > 7 && item.daysTilDue <= 28).slice(0, 5),
+        items: deadlineItems
+          .filter(
+            (item) => item.daysTilDue !== null && item.daysTilDue > 7 && item.daysTilDue <= 28
+          )
+          .slice(0, 5),
       },
       {
-        key: 'blocked',
-        title: 'Close Blockers',
+        key: "blocked",
+        title: "Close Blockers",
         icon: TrendingUp,
         items: sortProductionItems(
           dashboardClients
-            .filter(client => client.bookkeeping.status !== 'on_track')
-            .map(client => productionItem(client, 'Close')),
+            .filter((client) => client.bookkeeping.status !== "on_track")
+            .map((client) => productionItem(client, "Close"))
         ).slice(0, 5),
       },
       {
-        key: 'unassigned',
-        title: 'Unassigned',
+        key: "unassigned",
+        title: "Unassigned",
         icon: UserCheck,
-        items: deadlineItems.filter(item => item.client.assignedStaff.length === 0).slice(0, 5),
+        items: deadlineItems.filter((item) => item.client.assignedStaff.length === 0).slice(0, 5),
       },
     ];
   }, [dashboardClients]);
   const capacityPlanner = useMemo(() => {
     const unassigned = dashboardClients
-      .filter(client => client.assignedStaff.length === 0)
+      .filter((client) => client.assignedStaff.length === 0)
       .sort((a, b) => priorityScore(b.priority) - priorityScore(a.priority))
       .slice(0, 5);
     const overloaded = workloadOwners
-      .filter(owner => owner.staffId !== null && (owner.critical >= 3 || owner.clientCount >= 15 || owner.averageCloseProgress < 60))
+      .filter(
+        (owner) =>
+          owner.staffId !== null &&
+          (owner.critical >= 3 || owner.clientCount >= 15 || owner.averageCloseProgress < 60)
+      )
       .slice(0, 5);
     const openCapacity = workloadOwners
-      .filter(owner => owner.staffId !== null && owner.clientCount < 10 && owner.critical === 0 && owner.averageCloseProgress >= 70)
-      .sort((a, b) => a.clientCount - b.clientCount || b.averageCloseProgress - a.averageCloseProgress)
+      .filter(
+        (owner) =>
+          owner.staffId !== null &&
+          owner.clientCount < 10 &&
+          owner.critical === 0 &&
+          owner.averageCloseProgress >= 70
+      )
+      .sort(
+        (a, b) => a.clientCount - b.clientCount || b.averageCloseProgress - a.averageCloseProgress
+      )
       .slice(0, 5);
     return { unassigned, overloaded, openCapacity };
   }, [dashboardClients, workloadOwners]);
@@ -751,25 +876,31 @@ function BookkeeperCommandCenter({
       return priorityScore(b.priority) - priorityScore(a.priority);
     });
     return {
-      high: rankedClients.filter(client => clientIntervention(client).level === 'high').slice(0, 4),
-      watchlist: rankedClients.filter(client => clientIntervention(client).level === 'medium').slice(0, 4),
+      high: rankedClients
+        .filter((client) => clientIntervention(client).level === "high")
+        .slice(0, 4),
+      watchlist: rankedClients
+        .filter((client) => clientIntervention(client).level === "medium")
+        .slice(0, 4),
       exposure: rankedClients
-        .filter(client => clientIntervention(client).exposureAed > 0)
+        .filter((client) => clientIntervention(client).exposureAed > 0)
         .sort((a, b) => clientIntervention(b).exposureAed - clientIntervention(a).exposureAed)
         .slice(0, 4),
     };
   }, [dashboardClients]);
   const serviceLaneForecast = useMemo(() => {
     const clients = dashboardClients;
-    const corporateTaxClients = clients.filter(client => hasClientService(client, 'corporate_tax'));
-    const bookkeepingClients = clients.filter(client => hasClientService(client, 'bookkeeping'));
-    const accountingClients = clients.filter(client => hasClientService(client, 'accounting'));
+    const corporateTaxClients = clients.filter((client) =>
+      hasClientService(client, "corporate_tax")
+    );
+    const bookkeepingClients = clients.filter((client) => hasClientService(client, "bookkeeping"));
+    const accountingClients = clients.filter((client) => hasClientService(client, "accounting"));
     const makeRow = (
       label: string,
       rowClients: BookkeeperClient[],
       metric: string,
       action: string,
-      risk: BookkeeperPriority | 'filed' = 'on_track',
+      risk: BookkeeperPriority | "filed" = "on_track"
     ) => ({
       label,
       count: rowClients.length,
@@ -777,79 +908,163 @@ function BookkeeperCommandCenter({
       action,
       risk,
       primaryCompanyId: rowClients[0]?.companyId,
-      sample: rowClients.slice(0, 2).map(client => client.companyName).join(', '),
+      sample: rowClients
+        .slice(0, 2)
+        .map((client) => client.companyName)
+        .join(", "),
     });
     const sortedByIntervention = (rowClients: BookkeeperClient[]) =>
       [...rowClients].sort((a, b) => clientIntervention(b).score - clientIntervention(a).score);
-    const ctOpen = corporateTaxClients.filter(client => client.corporateTax.status !== 'filed');
-    const bookkeepingBlocked = sortedByIntervention(bookkeepingClients.filter(client => client.bookkeeping.status === 'critical'));
-    const bookkeepingAttention = sortedByIntervention(bookkeepingClients.filter(client => client.bookkeeping.status === 'attention'));
+    const ctOpen = corporateTaxClients.filter((client) => client.corporateTax.status !== "filed");
+    const bookkeepingBlocked = sortedByIntervention(
+      bookkeepingClients.filter((client) => client.bookkeeping.status === "critical")
+    );
+    const bookkeepingAttention = sortedByIntervention(
+      bookkeepingClients.filter((client) => client.bookkeeping.status === "attention")
+    );
     const bookkeepingReady = bookkeepingClients
-      .filter(client => client.bookkeeping.status === 'on_track' && client.bookkeeping.closeProgress >= 90)
+      .filter(
+        (client) =>
+          client.bookkeeping.status === "on_track" && client.bookkeeping.closeProgress >= 90
+      )
       .sort((a, b) => b.bookkeeping.closeProgress - a.bookkeeping.closeProgress);
-    const accountingVariance = sortedByIntervention(accountingClients.filter(client => client.accounting.status === 'critical'));
-    const accountingReview = sortedByIntervention(accountingClients.filter(client => client.accounting.status === 'attention'));
-    const accountingClean = accountingClients.filter(client => client.accounting.status === 'on_track');
+    const accountingVariance = sortedByIntervention(
+      accountingClients.filter((client) => client.accounting.status === "critical")
+    );
+    const accountingReview = sortedByIntervention(
+      accountingClients.filter((client) => client.accounting.status === "attention")
+    );
+    const accountingClean = accountingClients.filter(
+      (client) => client.accounting.status === "on_track"
+    );
 
     return [
       {
-        key: 'vat',
-        title: 'VAT Cohorts',
+        key: "vat",
+        title: "VAT Cohorts",
         icon: Calendar,
-        rows: (dashboard?.vatCohorts ?? []).slice(0, 3).map(cohort => ({
+        rows: (dashboard?.vatCohorts ?? []).slice(0, 3).map((cohort) => ({
           label: cohort.label,
           count: cohort.clientCount,
           metric: `${cohort.dueSoon} due · ${cohort.blocked} blocked`,
-          action: cohort.blocked > 0 ? 'Clear blockers' : cohort.dueSoon > 0 ? 'Prepare returns' : 'Monitor cohort',
-          risk: cohort.blocked > 0 ? 'critical' as const : cohort.dueSoon > 0 ? 'attention' as const : 'on_track' as const,
+          action:
+            cohort.blocked > 0
+              ? "Clear blockers"
+              : cohort.dueSoon > 0
+                ? "Prepare returns"
+                : "Monitor cohort",
+          risk:
+            cohort.blocked > 0
+              ? ("critical" as const)
+              : cohort.dueSoon > 0
+                ? ("attention" as const)
+                : ("on_track" as const),
           primaryCompanyId: cohort.clients[0]?.companyId,
-          sample: cohort.clients.slice(0, 2).map(client => client.companyName).join(', '),
+          sample: cohort.clients
+            .slice(0, 2)
+            .map((client) => client.companyName)
+            .join(", "),
         })),
       },
       {
-        key: 'ct',
-        title: 'Corporate Tax',
+        key: "ct",
+        title: "Corporate Tax",
         icon: Calculator,
         rows: [
-          makeRow('Due in 30d', sortedByIntervention(ctOpen.filter(client => (client.corporateTax.daysTilDue ?? 9999) <= 30)), 'urgent filings', 'Lock filing plan', 'critical'),
-          makeRow('Due in 90d', sortedByIntervention(ctOpen.filter(client => {
-            const days = client.corporateTax.daysTilDue ?? 9999;
-            return days > 30 && days <= 90;
-          })), 'preparation window', 'Start readiness review', 'attention'),
-          makeRow('Future / parked', sortedByIntervention(ctOpen.filter(client => (client.corporateTax.daysTilDue ?? 9999) > 90)), 'future filings', 'Monitor readiness'),
+          makeRow(
+            "Due in 30d",
+            sortedByIntervention(
+              ctOpen.filter((client) => (client.corporateTax.daysTilDue ?? 9999) <= 30)
+            ),
+            "urgent filings",
+            "Lock filing plan",
+            "critical"
+          ),
+          makeRow(
+            "Due in 90d",
+            sortedByIntervention(
+              ctOpen.filter((client) => {
+                const days = client.corporateTax.daysTilDue ?? 9999;
+                return days > 30 && days <= 90;
+              })
+            ),
+            "preparation window",
+            "Start readiness review",
+            "attention"
+          ),
+          makeRow(
+            "Future / parked",
+            sortedByIntervention(
+              ctOpen.filter((client) => (client.corporateTax.daysTilDue ?? 9999) > 90)
+            ),
+            "future filings",
+            "Monitor readiness"
+          ),
         ],
       },
       {
-        key: 'bookkeeping',
-        title: 'Bookkeeping Close',
+        key: "bookkeeping",
+        title: "Bookkeeping Close",
         icon: TrendingUp,
         rows: [
-          makeRow('Blocked', bookkeepingBlocked, 'source docs / bank gaps', 'Clear blockers', 'critical'),
-          makeRow('In progress', bookkeepingAttention, 'needs staff push', 'Finish close work', 'attention'),
-          makeRow('Review-ready', bookkeepingReady, '90%+ close-ready', 'Manager review'),
+          makeRow(
+            "Blocked",
+            bookkeepingBlocked,
+            "source docs / bank gaps",
+            "Clear blockers",
+            "critical"
+          ),
+          makeRow(
+            "In progress",
+            bookkeepingAttention,
+            "needs staff push",
+            "Finish close work",
+            "attention"
+          ),
+          makeRow("Review-ready", bookkeepingReady, "90%+ close-ready", "Manager review"),
         ],
       },
       {
-        key: 'accounting',
-        title: 'Accounting Review',
+        key: "accounting",
+        title: "Accounting Review",
         icon: CheckCircle2,
         rows: [
-          makeRow('TB variance', accountingVariance, 'requires correction', 'Review journals', 'critical'),
-          makeRow('Needs journals', accountingReview, 'posting required', 'Post activity', 'attention'),
-          makeRow('Clean files', accountingClean, 'balanced ledgers', 'Keep cadence'),
+          makeRow(
+            "TB variance",
+            accountingVariance,
+            "requires correction",
+            "Review journals",
+            "critical"
+          ),
+          makeRow(
+            "Needs journals",
+            accountingReview,
+            "posting required",
+            "Post activity",
+            "attention"
+          ),
+          makeRow("Clean files", accountingClean, "balanced ledgers", "Keep cadence"),
         ],
       },
     ];
   }, [dashboardClients, dashboard?.vatCohorts]);
   const ctClients = dashboardClients
-    .filter(client => hasClientService(client, 'corporate_tax') && client.corporateTax.status !== 'filed')
+    .filter(
+      (client) =>
+        hasClientService(client, "corporate_tax") && client.corporateTax.status !== "filed"
+    )
     .sort((a, b) => (a.corporateTax.daysTilDue ?? 9999) - (b.corporateTax.daysTilDue ?? 9999))
     .slice(0, 4);
   const closeClients = dashboardClients
-    .filter(client => hasClientService(client, 'bookkeeping') && client.bookkeeping.status !== 'on_track')
+    .filter(
+      (client) =>
+        hasClientService(client, "bookkeeping") && client.bookkeeping.status !== "on_track"
+    )
     .slice(0, 4);
   const accountingClients = dashboardClients
-    .filter(client => hasClientService(client, 'accounting') && client.accounting.status !== 'on_track')
+    .filter(
+      (client) => hasClientService(client, "accounting") && client.accounting.status !== "on_track"
+    )
     .slice(0, 4);
 
   return (
@@ -858,13 +1073,16 @@ function BookkeeperCommandCenter({
         <div>
           <h2 className="text-lg font-semibold tracking-tight">NR Bookkeeper Command Center</h2>
           <p className="text-sm text-muted-foreground">
-            VAT cohorts, corporate tax deadlines, monthly close blockers, and accounting review across the client portfolio.
+            VAT cohorts, corporate tax deadlines, monthly close blockers, and accounting review
+            across the client portfolio.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
             <Clock className="w-3.5 h-3.5" />
-            {dashboard?.generatedAt ? `Updated ${format(new Date(dashboard.generatedAt), 'MMM d, HH:mm')}` : 'Loading'}
+            {dashboard?.generatedAt
+              ? `Updated ${format(new Date(dashboard.generatedAt), "MMM d, HH:mm")}`
+              : "Loading"}
           </span>
         </div>
       </div>
@@ -894,7 +1112,9 @@ function BookkeeperCommandCenter({
               <p className="text-xs text-muted-foreground uppercase tracking-wide">CT due 90d</p>
               <Calculator className="w-4 h-4 text-blue-600" />
             </div>
-            <p className="text-2xl font-bold mt-1">{dashboard?.summary.corporateTaxDue90Days ?? 0}</p>
+            <p className="text-2xl font-bold mt-1">
+              {dashboard?.summary.corporateTaxDue90Days ?? 0}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -917,7 +1137,8 @@ function BookkeeperCommandCenter({
                 Client Service Matrix
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Scope every client by service before planning VAT, corporate tax, bookkeeping, or accounting work.
+                Scope every client by service before planning VAT, corporate tax, bookkeeping, or
+                accounting work.
               </p>
             </div>
             <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
@@ -925,14 +1146,17 @@ function BookkeeperCommandCenter({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {(dashboard?.serviceMatrix ?? CLIENT_SERVICE_OPTIONS.map(option => ({
-              code: option.code,
-              label: option.label,
-              shortLabel: option.shortLabel,
-              clientCount: 0,
-              critical: 0,
-              attention: 0,
-            }))).map(service => (
+            {(
+              dashboard?.serviceMatrix ??
+              CLIENT_SERVICE_OPTIONS.map((option) => ({
+                code: option.code,
+                label: option.label,
+                shortLabel: option.shortLabel,
+                clientCount: 0,
+                critical: 0,
+                attention: 0,
+              }))
+            ).map((service) => (
               <div key={service.code} className="rounded-md border bg-muted/20 p-3">
                 <p className="text-sm font-medium">{service.label}</p>
                 <p className="text-2xl font-bold mt-1">{service.clientCount}</p>
@@ -953,13 +1177,14 @@ function BookkeeperCommandCenter({
               Production Planner
             </CardTitle>
             <Badge variant="outline">
-              {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)} visible items
+              {productionBuckets.reduce((total, bucket) => total + bucket.items.length, 0)} visible
+              items
             </Badge>
           </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-            {productionBuckets.map(bucket => {
+            {productionBuckets.map((bucket) => {
               const Icon = bucket.icon;
               return (
                 <div key={bucket.key} className="rounded-md border bg-muted/20 p-3">
@@ -976,7 +1201,7 @@ function BookkeeperCommandCenter({
                         Clear
                       </div>
                     )}
-                    {bucket.items.map(item => (
+                    {bucket.items.map((item) => (
                       <button
                         key={`${bucket.key}-${item.client.companyId}`}
                         type="button"
@@ -985,7 +1210,9 @@ function BookkeeperCommandCenter({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{item.client.companyName}</p>
+                            <p className="text-sm font-medium truncate">
+                              {item.client.companyName}
+                            </p>
                             <p className="text-xs text-muted-foreground">
                               {item.label} · {formatDays(item.daysTilDue)}
                             </p>
@@ -1026,7 +1253,7 @@ function BookkeeperCommandCenter({
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Unassigned Intake</p>
-                <Badge variant={capacityPlanner.unassigned.length > 0 ? 'destructive' : 'outline'}>
+                <Badge variant={capacityPlanner.unassigned.length > 0 ? "destructive" : "outline"}>
                   {capacityPlanner.unassigned.length}
                 </Badge>
               </div>
@@ -1036,17 +1263,26 @@ function BookkeeperCommandCenter({
                     No unassigned clients
                   </div>
                 )}
-                {capacityPlanner.unassigned.map(client => (
-                  <div key={`unassigned-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                {capacityPlanner.unassigned.map((client) => (
+                  <div
+                    key={`unassigned-${client.companyId}`}
+                    className="rounded-md border bg-background px-3 py-2"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{client.companyName}</p>
-                        <p className="text-xs text-muted-foreground truncate">{client.nextBestAction}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {client.nextBestAction}
+                        </p>
                       </div>
                       <PriorityBadge priority={client.priority} />
                     </div>
                     <div className="flex gap-1 mt-2">
-                      <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onOpenBrief(client.companyId)}
+                      >
                         Brief
                       </Button>
                       <Button size="sm" variant="outline" onClick={onManageStaff}>
@@ -1061,7 +1297,7 @@ function BookkeeperCommandCenter({
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Overloaded Owners</p>
-                <Badge variant={capacityPlanner.overloaded.length > 0 ? 'secondary' : 'outline'}>
+                <Badge variant={capacityPlanner.overloaded.length > 0 ? "secondary" : "outline"}>
                   {capacityPlanner.overloaded.length}
                 </Badge>
               </div>
@@ -1071,8 +1307,11 @@ function BookkeeperCommandCenter({
                     No capacity pressure
                   </div>
                 )}
-                {capacityPlanner.overloaded.map(owner => (
-                  <div key={`overloaded-${owner.staffId}`} className="rounded-md border bg-background px-3 py-2">
+                {capacityPlanner.overloaded.map((owner) => (
+                  <div
+                    key={`overloaded-${owner.staffId}`}
+                    className="rounded-md border bg-background px-3 py-2"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{owner.name}</p>
@@ -1080,7 +1319,9 @@ function BookkeeperCommandCenter({
                           {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
                         </p>
                       </div>
-                      <Badge variant={owner.critical > 0 ? 'destructive' : 'secondary'}>{owner.critical} critical</Badge>
+                      <Badge variant={owner.critical > 0 ? "destructive" : "secondary"}>
+                        {owner.critical} critical
+                      </Badge>
                     </div>
                     <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
                       <span>{owner.vatDue28Days} VAT</span>
@@ -1103,8 +1344,11 @@ function BookkeeperCommandCenter({
                     No low-load owner found
                   </div>
                 )}
-                {capacityPlanner.openCapacity.map(owner => (
-                  <div key={`capacity-${owner.staffId}`} className="rounded-md border bg-background px-3 py-2">
+                {capacityPlanner.openCapacity.map((owner) => (
+                  <div
+                    key={`capacity-${owner.staffId}`}
+                    className="rounded-md border bg-background px-3 py-2"
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">{owner.name}</p>
@@ -1134,15 +1378,23 @@ function BookkeeperCommandCenter({
                 Intervention Radar
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                Prioritize files by deadline pressure, source-document gaps, owner gaps, and collection exposure.
+                Prioritize files by deadline pressure, source-document gaps, owner gaps, and
+                collection exposure.
               </p>
             </div>
             <div className="flex gap-2">
-              <Badge variant={(dashboard?.summary.interventionHigh ?? interventionRadar.high.length) > 0 ? 'destructive' : 'outline'}>
+              <Badge
+                variant={
+                  (dashboard?.summary.interventionHigh ?? interventionRadar.high.length) > 0
+                    ? "destructive"
+                    : "outline"
+                }
+              >
                 {dashboard?.summary.interventionHigh ?? interventionRadar.high.length} high
               </Badge>
               <Badge variant="secondary">
-                {dashboard?.summary.interventionMedium ?? interventionRadar.watchlist.length} watchlist
+                {dashboard?.summary.interventionMedium ?? interventionRadar.watchlist.length}{" "}
+                watchlist
               </Badge>
             </div>
           </div>
@@ -1152,7 +1404,9 @@ function BookkeeperCommandCenter({
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium">Escalate Today</p>
-                <Badge variant={interventionRadar.high.length > 0 ? 'destructive' : 'outline'}>{interventionRadar.high.length}</Badge>
+                <Badge variant={interventionRadar.high.length > 0 ? "destructive" : "outline"}>
+                  {interventionRadar.high.length}
+                </Badge>
               </div>
               <div className="mt-3 space-y-2 min-h-[154px]">
                 {interventionRadar.high.length === 0 && (
@@ -1160,21 +1414,34 @@ function BookkeeperCommandCenter({
                     No high-risk interventions
                   </div>
                 )}
-                {interventionRadar.high.map(client => {
+                {interventionRadar.high.map((client) => {
                   const intervention = clientIntervention(client);
                   return (
-                    <div key={`intervention-high-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div
+                      key={`intervention-high-${client.companyId}`}
+                      className="rounded-md border bg-background px-3 py-2"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{intervention.title}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {intervention.title}
+                          </p>
                         </div>
-                        <Badge className={interventionClass(intervention.level)}>{intervention.score}</Badge>
+                        <Badge className={interventionClass(intervention.level)}>
+                          {intervention.score}
+                        </Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2">{intervention.deadlineLabel}</p>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        {intervention.deadlineLabel}
+                      </p>
                       <p className="text-xs font-medium mt-1">{intervention.ownerAction}</p>
                       <div className="flex gap-1 mt-2">
-                        <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onOpenBrief(client.companyId)}
+                        >
                           Brief
                         </Button>
                         <Button size="sm" onClick={() => onOpenBooks(client.companyId)}>
@@ -1198,7 +1465,7 @@ function BookkeeperCommandCenter({
                     No medium-risk watchlist
                   </div>
                 )}
-                {interventionRadar.watchlist.map(client => {
+                {interventionRadar.watchlist.map((client) => {
                   const intervention = clientIntervention(client);
                   return (
                     <button
@@ -1210,12 +1477,16 @@ function BookkeeperCommandCenter({
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
-                          <p className="text-xs text-muted-foreground truncate">{intervention.ownerAction}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {intervention.ownerAction}
+                          </p>
                         </div>
-                        <Badge className={interventionClass(intervention.level)}>{intervention.score}</Badge>
+                        <Badge className={interventionClass(intervention.level)}>
+                          {intervention.score}
+                        </Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-2 truncate">
-                        {intervention.reasons.slice(0, 2).join(' · ')}
+                        {intervention.reasons.slice(0, 2).join(" · ")}
                       </p>
                     </button>
                   );
@@ -1234,23 +1505,38 @@ function BookkeeperCommandCenter({
                     No open exposure in radar
                   </div>
                 )}
-                {interventionRadar.exposure.map(client => {
+                {interventionRadar.exposure.map((client) => {
                   const intervention = clientIntervention(client);
                   return (
-                    <div key={`intervention-exposure-${client.companyId}`} className="rounded-md border bg-background px-3 py-2">
+                    <div
+                      key={`intervention-exposure-${client.companyId}`}
+                      className="rounded-md border bg-background px-3 py-2"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate">{client.companyName}</p>
-                          <p className="text-xs text-muted-foreground">{client.bookkeeping.overdueInvoiceCount} overdue invoices</p>
+                          <p className="text-xs text-muted-foreground">
+                            {client.bookkeeping.overdueInvoiceCount} overdue invoices
+                          </p>
                         </div>
                         <Badge variant="outline">{formatAed(intervention.exposureAed)}</Badge>
                       </div>
-                      <p className="text-xs text-muted-foreground mt-2 truncate">{intervention.ownerAction}</p>
+                      <p className="text-xs text-muted-foreground mt-2 truncate">
+                        {intervention.ownerAction}
+                      </p>
                       <div className="flex gap-1 mt-2">
-                        <Button size="sm" variant="outline" onClick={() => onOpenBrief(client.companyId)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onOpenBrief(client.companyId)}
+                        >
                           Brief
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => onViewProfile(client.companyId)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onViewProfile(client.companyId)}
+                        >
                           Profile
                         </Button>
                       </div>
@@ -1272,7 +1558,8 @@ function BookkeeperCommandCenter({
                 Service Lane Forecast
               </CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting review cadence.
+                One portfolio view for VAT cohorts, corporate tax, bookkeeping close, and accounting
+                review cadence.
               </p>
             </div>
             <Badge variant="outline">{dashboard?.summary.totalClients ?? 0} clients</Badge>
@@ -1280,7 +1567,7 @@ function BookkeeperCommandCenter({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-            {serviceLaneForecast.map(lane => {
+            {serviceLaneForecast.map((lane) => {
               const Icon = lane.icon;
               return (
                 <div key={lane.key} className="rounded-md border bg-muted/20 p-3">
@@ -1289,7 +1576,7 @@ function BookkeeperCommandCenter({
                     {lane.title}
                   </p>
                   <div className="mt-3 space-y-2">
-                    {lane.rows.map(row => (
+                    {lane.rows.map((row) => (
                       <button
                         key={`${lane.key}-${row.label}`}
                         type="button"
@@ -1305,7 +1592,9 @@ function BookkeeperCommandCenter({
                           <Badge className={priorityClass(row.risk)}>{row.count}</Badge>
                         </div>
                         <p className="text-xs font-medium mt-2 truncate">{row.action}</p>
-                        <p className="text-[11px] text-muted-foreground mt-1 truncate">{row.sample || 'No active clients'}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1 truncate">
+                          {row.sample || "No active clients"}
+                        </p>
                       </button>
                     ))}
                   </div>
@@ -1329,7 +1618,7 @@ function BookkeeperCommandCenter({
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex flex-wrap gap-2">
-              {(Object.keys(queueConfig) as BookkeeperQueueKey[]).map(key => {
+              {(Object.keys(queueConfig) as BookkeeperQueueKey[]).map((key) => {
                 const Icon = queueConfig[key].icon;
                 const count = dashboard?.queues?.[key]?.length ?? 0;
                 return (
@@ -1337,7 +1626,7 @@ function BookkeeperCommandCenter({
                     key={key}
                     type="button"
                     size="sm"
-                    variant={activeQueue === key ? 'secondary' : 'outline'}
+                    variant={activeQueue === key ? "secondary" : "outline"}
                     onClick={() => setActiveQueue(key)}
                     className="gap-1.5"
                   >
@@ -1356,8 +1645,11 @@ function BookkeeperCommandCenter({
                   <p className="text-xs text-muted-foreground mt-1">This lane is clear for now.</p>
                 </div>
               )}
-              {activeQueueItems.slice(0, 6).map(item => (
-                <div key={`${activeQueue}-${item.companyId}`} className="rounded-md border px-3 py-2.5">
+              {activeQueueItems.slice(0, 6).map((item) => (
+                <div
+                  key={`${activeQueue}-${item.companyId}`}
+                  className="rounded-md border px-3 py-2.5"
+                >
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -1371,15 +1663,25 @@ function BookkeeperCommandCenter({
                           <UserCheck className="w-3.5 h-3.5" />
                           {ownerPreview(item.ownerNames)}
                         </span>
-                        <span>{formatDateShort(item.dueDate)} · {formatDays(item.daysTilDue)}</span>
+                        <span>
+                          {formatDateShort(item.dueDate)} · {formatDays(item.daysTilDue)}
+                        </span>
                         {item.blockers.length > 1 && <span>{item.blockers.length} blockers</span>}
                       </div>
                     </div>
                     <div className="flex gap-1 sm:shrink-0">
-                      <Button size="sm" variant="outline" onClick={() => onOpenBrief(item.companyId)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onOpenBrief(item.companyId)}
+                      >
                         Brief
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => onViewProfile(item.companyId)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onViewProfile(item.companyId)}
+                      >
                         <ChevronRight className="w-3.5 h-3.5 mr-1" />
                         Profile
                       </Button>
@@ -1403,14 +1705,18 @@ function BookkeeperCommandCenter({
                 Workload Ownership
               </CardTitle>
               {(dashboard?.workload?.unassignedClients ?? 0) > 0 && (
-                <Badge variant="destructive">{dashboard?.workload?.unassignedClients} unassigned</Badge>
+                <Badge variant="destructive">
+                  {dashboard?.workload?.unassignedClients} unassigned
+                </Badge>
               )}
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
-            {workloadOwners.length === 0 && <p className="text-sm text-muted-foreground">No staff workload yet.</p>}
-            {workloadOwners.slice(0, 6).map(owner => (
-              <div key={owner.staffId ?? 'unassigned'} className="rounded-md border px-3 py-2">
+            {workloadOwners.length === 0 && (
+              <p className="text-sm text-muted-foreground">No staff workload yet.</p>
+            )}
+            {workloadOwners.slice(0, 6).map((owner) => (
+              <div key={owner.staffId ?? "unassigned"} className="rounded-md border px-3 py-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">{owner.name}</p>
@@ -1418,12 +1724,25 @@ function BookkeeperCommandCenter({
                       {owner.clientCount} clients · {owner.averageCloseProgress}% avg close
                     </p>
                   </div>
-                  <Badge variant={owner.critical > 0 ? 'destructive' : owner.attention > 0 ? 'secondary' : 'outline'}>
-                    {owner.critical > 0 ? `${owner.critical} critical` : `${owner.attention} attention`}
+                  <Badge
+                    variant={
+                      owner.critical > 0
+                        ? "destructive"
+                        : owner.attention > 0
+                          ? "secondary"
+                          : "outline"
+                    }
+                  >
+                    {owner.critical > 0
+                      ? `${owner.critical} critical`
+                      : `${owner.attention} attention`}
                   </Badge>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${owner.averageCloseProgress}%` }} />
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${owner.averageCloseProgress}%` }}
+                  />
                 </div>
                 <div className="flex flex-wrap gap-2 mt-2 text-[11px] text-muted-foreground">
                   <span>{owner.vatDue28Days} VAT due</span>
@@ -1445,7 +1764,7 @@ function BookkeeperCommandCenter({
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-            {(dashboard?.vatCohorts ?? []).slice(0, 3).map(cohort => (
+            {(dashboard?.vatCohorts ?? []).slice(0, 3).map((cohort) => (
               <div key={cohort.key} className="rounded-lg border bg-muted/20 p-3 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1453,8 +1772,14 @@ function BookkeeperCommandCenter({
                     <p className="text-xs text-muted-foreground">{cohort.clientCount} clients</p>
                   </div>
                   <div className="flex gap-1">
-                    {cohort.dueSoon > 0 && <Badge className="bg-amber-100 text-amber-800 border-amber-200">{cohort.dueSoon} due</Badge>}
-                    {cohort.blocked > 0 && <Badge variant="destructive">{cohort.blocked} blocked</Badge>}
+                    {cohort.dueSoon > 0 && (
+                      <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+                        {cohort.dueSoon} due
+                      </Badge>
+                    )}
+                    {cohort.blocked > 0 && (
+                      <Badge variant="destructive">{cohort.blocked} blocked</Badge>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2 min-h-[132px]">
@@ -1463,7 +1788,7 @@ function BookkeeperCommandCenter({
                       No clients in this cohort
                     </div>
                   )}
-                  {cohort.clients.slice(0, 4).map(client => (
+                  {cohort.clients.slice(0, 4).map((client) => (
                     <button
                       key={client.companyId}
                       type="button"
@@ -1479,7 +1804,9 @@ function BookkeeperCommandCenter({
                         </div>
                         <PriorityBadge priority={client.status} />
                       </div>
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.blockers)}</p>
+                      <p className="text-xs text-muted-foreground mt-1 truncate">
+                        {blockerPreview(client.blockers)}
+                      </p>
                     </button>
                   ))}
                 </div>
@@ -1498,8 +1825,10 @@ function BookkeeperCommandCenter({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {priorityClients.length === 0 && <p className="text-sm text-muted-foreground">No clients yet.</p>}
-            {priorityClients.map(client => (
+            {priorityClients.length === 0 && (
+              <p className="text-sm text-muted-foreground">No clients yet.</p>
+            )}
+            {priorityClients.map((client) => (
               <button
                 key={client.companyId}
                 type="button"
@@ -1510,7 +1839,9 @@ function BookkeeperCommandCenter({
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
                   <PriorityBadge priority={client.priority} />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">{client.nextBestAction}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {client.nextBestAction}
+                </p>
               </button>
             ))}
           </CardContent>
@@ -1524,14 +1855,20 @@ function BookkeeperCommandCenter({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {ctClients.length === 0 && <p className="text-sm text-muted-foreground">No CT deadlines requiring action.</p>}
-            {ctClients.map(client => (
+            {ctClients.length === 0 && (
+              <p className="text-sm text-muted-foreground">No CT deadlines requiring action.</p>
+            )}
+            {ctClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
-                  <span className="text-xs text-muted-foreground">{formatDays(client.corporateTax.daysTilDue)}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDays(client.corporateTax.daysTilDue)}
+                  </span>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.corporateTax.blockers)}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {blockerPreview(client.corporateTax.blockers)}
+                </p>
               </div>
             ))}
           </CardContent>
@@ -1545,17 +1882,24 @@ function BookkeeperCommandCenter({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {closeClients.length === 0 && <p className="text-sm text-muted-foreground">Monthly close is on track.</p>}
-            {closeClients.map(client => (
+            {closeClients.length === 0 && (
+              <p className="text-sm text-muted-foreground">Monthly close is on track.</p>
+            )}
+            {closeClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
                   <span className="text-xs font-medium">{client.bookkeeping.closeProgress}%</span>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full bg-primary" style={{ width: `${client.bookkeeping.closeProgress}%` }} />
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${client.bookkeeping.closeProgress}%` }}
+                  />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.bookkeeping.blockers)}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {blockerPreview(client.bookkeeping.blockers)}
+                </p>
               </div>
             ))}
           </CardContent>
@@ -1569,14 +1913,18 @@ function BookkeeperCommandCenter({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {accountingClients.length === 0 && <p className="text-sm text-muted-foreground">Trial balances are clean.</p>}
-            {accountingClients.map(client => (
+            {accountingClients.length === 0 && (
+              <p className="text-sm text-muted-foreground">Trial balances are clean.</p>
+            )}
+            {accountingClients.map((client) => (
               <div key={client.companyId} className="rounded-md border px-3 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium truncate">{client.companyName}</p>
                   <PriorityBadge priority={client.accounting.status} />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 truncate">{blockerPreview(client.accounting.blockers)}</p>
+                <p className="text-xs text-muted-foreground mt-1 truncate">
+                  {blockerPreview(client.accounting.blockers)}
+                </p>
               </div>
             ))}
           </CardContent>
@@ -1589,32 +1937,62 @@ function BookkeeperCommandCenter({
 function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string) => void }) {
   const { toast } = useToast();
   const { data, isLoading } = useQuery<GrowthDashboard>({
-    queryKey: ['/api/firm/growth-opportunities'],
+    queryKey: ["/api/firm/growth-opportunities"],
   });
 
   const refreshMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/firm/growth-opportunities/refresh'),
+    mutationFn: () => apiRequest("POST", "/api/firm/growth-opportunities/refresh"),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/growth-opportunities'] });
-      toast({ title: 'Revenue opportunities refreshed' });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/growth-opportunities"] });
+      toast({ title: "Revenue opportunities refreshed" });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not refresh revenue opportunities', description: e?.message }),
+    onError: (e: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not refresh revenue opportunities",
+        description: e?.message,
+      }),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, status, actionType, resolutionNote }: { id: string; status: GrowthOpportunityStatus; actionType: string; resolutionNote?: string }) =>
-      apiRequest('PATCH', `/api/firm/growth-opportunities/${id}`, { status, actionType, resolutionNote }),
+    mutationFn: ({
+      id,
+      status,
+      actionType,
+      resolutionNote,
+    }: {
+      id: string;
+      status: GrowthOpportunityStatus;
+      actionType: string;
+      resolutionNote?: string;
+    }) =>
+      apiRequest("PATCH", `/api/firm/growth-opportunities/${id}`, {
+        status,
+        actionType,
+        resolutionNote,
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/growth-opportunities'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/growth-opportunities"] });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not update opportunity', description: e?.message }),
+    onError: (e: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not update opportunity",
+        description: e?.message,
+      }),
   });
 
   const opportunities = data?.opportunities ?? [];
   const active = opportunities
-    .filter(item => item.status !== 'dismissed' && item.status !== 'completed')
+    .filter((item) => item.status !== "dismissed" && item.status !== "completed")
     .slice(0, 6);
-  const summary = data?.summary ?? { estimated: 0, accepted: 0, completed: 0, missed: 0, openCount: 0 };
+  const summary = data?.summary ?? {
+    estimated: 0,
+    accepted: 0,
+    completed: 0,
+    missed: 0,
+    openCount: 0,
+  };
 
   return (
     <Card>
@@ -1626,7 +2004,8 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
               Revenue Growth
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Internal opportunity queue for service AR, cleanup work, advisory packs, and compliance extras.
+              Internal opportunity queue for service AR, cleanup work, advisory packs, and
+              compliance extras.
             </p>
           </div>
           <Button
@@ -1664,25 +2043,32 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
           <p className="text-sm text-muted-foreground">Loading revenue signals...</p>
         ) : active.length === 0 ? (
           <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            No active revenue opportunities yet. Refresh signals after new AR, cleanup, or compliance data lands.
+            No active revenue opportunities yet. Refresh signals after new AR, cleanup, or
+            compliance data lands.
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {active.map(opportunity => (
+            {active.map((opportunity) => (
               <div key={opportunity.id} className="rounded-md border p-3 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium truncate">{opportunity.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">{opportunity.companyName ?? 'Client'}</p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {opportunity.companyName ?? "Client"}
+                    </p>
                   </div>
-                  <Badge variant={opportunity.priority === 'critical' ? 'destructive' : 'outline'}>
+                  <Badge variant={opportunity.priority === "critical" ? "destructive" : "outline"}>
                     {opportunity.priority}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">{opportunity.reason}</p>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-semibold">{formatAed(Number(opportunity.estimatedValue ?? 0))}</span>
-                  <span className="text-muted-foreground">{Math.round(Number(opportunity.confidence ?? 0) * 100)}% confidence</span>
+                  <span className="font-semibold">
+                    {formatAed(Number(opportunity.estimatedValue ?? 0))}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {Math.round(Number(opportunity.confidence ?? 0) * 100)}% confidence
+                  </span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -1694,7 +2080,13 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
                   </Button>
                   <Button
                     size="sm"
-                    onClick={() => updateMutation.mutate({ id: opportunity.id, status: 'accepted', actionType: 'accept' })}
+                    onClick={() =>
+                      updateMutation.mutate({
+                        id: opportunity.id,
+                        status: "accepted",
+                        actionType: "accept",
+                      })
+                    }
                     disabled={updateMutation.isPending}
                   >
                     Accept
@@ -1702,7 +2094,13 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => updateMutation.mutate({ id: opportunity.id, status: 'completed', actionType: 'complete' })}
+                    onClick={() =>
+                      updateMutation.mutate({
+                        id: opportunity.id,
+                        status: "completed",
+                        actionType: "complete",
+                      })
+                    }
                     disabled={updateMutation.isPending}
                   >
                     Complete
@@ -1710,12 +2108,14 @@ function RevenueGrowthPanel({ onOpenClient }: { onOpenClient: (companyId: string
                   <Button
                     size="sm"
                     variant="ghost"
-                    onClick={() => updateMutation.mutate({
-                      id: opportunity.id,
-                      status: 'dismissed',
-                      actionType: 'dismiss',
-                      resolutionNote: 'Dismissed from Client Operations.',
-                    })}
+                    onClick={() =>
+                      updateMutation.mutate({
+                        id: opportunity.id,
+                        status: "dismissed",
+                        actionType: "dismiss",
+                        resolutionNote: "Dismissed from Client Operations.",
+                      })
+                    }
                     disabled={updateMutation.isPending}
                   >
                     Dismiss
@@ -1740,12 +2140,14 @@ function VatWorkspacePanel({
   onOpenWorkspace: (companyId: string) => void;
 }) {
   const { data } = useQuery<{ workpapers: VatWorkpaperSummary[] }>({
-    queryKey: ['/api/firm/vat-workpapers'],
+    queryKey: ["/api/firm/vat-workpapers"],
   });
   const workpapers = data?.workpapers ?? [];
-  const draftCount = workpapers.filter(workpaper => workpaper.status === 'draft' || workpaper.status === 'in_review').length;
+  const draftCount = workpapers.filter(
+    (workpaper) => workpaper.status === "draft" || workpaper.status === "in_review"
+  ).length;
   const dueClients = (dashboard?.clients ?? [])
-    .filter(client => hasClientService(client, 'vat') && client.vat.status !== 'filed')
+    .filter((client) => hasClientService(client, "vat") && client.vat.status !== "filed")
     .sort((a, b) => (a.vat.daysTilDue ?? 99999) - (b.vat.daysTilDue ?? 99999))
     .slice(0, 6);
   const recentWorkpapers = workpapers.slice(0, 5);
@@ -1760,7 +2162,8 @@ function VatWorkspacePanel({
               VAT Submission Workspace
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              VAT-only workpapers for invoice rows, OCR drafts, evidence, and copy-ready VAT 201 figures.
+              VAT-only workpapers for invoice rows, OCR drafts, evidence, and copy-ready VAT 201
+              figures.
             </p>
           </div>
           <Badge variant="outline">{draftCount} draft/review workpapers</Badge>
@@ -1770,20 +2173,33 @@ function VatWorkspacePanel({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium">VAT queue</p>
-            <span className="text-xs text-muted-foreground">{dashboard?.summary.vatDue28Days ?? 0} due in 28d</span>
+            <span className="text-xs text-muted-foreground">
+              {dashboard?.summary.vatDue28Days ?? 0} due in 28d
+            </span>
           </div>
           {dueClients.length === 0 ? (
-            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No VAT queue items need action.</div>
+            <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+              No VAT queue items need action.
+            </div>
           ) : (
-            dueClients.map(client => (
-              <div key={client.companyId} className="rounded-md border p-3 flex items-center justify-between gap-3">
+            dueClients.map((client) => (
+              <div
+                key={client.companyId}
+                className="rounded-md border p-3 flex items-center justify-between gap-3"
+              >
                 <div className="min-w-0">
                   <p className="font-medium truncate">{client.companyName}</p>
                   <p className="text-xs text-muted-foreground">
-                    {client.vat.cohortLabel} · {formatPeriod(client.vat.periodStart, client.vat.periodEnd)} · {formatDays(client.vat.daysTilDue)}
+                    {client.vat.cohortLabel} ·{" "}
+                    {formatPeriod(client.vat.periodStart, client.vat.periodEnd)} ·{" "}
+                    {formatDays(client.vat.daysTilDue)}
                   </p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => onOpenWorkspace(client.companyId)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onOpenWorkspace(client.companyId)}
+                >
                   Workspace
                 </Button>
               </div>
@@ -1801,15 +2217,22 @@ function VatWorkspacePanel({
               No VAT workpapers yet. Open a client from the VAT queue to create one.
             </div>
           ) : (
-            recentWorkpapers.map(workpaper => (
-              <div key={workpaper.id} className="rounded-md border p-3 flex items-center justify-between gap-3">
+            recentWorkpapers.map((workpaper) => (
+              <div
+                key={workpaper.id}
+                className="rounded-md border p-3 flex items-center justify-between gap-3"
+              >
                 <div className="min-w-0">
                   <p className="font-medium truncate">{workpaper.companyName}</p>
                   <p className="text-xs text-muted-foreground">
                     {formatPeriod(workpaper.periodStart, workpaper.periodEnd)} · {workpaper.status}
                   </p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => onOpenWorkspace(workpaper.companyId)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onOpenWorkspace(workpaper.companyId)}
+                >
                   Open
                 </Button>
               </div>
@@ -1839,43 +2262,49 @@ function VatWorkspaceDialog({
 }) {
   const { toast } = useToast();
   const [selectedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
-  const [periodStart, setPeriodStart] = useState('');
-  const [periodEnd, setPeriodEnd] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [periodStart, setPeriodStart] = useState("");
+  const [periodEnd, setPeriodEnd] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidenceInputKey, setEvidenceInputKey] = useState(0);
-  const [workspaceTab, setWorkspaceTab] = useState('grid');
+  const [workspaceTab, setWorkspaceTab] = useState("grid");
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [rowForm, setRowForm] = useState({
-    rowCategory: 'standard_sale' as VatRowCategory,
-    vat201Box: 'box1bDubaiAmount',
-    invoiceNumber: '',
-    documentDate: '',
-    counterpartyName: '',
-    counterpartyTrn: '',
-    emirate: client?.emirate ?? 'dubai',
-    taxableAmount: '',
-    vatAmount: '',
-    adjustmentAmount: '',
-    grossAmount: '',
-    notes: '',
-    auditReason: '',
-    status: 'approved' as VatWorkpaperRow['status'],
-    sourceMethod: 'manual' as VatWorkpaperRow['sourceMethod'],
+    rowCategory: "standard_sale" as VatRowCategory,
+    vat201Box: "box1bDubaiAmount",
+    invoiceNumber: "",
+    documentDate: "",
+    counterpartyName: "",
+    counterpartyTrn: "",
+    emirate: client?.emirate ?? "dubai",
+    taxableAmount: "",
+    vatAmount: "",
+    adjustmentAmount: "",
+    grossAmount: "",
+    notes: "",
+    auditReason: "",
+    status: "approved" as VatWorkpaperRow["status"],
+    sourceMethod: "manual" as VatWorkpaperRow["sourceMethod"],
   });
-  const [pastedVatRows, setPastedVatRows] = useState('');
+  const [pastedVatRows, setPastedVatRows] = useState("");
 
   useEffect(() => {
     if (!open || !client) return;
-    setPeriodStart(inputDate(ops?.vat.periodStart) || format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), 'yyyy-MM-dd'));
-    setPeriodEnd(inputDate(ops?.vat.periodEnd) || format(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0), 'yyyy-MM-dd'));
+    setPeriodStart(
+      inputDate(ops?.vat.periodStart) ||
+        format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), "yyyy-MM-dd")
+    );
+    setPeriodEnd(
+      inputDate(ops?.vat.periodEnd) ||
+        format(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0), "yyyy-MM-dd")
+    );
     setDueDate(inputDate(ops?.vat.dueDate));
-    setRowForm(form => ({ ...form, emirate: client.emirate ?? 'dubai' }));
+    setRowForm((form) => ({ ...form, emirate: client.emirate ?? "dubai" }));
   }, [client, open, ops?.vat.dueDate, ops?.vat.periodEnd, ops?.vat.periodStart]);
 
   const workpapersQuery = useQuery<{ workpapers: VatWorkpaperSummary[] }>({
-    queryKey: ['/api/firm/vat-workpapers', client?.id],
-    queryFn: () => apiRequest('GET', `/api/firm/vat-workpapers?companyId=${client?.id}`),
+    queryKey: ["/api/firm/vat-workpapers", client?.id],
+    queryFn: () => apiRequest("GET", `/api/firm/vat-workpapers?companyId=${client?.id}`),
     enabled: open && !!client,
   });
   const workpapers = workpapersQuery.data?.workpapers ?? [];
@@ -1883,42 +2312,54 @@ function VatWorkspaceDialog({
   useEffect(() => {
     if (!open) return;
     if (!selectedWorkpaperId && workpapers.length > 0) setSelectedWorkpaperId(workpapers[0].id);
-    if (selectedWorkpaperId && workpapers.length > 0 && !workpapers.some(workpaper => workpaper.id === selectedWorkpaperId)) {
+    if (
+      selectedWorkpaperId &&
+      workpapers.length > 0 &&
+      !workpapers.some((workpaper) => workpaper.id === selectedWorkpaperId)
+    ) {
       setSelectedWorkpaperId(workpapers[0].id);
     }
   }, [open, selectedWorkpaperId, workpapers]);
 
   const detailQuery = useQuery<VatWorkpaperDetail>({
-    queryKey: ['/api/firm/vat-workpapers/detail', selectedWorkpaperId],
-    queryFn: () => apiRequest('GET', `/api/firm/vat-workpapers/${selectedWorkpaperId}`),
+    queryKey: ["/api/firm/vat-workpapers/detail", selectedWorkpaperId],
+    queryFn: () => apiRequest("GET", `/api/firm/vat-workpapers/${selectedWorkpaperId}`),
     enabled: open && !!selectedWorkpaperId,
   });
 
   const createMutation = useMutation({
-    mutationFn: () => apiRequest('POST', '/api/firm/vat-workpapers', {
-      companyId: client?.id,
-      periodStart,
-      periodEnd,
-      dueDate: dueDate || null,
-    }),
+    mutationFn: () =>
+      apiRequest("POST", "/api/firm/vat-workpapers", {
+        companyId: client?.id,
+        periodStart,
+        periodEnd,
+        dueDate: dueDate || null,
+      }),
     onSuccess: (workpaper: VatWorkpaperSummary) => {
       setSelectedWorkpaperId(workpaper.id);
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers', client?.id] });
-      toast({ title: 'VAT workpaper ready' });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/vat-workpapers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/vat-workpapers", client?.id] });
+      toast({ title: "VAT workpaper ready" });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not create VAT workpaper', description: e?.message }),
+    onError: (e: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not create VAT workpaper",
+        description: e?.message,
+      }),
   });
 
   const invalidateWorkspace = () => {
-    queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers', client?.id] });
-    queryClient.invalidateQueries({ queryKey: ['/api/firm/vat-workpapers/detail', selectedWorkpaperId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/firm/vat-workpapers"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/firm/vat-workpapers", client?.id] });
+    queryClient.invalidateQueries({
+      queryKey: ["/api/firm/vat-workpapers/detail", selectedWorkpaperId],
+    });
   };
 
-  const rowPayload = (overrides?: Partial<Pick<VatWorkpaperRow, 'status' | 'sourceMethod'>>) => ({
+  const rowPayload = (overrides?: Partial<Pick<VatWorkpaperRow, "status" | "sourceMethod">>) => ({
     rowCategory: rowForm.rowCategory,
-    vat201Box: rowForm.rowCategory === 'manual_adjustment' ? rowForm.vat201Box : undefined,
+    vat201Box: rowForm.rowCategory === "manual_adjustment" ? rowForm.vat201Box : undefined,
     invoiceNumber: rowForm.invoiceNumber || null,
     documentDate: rowForm.documentDate || null,
     counterpartyName: rowForm.counterpartyName || null,
@@ -1936,91 +2377,110 @@ function VatWorkspaceDialog({
 
   const resetRowForm = () => {
     setEditingRowId(null);
-    setRowForm(form => ({
+    setRowForm((form) => ({
       ...form,
-      status: 'approved',
-      sourceMethod: 'manual',
-      invoiceNumber: '',
-      documentDate: '',
-      counterpartyName: '',
-      counterpartyTrn: '',
-      taxableAmount: '',
-      vatAmount: '',
-      adjustmentAmount: '',
-      grossAmount: '',
-      notes: '',
-      auditReason: '',
+      status: "approved",
+      sourceMethod: "manual",
+      invoiceNumber: "",
+      documentDate: "",
+      counterpartyName: "",
+      counterpartyTrn: "",
+      taxableAmount: "",
+      vatAmount: "",
+      adjustmentAmount: "",
+      grossAmount: "",
+      notes: "",
+      auditReason: "",
     }));
   };
 
   const editVatRow = (row: VatWorkpaperRow) => {
     setEditingRowId(row.id);
-    setWorkspaceTab('grid');
+    setWorkspaceTab("grid");
     setRowForm({
       rowCategory: row.rowCategory,
-      vat201Box: row.vat201Box || 'box1bDubaiAmount',
-      invoiceNumber: row.invoiceNumber ?? '',
+      vat201Box: row.vat201Box || "box1bDubaiAmount",
+      invoiceNumber: row.invoiceNumber ?? "",
       documentDate: inputDate(row.documentDate),
-      counterpartyName: row.counterpartyName ?? '',
-      counterpartyTrn: row.counterpartyTrn ?? '',
-      emirate: row.emirate ?? client?.emirate ?? 'dubai',
-      taxableAmount: String(row.taxableAmount ?? ''),
-      vatAmount: String(row.vatAmount ?? ''),
-      adjustmentAmount: String(row.adjustmentAmount ?? ''),
-      grossAmount: String(row.grossAmount ?? ''),
-      notes: row.notes ?? '',
-      auditReason: row.auditReason ?? '',
+      counterpartyName: row.counterpartyName ?? "",
+      counterpartyTrn: row.counterpartyTrn ?? "",
+      emirate: row.emirate ?? client?.emirate ?? "dubai",
+      taxableAmount: String(row.taxableAmount ?? ""),
+      vatAmount: String(row.vatAmount ?? ""),
+      adjustmentAmount: String(row.adjustmentAmount ?? ""),
+      grossAmount: String(row.grossAmount ?? ""),
+      notes: row.notes ?? "",
+      auditReason: row.auditReason ?? "",
       status: row.status,
       sourceMethod: row.sourceMethod,
     });
   };
 
   const addRowMutation = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows`, rowPayload({
-      status: 'approved',
-      sourceMethod: 'manual',
-    })),
+    mutationFn: () =>
+      apiRequest(
+        "POST",
+        `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows`,
+        rowPayload({
+          status: "approved",
+          sourceMethod: "manual",
+        })
+      ),
     onSuccess: () => {
       invalidateWorkspace();
       resetRowForm();
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not add VAT row', description: e?.message }),
+    onError: (e: any) =>
+      toast({ variant: "destructive", title: "Could not add VAT row", description: e?.message }),
   });
 
   const saveRowMutation = useMutation({
     mutationFn: () => {
-      if (!editingRowId) throw new Error('Choose a VAT row to update first');
-      return apiRequest('PATCH', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${editingRowId}`, rowPayload());
+      if (!editingRowId) throw new Error("Choose a VAT row to update first");
+      return apiRequest(
+        "PATCH",
+        `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${editingRowId}`,
+        rowPayload()
+      );
     },
     onSuccess: () => {
       invalidateWorkspace();
       resetRowForm();
-      toast({ title: 'VAT row updated' });
+      toast({ title: "VAT row updated" });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not update VAT row', description: e?.message }),
+    onError: (e: any) =>
+      toast({ variant: "destructive", title: "Could not update VAT row", description: e?.message }),
   });
 
   const pastePreviewRows = useMemo(
     () => parseVatPasteRows(pastedVatRows, rowForm.emirate),
-    [pastedVatRows, rowForm.emirate],
+    [pastedVatRows, rowForm.emirate]
   );
 
   const importRowsMutation = useMutation({
     mutationFn: async () => {
-      if (!selectedWorkpaperId) throw new Error('Create or select a VAT workpaper first');
+      if (!selectedWorkpaperId) throw new Error("Create or select a VAT workpaper first");
       const rowsToImport = parseVatPasteRows(pastedVatRows, rowForm.emirate);
-      if (rowsToImport.length === 0) throw new Error('Paste at least one VAT row');
+      if (rowsToImport.length === 0) throw new Error("Paste at least one VAT row");
       for (const row of rowsToImport) {
-        await apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows`, row);
+        await apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows`, row);
       }
       return rowsToImport.length;
     },
     onSuccess: (count: number) => {
       invalidateWorkspace();
-      setPastedVatRows('');
-      toast({ title: 'VAT rows imported', description: `${count} row${count === 1 ? '' : 's'} added as approved import rows.` });
+      setPastedVatRows("");
+      toast({
+        title: "VAT rows imported",
+        description: `${count} row${count === 1 ? "" : "s"} added as approved import rows.`,
+      });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not import VAT rows', description: e?.message }),
+    onError: (e: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not import VAT rows",
+        description: e?.message,
+      }),
   });
 
   const scanMutation = useMutation({
@@ -2032,21 +2492,25 @@ function VatWorkspaceDialog({
           }
         : null;
 
-      return apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/scan`, {
+      return apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/scan`, {
         attachment: {
-          fileName: evidenceFile?.name || (rowForm.invoiceNumber ? `${rowForm.invoiceNumber}.scan` : 'vat-evidence.scan'),
-          mimeType: evidenceFile?.type || 'application/octet-stream',
+          fileName:
+            evidenceFile?.name ||
+            (rowForm.invoiceNumber ? `${rowForm.invoiceNumber}.scan` : "vat-evidence.scan"),
+          mimeType: evidenceFile?.type || "application/octet-stream",
           fileDataBase64: uploadedEvidence?.fileDataBase64,
           extractedText: rowForm.notes || uploadedEvidence?.extractedText || null,
           extractionJson: {
-            source: evidenceFile ? 'uploaded_evidence' : 'manual_ocr_review',
+            source: evidenceFile ? "uploaded_evidence" : "manual_ocr_review",
             originalSize: evidenceFile?.size,
-            originalLastModified: evidenceFile ? new Date(evidenceFile.lastModified).toISOString() : undefined,
+            originalLastModified: evidenceFile
+              ? new Date(evidenceFile.lastModified).toISOString()
+              : undefined,
           },
         },
         draftRow: rowPayload({
-          status: 'draft',
-          sourceMethod: 'ocr',
+          status: "draft",
+          sourceMethod: "ocr",
         }),
       });
     },
@@ -2054,65 +2518,91 @@ function VatWorkspaceDialog({
       invalidateWorkspace();
       resetRowForm();
       setEvidenceFile(null);
-      setEvidenceInputKey(key => key + 1);
-      toast({ title: 'OCR draft row logged for review' });
+      setEvidenceInputKey((key) => key + 1);
+      toast({ title: "OCR draft row logged for review" });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not log OCR draft', description: e?.message }),
+    onError: (e: any) =>
+      toast({ variant: "destructive", title: "Could not log OCR draft", description: e?.message }),
   });
 
   const updateRowMutation = useMutation({
-    mutationFn: ({ rowId, status }: { rowId: string; status: 'approved' | 'excluded' }) =>
-      apiRequest('PATCH', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}`, { status }),
+    mutationFn: ({ rowId, status }: { rowId: string; status: "approved" | "excluded" }) =>
+      apiRequest("PATCH", `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}`, {
+        status,
+      }),
     onSuccess: invalidateWorkspace,
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not update VAT row', description: e?.message }),
+    onError: (e: any) =>
+      toast({ variant: "destructive", title: "Could not update VAT row", description: e?.message }),
   });
 
   const recalculateMutation = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/recalculate`),
+    mutationFn: () =>
+      apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/recalculate`),
     onSuccess: invalidateWorkspace,
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not recalculate VAT workpaper', description: e?.message }),
+    onError: (e: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not recalculate VAT workpaper",
+        description: e?.message,
+      }),
   });
 
   const generateMutation = useMutation({
-    mutationFn: () => apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/generate-return`),
+    mutationFn: () =>
+      apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/generate-return`),
     onSuccess: () => {
       invalidateWorkspace();
-      toast({ title: 'VAT return generated for review', description: 'No FTA submission was performed.' });
+      toast({
+        title: "VAT return generated for review",
+        description: "No FTA submission was performed.",
+      });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not generate VAT return', description: e?.message }),
+    onError: (e: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not generate VAT return",
+        description: e?.message,
+      }),
   });
 
   const detail = detailQuery.data;
   const rows = detail?.rows ?? [];
   const totals = detail?.totals ?? detail?.workpaper.totalsSnapshot ?? {};
-  const draftRows = rows.filter(row => row.status === 'draft');
-  const approvedRows = rows.filter(row => row.status === 'approved');
-  const excludedRows = rows.filter(row => row.status === 'excluded');
-  const sourceBackedRows = approvedRows.filter(row => row.sourceMethod !== 'manual' || row.invoiceNumber || row.counterpartyName);
+  const draftRows = rows.filter((row) => row.status === "draft");
+  const approvedRows = rows.filter((row) => row.status === "approved");
+  const excludedRows = rows.filter((row) => row.status === "excluded");
+  const sourceBackedRows = approvedRows.filter(
+    (row) => row.sourceMethod !== "manual" || row.invoiceNumber || row.counterpartyName
+  );
   const outputVat = Number(totals.box8TotalVat ?? 0);
   const inputVat = Number(totals.box11TotalVat ?? 0);
   const payableVat = Number(totals.box14PayableTax ?? 0);
   const attachments = detail?.attachments ?? [];
-  const selectedSummary = workpapers.find(workpaper => workpaper.id === selectedWorkpaperId);
+  const selectedSummary = workpapers.find((workpaper) => workpaper.id === selectedWorkpaperId);
 
   const downloadAttachment = async (attachment: VatWorkpaperAttachment) => {
     if (!selectedWorkpaperId || !attachment.filePath) {
       toast({
-        variant: 'destructive',
-        title: 'Evidence file is not downloadable',
-        description: 'This evidence record was logged before file storage was enabled.',
+        variant: "destructive",
+        title: "Evidence file is not downloadable",
+        description: "This evidence record was logged before file storage was enabled.",
       });
       return;
     }
 
     try {
-      const response = await fetch(apiUrl(`/api/firm/vat-workpapers/${selectedWorkpaperId}/attachments/${attachment.id}/download`), {
-        credentials: 'include',
-      });
+      const response = await fetch(
+        apiUrl(
+          `/api/firm/vat-workpapers/${selectedWorkpaperId}/attachments/${attachment.id}/download`
+        ),
+        {
+          credentials: "include",
+        }
+      );
       if (!response.ok) throw new Error(await response.text());
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
       link.download = attachment.fileName;
       document.body.appendChild(link);
@@ -2120,7 +2610,11 @@ function VatWorkspaceDialog({
       link.remove();
       URL.revokeObjectURL(url);
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Could not download evidence', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Could not download evidence",
+        description: error?.message,
+      });
     }
   };
 
@@ -2128,42 +2622,57 @@ function VatWorkspaceDialog({
 
   const approveAllDraftsMutation = useMutation({
     mutationFn: () =>
-      apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/bulk-status`, { to: 'approved' }),
+      apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/rows/bulk-status`, {
+        to: "approved",
+      }),
     onSuccess: (result: { updated: number }) => {
       invalidateWorkspace();
       toast({
-        title: result.updated > 0 ? `${result.updated} draft rows approved` : 'No draft rows to approve',
-        description: result.updated > 0 ? 'Totals recalculated — approved rows now flow into the VAT 201.' : undefined,
+        title:
+          result.updated > 0 ? `${result.updated} draft rows approved` : "No draft rows to approve",
+        description:
+          result.updated > 0
+            ? "Totals recalculated — approved rows now flow into the VAT 201."
+            : undefined,
       });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Bulk approve failed', description: e?.message }),
+    onError: (e: any) =>
+      toast({ variant: "destructive", title: "Bulk approve failed", description: e?.message }),
   });
 
   const pullFromBooksMutation = useMutation({
     mutationFn: () =>
-      apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/pull-from-books`),
+      apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/pull-from-books`),
     onSuccess: (result: { created: number }) => {
       invalidateWorkspace();
       toast({
-        title: result.created > 0 ? `${result.created} draft rows pulled from books` : 'Books already up to date',
+        title:
+          result.created > 0
+            ? `${result.created} draft rows pulled from books`
+            : "Books already up to date",
         description:
           result.created > 0
-            ? 'Issued invoices and posted receipts for the period are in as drafts — review and approve.'
-            : 'Every document in this period is already on the workpaper.',
+            ? "Issued invoices and posted receipts for the period are in as drafts — review and approve."
+            : "Every document in this period is already on the workpaper.",
       });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not pull from books', description: e?.message }),
+    onError: (e: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not pull from books",
+        description: e?.message,
+      }),
   });
 
   const importFileMutation = useMutation({
     mutationFn: async (file: File) => {
       const fileDataBase64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
-        reader.onerror = () => reject(new Error('Could not read the file'));
+        reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+        reader.onerror = () => reject(new Error("Could not read the file"));
         reader.readAsDataURL(file);
       });
-      return apiRequest('POST', `/api/firm/vat-workpapers/${selectedWorkpaperId}/import-file`, {
+      return apiRequest("POST", `/api/firm/vat-workpapers/${selectedWorkpaperId}/import-file`, {
         fileName: file.name,
         fileDataBase64,
         defaultEmirate: rowForm.emirate,
@@ -2173,24 +2682,35 @@ function VatWorkspaceDialog({
       invalidateWorkspace();
       toast({ title: `${result.created} rows imported from Excel` });
     },
-    onError: (e: any) => toast({ variant: 'destructive', title: 'Could not import workbook', description: e?.message }),
+    onError: (e: any) =>
+      toast({
+        variant: "destructive",
+        title: "Could not import workbook",
+        description: e?.message,
+      }),
   });
 
   const downloadTemplate = async () => {
     try {
-      const response = await fetch(apiUrl('/api/firm/vat-workpapers/template'), { credentials: 'include' });
+      const response = await fetch(apiUrl("/api/firm/vat-workpapers/template"), {
+        credentials: "include",
+      });
       if (!response.ok) throw new Error(await response.text());
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
-      link.download = 'muhasib-vat-workpaper-template.xlsx';
+      link.download = "muhasib-vat-workpaper-template.xlsx";
       document.body.appendChild(link);
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Could not download template', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Could not download template",
+        description: error?.message,
+      });
     }
   };
 
@@ -2199,15 +2719,18 @@ function VatWorkspaceDialog({
     if (!selectedWorkpaperId) return;
     setExportingWorkbook(true);
     try {
-      const response = await fetch(apiUrl(`/api/firm/vat-workpapers/${selectedWorkpaperId}/export`), {
-        credentials: 'include',
-      });
+      const response = await fetch(
+        apiUrl(`/api/firm/vat-workpapers/${selectedWorkpaperId}/export`),
+        {
+          credentials: "include",
+        }
+      );
       if (!response.ok) throw new Error(await response.text());
       const blob = await response.blob();
-      const disposition = response.headers.get('Content-Disposition') ?? '';
-      const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? 'vat-workpaper.xlsx';
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const filename = disposition.match(/filename="([^"]+)"/)?.[1] ?? "vat-workpaper.xlsx";
       const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = url;
       link.download = filename;
       document.body.appendChild(link);
@@ -2215,11 +2738,15 @@ function VatWorkspaceDialog({
       link.remove();
       URL.revokeObjectURL(url);
       toast({
-        title: 'Workpaper exported',
-        description: 'Excel copy saved — grid plus copy-ready VAT 201 sheet.',
+        title: "Workpaper exported",
+        description: "Excel copy saved — grid plus copy-ready VAT 201 sheet.",
       });
     } catch (error: any) {
-      toast({ variant: 'destructive', title: 'Could not export workpaper', description: error?.message });
+      toast({
+        variant: "destructive",
+        title: "Could not export workpaper",
+        description: error?.message,
+      });
     } finally {
       setExportingWorkbook(false);
     }
@@ -2229,9 +2756,10 @@ function VatWorkspaceDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[96vw] w-[96vw] max-h-[92vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{client?.name ?? 'VAT Submission Workspace'}</DialogTitle>
+          <DialogTitle>{client?.name ?? "VAT Submission Workspace"}</DialogTitle>
           <DialogDescription>
-            Bookkeeper VAT workbook for invoice entry, scanned evidence, draft OCR review, VAT 201 totals, and copy-paste FTA filing figures. No FTA submission happens here.
+            Bookkeeper VAT workbook for invoice entry, scanned evidence, draft OCR review, VAT 201
+            totals, and copy-paste FTA filing figures. No FTA submission happens here.
           </DialogDescription>
         </DialogHeader>
 
@@ -2240,26 +2768,35 @@ function VatWorkspaceDialog({
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
               <div className="grid gap-1">
                 <Label>Period start</Label>
-                <Input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} />
+                <Input
+                  type="date"
+                  value={periodStart}
+                  onChange={(e) => setPeriodStart(e.target.value)}
+                />
               </div>
               <div className="grid gap-1">
                 <Label>Period end</Label>
-                <Input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} />
+                <Input
+                  type="date"
+                  value={periodEnd}
+                  onChange={(e) => setPeriodEnd(e.target.value)}
+                />
               </div>
               <div className="grid gap-1">
                 <Label>Due date</Label>
-                <Input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               </div>
               <div className="grid gap-1">
                 <Label>Workpaper</Label>
-                <Select value={selectedWorkpaperId ?? ''} onValueChange={setSelectedWorkpaperId}>
+                <Select value={selectedWorkpaperId ?? ""} onValueChange={setSelectedWorkpaperId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select workpaper" />
                   </SelectTrigger>
                   <SelectContent>
-                    {workpapers.map(workpaper => (
+                    {workpapers.map((workpaper) => (
                       <SelectItem key={workpaper.id} value={workpaper.id}>
-                        {formatPeriod(workpaper.periodStart, workpaper.periodEnd)} · {workpaper.status}
+                        {formatPeriod(workpaper.periodStart, workpaper.periodEnd)} ·{" "}
+                        {workpaper.status}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2267,11 +2804,18 @@ function VatWorkspaceDialog({
               </div>
             </div>
             <div className="flex items-end gap-2">
-              <Button onClick={() => createMutation.mutate()} disabled={!client || !periodStart || !periodEnd || createMutation.isPending}>
+              <Button
+                onClick={() => createMutation.mutate()}
+                disabled={!client || !periodStart || !periodEnd || createMutation.isPending}
+              >
                 <Plus className="w-4 h-4 mr-2" />
                 Create/Open
               </Button>
-              <Button variant="outline" onClick={() => recalculateMutation.mutate()} disabled={!selectedWorkpaperId || recalculateMutation.isPending}>
+              <Button
+                variant="outline"
+                onClick={() => recalculateMutation.mutate()}
+                disabled={!selectedWorkpaperId || recalculateMutation.isPending}
+              >
                 <RefreshCw className="w-4 h-4" />
               </Button>
               <Button
@@ -2281,7 +2825,7 @@ function VatWorkspaceDialog({
                 data-testid="button-export-workpaper"
               >
                 <Download className="w-4 h-4 mr-2" />
-                {exportingWorkbook ? 'Exporting…' : 'Excel'}
+                {exportingWorkbook ? "Exporting…" : "Excel"}
               </Button>
               <Button
                 variant="outline"
@@ -2290,7 +2834,7 @@ function VatWorkspaceDialog({
                 data-testid="button-pull-from-books"
               >
                 <BookOpen className="w-4 h-4 mr-2" />
-                {pullFromBooksMutation.isPending ? 'Pulling…' : 'Pull from books'}
+                {pullFromBooksMutation.isPending ? "Pulling…" : "Pull from books"}
               </Button>
             </div>
           </div>
@@ -2300,7 +2844,9 @@ function VatWorkspaceDialog({
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2">
                 <div className="rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Status</p>
-                  <p className="font-semibold">{detail?.workpaper.status ?? selectedSummary?.status}</p>
+                  <p className="font-semibold">
+                    {detail?.workpaper.status ?? selectedSummary?.status}
+                  </p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Approved rows</p>
@@ -2309,7 +2855,9 @@ function VatWorkspaceDialog({
                 <div className="rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Draft / excluded</p>
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold">{draftRows.length} / {excludedRows.length}</p>
+                    <p className="font-semibold">
+                      {draftRows.length} / {excludedRows.length}
+                    </p>
                     {draftRows.length > 0 && (
                       <Button
                         size="sm"
@@ -2331,7 +2879,9 @@ function VatWorkspaceDialog({
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Output / input VAT</p>
-                  <p className="font-semibold">{formatAed(outputVat)} / {formatAed(inputVat)}</p>
+                  <p className="font-semibold">
+                    {formatAed(outputVat)} / {formatAed(inputVat)}
+                  </p>
                 </div>
                 <div className="rounded-md border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Net payable</p>
@@ -2353,9 +2903,14 @@ function VatWorkspaceDialog({
                       <div className="flex flex-col gap-2 border-b bg-muted/30 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="font-medium">Invoice and bill entry grid</p>
-                          <p className="text-xs text-muted-foreground">Edit rows, approve drafts, exclude mistakes, then review totals in VAT 201 Review.</p>
+                          <p className="text-xs text-muted-foreground">
+                            Edit rows, approve drafts, exclude mistakes, then review totals in VAT
+                            201 Review.
+                          </p>
                         </div>
-                        <Badge variant="outline">{rows.length} row{rows.length === 1 ? '' : 's'}</Badge>
+                        <Badge variant="outline">
+                          {rows.length} row{rows.length === 1 ? "" : "s"}
+                        </Badge>
                       </div>
                       <div className="overflow-x-auto">
                         <Table>
@@ -2378,55 +2933,146 @@ function VatWorkspaceDialog({
                           <TableBody>
                             <TableRow className="bg-background">
                               <TableCell>
-                                <Badge variant={editingRowId ? 'secondary' : 'outline'}>{editingRowId ? 'editing' : 'new row'}</Badge>
+                                <Badge variant={editingRowId ? "secondary" : "outline"}>
+                                  {editingRowId ? "editing" : "new row"}
+                                </Badge>
                               </TableCell>
                               <TableCell>
-                                <Input className="h-8 min-w-32" placeholder="INV-1001" value={rowForm.invoiceNumber} onChange={e => setRowForm(form => ({ ...form, invoiceNumber: e.target.value }))} />
+                                <Input
+                                  className="h-8 min-w-32"
+                                  placeholder="INV-1001"
+                                  value={rowForm.invoiceNumber}
+                                  onChange={(e) =>
+                                    setRowForm((form) => ({
+                                      ...form,
+                                      invoiceNumber: e.target.value,
+                                    }))
+                                  }
+                                />
                               </TableCell>
                               <TableCell>
-                                <Input className="h-8 min-w-32" type="date" value={rowForm.documentDate} onChange={e => setRowForm(form => ({ ...form, documentDate: e.target.value }))} />
+                                <Input
+                                  className="h-8 min-w-32"
+                                  type="date"
+                                  value={rowForm.documentDate}
+                                  onChange={(e) =>
+                                    setRowForm((form) => ({
+                                      ...form,
+                                      documentDate: e.target.value,
+                                    }))
+                                  }
+                                />
                               </TableCell>
                               <TableCell>
-                                <Input className="h-8 min-w-48" placeholder="Customer / vendor" value={rowForm.counterpartyName} onChange={e => setRowForm(form => ({ ...form, counterpartyName: e.target.value }))} />
+                                <Input
+                                  className="h-8 min-w-48"
+                                  placeholder="Customer / vendor"
+                                  value={rowForm.counterpartyName}
+                                  onChange={(e) =>
+                                    setRowForm((form) => ({
+                                      ...form,
+                                      counterpartyName: e.target.value,
+                                    }))
+                                  }
+                                />
                               </TableCell>
                               <TableCell>
-                                <Input className="h-8 min-w-32" placeholder="TRN" value={rowForm.counterpartyTrn} onChange={e => setRowForm(form => ({ ...form, counterpartyTrn: e.target.value }))} />
+                                <Input
+                                  className="h-8 min-w-32"
+                                  placeholder="TRN"
+                                  value={rowForm.counterpartyTrn}
+                                  onChange={(e) =>
+                                    setRowForm((form) => ({
+                                      ...form,
+                                      counterpartyTrn: e.target.value,
+                                    }))
+                                  }
+                                />
                               </TableCell>
                               <TableCell>
-                                <Select value={rowForm.rowCategory} onValueChange={value => setRowForm(form => ({ ...form, rowCategory: value as VatRowCategory }))}>
+                                <Select
+                                  value={rowForm.rowCategory}
+                                  onValueChange={(value) =>
+                                    setRowForm((form) => ({
+                                      ...form,
+                                      rowCategory: value as VatRowCategory,
+                                    }))
+                                  }
+                                >
                                   <SelectTrigger className="h-8 min-w-40">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {vatRowCategories.map(category => (
-                                      <SelectItem key={category.value} value={category.value}>{category.label}</SelectItem>
+                                    {vatRowCategories.map((category) => (
+                                      <SelectItem key={category.value} value={category.value}>
+                                        {category.label}
+                                      </SelectItem>
                                     ))}
                                   </SelectContent>
                                 </Select>
                               </TableCell>
                               <TableCell>
-                                <Select value={rowForm.emirate} onValueChange={value => setRowForm(form => ({ ...form, emirate: value }))}>
+                                <Select
+                                  value={rowForm.emirate}
+                                  onValueChange={(value) =>
+                                    setRowForm((form) => ({ ...form, emirate: value }))
+                                  }
+                                >
                                   <SelectTrigger className="h-8 min-w-32">
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {vatEmirates.map(emirate => (
-                                      <SelectItem key={emirate.value} value={emirate.value}>{emirate.label}</SelectItem>
+                                    {vatEmirates.map((emirate) => (
+                                      <SelectItem key={emirate.value} value={emirate.value}>
+                                        {emirate.label}
+                                      </SelectItem>
                                     ))}
                                   </SelectContent>
                                 </Select>
                               </TableCell>
                               <TableCell>
-                                <Input className="h-8 min-w-24 text-right" placeholder="0.00" value={rowForm.taxableAmount} onChange={e => setRowForm(form => ({ ...form, taxableAmount: e.target.value }))} />
+                                <Input
+                                  className="h-8 min-w-24 text-right"
+                                  placeholder="0.00"
+                                  value={rowForm.taxableAmount}
+                                  onChange={(e) =>
+                                    setRowForm((form) => ({
+                                      ...form,
+                                      taxableAmount: e.target.value,
+                                    }))
+                                  }
+                                />
                               </TableCell>
                               <TableCell>
-                                <Input className="h-8 min-w-24 text-right" placeholder="0.00" value={rowForm.vatAmount} onChange={e => setRowForm(form => ({ ...form, vatAmount: e.target.value }))} />
+                                <Input
+                                  className="h-8 min-w-24 text-right"
+                                  placeholder="0.00"
+                                  value={rowForm.vatAmount}
+                                  onChange={(e) =>
+                                    setRowForm((form) => ({ ...form, vatAmount: e.target.value }))
+                                  }
+                                />
                               </TableCell>
                               <TableCell>
-                                <Input className="h-8 min-w-24 text-right" placeholder="0.00" value={rowForm.grossAmount} onChange={e => setRowForm(form => ({ ...form, grossAmount: e.target.value }))} />
+                                <Input
+                                  className="h-8 min-w-24 text-right"
+                                  placeholder="0.00"
+                                  value={rowForm.grossAmount}
+                                  onChange={(e) =>
+                                    setRowForm((form) => ({ ...form, grossAmount: e.target.value }))
+                                  }
+                                />
                               </TableCell>
                               <TableCell>
-                                <Select value={rowForm.status} onValueChange={value => setRowForm(form => ({ ...form, status: value as VatWorkpaperRow['status'] }))}>
+                                <Select
+                                  value={rowForm.status}
+                                  onValueChange={(value) =>
+                                    setRowForm((form) => ({
+                                      ...form,
+                                      status: value as VatWorkpaperRow["status"],
+                                    }))
+                                  }
+                                >
                                   <SelectTrigger className="h-8 min-w-28">
                                     <SelectValue />
                                   </SelectTrigger>
@@ -2440,11 +3086,19 @@ function VatWorkspaceDialog({
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-1">
                                   {editingRowId ? (
-                                    <Button size="sm" onClick={() => saveRowMutation.mutate()} disabled={!selectedWorkpaperId || saveRowMutation.isPending}>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => saveRowMutation.mutate()}
+                                      disabled={!selectedWorkpaperId || saveRowMutation.isPending}
+                                    >
                                       Save
                                     </Button>
                                   ) : (
-                                    <Button size="sm" onClick={() => addRowMutation.mutate()} disabled={!selectedWorkpaperId || addRowMutation.isPending}>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => addRowMutation.mutate()}
+                                      disabled={!selectedWorkpaperId || addRowMutation.isPending}
+                                    >
                                       Add
                                     </Button>
                                   )}
@@ -2456,48 +3110,88 @@ function VatWorkspaceDialog({
                             </TableRow>
                             {rows.length === 0 ? (
                               <TableRow>
-                                <TableCell colSpan={12} className="text-sm text-muted-foreground text-center py-8">
-                                  No VAT rows yet. Add invoice lines manually, paste rows from Excel, or upload evidence as OCR drafts.
+                                <TableCell
+                                  colSpan={12}
+                                  className="text-sm text-muted-foreground text-center py-8"
+                                >
+                                  No VAT rows yet. Add invoice lines manually, paste rows from
+                                  Excel, or upload evidence as OCR drafts.
                                 </TableCell>
                               </TableRow>
                             ) : (
-                              rows.map(row => (
-                                <TableRow key={row.id} className={editingRowId === row.id ? 'bg-primary/5' : undefined}>
+                              rows.map((row) => (
+                                <TableRow
+                                  key={row.id}
+                                  className={editingRowId === row.id ? "bg-primary/5" : undefined}
+                                >
                                   <TableCell>
-                                    <Badge variant={row.sourceMethod === 'ocr' ? 'secondary' : 'outline'}>{row.sourceMethod}</Badge>
+                                    <Badge
+                                      variant={row.sourceMethod === "ocr" ? "secondary" : "outline"}
+                                    >
+                                      {row.sourceMethod}
+                                    </Badge>
                                   </TableCell>
                                   <TableCell>
-                                    <p className="font-medium">{row.invoiceNumber || '—'}</p>
+                                    <p className="font-medium">{row.invoiceNumber || "—"}</p>
                                     <p className="text-xs text-muted-foreground">{row.vat201Box}</p>
                                   </TableCell>
                                   <TableCell>{formatDateShort(row.documentDate)}</TableCell>
                                   <TableCell>
-                                    <p className="max-w-56 truncate">{row.counterpartyName || '—'}</p>
+                                    <p className="max-w-56 truncate">
+                                      {row.counterpartyName || "—"}
+                                    </p>
                                   </TableCell>
-                                  <TableCell className="text-xs">{row.counterpartyTrn || '—'}</TableCell>
-                                  <TableCell className="text-sm">{vatRowCategoryLabel(row.rowCategory)}</TableCell>
-                                  <TableCell className="text-sm">{row.emirate || '—'}</TableCell>
-                                  <TableCell className="text-right">{formatAed(Number(row.taxableAmount ?? 0))}</TableCell>
-                                  <TableCell className="text-right">{formatAed(Number(row.vatAmount ?? 0))}</TableCell>
-                                  <TableCell className="text-right">{formatAed(Number(row.grossAmount ?? 0))}</TableCell>
+                                  <TableCell className="text-xs">
+                                    {row.counterpartyTrn || "—"}
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {vatRowCategoryLabel(row.rowCategory)}
+                                  </TableCell>
+                                  <TableCell className="text-sm">{row.emirate || "—"}</TableCell>
+                                  <TableCell className="text-right">
+                                    {formatAed(Number(row.taxableAmount ?? 0))}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {formatAed(Number(row.vatAmount ?? 0))}
+                                  </TableCell>
+                                  <TableCell className="text-right">
+                                    {formatAed(Number(row.grossAmount ?? 0))}
+                                  </TableCell>
                                   <TableCell>
-                                    <Badge variant={row.status === 'approved' ? 'default' : row.status === 'excluded' ? 'outline' : 'secondary'}>
+                                    <Badge
+                                      variant={
+                                        row.status === "approved"
+                                          ? "default"
+                                          : row.status === "excluded"
+                                            ? "outline"
+                                            : "secondary"
+                                      }
+                                    >
                                       {row.status}
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="text-right">
                                     <div className="flex justify-end gap-1">
-                                      <Button size="sm" variant="outline" onClick={() => editVatRow(row)}>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => editVatRow(row)}
+                                      >
                                         Edit
                                       </Button>
-                                      {row.status === 'draft' ? (
+                                      {row.status === "draft" ? (
                                         <>
                                           <Button
                                             size="sm"
                                             variant="outline"
-                                            aria-label={`Approve ${row.invoiceNumber || 'draft VAT row'}`}
+                                            aria-label={`Approve ${row.invoiceNumber || "draft VAT row"}`}
                                             title="Approve draft VAT row"
-                                            onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'approved' })}
+                                            onClick={() =>
+                                              updateRowMutation.mutate({
+                                                rowId: row.id,
+                                                status: "approved",
+                                              })
+                                            }
                                           >
                                             <Check className="w-3.5 h-3.5" />
                                             <span className="sr-only">Approve draft row</span>
@@ -2505,17 +3199,32 @@ function VatWorkspaceDialog({
                                           <Button
                                             size="sm"
                                             variant="ghost"
-                                            aria-label={`Exclude ${row.invoiceNumber || 'draft VAT row'}`}
+                                            aria-label={`Exclude ${row.invoiceNumber || "draft VAT row"}`}
                                             title="Exclude draft VAT row"
-                                            onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'excluded' })}
+                                            onClick={() =>
+                                              updateRowMutation.mutate({
+                                                rowId: row.id,
+                                                status: "excluded",
+                                              })
+                                            }
                                           >
                                             <XCircle className="w-3.5 h-3.5" />
                                             <span className="sr-only">Exclude draft row</span>
                                           </Button>
                                         </>
                                       ) : (
-                                        <Button size="sm" variant="ghost" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: row.status === 'approved' ? 'excluded' : 'approved' })}>
-                                          {row.status === 'approved' ? 'Exclude' : 'Approve'}
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() =>
+                                            updateRowMutation.mutate({
+                                              rowId: row.id,
+                                              status:
+                                                row.status === "approved" ? "excluded" : "approved",
+                                            })
+                                          }
+                                        >
+                                          {row.status === "approved" ? "Exclude" : "Approve"}
                                         </Button>
                                       )}
                                     </div>
@@ -2532,14 +3241,43 @@ function VatWorkspaceDialog({
                       <div className="rounded-md border p-3 space-y-3">
                         <div>
                           <p className="font-medium">Row notes and override reason</p>
-                          <p className="text-xs text-muted-foreground">Manual adjustments must explain the audit reason before they can be saved.</p>
+                          <p className="text-xs text-muted-foreground">
+                            Manual adjustments must explain the audit reason before they can be
+                            saved.
+                          </p>
                         </div>
-                        {rowForm.rowCategory === 'manual_adjustment' && (
-                          <Input placeholder="VAT 201 box, e.g. box9ExpensesVat" value={rowForm.vat201Box} onChange={e => setRowForm(form => ({ ...form, vat201Box: e.target.value }))} />
+                        {rowForm.rowCategory === "manual_adjustment" && (
+                          <Input
+                            placeholder="VAT 201 box, e.g. box9ExpensesVat"
+                            value={rowForm.vat201Box}
+                            onChange={(e) =>
+                              setRowForm((form) => ({ ...form, vat201Box: e.target.value }))
+                            }
+                          />
                         )}
-                        <Input placeholder="Adjustment amount" value={rowForm.adjustmentAmount} onChange={e => setRowForm(form => ({ ...form, adjustmentAmount: e.target.value }))} />
-                        <Textarea placeholder="Notes / OCR text" value={rowForm.notes} onChange={e => setRowForm(form => ({ ...form, notes: e.target.value }))} className="min-h-24" />
-                        <Textarea placeholder="Audit reason for overrides or manual adjustments" value={rowForm.auditReason} onChange={e => setRowForm(form => ({ ...form, auditReason: e.target.value }))} className="min-h-20" />
+                        <Input
+                          placeholder="Adjustment amount"
+                          value={rowForm.adjustmentAmount}
+                          onChange={(e) =>
+                            setRowForm((form) => ({ ...form, adjustmentAmount: e.target.value }))
+                          }
+                        />
+                        <Textarea
+                          placeholder="Notes / OCR text"
+                          value={rowForm.notes}
+                          onChange={(e) =>
+                            setRowForm((form) => ({ ...form, notes: e.target.value }))
+                          }
+                          className="min-h-24"
+                        />
+                        <Textarea
+                          placeholder="Audit reason for overrides or manual adjustments"
+                          value={rowForm.auditReason}
+                          onChange={(e) =>
+                            setRowForm((form) => ({ ...form, auditReason: e.target.value }))
+                          }
+                          className="min-h-20"
+                        />
                       </div>
 
                       <div className="rounded-md border p-3 space-y-3">
@@ -2547,29 +3285,46 @@ function VatWorkspaceDialog({
                           <div>
                             <p className="font-medium">Paste rows from Excel</p>
                             <p className="text-xs text-muted-foreground">
-                              Headers are supported: category, invoice number, date, customer/vendor, TRN, emirate, taxable amount, VAT amount, gross amount, notes.
+                              Headers are supported: category, invoice number, date,
+                              customer/vendor, TRN, emirate, taxable amount, VAT amount, gross
+                              amount, notes.
                             </p>
                           </div>
                           <Badge variant="outline">{pastePreviewRows.length} parsed</Badge>
                         </div>
                         <Textarea
                           value={pastedVatRows}
-                          onChange={e => setPastedVatRows(e.target.value)}
-                          placeholder={'category\tinvoice number\tdate\tcustomer/vendor\tTRN\temirate\ttaxable amount\tVAT amount\tgross amount\tnotes\nstandard_expense\tBILL-1001\t2026-05-18\tSupplier LLC\t100123456700003\tdubai\t1000\t50\t1050\tMay receipt'}
+                          onChange={(e) => setPastedVatRows(e.target.value)}
+                          placeholder={
+                            "category\tinvoice number\tdate\tcustomer/vendor\tTRN\temirate\ttaxable amount\tVAT amount\tgross amount\tnotes\nstandard_expense\tBILL-1001\t2026-05-18\tSupplier LLC\t100123456700003\tdubai\t1000\t50\t1050\tMay receipt"
+                          }
                           className="min-h-36 font-mono text-xs"
                           data-testid="textarea-vat-paste-rows"
                         />
                         {pastePreviewRows.length > 0 && (
                           <div className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
-                            Preview: {pastePreviewRows.slice(0, 3).map(row => `${row.invoiceNumber || 'No invoice'} ${formatAed(row.taxableAmount)} + VAT ${formatAed(row.vatAmount)}`).join(' · ')}
-                            {pastePreviewRows.length > 3 ? ` · +${pastePreviewRows.length - 3} more` : ''}
+                            Preview:{" "}
+                            {pastePreviewRows
+                              .slice(0, 3)
+                              .map(
+                                (row) =>
+                                  `${row.invoiceNumber || "No invoice"} ${formatAed(row.taxableAmount)} + VAT ${formatAed(row.vatAmount)}`
+                              )
+                              .join(" · ")}
+                            {pastePreviewRows.length > 3
+                              ? ` · +${pastePreviewRows.length - 3} more`
+                              : ""}
                           </div>
                         )}
                         <div className="flex items-center gap-2">
                           <Button
                             size="sm"
                             onClick={() => importRowsMutation.mutate()}
-                            disabled={!selectedWorkpaperId || pastePreviewRows.length === 0 || importRowsMutation.isPending}
+                            disabled={
+                              !selectedWorkpaperId ||
+                              pastePreviewRows.length === 0 ||
+                              importRowsMutation.isPending
+                            }
                           >
                             <Upload className="w-4 h-4 mr-2" />
                             Add pasted rows
@@ -2592,7 +3347,7 @@ function VatWorkspaceDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) importFileMutation.mutate(file);
-                              e.target.value = '';
+                              e.target.value = "";
                             }}
                           />
                           <Button
@@ -2603,7 +3358,7 @@ function VatWorkspaceDialog({
                             data-testid="button-vat-import-file"
                           >
                             <Upload className="w-4 h-4 mr-2" />
-                            {importFileMutation.isPending ? 'Importing…' : 'Import .xlsx'}
+                            {importFileMutation.isPending ? "Importing…" : "Import .xlsx"}
                           </Button>
                         </div>
                       </div>
@@ -2617,10 +3372,14 @@ function VatWorkspaceDialog({
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="font-medium">Upload invoice or receipt evidence</p>
-                          <p className="text-xs text-muted-foreground">Uploaded files create draft OCR rows. They do not count until approved.</p>
+                          <p className="text-xs text-muted-foreground">
+                            Uploaded files create draft OCR rows. They do not count until approved.
+                          </p>
                         </div>
                         {evidenceFile ? (
-                          <Badge variant="secondary">{(evidenceFile.size / 1024).toFixed(1)} KB</Badge>
+                          <Badge variant="secondary">
+                            {(evidenceFile.size / 1024).toFixed(1)} KB
+                          </Badge>
                         ) : null}
                       </div>
                       <Input
@@ -2628,7 +3387,7 @@ function VatWorkspaceDialog({
                         id="vat-evidence-upload"
                         type="file"
                         accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,text/plain,text/csv,application/json"
-                        onChange={event => setEvidenceFile(event.target.files?.[0] ?? null)}
+                        onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)}
                         data-testid="input-vat-evidence-upload"
                       />
                       {evidenceFile ? (
@@ -2639,14 +3398,19 @@ function VatWorkspaceDialog({
                             variant="ghost"
                             onClick={() => {
                               setEvidenceFile(null);
-                              setEvidenceInputKey(key => key + 1);
+                              setEvidenceInputKey((key) => key + 1);
                             }}
                           >
                             Remove
                           </Button>
                         </div>
                       ) : null}
-                      <Button size="sm" variant="outline" onClick={() => scanMutation.mutate()} disabled={!selectedWorkpaperId || scanMutation.isPending}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => scanMutation.mutate()}
+                        disabled={!selectedWorkpaperId || scanMutation.isPending}
+                      >
                         <ScanLine className="w-4 h-4 mr-2" />
                         Log OCR Draft
                       </Button>
@@ -2655,7 +3419,10 @@ function VatWorkspaceDialog({
                     <div className="rounded-md border overflow-hidden">
                       <div className="border-b bg-muted/30 px-3 py-2">
                         <p className="font-medium">Draft review queue</p>
-                        <p className="text-xs text-muted-foreground">Approve only after the bookkeeper has checked the scanned values against evidence.</p>
+                        <p className="text-xs text-muted-foreground">
+                          Approve only after the bookkeeper has checked the scanned values against
+                          evidence.
+                        </p>
                       </div>
                       <Table>
                         <TableHeader>
@@ -2670,22 +3437,53 @@ function VatWorkspaceDialog({
                         <TableBody>
                           {draftRows.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={5} className="text-sm text-muted-foreground text-center py-8">No OCR drafts waiting for review.</TableCell>
+                              <TableCell
+                                colSpan={5}
+                                className="text-sm text-muted-foreground text-center py-8"
+                              >
+                                No OCR drafts waiting for review.
+                              </TableCell>
                             </TableRow>
                           ) : (
-                            draftRows.map(row => (
+                            draftRows.map((row) => (
                               <TableRow key={row.id}>
-                                <TableCell>{row.invoiceNumber || '—'}</TableCell>
-                                <TableCell>{row.counterpartyName || '—'}</TableCell>
+                                <TableCell>{row.invoiceNumber || "—"}</TableCell>
+                                <TableCell>{row.counterpartyName || "—"}</TableCell>
                                 <TableCell>{vatRowCategoryLabel(row.rowCategory)}</TableCell>
-                                <TableCell className="text-right">{formatAed(Number(row.vatAmount ?? 0))}</TableCell>
+                                <TableCell className="text-right">
+                                  {formatAed(Number(row.vatAmount ?? 0))}
+                                </TableCell>
                                 <TableCell className="text-right">
                                   <div className="flex justify-end gap-1">
-                                    <Button size="sm" variant="outline" onClick={() => editVatRow(row)}>Edit</Button>
-                                    <Button size="sm" variant="outline" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'approved' })}>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => editVatRow(row)}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() =>
+                                        updateRowMutation.mutate({
+                                          rowId: row.id,
+                                          status: "approved",
+                                        })
+                                      }
+                                    >
                                       <Check className="w-3.5 h-3.5" />
                                     </Button>
-                                    <Button size="sm" variant="ghost" onClick={() => updateRowMutation.mutate({ rowId: row.id, status: 'excluded' })}>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() =>
+                                        updateRowMutation.mutate({
+                                          rowId: row.id,
+                                          status: "excluded",
+                                        })
+                                      }
+                                    >
                                       <XCircle className="w-3.5 h-3.5" />
                                     </Button>
                                   </div>
@@ -2704,21 +3502,33 @@ function VatWorkspaceDialog({
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <p className="font-medium">FTA VAT 201 copy fields</p>
-                        <p className="text-xs text-muted-foreground">Approved rows are aggregated below. Copy each value into the FTA portal manually; this does not submit to FTA.</p>
+                        <p className="text-xs text-muted-foreground">
+                          Approved rows are aggregated below. Copy each value into the FTA portal
+                          manually; this does not submit to FTA.
+                        </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" onClick={() => recalculateMutation.mutate()} disabled={!selectedWorkpaperId || recalculateMutation.isPending}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => recalculateMutation.mutate()}
+                          disabled={!selectedWorkpaperId || recalculateMutation.isPending}
+                        >
                           <RefreshCw className="w-4 h-4 mr-2" />
                           Recalculate
                         </Button>
-                        <Button size="sm" onClick={() => generateMutation.mutate()} disabled={!selectedWorkpaperId || generateMutation.isPending}>
+                        <Button
+                          size="sm"
+                          onClick={() => generateMutation.mutate()}
+                          disabled={!selectedWorkpaperId || generateMutation.isPending}
+                        >
                           <FileText className="w-4 h-4 mr-2" />
                           Generate Return
                         </Button>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                      {vat201CopyGroups.map(group => (
+                      {vat201CopyGroups.map((group) => (
                         <div key={group.title} className="rounded-md border bg-background p-3">
                           <p className="text-sm font-semibold mb-2">{group.title}</p>
                           <div className="grid gap-2">
@@ -2751,19 +3561,32 @@ function VatWorkspaceDialog({
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-medium">Evidence files</p>
-                        <p className="text-xs text-muted-foreground">Uploaded invoices and receipts stay linked to VAT rows for refund support and later review.</p>
+                        <p className="text-xs text-muted-foreground">
+                          Uploaded invoices and receipts stay linked to VAT rows for refund support
+                          and later review.
+                        </p>
                       </div>
-                      <Badge variant="outline">{attachments.length} file{attachments.length === 1 ? '' : 's'}</Badge>
+                      <Badge variant="outline">
+                        {attachments.length} file{attachments.length === 1 ? "" : "s"}
+                      </Badge>
                     </div>
                     {attachments.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No invoice evidence uploaded yet.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No invoice evidence uploaded yet.
+                      </p>
                     ) : (
                       <div className="grid gap-2">
-                        {attachments.map(attachment => (
-                          <div key={attachment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2">
+                        {attachments.map((attachment) => (
+                          <div
+                            key={attachment.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2"
+                          >
                             <div className="min-w-0">
                               <p className="truncate text-sm font-medium">{attachment.fileName}</p>
-                              <p className="text-xs text-muted-foreground">{attachment.mimeType || 'file'} · {formatDateShort(attachment.createdAt)}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {attachment.mimeType || "file"} ·{" "}
+                                {formatDateShort(attachment.createdAt)}
+                              </p>
                             </div>
                             <Button
                               size="sm"
@@ -2789,35 +3612,43 @@ function VatWorkspaceDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
+function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatStatus"] }) {
   if (!vatStatus) return <Badge variant="outline">No VAT</Badge>;
   const due = new Date(vatStatus.dueDate);
   const now = new Date();
   const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (vatStatus.status === 'filed' || vatStatus.status === 'submitted') {
+  if (vatStatus.status === "filed" || vatStatus.status === "submitted") {
     return <Badge className="bg-green-100 text-green-800 border-green-200">Filed</Badge>;
   }
   if (daysUntilDue < 0) {
     return <Badge variant="destructive">Overdue</Badge>;
   }
   if (daysUntilDue <= 14) {
-    return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Due {format(due, 'MMM d')}</Badge>;
+    return (
+      <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+        Due {format(due, "MMM d")}
+      </Badge>
+    );
   }
-  return <Badge variant="outline">Due {format(due, 'MMM d')}</Badge>;
+  return <Badge variant="outline">Due {format(due, "MMM d")}</Badge>;
 }
 
 function StatusBadge({ active }: { active: boolean }) {
-  return active
-    ? <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>
-    : <Badge variant="secondary">Inactive</Badge>;
+  return active ? (
+    <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>
+  ) : (
+    <Badge variant="secondary">Inactive</Badge>
+  );
 }
 
 function clientNeedsAttention(c: ClientWithStats): boolean {
@@ -2826,7 +3657,7 @@ function clientNeedsAttention(c: ClientWithStats): boolean {
   // The list endpoint doesn't expose per-invoice due dates, so outstandingAr>0
   // is used as the AR proxy (slightly broader than server's overdue-only count).
   if (c.outstandingAr > 0) return true;
-  if (c.vatStatus && c.vatStatus.status !== 'filed' && c.vatStatus.status !== 'submitted') {
+  if (c.vatStatus && c.vatStatus.status !== "filed" && c.vatStatus.status !== "submitted") {
     const due = new Date(c.vatStatus.dueDate);
     if (due < new Date()) return true;
   }
@@ -2835,7 +3666,7 @@ function clientNeedsAttention(c: ClientWithStats): boolean {
 
 function vatDueSoon(c: ClientWithStats): boolean {
   if (!c.vatStatus) return false;
-  if (c.vatStatus.status === 'filed' || c.vatStatus.status === 'submitted') return false;
+  if (c.vatStatus.status === "filed" || c.vatStatus.status === "submitted") return false;
   const due = new Date(c.vatStatus.dueDate);
   const now = new Date();
   const days = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
@@ -2859,30 +3690,37 @@ interface AddClientFormData {
 }
 
 const emptyForm: AddClientFormData = {
-  name: '',
-  trnVatNumber: '',
-  industry: '',
-  legalStructure: '',
-  contactEmail: '',
-  contactPhone: '',
-  businessAddress: '',
-  emirate: 'dubai',
-  vatFilingFrequency: 'quarterly',
-  vatPeriodStartMonth: '1',
-  fiscalYearStartMonth: '1',
-  corporateTaxId: '',
+  name: "",
+  trnVatNumber: "",
+  industry: "",
+  legalStructure: "",
+  contactEmail: "",
+  contactPhone: "",
+  businessAddress: "",
+  emirate: "dubai",
+  vatFilingFrequency: "quarterly",
+  vatPeriodStartMonth: "1",
+  fiscalYearStartMonth: "1",
+  corporateTaxId: "",
   serviceScope: [...DEFAULT_CLIENT_SERVICE_CODES],
 };
 
-type QuickFilter = 'all' | 'critical' | 'attention' | 'vat-due' | 'close-blocked' | 'unassigned' | 'no-docs';
+type QuickFilter =
+  | "all"
+  | "critical"
+  | "attention"
+  | "vat-due"
+  | "close-blocked"
+  | "unassigned"
+  | "no-docs";
 
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { setActiveClientCompany } = useActiveCompany();
-  const [view, setView] = useState<'card' | 'table'>('card');
-  const [search, setSearch] = useState('');
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+  const [view, setView] = useState<"card" | "table">("card");
+  const [search, setSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -2892,19 +3730,21 @@ export default function ClientPortfolio() {
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
-    queryKey: ['/api/firm/clients'],
+    queryKey: ["/api/firm/clients"],
   });
 
   const { data: overview } = useQuery<FirmOverview>({
-    queryKey: ['/api/firm/overview'],
+    queryKey: ["/api/firm/overview"],
   });
 
   const { data: bookkeeperDashboard } = useQuery<BookkeeperDashboard>({
-    queryKey: ['/api/firm/bookkeeper-dashboard'],
+    queryKey: ["/api/firm/bookkeeper-dashboard"],
   });
 
   const bookkeeperByClientId = useMemo(() => {
-    return new Map((bookkeeperDashboard?.clients ?? []).map(client => [client.companyId, client]));
+    return new Map(
+      (bookkeeperDashboard?.clients ?? []).map((client) => [client.companyId, client])
+    );
   }, [bookkeeperDashboard]);
 
   const briefClient = useMemo(() => {
@@ -2912,7 +3752,9 @@ export default function ClientPortfolio() {
   }, [bookkeeperByClientId, briefClientId]);
 
   const vatWorkspaceClient = useMemo(() => {
-    return vatWorkspaceClientId ? clients.find(client => client.id === vatWorkspaceClientId) : undefined;
+    return vatWorkspaceClientId
+      ? clients.find((client) => client.id === vatWorkspaceClientId)
+      : undefined;
   }, [clients, vatWorkspaceClientId]);
 
   const vatWorkspaceOps = useMemo(() => {
@@ -2920,31 +3762,35 @@ export default function ClientPortfolio() {
   }, [bookkeeperByClientId, vatWorkspaceClientId]);
 
   const createMutation = useMutation({
-    mutationFn: (data: AddClientFormData) => apiRequest('POST', '/api/firm/clients', data),
+    mutationFn: (data: AddClientFormData) => apiRequest("POST", "/api/firm/clients", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
-      toast({ title: 'Client created successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      toast({ title: "Client created successfully" });
       setAddOpen(false);
       setForm(emptyForm);
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create client', description: e?.message });
+      toast({ variant: "destructive", title: "Failed to create client", description: e?.message });
     },
   });
 
   const switchMutation = useMutation({
-    mutationFn: (companyId: string) => apiRequest('POST', `/api/firm/clients/${companyId}/switch`),
+    mutationFn: (companyId: string) => apiRequest("POST", `/api/firm/clients/${companyId}/switch`),
     onSuccess: (_, companyId) => {
       setActiveClientCompany(companyId);
       // Force a refetch of /api/companies so the active company is in cache.
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
-      navigate('/dashboard');
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      navigate("/dashboard");
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Could not open client books', description: e?.message });
+      toast({
+        variant: "destructive",
+        title: "Could not open client books",
+        description: e?.message,
+      });
     },
   });
 
@@ -2953,55 +3799,63 @@ export default function ClientPortfolio() {
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       // Build base64 in chunks to avoid call-stack overflow on bigger files.
-      let binary = '';
+      let binary = "";
       const chunk = 0x8000;
       for (let i = 0; i < bytes.length; i += chunk) {
         binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
       }
       const fileData = btoa(binary);
-      return apiRequest('POST', '/api/firm/clients/import', { fileData }) as Promise<ImportResult>;
+      return apiRequest("POST", "/api/firm/clients/import", { fileData }) as Promise<ImportResult>;
     },
-    onSuccess: result => {
+    onSuccess: (result) => {
       setImportResult(result);
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/bookkeeper-dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
         title: `Imported ${result.created.length} clients`,
-        description: result.errors.length > 0 ? `${result.errors.length} errors — see details.` : undefined,
+        description:
+          result.errors.length > 0 ? `${result.errors.length} errors — see details.` : undefined,
       });
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Import failed', description: e?.message });
+      toast({ variant: "destructive", title: "Import failed", description: e?.message });
     },
   });
 
   const filtered = useMemo(() => {
-    return clients.filter(c => {
+    return clients.filter((c) => {
       const ops = bookkeeperByClientId.get(c.id);
       const matchesSearch =
         !search ||
         c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.trnVatNumber || '').toLowerCase().includes(search.toLowerCase());
+        (c.trnVatNumber || "").toLowerCase().includes(search.toLowerCase());
       if (!matchesSearch) return false;
 
       switch (quickFilter) {
-        case 'critical':
-          return ops?.priority === 'critical';
-        case 'attention':
-          return ops ? ops.priority === 'attention' || ops.priority === 'critical' : clientNeedsAttention(c);
-        case 'vat-due':
+        case "critical":
+          return ops?.priority === "critical";
+        case "attention":
           return ops
-            ? hasClientService(ops, 'vat') && ops.vat.status !== 'filed' && ops.vat.daysTilDue !== null && ops.vat.daysTilDue <= 28
-            : hasClientService(c, 'vat') && vatDueSoon(c);
-        case 'close-blocked':
-          return ops ? hasClientService(ops, 'bookkeeping') && ops.bookkeeping.status !== 'on_track' : false;
-        case 'unassigned':
+            ? ops.priority === "attention" || ops.priority === "critical"
+            : clientNeedsAttention(c);
+        case "vat-due":
+          return ops
+            ? hasClientService(ops, "vat") &&
+                ops.vat.status !== "filed" &&
+                ops.vat.daysTilDue !== null &&
+                ops.vat.daysTilDue <= 28
+            : hasClientService(c, "vat") && vatDueSoon(c);
+        case "close-blocked":
+          return ops
+            ? hasClientService(ops, "bookkeeping") && ops.bookkeeping.status !== "on_track"
+            : false;
+        case "unassigned":
           return ops ? ops.assignedStaff.length === 0 : c.assignedStaff.length === 0;
-        case 'no-docs':
+        case "no-docs":
           return c.invoiceCount === 0 && !c.lastReceiptDate;
-        case 'all':
+        case "all":
         default:
           return true;
       }
@@ -3031,11 +3885,18 @@ export default function ClientPortfolio() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Portfolio</h1>
           <p className="text-muted-foreground mt-1">
-            {clients.length} client{clients.length !== 1 ? 's' : ''} managed by NRA
+            {clients.length} client{clients.length !== 1 ? "s" : ""} managed by NRA
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => { setImportResult(null); setImportFile(null); setImportOpen(true); }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setImportResult(null);
+              setImportFile(null);
+              setImportOpen(true);
+            }}
+          >
             <Upload className="w-4 h-4 mr-2" />
             Import Clients
           </Button>
@@ -3078,7 +3939,9 @@ export default function ClientPortfolio() {
         <Card data-testid="card-attention">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Needs Attention</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                Needs Attention
+              </p>
               <AlertTriangle className="w-4 h-4 text-orange-600" />
             </div>
             <p className="text-2xl font-bold mt-1">{overview?.needsAttention ?? 0}</p>
@@ -3091,7 +3954,7 @@ export default function ClientPortfolio() {
         onOpenBooks={handleOpenBooks}
         onViewProfile={handleViewProfile}
         onOpenBrief={setBriefClientId}
-        onManageStaff={() => navigate('/firm/staff')}
+        onManageStaff={() => navigate("/firm/staff")}
       />
 
       <RevenueGrowthPanel onOpenClient={handleViewProfile} />
@@ -3106,15 +3969,15 @@ export default function ClientPortfolio() {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          variant={quickFilter === 'all' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('all')}
+          variant={quickFilter === "all" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("all")}
         >
           All ({clients.length})
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'critical' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('critical')}
+          variant={quickFilter === "critical" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("critical")}
           data-testid="filter-critical"
         >
           <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
@@ -3122,17 +3985,20 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'attention' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('attention')}
+          variant={quickFilter === "attention" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("attention")}
           data-testid="filter-attention"
         >
           <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
-          Needs Attention ({(bookkeeperDashboard?.summary.critical ?? 0) + (bookkeeperDashboard?.summary.attention ?? 0)})
+          Needs Attention (
+          {(bookkeeperDashboard?.summary.critical ?? 0) +
+            (bookkeeperDashboard?.summary.attention ?? 0)}
+          )
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'vat-due' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('vat-due')}
+          variant={quickFilter === "vat-due" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("vat-due")}
           data-testid="filter-vat-due"
         >
           <Calendar className="w-3.5 h-3.5 mr-1.5" />
@@ -3140,8 +4006,8 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'close-blocked' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('close-blocked')}
+          variant={quickFilter === "close-blocked" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("close-blocked")}
           data-testid="filter-close-blocked"
         >
           <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
@@ -3149,8 +4015,8 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'unassigned' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('unassigned')}
+          variant={quickFilter === "unassigned" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("unassigned")}
           data-testid="filter-unassigned"
         >
           <UserCheck className="w-3.5 h-3.5 mr-1.5" />
@@ -3158,8 +4024,8 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'no-docs' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('no-docs')}
+          variant={quickFilter === "no-docs" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("no-docs")}
           data-testid="filter-no-docs"
         >
           <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
@@ -3174,25 +4040,25 @@ export default function ClientPortfolio() {
           <Input
             placeholder="Search by name or TRN..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
             data-testid="input-client-search"
           />
         </div>
         <div className="flex border rounded-md ml-auto">
           <Button
-            variant={view === 'card' ? 'secondary' : 'ghost'}
+            variant={view === "card" ? "secondary" : "ghost"}
             size="sm"
             className="rounded-r-none"
-            onClick={() => setView('card')}
+            onClick={() => setView("card")}
           >
             <LayoutGrid className="w-4 h-4" />
           </Button>
           <Button
-            variant={view === 'table' ? 'secondary' : 'ghost'}
+            variant={view === "table" ? "secondary" : "ghost"}
             size="sm"
             className="rounded-l-none"
-            onClick={() => setView('table')}
+            onClick={() => setView("table")}
           >
             <List className="w-4 h-4" />
           </Button>
@@ -3204,12 +4070,12 @@ export default function ClientPortfolio() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
           <h3 className="font-semibold text-lg">
-            {clients.length === 0 ? 'No clients yet' : 'No clients match your filters'}
+            {clients.length === 0 ? "No clients yet" : "No clients match your filters"}
           </h3>
           <p className="text-muted-foreground mt-1 mb-4">
             {clients.length === 0
-              ? 'Add your first client company to get started.'
-              : 'Try adjusting your search or quick filter.'}
+              ? "Add your first client company to get started."
+              : "Try adjusting your search or quick filter."}
           </p>
           {clients.length === 0 && (
             <Button onClick={() => setAddOpen(true)}>
@@ -3246,7 +4112,7 @@ export default function ClientPortfolio() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.slice(0, 12).map(client => {
+                {filtered.slice(0, 12).map((client) => {
                   const ops = bookkeeperByClientId.get(client.id);
                   return (
                     <TableRow key={`matrix-${client.id}`} className="hover:bg-muted/50">
@@ -3258,55 +4124,94 @@ export default function ClientPortfolio() {
                         >
                           {client.name}
                         </button>
-                        <p className="text-xs text-muted-foreground">{client.trnVatNumber || 'No TRN'}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {client.trnVatNumber || "No TRN"}
+                        </p>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {ops ? ownerPreview(ops.assignedStaff.map(staff => staff.name)) : ownerPreview(client.assignedStaff.map(staff => staff.name))}
+                        {ops
+                          ? ownerPreview(ops.assignedStaff.map((staff) => staff.name))
+                          : ownerPreview(client.assignedStaff.map((staff) => staff.name))}
                       </TableCell>
                       <TableCell>
-                        <ServiceScopeBadges services={ops?.serviceScope ?? client.serviceScope} compact />
+                        <ServiceScopeBadges
+                          services={ops?.serviceScope ?? client.serviceScope}
+                          compact
+                        />
                       </TableCell>
-                      <TableCell>{ops ? <PriorityBadge priority={ops.priority} /> : <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />}</TableCell>
+                      <TableCell>
+                        {ops ? (
+                          <PriorityBadge priority={ops.priority} />
+                        ) : (
+                          <StatusBadge
+                            active={client.invoiceCount > 0 || !!client.lastReceiptDate}
+                          />
+                        )}
+                      </TableCell>
                       <TableCell className="text-sm">
-                        {ops && hasClientService(ops, 'vat') ? (
-                          <span>{formatDateShort(ops.vat.dueDate)} · {formatDays(ops.vat.daysTilDue)}</span>
+                        {ops && hasClientService(ops, "vat") ? (
+                          <span>
+                            {formatDateShort(ops.vat.dueDate)} · {formatDays(ops.vat.daysTilDue)}
+                          </span>
                         ) : (
                           <Badge variant="outline">Not scoped</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {ops && hasClientService(ops, 'corporate_tax')
+                        {ops && hasClientService(ops, "corporate_tax")
                           ? `${formatDateShort(ops.corporateTax.dueDate)} · ${formatDays(ops.corporateTax.daysTilDue)}`
-                          : 'Not scoped'}
+                          : "Not scoped"}
                       </TableCell>
                       <TableCell>
-                        {ops && hasClientService(ops, 'bookkeeping') ? (
+                        {ops && hasClientService(ops, "bookkeeping") ? (
                           <div className="min-w-28">
                             <div className="flex items-center justify-between text-xs">
                               <span>{ops.bookkeeping.closeProgress}%</span>
-                              <span className="text-muted-foreground">{priorityLabel(ops.bookkeeping.status)}</span>
+                              <span className="text-muted-foreground">
+                                {priorityLabel(ops.bookkeeping.status)}
+                              </span>
                             </div>
                             <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                              <div className="h-full bg-primary" style={{ width: `${ops.bookkeeping.closeProgress}%` }} />
+                              <div
+                                className="h-full bg-primary"
+                                style={{ width: `${ops.bookkeeping.closeProgress}%` }}
+                              />
                             </div>
                           </div>
-                        ) : 'Not scoped'}
+                        ) : (
+                          "Not scoped"
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-between gap-2 min-w-64">
-                          <p className="text-sm text-muted-foreground truncate">{ops?.nextBestAction ?? 'Open client profile'}</p>
+                          <p className="text-sm text-muted-foreground truncate">
+                            {ops?.nextBestAction ?? "Open client profile"}
+                          </p>
                           <div className="flex gap-1">
                             {ops && (
-                              <Button size="sm" variant="outline" onClick={() => setBriefClientId(client.id)}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setBriefClientId(client.id)}
+                              >
                                 Brief
                               </Button>
                             )}
-                            {(!ops || hasClientService(ops, 'vat')) && (
-                              <Button size="sm" variant="outline" onClick={() => setVatWorkspaceClientId(client.id)}>
+                            {(!ops || hasClientService(ops, "vat")) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setVatWorkspaceClientId(client.id)}
+                              >
                                 VAT
                               </Button>
                             )}
-                            <Button size="sm" variant="outline" onClick={() => handleOpenBooks(client.id)} disabled={switchMutation.isPending}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenBooks(client.id)}
+                              disabled={switchMutation.isPending}
+                            >
                               <BookOpen className="w-3.5 h-3.5 mr-1" />
                               Open
                             </Button>
@@ -3320,7 +4225,8 @@ export default function ClientPortfolio() {
             </Table>
             {filtered.length > 12 && (
               <p className="text-xs text-muted-foreground mt-3">
-                Showing the first 12 clients for the selected filter. Use search or table view for the full list.
+                Showing the first 12 clients for the selected filter. Use search or table view for
+                the full list.
               </p>
             )}
           </CardContent>
@@ -3328,24 +4234,35 @@ export default function ClientPortfolio() {
       )}
 
       {/* Card view */}
-      {view === 'card' && filtered.length > 0 && (
+      {view === "card" && filtered.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(client => {
+          {filtered.map((client) => {
             const ops = bookkeeperByClientId.get(client.id);
             return (
-              <Card key={client.id} className="hover:shadow-md transition-shadow" data-testid={`client-card-${client.id}`}>
+              <Card
+                key={client.id}
+                className="hover:shadow-md transition-shadow"
+                data-testid={`client-card-${client.id}`}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-base truncate">{client.name}</CardTitle>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : 'No TRN registered'}
+                        {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : "No TRN registered"}
                       </p>
                       <div className="mt-2">
-                        <ServiceScopeBadges services={ops?.serviceScope ?? client.serviceScope} compact />
+                        <ServiceScopeBadges
+                          services={ops?.serviceScope ?? client.serviceScope}
+                          compact
+                        />
                       </div>
                     </div>
-                    {ops ? <PriorityBadge priority={ops.priority} /> : <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />}
+                    {ops ? (
+                      <PriorityBadge priority={ops.priority} />
+                    ) : (
+                      <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -3356,10 +4273,15 @@ export default function ClientPortfolio() {
                           <p className="text-xs text-muted-foreground">Next action</p>
                           <p className="text-sm font-medium truncate">{ops.nextBestAction}</p>
                         </div>
-                        <span className="text-xs font-medium shrink-0">{ops.bookkeeping.closeProgress}% close</span>
+                        <span className="text-xs font-medium shrink-0">
+                          {ops.bookkeeping.closeProgress}% close
+                        </span>
                       </div>
                       <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full bg-primary" style={{ width: `${ops.bookkeeping.closeProgress}%` }} />
+                        <div
+                          className="h-full bg-primary"
+                          style={{ width: `${ops.bookkeeping.closeProgress}%` }}
+                        />
                       </div>
                     </div>
                   )}
@@ -3368,7 +4290,9 @@ export default function ClientPortfolio() {
                   <div className="grid grid-cols-2 gap-2">
                     <div className="bg-muted/40 rounded-md p-2">
                       <p className="text-xs text-muted-foreground">Outstanding AR</p>
-                      <p className="font-semibold text-sm mt-0.5">{formatAed(client.outstandingAr)}</p>
+                      <p className="font-semibold text-sm mt-0.5">
+                        {formatAed(client.outstandingAr)}
+                      </p>
                     </div>
                     <div className="bg-muted/40 rounded-md p-2">
                       <p className="text-xs text-muted-foreground">Invoices</p>
@@ -3382,15 +4306,25 @@ export default function ClientPortfolio() {
                       <Calendar className="w-3.5 h-3.5" />
                       VAT Status
                     </span>
-                    {ops && hasClientService(ops, 'vat')
-                      ? <PriorityBadge priority={ops.vat.status} />
-                      : <Badge variant="outline">Not scoped</Badge>}
+                    {ops && hasClientService(ops, "vat") ? (
+                      <PriorityBadge priority={ops.vat.status} />
+                    ) : (
+                      <Badge variant="outline">Not scoped</Badge>
+                    )}
                   </div>
 
                   {ops && (
                     <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <span>{hasClientService(ops, 'vat') ? `VAT ${formatDays(ops.vat.daysTilDue)}` : 'VAT not scoped'}</span>
-                      <span>{hasClientService(ops, 'corporate_tax') ? `CT ${formatDays(ops.corporateTax.daysTilDue)}` : 'CT not scoped'}</span>
+                      <span>
+                        {hasClientService(ops, "vat")
+                          ? `VAT ${formatDays(ops.vat.daysTilDue)}`
+                          : "VAT not scoped"}
+                      </span>
+                      <span>
+                        {hasClientService(ops, "corporate_tax")
+                          ? `CT ${formatDays(ops.corporateTax.daysTilDue)}`
+                          : "CT not scoped"}
+                      </span>
                     </div>
                   )}
 
@@ -3399,8 +4333,8 @@ export default function ClientPortfolio() {
                     <span>Last receipt</span>
                     <span>
                       {client.lastReceiptDate
-                        ? format(new Date(client.lastReceiptDate), 'MMM d, yyyy')
-                        : 'Never'}
+                        ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
+                        : "Never"}
                     </span>
                   </div>
 
@@ -3408,7 +4342,9 @@ export default function ClientPortfolio() {
                   {(ops?.assignedStaff.length ?? client.assignedStaff.length) > 0 && (
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Users className="w-3.5 h-3.5" />
-                      {ops ? ops.assignedStaff.map(s => s.name).join(', ') : client.assignedStaff.map(s => s.name).join(', ')}
+                      {ops
+                        ? ops.assignedStaff.map((s) => s.name).join(", ")
+                        : client.assignedStaff.map((s) => s.name).join(", ")}
                     </div>
                   )}
 
@@ -3423,7 +4359,7 @@ export default function ClientPortfolio() {
                         Brief
                       </Button>
                     )}
-                    {(!ops || hasClientService(ops, 'vat')) && (
+                    {(!ops || hasClientService(ops, "vat")) && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -3458,7 +4394,7 @@ export default function ClientPortfolio() {
       )}
 
       {/* Table view */}
-      {view === 'table' && filtered.length > 0 && (
+      {view === "table" && filtered.length > 0 && (
         <div className="border rounded-lg overflow-hidden overflow-x-auto">
           <Table>
             <TableHeader>
@@ -3475,7 +4411,7 @@ export default function ClientPortfolio() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(client => {
+              {filtered.map((client) => {
                 const ops = bookkeeperByClientId.get(client.id);
                 return (
                   <TableRow key={client.id} className="hover:bg-muted/50">
@@ -3486,47 +4422,62 @@ export default function ClientPortfolio() {
                           {ops && <PriorityBadge priority={ops.priority} />}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {ops?.nextBestAction ?? client.industry ?? 'Open profile for details'}
+                          {ops?.nextBestAction ?? client.industry ?? "Open profile for details"}
                         </p>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <ServiceScopeBadges services={ops?.serviceScope ?? client.serviceScope} compact />
+                      <ServiceScopeBadges
+                        services={ops?.serviceScope ?? client.serviceScope}
+                        compact
+                      />
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {client.trnVatNumber || '—'}
+                      {client.trnVatNumber || "—"}
                     </TableCell>
                     <TableCell className="font-medium">{formatAed(client.outstandingAr)}</TableCell>
                     <TableCell>{client.invoiceCount}</TableCell>
                     <TableCell>
-                      {ops && hasClientService(ops, 'vat')
-                        ? <PriorityBadge priority={ops.vat.status} />
-                        : <Badge variant="outline">Not scoped</Badge>}
+                      {ops && hasClientService(ops, "vat") ? (
+                        <PriorityBadge priority={ops.vat.status} />
+                      ) : (
+                        <Badge variant="outline">Not scoped</Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {ops && hasClientService(ops, 'bookkeeping')
+                      {ops && hasClientService(ops, "bookkeeping")
                         ? `${ops.bookkeeping.closeProgress}% close`
                         : !ops && client.lastReceiptDate
-                          ? format(new Date(client.lastReceiptDate), 'MMM d, yyyy')
-                          : 'Not scoped'}
+                          ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
+                          : "Not scoped"}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Users className="w-3.5 h-3.5 text-muted-foreground" />
                         <span className="text-sm">
-                          {ops ? ownerPreview(ops.assignedStaff.map(staff => staff.name)) : client.assignedStaff.length}
+                          {ops
+                            ? ownerPreview(ops.assignedStaff.map((staff) => staff.name))
+                            : client.assignedStaff.length}
                         </span>
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         {ops && (
-                          <Button size="sm" variant="outline" onClick={() => setBriefClientId(client.id)}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setBriefClientId(client.id)}
+                          >
                             Brief
                           </Button>
                         )}
-                        {(!ops || hasClientService(ops, 'vat')) && (
-                          <Button size="sm" variant="outline" onClick={() => setVatWorkspaceClientId(client.id)}>
+                        {(!ops || hasClientService(ops, "vat")) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setVatWorkspaceClientId(client.id)}
+                          >
                             VAT
                           </Button>
                         )}
@@ -3538,7 +4489,11 @@ export default function ClientPortfolio() {
                           <BookOpen className="w-3.5 h-3.5 mr-1" />
                           Open
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => handleViewProfile(client.id)}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleViewProfile(client.id)}
+                        >
                           <ChevronRight className="w-4 h-4" />
                         </Button>
                       </div>
@@ -3566,7 +4521,7 @@ export default function ClientPortfolio() {
               <Input
                 id="name"
                 value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="Al Majid Trading LLC"
               />
             </div>
@@ -3578,21 +4533,22 @@ export default function ClientPortfolio() {
                 </p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {CLIENT_SERVICE_OPTIONS.map(option => (
+                {CLIENT_SERVICE_OPTIONS.map((option) => (
                   <label
                     key={option.code}
                     className="flex items-start gap-2 rounded-md border bg-background px-3 py-2 text-sm"
                   >
                     <Checkbox
                       checked={form.serviceScope.includes(option.code)}
-                      onCheckedChange={checked => {
-                        setForm(current => {
+                      onCheckedChange={(checked) => {
+                        setForm((current) => {
                           const serviceScope = checked
                             ? Array.from(new Set([...current.serviceScope, option.code]))
-                            : current.serviceScope.filter(service => service !== option.code);
+                            : current.serviceScope.filter((service) => service !== option.code);
                           return {
                             ...current,
-                            serviceScope: serviceScope.length > 0 ? serviceScope : current.serviceScope,
+                            serviceScope:
+                              serviceScope.length > 0 ? serviceScope : current.serviceScope,
                           };
                         });
                       }}
@@ -3611,13 +4567,16 @@ export default function ClientPortfolio() {
                 <Input
                   id="trn"
                   value={form.trnVatNumber}
-                  onChange={e => setForm(f => ({ ...f, trnVatNumber: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, trnVatNumber: e.target.value }))}
                   placeholder="100234567890003"
                 />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="emirate">Emirate</Label>
-                <Select value={form.emirate} onValueChange={v => setForm(f => ({ ...f, emirate: v }))}>
+                <Select
+                  value={form.emirate}
+                  onValueChange={(v) => setForm((f) => ({ ...f, emirate: v }))}
+                >
                   <SelectTrigger id="emirate">
                     <SelectValue />
                   </SelectTrigger>
@@ -3638,7 +4597,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="legalStructure">Legal Structure</Label>
                 <Select
                   value={form.legalStructure}
-                  onValueChange={v => setForm(f => ({ ...f, legalStructure: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, legalStructure: v }))}
                 >
                   <SelectTrigger id="legalStructure">
                     <SelectValue placeholder="Select..." />
@@ -3656,7 +4615,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="vatFrequency">VAT Frequency</Label>
                 <Select
                   value={form.vatFilingFrequency}
-                  onValueChange={v => setForm(f => ({ ...f, vatFilingFrequency: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, vatFilingFrequency: v }))}
                 >
                   <SelectTrigger id="vatFrequency">
                     <SelectValue />
@@ -3673,7 +4632,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="vatCloseGroup">VAT Close Group</Label>
                 <Select
                   value={form.vatPeriodStartMonth}
-                  onValueChange={v => setForm(f => ({ ...f, vatPeriodStartMonth: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, vatPeriodStartMonth: v }))}
                 >
                   <SelectTrigger id="vatCloseGroup">
                     <SelectValue />
@@ -3689,7 +4648,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="fiscalYearStart">Financial Year Start</Label>
                 <Select
                   value={form.fiscalYearStartMonth}
-                  onValueChange={v => setForm(f => ({ ...f, fiscalYearStartMonth: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, fiscalYearStartMonth: v }))}
                 >
                   <SelectTrigger id="fiscalYearStart">
                     <SelectValue />
@@ -3716,7 +4675,7 @@ export default function ClientPortfolio() {
               <Input
                 id="industry"
                 value={form.industry}
-                onChange={e => setForm(f => ({ ...f, industry: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, industry: e.target.value }))}
                 placeholder="Trading, Construction, Retail..."
               />
             </div>
@@ -3725,7 +4684,7 @@ export default function ClientPortfolio() {
               <Input
                 id="corporateTaxId"
                 value={form.corporateTaxId}
-                onChange={e => setForm(f => ({ ...f, corporateTaxId: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, corporateTaxId: e.target.value }))}
                 placeholder="CT-1002345678"
               />
             </div>
@@ -3736,7 +4695,7 @@ export default function ClientPortfolio() {
                   id="contactEmail"
                   type="email"
                   value={form.contactEmail}
-                  onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, contactEmail: e.target.value }))}
                   placeholder="info@company.ae"
                 />
               </div>
@@ -3745,7 +4704,7 @@ export default function ClientPortfolio() {
                 <Input
                   id="contactPhone"
                   value={form.contactPhone}
-                  onChange={e => setForm(f => ({ ...f, contactPhone: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, contactPhone: e.target.value }))}
                   placeholder="+971 4 123 4567"
                 />
               </div>
@@ -3755,7 +4714,7 @@ export default function ClientPortfolio() {
               <Input
                 id="businessAddress"
                 value={form.businessAddress}
-                onChange={e => setForm(f => ({ ...f, businessAddress: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, businessAddress: e.target.value }))}
                 placeholder="Office 301, Business Bay, Dubai"
               />
             </div>
@@ -3769,7 +4728,7 @@ export default function ClientPortfolio() {
               disabled={!form.name.trim() || createMutation.isPending}
               data-testid="button-create-client"
             >
-              {createMutation.isPending ? 'Creating...' : 'Create Client'}
+              {createMutation.isPending ? "Creating..." : "Create Client"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3782,8 +4741,8 @@ export default function ClientPortfolio() {
             <DialogTitle>Import Clients</DialogTitle>
             <DialogDescription>
               Upload a CSV or Excel file. Each row becomes a new client company with a UAE chart of
-              accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate,
-              VAT filing, VAT close group, financial year start, corporate tax ID.
+              accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate, VAT
+              filing, VAT close group, financial year start, corporate tax ID.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -3793,7 +4752,7 @@ export default function ClientPortfolio() {
                 id="import-file"
                 type="file"
                 accept=".csv,.xlsx,.xls"
-                onChange={e => {
+                onChange={(e) => {
                   setImportFile(e.target.files?.[0] ?? null);
                   setImportResult(null);
                 }}
@@ -3808,7 +4767,7 @@ export default function ClientPortfolio() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="font-medium">Errors</span>
-                  <span className={importResult.errors.length > 0 ? 'text-red-700' : ''}>
+                  <span className={importResult.errors.length > 0 ? "text-red-700" : ""}>
                     {importResult.errors.length}
                   </span>
                 </div>
@@ -3816,7 +4775,8 @@ export default function ClientPortfolio() {
                   <div className="max-h-40 overflow-auto text-xs text-muted-foreground space-y-1">
                     {importResult.errors.slice(0, 20).map((e, i) => (
                       <div key={i}>
-                        Row {e.row}{e.name ? ` (${e.name})` : ''}: {e.error}
+                        Row {e.row}
+                        {e.name ? ` (${e.name})` : ""}: {e.error}
                       </div>
                     ))}
                   </div>
@@ -3834,7 +4794,7 @@ export default function ClientPortfolio() {
               data-testid="button-import-clients"
             >
               <Upload className="w-4 h-4 mr-2" />
-              {importMutation.isPending ? 'Importing...' : 'Import'}
+              {importMutation.isPending ? "Importing..." : "Import"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3843,7 +4803,7 @@ export default function ClientPortfolio() {
       <OperationsBriefDialog
         client={briefClient}
         open={!!briefClientId}
-        onOpenChange={open => !open && setBriefClientId(null)}
+        onOpenChange={(open) => !open && setBriefClientId(null)}
         onOpenBooks={handleOpenBooks}
         onViewProfile={handleViewProfile}
       />
@@ -3851,7 +4811,7 @@ export default function ClientPortfolio() {
         client={vatWorkspaceClient}
         ops={vatWorkspaceOps}
         open={!!vatWorkspaceClientId}
-        onOpenChange={open => !open && setVatWorkspaceClientId(null)}
+        onOpenChange={(open) => !open && setVatWorkspaceClientId(null)}
       />
     </div>
   );

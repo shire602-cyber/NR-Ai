@@ -14,7 +14,7 @@ import {
   Star,
   MessageSquare,
   PartyPopper,
-} from 'lucide-react';
+} from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -23,7 +23,7 @@ export interface MessageTemplate {
   name: string;
   nameAr: string;
   icon: typeof Receipt;
-  category: 'invoice' | 'payment' | 'onboarding' | 'service' | 'alert' | 'engagement';
+  category: "invoice" | "payment" | "onboarding" | "service" | "alert" | "engagement";
   template: string;
   templateAr: string;
 }
@@ -33,23 +33,23 @@ export interface MessageTemplate {
 // Normalize a UAE-leaning phone number into an E.164 digit string suitable
 // for WhatsApp Web draft URLs. Returns "" when the input cannot be reasonably normalized.
 export function formatPhoneForWhatsApp(phone: string): string {
-  let cleaned = (phone || '').replace(/[^\d]/g, '');
-  if (!cleaned) return '';
+  let cleaned = (phone || "").replace(/[^\d]/g, "");
+  if (!cleaned) return "";
   // 10 digits starting with 05 -> UAE local mobile, strip leading 0, add 971
-  if (cleaned.length === 10 && cleaned.startsWith('05')) {
-    cleaned = '971' + cleaned.substring(1);
-  } else if (cleaned.length === 9 && cleaned.startsWith('5')) {
+  if (cleaned.length === 10 && cleaned.startsWith("05")) {
+    cleaned = "971" + cleaned.substring(1);
+  } else if (cleaned.length === 9 && cleaned.startsWith("5")) {
     // 9 digits starting with 5 -> UAE mobile without country/leading 0
-    cleaned = '971' + cleaned;
-  } else if (cleaned.startsWith('00')) {
+    cleaned = "971" + cleaned;
+  } else if (cleaned.startsWith("00")) {
     // International prefix 00 -> drop it
     cleaned = cleaned.substring(2);
-  } else if (cleaned.startsWith('0')) {
+  } else if (cleaned.startsWith("0")) {
     // Generic leading 0 (national prefix) -> drop it
     cleaned = cleaned.substring(1);
   }
   // E.164 allows 8..15 digits after the country code; reject anything outside that.
-  if (cleaned.length < 8 || cleaned.length > 15) return '';
+  if (cleaned.length < 8 || cleaned.length > 15) return "";
   return cleaned;
 }
 
@@ -62,7 +62,7 @@ export function buildWhatsAppWebDraftUrl(phone: string, message: string): string
 export function openWhatsApp(phone: string, message: string) {
   const formatted = formatPhoneForWhatsApp(phone);
   if (!formatted) return;
-  window.open(buildWhatsAppWebDraftUrl(formatted, message), '_blank', 'noopener,noreferrer');
+  window.open(buildWhatsAppWebDraftUrl(formatted, message), "_blank", "noopener,noreferrer");
 }
 
 // Prefer a contact's dedicated WhatsApp number, fall back to phone.
@@ -79,7 +79,7 @@ export function pickWhatsAppNumber(contact: {
 export function fillTemplate(templateStr: string, data: Record<string, string>): string {
   let result = templateStr;
   for (const [key, value] of Object.entries(data)) {
-    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value);
   }
   return result;
 }
@@ -88,11 +88,11 @@ export function fillTemplate(templateStr: string, data: Record<string, string>):
 
 export const MESSAGE_TEMPLATES: MessageTemplate[] = [
   {
-    id: 'invoice_new',
-    name: 'New Invoice',
-    nameAr: 'فاتورة جديدة',
+    id: "invoice_new",
+    name: "New Invoice",
+    nameAr: "فاتورة جديدة",
     icon: FileText,
-    category: 'invoice',
+    category: "invoice",
     template: `Hello {{customer_name}},
 
 Your invoice {{invoice_number}} for AED {{amount}} has been issued.
@@ -111,11 +111,11 @@ Thank you for your business!
 - {{company_name}}`,
   },
   {
-    id: 'invoice_with_link',
-    name: 'Invoice with Link',
-    nameAr: 'فاتورة مع رابط',
+    id: "invoice_with_link",
+    name: "Invoice with Link",
+    nameAr: "فاتورة مع رابط",
     icon: FileText,
-    category: 'invoice',
+    category: "invoice",
     template: `Hello {{customer_name}},
 
 Your invoice {{invoice_number}} for {{amount}} is ready.
@@ -138,11 +138,11 @@ Thank you!
 - {{company_name}}`,
   },
   {
-    id: 'payment_reminder',
-    name: 'Payment Reminder',
-    nameAr: 'تذكير بالدفع',
+    id: "payment_reminder",
+    name: "Payment Reminder",
+    nameAr: "تذكير بالدفع",
     icon: CreditCard,
-    category: 'payment',
+    category: "payment",
     template: `Hello {{customer_name}},
 
 This is a friendly reminder that invoice {{invoice_number}} for AED {{amount}} is due on {{due_date}}.
@@ -161,11 +161,11 @@ Thank you!
 - {{company_name}}`,
   },
   {
-    id: 'payment_overdue',
-    name: 'Overdue Payment',
-    nameAr: 'دفعة متأخرة',
+    id: "payment_overdue",
+    name: "Overdue Payment",
+    nameAr: "دفعة متأخرة",
     icon: CalendarClock,
-    category: 'payment',
+    category: "payment",
     template: `Hello {{customer_name}},
 
 Invoice {{invoice_number}} for AED {{amount}} was due on {{due_date}} and is now overdue.
@@ -184,11 +184,11 @@ Thank you for your attention.
 - {{company_name}}`,
   },
   {
-    id: 'payment_received',
-    name: 'Payment Received',
-    nameAr: 'تم استلام الدفع',
+    id: "payment_received",
+    name: "Payment Received",
+    nameAr: "تم استلام الدفع",
     icon: CheckCircle2,
-    category: 'payment',
+    category: "payment",
     template: `Hello {{customer_name}},
 
 Thank you! We have received your payment of AED {{amount}} for invoice {{invoice_number}}.
@@ -207,11 +207,11 @@ Best regards,
 - {{company_name}}`,
   },
   {
-    id: 'welcome_client',
-    name: 'Welcome New Client',
-    nameAr: 'ترحيب بعميل جديد',
+    id: "welcome_client",
+    name: "Welcome New Client",
+    nameAr: "ترحيب بعميل جديد",
     icon: UserPlus,
-    category: 'onboarding',
+    category: "onboarding",
     template: `Hello {{customer_name}},
 
 Welcome to {{company_name}}! We are delighted to have you as our client.
@@ -230,11 +230,11 @@ Best regards,
 - {{company_name}}`,
   },
   {
-    id: 'document_request',
-    name: 'Document Request',
-    nameAr: 'طلب مستندات',
+    id: "document_request",
+    name: "Document Request",
+    nameAr: "طلب مستندات",
     icon: FolderOpen,
-    category: 'onboarding',
+    category: "onboarding",
     template: `Hello {{customer_name}},
 
 We kindly request you to provide the following documents at your earliest convenience:
@@ -263,11 +263,11 @@ Thank you!
 - {{company_name}}`,
   },
   {
-    id: 'onboarding_complete',
-    name: 'Onboarding Complete',
-    nameAr: 'اكتمال التسجيل',
+    id: "onboarding_complete",
+    name: "Onboarding Complete",
+    nameAr: "اكتمال التسجيل",
     icon: CheckCircle2,
-    category: 'onboarding',
+    category: "onboarding",
     template: `Hello {{customer_name}},
 
 Great news! Your onboarding with {{company_name}} is now complete. Your account is fully set up and ready to go.
@@ -286,11 +286,11 @@ Welcome aboard!
 - {{company_name}}`,
   },
   {
-    id: 'bookkeeping_complete',
-    name: 'Bookkeeping Complete',
-    nameAr: 'اكتمال المحاسبة الشهرية',
+    id: "bookkeeping_complete",
+    name: "Bookkeeping Complete",
+    nameAr: "اكتمال المحاسبة الشهرية",
     icon: BookOpen,
-    category: 'service',
+    category: "service",
     template: `Hello {{customer_name}},
 
 Your bookkeeping for {{period}} has been completed. All transactions have been recorded and reconciled.
@@ -309,11 +309,11 @@ Best regards,
 - {{company_name}}`,
   },
   {
-    id: 'vat_filed',
-    name: 'VAT Return Filed',
-    nameAr: 'تم تقديم إقرار الضريبة',
+    id: "vat_filed",
+    name: "VAT Return Filed",
+    nameAr: "تم تقديم إقرار الضريبة",
     icon: ClipboardCheck,
-    category: 'service',
+    category: "service",
     template: `Hello {{customer_name}},
 
 Your VAT return for the period {{period}} has been successfully filed with the Federal Tax Authority.
@@ -338,11 +338,11 @@ Best regards,
 - {{company_name}}`,
   },
   {
-    id: 'vat_deadline_reminder',
-    name: 'VAT Deadline Reminder',
-    nameAr: 'تذكير موعد الضريبة',
+    id: "vat_deadline_reminder",
+    name: "VAT Deadline Reminder",
+    nameAr: "تذكير موعد الضريبة",
     icon: CalendarClock,
-    category: 'alert',
+    category: "alert",
     template: `Hello {{customer_name}},
 
 This is a reminder that your VAT return filing deadline is approaching on {{due_date}}.
@@ -361,11 +361,11 @@ Thank you!
 - {{company_name}}`,
   },
   {
-    id: 'tax_return_ready',
-    name: 'Tax Return Ready',
-    nameAr: 'الإقرار الضريبي جاهز',
+    id: "tax_return_ready",
+    name: "Tax Return Ready",
+    nameAr: "الإقرار الضريبي جاهز",
     icon: FileText,
-    category: 'service',
+    category: "service",
     template: `Hello {{customer_name}},
 
 Your tax return for {{period}} has been prepared and is ready for your review.
@@ -384,11 +384,11 @@ Best regards,
 - {{company_name}}`,
   },
   {
-    id: 'report_ready',
-    name: 'Financial Report Ready',
-    nameAr: 'التقرير المالي جاهز',
+    id: "report_ready",
+    name: "Financial Report Ready",
+    nameAr: "التقرير المالي جاهز",
     icon: BarChart3,
-    category: 'service',
+    category: "service",
     template: `Hello {{customer_name}},
 
 Your financial report for {{period}} is now ready. Key highlights:
@@ -411,11 +411,11 @@ Best regards,
 - {{company_name}}`,
   },
   {
-    id: 'seasonal_greeting',
-    name: 'Seasonal Greeting',
-    nameAr: 'تهنئة موسمية',
+    id: "seasonal_greeting",
+    name: "Seasonal Greeting",
+    nameAr: "تهنئة موسمية",
     icon: PartyPopper,
-    category: 'engagement',
+    category: "engagement",
     template: `Dear {{customer_name}},
 
 {{message}}
@@ -434,11 +434,11 @@ Best regards,
 - {{company_name}}`,
   },
   {
-    id: 'feedback_request',
-    name: 'Feedback Request',
-    nameAr: 'طلب ملاحظات',
+    id: "feedback_request",
+    name: "Feedback Request",
+    nameAr: "طلب ملاحظات",
     icon: MessageSquare,
-    category: 'engagement',
+    category: "engagement",
     template: `Hello {{customer_name}},
 
 We value your opinion! We would love to hear your feedback about our services.
@@ -457,11 +457,11 @@ Thank you for your time!
 - {{company_name}}`,
   },
   {
-    id: 'general_reminder',
-    name: 'General Reminder',
-    nameAr: 'تذكير عام',
+    id: "general_reminder",
+    name: "General Reminder",
+    nameAr: "تذكير عام",
     icon: Bell,
-    category: 'alert',
+    category: "alert",
     template: `Hello {{customer_name}},
 
 {{message}}
@@ -476,11 +476,11 @@ Best regards,
 - {{company_name}}`,
   },
   {
-    id: 'news_update',
-    name: 'News & Announcement',
-    nameAr: 'أخبار وإعلان',
+    id: "news_update",
+    name: "News & Announcement",
+    nameAr: "أخبار وإعلان",
     icon: Megaphone,
-    category: 'engagement',
+    category: "engagement",
     template: `Hello {{customer_name}},
 
 {{message}}

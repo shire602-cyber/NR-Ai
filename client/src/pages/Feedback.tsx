@@ -1,109 +1,146 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest } from '@/lib/queryClient';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { formatDistanceToNow } from 'date-fns';
-import { useLocation } from 'wouter';
-import { 
-  MessageSquare, 
-  Bug, 
-  Lightbulb, 
-  ThumbsUp, 
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { formatDistanceToNow } from "date-fns";
+import { useLocation } from "wouter";
+import {
+  MessageSquare,
+  Bug,
+  Lightbulb,
+  ThumbsUp,
   Star,
   Send,
   History,
   CheckCircle,
   Clock,
-  AlertCircle
-} from 'lucide-react';
-import type { UserFeedback } from '@shared/schema';
+  AlertCircle,
+} from "lucide-react";
+import type { UserFeedback } from "@shared/schema";
 
 const FEEDBACK_TYPES = [
-  { value: 'bug', label: 'Bug Report', icon: Bug, description: 'Report a problem or error' },
-  { value: 'feature_request', label: 'Feature Request', icon: Lightbulb, description: 'Suggest a new feature' },
-  { value: 'improvement', label: 'Improvement', icon: ThumbsUp, description: 'Suggest an improvement' },
-  { value: 'praise', label: 'Praise', icon: Star, description: 'Share what you love' },
+  { value: "bug", label: "Bug Report", icon: Bug, description: "Report a problem or error" },
+  {
+    value: "feature_request",
+    label: "Feature Request",
+    icon: Lightbulb,
+    description: "Suggest a new feature",
+  },
+  {
+    value: "improvement",
+    label: "Improvement",
+    icon: ThumbsUp,
+    description: "Suggest an improvement",
+  },
+  { value: "praise", label: "Praise", icon: Star, description: "Share what you love" },
 ];
 
 const CATEGORIES = [
-  { value: 'ui', label: 'User Interface' },
-  { value: 'performance', label: 'Performance' },
-  { value: 'feature', label: 'Feature' },
-  { value: 'billing', label: 'Billing' },
-  { value: 'support', label: 'Support' },
-  { value: 'other', label: 'Other' },
+  { value: "ui", label: "User Interface" },
+  { value: "performance", label: "Performance" },
+  { value: "feature", label: "Feature" },
+  { value: "billing", label: "Billing" },
+  { value: "support", label: "Support" },
+  { value: "other", label: "Other" },
 ];
 
 export default function Feedback() {
   const { toast } = useToast();
   const [location] = useLocation();
-  const [activeTab, setActiveTab] = useState('submit');
+  const [activeTab, setActiveTab] = useState("submit");
   const [formData, setFormData] = useState({
-    feedbackType: '',
-    category: '',
-    title: '',
-    message: '',
+    feedbackType: "",
+    category: "",
+    title: "",
+    message: "",
     rating: 0,
     allowContact: true,
-    contactEmail: '',
+    contactEmail: "",
   });
 
   const { data: feedbackHistory, isLoading: historyLoading } = useQuery<UserFeedback[]>({
-    queryKey: ['/api/feedback'],
+    queryKey: ["/api/feedback"],
   });
 
   const submitMutation = useMutation({
-    mutationFn: (data: typeof formData) => apiRequest('POST', '/api/feedback', {
-      ...data,
-      pageContext: location,
-    }),
+    mutationFn: (data: typeof formData) =>
+      apiRequest("POST", "/api/feedback", {
+        ...data,
+        pageContext: location,
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/feedback'] });
-      toast({ title: 'Thank you for your feedback!' });
+      queryClient.invalidateQueries({ queryKey: ["/api/feedback"] });
+      toast({ title: "Thank you for your feedback!" });
       setFormData({
-        feedbackType: '',
-        category: '',
-        title: '',
-        message: '',
+        feedbackType: "",
+        category: "",
+        title: "",
+        message: "",
         rating: 0,
         allowContact: true,
-        contactEmail: '',
+        contactEmail: "",
       });
-      setActiveTab('history');
+      setActiveTab("history");
     },
     onError: (error: any) => {
-      toast({ title: 'Error', description: error?.message, variant: 'destructive' });
+      toast({ title: "Error", description: error?.message, variant: "destructive" });
     },
   });
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'resolved':
-        return <Badge className="bg-green-500"><CheckCircle className="w-3 h-3 mr-1" />Resolved</Badge>;
-      case 'in_progress':
-        return <Badge className="bg-blue-500"><Clock className="w-3 h-3 mr-1" />In Progress</Badge>;
-      case 'reviewed':
-        return <Badge className="bg-amber-500"><AlertCircle className="w-3 h-3 mr-1" />Reviewed</Badge>;
-      case 'new':
-        return <Badge variant="secondary"><Clock className="w-3 h-3 mr-1" />New</Badge>;
+      case "resolved":
+        return (
+          <Badge className="bg-green-500">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            Resolved
+          </Badge>
+        );
+      case "in_progress":
+        return (
+          <Badge className="bg-blue-500">
+            <Clock className="w-3 h-3 mr-1" />
+            In Progress
+          </Badge>
+        );
+      case "reviewed":
+        return (
+          <Badge className="bg-amber-500">
+            <AlertCircle className="w-3 h-3 mr-1" />
+            Reviewed
+          </Badge>
+        );
+      case "new":
+        return (
+          <Badge variant="secondary">
+            <Clock className="w-3 h-3 mr-1" />
+            New
+          </Badge>
+        );
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
   };
 
   const getTypeIcon = (type: string) => {
-    const typeInfo = FEEDBACK_TYPES.find(t => t.value === type);
+    const typeInfo = FEEDBACK_TYPES.find((t) => t.value === type);
     if (typeInfo) {
       const Icon = typeInfo.icon;
       return <Icon className="w-4 h-4" />;
@@ -135,9 +172,7 @@ export default function Feedback() {
           <Card>
             <CardHeader>
               <CardTitle>Share Your Feedback</CardTitle>
-              <CardDescription>
-                Your feedback helps us build a better product
-              </CardDescription>
+              <CardDescription>Your feedback helps us build a better product</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="space-y-2">
@@ -151,13 +186,15 @@ export default function Feedback() {
                         key={type.value}
                         onClick={() => setFormData({ ...formData, feedbackType: type.value })}
                         className={`p-4 rounded-lg border-2 transition-colors text-left ${
-                          isSelected 
-                            ? 'border-primary bg-primary/5' 
-                            : 'border-border hover:border-primary/50'
+                          isSelected
+                            ? "border-primary bg-primary/5"
+                            : "border-border hover:border-primary/50"
                         }`}
                         data-testid={`button-type-${type.value}`}
                       >
-                        <Icon className={`w-6 h-6 mb-2 ${isSelected ? 'text-primary' : 'text-muted-foreground'}`} />
+                        <Icon
+                          className={`w-6 h-6 mb-2 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
+                        />
                         <div className="font-medium">{type.label}</div>
                         <div className="text-xs text-muted-foreground">{type.description}</div>
                       </button>
@@ -178,7 +215,9 @@ export default function Feedback() {
                     </SelectTrigger>
                     <SelectContent>
                       {CATEGORIES.map((cat) => (
-                        <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                        <SelectItem key={cat.value} value={cat.value}>
+                          {cat.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -194,12 +233,12 @@ export default function Feedback() {
                         className="p-1 hover:scale-110 transition-transform"
                         data-testid={`button-star-${star}`}
                       >
-                        <Star 
+                        <Star
                           className={`w-8 h-8 ${
-                            star <= formData.rating 
-                              ? 'fill-amber-400 text-amber-400' 
-                              : 'text-muted-foreground'
-                          }`} 
+                            star <= formData.rating
+                              ? "fill-amber-400 text-amber-400"
+                              : "text-muted-foreground"
+                          }`}
                         />
                       </button>
                     ))}
@@ -255,7 +294,7 @@ export default function Feedback() {
                 </div>
               )}
 
-              <Button 
+              <Button
                 onClick={() => submitMutation.mutate(formData)}
                 disabled={!formData.feedbackType || !formData.message || submitMutation.isPending}
                 className="w-full"
@@ -271,7 +310,7 @@ export default function Feedback() {
         <TabsContent value="history" className="mt-6">
           {historyLoading ? (
             <div className="space-y-4">
-              {[1, 2, 3].map(i => (
+              {[1, 2, 3].map((i) => (
                 <Skeleton key={i} className="h-24 w-full" />
               ))}
             </div>
@@ -283,9 +322,7 @@ export default function Feedback() {
                 <p className="text-muted-foreground text-center mb-4">
                   Your submitted feedback will appear here
                 </p>
-                <Button onClick={() => setActiveTab('submit')}>
-                  Submit Your First Feedback
-                </Button>
+                <Button onClick={() => setActiveTab("submit")}>Submit Your First Feedback</Button>
               </CardContent>
             </Card>
           ) : (
@@ -298,7 +335,7 @@ export default function Feedback() {
                         {getTypeIcon(feedback.feedbackType)}
                         <div>
                           <CardTitle className="text-lg">
-                            {feedback.title || feedback.feedbackType.replace('_', ' ')}
+                            {feedback.title || feedback.feedbackType.replace("_", " ")}
                           </CardTitle>
                           <CardDescription>
                             {formatDistanceToNow(new Date(feedback.createdAt), { addSuffix: true })}
@@ -309,13 +346,13 @@ export default function Feedback() {
                         {feedback.rating && (
                           <div className="flex items-center">
                             {[1, 2, 3, 4, 5].map((star) => (
-                              <Star 
+                              <Star
                                 key={star}
                                 className={`w-4 h-4 ${
-                                  star <= feedback.rating! 
-                                    ? 'fill-amber-400 text-amber-400' 
-                                    : 'text-muted-foreground'
-                                }`} 
+                                  star <= feedback.rating!
+                                    ? "fill-amber-400 text-amber-400"
+                                    : "text-muted-foreground"
+                                }`}
                               />
                             ))}
                           </div>

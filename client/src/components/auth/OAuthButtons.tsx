@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
-import { FcGoogle } from 'react-icons/fc';
-import { FaMicrosoft } from 'react-icons/fa';
-import { Button } from '@/components/ui/button';
-import { apiUrl } from '@/lib/api';
+import { useEffect, useState } from "react";
+import { FcGoogle } from "react-icons/fc";
+import { FaMicrosoft } from "react-icons/fa";
+import { Button } from "@/components/ui/button";
+import { apiUrl } from "@/lib/api";
 
-type OAuthProvider = 'google' | 'microsoft';
+type OAuthProvider = "google" | "microsoft";
 type OAuthProviderInfo = {
   id: OAuthProvider;
   label: string;
@@ -17,16 +17,16 @@ const PROVIDER_ICONS = {
 } as const;
 
 const PROVIDER_ICON_CLASS = {
-  google: 'h-4 w-4',
-  microsoft: 'h-4 w-4 text-[#00a4ef]',
+  google: "h-4 w-4",
+  microsoft: "h-4 w-4 text-[#00a4ef]",
 } as const;
 
 function safeNextPath(): string {
-  if (typeof window === 'undefined') return '/dashboard';
+  if (typeof window === "undefined") return "/dashboard";
   const params = new URLSearchParams(window.location.search);
-  const next = params.get('next');
-  if (next?.startsWith('/') && !next.startsWith('//')) return next;
-  return '/dashboard';
+  const next = params.get("next");
+  if (next?.startsWith("/") && !next.startsWith("//")) return next;
+  return "/dashboard";
 }
 
 export function OAuthButtons() {
@@ -36,14 +36,15 @@ export function OAuthButtons() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch(apiUrl('/api/auth/oauth/providers'), { credentials: 'include' })
+    fetch(apiUrl("/api/auth/oauth/providers"), { credentials: "include" })
       .then(async (response) => {
         if (!response.ok) return [];
         const body = await response.json();
         if (!Array.isArray(body?.providers)) return [];
         return body.providers.filter(
           (provider: Partial<OAuthProviderInfo>) =>
-            (provider.id === 'google' || provider.id === 'microsoft') && provider.configured === true,
+            (provider.id === "google" || provider.id === "microsoft") &&
+            provider.configured === true
         ) as OAuthProviderInfo[];
       })
       .then((configuredProviders) => {
@@ -97,7 +98,7 @@ export function OAuthButtons() {
       </div>
       {pendingProvider && (
         <p className="text-center text-xs text-muted-foreground" role="status">
-          Redirecting to {pendingProvider === 'google' ? 'Google' : 'Microsoft'}...
+          Redirecting to {pendingProvider === "google" ? "Google" : "Microsoft"}...
         </p>
       )}
     </div>

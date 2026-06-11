@@ -1,19 +1,39 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Progress } from '@/components/ui/progress';
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ComposedChart } from 'recharts';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency } from '@/lib/format';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
+import {
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+  ComposedChart,
+} from "recharts";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatCurrency } from "@/lib/format";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   TrendingUp,
   TrendingDown,
@@ -33,8 +53,8 @@ import {
   DollarSign,
   PiggyBank,
   Activity,
-  Zap
-} from 'lucide-react';
+  Zap,
+} from "lucide-react";
 
 interface CashFlowForecast {
   id: string;
@@ -61,74 +81,74 @@ interface FinancialKPI {
   value: number;
   previousValue: number;
   changePercent: number;
-  trend: 'up' | 'down' | 'stable';
+  trend: "up" | "down" | "stable";
   benchmark?: number;
   unit: string;
 }
 
 interface AIInsight {
   id: string;
-  type: 'opportunity' | 'warning' | 'trend' | 'recommendation';
+  type: "opportunity" | "warning" | "trend" | "recommendation";
   title: string;
   description: string;
   impact: string;
-  priority: 'high' | 'medium' | 'low';
+  priority: "high" | "medium" | "low";
   actionable: boolean;
   action?: string;
 }
 
 export default function AdvancedAnalytics() {
   const { t, locale } = useTranslation();
-  const isRTL = locale === 'ar';
+  const isRTL = locale === "ar";
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
-  const [forecastPeriod, setForecastPeriod] = useState('3months');
+  const [forecastPeriod, setForecastPeriod] = useState("3months");
   const [budgetYear, setBudgetYear] = useState(new Date().getFullYear());
   const [budgetMonth, setBudgetMonth] = useState(new Date().getMonth() + 1);
 
   // Fetch forecasts
   const { data: forecasts, isLoading: forecastsLoading } = useQuery<CashFlowForecast[]>({
-    queryKey: ['/api/analytics/forecasts', companyId, forecastPeriod],
+    queryKey: ["/api/analytics/forecasts", companyId, forecastPeriod],
     queryFn: () => {
       const params = new URLSearchParams({
-        companyId: companyId ?? '',
+        companyId: companyId ?? "",
         period: forecastPeriod,
       });
-      return apiRequest('GET', `/api/analytics/forecasts?${params}`);
+      return apiRequest("GET", `/api/analytics/forecasts?${params}`);
     },
     enabled: !!companyId,
   });
 
   // Fetch budget vs actual
   const { data: budgetData, isLoading: budgetLoading } = useQuery<BudgetVsActual[]>({
-    queryKey: ['/api/analytics/budget-vs-actual', companyId, budgetYear, budgetMonth],
+    queryKey: ["/api/analytics/budget-vs-actual", companyId, budgetYear, budgetMonth],
     queryFn: () => {
       const params = new URLSearchParams({
-        companyId: companyId ?? '',
+        companyId: companyId ?? "",
         year: String(budgetYear),
         month: String(budgetMonth),
       });
-      return apiRequest('GET', `/api/analytics/budget-vs-actual?${params}`);
+      return apiRequest("GET", `/api/analytics/budget-vs-actual?${params}`);
     },
     enabled: !!companyId,
   });
 
   // Fetch KPIs
   const { data: kpis, isLoading: kpisLoading } = useQuery<FinancialKPI[]>({
-    queryKey: ['/api/analytics/kpis', companyId],
+    queryKey: ["/api/analytics/kpis", companyId],
     queryFn: () => {
-      const params = new URLSearchParams({ companyId: companyId ?? '' });
-      return apiRequest('GET', `/api/analytics/kpis?${params}`);
+      const params = new URLSearchParams({ companyId: companyId ?? "" });
+      return apiRequest("GET", `/api/analytics/kpis?${params}`);
     },
     enabled: !!companyId,
   });
 
   // Fetch AI insights
   const { data: insights, isLoading: insightsLoading } = useQuery<AIInsight[]>({
-    queryKey: ['/api/analytics/insights', companyId],
+    queryKey: ["/api/analytics/insights", companyId],
     queryFn: () => {
-      const params = new URLSearchParams({ companyId: companyId ?? '' });
-      return apiRequest('GET', `/api/analytics/insights?${params}`);
+      const params = new URLSearchParams({ companyId: companyId ?? "" });
+      return apiRequest("GET", `/api/analytics/insights?${params}`);
     },
     enabled: !!companyId,
   });
@@ -136,22 +156,31 @@ export default function AdvancedAnalytics() {
   // Generate forecast mutation
   const generateForecastMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest('POST', '/api/analytics/generate-forecast', {
+      return await apiRequest("POST", "/api/analytics/generate-forecast", {
         companyId,
         period: forecastPeriod,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/analytics/forecasts', companyId, forecastPeriod] });
-      toast({ title: 'Forecast Generated', description: 'AI has generated new cash flow predictions' });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/analytics/forecasts", companyId, forecastPeriod],
+      });
+      toast({
+        title: "Forecast Generated",
+        description: "AI has generated new cash flow predictions",
+      });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Error', description: error?.message || 'Failed to generate forecast' });
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.message || "Failed to generate forecast",
+      });
     },
   });
 
   const forecastRows = (forecasts ?? []).map((forecast) => ({
-    month: new Date(forecast.forecastDate).toLocaleDateString('en-AE', { month: 'short' }),
+    month: new Date(forecast.forecastDate).toLocaleDateString("en-AE", { month: "short" }),
     inflow: Number(forecast.predictedInflow) || 0,
     outflow: Number(forecast.predictedOutflow) || 0,
     balance: Number(forecast.predictedBalance) || 0,
@@ -165,7 +194,7 @@ export default function AdvancedAnalytics() {
       balance: row.balance,
       confidence: summary.confidence + row.confidence,
     }),
-    { inflow: 0, outflow: 0, balance: 0, confidence: 0 },
+    { inflow: 0, outflow: 0, balance: 0, confidence: 0 }
   );
   const averageForecastConfidence = hasForecastRows
     ? Math.round((forecastSummary.confidence / forecastRows.length) * 100)
@@ -184,7 +213,7 @@ export default function AdvancedAnalytics() {
       actual: summary.actual + row.actual,
       variance: summary.variance + row.variance,
     }),
-    { budgeted: 0, actual: 0, variance: 0 },
+    { budgeted: 0, actual: 0, variance: 0 }
   );
 
   const kpiRows = kpis ?? [];
@@ -192,26 +221,47 @@ export default function AdvancedAnalytics() {
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
-      case 'up': return <ArrowUp className="w-4 h-4 text-green-600 dark:text-green-400" />;
-      case 'down': return <ArrowDown className="w-4 h-4 text-red-600 dark:text-red-400" />;
-      default: return <Minus className="w-4 h-4 text-muted-foreground" />;
+      case "up":
+        return <ArrowUp className="w-4 h-4 text-green-600 dark:text-green-400" />;
+      case "down":
+        return <ArrowDown className="w-4 h-4 text-red-600 dark:text-red-400" />;
+      default:
+        return <Minus className="w-4 h-4 text-muted-foreground" />;
     }
   };
 
   const getInsightIcon = (type: string) => {
     switch (type) {
-      case 'opportunity': return <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />;
-      case 'warning': return <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />;
-      case 'trend': return <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />;
-      case 'recommendation': return <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />;
-      default: return <Brain className="w-5 h-5" />;
+      case "opportunity":
+        return <TrendingUp className="w-5 h-5 text-green-600 dark:text-green-400" />;
+      case "warning":
+        return <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />;
+      case "trend":
+        return <Activity className="w-5 h-5 text-blue-600 dark:text-blue-400" />;
+      case "recommendation":
+        return <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />;
+      default:
+        return <Brain className="w-5 h-5" />;
     }
   };
 
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const months = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+  ];
 
   return (
-    <div className="space-y-6" dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="space-y-6" dir={isRTL ? "rtl" : "ltr"}>
       {/* Header */}
       <div className="relative overflow-hidden rounded-lg bg-gradient-to-br from-blue-600/10 via-purple-600/5 to-transparent border border-blue-600/20 p-8">
         <div className="relative z-10">
@@ -220,7 +270,9 @@ export default function AdvancedAnalytics() {
               <BarChart3 className="w-6 h-6 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold" data-testid="text-analytics-title">Advanced Analytics & Forecasts</h1>
+              <h1 className="text-3xl font-bold" data-testid="text-analytics-title">
+                Advanced Analytics & Forecasts
+              </h1>
               <p className="text-muted-foreground mt-1">
                 AI-powered financial intelligence for strategic decision making
               </p>
@@ -289,9 +341,13 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono text-green-600 dark:text-green-400">
-                  {formatCurrency(forecastSummary.inflow, 'AED')}
+                  {formatCurrency(forecastSummary.inflow, "AED")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Next {forecastPeriod === '3months' ? '3' : forecastPeriod === '6months' ? '6' : '12'} months</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Next{" "}
+                  {forecastPeriod === "3months" ? "3" : forecastPeriod === "6months" ? "6" : "12"}{" "}
+                  months
+                </p>
               </CardContent>
             </Card>
 
@@ -302,7 +358,7 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono text-blue-600 dark:text-blue-400">
-                  {formatCurrency(forecastSummary.outflow, 'AED')}
+                  {formatCurrency(forecastSummary.outflow, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Estimated expenses</p>
               </CardContent>
@@ -315,7 +371,7 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono text-green-600 dark:text-green-400">
-                  {formatCurrency(forecastSummary.balance, 'AED')}
+                  {formatCurrency(forecastSummary.balance, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Projected balance</p>
               </CardContent>
@@ -326,7 +382,9 @@ export default function AdvancedAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Cash Flow Forecast</CardTitle>
-              <CardDescription>AI-predicted inflows and outflows with confidence bands</CardDescription>
+              <CardDescription>
+                AI-predicted inflows and outflows with confidence bands
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {forecastsLoading ? (
@@ -337,7 +395,7 @@ export default function AdvancedAnalytics() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis tickFormatter={(value) => `${value / 1000}k`} />
-                    <Tooltip formatter={(value) => formatCurrency(value as number, 'AED')} />
+                    <Tooltip formatter={(value) => formatCurrency(value as number, "AED")} />
                     <Legend />
                     <Area
                       type="monotone"
@@ -362,7 +420,7 @@ export default function AdvancedAnalytics() {
                       dataKey="balance"
                       stroke="hsl(262, 83%, 58%)"
                       strokeWidth={2}
-                      dot={{ fill: 'hsl(262, 83%, 58%)' }}
+                      dot={{ fill: "hsl(262, 83%, 58%)" }}
                       name="Net Balance"
                     />
                   </AreaChart>
@@ -371,7 +429,9 @@ export default function AdvancedAnalytics() {
                 <div className="h-[350px] flex flex-col items-center justify-center text-center text-muted-foreground">
                   <Calendar className="w-8 h-8 mb-3" />
                   <p className="font-medium">No forecast generated yet</p>
-                  <p className="text-sm">Generate a forecast once invoices, receipts, or journals exist.</p>
+                  <p className="text-sm">
+                    Generate a forecast once invoices, receipts, or journals exist.
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -388,13 +448,18 @@ export default function AdvancedAnalytics() {
             <CardContent>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm text-muted-foreground">
-                  {hasForecastRows ? 'Based on generated forecast history' : 'Needs transaction history before confidence is meaningful'}
+                  {hasForecastRows
+                    ? "Based on generated forecast history"
+                    : "Needs transaction history before confidence is meaningful"}
                 </span>
-                <span className="font-mono font-bold text-primary">{averageForecastConfidence}%</span>
+                <span className="font-mono font-bold text-primary">
+                  {averageForecastConfidence}%
+                </span>
               </div>
               <Progress value={averageForecastConfidence} className="h-2" />
               <p className="text-xs text-muted-foreground mt-2">
-                Confidence increases with more transaction history. Empty demo data is not shown as a real forecast.
+                Confidence increases with more transaction history. Empty demo data is not shown as
+                a real forecast.
               </p>
             </CardContent>
           </Card>
@@ -412,13 +477,18 @@ export default function AdvancedAnalytics() {
                 <SelectItem value="2025">2025</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={budgetMonth.toString()} onValueChange={(v) => setBudgetMonth(parseInt(v))}>
+            <Select
+              value={budgetMonth.toString()}
+              onValueChange={(v) => setBudgetMonth(parseInt(v))}
+            >
               <SelectTrigger className="w-36" data-testid="select-budget-month">
                 <SelectValue placeholder="Month" />
               </SelectTrigger>
               <SelectContent>
                 {months.map((m, i) => (
-                  <SelectItem key={i + 1} value={(i + 1).toString()}>{m}</SelectItem>
+                  <SelectItem key={i + 1} value={(i + 1).toString()}>
+                    {m}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -433,9 +503,11 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(budgetSummary.budgeted, 'AED')}
+                  {formatCurrency(budgetSummary.budgeted, "AED")}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Planned for {months[budgetMonth - 1]} {budgetYear}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Planned for {months[budgetMonth - 1]} {budgetYear}
+                </p>
               </CardContent>
             </Card>
 
@@ -446,7 +518,7 @@ export default function AdvancedAnalytics() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold font-mono">
-                  {formatCurrency(budgetSummary.actual, 'AED')}
+                  {formatCurrency(budgetSummary.actual, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Recorded transactions</p>
               </CardContent>
@@ -458,11 +530,13 @@ export default function AdvancedAnalytics() {
                 <PiggyBank className="w-4 h-4 text-green-600 dark:text-green-400" />
               </CardHeader>
               <CardContent>
-                <div className={`text-2xl font-bold font-mono ${budgetSummary.variance > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                  {formatCurrency(budgetSummary.variance, 'AED')}
+                <div
+                  className={`text-2xl font-bold font-mono ${budgetSummary.variance > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}
+                >
+                  {formatCurrency(budgetSummary.variance, "AED")}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {budgetSummary.variance > 0 ? 'Over budget' : 'Under or on budget'}
+                  {budgetSummary.variance > 0 ? "Over budget" : "Under or on budget"}
                 </p>
               </CardContent>
             </Card>
@@ -472,7 +546,9 @@ export default function AdvancedAnalytics() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Budget vs Actual Comparison</CardTitle>
-              <CardDescription>Category-wise breakdown of planned vs actual spending</CardDescription>
+              <CardDescription>
+                Category-wise breakdown of planned vs actual spending
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {budgetLoading ? (
@@ -483,7 +559,7 @@ export default function AdvancedAnalytics() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" tickFormatter={(value) => `${value / 1000}k`} />
                     <YAxis type="category" dataKey="category" width={100} />
-                    <Tooltip formatter={(value) => formatCurrency(value as number, 'AED')} />
+                    <Tooltip formatter={(value) => formatCurrency(value as number, "AED")} />
                     <Legend />
                     <Bar dataKey="budgeted" fill="hsl(var(--muted))" name="Budgeted" barSize={20} />
                     <Bar dataKey="actual" fill="hsl(var(--primary))" name="Actual" barSize={20} />
@@ -493,7 +569,10 @@ export default function AdvancedAnalytics() {
                 <div className="h-[350px] flex flex-col items-center justify-center text-center text-muted-foreground">
                   <Target className="w-8 h-8 mb-3" />
                   <p className="font-medium">No budget data yet</p>
-                  <p className="text-sm">Create budgets and post transactions to compare planned versus actual performance.</p>
+                  <p className="text-sm">
+                    Create budgets and post transactions to compare planned versus actual
+                    performance.
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -514,27 +593,36 @@ export default function AdvancedAnalytics() {
                 )}
                 {budgetRows.map((item, idx) => {
                   const isOverBudget = item.variance > 0;
-                  const variancePercent = item.budgeted > 0
-                    ? Math.abs((item.variance / item.budgeted) * 100)
-                    : 0;
+                  const variancePercent =
+                    item.budgeted > 0 ? Math.abs((item.variance / item.budgeted) * 100) : 0;
 
                   return (
-                    <div key={idx} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover-elevate">
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-3 rounded-lg bg-muted/50 hover-elevate"
+                    >
                       <div className="flex items-center gap-3">
-                        <div className={`w-2 h-8 rounded-full ${isOverBudget ? 'bg-red-500' : item.variance === 0 ? 'bg-gray-400' : 'bg-green-500'}`} />
+                        <div
+                          className={`w-2 h-8 rounded-full ${isOverBudget ? "bg-red-500" : item.variance === 0 ? "bg-gray-400" : "bg-green-500"}`}
+                        />
                         <div>
                           <p className="font-medium">{item.category}</p>
                           <p className="text-xs text-muted-foreground">
-                            Budget: {formatCurrency(item.budgeted, 'AED')} | Actual: {formatCurrency(item.actual, 'AED')}
+                            Budget: {formatCurrency(item.budgeted, "AED")} | Actual:{" "}
+                            {formatCurrency(item.actual, "AED")}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className={`font-mono font-bold ${isOverBudget ? 'text-red-600 dark:text-red-400' : item.variance === 0 ? 'text-muted-foreground' : 'text-green-600 dark:text-green-400'}`}>
-                          {item.variance > 0 ? '+' : ''}{formatCurrency(item.variance, 'AED')}
+                        <p
+                          className={`font-mono font-bold ${isOverBudget ? "text-red-600 dark:text-red-400" : item.variance === 0 ? "text-muted-foreground" : "text-green-600 dark:text-green-400"}`}
+                        >
+                          {item.variance > 0 ? "+" : ""}
+                          {formatCurrency(item.variance, "AED")}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {variancePercent.toFixed(1)}% {isOverBudget ? 'over' : item.variance === 0 ? 'on target' : 'under'}
+                          {variancePercent.toFixed(1)}%{" "}
+                          {isOverBudget ? "over" : item.variance === 0 ? "on target" : "under"}
                         </p>
                       </div>
                     </div>
@@ -559,9 +647,10 @@ export default function AdvancedAnalytics() {
 
           {/* KPI Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {kpisLoading && Array.from({ length: 3 }).map((_, idx) => (
-              <Skeleton key={idx} className="h-40 w-full" />
-            ))}
+            {kpisLoading &&
+              Array.from({ length: 3 }).map((_, idx) => (
+                <Skeleton key={idx} className="h-40 w-full" />
+              ))}
             {!kpisLoading && kpiRows.length === 0 && (
               <Card className="md:col-span-2 lg:col-span-3">
                 <CardContent className="py-10 text-center text-muted-foreground">
@@ -572,32 +661,44 @@ export default function AdvancedAnalytics() {
               </Card>
             )}
             {kpiRows.map((kpi, idx) => {
-              const isPositiveTrend = (kpi.type === 'expense_ratio' || kpi.type === 'dso')
-                ? kpi.trend === 'down'
-                : kpi.trend === 'up';
+              const isPositiveTrend =
+                kpi.type === "expense_ratio" || kpi.type === "dso"
+                  ? kpi.trend === "down"
+                  : kpi.trend === "up";
               const meetsOrExceedsBenchmark = kpi.benchmark
-                ? (kpi.type === 'expense_ratio' || kpi.type === 'dso' ? kpi.value <= kpi.benchmark : kpi.value >= kpi.benchmark)
+                ? kpi.type === "expense_ratio" || kpi.type === "dso"
+                  ? kpi.value <= kpi.benchmark
+                  : kpi.value >= kpi.benchmark
                 : true;
 
               return (
                 <Card key={idx} className="hover-elevate relative overflow-hidden">
-                  <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-20
-                    ${isPositiveTrend ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <div
+                    className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-2xl opacity-20
+                    ${isPositiveTrend ? "bg-green-500" : "bg-red-500"}`}
+                  />
                   <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2 gap-2">
                     <div>
                       <CardTitle className="text-sm font-medium">{kpi.label}</CardTitle>
                       {kpi.benchmark && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          Benchmark: {kpi.benchmark}{kpi.unit}
+                          Benchmark: {kpi.benchmark}
+                          {kpi.unit}
                         </p>
                       )}
                     </div>
                     {meetsOrExceedsBenchmark ? (
-                      <Badge variant="secondary" className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400">
+                      <Badge
+                        variant="secondary"
+                        className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400"
+                      >
                         On Track
                       </Badge>
                     ) : (
-                      <Badge variant="secondary" className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                      <Badge
+                        variant="secondary"
+                        className="bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+                      >
                         Below Target
                       </Badge>
                     )}
@@ -605,12 +706,17 @@ export default function AdvancedAnalytics() {
                   <CardContent>
                     <div className="flex items-end justify-between">
                       <div>
-                        <p className={`text-3xl font-bold ${isPositiveTrend ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                          {kpi.value.toFixed(1)}<span className="text-lg">{kpi.unit}</span>
+                        <p
+                          className={`text-3xl font-bold ${isPositiveTrend ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                        >
+                          {kpi.value.toFixed(1)}
+                          <span className="text-lg">{kpi.unit}</span>
                         </p>
                         <div className="flex items-center gap-1 mt-2">
                           {getTrendIcon(kpi.trend)}
-                          <span className={`text-xs font-medium ${isPositiveTrend ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          <span
+                            className={`text-xs font-medium ${isPositiveTrend ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                          >
                             {Math.abs(kpi.changePercent).toFixed(1)}% vs last period
                           </span>
                         </div>
@@ -632,7 +738,9 @@ export default function AdvancedAnalytics() {
               <div className="h-[300px] flex flex-col items-center justify-center text-center text-muted-foreground">
                 <BarChart3 className="w-8 h-8 mb-3" />
                 <p className="font-medium">Trend history is not available yet</p>
-                <p className="text-sm">This chart will populate once periodic KPI snapshots are recorded.</p>
+                <p className="text-sm">
+                  This chart will populate once periodic KPI snapshots are recorded.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -651,27 +759,34 @@ export default function AdvancedAnalytics() {
           </div>
 
           <div className="grid gap-4">
-            {insightsLoading && Array.from({ length: 2 }).map((_, idx) => (
-              <Skeleton key={idx} className="h-32 w-full" />
-            ))}
+            {insightsLoading &&
+              Array.from({ length: 2 }).map((_, idx) => (
+                <Skeleton key={idx} className="h-32 w-full" />
+              ))}
             {!insightsLoading && insightRows.length === 0 && (
               <Card>
                 <CardContent className="py-10 text-center text-muted-foreground">
                   <Brain className="w-8 h-8 mx-auto mb-3" />
                   <p className="font-medium">No AI insights yet</p>
-                  <p className="text-sm">Insights will appear when real invoices, expenses, and patterns exist.</p>
+                  <p className="text-sm">
+                    Insights will appear when real invoices, expenses, and patterns exist.
+                  </p>
                 </CardContent>
               </Card>
             )}
             {insightRows.map((insight) => {
               const priorityColors = {
-                high: 'border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20',
-                medium: 'border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20',
-                low: 'border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20',
+                high: "border-red-200 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20",
+                medium:
+                  "border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20",
+                low: "border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/20",
               };
 
               return (
-                <Card key={insight.id} className={`hover-elevate border-2 ${priorityColors[insight.priority]}`}>
+                <Card
+                  key={insight.id}
+                  className={`hover-elevate border-2 ${priorityColors[insight.priority]}`}
+                >
                   <CardHeader>
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-start gap-3">
@@ -681,8 +796,12 @@ export default function AdvancedAnalytics() {
                           <CardDescription className="mt-1">{insight.description}</CardDescription>
                         </div>
                       </div>
-                      <Badge variant={insight.priority === 'high' ? 'destructive' : 'secondary'}>
-                        {insight.priority === 'high' ? 'High Priority' : insight.priority === 'medium' ? 'Medium' : 'Low'}
+                      <Badge variant={insight.priority === "high" ? "destructive" : "secondary"}>
+                        {insight.priority === "high"
+                          ? "High Priority"
+                          : insight.priority === "medium"
+                            ? "Medium"
+                            : "Low"}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -714,8 +833,9 @@ export default function AdvancedAnalytics() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground">
-                Our AI analyzes your transaction patterns, compares against industry benchmarks, and identifies opportunities and risks.
-                Insights are updated daily as new data comes in. More transaction history improves accuracy.
+                Our AI analyzes your transaction patterns, compares against industry benchmarks, and
+                identifies opportunities and risks. Insights are updated daily as new data comes in.
+                More transaction history improves accuracy.
               </p>
             </CardContent>
           </Card>

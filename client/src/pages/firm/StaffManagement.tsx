@@ -1,20 +1,29 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { PageHeader } from "@/components/ui/page-header";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
-  Users, ChevronDown, ChevronRight, Building2,
-  UserPlus, UserMinus, CheckSquare, Square, Shield,
-  Search, Mail, ExternalLink,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import type { Company } from '@shared/schema';
+  Users,
+  ChevronDown,
+  ChevronRight,
+  Building2,
+  UserPlus,
+  UserMinus,
+  CheckSquare,
+  Square,
+  Shield,
+  Search,
+  Mail,
+  ExternalLink,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Company } from "@shared/schema";
 
 interface StaffMember {
   id: string;
@@ -42,28 +51,29 @@ export default function StaffManagement() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [expandedStaff, setExpandedStaff] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [pendingChanges, setPendingChanges] = useState<
-    Map<string, { staffId: string; companyId: string; action: 'assign' | 'unassign' }>
+    Map<string, { staffId: string; companyId: string; action: "assign" | "unassign" }>
   >(new Map());
   const [saving, setSaving] = useState(false);
 
   const { data: staff = [], isLoading: loadingStaff } = useQuery<StaffMember[]>({
-    queryKey: ['/api/firm/staff'],
+    queryKey: ["/api/firm/staff"],
   });
 
   const { data: clients = [] } = useQuery<ClientWithStats[]>({
-    queryKey: ['/api/firm/clients'],
+    queryKey: ["/api/firm/clients"],
   });
 
-  const filteredStaff = staff.filter(s =>
-    !search ||
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.email.toLowerCase().includes(search.toLowerCase())
+  const filteredStaff = staff.filter(
+    (s) =>
+      !search ||
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.email.toLowerCase().includes(search.toLowerCase())
   );
 
   const toggleExpand = (staffId: string) => {
-    setExpandedStaff(prev => {
+    setExpandedStaff((prev) => {
       const next = new Set(prev);
       if (next.has(staffId)) next.delete(staffId);
       else next.add(staffId);
@@ -74,17 +84,17 @@ export default function StaffManagement() {
   const isAssigned = (staffMember: StaffMember, companyId: string): boolean => {
     const key = `${staffMember.id}:${companyId}`;
     if (pendingChanges.has(key)) {
-      return pendingChanges.get(key)!.action === 'assign';
+      return pendingChanges.get(key)!.action === "assign";
     }
-    return staffMember.assignedClients.some(c => c.companyId === companyId);
+    return staffMember.assignedClients.some((c) => c.companyId === companyId);
   };
 
   const toggleAssignment = (staffMember: StaffMember, companyId: string) => {
     const key = `${staffMember.id}:${companyId}`;
-    const currentlyAssigned = staffMember.assignedClients.some(c => c.companyId === companyId);
+    const currentlyAssigned = staffMember.assignedClients.some((c) => c.companyId === companyId);
     const pendingAction = pendingChanges.get(key)?.action;
 
-    setPendingChanges(prev => {
+    setPendingChanges((prev) => {
       const next = new Map(prev);
       if (pendingAction) {
         // Toggle removes the pending change (reverts to original)
@@ -93,7 +103,7 @@ export default function StaffManagement() {
         next.set(key, {
           staffId: staffMember.id,
           companyId,
-          action: currentlyAssigned ? 'unassign' : 'assign',
+          action: currentlyAssigned ? "unassign" : "assign",
         });
       }
       return next;
@@ -108,10 +118,10 @@ export default function StaffManagement() {
 
     for (const change of pendingChanges.values()) {
       try {
-        await apiRequest('POST', `/api/firm/clients/${change.companyId}/assign-staff`, {
+        await apiRequest("POST", `/api/firm/clients/${change.companyId}/assign-staff`, {
           staffUserId: change.staffId,
           action: change.action,
-          role: 'accountant',
+          role: "accountant",
         });
         success++;
       } catch {
@@ -121,14 +131,14 @@ export default function StaffManagement() {
 
     setSaving(false);
     setPendingChanges(new Map());
-    queryClient.invalidateQueries({ queryKey: ['/api/firm/staff'] });
-    queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
+    queryClient.invalidateQueries({ queryKey: ["/api/firm/staff"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
 
     if (failed === 0) {
-      toast({ title: `${success} assignment${success !== 1 ? 's' : ''} saved` });
+      toast({ title: `${success} assignment${success !== 1 ? "s" : ""} saved` });
     } else {
       toast({
-        variant: 'destructive',
+        variant: "destructive",
         title: `${success} saved, ${failed} failed`,
       });
     }
@@ -148,23 +158,21 @@ export default function StaffManagement() {
         eyebrow="Firm"
         title="Staff Management"
         description="Manage NRA staff assignments across client companies"
-        actions={pendingChanges.size > 0 && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">
-              {pendingChanges.size} pending change{pendingChanges.size !== 1 ? 's' : ''}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPendingChanges(new Map())}
-            >
-              Discard
-            </Button>
-            <Button size="sm" onClick={saveChanges} disabled={saving}>
-              {saving ? 'Saving...' : 'Save Changes'}
-            </Button>
-          </div>
-        )}
+        actions={
+          pendingChanges.size > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-muted-foreground">
+                {pendingChanges.size} pending change{pendingChanges.size !== 1 ? "s" : ""}
+              </span>
+              <Button variant="outline" size="sm" onClick={() => setPendingChanges(new Map())}>
+                Discard
+              </Button>
+              <Button size="sm" onClick={saveChanges} disabled={saving}>
+                {saving ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          )
+        }
       />
 
       {/* Search */}
@@ -173,7 +181,7 @@ export default function StaffManagement() {
         <Input
           placeholder="Search staff by name or email..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
         />
       </div>
@@ -196,7 +204,7 @@ export default function StaffManagement() {
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-muted-foreground">Unassigned Clients</p>
             <p className="text-2xl font-bold mt-0.5">
-              {clients.filter(c => c.assignedStaff?.length === 0).length}
+              {clients.filter((c) => c.assignedStaff?.length === 0).length}
             </p>
           </CardContent>
         </Card>
@@ -208,14 +216,16 @@ export default function StaffManagement() {
           <Users className="w-12 h-12 text-muted-foreground mb-4" />
           <h3 className="font-semibold">No staff members found</h3>
           <p className="text-muted-foreground text-sm mt-1">
-            {search ? 'Try adjusting your search.' : 'No admin users exist yet.'}
+            {search ? "Try adjusting your search." : "No admin users exist yet."}
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredStaff.map(member => {
+          {filteredStaff.map((member) => {
             const expanded = expandedStaff.has(member.id);
-            const pendingForMember = [...pendingChanges.values()].filter(c => c.staffId === member.id);
+            const pendingForMember = [...pendingChanges.values()].filter(
+              (c) => c.staffId === member.id
+            );
 
             return (
               <Card key={member.id} className="overflow-hidden">
@@ -241,20 +251,25 @@ export default function StaffManagement() {
                   </div>
                   <div className="flex items-center gap-3">
                     {pendingForMember.length > 0 && (
-                      <Badge variant="outline" className="text-amber-700 border-amber-300 bg-amber-50">
+                      <Badge
+                        variant="outline"
+                        className="text-amber-700 border-amber-300 bg-amber-50"
+                      >
                         {pendingForMember.length} pending
                       </Badge>
                     )}
                     <div className="text-right">
                       <p className="text-sm font-medium">
-                        {member.assignedClientCount} client{member.assignedClientCount !== 1 ? 's' : ''}
+                        {member.assignedClientCount} client
+                        {member.assignedClientCount !== 1 ? "s" : ""}
                       </p>
                       <p className="text-xs text-muted-foreground">assigned</p>
                     </div>
-                    {expanded
-                      ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                      : <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    }
+                    {expanded ? (
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    )}
                   </div>
                 </div>
 
@@ -269,7 +284,7 @@ export default function StaffManagement() {
                         <p className="text-sm text-muted-foreground">No client companies yet.</p>
                       ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
-                          {clients.map(client => {
+                          {clients.map((client) => {
                             const assigned = isAssigned(member, client.id);
                             const key = `${member.id}:${client.id}`;
                             const hasPending = pendingChanges.has(key);
@@ -278,10 +293,10 @@ export default function StaffManagement() {
                               <label
                                 key={client.id}
                                 className={[
-                                  'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors',
-                                  assigned ? 'bg-primary/5 border-primary/20' : 'hover:bg-muted/40',
-                                  hasPending ? 'ring-1 ring-amber-300' : '',
-                                ].join(' ')}
+                                  "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                                  assigned ? "bg-primary/5 border-primary/20" : "hover:bg-muted/40",
+                                  hasPending ? "ring-1 ring-amber-300" : "",
+                                ].join(" ")}
                               >
                                 <Checkbox
                                   checked={assigned}
@@ -290,7 +305,7 @@ export default function StaffManagement() {
                                 <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium truncate">{client.name}</p>
                                   <p className="text-xs text-muted-foreground truncate">
-                                    {client.trnVatNumber || 'No TRN'}
+                                    {client.trnVatNumber || "No TRN"}
                                   </p>
                                 </div>
                                 {assigned && (
@@ -298,7 +313,7 @@ export default function StaffManagement() {
                                     size="sm"
                                     variant="ghost"
                                     className="h-7 px-2 text-xs"
-                                    onClick={e => {
+                                    onClick={(e) => {
                                       e.preventDefault();
                                       navigate(`/firm/clients/${client.id}`);
                                     }}

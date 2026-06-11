@@ -1,8 +1,8 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { AlertCircle, RefreshCw, Home } from 'lucide-react';
-import { apiUrl } from '@/lib/api';
+import React, { Component, ErrorInfo, ReactNode } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, RefreshCw, Home } from "lucide-react";
+import { apiUrl } from "@/lib/api";
 
 interface Props {
   children: ReactNode;
@@ -11,7 +11,7 @@ interface Props {
   /** Custom fallback. Receives the error and a retry callback. */
   fallback?: (error: Error, retry: () => void) => ReactNode;
   /** Variant of the default fallback. "section" is inline; "page" is full-screen. */
-  variant?: 'page' | 'section';
+  variant?: "page" | "section";
 }
 
 interface State {
@@ -21,16 +21,16 @@ interface State {
 
 async function reportToServer(error: Error, info: ErrorInfo, name?: string) {
   try {
-    await fetch(apiUrl('/api/client-errors'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
+    await fetch(apiUrl("/api/client-errors"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({
         message: error.message,
         stack: error.stack,
         componentStack: info.componentStack,
-        url: typeof window !== 'undefined' ? window.location.href : undefined,
-        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
+        url: typeof window !== "undefined" ? window.location.href : undefined,
+        userAgent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
         boundary: name,
       }),
     });
@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Error caught by boundary:', error, errorInfo);
+    console.error("Error caught by boundary:", error, errorInfo);
     void reportToServer(error, errorInfo, this.props.name);
   }
 
@@ -69,13 +69,9 @@ export class ErrorBoundary extends Component<Props, State> {
       return this.props.fallback(error, this.handleRetry);
     }
 
-    if (this.props.variant === 'section') {
+    if (this.props.variant === "section") {
       return (
-        <SectionErrorFallback
-          error={error}
-          onRetry={this.handleRetry}
-          name={this.props.name}
-        />
+        <SectionErrorFallback error={error} onRetry={this.handleRetry} name={this.props.name} />
       );
     }
 
@@ -105,7 +101,11 @@ function PageErrorFallback({ error, onRetry }: { error: Error | null; onRetry: (
             </pre>
           )}
           <div className="flex gap-3">
-            <Button variant="outline" onClick={() => (window.location.href = '/dashboard')} className="flex-1">
+            <Button
+              variant="outline"
+              onClick={() => (window.location.href = "/dashboard")}
+              className="flex-1"
+            >
               <Home className="w-4 h-4 mr-2" />
               Dashboard
             </Button>
@@ -132,7 +132,7 @@ function SectionErrorFallback({
   return (
     <div
       role="alert"
-      data-testid={name ? `error-boundary-${name}` : 'error-boundary-section'}
+      data-testid={name ? `error-boundary-${name}` : "error-boundary-section"}
       className="rounded-lg border border-destructive/30 bg-destructive/5 p-6"
     >
       <div className="flex items-start gap-3">
@@ -141,7 +141,7 @@ function SectionErrorFallback({
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="font-medium mb-1">
-            {name ? `${name} couldn't load` : 'This section couldn\'t load'}
+            {name ? `${name} couldn't load` : "This section couldn't load"}
           </h3>
           <p className="text-sm text-muted-foreground mb-3">
             We've been notified. You can retry, or continue using the rest of the app.
@@ -156,11 +156,7 @@ function SectionErrorFallback({
               <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
               Retry
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => (window.location.href = '/dashboard')}
-            >
+            <Button size="sm" variant="ghost" onClick={() => (window.location.href = "/dashboard")}>
               <Home className="w-3.5 h-3.5 mr-1.5" />
               Dashboard
             </Button>

@@ -1,24 +1,51 @@
-import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { useToast } from '@/hooks/use-toast';
-import { useTranslation } from '@/lib/i18n';
-import { useDefaultCompany } from '@/hooks/useDefaultCompany';
-import { formatCurrency } from '@/lib/format';
-import { apiRequest } from '@/lib/queryClient';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Bot, Send, TrendingUp, AlertTriangle, DollarSign, FileText, Loader2, Brain, BarChart3, Zap, Target, ArrowUp, ArrowDown, Eye, PieChart } from 'lucide-react';
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
+import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { formatCurrency } from "@/lib/format";
+import { apiRequest } from "@/lib/queryClient";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  Bot,
+  Send,
+  TrendingUp,
+  AlertTriangle,
+  DollarSign,
+  FileText,
+  Loader2,
+  Brain,
+  BarChart3,
+  Zap,
+  Target,
+  ArrowUp,
+  ArrowDown,
+  Eye,
+  PieChart,
+} from "lucide-react";
 
 interface Message {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
   timestamp: Date;
 }
@@ -51,7 +78,7 @@ interface ExpenseBreakdownEntry {
 interface KPI {
   label: string;
   value: number;
-  format: 'percent' | 'currency';
+  format: "percent" | "currency";
   icon: any;
   color: string;
 }
@@ -61,33 +88,35 @@ export default function AICFO() {
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [activeTab, setActiveTab] = useState('overview');
+  const [input, setInput] = useState("");
+  const [activeTab, setActiveTab] = useState("overview");
 
   // Get financial context for AI
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
-    queryKey: ['/api/companies', companyId, 'dashboard/stats'],
+    queryKey: ["/api/companies", companyId, "dashboard/stats"],
     enabled: !!companyId,
   });
 
   const { data: profitLoss, isLoading: plLoading } = useQuery<ProfitLossReport>({
-    queryKey: ['/api/companies', companyId, 'reports', 'pl'],
+    queryKey: ["/api/companies", companyId, "reports", "pl"],
     enabled: !!companyId,
   });
 
   const { data: monthlyTrends, isLoading: trendsLoading } = useQuery<MonthlyTrend[]>({
-    queryKey: ['/api/companies', companyId, 'dashboard/monthly-trends'],
+    queryKey: ["/api/companies", companyId, "dashboard/monthly-trends"],
     enabled: !!companyId,
   });
 
-  const { data: expenseBreakdown, isLoading: breakdownLoading } = useQuery<ExpenseBreakdownEntry[]>({
-    queryKey: ['/api/companies', companyId, 'dashboard/expense-breakdown'],
-    enabled: !!companyId,
-  });
+  const { data: expenseBreakdown, isLoading: breakdownLoading } = useQuery<ExpenseBreakdownEntry[]>(
+    {
+      queryKey: ["/api/companies", companyId, "dashboard/expense-breakdown"],
+      enabled: !!companyId,
+    }
+  );
 
   const askAICFOMutation = useMutation({
     mutationFn: async (question: string) => {
-      const response = await apiRequest('POST', '/api/ai/cfo-advice', {
+      const response = await apiRequest("POST", "/api/ai/cfo-advice", {
         companyId,
         question,
         context: {
@@ -98,18 +127,21 @@ export default function AICFO() {
       return response;
     },
     onSuccess: (data) => {
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: data.advice,
-        timestamp: new Date(),
-      }]);
-      setInput('');
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.advice,
+          timestamp: new Date(),
+        },
+      ]);
+      setInput("");
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'AI CFO Error',
-        description: error?.message || 'Failed to get advice',
+        variant: "destructive",
+        title: "AI CFO Error",
+        description: error?.message || "Failed to get advice",
       });
     },
   });
@@ -119,19 +151,19 @@ export default function AICFO() {
   // EmptyState instead of fabricated recommendations.
   const insightsMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/ai/cfo-advice', {
+      const response = await apiRequest("POST", "/api/ai/cfo-advice", {
         companyId,
         question:
-          'Give me 3 concrete, prioritized recommendations to improve my financial health based on my current data. Focus on actions I can take this month.',
+          "Give me 3 concrete, prioritized recommendations to improve my financial health based on my current data. Focus on actions I can take this month.",
         context: { stats, profitLoss },
       });
       return response.advice as string;
     },
     onError: (error: any) => {
       toast({
-        variant: 'destructive',
-        title: 'AI CFO Error',
-        description: error?.message || 'Failed to generate insights',
+        variant: "destructive",
+        title: "AI CFO Error",
+        description: error?.message || "Failed to generate insights",
       });
     },
   });
@@ -140,11 +172,14 @@ export default function AICFO() {
     e.preventDefault();
     if (!input.trim()) return;
 
-    setMessages(prev => [...prev, {
-      role: 'user',
-      content: input,
-      timestamp: new Date(),
-    }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        content: input,
+        timestamp: new Date(),
+      },
+    ]);
 
     askAICFOMutation.mutate(input);
   };
@@ -158,48 +193,47 @@ export default function AICFO() {
     { q: "Revenue forecast for next quarter?", icon: "🔮" },
   ];
 
-  const profitMarginPct = profitLoss && profitLoss.totalRevenue > 0
-    ? (profitLoss.netProfit / profitLoss.totalRevenue) * 100
-    : null;
-  const expenseRatioPct = profitLoss && profitLoss.totalRevenue > 0
-    ? (profitLoss.totalExpenses / profitLoss.totalRevenue) * 100
-    : null;
+  const profitMarginPct =
+    profitLoss && profitLoss.totalRevenue > 0
+      ? (profitLoss.netProfit / profitLoss.totalRevenue) * 100
+      : null;
+  const expenseRatioPct =
+    profitLoss && profitLoss.totalRevenue > 0
+      ? (profitLoss.totalExpenses / profitLoss.totalRevenue) * 100
+      : null;
 
   const kpis: KPI[] = [
     {
-      label: 'Profit Margin',
+      label: "Profit Margin",
       value: profitMarginPct ?? 0,
-      format: 'percent',
+      format: "percent",
       icon: TrendingUp,
-      color: 'text-green-600 dark:text-green-400',
+      color: "text-green-600 dark:text-green-400",
     },
     {
-      label: 'Expense Ratio',
+      label: "Expense Ratio",
       value: expenseRatioPct ?? 0,
-      format: 'percent',
+      format: "percent",
       icon: BarChart3,
-      color: 'text-blue-600 dark:text-blue-400',
+      color: "text-blue-600 dark:text-blue-400",
     },
     {
-      label: 'Total Revenue',
+      label: "Total Revenue",
       value: profitLoss?.totalRevenue ?? 0,
-      format: 'currency',
+      format: "currency",
       icon: ArrowUp,
-      color: 'text-purple-600 dark:text-purple-400',
+      color: "text-purple-600 dark:text-purple-400",
     },
     {
-      label: 'Net Profit',
+      label: "Net Profit",
       value: profitLoss?.netProfit ?? 0,
-      format: 'currency',
+      format: "currency",
       icon: DollarSign,
-      color: 'text-amber-600 dark:text-amber-400',
+      color: "text-amber-600 dark:text-amber-400",
     },
   ];
 
-  const totalExpenseBreakdown = (expenseBreakdown ?? []).reduce(
-    (sum, item) => sum + item.value,
-    0,
-  );
+  const totalExpenseBreakdown = (expenseBreakdown ?? []).reduce((sum, item) => sum + item.value, 0);
 
   return (
     <div className="space-y-6">
@@ -259,9 +293,9 @@ export default function AICFO() {
                       <Skeleton className="h-9 w-32" />
                     ) : (
                       <div className={`text-3xl font-bold ${kpi.color}`}>
-                        {kpi.format === 'percent'
+                        {kpi.format === "percent"
                           ? `${Math.round(kpi.value)}%`
-                          : formatCurrency(kpi.value, 'AED')}
+                          : formatCurrency(kpi.value, "AED")}
                       </div>
                     )}
                   </CardContent>
@@ -283,7 +317,7 @@ export default function AICFO() {
                 ) : stats ? (
                   <>
                     <div className="text-3xl font-bold font-mono text-green-600 dark:text-green-400">
-                      {formatCurrency(stats.revenue || 0, 'AED')}
+                      {formatCurrency(stats.revenue || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
                       {stats.totalInvoices || 0} invoices • Last 30 days
@@ -306,7 +340,7 @@ export default function AICFO() {
                 ) : stats ? (
                   <>
                     <div className="text-3xl font-bold font-mono text-blue-600 dark:text-blue-400">
-                      {formatCurrency(stats.expenses || 0, 'AED')}
+                      {formatCurrency(stats.expenses || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
                       {stats.totalEntries || 0} entries • Last 30 days
@@ -318,21 +352,29 @@ export default function AICFO() {
               </CardContent>
             </Card>
 
-            <Card className={`hover-elevate ${(profitLoss?.netProfit || 0) >= 0 ? 'border-green-200 dark:border-green-900' : 'border-red-200 dark:border-red-900'}`}>
+            <Card
+              className={`hover-elevate ${(profitLoss?.netProfit || 0) >= 0 ? "border-green-200 dark:border-green-900" : "border-red-200 dark:border-red-900"}`}
+            >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                 <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
-                <Target className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} />
+                <Target
+                  className={`w-4 h-4 ${(profitLoss?.netProfit || 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                />
               </CardHeader>
               <CardContent>
                 {plLoading ? (
                   <Skeleton className="h-10 w-40" />
                 ) : profitLoss ? (
                   <>
-                    <div className={`text-3xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {formatCurrency(profitLoss.netProfit || 0, 'AED')}
+                    <div
+                      className={`text-3xl font-bold font-mono ${(profitLoss.netProfit || 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                    >
+                      {formatCurrency(profitLoss.netProfit || 0, "AED")}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      {profitLoss.totalRevenue ? `${((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(1)}% margin` : 'No revenue yet'}
+                      {profitLoss.totalRevenue
+                        ? `${((profitLoss.netProfit / profitLoss.totalRevenue) * 100).toFixed(1)}% margin`
+                        : "No revenue yet"}
                     </p>
                   </>
                 ) : (
@@ -357,10 +399,11 @@ export default function AICFO() {
                 ) : stats ? (
                   <>
                     <div className="text-3xl font-bold font-mono text-amber-600 dark:text-amber-400">
-                      {formatCurrency(stats.outstanding || 0, 'AED')}
+                      {formatCurrency(stats.outstanding || 0, "AED")}
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      You have outstanding amounts that need follow-up. Send reminders to improve cash flow.
+                      You have outstanding amounts that need follow-up. Send reminders to improve
+                      cash flow.
                     </p>
                     <Button variant="outline" size="sm" className="w-fit">
                       View Outstanding Invoices
@@ -390,7 +433,7 @@ export default function AICFO() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis />
-                    <Tooltip formatter={(value) => formatCurrency(Number(value), 'AED')} />
+                    <Tooltip formatter={(value) => formatCurrency(Number(value), "AED")} />
                     <Legend />
                     <Line
                       type="monotone"
@@ -434,9 +477,8 @@ export default function AICFO() {
               ) : expenseBreakdown && expenseBreakdown.length > 0 ? (
                 <div className="space-y-4">
                   {expenseBreakdown.map((item, idx) => {
-                    const pct = totalExpenseBreakdown > 0
-                      ? (item.value / totalExpenseBreakdown) * 100
-                      : 0;
+                    const pct =
+                      totalExpenseBreakdown > 0 ? (item.value / totalExpenseBreakdown) * 100 : 0;
                     return (
                       <div key={idx} className="space-y-2">
                         <div className="flex items-center justify-between">
@@ -444,12 +486,11 @@ export default function AICFO() {
                           <span className="text-sm font-mono font-bold">{pct.toFixed(0)}%</span>
                         </div>
                         <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                          <div
-                            className="bg-primary h-full"
-                            style={{ width: `${pct}%` }}
-                          />
+                          <div className="bg-primary h-full" style={{ width: `${pct}%` }} />
                         </div>
-                        <p className="text-xs text-muted-foreground">{formatCurrency(item.value, 'AED')}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatCurrency(item.value, "AED")}
+                        </p>
                       </div>
                     );
                   })}
@@ -503,7 +544,7 @@ export default function AICFO() {
               title="No insights generated yet"
               description="Generate prioritized, AI-written recommendations based on your real financial data. Costs an AI request."
               action={{
-                label: insightsMutation.isPending ? 'Generating…' : 'Generate insights',
+                label: insightsMutation.isPending ? "Generating…" : "Generate insights",
                 onClick: () => insightsMutation.mutate(),
               }}
             />
@@ -533,10 +574,13 @@ export default function AICFO() {
                     </div>
                     <h3 className="font-semibold mb-2">Start a conversation</h3>
                     <p className="text-sm text-muted-foreground mb-6 max-w-xs">
-                      Ask me anything about your finances. I'll provide data-backed insights and recommendations.
+                      Ask me anything about your finances. I'll provide data-backed insights and
+                      recommendations.
                     </p>
                     <div className="w-full space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground mb-3">Quick Questions:</p>
+                      <p className="text-xs font-semibold text-muted-foreground mb-3">
+                        Quick Questions:
+                      </p>
                       <div className="grid gap-2">
                         {quickQuestions.slice(0, 3).map((item, i) => (
                           <Button
@@ -559,18 +603,16 @@ export default function AICFO() {
                     {messages.map((msg, i) => (
                       <div
                         key={i}
-                        className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                        className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                       >
-                        {msg.role === 'assistant' && (
+                        {msg.role === "assistant" && (
                           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
                             <Bot className="w-4 h-4 text-primary" />
                           </div>
                         )}
                         <div
                           className={`max-w-[75%] rounded-lg p-3 ${
-                            msg.role === 'user'
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted'
+                            msg.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"
                           }`}
                         >
                           <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
@@ -578,7 +620,7 @@ export default function AICFO() {
                             {msg.timestamp.toLocaleTimeString()}
                           </p>
                         </div>
-                        {msg.role === 'user' && (
+                        {msg.role === "user" && (
                           <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 text-primary-foreground text-xs font-semibold">
                             U
                           </div>
@@ -604,7 +646,9 @@ export default function AICFO() {
               {/* Quick Questions */}
               {messages.length > 0 && (
                 <div className="mb-3 pb-3 border-b">
-                  <p className="text-xs font-semibold text-muted-foreground mb-2">Suggested questions:</p>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">
+                    Suggested questions:
+                  </p>
                   <div className="flex gap-2 flex-wrap">
                     {quickQuestions.slice(0, 3).map((item, i) => (
                       <Badge

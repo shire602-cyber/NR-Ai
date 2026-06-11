@@ -1,11 +1,11 @@
-import type { Request, Response, NextFunction } from 'express';
-import { ZodError } from 'zod';
-import { createLogger } from '../config/logger';
-import { isProduction } from '../config/env';
-import { RetentionViolationError } from '../services/retention.service';
-import { AppError, RetentionError, ValidationError, AuthError } from '../errors';
+import type { Request, Response, NextFunction } from "express";
+import { ZodError } from "zod";
+import { createLogger } from "../config/logger";
+import { isProduction } from "../config/env";
+import { RetentionViolationError } from "../services/retention.service";
+import { AppError, RetentionError, ValidationError, AuthError } from "../errors";
 
-const log = createLogger('error');
+const log = createLogger("error");
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -32,7 +32,7 @@ export function globalErrorHandler(
   // FTA 5-year retention: cannot delete records still inside the window.
   // Translate the legacy service-thrown error into the new RetentionError.
   if (err instanceof RetentionViolationError) {
-    const re = new RetentionError(err.retentionExpiresAt, 'Record');
+    const re = new RetentionError(err.retentionExpiresAt, "Record");
     res.status(re.statusCode).json(withRequestId(re.toJSON(), req));
     return;
   }
@@ -45,7 +45,7 @@ export function globalErrorHandler(
   // Zod errors thrown directly from handlers — render the same shape that
   // the validate() middleware produces so the client sees one schema.
   if (err instanceof ZodError) {
-    const ve = new ValidationError('Validation error', {
+    const ve = new ValidationError("Validation error", {
       errors: err.flatten().fieldErrors,
       formErrors: err.flatten().formErrors,
     });
@@ -54,8 +54,8 @@ export function globalErrorHandler(
   }
 
   // JWT errors — keep behaviour but emit a typed AuthError.
-  if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
-    const ae = new AuthError('Invalid or expired token', 'AUTH_INVALID_TOKEN');
+  if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
+    const ae = new AuthError("Invalid or expired token", "AUTH_INVALID_TOKEN");
     res.status(ae.statusCode).json(withRequestId(ae.toJSON(), req));
     return;
   }
@@ -63,11 +63,19 @@ export function globalErrorHandler(
   // Any AppError (or subclass).
   if (err instanceof AppError) {
     if (!err.isOperational) {
-      log.error({ err, requestId: req.id, method: req.method, url: req.url }, 'Non-operational AppError');
+      log.error(
+        { err, requestId: req.id, method: req.method, url: req.url },
+        "Non-operational AppError"
+      );
     } else if (err.statusCode >= 500) {
       log.error(
-        { err: { message: err.message, code: err.code, stack: err.stack }, requestId: req.id, method: req.method, url: req.url },
-        'AppError 5xx',
+        {
+          err: { message: err.message, code: err.code, stack: err.stack },
+          requestId: req.id,
+          method: req.method,
+          url: req.url,
+        },
+        "AppError 5xx"
       );
     }
     res.status(err.statusCode).json(withRequestId(err.toJSON(), req));
@@ -83,17 +91,17 @@ export function globalErrorHandler(
       method: req.method,
       url: req.url,
     },
-    'Unhandled error',
+    "Unhandled error"
   );
 
   res.status(500).json(
     withRequestId(
       {
-        message: isProduction() ? 'Internal Server Error' : err.message,
-        code: 'INTERNAL_ERROR',
+        message: isProduction() ? "Internal Server Error" : err.message,
+        code: "INTERNAL_ERROR",
       },
-      req,
-    ),
+      req
+    )
   );
 }
 
@@ -105,10 +113,10 @@ export function notFoundHandler(req: Request, res: Response): void {
     withRequestId(
       {
         message: `Route ${req.method} ${req.path} not found`,
-        code: 'ROUTE_NOT_FOUND',
+        code: "ROUTE_NOT_FOUND",
       },
-      req,
-    ),
+      req
+    )
   );
 }
 

@@ -6,18 +6,18 @@
  * batch / mutation endpoints require firm_owner specifically (requireFirmOwner).
  */
 
-import type { Express, Request, Response } from 'express';
-import { Router } from 'express';
-import { z } from 'zod';
-import { and, eq, gte, inArray, isNull, lt, or, sql, sum } from 'drizzle-orm';
+import type { Express, Request, Response } from "express";
+import { Router } from "express";
+import { z } from "zod";
+import { and, eq, gte, inArray, isNull, lt, or, sql, sum } from "drizzle-orm";
 
-import { authMiddleware } from '../middleware/auth';
-import { requireFirmAdmin, requireFirmOwner } from '../middleware/rbac';
-import { asyncHandler } from '../middleware/errorHandler';
-import { createLogger } from '../config/logger';
-import { db } from '../db';
-import { companies, invoices, receipts } from '../../shared/schema';
-import { recordAudit } from '../services/audit.service';
+import { authMiddleware } from "../middleware/auth";
+import { requireFirmAdmin, requireFirmOwner } from "../middleware/rbac";
+import { asyncHandler } from "../middleware/errorHandler";
+import { createLogger } from "../config/logger";
+import { db } from "../db";
+import { companies, invoices, receipts } from "../../shared/schema";
+import { recordAudit } from "../services/audit.service";
 import {
   buildClientSnapshots,
   buildFirmDashboard,
@@ -39,27 +39,27 @@ import {
   type ClientRankBy,
   type ClientSnapshot,
   type SortDir,
-} from '../services/firm-command-center.service';
+} from "../services/firm-command-center.service";
 
-const logger = createLogger('firm-command-center-routes');
+const logger = createLogger("firm-command-center-routes");
 
 // ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const alertFilterSchema = z.object({
-  severity: z.enum(['critical', 'warning', 'info']).optional(),
+  severity: z.enum(["critical", "warning", "info"]).optional(),
   isRead: z
-    .union([z.boolean(), z.enum(['true', 'false'])])
+    .union([z.boolean(), z.enum(["true", "false"])])
     .optional()
-    .transform((v) => (typeof v === 'string' ? v === 'true' : v)),
+    .transform((v) => (typeof v === "string" ? v === "true" : v)),
 });
 
 const rankSchema = z.object({
-  by: z.enum(['health', 'revenue', 'overdue', 'compliance']).default('health'),
-  dir: z.enum(['asc', 'desc']).default('desc'),
+  by: z.enum(["health", "revenue", "overdue", "compliance"]).default("health"),
+  dir: z.enum(["asc", "desc"]).default("desc"),
 });
 
 const periodSchema = z.object({
-  granularity: z.enum(['month', 'quarter']).default('month'),
+  granularity: z.enum(["month", "quarter"]).default("month"),
 });
 
 const batchCompanyIdsSchema = z.object({
@@ -69,7 +69,7 @@ const batchCompanyIdsSchema = z.object({
 const assignStaffSchema = z.object({
   userId: z.string().uuid(),
   companyId: z.string().uuid(),
-  role: z.enum(['accountant', 'reviewer', 'manager']).default('accountant'),
+  role: z.enum(["accountant", "reviewer", "manager"]).default("accountant"),
 });
 
 // Path-param schemas. Drizzle parameterizes queries, but invalid UUIDs reach
@@ -79,8 +79,8 @@ const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
 
 // ─── Range helpers ────────────────────────────────────────────────────────────
 
-function currentPeriodRange(granularity: 'month' | 'quarter', now: Date = new Date()) {
-  if (granularity === 'month') {
+function currentPeriodRange(granularity: "month" | "quarter", now: Date = new Date()) {
+  if (granularity === "month") {
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
     return { start, end };
@@ -116,18 +116,19 @@ function snapshotToHealthScore(snap: ClientSnapshot): ClientHealthScore {
 async function resolveBatchScope(
   req: Request,
   res: Response,
-  requested: string[],
+  requested: string[]
 ): Promise<{ allowed: string[]; rejected: string[] } | null> {
-  const { id: userId, firmRole } = (req as { user?: { id: string; firmRole?: string | null } }).user ?? {};
+  const { id: userId, firmRole } =
+    (req as { user?: { id: string; firmRole?: string | null } }).user ?? {};
   if (!userId) {
-    res.status(401).json({ message: 'Authentication required' });
+    res.status(401).json({ message: "Authentication required" });
     return null;
   }
   const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
   const { allowedCompanyIds, rejectedCompanyIds } = scopeBatchToAccessible(requested, accessible);
   if (allowedCompanyIds.length === 0) {
     res.status(403).json({
-      message: 'None of the requested companies are accessible',
+      message: "None of the requested companies are accessible",
       rejectedCompanyIds,
     });
     return null;
@@ -147,10 +148,10 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── GET /dashboard ─────────────────────────────────────────────────────
   router.get(
-    '/dashboard',
+    "/dashboard",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const skipCache = req.query.skipCache === 'true';
+      const skipCache = req.query.skipCache === "true";
       const result = await buildFirmDashboard(userId, firmRole ?? null, { skipCache });
       res.json(result);
     })
@@ -158,12 +159,12 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── GET /clients/health ────────────────────────────────────────────────
   router.get(
-    '/clients/health',
+    "/clients/health",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
       const { by, dir } = rankSchema.parse({
-        by: req.query.by ?? 'health',
-        dir: req.query.dir ?? 'desc',
+        by: req.query.by ?? "health",
+        dir: req.query.dir ?? "desc",
       });
 
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
@@ -179,9 +180,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const revenueRows = (await db
         .select({ companyId: invoices.companyId, total: sum(invoices.total) })
         .from(invoices)
-        .where(
-          and(inArray(invoices.companyId, companyIds), eq(invoices.status, 'paid'))
-        )
+        .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, "paid")))
         .groupBy(invoices.companyId)) as Array<{ companyId: string; total: string | null }>;
       const revenueMap = new Map(revenueRows.map((r) => [r.companyId, Number(r.total ?? 0)]));
 
@@ -201,7 +200,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         };
       });
 
-      const sorted = rankClients<typeof ranked[number]>(
+      const sorted = rankClients<(typeof ranked)[number]>(
         ranked,
         by as ClientRankBy,
         dir as SortDir
@@ -212,23 +211,23 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── GET /clients/:companyId/health ─────────────────────────────────────
   router.get(
-    '/clients/:companyId/health',
+    "/clients/:companyId/health",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
       const parsed = companyIdParamSchema.safeParse(req.params);
       if (!parsed.success) {
-        return res.status(400).json({ message: 'Invalid companyId' });
+        return res.status(400).json({ message: "Invalid companyId" });
       }
       const { companyId } = parsed.data;
 
       const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
       if (!accessible.includes(companyId)) {
-        return res.status(403).json({ message: 'Access denied to this client' });
+        return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const snapshots = await buildClientSnapshots([companyId]);
       const snap = snapshots[0];
-      if (!snap) return res.status(404).json({ message: 'Client not found' });
+      if (!snap) return res.status(404).json({ message: "Client not found" });
 
       const health = snapshotToHealthScore(snap);
       const alerts = generateAlertsForClient(snap);
@@ -239,7 +238,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── GET /alerts ─────────────────────────────────────────────────────────
   router.get(
-    '/alerts',
+    "/alerts",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
       const filters = alertFilterSchema.parse(req.query);
@@ -254,7 +253,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // concurrent refreshes for the same firm cannot both pass the dedupe check
   // and create duplicate rows.
   router.post(
-    '/alerts/refresh',
+    "/alerts/refresh",
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
@@ -265,8 +264,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       const { generated, created } = await refreshFirmAlerts(userId, candidates);
       await recordAudit({
         userId,
-        action: 'firm_alerts_refresh',
-        entityType: 'firm_alert',
+        action: "firm_alerts_refresh",
+        entityType: "firm_alert",
         req,
         extra: {
           generated,
@@ -283,21 +282,21 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // resources are gated to firm_owner. firm_admin reads alerts but can't toggle
   // read/resolved state.
   router.patch(
-    '/alerts/:id/read',
+    "/alerts/:id/read",
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
       const parsed = uuidParamSchema.safeParse(req.params);
       if (!parsed.success) {
-        return res.status(400).json({ message: 'Invalid alert id' });
+        return res.status(400).json({ message: "Invalid alert id" });
       }
       const updated = await markAlertRead(userId, parsed.data.id);
-      if (!updated) return res.status(404).json({ message: 'Alert not found' });
+      if (!updated) return res.status(404).json({ message: "Alert not found" });
       await recordAudit({
         userId,
         companyId: updated.companyId,
-        action: 'firm_alert_mark_read',
-        entityType: 'firm_alert',
+        action: "firm_alert_mark_read",
+        entityType: "firm_alert",
         entityId: updated.id,
         req,
         extra: { alertType: updated.alertType, severity: updated.severity },
@@ -308,21 +307,21 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── PATCH /alerts/:id/resolve ──────────────────────────────────────────
   router.patch(
-    '/alerts/:id/resolve',
+    "/alerts/:id/resolve",
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
       const parsed = uuidParamSchema.safeParse(req.params);
       if (!parsed.success) {
-        return res.status(400).json({ message: 'Invalid alert id' });
+        return res.status(400).json({ message: "Invalid alert id" });
       }
       const updated = await resolveAlert(userId, parsed.data.id);
-      if (!updated) return res.status(404).json({ message: 'Alert not found' });
+      if (!updated) return res.status(404).json({ message: "Alert not found" });
       await recordAudit({
         userId,
         companyId: updated.companyId,
-        action: 'firm_alert_resolve',
-        entityType: 'firm_alert',
+        action: "firm_alert_resolve",
+        entityType: "firm_alert",
         entityId: updated.id,
         req,
         extra: { alertType: updated.alertType, severity: updated.severity },
@@ -333,7 +332,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── GET /staff/workload ────────────────────────────────────────────────
   router.get(
-    '/staff/workload',
+    "/staff/workload",
     asyncHandler(async (_req: Request, res: Response) => {
       const workload = await fetchStaffWorkload();
       res.json(workload);
@@ -345,7 +344,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // failure modes; asyncHandler routes these to the global error handler with
   // the correct status. Unknown DB errors surface as 500 (default), not 400.
   router.post(
-    '/staff/assign',
+    "/staff/assign",
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const actorId = (req as any).user.id;
@@ -354,8 +353,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       await recordAudit({
         userId: actorId,
         companyId,
-        action: 'firm_staff_assign',
-        entityType: 'firm_staff_assignment',
+        action: "firm_staff_assign",
+        entityType: "firm_staff_assignment",
         entityId: `${userId}:${companyId}`,
         req,
         extra: { assignedUserId: userId, role },
@@ -366,11 +365,11 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── GET /metrics/comparison ────────────────────────────────────────────
   router.get(
-    '/metrics/comparison',
+    "/metrics/comparison",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
       const { granularity } = periodSchema.parse({
-        granularity: req.query.granularity ?? 'month',
+        granularity: req.query.granularity ?? "month",
       });
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const currentRange = currentPeriodRange(granularity);
@@ -388,7 +387,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── POST /batch/vat-calculate ──────────────────────────────────────────
   router.post(
-    '/batch/vat-calculate',
+    "/batch/vat-calculate",
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
@@ -413,7 +412,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         .where(
           and(
             inArray(invoices.companyId, allowedCompanyIds),
-            eq(invoices.status, 'paid'),
+            eq(invoices.status, "paid"),
             gte(invoices.createdAt, periodStart),
             lt(invoices.createdAt, periodEnd)
           )
@@ -471,14 +470,11 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         };
       });
 
-      logger.info(
-        { firmId: userId, count: results.length },
-        'Phase 6 batch VAT calc completed'
-      );
+      logger.info({ firmId: userId, count: results.length }, "Phase 6 batch VAT calc completed");
       await recordAudit({
         userId,
-        action: 'firm_batch_vat_calculate',
-        entityType: 'firm_batch_action',
+        action: "firm_batch_vat_calculate",
+        entityType: "firm_batch_action",
         req,
         extra: {
           allowedCompanyIds,
@@ -498,7 +494,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── POST /batch/chase-payments ─────────────────────────────────────────
   router.post(
-    '/batch/chase-payments',
+    "/batch/chase-payments",
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
@@ -526,7 +522,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         .where(
           and(
             inArray(invoices.companyId, allowedCompanyIds),
-            inArray(invoices.status, ['sent', 'partial']),
+            inArray(invoices.status, ["sent", "partial"]),
             lt(invoices.dueDate, now),
             or(isNull(invoices.lastReminderSentAt), lt(invoices.lastReminderSentAt, startOfToday))
           )
@@ -559,18 +555,18 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
       logger.info(
         { firmId: userId, count: overdueRows.length },
-        'Phase 6 batch payment chase queued'
+        "Phase 6 batch payment chase queued"
       );
       await recordAudit({
         userId,
-        action: 'firm_batch_payment_chase_queued',
-        entityType: 'firm_batch_action',
+        action: "firm_batch_payment_chase_queued",
+        entityType: "firm_batch_action",
         req,
         extra: {
           allowedCompanyIds,
           rejectedCompanyIds,
           invoiceIds: overdueRows.map((r) => r.id),
-          dedupeWindow: 'calendar_day',
+          dedupeWindow: "calendar_day",
           queuedInvoiceCount: overdueRows.length,
         },
       });
@@ -584,7 +580,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
   // ─── POST /batch/chase-documents ────────────────────────────────────────
   router.post(
-    '/batch/chase-documents',
+    "/batch/chase-documents",
     requireFirmOwner(),
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId } = (req as any).user;
@@ -597,8 +593,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       // worker reads these and dispatches reminders to the client portal.
       const candidates = allowedCompanyIds.map((id) => ({
         companyId: id,
-        alertType: 'document_missing' as const,
-        severity: 'info' as const,
+        alertType: "document_missing" as const,
+        severity: "info" as const,
         message: `Document chase requested by firm`,
         metadata: {
           actionKey: `firm_batch:document_chase:${id}`,
@@ -608,14 +604,11 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
       }));
       const { generated, created } = await refreshFirmAlerts(userId, candidates);
 
-      logger.info(
-        { firmId: userId, count: created.length },
-        'Phase 6 batch document chase queued'
-      );
+      logger.info({ firmId: userId, count: created.length }, "Phase 6 batch document chase queued");
       await recordAudit({
         userId,
-        action: 'firm_batch_document_chase_queued',
-        entityType: 'firm_batch_action',
+        action: "firm_batch_document_chase_queued",
+        entityType: "firm_batch_action",
         req,
         extra: {
           allowedCompanyIds,
@@ -633,6 +626,6 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
     })
   );
 
-  app.use('/api/firm/command-center', router);
-  logger.info('Firm command center routes registered at /api/firm/command-center/*');
+  app.use("/api/firm/command-center", router);
+  logger.info("Firm command center routes registered at /api/firm/command-center/*");
 }

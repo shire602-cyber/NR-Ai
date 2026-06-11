@@ -1,8 +1,12 @@
-import { storage } from '../storage';
-import { createLogger } from '../config/logger';
-import type { FixedAsset, DepreciationSchedule, InsertDepreciationSchedule } from '../../shared/schema';
+import { storage } from "../storage";
+import { createLogger } from "../config/logger";
+import type {
+  FixedAsset,
+  DepreciationSchedule,
+  InsertDepreciationSchedule,
+} from "../../shared/schema";
 
-const log = createLogger('depreciation');
+const log = createLogger("depreciation");
 
 /**
  * Calculate monthly depreciation amount for an asset.
@@ -12,15 +16,16 @@ export function calculateMonthlyDepreciation(
   purchasePrice: number,
   residualValue: number,
   usefulLifeMonths: number,
-  currentBookValue: number,
+  currentBookValue: number
 ): number {
-  if (method === 'declining_balance') {
+  if (method === "declining_balance") {
     const usefulLifeYears = usefulLifeMonths / 12;
     // When residualValue is 0, Math.pow(0/price, 1/n) = 0, making rate = 1.0 (100%).
     // Use double-declining balance method instead: rate = 2 / usefulLifeYears.
-    const rate = residualValue <= 0
-      ? (2 / usefulLifeYears)
-      : 1 - Math.pow(residualValue / purchasePrice, 1 / usefulLifeYears);
+    const rate =
+      residualValue <= 0
+        ? 2 / usefulLifeYears
+        : 1 - Math.pow(residualValue / purchasePrice, 1 / usefulLifeYears);
     const annualDep = currentBookValue * rate;
     const monthly = annualDep / 12;
     // Don't depreciate below residual value (guard against negative values)
@@ -39,10 +44,12 @@ export function calculateMonthlyDepreciation(
  * Creates DepreciationSchedule records (status: pending) for each month
  * from purchase date through end of useful life.
  */
-export async function generateDepreciationSchedule(assetId: string): Promise<DepreciationSchedule[]> {
+export async function generateDepreciationSchedule(
+  assetId: string
+): Promise<DepreciationSchedule[]> {
   const asset = await storage.getFixedAsset(assetId);
-  if (!asset) throw new Error('Asset not found');
-  if (asset.status !== 'active') throw new Error('Asset is not active');
+  if (!asset) throw new Error("Asset not found");
+  if (asset.status !== "active") throw new Error("Asset is not active");
 
   // Delete any existing pending schedules
   await storage.deleteDepreciationSchedulesByAssetId(assetId);
@@ -65,7 +72,7 @@ export async function generateDepreciationSchedule(assetId: string): Promise<Dep
       asset.purchasePrice,
       asset.residualValue,
       asset.usefulLifeMonths,
-      bookValue,
+      bookValue
     );
 
     if (depAmount <= 0) break; // Fully depreciated
@@ -80,12 +87,12 @@ export async function generateDepreciationSchedule(assetId: string): Promise<Dep
       depreciationAmount: Math.round(depAmount * 100) / 100,
       accumulatedDepreciation: Math.round(accumulatedDep * 100) / 100,
       bookValue: Math.round(bookValue * 100) / 100,
-      status: 'pending',
+      status: "pending",
     });
     schedules.push(schedule);
   }
 
-  log.info({ assetId, periods: schedules.length }, 'Depreciation schedule generated');
+  log.info({ assetId, periods: schedules.length }, "Depreciation schedule generated");
   return schedules;
 }
 
@@ -93,18 +100,15 @@ export async function generateDepreciationSchedule(assetId: string): Promise<Dep
  * Post a depreciation entry -- creates a journal entry debiting depreciation expense
  * and crediting accumulated depreciation. Marks the schedule as posted.
  */
-export async function postDepreciationEntry(
-  scheduleId: string,
-  userId: string,
-): Promise<void> {
+export async function postDepreciationEntry(scheduleId: string, userId: string): Promise<void> {
   const schedule = await storage.getDepreciationSchedule(scheduleId);
-  if (!schedule) throw new Error('Schedule not found');
-  if (schedule.status === 'posted') throw new Error('Already posted');
+  if (!schedule) throw new Error("Schedule not found");
+  if (schedule.status === "posted") throw new Error("Already posted");
 
   const asset = await storage.getFixedAsset(schedule.fixedAssetId);
-  if (!asset) throw new Error('Asset not found');
+  if (!asset) throw new Error("Asset not found");
   if (!asset.depreciationExpenseAccountId || !asset.accumulatedDepAccountId) {
-    throw new Error('Asset missing depreciation accounts');
+    throw new Error("Asset missing depreciation accounts");
   }
 
   const { entry } = await storage.createJournalEntryWithLines(
@@ -112,8 +116,8 @@ export async function postDepreciationEntry(
     schedule.periodEnd,
     {
       memo: `Depreciation: ${asset.name} (${asset.assetCode}) — ${schedule.periodStart.toISOString().slice(0, 7)}`,
-      status: 'posted',
-      source: 'system',
+      status: "posted",
+      source: "system",
       sourceId: asset.id,
       createdBy: userId,
       postedBy: userId,
@@ -131,24 +135,24 @@ export async function postDepreciationEntry(
         credit: schedule.depreciationAmount,
         description: `Accumulated depreciation: ${asset.name}`,
       },
-    ],
+    ]
   );
 
   // Update schedule
   await storage.updateDepreciationSchedule(scheduleId, {
-    status: 'posted',
+    status: "posted",
     journalEntryId: entry.id,
   });
 
   // Check if fully depreciated
   const remainingSchedules = await storage.getDepreciationSchedulesByAssetId(asset.id);
-  const allPosted = remainingSchedules.every((s: DepreciationSchedule) => s.status === 'posted');
+  const allPosted = remainingSchedules.every((s: DepreciationSchedule) => s.status === "posted");
   if (allPosted) {
-    await storage.updateFixedAsset(asset.id, { status: 'fully_depreciated' });
-    log.info({ assetId: asset.id }, 'Asset fully depreciated');
+    await storage.updateFixedAsset(asset.id, { status: "fully_depreciated" });
+    log.info({ assetId: asset.id }, "Asset fully depreciated");
   }
 
-  log.info({ scheduleId, entryId: entry.id }, 'Depreciation entry posted');
+  log.info({ scheduleId, entryId: entry.id }, "Depreciation entry posted");
 }
 
 /**
@@ -157,7 +161,7 @@ export async function postDepreciationEntry(
 export async function postPendingDepreciation(
   companyId: string,
   throughDate: Date,
-  userId: string,
+  userId: string
 ): Promise<number> {
   const pending = await storage.getPendingDepreciationSchedules(companyId);
   let posted = 0;
@@ -169,7 +173,7 @@ export async function postPendingDepreciation(
     }
   }
 
-  log.info({ companyId, posted, throughDate }, 'Batch depreciation posted');
+  log.info({ companyId, posted, throughDate }, "Batch depreciation posted");
   return posted;
 }
 
@@ -181,21 +185,22 @@ export async function disposeAsset(
   assetId: string,
   disposalDate: Date,
   disposalPrice: number,
-  userId: string,
+  userId: string
 ): Promise<void> {
   const asset = await storage.getFixedAsset(assetId);
-  if (!asset) throw new Error('Asset not found');
-  if (asset.status === 'disposed') throw new Error('Asset already disposed');
+  if (!asset) throw new Error("Asset not found");
+  if (asset.status === "disposed") throw new Error("Asset already disposed");
   if (!asset.assetAccountId || !asset.accumulatedDepAccountId) {
-    throw new Error('Asset missing accounts');
+    throw new Error("Asset missing accounts");
   }
 
   // Calculate accumulated depreciation from posted schedules
   const schedules = await storage.getDepreciationSchedulesByAssetId(assetId);
-  const postedSchedules = schedules.filter((s: DepreciationSchedule) => s.status === 'posted');
-  const accumulatedDep = postedSchedules.length > 0
-    ? postedSchedules[postedSchedules.length - 1].accumulatedDepreciation
-    : 0;
+  const postedSchedules = schedules.filter((s: DepreciationSchedule) => s.status === "posted");
+  const accumulatedDep =
+    postedSchedules.length > 0
+      ? postedSchedules[postedSchedules.length - 1].accumulatedDepreciation
+      : 0;
 
   const bookValue = asset.purchasePrice - accumulatedDep;
   const gainLoss = disposalPrice - bookValue;
@@ -204,7 +209,12 @@ export async function disposeAsset(
   const gainLossAccountId = asset.depreciationExpenseAccountId || asset.accumulatedDepAccountId;
 
   // Build lines conditionally
-  const disposalLines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
+  const disposalLines: Array<{
+    accountId: string;
+    debit: number;
+    credit: number;
+    description: string;
+  }> = [];
 
   // Debit accumulated depreciation (remove contra-asset)
   if (accumulatedDep > 0) {
@@ -255,15 +265,18 @@ export async function disposeAsset(
     asset.companyId,
     disposalDate,
     {
-      memo: `Disposal of asset: ${asset.name} (${asset.assetCode})` +
-        (gainLoss !== 0 ? ` — ${gainLoss > 0 ? 'gain' : 'loss'} of ${Math.abs(gainLoss).toFixed(2)} recorded to depreciation expense account` : ''),
-      status: 'posted',
-      source: 'system',
+      memo:
+        `Disposal of asset: ${asset.name} (${asset.assetCode})` +
+        (gainLoss !== 0
+          ? ` — ${gainLoss > 0 ? "gain" : "loss"} of ${Math.abs(gainLoss).toFixed(2)} recorded to depreciation expense account`
+          : ""),
+      status: "posted",
+      source: "system",
       sourceId: asset.id,
       createdBy: userId,
       postedBy: userId,
     },
-    disposalLines,
+    disposalLines
   );
 
   // Delete remaining pending schedules
@@ -271,11 +284,11 @@ export async function disposeAsset(
 
   // Update asset
   await storage.updateFixedAsset(assetId, {
-    status: 'disposed',
+    status: "disposed",
     disposalDate,
     disposalPrice,
     disposalJournalEntryId: entry.id,
   });
 
-  log.info({ assetId, disposalPrice, gainLoss, entryId: entry.id }, 'Asset disposed');
+  log.info({ assetId, disposalPrice, gainLoss, entryId: entry.id }, "Asset disposed");
 }

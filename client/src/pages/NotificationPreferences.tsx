@@ -1,18 +1,25 @@
-import { PageHeader } from '@/components/ui/page-header';
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Form, FormControl, FormField, FormItem, FormLabel, FormDescription } from '@/components/ui/form';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from '@/lib/push';
-import { Bell, Mail, FileText, Calendar, CreditCard, BarChart3 } from 'lucide-react';
+import { PageHeader } from "@/components/ui/page-header";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormDescription,
+} from "@/components/ui/form";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { subscribeToPush, unsubscribeFromPush, isPushSubscribed } from "@/lib/push";
+import { Bell, Mail, FileText, Calendar, CreditCard, BarChart3 } from "lucide-react";
 
 const preferencesSchema = z.object({
   pushEnabled: z.boolean().default(false),
@@ -43,8 +50,8 @@ export default function NotificationPreferences() {
   }, []);
 
   const { data: preferences, isLoading } = useQuery<NotificationPrefs>({
-    queryKey: ['/api/notification-preferences'],
-    queryFn: () => apiRequest('GET', '/api/notification-preferences'),
+    queryKey: ["/api/notification-preferences"],
+    queryFn: () => apiRequest("GET", "/api/notification-preferences"),
   });
 
   const form = useForm<PreferencesFormData>({
@@ -74,13 +81,20 @@ export default function NotificationPreferences() {
 
   const updateMutation = useMutation({
     mutationFn: (data: PreferencesFormData) =>
-      apiRequest('PUT', '/api/notification-preferences', data),
+      apiRequest("PUT", "/api/notification-preferences", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/notification-preferences'] });
-      toast({ title: 'Preferences saved', description: 'Your notification preferences have been updated.' });
+      queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
+      toast({
+        title: "Preferences saved",
+        description: "Your notification preferences have been updated.",
+      });
     },
     onError: (error: any) => {
-      toast({ variant: 'destructive', title: 'Failed to save preferences', description: error?.message || 'Please try again.' });
+      toast({
+        variant: "destructive",
+        title: "Failed to save preferences",
+        description: error?.message || "Please try again.",
+      });
     },
   });
 
@@ -92,17 +106,17 @@ export default function NotificationPreferences() {
     if (pushActive) {
       await unsubscribeFromPush();
       setPushActive(false);
-      form.setValue('pushEnabled', false);
+      form.setValue("pushEnabled", false);
     } else {
       const success = await subscribeToPush();
       if (success) {
         setPushActive(true);
-        form.setValue('pushEnabled', true);
+        form.setValue("pushEnabled", true);
       } else {
         toast({
-          variant: 'destructive',
-          title: 'Push notifications blocked',
-          description: 'Please allow notifications in your browser settings.',
+          variant: "destructive",
+          title: "Push notifications blocked",
+          description: "Please allow notifications in your browser settings.",
         });
       }
     }
@@ -137,9 +151,7 @@ export default function NotificationPreferences() {
                 <Bell className="w-5 h-5" />
                 Notification Channels
               </CardTitle>
-              <CardDescription>
-                Choose how you want to receive notifications
-              </CardDescription>
+              <CardDescription>Choose how you want to receive notifications</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -153,7 +165,12 @@ export default function NotificationPreferences() {
                     </div>
                     <div className="flex items-center gap-2">
                       {!pushActive && (
-                        <Button type="button" variant="outline" size="sm" onClick={handleEnablePush}>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleEnablePush}
+                        >
                           Enable Push
                         </Button>
                       )}
@@ -203,9 +220,7 @@ export default function NotificationPreferences() {
                 <FileText className="w-5 h-5" />
                 Notification Types
               </CardTitle>
-              <CardDescription>
-                Select which types of events trigger notifications
-              </CardDescription>
+              <CardDescription>Select which types of events trigger notifications</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <FormField
@@ -218,7 +233,9 @@ export default function NotificationPreferences() {
                         <FileText className="w-4 h-4" />
                         Invoice Reminders
                       </FormLabel>
-                      <FormDescription>Get notified about overdue invoices and payment due dates</FormDescription>
+                      <FormDescription>
+                        Get notified about overdue invoices and payment due dates
+                      </FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -237,7 +254,9 @@ export default function NotificationPreferences() {
                         <Calendar className="w-4 h-4" />
                         VAT Deadlines
                       </FormLabel>
-                      <FormDescription>Get reminded about upcoming VAT filing and payment deadlines</FormDescription>
+                      <FormDescription>
+                        Get reminded about upcoming VAT filing and payment deadlines
+                      </FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -256,7 +275,9 @@ export default function NotificationPreferences() {
                         <CreditCard className="w-4 h-4" />
                         Payment Received
                       </FormLabel>
-                      <FormDescription>Get notified when a payment is received for an invoice</FormDescription>
+                      <FormDescription>
+                        Get notified when a payment is received for an invoice
+                      </FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -275,7 +296,9 @@ export default function NotificationPreferences() {
                         <BarChart3 className="w-4 h-4" />
                         Weekly Digest
                       </FormLabel>
-                      <FormDescription>Receive a weekly summary of your financial activity</FormDescription>
+                      <FormDescription>
+                        Receive a weekly summary of your financial activity
+                      </FormDescription>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -288,7 +311,7 @@ export default function NotificationPreferences() {
 
           <div className="flex justify-end">
             <Button type="submit" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Saving...' : 'Save Preferences'}
+              {updateMutation.isPending ? "Saving..." : "Save Preferences"}
             </Button>
           </div>
         </form>

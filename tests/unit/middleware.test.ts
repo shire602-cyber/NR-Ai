@@ -1,14 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Request, Response, NextFunction } from 'express';
-import {
-  AppError,
-  globalErrorHandler,
-  asyncHandler,
-} from '../../server/middleware/errorHandler';
-import { ZodError } from 'zod';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { Request, Response, NextFunction } from "express";
+import { AppError, globalErrorHandler, asyncHandler } from "../../server/middleware/errorHandler";
+import { ZodError } from "zod";
 
 // Mock logger
-vi.mock('../../server/config/logger', () => ({
+vi.mock("../../server/config/logger", () => ({
   createLogger: () => ({
     info: vi.fn(),
     warn: vi.fn(),
@@ -18,11 +14,11 @@ vi.mock('../../server/config/logger', () => ({
   }),
 }));
 
-vi.mock('../../server/config/env', () => ({
+vi.mock("../../server/config/env", () => ({
   isProduction: () => false,
   getEnv: () => ({
-    NODE_ENV: 'test',
-    JWT_SECRET: 'test-jwt-secret-at-least-32-characters-long-unique',
+    NODE_ENV: "test",
+    JWT_SECRET: "test-jwt-secret-at-least-32-characters-long-unique",
   }),
 }));
 
@@ -36,55 +32,55 @@ function createMockRes(): Response {
 
 function createMockReq(overrides: Partial<Request> = {}): Request {
   return {
-    method: 'GET',
-    url: '/test',
+    method: "GET",
+    url: "/test",
     headers: {},
     ...overrides,
   } as Request;
 }
 
-describe('Error Handler Middleware', () => {
-  describe('AppError', () => {
-    it('should create an error with status code', () => {
-      const error = new AppError('Not Found', 404);
-      expect(error.message).toBe('Not Found');
+describe("Error Handler Middleware", () => {
+  describe("AppError", () => {
+    it("should create an error with status code", () => {
+      const error = new AppError("Not Found", 404);
+      expect(error.message).toBe("Not Found");
       expect(error.statusCode).toBe(404);
       expect(error.isOperational).toBe(true);
     });
 
-    it('should support non-operational errors', () => {
-      const error = new AppError('Internal', 500, false);
+    it("should support non-operational errors", () => {
+      const error = new AppError("Internal", 500, false);
       expect(error.isOperational).toBe(false);
     });
   });
 
-  describe('globalErrorHandler', () => {
-    it('should handle AppError correctly', () => {
+  describe("globalErrorHandler", () => {
+    it("should handle AppError correctly", () => {
       const req = createMockReq();
       const res = createMockRes();
       const next = vi.fn() as NextFunction;
-      const error = new AppError('Not Found', 404);
+      const error = new AppError("Not Found", 404);
 
       globalErrorHandler(error, req, res, next);
 
       expect(res.status).toHaveBeenCalledWith(404);
       expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Not Found', code: expect.any(String) })
+        expect.objectContaining({ message: "Not Found", code: expect.any(String) })
       );
     });
 
-    it('should handle ZodError with validation details', () => {
+    it("should handle ZodError with validation details", () => {
       const req = createMockReq();
       const res = createMockRes();
       const next = vi.fn() as NextFunction;
 
       const zodError = new ZodError([
         {
-          code: 'invalid_type',
-          expected: 'string',
-          received: 'undefined',
-          path: ['email'],
-          message: 'Required',
+          code: "invalid_type",
+          expected: "string",
+          received: "undefined",
+          path: ["email"],
+          message: "Required",
         },
       ]);
 
@@ -93,8 +89,8 @@ describe('Error Handler Middleware', () => {
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Validation error',
-          code: 'VALIDATION_ERROR',
+          message: "Validation error",
+          code: "VALIDATION_ERROR",
           details: expect.objectContaining({
             errors: expect.any(Object),
           }),
@@ -102,11 +98,11 @@ describe('Error Handler Middleware', () => {
       );
     });
 
-    it('should handle unknown errors with 500', () => {
+    it("should handle unknown errors with 500", () => {
       const req = createMockReq();
       const res = createMockRes();
       const next = vi.fn() as NextFunction;
-      const error = new Error('Something broke');
+      const error = new Error("Something broke");
 
       globalErrorHandler(error, req, res, next);
 
@@ -114,8 +110,8 @@ describe('Error Handler Middleware', () => {
     });
   });
 
-  describe('asyncHandler', () => {
-    it('should pass resolved value through', async () => {
+  describe("asyncHandler", () => {
+    it("should pass resolved value through", async () => {
       const req = createMockReq();
       const res = createMockRes();
       const next = vi.fn() as NextFunction;
@@ -128,11 +124,11 @@ describe('Error Handler Middleware', () => {
       expect(res.json).toHaveBeenCalledWith({ ok: true });
     });
 
-    it('should catch rejected promises and call next', async () => {
+    it("should catch rejected promises and call next", async () => {
       const req = createMockReq();
       const res = createMockRes();
       const next = vi.fn() as NextFunction;
-      const error = new Error('Async failure');
+      const error = new Error("Async failure");
 
       const handler = asyncHandler(async () => {
         throw error;

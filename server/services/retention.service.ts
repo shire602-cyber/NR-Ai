@@ -3,15 +3,15 @@ export const RETENTION_YEARS = 5;
 
 export class RetentionViolationError extends Error {
   readonly status = 409;
-  readonly code = 'RETENTION_NOT_EXPIRED';
+  readonly code = "RETENTION_NOT_EXPIRED";
   readonly retentionExpiresAt: Date;
 
   constructor(retentionExpiresAt: Date, recordType: string) {
     super(
       `${recordType} cannot be deleted before ${retentionExpiresAt.toISOString().slice(0, 10)} ` +
-      `(UAE FTA requires ${RETENTION_YEARS}-year retention of financial records).`,
+        `(UAE FTA requires ${RETENTION_YEARS}-year retention of financial records).`
     );
-    this.name = 'RetentionViolationError';
+    this.name = "RetentionViolationError";
     this.retentionExpiresAt = retentionExpiresAt;
   }
 }
@@ -36,7 +36,7 @@ export function isWithinRetention(record: {
 // window. Call from any DELETE handler before performing the delete.
 export function assertRetentionExpired(
   record: { createdAt: Date | string; retentionExpiresAt?: Date | string | null },
-  recordType: string,
+  recordType: string
 ): void {
   const expiry = record.retentionExpiresAt
     ? new Date(record.retentionExpiresAt)
