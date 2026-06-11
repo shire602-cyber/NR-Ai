@@ -898,6 +898,36 @@ export type InsertReconciliationRule = z.infer<typeof insertReconciliationRuleSc
 export type ReconciliationRule = typeof reconciliationRules.$inferSelect;
 
 // ===========================
+// Invoice Templates (branding presets for invoice PDFs)
+// ===========================
+export const invoiceTemplates = pgTable("invoice_templates", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  layout: text("layout").notNull().default("classic"), // classic | modern | minimal
+  primaryColor: text("primary_color").default("#0D5C3D"),
+  accentColor: text("accent_color").default("#C19E50"),
+  headerText: text("header_text"),
+  footerText: text("footer_text"),
+  showLogo: boolean("show_logo").notNull().default(true),
+  showStamp: boolean("show_stamp").notNull().default(false),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  companyIdIdx: index("idx_invoice_templates_company_id").on(table.companyId),
+}));
+
+export const insertInvoiceTemplateSchema = createInsertSchema(invoiceTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertInvoiceTemplate = z.infer<typeof insertInvoiceTemplateSchema>;
+export type InvoiceTemplate = typeof invoiceTemplates.$inferSelect;
+
+// ===========================
 // Invoice Payments
 // ===========================
 export const invoicePayments = pgTable("invoice_payments", {

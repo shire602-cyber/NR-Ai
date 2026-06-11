@@ -34,7 +34,7 @@ const ROUTES = [
   '/expense-claims', '/inventory', '/integrations', '/integrations-hub', '/whatsapp',
   '/document-chasing', '/notifications', '/reminders', '/company-profile',
   '/settings/company', '/team', '/document-vault', '/month-end', '/backup-restore',
-  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/financial-statements', '/reconciliation-rules', '/task-center', '/news-feed',
+  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/financial-statements', '/reconciliation-rules', '/invoice-templates', '/task-center', '/news-feed',
   '/admin/dashboard', '/admin/clients', '/admin/invitations', '/admin/import',
   '/admin/activity-logs', '/admin/users', '/admin',
   '/firm/command-center', '/firm/clients', '/firm/staff', '/firm/health',
@@ -423,6 +423,33 @@ async function main() {
     }
   } catch (e) {
     await fail('statements-rules-flow', { crash: e.message.slice(0, 150) });
+  }
+
+  // ── 9b. Invoice template flow: create → set default → list reflects it ────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const tplRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoice-templates`, {
+      headers: { 'x-csrf-token': csrfToken ?? '' },
+      data: { name: 'Brand Emerald', layout: 'modern', primaryColor: '#0D5C3D', accentColor: '#C19E50' },
+    });
+    if (tplRes.status() !== 201) {
+      await fail('invoice-template create', { detail: `status ${tplRes.status()}: ${(await tplRes.text()).slice(0, 200)}` });
+    } else {
+      const tpl = await tplRes.json();
+      const defRes = await page.request.post(`${BASE}/api/invoice-templates/${tpl.id}/set-default`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+      });
+      if (defRes.status() >= 300) {
+        await fail('invoice-template set-default', { detail: `status ${defRes.status()}: ${(await defRes.text()).slice(0, 200)}` });
+      } else {
+        const list = await (await page.request.get(`${BASE}/api/companies/${companyId}/invoice-templates`)).json();
+        const isDefault = Array.isArray(list) && list.find((t) => t.id === tpl.id)?.isDefault === true;
+        if (!isDefault) await fail('invoice-template default-check', { detail: 'template not marked default in list' });
+      }
+    }
+  } catch (e) {
+    await fail('invoice-template-flow', { crash: e.message.slice(0, 150) });
   }
 
   // ── 10. Account-type matrix: every kind of account must work ──────────────

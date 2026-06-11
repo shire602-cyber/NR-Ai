@@ -15,6 +15,7 @@ import type {
   PurchaseOrderLine, InsertPurchaseOrderLine,
   CostCenter, InsertCostCenter,
   ReconciliationRule, InsertReconciliationRule,
+  InvoiceTemplate, InsertInvoiceTemplate,
   Receipt, InsertReceipt,
   CustomerContact, InsertCustomerContact,
   Waitlist, InsertWaitlist,
@@ -89,6 +90,7 @@ import {
   purchaseOrderLines,
   costCenters,
   reconciliationRules,
+  invoiceTemplates,
   receipts,
   customerContacts,
   waitlist,
@@ -2163,6 +2165,42 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteLinesByQuoteId(quoteId: string): Promise<void> {
     await db.delete(quoteLines).where(eq(quoteLines.quoteId, quoteId));
+  }
+
+  // Invoice templates
+  async getInvoiceTemplatesByCompanyId(companyId: string): Promise<InvoiceTemplate[]> {
+    return await db
+      .select()
+      .from(invoiceTemplates)
+      .where(eq(invoiceTemplates.companyId, companyId))
+      .orderBy(desc(invoiceTemplates.isDefault), invoiceTemplates.name);
+  }
+
+  async getInvoiceTemplate(id: string): Promise<InvoiceTemplate | undefined> {
+    const [template] = await db
+      .select()
+      .from(invoiceTemplates)
+      .where(eq(invoiceTemplates.id, id))
+      .limit(1);
+    return template;
+  }
+
+  async createInvoiceTemplate(data: InsertInvoiceTemplate): Promise<InvoiceTemplate> {
+    const [template] = await db.insert(invoiceTemplates).values(data).returning();
+    return template;
+  }
+
+  async updateInvoiceTemplate(id: string, data: Partial<InsertInvoiceTemplate>): Promise<InvoiceTemplate | undefined> {
+    const [template] = await db
+      .update(invoiceTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(invoiceTemplates.id, id))
+      .returning();
+    return template;
+  }
+
+  async deleteInvoiceTemplate(id: string): Promise<void> {
+    await db.delete(invoiceTemplates).where(eq(invoiceTemplates.id, id));
   }
 
   // Reconciliation rules
