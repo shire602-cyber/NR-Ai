@@ -148,6 +148,7 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     items: [
       { titleKey: 'documentChasing', url: '/document-chasing' },
       { titleKey: 'complianceCalendar', url: '/compliance-calendar' },
+      { titleKey: 'documentVersions', url: '/document-versions' },
     ],
   },
   {

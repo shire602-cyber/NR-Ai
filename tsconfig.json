@@ -10,7 +10,6 @@
     "**/.cursor/**",
     "server/routes/api-keys.routes.ts",
     "server/routes/billing.routes.ts",
-    "server/routes/document-versions.routes.ts",
     "server/routes/push.routes.ts",
     "server/routes/webhooks.routes.ts",
     "server/services/depreciation.service.ts",
@@ -22,7 +21,6 @@
     "client/src/lib/date-safe.ts",
     "client/src/lib/push.ts",
     "client/src/pages/DeveloperSettings.tsx",
-    "client/src/pages/DocumentVersions.tsx",
     "client/src/pages/NotificationPreferences.tsx",
     "client/src/pages/Subscription.tsx"
   ],

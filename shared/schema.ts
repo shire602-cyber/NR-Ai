@@ -965,6 +965,31 @@ export type InsertBankConnection = z.infer<typeof insertBankConnectionSchema>;
 export type BankConnection = typeof bankConnections.$inferSelect;
 
 // ===========================
+// Document Versions (audit-grade change history for documents)
+// ===========================
+export const documentVersions = pgTable("document_versions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+  documentType: text("document_type").notNull(), // invoice | quote | credit_note | purchase_order | receipt
+  documentId: uuid("document_id").notNull(),
+  version: integer("version").notNull(),
+  changeDescription: text("change_description"),
+  changedBy: uuid("changed_by").references(() => users.id),
+  snapshotData: text("snapshot_data"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  documentIdx: index("idx_document_versions_document").on(table.companyId, table.documentType, table.documentId),
+}));
+
+export const insertDocumentVersionSchema = createInsertSchema(documentVersions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type InsertDocumentVersion = z.infer<typeof insertDocumentVersionSchema>;
+export type DocumentVersion = typeof documentVersions.$inferSelect;
+
+// ===========================
 // Invoice Payments
 // ===========================
 export const invoicePayments = pgTable("invoice_payments", {

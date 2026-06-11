@@ -34,7 +34,7 @@ const ROUTES = [
   '/expense-claims', '/inventory', '/integrations', '/integrations-hub', '/whatsapp',
   '/document-chasing', '/notifications', '/reminders', '/company-profile',
   '/settings/company', '/team', '/document-vault', '/month-end', '/backup-restore',
-  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/financial-statements', '/reconciliation-rules', '/invoice-templates', '/task-center', '/news-feed',
+  '/history', '/exchange-rates', '/quotes', '/credit-notes', '/purchase-orders', '/cost-centers', '/financial-statements', '/reconciliation-rules', '/invoice-templates', '/document-versions', '/task-center', '/news-feed',
   '/admin/dashboard', '/admin/clients', '/admin/invitations', '/admin/import',
   '/admin/activity-logs', '/admin/users', '/admin',
   '/firm/command-center', '/firm/clients', '/firm/staff', '/firm/health',
@@ -698,6 +698,37 @@ async function main() {
     }
   } catch (e) {
     await fail('einvoice-flow', { crash: e.message.slice(0, 150) });
+  }
+
+  // ── 9h. Document versions: snapshot an invoice, history reflects it ───────
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const invoices = await (await page.request.get(`${BASE}/api/companies/${companyId}/invoices`)).json();
+    const targetInvoice = invoices?.[0];
+    if (targetInvoice) {
+      const verRes = await page.request.post(`${BASE}/api/companies/${companyId}/document-versions`, {
+        headers: { 'x-csrf-token': csrfToken ?? '' },
+        data: {
+          documentType: 'invoice',
+          documentId: targetInvoice.id,
+          changeDescription: 'E2E snapshot before edits',
+          snapshotData: { total: targetInvoice.total },
+        },
+      });
+      if (verRes.status() !== 201) {
+        await fail('docver create', { detail: `status ${verRes.status()}: ${(await verRes.text()).slice(0, 200)}` });
+      } else {
+        const history = await (
+          await page.request.get(`${BASE}/api/companies/${companyId}/document-versions/invoice/${targetInvoice.id}`)
+        ).json();
+        if (!Array.isArray(history) || history.length < 1 || history[0]?.version !== 1) {
+          await fail('docver history', { detail: `expected version 1, got ${JSON.stringify(history).slice(0, 120)}` });
+        }
+      }
+    }
+  } catch (e) {
+    await fail('docver-flow', { crash: e.message.slice(0, 150) });
   }
 
   // ── 10. Account-type matrix: every kind of account must work ──────────────
