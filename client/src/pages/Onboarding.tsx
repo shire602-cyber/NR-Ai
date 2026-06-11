@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from '@/lib/i18n';
 import { z } from 'zod';
 import {
   Sparkles,
@@ -547,6 +548,8 @@ function WelcomeStep({
   onExpress: (data: { name: string; emirate: string; trnVatNumber: string }) => Promise<void>;
   expressSaving: boolean;
 }) {
+  const { t } = useTranslation();
+  const tr = t as Record<string, string>;
   const [name, setName] = useState(companyName ?? '');
   const [emirate, setEmirate] = useState('dubai');
   const [trn, setTrn] = useState('');
@@ -573,7 +576,7 @@ function WelcomeStep({
           Welcome to Muhasib.ai
         </Badge>
         <h1 className="font-display text-[34px] md:text-[40px] leading-[1.05] tracking-tight">
-          {companyName ? `Hello, ${companyName}.` : 'Books ready in 90 seconds.'}
+          {companyName ? `Hello, ${companyName}.` : (tr.booksReadyTitle ?? 'Books ready in 90 seconds.')}
         </h1>
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
           Your company name is all we need — the UAE chart of accounts, VAT setup, and
@@ -585,7 +588,7 @@ function WelcomeStep({
       <Card className="max-w-md mx-auto text-left border-accent/30 shadow-lg">
         <CardContent className="p-5 space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="express-name">Company name</Label>
+            <Label htmlFor="express-name">{tr.companyNameLabel ?? 'Company name'}</Label>
             <Input
               id="express-name"
               value={name}
@@ -597,7 +600,7 @@ function WelcomeStep({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label>Emirate</Label>
+              <Label>{tr.emirateLabel ?? 'Emirate'}</Label>
               <Select value={emirate} onValueChange={setEmirate} disabled={expressSaving}>
                 <SelectTrigger data-testid="express-emirate">
                   <SelectValue />
@@ -610,7 +613,7 @@ function WelcomeStep({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="express-trn">TRN <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Label htmlFor="express-trn">{tr.trnOptionalLabel ?? 'TRN (optional)'}</Label>
               <Input
                 id="express-trn"
                 value={trn}
@@ -636,9 +639,9 @@ function WelcomeStep({
             data-testid="onboarding-express"
           >
             {expressSaving ? (
-              <><RefreshCw className="w-4 h-4 animate-spin" /> Setting up your books…</>
+              <><RefreshCw className="w-4 h-4 animate-spin" /> {tr.settingUpBooks ?? 'Setting up your books…'}</>
             ) : (
-              <><Sparkles className="w-4 h-4" /> Set up my books now</>
+              <><Sparkles className="w-4 h-4" /> {tr.setUpMyBooks ?? 'Set up my books now'}</>
             )}
           </Button>
           <p className="text-[11.5px] text-muted-foreground text-center leading-relaxed">
