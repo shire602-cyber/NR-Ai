@@ -210,10 +210,10 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-function FilingStatusBadge({ status }: { status?: 'up_to_date' | 'due_soon' | 'overdue' }) {
-  if (status === 'overdue') return <Badge variant="danger" dot>Overdue</Badge>;
-  if (status === 'due_soon') return <Badge variant="warning" dot>Due soon</Badge>;
-  return <Badge variant="success" dot>On track</Badge>;
+function FilingStatusBadge({ status, t }: { status?: 'up_to_date' | 'due_soon' | 'overdue'; t: Record<string, string> }) {
+  if (status === 'overdue') return <Badge variant="danger" dot>{t.overdue ?? 'Overdue'}</Badge>;
+  if (status === 'due_soon') return <Badge variant="warning" dot>{t.dueSoon ?? 'Due soon'}</Badge>;
+  return <Badge variant="success" dot>{t.onTrack ?? 'On track'}</Badge>;
 }
 
 /**
@@ -483,12 +483,12 @@ function CustomerDashboard() {
           transition={{ duration: 0.4, delay: 0.2 }}
         >
           <SectionHeader
-            eyebrow="Compliance"
-            title="Filing pulse"
+            eyebrow={(t as any).complianceEyebrow ?? 'Compliance'}
+            title={(t as any).filingPulse ?? 'Filing pulse'}
             action={
               <Link href="/compliance-calendar">
                 <Button variant="ghost" size="sm" className="gap-1 text-accent hover:text-accent -me-2">
-                  Calendar <ArrowRight className="w-3.5 h-3.5" />
+                  {(t as any).calendarLink ?? 'Calendar'} <ArrowRight className="w-3.5 h-3.5" />
                 </Button>
               </Link>
             }
@@ -500,7 +500,7 @@ function CustomerDashboard() {
                 <ScoreRing score={compliance.auditReadiness?.score ?? 0} />
                 <div className="min-w-0">
                   <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-                    Audit readiness
+                    {(t as any).auditReadiness ?? 'Audit readiness'}
                   </div>
                   <div className="mt-1 text-[12.5px] text-muted-foreground leading-snug">
                     {(compliance.auditReadiness?.issues?.length ?? 0) === 0
@@ -516,16 +516,16 @@ function CustomerDashboard() {
                   <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
                     VAT 201
                   </div>
-                  <FilingStatusBadge status={compliance.vatStatus?.filingStatus} />
+                  <FilingStatusBadge status={compliance.vatStatus?.filingStatus} t={t as any} />
                 </div>
                 <div className="mt-2 font-mono tabular-nums text-[14px] text-foreground">
                   {compliance.vatStatus?.nextDue
-                    ? <>Next due {formatDate(compliance.vatStatus.nextDue, locale)}</>
-                    : 'No return filed yet'}
+                    ? <>{(t as any).nextDue ?? 'Next due'} {formatDate(compliance.vatStatus.nextDue, locale)}</>
+                    : ((t as any).noReturnFiledYet ?? 'No return filed yet')}
                 </div>
                 <Link href="/vat-filing">
                   <Button variant="ghost" size="sm" className="mt-2 -ms-3 gap-1 text-accent hover:text-accent">
-                    Open VAT workspace <ArrowRight className="w-3.5 h-3.5" />
+                    {(t as any).openVatWorkspace ?? 'Open VAT workspace'} <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
               </div>
@@ -534,18 +534,18 @@ function CustomerDashboard() {
               <div className="p-5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted-foreground">
-                    Corporate tax
+                    {(t as any).corporateTaxLabel ?? 'Corporate tax'}
                   </div>
-                  <FilingStatusBadge status={compliance.corporateTaxStatus?.status} />
+                  <FilingStatusBadge status={compliance.corporateTaxStatus?.status} t={t as any} />
                 </div>
                 <div className="mt-2 font-mono tabular-nums text-[14px] text-foreground">
                   {compliance.corporateTaxStatus?.nextDue
-                    ? <>Next due {formatDate(compliance.corporateTaxStatus.nextDue, locale)}</>
-                    : 'No return filed yet'}
+                    ? <>{(t as any).nextDue ?? 'Next due'} {formatDate(compliance.corporateTaxStatus.nextDue, locale)}</>
+                    : ((t as any).noReturnFiledYet ?? 'No return filed yet')}
                 </div>
                 <Link href="/corporate-tax">
                   <Button variant="ghost" size="sm" className="mt-2 -ms-3 gap-1 text-accent hover:text-accent">
-                    Open tax workpaper <ArrowRight className="w-3.5 h-3.5" />
+                    {(t as any).openTaxWorkpaper ?? 'Open tax workpaper'} <ArrowRight className="w-3.5 h-3.5" />
                   </Button>
                 </Link>
               </div>
@@ -555,7 +555,7 @@ function CustomerDashboard() {
             {(compliance.auditReadiness?.issues?.length ?? 0) > 0 && (
               <div className="border-t border-border/60">
                 <div className="px-5 pt-3 pb-1 text-[10.5px] uppercase tracking-[0.14em] font-semibold text-muted-foreground/80">
-                  Raise your score
+                  {(t as any).raiseYourScore ?? 'Raise your score'}
                 </div>
                 <div className="divide-y divide-border/40 pb-1.5">
                   {compliance.auditReadiness.issues.map((issue: string) => (

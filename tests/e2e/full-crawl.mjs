@@ -671,6 +671,37 @@ async function main() {
     '/client-portal/statements', '/client-portal/messages',
   ]);
 
+  // ── 11. Arabic / RTL smoke: the bilingual promise must hold ───────────────
+  // Switch the persisted locale to Arabic, crawl key routes, and assert the
+  // document direction flips and nothing breaks.
+  try {
+    await page.addInitScript(() => {
+      localStorage.setItem(
+        'i18n-storage',
+        JSON.stringify({ state: { locale: 'ar' }, version: 0 }),
+      );
+    });
+    for (const route of ['/dashboard', '/invoices', '/vat-filing', '/reports', '/settings/company']) {
+      routeErrors = [];
+      apiFailures = [];
+      await page.goto(`${BASE}${route}`, { timeout: 45000 });
+      await page.waitForTimeout(1700);
+      const dir = await page.evaluate(() => document.documentElement.getAttribute('dir'));
+      const mainText = await page.locator('main').innerText().catch(() => '');
+      const blank = mainText.trim().length < 40;
+      if (dir !== 'rtl' || routeErrors.length || blank) {
+        await fail(`rtl route ${route}`, {
+          dir,
+          blank: blank || undefined,
+          js: routeErrors.slice(0, 3),
+          api: [...new Set(apiFailures)].slice(0, 4),
+        });
+      }
+    }
+  } catch (e) {
+    await fail('rtl-smoke', { crash: e.message.slice(0, 150) });
+  }
+
   await browser.close();
 
   // ── Report ─────────────────────────────────────────────────────────────────
