@@ -81,7 +81,11 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
     "/firm/analytics/revenue",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       const whereClause = getClientWhereClause(accessibleIds);
 
       // Total MRR: sum of active engagement monthly fees
@@ -174,7 +178,11 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
     "/firm/analytics/utilization",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
 
       // Staff count
       const staffRows = await db
@@ -224,7 +232,11 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
     "/firm/analytics/client-health-summary",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       const whereClause = getClientWhereClause(accessibleIds);
 
       const clientList = await db

@@ -194,7 +194,11 @@ router.post(
     const { id: userId, firmRole } = (req as any).user;
     const { items } = bulkOcrSchema.parse(req.body);
 
-    const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+    const accessibleIds = await getAccessibleCompanyIds(
+      userId,
+      firmRole ?? "",
+      (req as any).user?.isAdmin === true
+    );
 
     for (const item of items) {
       if (accessibleIds !== null && !accessibleIds.includes(item.companyId)) {
@@ -259,7 +263,11 @@ router.post(
   "/bulk/vat-queue",
   asyncHandler(async (req: Request, res: Response) => {
     const { id: userId, firmRole } = (req as any).user;
-    const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+    const accessibleIds = await getAccessibleCompanyIds(
+      userId,
+      firmRole ?? "",
+      (req as any).user?.isAdmin === true
+    );
 
     let clientCompanies: (typeof companies.$inferSelect)[];
 
@@ -362,7 +370,11 @@ router.post(
     const { id: userId, firmRole } = (req as any).user;
     const { companyIds, serviceDescription, amount, vatRate } = bulkInvoicesSchema.parse(req.body);
 
-    const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+    const accessibleIds = await getAccessibleCompanyIds(
+      userId,
+      firmRole ?? "",
+      (req as any).user?.isAdmin === true
+    );
 
     for (const companyId of companyIds) {
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
@@ -451,7 +463,11 @@ router.post(
     const { id: userId, firmRole } = (req as any).user;
     const { companyIds, period } = periodCloseSchema.parse(req.body);
 
-    const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+    const accessibleIds = await getAccessibleCompanyIds(
+      userId,
+      firmRole ?? "",
+      (req as any).user?.isAdmin === true
+    );
 
     for (const companyId of companyIds) {
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
@@ -540,7 +556,11 @@ router.get(
   "/bulk/bank-import-status",
   asyncHandler(async (req: Request, res: Response) => {
     const { id: userId, firmRole } = (req as any).user;
-    const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+    const accessibleIds = await getAccessibleCompanyIds(
+      userId,
+      firmRole ?? "",
+      (req as any).user?.isAdmin === true
+    );
 
     let clientCompanies: (typeof companies.$inferSelect)[];
 

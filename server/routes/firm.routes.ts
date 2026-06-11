@@ -611,7 +611,11 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/clients",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
 
       let clientCompanies: Awaited<ReturnType<typeof storage.getClientCompanies>>;
       if (accessibleIds === null) {
@@ -653,7 +657,11 @@ export function registerFirmRoutes(app: Express): void {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
@@ -778,7 +786,11 @@ export function registerFirmRoutes(app: Express): void {
       const validated = updateClientSchema.parse(req.body);
       const { serviceScope, ...companyPatch } = validated;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
@@ -927,7 +939,11 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/bookkeeper-dashboard",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
 
       type BookkeeperClientRow = {
         id: string;
@@ -1741,7 +1757,11 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/health",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
 
       let clientList: {
         id: string;
@@ -2008,7 +2028,11 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/health/deadlines",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
 
       if (accessibleIds !== null && accessibleIds.length === 0) {
         return res.json({ deadlines: [] });
@@ -2086,7 +2110,11 @@ export function registerFirmRoutes(app: Express): void {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
       }
@@ -2298,7 +2326,11 @@ export function registerFirmRoutes(app: Express): void {
     "/firm/overview",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
+      const accessibleIds = await getAccessibleCompanyIds(
+        userId,
+        firmRole ?? "",
+        (req as any).user?.isAdmin === true
+      );
 
       let clientIds: string[];
       if (accessibleIds === null) {

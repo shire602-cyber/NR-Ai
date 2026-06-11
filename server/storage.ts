@@ -320,7 +320,11 @@ export interface IStorage {
    * Return all companies a user can access — direct company_users membership
    * plus firm-accessible client companies if firmRole is supplied.
    */
-  getAccessibleCompanies(userId: string, firmRole?: string | null): Promise<Company[]>;
+  getAccessibleCompanies(
+    userId: string,
+    firmRole?: string | null,
+    isAdmin?: boolean
+  ): Promise<Company[]>;
 
   // Accounts
   getAccount(id: string, companyId: string): Promise<Account | undefined>;
@@ -1066,10 +1070,14 @@ export class DatabaseStorage implements IStorage {
     return !!assignment;
   }
 
-  async getAccessibleCompanies(userId: string, firmRole?: string | null): Promise<Company[]> {
+  async getAccessibleCompanies(
+    userId: string,
+    firmRole?: string | null,
+    isAdmin = false
+  ): Promise<Company[]> {
     const direct = await this.getCompaniesByUserId(userId);
 
-    if (firmRole !== "firm_owner" && firmRole !== "firm_admin") {
+    if (!isAdmin && firmRole !== "firm_owner" && firmRole !== "firm_admin") {
       return direct;
     }
 
@@ -1077,7 +1085,8 @@ export class DatabaseStorage implements IStorage {
     const directIds = new Set(direct.map((c) => c.id));
 
     let firmCompanies: Company[];
-    if (firmRole === "firm_owner") {
+    // Platform admins get the same full client scope as firm_owner.
+    if (isAdmin || firmRole === "firm_owner") {
       firmCompanies = await db
         .select()
         .from(companies)

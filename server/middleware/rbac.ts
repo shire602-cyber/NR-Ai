@@ -2,9 +2,9 @@ import type { Request, Response, NextFunction } from "express";
 import { db } from "../db";
 import { eq, and, isNull } from "drizzle-orm";
 import { companyUsers, companies, firmStaffAssignments } from "../../shared/schema";
+import { canAccessNraCenter, hasFullNraScope, isNraFirmRole } from "../../shared/access";
 
-const FIRM_ROLES = ["firm_owner", "firm_admin"] as const;
-export type FirmRole = (typeof FIRM_ROLES)[number];
+export type { NraFirmRole as FirmRole } from "../../shared/access";
 
 /**
  * Require the requesting user to have one of the given roles in the active
@@ -19,8 +19,8 @@ export function requireRole(...roles: string[]) {
       return;
     }
 
-    // firm_owner bypasses all company-level role checks
-    if ((req.user as any).firmRole === "firm_owner") {
+    // Platform admins and firm_owner bypass company-level role checks.
+    if (hasFullNraScope(req.user as any)) {
       next();
       return;
     }
@@ -54,31 +54,46 @@ export function requireRole(...roles: string[]) {
 }
 
 /**
- * Require the requesting user to be firm_owner or firm_admin.
- * This gates access to the NRA Management Center.
+ * Canonical NRA Center gate: platform admins (isAdmin) and NRA firm staff
+ * (firm_owner / firm_admin). Every /api/firm/* and NRA surface mounts this —
+ * SaaS customers and client-portal users are always rejected, even when they
+ * guess URLs. Mirrors canAccessNraCenter() used by the client UI.
  *
  * Must be used AFTER authMiddleware.
  */
-export function requireFirmRole() {
+export function requireNraAccess() {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
       res.status(401).json({ message: "Authentication required" });
       return;
     }
-
-    const firmRole = (req.user as any).firmRole as string | undefined;
-    if (!firmRole || !FIRM_ROLES.includes(firmRole as FirmRole)) {
+    if (!canAccessNraCenter(req.user as any)) {
       res.status(403).json({ message: "NRA firm staff access required" });
       return;
     }
-
     next();
   };
 }
 
 /**
- * Require firm_owner specifically (firm_admin is rejected).
- * Used to gate destructive / batch / firm-wide configuration endpoints.
+ * @deprecated Alias of requireNraAccess() kept so existing route modules keep
+ * reading naturally; new code should mount requireNraAccess().
+ */
+export function requireFirmRole() {
+  return requireNraAccess();
+}
+
+/**
+ * @deprecated Alias of requireNraAccess(); see requireFirmRole.
+ */
+export function requireFirmAdmin() {
+  return requireNraAccess();
+}
+
+/**
+ * Require firm_owner (or a platform admin acting in support). Gates
+ * destructive / batch / firm-wide configuration endpoints — firm_admin is
+ * rejected.
  *
  * Must be used AFTER authMiddleware.
  */
@@ -88,8 +103,7 @@ export function requireFirmOwner() {
       res.status(401).json({ message: "Authentication required" });
       return;
     }
-    const firmRole = (req.user as any).firmRole as string | undefined;
-    if (firmRole !== "firm_owner") {
+    if (!hasFullNraScope(req.user as any)) {
       res.status(403).json({ message: "Firm owner access required" });
       return;
     }
@@ -98,30 +112,10 @@ export function requireFirmOwner() {
 }
 
 /**
- * Require firm_admin or firm_owner (read-only firm endpoints).
- * Alias for the broader requireFirmRole(); kept as a separate name so route
- * intent is obvious at the call site.
- *
- * Must be used AFTER authMiddleware.
- */
-export function requireFirmAdmin() {
-  return function (req: Request, res: Response, next: NextFunction): void {
-    if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
-      return;
-    }
-    const firmRole = (req.user as any).firmRole as string | undefined;
-    if (!firmRole || !FIRM_ROLES.includes(firmRole as FirmRole)) {
-      res.status(403).json({ message: "NRA firm staff access required" });
-      return;
-    }
-    next();
-  };
-}
-
-/**
- * Returns the list of company IDs a firm staff member may access.
- * - firm_owner: all companies (returns null → caller should not filter)
+ * Returns the list of client company IDs a user may access through the NRA
+ * Center, or null for "all client companies".
+ * - platform admin (isAdmin) and firm_owner: all (returns null → caller
+ *   should not filter)
  * - firm_admin: client companies the user is linked to via either
  *     (a) firm_staff_assignments — explicit firm-staff assignment, or
  *     (b) company_users — direct membership added through /assign-staff or
@@ -138,9 +132,11 @@ export function requireFirmAdmin() {
  */
 export async function getAccessibleCompanyIds(
   userId: string,
-  firmRole: string
+  firmRole: string,
+  isAdmin = false
 ): Promise<string[] | null> {
-  if (firmRole === "firm_owner") return null;
+  if (isAdmin || firmRole === "firm_owner") return null;
+  if (!isNraFirmRole(firmRole)) return [];
 
   const [byAssignment, byMembership] = await Promise.all([
     db
