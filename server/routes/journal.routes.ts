@@ -497,9 +497,13 @@ export function registerJournalRoutes(app: Express) {
         reversalLines
       );
 
-      // Mark original entry as void
+      // The ORIGINAL STAYS POSTED. Reversal accounting offsets the original
+      // with an equal-and-opposite posted entry — voiding the original as
+      // well would remove it from reports while the reversal still
+      // subtracts it, double-reversing the books (net effect −1× instead
+      // of 0). The original keeps its place in the GL and audit trail; the
+      // pair nets to zero.
       await storage.updateJournalEntry(id, entry.companyId, {
-        status: "void",
         updatedBy: userId,
         updatedAt: new Date(),
       });
@@ -512,7 +516,7 @@ export function registerJournalRoutes(app: Express) {
         entityId: id,
         before: { status: "posted", entryNumber: entry.entryNumber },
         after: {
-          status: "void",
+          status: "posted",
           reversalEntryId: reversalEntry.id,
           reversalNumber: reversalEntry.entryNumber,
         },
