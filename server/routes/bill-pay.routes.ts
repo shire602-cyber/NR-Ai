@@ -55,6 +55,13 @@ const billCreateSchema = z.object({
   notes: z.string().max(2000).optional().nullable(),
   attachment_url: z.string().url().optional().nullable(),
   reverse_charge: z.boolean().optional(),
+  exchange_rate: z
+    .union([z.number(), z.string()])
+    .optional()
+    .nullable()
+    .refine((v) => v === null || v === undefined || v === "" || Number(v) > 0, {
+      message: "exchange_rate must be positive",
+    }),
   line_items: z.array(billLineItemSchema).min(1, "At least one line item is required"),
 });
 
@@ -234,7 +241,19 @@ export function registerBillPayRoutes(app: Express) {
         attachment_url,
         line_items,
         reverse_charge,
+        exchange_rate,
       } = req.body;
+
+      // Foreign-currency bills must carry a rate to AED — the GL and VAT 201
+      // are AED. AED bills default to 1.
+      const docCurrency = (currency || "AED").toUpperCase();
+      const fxRate = Number(exchange_rate) > 0 ? Number(exchange_rate) : 1;
+      if (docCurrency !== "AED" && fxRate === 1 && !(Number(exchange_rate) > 0)) {
+        return res.status(422).json({
+          message: `Foreign-currency bills require exchange_rate (${docCurrency}→AED).`,
+          code: "NO_EXCHANGE_RATE",
+        });
+      }
 
       // Bills post a JE on the bill_date once approved — refuse to even draft
       // one inside a closed period.
@@ -265,8 +284,8 @@ export function registerBillPayRoutes(app: Express) {
         `INSERT INTO vendor_bills (
         company_id, vendor_name, vendor_trn, bill_number, bill_date, due_date,
         currency, subtotal, vat_amount, total_amount, amount_paid, status,
-        category, notes, attachment_url, reverse_charge
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        category, notes, attachment_url, reverse_charge, exchange_rate
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *`,
         [
           companyId,
@@ -275,7 +294,7 @@ export function registerBillPayRoutes(app: Express) {
           bill_number || null,
           bill_date,
           due_date || null,
-          currency || "AED",
+          docCurrency,
           subtotal.toFixed(2),
           vatAmount.toFixed(2),
           totalAmount.toFixed(2),
@@ -285,6 +304,7 @@ export function registerBillPayRoutes(app: Express) {
           notes || null,
           attachment_url || null,
           billReverseCharge,
+          fxRate,
         ]
       );
 

@@ -498,6 +498,13 @@
       "when": 1781290000000,
       "tag": "0071_receipts_date_type",
       "breakpoints": false
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1781300000000,
+      "tag": "0072_vendor_bills_exchange_rate",
+      "breakpoints": false
     }
   ]
 }

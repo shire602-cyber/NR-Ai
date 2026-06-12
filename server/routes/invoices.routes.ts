@@ -27,6 +27,7 @@ import {
   peekNextInvoiceNumber,
 } from "../services/invoice-numbering.service";
 import { assertRetentionExpired } from "../services/retention.service";
+import { getLatestRate } from "./exchange-rates.routes";
 
 const log = createLogger("invoices");
 
@@ -245,6 +246,30 @@ export function registerInvoiceRoutes(app: Express) {
       // Convert date string to Date object if it's a string
       const invoiceDate = typeof date === "string" ? new Date(date) : date;
 
+      // Foreign-currency invoices must carry a rate to AED at transaction
+      // date — the GL, VAT return, and FTA reporting are all AED. Accept an
+      // explicit exchangeRate from the caller or fall back to the stored
+      // rates; refuse to book a foreign invoice with no rate at all.
+      const docCurrency = (invoiceData.currency || "AED").toUpperCase();
+      let exchangeRate = 1;
+      if (docCurrency !== "AED") {
+        const supplied = Number(invoiceData.exchangeRate);
+        if (Number.isFinite(supplied) && supplied > 0) {
+          exchangeRate = supplied;
+        } else {
+          const stored = await getLatestRate(docCurrency, "AED", invoiceDate);
+          if (!stored || stored <= 0) {
+            return res.status(422).json({
+              message: `No ${docCurrency}→AED exchange rate available. Add one under Exchange Rates or pass exchangeRate.`,
+              code: "NO_EXCHANGE_RATE",
+            });
+          }
+          exchangeRate = stored;
+        }
+      }
+      invoiceData.exchangeRate = exchangeRate;
+      invoiceData.baseCurrencyAmount = Math.round(total * exchangeRate * 100) / 100;
+
       // Block invoice creation in a locked period — invoice creation immediately
       // posts a revenue-recognition journal entry on this date.
       await assertPeriodNotLocked(companyId, invoiceDate);
@@ -448,6 +473,13 @@ export function registerInvoiceRoutes(app: Express) {
         await assertPeriodNotLocked(invoice.companyId, invoiceDate);
       }
 
+      // Keep the AED base amount in sync with the recomputed totals. The
+      // stored transaction-date rate is reused unless the caller supplies one.
+      const fxRate =
+        Number(invoiceData.exchangeRate) > 0
+          ? Number(invoiceData.exchangeRate)
+          : Number((invoice as any).exchangeRate) || 1;
+
       // Update invoice
       const updatedInvoice = await storage.updateInvoice(id, invoice.companyId, {
         ...invoiceData,
@@ -455,6 +487,8 @@ export function registerInvoiceRoutes(app: Express) {
         subtotal,
         vatAmount,
         total,
+        exchangeRate: fxRate,
+        baseCurrencyAmount: Math.round(total * fxRate * 100) / 100,
       });
 
       await storage.deleteInvoiceLinesByInvoiceId(id);

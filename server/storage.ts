@@ -4213,7 +4213,7 @@ export class DatabaseStorage implements IStorage {
     return await db.transaction(async (tx: typeof db) => {
       // Lock the invoice row. Concurrent payment writers will queue here.
       const lockResult: any = await tx.execute(sql`
-        SELECT id, company_id, currency, total, status, number
+        SELECT id, company_id, currency, total, status, number, exchange_rate
         FROM invoices
         WHERE id = ${input.invoiceId}
         FOR UPDATE
@@ -4225,6 +4225,7 @@ export class DatabaseStorage implements IStorage {
         total: number;
         status: string;
         number?: string;
+        exchange_rate?: number | string | null;
       }>;
       const lockedInvoice = lockedRows[0];
       if (!lockedInvoice) {
@@ -4312,10 +4313,12 @@ export class DatabaseStorage implements IStorage {
           postedAt: input.date,
         })
         .returning();
+      const fxRate = Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
+      const amountAed = Math.round(input.amount * fxRate * 100) / 100;
       await tx.insert(journalLines).values({
         entryId: entry.id,
         accountId: input.paymentAccountId,
-        debit: input.amount,
+        debit: amountAed,
         credit: 0,
         description: `Payment received - Invoice ${lockedInvoice.number || input.invoiceId}`,
       });
@@ -4323,7 +4326,7 @@ export class DatabaseStorage implements IStorage {
         entryId: entry.id,
         accountId: input.receivableAccountId,
         debit: 0,
-        credit: input.amount,
+        credit: amountAed,
         description: `Clear A/R - Invoice ${lockedInvoice.number || input.invoiceId}`,
       });
 

@@ -101,8 +101,14 @@ export function registerVATRoutes(app: Express) {
       const periodLines = await storage.getInvoiceLinesByInvoiceIds(
         periodInvoices.map((i) => i.id)
       );
+      // FTA reporting is AED — convert foreign-currency invoice lines at the
+      // invoice's stored transaction-date rate.
+      const rateByInvoiceId = new Map(
+        periodInvoices.map((i) => [i.id, Number((i as any).exchangeRate) > 0 ? Number((i as any).exchangeRate) : 1])
+      );
       for (const line of periodLines) {
-        const lineAmount = line.quantity * line.unitPrice;
+        const fxRate = rateByInvoiceId.get(line.invoiceId) ?? 1;
+        const lineAmount = line.quantity * line.unitPrice * fxRate;
         const lineVat = lineAmount * (line.vatRate ?? UAE_VAT_RATE);
         const supplyType = (line as any).vatSupplyType || "standard_rated";
 
@@ -178,10 +184,10 @@ export function registerVATRoutes(app: Express) {
       try {
         const billRes = await pool.query(
           `SELECT
-             COALESCE(SUM(subtotal) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-             COALESCE(SUM(vat_amount) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-             COALESCE(SUM(subtotal) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-             COALESCE(SUM(vat_amount) FILTER (WHERE reverse_charge = false), 0) AS std_vat
+             COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
+             COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
+             COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
+             COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
          FROM vendor_bills
          WHERE company_id = $1
            AND bill_date >= $2::date

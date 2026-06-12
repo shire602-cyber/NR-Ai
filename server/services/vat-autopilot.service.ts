@@ -645,7 +645,7 @@ export async function calculateVatReturn(
   // void, and cancelled invoices because they create no VAT obligation.
   const invoiceLineRes = await pool.query(
     `SELECT il.quantity::numeric AS quantity,
-            il.unit_price::numeric AS unit_price,
+            (il.unit_price::numeric * COALESCE(i.exchange_rate, 1)::numeric) AS unit_price,
             il.vat_rate::numeric AS vat_rate,
             il.vat_supply_type AS vat_supply_type,
             i.id AS invoice_id
@@ -751,10 +751,10 @@ export async function calculateVatReturn(
   try {
     const billRes = await pool.query(
       `SELECT
-         COALESCE(SUM(subtotal) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
-         COALESCE(SUM(vat_amount) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
-         COALESCE(SUM(subtotal) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
-         COALESCE(SUM(vat_amount) FILTER (WHERE reverse_charge = false), 0) AS std_vat
+         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
+         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
+         COALESCE(SUM(subtotal * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
+         COALESCE(SUM(vat_amount * COALESCE(exchange_rate,1)) FILTER (WHERE reverse_charge = false), 0) AS std_vat
        FROM vendor_bills
        WHERE company_id = $1
          AND bill_date >= $2::date AND bill_date <= $3::date

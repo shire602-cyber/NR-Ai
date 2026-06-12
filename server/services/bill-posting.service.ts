@@ -72,7 +72,12 @@ interface BillRow {
   vat_amount: string | number;
   total_amount: string | number;
   reverse_charge: boolean;
+  exchange_rate?: string | number | null;
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const rateOf = (bill: { exchange_rate?: string | number | null }) =>
+  Number(bill.exchange_rate) > 0 ? Number(bill.exchange_rate) : 1;
 
 interface BillLineRow {
   description: string;
@@ -152,8 +157,10 @@ export async function postBillApprovalJournal(
     (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
   );
 
-  const subtotal = Number(bill.subtotal);
-  const vatAmount = Number(bill.vat_amount);
+  // The ledger is AED — convert document-currency bills at the stored rate.
+  const fxRate = rateOf(bill);
+  const subtotal = round2(Number(bill.subtotal) * fxRate);
+  const vatAmount = round2(Number(bill.vat_amount) * fxRate);
   const billDate = toDate(bill.bill_date);
   const billRef = bill.bill_number || bill.id.slice(0, 8);
 
@@ -164,11 +171,15 @@ export async function postBillApprovalJournal(
     const accountId = await resolveLineAccount(accounts, companyId, line, category);
     lines.push({
       accountId,
-      debit: Number(line.amount),
+      debit: round2(Number(line.amount) * fxRate),
       credit: 0,
       description: `Bill ${billRef} - ${line.description}`.slice(0, 255),
     });
   }
+
+  // Per-line rounding can drift a fils from subtotal×rate — rebalance off the
+  // actual expense debits (BEFORE the VAT leg) so the entry always balances.
+  const expenseDebits = round2(lines.reduce((sum, l) => sum + l.debit, 0));
 
   if (vatAmount > 0 && inputVat) {
     lines.push({
@@ -192,13 +203,13 @@ export async function postBillApprovalJournal(
     lines.push({
       accountId: ap.id,
       debit: 0,
-      credit: subtotal,
+      credit: expenseDebits,
       description: `A/P - ${bill.vendor_name} - Bill ${billRef}`,
     });
   } else {
     // If the input VAT account is missing the debit side is short — fall back
     // to crediting AP for the subtotal+VAT only when VAT was debited.
-    const apCredit = vatAmount > 0 && inputVat ? subtotal + vatAmount : subtotal;
+    const apCredit = round2(vatAmount > 0 && inputVat ? expenseDebits + vatAmount : expenseDebits);
     lines.push({
       accountId: ap.id,
       debit: 0,
@@ -231,7 +242,7 @@ export async function postBillApprovalJournal(
  * Post the payment journal entry for a bill payment (Dr AP / Cr bank or cash).
  */
 export async function postBillPaymentJournal(
-  bill: Pick<BillRow, "id" | "company_id" | "vendor_name" | "bill_number">,
+  bill: Pick<BillRow, "id" | "company_id" | "vendor_name" | "bill_number" | "exchange_rate">,
   payment: {
     id: string;
     payment_date: string | Date;
@@ -262,7 +273,7 @@ export async function postBillPaymentJournal(
     throw new Error("Accounts Payable or Bank account not found in chart of accounts");
   }
 
-  const amount = Number(payment.amount);
+  const amount = round2(Number(payment.amount) * rateOf(bill as BillRow));
   const payDate = toDate(payment.payment_date);
   const billRef = bill.bill_number || bill.id.slice(0, 8);
 

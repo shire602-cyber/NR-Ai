@@ -24,10 +24,14 @@ interface InvoiceLike {
   number: string;
   customerName: string;
   date: string | Date;
+  currency?: string | null;
+  exchangeRate?: string | number | null;
   subtotal: string | number;
   vatAmount: string | number;
   total: string | number;
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
  * Create the revenue-recognition JE for an issued invoice. Returns true when
@@ -71,9 +75,18 @@ export async function postInvoiceRevenueJournal(
     return false;
   }
 
-  const subtotal = Number(invoice.subtotal);
-  const vatAmount = Number(invoice.vatAmount);
-  const total = Number(invoice.total);
+  // The ledger is AED. Foreign-currency invoices post at the stored
+  // transaction-date rate, with the original amounts preserved on the lines.
+  const currency = (invoice.currency || "AED").toUpperCase();
+  const rate = Number(invoice.exchangeRate) > 0 ? Number(invoice.exchangeRate) : 1;
+  const isForeign = currency !== "AED" && rate !== 1;
+  const docSubtotal = Number(invoice.subtotal);
+  const docVatAmount = Number(invoice.vatAmount);
+  const docTotal = Number(invoice.total);
+  const subtotal = round2(docSubtotal * rate);
+  const vatAmount = round2(docVatAmount * rate);
+  // AR is the sum of the credit legs, not total×rate — independent rounding
+  // of subtotal and VAT could otherwise leave the entry unbalanced by a fils.
   const invoiceDate = invoice.date instanceof Date ? invoice.date : new Date(invoice.date);
 
   // Split zero-rated lines (vatRate = 0) to the dedicated income account so
@@ -85,21 +98,28 @@ export async function postInvoiceRevenueJournal(
     zeroRatedNet = lines
       .filter((l) => Number(l.vatRate) === 0)
       .reduce((sum, l) => sum + Number(l.quantity) * Number(l.unitPrice), 0);
+    zeroRatedNet = round2(zeroRatedNet * rate);
     zeroRatedNet = Math.min(zeroRatedNet, subtotal);
   }
-  const standardNet = subtotal - zeroRatedNet;
+  const standardNet = round2(subtotal - zeroRatedNet);
+  const arDebit = round2(subtotal + vatAmount);
 
-  const journalLines: Array<{
-    accountId: string;
-    debit: number;
-    credit: number;
-    description: string;
-  }> = [
+  const fx = (docAmount: number, side: "debit" | "credit") =>
+    isForeign
+      ? {
+          foreignCurrency: currency,
+          exchangeRate: rate,
+          ...(side === "debit" ? { foreignDebit: docAmount } : { foreignCredit: docAmount }),
+        }
+      : {};
+
+  const journalLines: Array<Record<string, unknown>> = [
     {
       accountId: accountsReceivable.id,
-      debit: total,
+      debit: arDebit,
       credit: 0,
-      description: `Invoice ${invoice.number} - ${invoice.customerName}`,
+      description: `Invoice ${invoice.number} - ${invoice.customerName}${isForeign ? ` (${currency} ${docTotal} @ ${rate})` : ""}`,
+      ...fx(docTotal, "debit"),
     },
   ];
   if (standardNet > 0) {
@@ -141,7 +161,7 @@ export async function postInvoiceRevenueJournal(
       postedBy: userId,
       postedAt: invoiceDate,
     } as any,
-    journalLines
+    journalLines as any
   );
 
   log.info({ entryNumber, invoiceId: invoice.id }, "Revenue recognition journal entry created");
