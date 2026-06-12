@@ -671,6 +671,36 @@ export async function calculateVatReturn(
   );
   const sales = aggregateInvoiceLines(lines);
 
+  // Issued credit notes reduce the output side (FTA: adjustments to
+  // supplies). Subtract their lines from the matching buckets so the
+  // calculated return agrees with the GL, where the CN reversal has already
+  // reduced revenue and output VAT. Table may be absent in dev (42P01).
+  try {
+    const cnRes = await pool.query(
+      `SELECT cl.quantity::numeric AS quantity,
+              cl.unit_price::numeric AS unit_price,
+              cl.vat_rate::numeric AS vat_rate
+       FROM credit_note_lines cl
+       JOIN credit_notes cn ON cn.id = cl.credit_note_id
+       WHERE cn.company_id = $1
+         AND cn.date >= $2 AND cn.date <= $3
+         AND cn.status = 'issued'`,
+      [companyId, resolvedPeriod.start, resolvedPeriod.end]
+    );
+    for (const row of cnRes.rows as Array<Record<string, unknown>>) {
+      const lineAmount = (Number(row.quantity) || 0) * (Number(row.unit_price) || 0);
+      const rate = row.vat_rate === null ? UAE_VAT_RATE : Number(row.vat_rate);
+      if (rate === 0) {
+        sales.zeroRatedAmount = round2(sales.zeroRatedAmount - lineAmount);
+      } else {
+        sales.standardRatedAmount = round2(sales.standardRatedAmount - lineAmount);
+        sales.standardRatedVat = round2(sales.standardRatedVat - lineAmount * rate);
+      }
+    }
+  } catch (err) {
+    if ((err as { code?: string })?.code !== "42P01") throw err;
+  }
+
   // ── Purchases side ────────────────────────────────────────────────────────
   // Posted receipts only — drafts cannot support input VAT recovery.
   const receiptRes = await pool.query(
