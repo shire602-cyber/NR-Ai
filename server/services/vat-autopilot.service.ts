@@ -711,24 +711,36 @@ export async function calculateVatReturn(
     }
   }
 
-  // Reverse-charge bills come from the bill-pay schema which isn't always
-  // installed in dev — only swallow the missing-table case, surface anything
-  // else (a real query failure must not silently mask reverse-charge VAT).
+  // Vendor bills come from the bill-pay schema which isn't always installed
+  // in dev — only swallow the missing-table case, surface anything else (a
+  // real query failure must not silently mask VAT). Reverse-charge bills feed
+  // Boxes 3/10; ordinary approved/paid bills carry recoverable input VAT into
+  // Box 9. Pending bills are excluded to match GL posting at approval time.
   let billReverseChargeAmount = 0;
   let billReverseChargeVat = 0;
   try {
     const billRes = await pool.query(
-      `SELECT COALESCE(SUM(subtotal), 0) AS amount,
-              COALESCE(SUM(vat_amount), 0) AS vat
+      `SELECT
+         COALESCE(SUM(subtotal) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
+         COALESCE(SUM(vat_amount) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
+         COALESCE(SUM(subtotal) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
+         COALESCE(SUM(vat_amount) FILTER (WHERE reverse_charge = false), 0) AS std_vat
        FROM vendor_bills
        WHERE company_id = $1
-         AND reverse_charge = true
-         AND bill_date >= $2 AND bill_date <= $3
-         AND status NOT IN ('void','cancelled','draft')`,
-      [companyId, resolvedPeriod.start, resolvedPeriod.end]
+         AND bill_date >= $2::date AND bill_date <= $3::date
+         AND status NOT IN ('void','cancelled','draft','pending')`,
+      // Calendar-date comparison — timestamptz casts shift boundaries in
+      // non-UTC server timezones (e.g. an Apr 1 bill falling out of Q2).
+      [
+        companyId,
+        resolvedPeriod.start.toISOString().slice(0, 10),
+        resolvedPeriod.end.toISOString().slice(0, 10),
+      ]
     );
-    billReverseChargeAmount = Number(billRes.rows[0]?.amount || 0);
-    billReverseChargeVat = Number(billRes.rows[0]?.vat || 0);
+    billReverseChargeAmount = Number(billRes.rows[0]?.rc_amount || 0);
+    billReverseChargeVat = Number(billRes.rows[0]?.rc_vat || 0);
+    totalExpenses += Number(billRes.rows[0]?.std_amount || 0);
+    inputVatGross += Number(billRes.rows[0]?.std_vat || 0);
   } catch (err) {
     // PG SQLSTATE 42P01 = undefined_table. Anything else is a real error.
     if ((err as { code?: string })?.code !== "42P01") throw err;

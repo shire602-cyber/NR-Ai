@@ -136,7 +136,10 @@ const LEVEL_BADGE: Record<DeadlineStatus["level"], { label: string; className: s
 };
 
 function formatDate(iso: string): string {
-  return format(new Date(iso), "dd MMM yyyy");
+  // Period boundaries are UTC instants (e.g. 30 Jun 23:59:59.999Z). Format the
+  // UTC calendar date — local-time formatting in UAE (UTC+4) would roll the
+  // period end over to "01 Jul".
+  return format(new Date(iso.slice(0, 10) + "T00:00:00"), "dd MMM yyyy");
 }
 
 // ─── Page ───────────────────────────────────────────────────────────────────

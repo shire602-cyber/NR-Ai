@@ -1,7 +1,7 @@
 // Invoice status state machine.
 //
 // Allowed transitions (target ← any of):
-//   draft   → sent, posted, void
+//   draft   → sent, posted, void, cancelled (abandon an unissued draft)
 //   sent    → paid, partial, void
 //   posted  → paid, partial, void
 //   partial → paid, void
@@ -23,7 +23,7 @@ export const INVOICE_STATUSES: InvoiceStatus[] = [
 ];
 
 const TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
-  draft: ["sent", "posted", "void"],
+  draft: ["sent", "posted", "void", "cancelled"],
   sent: ["paid", "partial", "void"],
   posted: ["paid", "partial", "void"],
   partial: ["paid", "void"],
