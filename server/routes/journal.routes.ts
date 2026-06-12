@@ -17,12 +17,13 @@ async function findJournalEntryForUser(
   userId: string,
   entryId: string
 ): Promise<JournalEntry | undefined> {
-  const userCompanies = await storage.getCompaniesByUserId(userId);
-  for (const c of userCompanies) {
-    const entry = await storage.getJournalEntry(entryId, c.id);
-    if (entry) return entry;
-  }
-  return undefined;
+  // Resolve then authorise with the same semantics as the rest of the API —
+  // hasCompanyAccess covers direct membership, firm owners, and assigned firm
+  // admins (a membership-only walk locked firm owners out of client records).
+  const entry = await storage.getJournalEntryById(entryId);
+  if (!entry) return undefined;
+  const hasAccess = await storage.hasCompanyAccess(userId, entry.companyId);
+  return hasAccess ? entry : undefined;
 }
 
 export function registerJournalRoutes(app: Express) {
@@ -81,7 +82,10 @@ export function registerJournalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const userId = (req as any).user.id;
-      const { lines, date, status = "draft", ...entryData } = req.body;
+      const { lines, date, status = "draft", description, ...entryData } = req.body;
+      // The client sends `description`; the journal_entries column is `memo`.
+      // Without this mapping the narration was silently dropped.
+      if (description && !entryData.memo) entryData.memo = description;
 
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);

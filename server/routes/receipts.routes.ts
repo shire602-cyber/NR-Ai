@@ -24,12 +24,11 @@ const log = createLogger("receipts");
 // Walk the user's companies and return the first match — storage.getReceipt is
 // tenant-scoped, so a hit here also proves the user has access.
 async function findReceiptForUser(userId: string, receiptId: string): Promise<Receipt | undefined> {
-  const userCompanies = await storage.getCompaniesByUserId(userId);
-  for (const c of userCompanies) {
-    const receipt = await storage.getReceipt(receiptId, c.id);
-    if (receipt) return receipt;
-  }
-  return undefined;
+  // Resolve then authorise (covers firm owners/admins, not just members).
+  const receipt = await storage.getReceiptById(receiptId);
+  if (!receipt) return undefined;
+  const hasAccess = await storage.hasCompanyAccess(userId, receipt.companyId);
+  return hasAccess ? receipt : undefined;
 }
 
 export function registerReceiptRoutes(app: Express) {

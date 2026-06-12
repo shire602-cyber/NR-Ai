@@ -1406,6 +1406,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Journal Entries
+  /** Unscoped lookup — caller MUST authorise via hasCompanyAccess. */
+  async getJournalEntryById(id: string): Promise<JournalEntry | undefined> {
+    const [entry] = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+    return entry || undefined;
+  }
+
   async getJournalEntry(id: string, companyId: string): Promise<JournalEntry | undefined> {
     const [entry] = await db
       .select()
@@ -1723,6 +1729,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Receipts
+  /** Unscoped lookup — caller MUST authorise via hasCompanyAccess. */
+  async getReceiptById(id: string): Promise<Receipt | undefined> {
+    const [receipt] = await db.select().from(receipts).where(eq(receipts.id, id));
+    return receipt || undefined;
+  }
+
   async getReceipt(id: string, companyId: string): Promise<Receipt | undefined> {
     const [receipt] = await db
       .select()
