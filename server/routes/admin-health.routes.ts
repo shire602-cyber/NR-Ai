@@ -55,16 +55,25 @@ export function registerAdminHealthRoutes(app: Express): void {
       expected.set("invoice_number_sequences", new Set(["company_id", "doc_type", "year", "last_value"]));
 
       const live = await pool.query(
-        `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'`
+        `SELECT table_name, column_name, is_nullable, column_default, data_type
+         FROM information_schema.columns WHERE table_schema = 'public'`
       );
-      const liveCols = new Map<string, Set<string>>();
+      const liveCols = new Map<string, Map<string, { nullable: boolean; hasDefault: boolean; type: string }>>();
       for (const row of live.rows) {
-        if (!liveCols.has(row.table_name)) liveCols.set(row.table_name, new Set());
-        liveCols.get(row.table_name)!.add(row.column_name);
+        if (!liveCols.has(row.table_name)) liveCols.set(row.table_name, new Map());
+        liveCols.get(row.table_name)!.set(row.column_name, {
+          nullable: row.is_nullable === "YES",
+          hasDefault: row.column_default !== null,
+          type: row.data_type,
+        });
       }
 
       const missingTables: string[] = [];
       const missingColumns: Record<string, string[]> = {};
+      // Live columns the code schema doesn't know about. A legacy NOT NULL
+      // extra column without a default breaks every INSERT through the ORM —
+      // the inverse failure mode of a missing column.
+      const extraColumnsBlockingInserts: Record<string, string[]> = {};
       for (const [table, cols] of expected) {
         const liveSet = liveCols.get(table);
         if (!liveSet) {
@@ -73,14 +82,29 @@ export function registerAdminHealthRoutes(app: Express): void {
         }
         const missing = [...cols].filter((c) => !liveSet.has(c));
         if (missing.length) missingColumns[table] = missing;
+        const blockers = [...liveSet.entries()]
+          .filter(([name, meta]) => !cols.has(name) && !meta.nullable && !meta.hasDefault)
+          .map(([name, meta]) => `${name} (${meta.type})`);
+        if (blockers.length) extraColumnsBlockingInserts[table] = blockers;
       }
 
+      // Optional drill-down: full live column spec for one table.
+      const tableParam = typeof _req.query.table === "string" ? _req.query.table : null;
+      const tableDetail = tableParam
+        ? [...(liveCols.get(tableParam) ?? new Map()).entries()].map(([name, meta]) => ({ name, ...meta }))
+        : undefined;
+
       res.json({
-        healthy: missingTables.length === 0 && Object.keys(missingColumns).length === 0,
+        healthy:
+          missingTables.length === 0 &&
+          Object.keys(missingColumns).length === 0 &&
+          Object.keys(extraColumnsBlockingInserts).length === 0,
         expectedTables: expected.size,
         liveTables: liveCols.size,
         missingTables: missingTables.sort(),
         missingColumns,
+        extraColumnsBlockingInserts,
+        ...(tableDetail ? { tableDetail: { table: tableParam, columns: tableDetail } } : {}),
       });
     })
   );
