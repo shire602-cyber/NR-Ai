@@ -94,6 +94,21 @@ export function registerJournalRoutes(app: Express) {
         return res.status(400).json({ message: "Journal entry must have at least 2 lines" });
       }
 
+      // Every line must reference an account in this company's chart — a
+      // missing/foreign accountId previously surfaced as a raw DB 500.
+      const companyAccounts = await storage.getAccountsByCompanyId(companyId);
+      const accountIds = new Set(companyAccounts.map((a) => a.id));
+      for (const line of lines) {
+        if (!line.accountId || !accountIds.has(line.accountId)) {
+          return res.status(400).json({
+            message: line.accountId
+              ? `Account ${line.accountId} not found in this company's chart of accounts`
+              : "Each journal line requires an accountId",
+            code: "INVALID_ACCOUNT",
+          });
+        }
+      }
+
       // Validate debits equal credits
       let totalDebit = 0;
       let totalCredit = 0;
@@ -238,6 +253,21 @@ export function registerJournalRoutes(app: Express) {
       // Validate at least 2 lines
       if (!lines || lines.length < 2) {
         return res.status(400).json({ message: "Journal entry must have at least 2 lines" });
+      }
+
+      // Every line must reference an account in this company's chart — a
+      // missing/foreign accountId previously surfaced as a raw DB 500.
+      const companyAccounts = await storage.getAccountsByCompanyId(entry.companyId);
+      const accountIds = new Set(companyAccounts.map((a) => a.id));
+      for (const line of lines) {
+        if (!line.accountId || !accountIds.has(line.accountId)) {
+          return res.status(400).json({
+            message: line.accountId
+              ? `Account ${line.accountId} not found in this company's chart of accounts`
+              : "Each journal line requires an accountId",
+            code: "INVALID_ACCOUNT",
+          });
+        }
       }
 
       // Validate debits equal credits

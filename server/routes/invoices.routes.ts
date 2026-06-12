@@ -351,6 +351,23 @@ export function registerInvoiceRoutes(app: Express) {
       const invoiceEntries = entries.filter((e) => e.sourceId === id && e.status === "draft");
 
       if (invoiceEntries.length === 0) {
+        // Repair path: an ISSUED invoice with no journal entry at all (e.g.
+        // issued while the chart of accounts was missing) gets its revenue
+        // recognition created now.
+        const hasAny = entries.some((e) => e.sourceId === id);
+        const issued = ["sent", "posted", "partial", "paid"].includes(invoice.status);
+        if (!hasAny && issued) {
+          await assertPeriodNotLocked(invoice.companyId, invoice.date);
+          const posted = await postInvoiceRevenueJournal(invoice as any, userId);
+          if (posted) {
+            return res.json({ message: "Revenue recognition entry created", count: 1 });
+          }
+          return res.status(422).json({
+            message:
+              "Cannot post invoice: revenue accounts are missing from the chart of accounts.",
+            code: "CHART_OF_ACCOUNTS_MISSING",
+          });
+        }
         return res.status(400).json({ message: "No draft entries to post" });
       }
 
@@ -621,7 +638,21 @@ export function registerInvoiceRoutes(app: Express) {
         // created before drafts stopped auto-posting is skipped.
         if (oldStatus === "draft" && (status === "sent" || status === "posted")) {
           await assertPeriodNotLocked(invoice.companyId, invoice.date);
-          await postInvoiceRevenueJournal(invoice as any, userId);
+          const posted = await postInvoiceRevenueJournal(invoice as any, userId);
+          const existing = await storage.getJournalEntriesBySource(
+            invoice.companyId,
+            "invoice",
+            id
+          );
+          // postInvoiceRevenueJournal returns false both for "already posted"
+          // (fine) and "missing accounts" (NOT fine) — distinguish via the GL.
+          if (!posted && !existing.some((e) => e.status === "posted")) {
+            return res.status(422).json({
+              message:
+                "Cannot issue invoice: revenue accounts are missing from the chart of accounts. Seed the default chart first (POST /api/companies/:id/seed-accounts).",
+              code: "CHART_OF_ACCOUNTS_MISSING",
+            });
+          }
         }
 
         // Void/cancel must reverse the original revenue-recognition JE so the
