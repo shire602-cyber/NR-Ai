@@ -205,7 +205,7 @@ function mapRow(fields: string[], headers: string[], format: BankFormat): Parsed
     // Generic: try common column names
     dateStr = get("Date") || get("TransactionDate") || get("ValueDate") || get("TxnDate");
     description = get("Description") || get("Details") || get("Narration") || get("Particulars");
-    debitStr = get("Debit") || get("Withdrawal") || get("Dr") || get("Amount");
+    debitStr = get("Debit") || get("Withdrawal") || get("Dr");
     creditStr = get("Credit") || get("Deposit") || get("Cr");
     balanceStr = get("Balance") || get("RunningBalance") || get("ClosingBalance");
     reference = get("Reference") || get("Ref") || get("ChequeNo");
