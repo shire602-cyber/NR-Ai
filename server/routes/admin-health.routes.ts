@@ -13,6 +13,9 @@ import { storage } from "../storage";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
+import { pool } from "../db";
+import { getTableConfig } from "drizzle-orm/pg-core";
+import * as schema from "../../shared/schema";
 
 const logger = createLogger("admin-health-routes");
 
@@ -22,6 +25,65 @@ export function registerAdminHealthRoutes(app: Express): void {
   // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
   router.use("/admin", authMiddleware as any);
   router.use("/admin", adminMiddleware as any);
+
+  // =========================================
+  // GET /api/admin/schema-health
+  // Diffs the live database against the Drizzle schema (plus the raw-SQL
+  // bill-pay tables). Surfaces tables/columns that exist in code but not in
+  // the database — the recurring failure mode of baselined migration ledgers
+  // where a migration is marked applied without ever running.
+  // =========================================
+  router.get(
+    "/admin/schema-health",
+    asyncHandler(async (_req: Request, res: Response) => {
+      // Expected shape from the Drizzle schema definitions.
+      const expected = new Map<string, Set<string>>();
+      for (const exported of Object.values(schema)) {
+        let cfg;
+        try {
+          cfg = getTableConfig(exported as any);
+        } catch {
+          continue; // not a pgTable export (relation, enum, zod schema, ...)
+        }
+        const cols = new Set<string>(cfg.columns.map((c: any) => c.name as string));
+        expected.set(cfg.name, cols);
+      }
+      // Raw-SQL tables managed outside Drizzle.
+      expected.set("vendor_bills", new Set(["id", "company_id", "reverse_charge", "retention_expires_at"]));
+      expected.set("bill_line_items", new Set(["id", "bill_id", "reverse_charge"]));
+      expected.set("bill_payments", new Set(["id", "bill_id", "retention_expires_at"]));
+      expected.set("invoice_number_sequences", new Set(["company_id", "doc_type", "year", "last_value"]));
+
+      const live = await pool.query(
+        `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'`
+      );
+      const liveCols = new Map<string, Set<string>>();
+      for (const row of live.rows) {
+        if (!liveCols.has(row.table_name)) liveCols.set(row.table_name, new Set());
+        liveCols.get(row.table_name)!.add(row.column_name);
+      }
+
+      const missingTables: string[] = [];
+      const missingColumns: Record<string, string[]> = {};
+      for (const [table, cols] of expected) {
+        const liveSet = liveCols.get(table);
+        if (!liveSet) {
+          missingTables.push(table);
+          continue;
+        }
+        const missing = [...cols].filter((c) => !liveSet.has(c));
+        if (missing.length) missingColumns[table] = missing;
+      }
+
+      res.json({
+        healthy: missingTables.length === 0 && Object.keys(missingColumns).length === 0,
+        expectedTables: expected.size,
+        liveTables: liveCols.size,
+        missingTables: missingTables.sort(),
+        missingColumns,
+      });
+    })
+  );
 
   // =========================================
   // GET /api/admin/clients/health-overview
