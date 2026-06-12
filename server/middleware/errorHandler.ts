@@ -94,11 +94,16 @@ export function globalErrorHandler(
     "Unhandled error"
   );
 
+  // Platform admins get the underlying message even in production — they own
+  // the deployment and need it to diagnose schema/data drift without log
+  // access. Regular users still get the opaque message + requestId.
+  const isAdmin = Boolean((req as any).user?.isAdmin);
   res.status(500).json(
     withRequestId(
       {
-        message: isProduction() ? "Internal Server Error" : err.message,
+        message: isProduction() && !isAdmin ? "Internal Server Error" : err.message,
         code: "INTERNAL_ERROR",
+        ...(isAdmin && isProduction() ? { adminDetail: { name: err.name } } : {}),
       },
       req
     )
