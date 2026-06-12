@@ -53,6 +53,22 @@ export function registerAdminHealthRoutes(app: Express): void {
       expected.set("bill_line_items", new Set(["id", "bill_id", "reverse_charge"]));
       expected.set("bill_payments", new Set(["id", "bill_id", "retention_expires_at"]));
       expected.set("invoice_number_sequences", new Set(["company_id", "doc_type", "year", "last_value"]));
+      // Raw-SQL module tables (created by migrations, not in Drizzle).
+      for (const t of [
+        "fixed_assets",
+        "depreciation_schedules",
+        "employees",
+        "payroll_runs",
+        "payroll_items",
+        "budget_plans",
+        "budget_lines",
+        "expense_claims",
+        "expense_claim_items",
+        "ai_company_rules",
+        "ai_gl_queue",
+      ]) {
+        expected.set(t, new Set(["id"]));
+      }
 
       const live = await pool.query(
         `SELECT table_name, column_name, is_nullable, column_default, data_type

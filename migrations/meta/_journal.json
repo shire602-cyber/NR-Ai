@@ -505,6 +505,13 @@
       "when": 1781300000000,
       "tag": "0072_vendor_bills_exchange_rate",
       "breakpoints": false
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1781310000000,
+      "tag": "0073_self_heal_assets_payroll_budgets",
+      "breakpoints": false
     }
   ]
 }
