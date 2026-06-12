@@ -33,12 +33,14 @@ const log = createLogger("invoices");
 // Walk the user's companies to find the invoice. Storage queries are
 // tenant-scoped, so a hit also proves the user has access.
 async function findInvoiceForUser(userId: string, invoiceId: string): Promise<Invoice | undefined> {
-  const userCompanies = await storage.getCompaniesByUserId(userId);
-  for (const c of userCompanies) {
-    const invoice = await storage.getInvoice(invoiceId, c.id);
-    if (invoice) return invoice;
-  }
-  return undefined;
+  // Resolve the record first, then authorise with the SAME access semantics
+  // as the rest of the API (hasCompanyAccess covers direct membership, firm
+  // owners, and assigned firm admins). The old membership-only walk let firm
+  // owners create invoices in client companies they could never update.
+  const invoice = await storage.getInvoiceById(invoiceId);
+  if (!invoice) return undefined;
+  const hasAccess = await storage.hasCompanyAccess(userId, invoice.companyId);
+  return hasAccess ? invoice : undefined;
 }
 
 const invoiceLineInputSchema = z.object({

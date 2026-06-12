@@ -1589,6 +1589,13 @@ export class DatabaseStorage implements IStorage {
     return invoice || undefined;
   }
 
+  /** Unscoped lookup — caller MUST authorise via hasCompanyAccess on the
+   * returned record's companyId before using it. */
+  async getInvoiceById(id: string): Promise<Invoice | undefined> {
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, id));
+    return invoice || undefined;
+  }
+
   async getInvoicesByCompanyId(companyId: string): Promise<Invoice[]> {
     return await db
       .select()
