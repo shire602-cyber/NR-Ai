@@ -6,6 +6,7 @@ import { storage } from "../storage";
 import { generateCreditNotePDF } from "../services/pdf-credit-note.service";
 import { ACCOUNT_CODES } from "../constants";
 import { createLogger } from "../config/logger";
+import { calculateDocumentTotals } from "../services/document-totals.service";
 
 const logger = createLogger("credit-notes-routes");
 
@@ -83,7 +84,7 @@ export function registerCreditNoteRoutes(app: Express) {
       }
 
       const creditNote = await storage.createCreditNote(
-        normalizeCreditNoteDates({ ...creditNoteData, companyId })
+        normalizeCreditNoteDates({ ...creditNoteData, ...calculateDocumentTotals(lines), companyId })
       );
 
       if (lines && Array.isArray(lines)) {
@@ -123,7 +124,14 @@ export function registerCreditNoteRoutes(app: Express) {
         return res.status(400).json({ message: "Cannot update an issued or voided credit note" });
       }
 
-      const updated = await storage.updateCreditNote(id, normalizeCreditNoteDates(updateData));
+      const updated = await storage.updateCreditNote(
+        id,
+        normalizeCreditNoteDates(
+          lines && Array.isArray(lines)
+            ? { ...updateData, ...calculateDocumentTotals(lines) }
+            : updateData
+        )
+      );
 
       if (lines && Array.isArray(lines)) {
         await storage.deleteCreditNoteLinesByCreditNoteId(id);
@@ -189,6 +197,17 @@ export function registerCreditNoteRoutes(app: Express) {
 
       if (creditNote.status === "issued") {
         return res.status(400).json({ message: "Credit note already issued" });
+      }
+
+      // A zero-total credit note posts a meaningless empty reversal — refuse.
+      // (Totals are computed server-side from lines; zero means no lines or
+      // data created before totals were computed.)
+      if (!(Number(creditNote.total) > 0)) {
+        return res.status(422).json({
+          message:
+            "Credit note total is zero — re-save the credit note with line items before issuing.",
+          code: "CREDIT_NOTE_ZERO_TOTAL",
+        });
       }
 
       if (creditNote.status === "void") {

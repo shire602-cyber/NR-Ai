@@ -5,6 +5,9 @@ import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import { generateQuotePDF } from "../services/pdf-quote.service";
 import { createLogger } from "../config/logger";
+import { calculateDocumentTotals } from "../services/document-totals.service";
+import { allocateInvoiceNumber } from "../services/invoice-numbering.service";
+import { db } from "../db";
 
 const logger = createLogger("quotes-routes");
 
@@ -82,7 +85,10 @@ export function registerQuoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const quote = await storage.createQuote(normalizeQuoteDates({ ...quoteData, companyId }));
+      const totals = calculateDocumentTotals(lines);
+      const quote = await storage.createQuote(
+        normalizeQuoteDates({ ...quoteData, ...totals, companyId })
+      );
 
       if (lines && Array.isArray(lines)) {
         for (const line of lines) {
@@ -116,7 +122,14 @@ export function registerQuoteRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const updated = await storage.updateQuote(id, normalizeQuoteDates(updateData));
+      const updated = await storage.updateQuote(
+        id,
+        normalizeQuoteDates(
+          lines && Array.isArray(lines)
+            ? { ...updateData, ...calculateDocumentTotals(lines) }
+            : updateData
+        )
+      );
 
       if (lines && Array.isArray(lines)) {
         await storage.deleteQuoteLinesByQuoteId(quote.id);
@@ -180,18 +193,23 @@ export function registerQuoteRoutes(app: Express) {
 
       const lines = await storage.getQuoteLinesByQuoteId(id);
 
-      // Create invoice from quote
-      const invoiceNumber = `INV-${Date.now()}`;
+      // Create invoice from quote. The number MUST come from the FTA
+      // sequential allocator (gap-free) — a timestamp here would break the
+      // numbering sequence the moment the invoice is issued. Totals are
+      // recomputed from the quote lines, not trusted from the quote row.
+      const invoiceDate = new Date();
+      const totals = calculateDocumentTotals(lines as any);
+      const invoiceNumber = await allocateInvoiceNumber(quote.companyId, "invoice", invoiceDate, db);
       const invoice = await storage.createInvoice({
         companyId: quote.companyId,
         number: invoiceNumber,
         customerName: quote.customerName,
         customerTrn: quote.customerTrn,
-        date: new Date(),
+        date: invoiceDate,
         currency: quote.currency,
-        subtotal: quote.subtotal,
-        vatAmount: quote.vatAmount,
-        total: quote.total,
+        subtotal: totals.subtotal,
+        vatAmount: totals.vatAmount,
+        total: totals.total,
         status: "draft",
       });
 
