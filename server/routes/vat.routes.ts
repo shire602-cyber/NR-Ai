@@ -263,7 +263,29 @@ export function registerVATRoutes(app: Express) {
       const totalInputAmount = totalExpenses + reverseChargeAmount;
       const totalInputVat = inputTax + reverseChargeVatRecoverable;
 
-      const vatReturn = await storage.createVatReturn({
+      // One return per period: regenerating refreshes the existing draft
+      // instead of stacking duplicates (and some production databases carry a
+      // unique (company, period) index that hard-rejects a second insert).
+      // A submitted/filed return is immutable — refuse to regenerate over it.
+      const existingReturns = await storage.getVatReturnsByCompanyId(companyId);
+      const samePeriod = existingReturns.find(
+        (r) =>
+          new Date(r.periodStart).getTime() === startDate.getTime() &&
+          new Date(r.periodEnd).getTime() === endDate.getTime()
+      );
+      if (samePeriod && samePeriod.status !== "draft") {
+        return res.status(409).json({
+          message: `A ${samePeriod.status} VAT return already exists for this period. Submitted returns cannot be regenerated.`,
+          code: "VAT_RETURN_EXISTS",
+        });
+      }
+
+      const persistVatReturn = (data: any) =>
+        samePeriod
+          ? storage.updateVatReturn(samePeriod.id, data)
+          : storage.createVatReturn(data);
+
+      const vatReturn = await persistVatReturn({
         companyId,
         periodStart: startDate,
         periodEnd: endDate,
