@@ -21,9 +21,21 @@ export const ACCOUNT_CODES = {
   /** Accounts Receivable (current asset). */
   AR: "1040",
   /** Accounts Payable (current liability). */
-  AP: "2020",
-  /** Output VAT payable (current liability). Same code as AP in default UAE COA. */
+  AP: "2010",
+  /** Output VAT payable (current liability). */
   VAT_OUTPUT: "2020",
+  /** Input VAT receivable (current asset). */
+  VAT_INPUT: "1050",
+  /** Cash on hand (current asset). */
+  CASH: "1010",
+  /** Bank accounts (current asset). */
+  BANK: "1020",
+  /** Inventory (current asset). */
+  INVENTORY: "1070",
+  /** Office equipment (fixed asset). */
+  EQUIPMENT: "1210",
+  /** Zero-rated sales (income). */
+  ZERO_RATED_SALES: "4060",
   /** Sales Revenue (income). */
   REVENUE: "4010",
   /** Service Revenue (alternate revenue account some firms use). */

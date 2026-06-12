@@ -18,6 +18,7 @@ import { db } from "../db";
 import { invoices as invoicesTable, invoiceLines as invoiceLinesTable } from "../../shared/schema";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { canTransition, isTerminal, isValidStatus } from "../services/invoice-state-machine";
+import { postInvoiceRevenueJournal } from "../services/invoice-posting.service";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
 import { UAE_VAT_RATE, ACCOUNT_CODES } from "../constants";
@@ -44,7 +45,21 @@ const invoiceLineInputSchema = z.object({
   description: z.string().trim().min(1, "Line description is required").max(1000),
   quantity: z.coerce.number().finite().positive("Line quantity must be greater than 0"),
   unitPrice: z.coerce.number().finite().positive("Line unit price must be greater than 0"),
-  vatRate: z.coerce.number().finite().min(0).max(1).default(UAE_VAT_RATE),
+  // UAE has exactly two VAT rates: 0% (zero-rated/exempt lines) and 5%
+  // (standard). Accept either decimal (0.05) or percent (5) form — a typo
+  // like 0.5 must be rejected, not silently baked into a tax invoice.
+  vatRate: z.coerce
+    .number()
+    .finite()
+    .transform((v) => (v === 5 ? UAE_VAT_RATE : v))
+    .pipe(
+      z
+        .number()
+        .refine((v) => v === 0 || v === UAE_VAT_RATE, {
+          message: "VAT rate must be 0% or 5% (UAE)",
+        })
+    )
+    .default(UAE_VAT_RATE),
 });
 
 const invoiceLinesInputSchema = z
@@ -277,78 +292,9 @@ export function registerInvoiceRoutes(app: Express) {
         return { allocatedNumber: number, invoice: insertedInvoice };
       });
 
-      // Revenue recognition: create journal entry immediately when invoice is raised
-      const accounts = await storage.getAccountsByCompanyId(companyId);
-      // Look up by code/type to avoid fragile name-string matching
-      const accountsReceivable = accounts.find(
-        (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-      );
-      const salesRevenue = accounts.find(
-        (a) =>
-          a.isSystemAccount &&
-          a.type === "income" &&
-          (a.code === ACCOUNT_CODES.REVENUE || a.code === ACCOUNT_CODES.REVENUE_ALT)
-      );
-      const vatPayable = accounts.find(
-        (a) => a.isVatAccount && a.vatType === "output" && a.code === ACCOUNT_CODES.VAT_OUTPUT
-      );
-
-      if (accountsReceivable && salesRevenue) {
-        // Generate entry number atomically via storage helper
-        const entryNumber = await storage.generateEntryNumber(companyId, invoiceDate);
-
-        const journalLines: Array<{
-          accountId: string;
-          debit: number;
-          credit: number;
-          description: string;
-        }> = [
-          {
-            accountId: accountsReceivable.id,
-            debit: total,
-            credit: 0,
-            description: `Invoice ${invoice.number} - ${invoice.customerName}`,
-          },
-          {
-            accountId: salesRevenue.id,
-            debit: 0,
-            credit: subtotal,
-            description: `Sales revenue - Invoice ${invoice.number}`,
-          },
-        ];
-        if (vatAmount > 0 && vatPayable) {
-          journalLines.push({
-            accountId: vatPayable.id,
-            debit: 0,
-            credit: vatAmount,
-            description: `VAT output - Invoice ${invoice.number}`,
-          });
-        }
-
-        await storage.createJournalEntry(
-          {
-            companyId: companyId,
-            date: invoiceDate,
-            memo: `Sales Invoice ${invoice.number} - ${invoice.customerName}`,
-            entryNumber,
-            status: "posted",
-            source: "invoice",
-            sourceId: invoice.id,
-            createdBy: userId,
-            postedBy: userId,
-            postedAt: invoiceDate,
-          },
-          journalLines
-        );
-
-        log.info(
-          { entryNumber, invoiceId: invoice.id },
-          "Revenue recognition journal entry created"
-        );
-      } else {
-        log.warn("Could not create revenue recognition entry - missing accounts");
-      }
-
+      // Revenue recognition happens when the invoice is ISSUED (marked
+      // sent/posted) — a draft is a working document, not a supply, so it must
+      // not touch the GL or the VAT position. See invoice-posting.service.
       log.info({ invoiceId: invoice.id }, "Invoice created successfully");
 
       await recordAudit({
@@ -670,10 +616,19 @@ export function registerInvoiceRoutes(app: Express) {
           throw err;
         }
       } else if (oldStatus !== status) {
-        // Void must reverse the original revenue-recognition JE so the GL
-        // doesn't keep recognising sales that were never realised. Without
-        // this, a voided invoice would still inflate revenue and AR.
-        if (status === "void") {
+        // Issuing the invoice (draft → sent/posted) is the revenue-recognition
+        // event: post the AR/Revenue/VAT journal entry now. Idempotent — data
+        // created before drafts stopped auto-posting is skipped.
+        if (oldStatus === "draft" && (status === "sent" || status === "posted")) {
+          await assertPeriodNotLocked(invoice.companyId, invoice.date);
+          await postInvoiceRevenueJournal(invoice as any, userId);
+        }
+
+        // Void/cancel must reverse the original revenue-recognition JE so the
+        // GL doesn't keep recognising sales that were never realised. Drafts
+        // normally have no JE (nothing to reverse), but data created before
+        // drafts stopped auto-posting can — so cancellation checks too.
+        if (status === "void" || status === "cancelled") {
           const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
           const accountsReceivable = accounts.find(
             (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
@@ -741,7 +696,7 @@ export function registerInvoiceRoutes(app: Express) {
                 source: "invoice",
                 sourceId: id,
                 reversedEntryId: originalEntry.id,
-                reversalReason: "Invoice voided",
+                reversalReason: `Invoice ${status}`,
                 createdBy: userId,
                 postedBy: userId,
                 postedAt: reversalDate,

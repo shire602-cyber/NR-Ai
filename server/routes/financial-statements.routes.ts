@@ -20,6 +20,18 @@ interface GroupedAccounts {
   };
 }
 
+
+// Parse a report boundary date. Date-only values (e.g. "2026-06-12") are
+// CALENDAR dates: as an end boundary the whole day must be included, so we
+// extend them to 23:59:59.999 UTC. Timestamps are passed through unchanged.
+function parseEndOfDay(raw: string): Date {
+  const d = new Date(raw);
+  if (!raw.includes("T")) {
+    d.setUTCHours(23, 59, 59, 999);
+  }
+  return d;
+}
+
 export function registerFinancialStatementRoutes(app: Express) {
   // =====================================
   // Financial Statements Routes
@@ -41,7 +53,7 @@ export function registerFinancialStatementRoutes(app: Express) {
       }
 
       const startDate = req.query.startDate ? new Date(req.query.startDate as string) : null;
-      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : null;
+      const endDate = req.query.endDate ? parseEndOfDay(req.query.endDate as string) : null;
 
       if (!startDate || !endDate) {
         return res.status(400).json({ message: "startDate and endDate query params are required" });
@@ -147,7 +159,7 @@ export function registerFinancialStatementRoutes(app: Express) {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      const asOfDate = req.query.asOfDate ? new Date(req.query.asOfDate as string) : null;
+      const asOfDate = req.query.asOfDate ? parseEndOfDay(req.query.asOfDate as string) : null;
       if (!asOfDate) {
         return res.status(400).json({ message: "asOfDate query param is required" });
       }
@@ -290,7 +302,7 @@ export function registerFinancialStatementRoutes(app: Express) {
       }
 
       const startDate = req.query.startDate ? new Date(req.query.startDate as string) : null;
-      const endDate = req.query.endDate ? new Date(req.query.endDate as string) : null;
+      const endDate = req.query.endDate ? parseEndOfDay(req.query.endDate as string) : null;
 
       if (!startDate || !endDate) {
         return res.status(400).json({ message: "startDate and endDate query params are required" });

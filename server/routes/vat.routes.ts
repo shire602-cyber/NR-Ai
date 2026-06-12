@@ -71,7 +71,12 @@ export function registerVATRoutes(app: Express) {
       const receipts = await storage.getReceiptsByCompanyId(companyId);
 
       const startDate = new Date(periodStart);
+      // periodEnd is a calendar date — include the entire final day so
+      // invoices timestamped during it aren't dropped from the return.
       const endDate = new Date(periodEnd);
+      if (typeof periodEnd === "string" && !periodEnd.includes("T")) {
+        endDate.setUTCHours(23, 59, 59, 999);
+      }
 
       // Filter invoices for the period — drafts must be excluded too because
       // they have not been issued and therefore create no VAT obligation.
@@ -131,8 +136,8 @@ export function registerVATRoutes(app: Express) {
       const ordinaryReceipts = periodReceipts.filter((r) => !r.reverseCharge);
       const reverseChargeReceipts = periodReceipts.filter((r) => r.reverseCharge);
 
-      const totalExpenses = ordinaryReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
-      const inputTaxGross = ordinaryReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
+      let totalExpenses = ordinaryReceipts.reduce((sum, rec) => sum + (rec.amount || 0), 0);
+      let inputTaxGross = ordinaryReceipts.reduce((sum, rec) => sum + (rec.vatAmount || 0), 0);
 
       let reverseChargeAmount = reverseChargeReceipts.reduce(
         (sum, rec) => sum + (rec.amount || 0),
@@ -143,21 +148,31 @@ export function registerVATRoutes(app: Express) {
         0
       );
 
-      // Reverse-charge bills (foreign / unregistered vendor purchases) — pulled
-      // direct from vendor_bills since the bill module isn't in Drizzle yet.
+      // Vendor bills — pulled direct from vendor_bills since the bill module
+      // isn't in Drizzle yet. Reverse-charge bills feed Boxes 3/10; ordinary
+      // approved bills carry recoverable input VAT into Box 9 alongside
+      // posted receipts. Pending bills are excluded: input VAT is only
+      // claimable once the bill is approved (matching when it posts to GL).
       try {
         const billRes = await pool.query(
-          `SELECT COALESCE(SUM(subtotal), 0) AS amount, COALESCE(SUM(vat_amount), 0) AS vat
+          `SELECT
+             COALESCE(SUM(subtotal) FILTER (WHERE reverse_charge = true), 0) AS rc_amount,
+             COALESCE(SUM(vat_amount) FILTER (WHERE reverse_charge = true), 0) AS rc_vat,
+             COALESCE(SUM(subtotal) FILTER (WHERE reverse_charge = false), 0) AS std_amount,
+             COALESCE(SUM(vat_amount) FILTER (WHERE reverse_charge = false), 0) AS std_vat
          FROM vendor_bills
          WHERE company_id = $1
-           AND reverse_charge = true
-           AND bill_date >= $2
-           AND bill_date <= $3
-           AND status NOT IN ('void','cancelled','draft')`,
-          [companyId, startDate, endDate]
+           AND bill_date >= $2::date
+           AND bill_date <= $3::date
+           AND status NOT IN ('void','cancelled','draft','pending')`,
+          // Compare calendar dates, not timestamps — casting the JS Date to
+          // timestamptz shifts period boundaries in non-UTC server timezones.
+          [companyId, startDate.toISOString().slice(0, 10), endDate.toISOString().slice(0, 10)]
         );
-        reverseChargeAmount += Number(billRes.rows[0]?.amount || 0);
-        reverseChargeVatGross += Number(billRes.rows[0]?.vat || 0);
+        reverseChargeAmount += Number(billRes.rows[0]?.rc_amount || 0);
+        reverseChargeVatGross += Number(billRes.rows[0]?.rc_vat || 0);
+        totalExpenses += Number(billRes.rows[0]?.std_amount || 0);
+        inputTaxGross += Number(billRes.rows[0]?.std_vat || 0);
       } catch (err) {
         // Bill-pay schema may not be installed in dev — fail open, log via parent.
       }

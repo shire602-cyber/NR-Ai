@@ -8,6 +8,10 @@ import { pool } from "../db";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
+import {
+  postBillApprovalJournal,
+  postBillPaymentJournal,
+} from "../services/bill-posting.service";
 
 const log = createLogger("bill-pay");
 
@@ -24,7 +28,19 @@ const billLineItemSchema = z.object({
   description: z.string().min(1, "Line description is required").max(500),
   quantity: z.union([z.number(), z.string()]).optional(),
   unit_price: z.union([z.number(), z.string()]),
-  vat_rate: z.union([z.number(), z.string()]).optional().nullable(),
+  // UAE VAT: only 0% and 5% exist. Accept percent (5) or decimal (0.05) form.
+  vat_rate: z
+    .union([z.number(), z.string()])
+    .optional()
+    .nullable()
+    .refine(
+      (v) => {
+        if (v === null || v === undefined || v === "") return true;
+        const n = Number(v);
+        return n === 0 || n === 5 || n === 0.05;
+      },
+      { message: "VAT rate must be 0% or 5% (UAE)" }
+    ),
   account_id: z.string().uuid().optional().nullable(),
 });
 
@@ -72,7 +88,9 @@ const billPaymentSchema = z.object({
 function resolveVatRatePercent(raw: unknown): number {
   if (raw === null || raw === undefined || raw === "") return 5;
   const n = Number(raw);
-  return Number.isFinite(n) ? n : 5;
+  if (!Number.isFinite(n)) return 5;
+  // Normalise decimal form (0.05) to percent form (5).
+  return n === 0.05 ? 5 : n;
 }
 
 export function registerBillPayRoutes(app: Express) {
@@ -487,6 +505,14 @@ export function registerBillPayRoutes(app: Express) {
       // Approval triggers the AP journal entry on bill_date — block if locked.
       await assertPeriodNotLocked(bill.company_id, bill.bill_date);
 
+      // Post the AP journal entry BEFORE flipping status — if posting fails the
+      // bill stays pending and the books never diverge from the subledger.
+      const linesResult = await pool.query(
+        `SELECT description, amount, account_id FROM bill_line_items WHERE bill_id = $1`,
+        [id]
+      );
+      await postBillApprovalJournal(bill, linesResult.rows, bill.category ?? null, userId);
+
       const updateResult = await pool.query(
         `UPDATE vendor_bills
        SET status = 'approved', approved_by = $1, approved_at = NOW()
@@ -554,6 +580,15 @@ export function registerBillPayRoutes(app: Express) {
         ]
       );
 
+      // Post the cash JE (Dr A/P, Cr Bank). If posting fails, remove the
+      // payment row so the subledger never disagrees with the ledger.
+      try {
+        await postBillPaymentJournal(bill, paymentResult.rows[0], userId);
+      } catch (postErr) {
+        await pool.query(`DELETE FROM bill_payments WHERE id = $1`, [paymentResult.rows[0].id]);
+        throw postErr;
+      }
+
       // Update bill amount_paid and status
       const newAmountPaid = currentPaid + paymentAmount;
       let newStatus: string;
@@ -582,6 +617,71 @@ export function registerBillPayRoutes(app: Express) {
         amount_paid: newAmountPaid,
         remaining: totalAmount - newAmountPaid,
       });
+    })
+  );
+
+  // Backfill GL postings for bills approved/paid before bill→GL posting
+  // existed. Idempotent: bills/payments that already carry a journal entry
+  // are skipped, so this is safe to run repeatedly.
+  app.post(
+    "/api/companies/:companyId/bills/backfill-gl",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = req.user!.id;
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const billsRes = await pool.query(
+        `SELECT * FROM vendor_bills
+         WHERE company_id = $1 AND status IN ('approved','paid','partial','overdue')`,
+        [companyId]
+      );
+
+      let billsPosted = 0;
+      let paymentsPosted = 0;
+      const errors: Array<{ billId: string; error: string }> = [];
+
+      for (const bill of billsRes.rows) {
+        try {
+          await assertPeriodNotLocked(companyId, bill.bill_date);
+          const before = await storage.getJournalEntriesBySource(companyId, "bill", bill.id);
+          if (!before.some((e) => e.status === "posted")) {
+            const linesRes = await pool.query(
+              `SELECT description, amount, account_id FROM bill_line_items WHERE bill_id = $1`,
+              [bill.id]
+            );
+            await postBillApprovalJournal(bill, linesRes.rows, bill.category ?? null, userId);
+            billsPosted++;
+          }
+
+          const paymentsRes = await pool.query(
+            `SELECT * FROM bill_payments WHERE bill_id = $1`,
+            [bill.id]
+          );
+          for (const payment of paymentsRes.rows) {
+            const existing = await storage.getJournalEntriesBySource(
+              companyId,
+              "bill_payment",
+              payment.id
+            );
+            if (!existing.some((e) => e.status === "posted")) {
+              await assertPeriodNotLocked(companyId, payment.payment_date);
+              await postBillPaymentJournal(bill, payment, userId);
+              paymentsPosted++;
+            }
+          }
+        } catch (err: any) {
+          errors.push({ billId: bill.id, error: err?.message || String(err) });
+        }
+      }
+
+      log.info({ companyId, billsPosted, paymentsPosted }, "Bill GL backfill complete");
+      res.json({ billsScanned: billsRes.rows.length, billsPosted, paymentsPosted, errors });
     })
   );
 

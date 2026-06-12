@@ -185,6 +185,16 @@ export function registerReceiptRoutes(app: Express) {
 
       const { imageData, ...receiptData } = req.body;
 
+      // The client sends date as an ISO string; the Drizzle timestamp column
+      // needs a Date object (string input crashes mapToDriverValue).
+      if (receiptData.date && typeof receiptData.date === "string") {
+        const parsed = new Date(receiptData.date);
+        if (Number.isNaN(parsed.getTime())) {
+          return res.status(400).json({ message: "Invalid receipt date" });
+        }
+        receiptData.date = parsed;
+      }
+
       // Block receipt creation in a locked period — receipts are eventually
       // posted as journal entries dated on receipt.date.
       if (receiptData.date) {
@@ -272,6 +282,15 @@ export function registerReceiptRoutes(app: Express) {
       // Convert empty category string to null (UUID field cannot accept empty strings)
       if (req.body.category === "") {
         req.body.category = null;
+      }
+
+      // ISO date string → Date for the Drizzle timestamp column.
+      if (req.body.date && typeof req.body.date === "string") {
+        const parsed = new Date(req.body.date);
+        if (Number.isNaN(parsed.getTime())) {
+          return res.status(400).json({ message: "Invalid receipt date" });
+        }
+        req.body.date = parsed;
       }
 
       const before = await findReceiptForUser(userId, id);
