@@ -23,6 +23,11 @@ const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(__dirname, ".artifacts");
 
+if (!process.env.DATABASE_URL) {
+  console.error("DATABASE_URL is required for E2E role promotion against the test database.");
+  process.exit(1);
+}
+
 const ROUTES = [
   "/dashboard",
   "/invoices",
