@@ -512,6 +512,13 @@
       "when": 1781310000000,
       "tag": "0073_self_heal_assets_payroll_budgets",
       "breakpoints": false
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1781320000000,
+      "tag": "0074_journal_entry_unique_dedup",
+      "breakpoints": false
     }
   ]
 }

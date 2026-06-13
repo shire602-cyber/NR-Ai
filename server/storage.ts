@@ -1499,13 +1499,80 @@ export class DatabaseStorage implements IStorage {
     }
     assertBalanced(lines);
 
-    return await db.transaction(async (tx: typeof db) => {
-      const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
-      for (const line of lines) {
-        await tx.insert(journalLines).values({ ...line, entryId: entry.id });
+    // Concurrency-safe numbering. generateEntryNumber releases its advisory
+    // lock before this insert runs, so two concurrent callers can compute the
+    // same entry_number. The unique (company_id, entry_number) constraint
+    // rejects the loser with 23505; we catch it, regenerate against the now-
+    // committed winner, and retry. Result: gap-free, collision-free numbers
+    // under parallel load without holding a lock across the whole insert.
+    const MAX_ATTEMPTS = 8;
+    let attempt = 0;
+    // Re-derive date for regeneration. The caller always supplies a Date.
+    const entryDate =
+      insertEntry.date instanceof Date ? insertEntry.date : new Date(insertEntry.date as any);
+
+    // Precompute the per-(company, date) advisory-lock keys + sequence prefix.
+    const dateStr = entryDate.toISOString().slice(0, 10).replace(/-/g, "");
+    const prefix = `JE-${dateStr}`;
+    const counterStart = prefix.length + 2; // 1-based SUBSTRING pos of the NNN counter
+    const lockKey1 = insertEntry.companyId ? hashStringToInt(insertEntry.companyId) : 0;
+    const lockKey2 = hashStringToInt(prefix);
+
+    while (true) {
+      try {
+        return await db.transaction(async (tx: typeof db) => {
+          // Serialize numbering for the lifetime of THIS transaction. The
+          // xact-scoped advisory lock is held until commit, so two concurrent
+          // creators can't compute the same MAX+1 (the flaw in generating the
+          // number before the insert in a separate session-scoped lock).
+          if (insertEntry.companyId) {
+            await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey1}, ${lockKey2})`);
+            const res: any = await tx.execute(sql`
+              SELECT COALESCE(
+                MAX(CAST(SUBSTRING(entry_number FROM ${counterStart}::int) AS INTEGER)),
+                0
+              ) AS max_seq
+              FROM journal_entries
+              WHERE company_id = ${insertEntry.companyId}
+                AND entry_number LIKE ${prefix + "-%"}
+                AND entry_number ~ ${"^" + prefix + "-[0-9]+$"}
+            `);
+            const rows = (res.rows ?? res) as Array<{ max_seq: number | string | null }>;
+            const next = Number(rows[0]?.max_seq ?? 0) + 1;
+            insertEntry.entryNumber = `${prefix}-${String(next).padStart(3, "0")}`;
+          }
+          const [entry] = await tx.insert(journalEntries).values(insertEntry).returning();
+          for (const line of lines) {
+            await tx.insert(journalLines).values({ ...line, entryId: entry.id });
+          }
+          return entry;
+        });
+      } catch (err: any) {
+        // Drizzle wraps the pg error — the SQLSTATE 23505 and constraint name
+        // live on err.cause. Walk the cause chain to find them.
+        let pgErr: any = err;
+        const seen = new Set();
+        while (pgErr && !seen.has(pgErr)) {
+          seen.add(pgErr);
+          if (pgErr.code === "23505") break;
+          pgErr = pgErr.cause;
+        }
+        const dupText = String(
+          pgErr?.constraint || pgErr?.detail || err?.message || ""
+        ).toLowerCase();
+        const isDup =
+          pgErr?.code === "23505" &&
+          (dupText.includes("entry_number") || dupText.includes("company_entry"));
+        if (!isDup || attempt >= MAX_ATTEMPTS || !insertEntry.companyId) throw err;
+        attempt++;
+        // Small jittered backoff so racers don't lock-step onto the same number.
+        await new Promise((r) => setTimeout(r, 10 * attempt + Math.floor(attempt * 7)));
+        insertEntry.entryNumber = await this.generateEntryNumber(
+          insertEntry.companyId,
+          entryDate
+        );
       }
-      return entry;
-    });
+    }
   }
 
   async updateJournalEntry(
