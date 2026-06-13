@@ -7,13 +7,15 @@
 
 **Codex follow-up verification, 2026-06-13:** A clean `origin/main` audit found and fixed three concrete gate blockers: missing Prettier wiring, dev/prod dependency advisories, and false-positive API coverage findings from React Query cache invalidation keys. The automated readiness gates now pass locally, including `npm run audit:campaign`, `npm audit`, `npm run format:check`, `npm run lint` (warnings only), `npm run check:migrations`, `npm run audit:api-coverage:strict`, and `npm run test:coverage`. Coverage is now an enforceable baseline ratchet, not proof of high coverage; the current clean-audit baseline is about 12.7% lines and must be raised with integration and route-level tests. The read-only production smoke also passes for liveness, readiness, version, and OAuth-provider checks. Authenticated live production accounting invariants still require production credentials plus access to the live books before anyone should describe the system as "100%" production ready.
 
+**Codex authenticated live audit, 2026-06-13:** Using the production admin session on live commit `077b220`, Codex denied the "100%" claim because `/anomaly-detection` failed behind the route error boundary with `TypeError: Cannot read properties of undefined (reading 'icon')`. The root cause was a contract mismatch: persisted anomaly alerts use `low | medium | high | critical`, while the page only accepted `info | warning | critical`. The fix is committed on `codex/prod-readiness-gates` at `4c0f96f`, but production smoke still reports live commit `077b220`; deploy `4c0f96f` or later and rerun the authenticated route crawl before restoring the production-ready verdict.
+
 ---
 
 ## 1. Verdict
 
-**The Muhasib.ai accounting platform is production-ready.**
+**Current Codex verdict: not 100% production ready on the live deployment serving commit `077b220`.**
 
-Every workflow an accountant, CFO, tax manager, bookkeeper, firm administrator, or client-portal user performs has been exercised end-to-end on the live system. The general ledger balances, all subledgers tie to their control accounts, the VAT 201 and corporate-tax computations reconcile to the GL, and the ledger is safe under concurrent load. All automated tests pass (552/552) on every deploy.
+The historical accounting evidence below remains useful, and the fix branch automated suite passes 553/553 tests. The claim should be restored only after commit `4c0f96f` or later is deployed and the authenticated route crawl plus accounting smoke/invariant checks pass against that live deployment.
 
 ---
 
@@ -150,7 +152,7 @@ Plus: 64 of 66 production companies had **no chart of accounts** — all seeded 
 
 ## 5. Test evidence summary
 
-- **Automated suite:** 552 tests, 39 files — **passing on every deploy** (tsc clean; bundle-hygiene, route-registration, and API-contract checks pass).
+- **Automated suite:** 553 tests, 40 files — **passing on the fix branch** (tsc clean; bundle-hygiene, route-registration, and API-contract checks pass).
 - **Four-role production audit:** Bookkeeper (30 transactions), CFO audit (36 checks, all balanced/tied), Tax Manager (VAT 201 + CT), Tax CFO review (21 checks) — all pass.
 - **Final integrity audit:** 9/9 accounting invariants hold on the live books.
 - **Module phases (production):** credit notes/quotes/POs, multi-currency, banking + month-end, fixed assets + payroll, AI suite, e-invoicing + firm workspace, client-portal isolation, concurrency, billing — all pass.
@@ -170,6 +172,6 @@ These do not affect accounting correctness or data integrity:
 
 ## 7. Conclusion
 
-Muhasib.ai has been verified end-to-end on production across the full accounting, tax, AI, firm, and portal surface, with financial figures proven correct to the fils and the ledger safe under concurrent load. The underlying production schema drift that was silently breaking modules has been healed and is now permanently monitored. **The platform is production-ready.**
+Muhasib.ai has strong historical production accounting evidence, and the latest fix branch passes the automated readiness gates. **Do not call the live deployment 100% production ready until commit `4c0f96f` or later is deployed and the authenticated production route crawl plus accounting invariant checks pass against that deployed commit.**
 
 _Prepared by automated end-to-end verification, 2026-06-13._
