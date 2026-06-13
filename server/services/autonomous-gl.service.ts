@@ -374,9 +374,19 @@ Date: ${txn.transaction_date}${txn.reference ? `\nReference: ${txn.reference}` :
   const matchedAccount = accounts.find((a) => a.id === parsed.accountId);
   if (!matchedAccount) {
     // Try matching by name or code as fallback
-    const byName = accounts.find(
-      (a) => a.name_en.toLowerCase() === (parsed.accountName || "").toLowerCase()
-    );
+    const wantName = (parsed.accountName || "").toLowerCase().trim();
+    const byName =
+      accounts.find((a) => a.name_en.toLowerCase() === wantName) ||
+      (wantName
+        ? accounts.find(
+            (a) =>
+              a.name_en.toLowerCase().includes(wantName) ||
+              wantName.includes(a.name_en.toLowerCase())
+          )
+        : undefined) ||
+      (parsed.accountCode
+        ? accounts.find((a) => String(a.code) === String(parsed.accountCode))
+        : undefined);
     if (byName) {
       parsed.accountId = byName.id;
       parsed.accountName = byName.name_en;
@@ -474,11 +484,7 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
 }
 
 async function notifyOwnerOfDrafts(companyId: string, draftCount: number): Promise<void> {
-  const { rows: ownerRows } = await pool.query(
-    `SELECT user_id FROM company_users WHERE company_id = $1 AND role = 'owner' LIMIT 1`,
-    [companyId]
-  );
-  const ownerUserId = ownerRows[0]?.user_id;
+  const ownerUserId = await storage.resolveCompanyActorUserId(companyId);
   if (!ownerUserId) return;
 
   await pool.query(
@@ -530,15 +536,11 @@ async function createJournalEntryForQueueItem(
     throw new Error("Cannot post: queue item has no suggested account");
   }
 
-  // Resolve the company owner's user ID to satisfy the FK constraint on created_by
-  const { rows: ownerRows } = await pool.query(
-    `SELECT user_id FROM company_users WHERE company_id = $1 AND role = 'owner' LIMIT 1`,
-    [companyId]
-  );
-  const systemUserId = ownerRows[0]?.user_id;
+  // Resolve a valid actor user (owner / member / firm owner) for created_by.
+  const systemUserId = await storage.resolveCompanyActorUserId(companyId);
   if (!systemUserId) {
     throw new Error(
-      `No owner user found for company ${companyId} — cannot create auto-posted journal entry`
+      `No actor user found for company ${companyId} — cannot create auto-posted journal entry`
     );
   }
 

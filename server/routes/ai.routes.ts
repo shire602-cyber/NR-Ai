@@ -1489,8 +1489,8 @@ Respond with JSON:
         if (!company) {
           return res.status(404).json({ message: "Company not found" });
         }
-        const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-        if (!companyUsers.some((cu) => cu.userId === userId)) {
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+        if (!hasAccess) {
           return res.status(403).json({ message: "Access denied" });
         }
 
@@ -2276,8 +2276,8 @@ ${askGuidanceBlock}`;
         }
 
         // Verify company access
-        const companyUsers = await storage.getCompanyUsersByCompanyId(companyId);
-        if (!companyUsers.some((cu) => cu.userId === userId)) {
+        const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+        if (!hasAccess) {
           return res.status(403).json({ message: "Access denied" });
         }
 

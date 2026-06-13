@@ -309,6 +309,7 @@ export interface IStorage {
   // Company Users
   createCompanyUser(companyUser: InsertCompanyUser): Promise<CompanyUser>;
   getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined>;
+  resolveCompanyActorUserId(companyId: string): Promise<string | null>;
   getCompanyUsersByCompanyId(companyId: string): Promise<CompanyUser[]>;
   /**
    * Check whether the user has access to a company. Optional firmRole allows
@@ -1035,6 +1036,41 @@ export class DatabaseStorage implements IStorage {
       .from(companyUsers)
       .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, userId)));
     return companyUser || undefined;
+  }
+
+  /**
+   * Resolve a valid actor user id for a company — used wherever a system /
+   * automated action (AI auto-post, scheduled jobs) must satisfy a created_by
+   * FK. Firm-client companies have no company_users rows, so a bare
+   * role='owner' lookup returns nothing; fall back to any member, then to a
+   * firm owner who has access to all client companies.
+   */
+  async resolveCompanyActorUserId(companyId: string): Promise<string | null> {
+    const [owner] = await db
+      .select({ userId: companyUsers.userId })
+      .from(companyUsers)
+      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.role, "owner")))
+      .limit(1);
+    if (owner?.userId) return owner.userId;
+
+    const [anyMember] = await db
+      .select({ userId: companyUsers.userId })
+      .from(companyUsers)
+      .where(eq(companyUsers.companyId, companyId))
+      .limit(1);
+    if (anyMember?.userId) return anyMember.userId;
+
+    // Firm-client company: any firm owner can act for it.
+    const company = await this.getCompany(companyId);
+    if (company?.companyType === "client") {
+      const [firmOwner] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.firmRole, "firm_owner"))
+        .limit(1);
+      if (firmOwner?.id) return firmOwner.id;
+    }
+    return null;
   }
 
   async hasCompanyAccess(
