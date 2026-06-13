@@ -54,8 +54,9 @@ Scope: this file applies to the whole repository.
 - For cookie/session-based state-changing API requests, fetch `/api/csrf-token` and send
   the returned value as `X-CSRF-Token`; Bearer-auth requests are CSRF-exempt.
 - The Docker/Railway runtime expects a Node 20.19+ production build because the Vite/Rolldown
-  toolchain requires at least Node 20.19. `/health/live` is the cheap liveness probe; `/health`
-  is DB-backed readiness/full health.
+  toolchain requires at least Node 20.19. Keep the production Docker base on Debian slim/glibc
+  rather than Alpine/musl for the Vite 8/Rolldown native bindings. `/health/live` is the cheap
+  liveness probe; `/health` is DB-backed readiness/full health.
 - For a containerized local stack, `docker compose up --build` starts the app plus Postgres 16
   using `.env` and persists `pgdata`/`uploads` volumes.
 - For authenticated endpoint smoke testing, run `bash tests/test-firm-endpoints.sh` with

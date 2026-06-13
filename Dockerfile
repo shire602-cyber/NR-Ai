@@ -13,7 +13,7 @@ ARG RAILWAY_GIT_COMMIT_SHA=local
 # ---------------------------------------------------------------------------
 # Stage 1: Install dependencies and build the client + server bundles
 # ---------------------------------------------------------------------------
-FROM node:20.19-alpine AS builder
+FROM node:20.19-bookworm-slim AS builder
 ARG RAILWAY_GIT_COMMIT_SHA
 ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
 WORKDIR /app
@@ -41,7 +41,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2: Install production dependencies only
 # ---------------------------------------------------------------------------
-FROM node:20.19-alpine AS deps
+FROM node:20.19-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
@@ -49,14 +49,14 @@ RUN npm ci --omit=dev --ignore-scripts
 # ---------------------------------------------------------------------------
 # Stage 3: Minimal production image
 # ---------------------------------------------------------------------------
-FROM node:20.19-alpine
+FROM node:20.19-bookworm-slim
 ARG RAILWAY_GIT_COMMIT_SHA
 ENV NODE_ENV=production
 ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
 WORKDIR /app
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 muhasib
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs --home-dir /app --shell /usr/sbin/nologin muhasib
 
 COPY --from=deps /app/node_modules ./node_modules
 
@@ -78,6 +78,6 @@ USER muhasib
 EXPOSE ${PORT:-5000}
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-5000}/api/version || exit 1
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 5000) + '/api/version').then((res) => process.exit(res.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 CMD ["node", "dist/index.js"]
