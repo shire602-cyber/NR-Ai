@@ -13,7 +13,7 @@ ARG RAILWAY_GIT_COMMIT_SHA=local
 # ---------------------------------------------------------------------------
 # Stage 1: Install dependencies and build the client + server bundles
 # ---------------------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:20.19-alpine AS builder
 ARG RAILWAY_GIT_COMMIT_SHA
 ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
 WORKDIR /app
@@ -41,7 +41,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 2: Install production dependencies only
 # ---------------------------------------------------------------------------
-FROM node:20-alpine AS deps
+FROM node:20.19-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
@@ -49,7 +49,7 @@ RUN npm ci --omit=dev --ignore-scripts
 # ---------------------------------------------------------------------------
 # Stage 3: Minimal production image
 # ---------------------------------------------------------------------------
-FROM node:20-alpine
+FROM node:20.19-alpine
 ARG RAILWAY_GIT_COMMIT_SHA
 ENV NODE_ENV=production
 ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
