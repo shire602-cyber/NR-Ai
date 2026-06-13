@@ -506,7 +506,10 @@ async function notifyOwnerOfDrafts(companyId: string, draftCount: number): Promi
  */
 async function createJournalEntryForQueueItem(
   companyId: string,
-  item: AIGLQueueItem & { bank_account_id?: string | null }
+  item: AIGLQueueItem & { bank_account_id?: string | null },
+  // Human-reviewed actions (accept/correct) POST immediately — the review IS
+  // the approval. Only the unattended autopilot path drafts for later review.
+  postImmediately = false
 ): Promise<string> {
   const amount = parseFloat(item.amount);
   const txnDate = new Date(item.transaction_date);
@@ -598,11 +601,14 @@ async function createJournalEntryForQueueItem(
       companyId,
       entryNumber,
       date: txnDate,
-      memo: `AI Draft (review required): ${item.description}`,
-      status: "draft",
+      memo: postImmediately
+        ? `AI GL (reviewed): ${item.description}`
+        : `AI Draft (review required): ${item.description}`,
+      status: postImmediately ? "posted" : "draft",
       source: "system",
       sourceId: item.bank_transaction_id,
       createdBy: systemUserId,
+      ...(postImmediately ? { postedBy: systemUserId, postedAt: new Date() } : {}),
     } as any,
     lines
   );
@@ -651,10 +657,19 @@ export async function processUserFeedback(
         ]);
         bankAccountId = bt?.bank_account_id || null;
       }
-      journalEntryId = await createJournalEntryForQueueItem(item.company_id, {
-        ...item,
-        bank_account_id: bankAccountId,
-      });
+      journalEntryId = await createJournalEntryForQueueItem(
+        item.company_id,
+        { ...item, bank_account_id: bankAccountId },
+        true // human accepted → post to GL now
+      );
+    } else {
+      // A draft already exists (auto-drafted by autopilot) — accepting it is
+      // the human approval, so post it now instead of leaving it as a draft.
+      await pool.query(
+        `UPDATE journal_entries SET status = 'posted', posted_by = $1, posted_at = now()
+         WHERE id = $2 AND status = 'draft'`,
+        [userId, journalEntryId]
+      );
     }
 
     await pool.query(
@@ -746,7 +761,11 @@ export async function processUserFeedback(
       suggested_account_id: userAccountId,
       bank_account_id: bankAccountId,
     };
-    const journalEntryId = await createJournalEntryForQueueItem(item.company_id, correctedItem);
+    const journalEntryId = await createJournalEntryForQueueItem(
+      item.company_id,
+      correctedItem,
+      true // human corrected + approved → post to GL now
+    );
 
     await pool.query(
       `UPDATE ai_gl_queue
