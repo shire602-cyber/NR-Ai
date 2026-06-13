@@ -4,11 +4,26 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import { detectAnomalies } from "../services/anomaly-detection.service";
 
+type AnomalyUiSeverity = "critical" | "warning" | "info";
+
 const severityMap: Record<string, "low" | "medium" | "high" | "critical"> = {
   info: "low",
   warning: "medium",
   critical: "critical",
 };
+
+const uiSeverityMap: Record<string, AnomalyUiSeverity> = {
+  critical: "critical",
+  high: "warning",
+  medium: "warning",
+  warning: "warning",
+  low: "info",
+  info: "info",
+};
+
+function toUiSeverity(severity: string | null | undefined): AnomalyUiSeverity {
+  return severity ? (uiSeverityMap[severity] ?? "warning") : "warning";
+}
 
 const typeMap: Record<string, string> = {
   duplicate_amount: "duplicate",
@@ -63,14 +78,25 @@ export function registerAnomalyRoutes(app: Express) {
       // Return unresolved alerts from DB
       const unresolved = await storage.getUnresolvedAnomalyAlerts(companyId);
 
+      const anomalies = unresolved.map((alert) => ({
+        id: alert.id,
+        type: alert.type,
+        severity: toUiSeverity(alert.severity),
+        description: alert.description,
+        amount: 0,
+        date: alert.createdAt.toISOString(),
+        relatedId: alert.relatedEntityId,
+        relatedType: alert.relatedEntityType,
+      }));
+
       const summary = {
-        total: unresolved.length,
-        critical: unresolved.filter((a) => a.severity === "critical").length,
-        warning: unresolved.filter((a) => a.severity === "medium" || a.severity === "high").length,
-        info: unresolved.filter((a) => a.severity === "low").length,
+        total: anomalies.length,
+        critical: anomalies.filter((a) => a.severity === "critical").length,
+        warning: anomalies.filter((a) => a.severity === "warning").length,
+        info: anomalies.filter((a) => a.severity === "info").length,
       };
 
-      res.json({ anomalies: unresolved, summary, scannedAt: result.scannedAt });
+      res.json({ anomalies, summary, scannedAt: result.scannedAt });
     })
   );
 

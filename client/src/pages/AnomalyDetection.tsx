@@ -34,16 +34,17 @@ import {
 } from "lucide-react";
 
 type AnomalySeverity = "critical" | "warning" | "info";
+type RawAnomalySeverity = AnomalySeverity | "low" | "medium" | "high" | string;
 
 interface Anomaly {
   id: string;
   type: string;
-  severity: AnomalySeverity;
+  severity: RawAnomalySeverity;
   description: string;
-  amount: number;
-  date: string;
-  relatedId: string;
-  relatedType: "journal_entry" | "receipt" | "invoice";
+  amount?: number;
+  date?: string | null;
+  relatedId?: string | null;
+  relatedType?: string | null;
 }
 
 interface AnomalySummary {
@@ -86,6 +87,19 @@ const typeIcons: Record<string, typeof Copy> = {
   duplicate_vendor: UserX,
   expense_spike: TrendingUp,
 };
+
+const severityAliases: Record<string, AnomalySeverity> = {
+  critical: "critical",
+  high: "warning",
+  medium: "warning",
+  warning: "warning",
+  low: "info",
+  info: "info",
+};
+
+function normalizeSeverity(severity: RawAnomalySeverity | null | undefined): AnomalySeverity {
+  return severity ? (severityAliases[severity] ?? "warning") : "warning";
+}
 
 export default function AnomalyDetection() {
   const { t, locale } = useTranslation();
@@ -147,12 +161,18 @@ export default function AnomalyDetection() {
   }
 
   const filteredAnomalies =
-    result?.anomalies.filter((a) => severityFilter === "all" || a.severity === severityFilter) ||
-    [];
+    result?.anomalies.filter(
+      (a) => severityFilter === "all" || normalizeSeverity(a.severity) === severityFilter
+    ) || [];
 
-  const formatAnomalyDate = (dateStr: string) => {
+  const formatAnomalyDate = (dateStr?: string | null) => {
+    if (!dateStr) return "N/A";
+
     try {
-      return new Date(dateStr).toLocaleDateString("en-AE", {
+      const date = new Date(dateStr);
+      if (Number.isNaN(date.getTime())) return dateStr;
+
+      return date.toLocaleDateString("en-AE", {
         year: "numeric",
         month: "short",
         day: "numeric",
@@ -291,9 +311,11 @@ export default function AnomalyDetection() {
       ) : filteredAnomalies.length > 0 ? (
         <div className="space-y-3">
           {filteredAnomalies.map((anomaly) => {
-            const config = severityConfig[anomaly.severity];
+            const severity = normalizeSeverity(anomaly.severity);
+            const config = severityConfig[severity];
             const SeverityIcon = config.icon;
-            const TypeIcon = typeIcons[anomaly.type] || Info;
+            const anomalyType = anomaly.type || "anomaly";
+            const TypeIcon = typeIcons[anomalyType] || Info;
 
             return (
               <Card key={anomaly.id} className={`${config.bg} border`}>
@@ -306,16 +328,16 @@ export default function AnomalyDetection() {
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge
-                            variant={anomaly.severity === "critical" ? "destructive" : "secondary"}
+                            variant={severity === "critical" ? "destructive" : "secondary"}
                             className="text-xs"
                           >
                             {config.label}
                           </Badge>
                           <Badge variant="outline" className="text-xs flex items-center gap-1">
                             <TypeIcon className="h-3 w-3" />
-                            {anomaly.type.replace(/_/g, " ")}
+                            {anomalyType.replace(/_/g, " ")}
                           </Badge>
-                          {anomaly.amount > 0 && (
+                          {typeof anomaly.amount === "number" && anomaly.amount > 0 && (
                             <span className="text-sm font-medium">
                               {formatCurrency(anomaly.amount, "AED", locale)}
                             </span>
