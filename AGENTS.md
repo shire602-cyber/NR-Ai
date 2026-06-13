@@ -57,6 +57,9 @@ Scope: this file applies to the whole repository.
   toolchain requires at least Node 20.19. Keep the production Docker base on Debian slim/glibc
   rather than Alpine/musl for the Vite 8/Rolldown native bindings. `/health/live` is the cheap
   liveness probe; `/health` is DB-backed readiness/full health.
+- After dependency changes, validate the Railway install path with
+  `npx -p node@20.19.0 -p npm@10.8.2 -c "npm ci --omit=dev --ignore-scripts"` so npm 10
+  lockfile/platform issues are caught before deployment.
 - For a containerized local stack, `docker compose up --build` starts the app plus Postgres 16
   using `.env` and persists `pgdata`/`uploads` volumes.
 - For authenticated endpoint smoke testing, run `bash tests/test-firm-endpoints.sh` with
