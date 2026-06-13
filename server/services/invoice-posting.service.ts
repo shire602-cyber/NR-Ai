@@ -51,9 +51,7 @@ export async function postInvoiceRevenueJournal(
   }
 
   const accounts = await storage.getAccountsByCompanyId(invoice.companyId);
-  const accountsReceivable = accounts.find(
-    (a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount
-  );
+  const accountsReceivable = accounts.find((a) => a.code === ACCOUNT_CODES.AR && a.isSystemAccount);
   const salesRevenue = accounts.find(
     (a) =>
       a.isSystemAccount &&

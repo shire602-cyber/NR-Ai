@@ -73,14 +73,21 @@ for (const file of serverRouteFiles) {
 
 const clientFiles = walk('client/src', (file) => /\.(ts|tsx)$/.test(file));
 const apiReferences = [];
+
+function isInvalidateQueryKey(lines, index) {
+  const context = lines.slice(Math.max(0, index - 4), index + 1).join('\n');
+  return /\binvalidateQueries\s*\(\s*\{[\s\S]*\bqueryKey\s*:/.test(context);
+}
+
 for (const file of clientFiles) {
   const lines = read(file).split('\n');
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    if (line.includes('invalidateQueries')) continue;
 
     const queryKeyMatch = line.match(/queryKey:\s*\[([^\]]+)\]/);
     if (queryKeyMatch) {
+      if (isInvalidateQueryKey(lines, index)) continue;
+
       const lookahead = lines.slice(index, index + 8).join('\n');
       if (/\bqueryFn\s*:/.test(lookahead)) continue;
 

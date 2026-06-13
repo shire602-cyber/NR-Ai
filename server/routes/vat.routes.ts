@@ -104,7 +104,10 @@ export function registerVATRoutes(app: Express) {
       // FTA reporting is AED — convert foreign-currency invoice lines at the
       // invoice's stored transaction-date rate.
       const rateByInvoiceId = new Map(
-        periodInvoices.map((i) => [i.id, Number((i as any).exchangeRate) > 0 ? Number((i as any).exchangeRate) : 1])
+        periodInvoices.map((i) => [
+          i.id,
+          Number((i as any).exchangeRate) > 0 ? Number((i as any).exchangeRate) : 1,
+        ])
       );
       for (const line of periodLines) {
         const fxRate = rateByInvoiceId.get(line.invoiceId) ?? 1;
@@ -309,9 +312,7 @@ export function registerVATRoutes(app: Express) {
       }
 
       const persistVatReturn = (data: any) =>
-        samePeriod
-          ? storage.updateVatReturn(samePeriod.id, data)
-          : storage.createVatReturn(data);
+        samePeriod ? storage.updateVatReturn(samePeriod.id, data) : storage.createVatReturn(data);
 
       const vatReturn = await persistVatReturn({
         companyId,

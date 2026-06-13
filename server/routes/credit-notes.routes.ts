@@ -84,7 +84,11 @@ export function registerCreditNoteRoutes(app: Express) {
       }
 
       const creditNote = await storage.createCreditNote(
-        normalizeCreditNoteDates({ ...creditNoteData, ...calculateDocumentTotals(lines), companyId })
+        normalizeCreditNoteDates({
+          ...creditNoteData,
+          ...calculateDocumentTotals(lines),
+          companyId,
+        })
       );
 
       if (lines && Array.isArray(lines)) {

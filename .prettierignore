@@ -1,8 +1,8 @@
 node_modules
 dist
 build
+migrations/meta/
 *.min.js
 *.min.css
 package-lock.json
 .env*
-

@@ -1567,10 +1567,7 @@ export class DatabaseStorage implements IStorage {
         attempt++;
         // Small jittered backoff so racers don't lock-step onto the same number.
         await new Promise((r) => setTimeout(r, 10 * attempt + Math.floor(attempt * 7)));
-        insertEntry.entryNumber = await this.generateEntryNumber(
-          insertEntry.companyId,
-          entryDate
-        );
+        insertEntry.entryNumber = await this.generateEntryNumber(insertEntry.companyId, entryDate);
       }
     }
   }
@@ -4416,7 +4413,8 @@ export class DatabaseStorage implements IStorage {
           postedAt: input.date,
         })
         .returning();
-      const fxRate = Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
+      const fxRate =
+        Number(lockedInvoice.exchange_rate) > 0 ? Number(lockedInvoice.exchange_rate) : 1;
       const amountAed = Math.round(input.amount * fxRate * 100) / 100;
       await tx.insert(journalLines).values({
         entryId: entry.id,

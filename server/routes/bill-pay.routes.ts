@@ -8,10 +8,7 @@ import { pool } from "../db";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
-import {
-  postBillApprovalJournal,
-  postBillPaymentJournal,
-} from "../services/bill-posting.service";
+import { postBillApprovalJournal, postBillPaymentJournal } from "../services/bill-posting.service";
 
 const log = createLogger("bill-pay");
 
@@ -679,10 +676,9 @@ export function registerBillPayRoutes(app: Express) {
             billsPosted++;
           }
 
-          const paymentsRes = await pool.query(
-            `SELECT * FROM bill_payments WHERE bill_id = $1`,
-            [bill.id]
-          );
+          const paymentsRes = await pool.query(`SELECT * FROM bill_payments WHERE bill_id = $1`, [
+            bill.id,
+          ]);
           for (const payment of paymentsRes.rows) {
             const existing = await storage.getJournalEntriesBySource(
               companyId,

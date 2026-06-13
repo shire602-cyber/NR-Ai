@@ -20,7 +20,6 @@ interface GroupedAccounts {
   };
 }
 
-
 // Parse a report boundary date. Date-only values (e.g. "2026-06-12") are
 // CALENDAR dates: as an end boundary the whole day must be included, so we
 // extend them to 23:59:59.999 UTC. Timestamps are passed through unchanged.

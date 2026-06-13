@@ -34,6 +34,7 @@ export default defineConfig({
     // warning budget tight so build logs catch new accidental eager imports.
     chunkSizeWarningLimit: 500,
     cssCodeSplit: true,
+    cssMinify: "esbuild",
     minify: "esbuild",
     target: "es2020",
     rollupOptions: {

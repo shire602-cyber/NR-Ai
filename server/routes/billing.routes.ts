@@ -36,16 +36,15 @@ export function registerBillingRoutes(app: Express) {
       // mirror featureGate.getSubscriptionForRequest which defaults to 'free'.
       // Returning 404 made the billing page error for every unsubscribed
       // company (i.e. all of them until billing is live).
-      const subscription =
-        (await storage.getSubscription(companyId)) ?? {
-          companyId,
-          planId: "free",
-          status: "active",
-          isDefault: true,
-          invoicesCreatedThisMonth: 0,
-          receiptsCreatedThisMonth: 0,
-          aiCreditsUsedThisMonth: 0,
-        };
+      const subscription = (await storage.getSubscription(companyId)) ?? {
+        companyId,
+        planId: "free",
+        status: "active",
+        isDefault: true,
+        invoicesCreatedThisMonth: 0,
+        receiptsCreatedThisMonth: 0,
+        aiCreditsUsedThisMonth: 0,
+      };
 
       const limits = getTierLimits(subscription.planId);
       // Mirrors server/middleware/featureGate.ts: until BILLING_ENFORCEMENT=true
@@ -68,15 +67,14 @@ export function registerBillingRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      const subscription =
-        (await storage.getSubscription(companyId)) ?? {
-          companyId,
-          planId: "free",
-          status: "active",
-          invoicesCreatedThisMonth: 0,
-          receiptsCreatedThisMonth: 0,
-          aiCreditsUsedThisMonth: 0,
-        };
+      const subscription = (await storage.getSubscription(companyId)) ?? {
+        companyId,
+        planId: "free",
+        status: "active",
+        invoicesCreatedThisMonth: 0,
+        receiptsCreatedThisMonth: 0,
+        aiCreditsUsedThisMonth: 0,
+      };
 
       const limits = getTierLimits(subscription.planId);
       const userCount = await storage.getUserCountByCompanyId(companyId);

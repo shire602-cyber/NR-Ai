@@ -49,10 +49,16 @@ export function registerAdminHealthRoutes(app: Express): void {
         expected.set(cfg.name, cols);
       }
       // Raw-SQL tables managed outside Drizzle.
-      expected.set("vendor_bills", new Set(["id", "company_id", "reverse_charge", "retention_expires_at"]));
+      expected.set(
+        "vendor_bills",
+        new Set(["id", "company_id", "reverse_charge", "retention_expires_at"])
+      );
       expected.set("bill_line_items", new Set(["id", "bill_id", "reverse_charge"]));
       expected.set("bill_payments", new Set(["id", "bill_id", "retention_expires_at"]));
-      expected.set("invoice_number_sequences", new Set(["company_id", "doc_type", "year", "last_value"]));
+      expected.set(
+        "invoice_number_sequences",
+        new Set(["company_id", "doc_type", "year", "last_value"])
+      );
       // Raw-SQL module tables (created by migrations, not in Drizzle).
       for (const t of [
         "fixed_assets",
@@ -74,7 +80,10 @@ export function registerAdminHealthRoutes(app: Express): void {
         `SELECT table_name, column_name, is_nullable, column_default, data_type
          FROM information_schema.columns WHERE table_schema = 'public'`
       );
-      const liveCols = new Map<string, Map<string, { nullable: boolean; hasDefault: boolean; type: string }>>();
+      const liveCols = new Map<
+        string,
+        Map<string, { nullable: boolean; hasDefault: boolean; type: string }>
+      >();
       for (const row of live.rows) {
         if (!liveCols.has(row.table_name)) liveCols.set(row.table_name, new Map());
         liveCols.get(row.table_name)!.set(row.column_name, {
@@ -107,7 +116,10 @@ export function registerAdminHealthRoutes(app: Express): void {
       // Optional drill-down: full live column spec for one table.
       const tableParam = typeof _req.query.table === "string" ? _req.query.table : null;
       const tableDetail = tableParam
-        ? [...(liveCols.get(tableParam) ?? new Map()).entries()].map(([name, meta]) => ({ name, ...meta }))
+        ? [...(liveCols.get(tableParam) ?? new Map()).entries()].map(([name, meta]) => ({
+            name,
+            ...meta,
+          }))
         : undefined;
 
       res.json({

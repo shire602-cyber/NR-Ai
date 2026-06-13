@@ -56,11 +56,9 @@ const invoiceLineInputSchema = z.object({
     .finite()
     .transform((v) => (v === 5 ? UAE_VAT_RATE : v))
     .pipe(
-      z
-        .number()
-        .refine((v) => v === 0 || v === UAE_VAT_RATE, {
-          message: "VAT rate must be 0% or 5% (UAE)",
-        })
+      z.number().refine((v) => v === 0 || v === UAE_VAT_RATE, {
+        message: "VAT rate must be 0% or 5% (UAE)",
+      })
     )
     .default(UAE_VAT_RATE),
 });

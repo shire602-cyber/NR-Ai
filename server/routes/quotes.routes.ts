@@ -199,7 +199,12 @@ export function registerQuoteRoutes(app: Express) {
       // recomputed from the quote lines, not trusted from the quote row.
       const invoiceDate = new Date();
       const totals = calculateDocumentTotals(lines as any);
-      const invoiceNumber = await allocateInvoiceNumber(quote.companyId, "invoice", invoiceDate, db);
+      const invoiceNumber = await allocateInvoiceNumber(
+        quote.companyId,
+        "invoice",
+        invoiceDate,
+        db
+      );
       const invoice = await storage.createInvoice({
         companyId: quote.companyId,
         number: invoiceNumber,
