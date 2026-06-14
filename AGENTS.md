@@ -67,6 +67,9 @@ Scope: this file applies to the whole repository.
   production URL or password defaults.
 - For read-only production smoke testing, run
   `SMOKE_READ_ONLY=true SMOKE_EXPECTED_COMMIT=<short-sha> npm run smoke:prod -- <url>`.
+- `npm run security:verify-prod` requires `DATABASE_URL`; Railway production uses a private
+  `postgres.railway.internal` URL, so run this inside the Railway network or through Railway SSH
+  after an SSH key is registered.
 - `npm run e2e` requires a running app plus `BASE_URL` and `DATABASE_URL`; it registers a
   fresh user, promotes it through Postgres, crawls workspace routes, and posts a balanced journal.
 - `npm run test:coverage` is a baseline ratchet, not proof of broad route coverage; raise the
