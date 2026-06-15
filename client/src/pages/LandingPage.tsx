@@ -255,6 +255,18 @@ export default function LandingPage() {
               >
                 Pricing
               </a>
+              <Link
+                href="/trust"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Trust
+              </Link>
+              <Link
+                href="/migration-guides"
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Migrate
+              </Link>
               <a
                 href="#contact"
                 className="text-muted-foreground hover:text-foreground transition-colors"
@@ -332,6 +344,20 @@ export default function LandingPage() {
                 >
                   Pricing
                 </a>
+                <Link
+                  href="/trust"
+                  onClick={() => setMenuOpen(false)}
+                  className="text-sm font-medium py-2"
+                >
+                  Trust
+                </Link>
+                <Link
+                  href="/migration-guides"
+                  onClick={() => setMenuOpen(false)}
+                  className="text-sm font-medium py-2"
+                >
+                  Migration Guides
+                </Link>
                 <a
                   href="#contact"
                   onClick={() => setMenuOpen(false)}
@@ -824,18 +850,36 @@ export default function LandingPage() {
                     Sign Up
                   </Link>
                 </li>
+                <li>
+                  <Link
+                    href="/migration-guides"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Migration Guides
+                  </Link>
+                </li>
               </ul>
             </div>
 
             {/* Compliance */}
             <div>
-              <h4 className="font-semibold text-sm mb-3">Compliance</h4>
+              <h4 className="font-semibold text-sm mb-3">UAE Workflows</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li>FTA VAT 201 Returns</li>
-                <li>Corporate Tax (CT)</li>
-                <li>E-Invoicing (Phase 1 & 2)</li>
+                <li>VAT 201 review workspace</li>
+                <li>Corporate Tax calculator</li>
+                <li>E-invoicing XML readiness</li>
                 <li>WPS Payroll (SIF)</li>
-                <li>IFRS-Ready Reports</li>
+                <li>Exportable financial reports</li>
+                <li>
+                  <Link href="/trust" className="hover:text-foreground transition-colors">
+                    Trust and security
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/help" className="hover:text-foreground transition-colors">
+                    Help Center
+                  </Link>
+                </li>
               </ul>
               <h4 className="font-semibold text-sm mt-5 mb-3">Legal</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">

@@ -33,6 +33,9 @@ const CustomerPortal = lazy(() => import("@/pages/CustomerPortal"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const CookiePolicy = lazy(() => import("@/pages/CookiePolicy"));
+const TrustSecurity = lazy(() => import("@/pages/TrustSecurity"));
+const HelpCenter = lazy(() => import("@/pages/HelpCenter"));
+const MigrationGuides = lazy(() => import("@/pages/MigrationGuides"));
 
 // Client Portal — lazy loaded
 const PortalDashboard = lazy(() => import("@/pages/portal/PortalDashboard"));
@@ -442,6 +445,9 @@ function Router() {
     location === "/privacy" ||
     location === "/terms" ||
     location === "/cookies" ||
+    location === "/trust" ||
+    location === "/help" ||
+    location === "/migration-guides" ||
     location.startsWith("/view/invoice/") ||
     location.startsWith("/portal/")
   ) {
@@ -467,6 +473,9 @@ function Router() {
               <Route path="/privacy" component={PrivacyPolicy} />
               <Route path="/terms" component={TermsOfService} />
               <Route path="/cookies" component={CookiePolicy} />
+              <Route path="/trust" component={TrustSecurity} />
+              <Route path="/help" component={HelpCenter} />
+              <Route path="/migration-guides" component={MigrationGuides} />
             </Switch>
           </Suspense>
         </motion.div>

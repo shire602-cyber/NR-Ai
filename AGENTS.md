@@ -24,9 +24,9 @@ Scope: this file applies to the whole repository.
 - Type-check with `npm run check`.
 - Run unit tests with `npm test`; use `npm run test:watch` for watch mode and
   `npm run test:coverage` for coverage.
-- Run the broader readiness sweep with `npm run audit:campaign`; it chains type/contract checks,
-  audit inventory, frontend API coverage, production dependency audit, unit tests, and build.
-- Use `npm run audit:api-coverage:strict` when frontend API-reference drift should fail the gate.
+- TODO: `audit:campaign` and `audit:api-coverage:strict` are not defined in `package.json` in
+  this checkout. Until those scripts are restored, use `npm run check`, changed-file Prettier,
+  `npm test`, `npm run build`, and `npm run lint` as the local readiness sweep.
 - Lint with `npm run lint`; use `npm run lint:fix` only when you intend to modify files.
 - Check formatting with `npm run format:check`; use `npm run format` only when you intend to
   modify files. `migrations/meta/` is generated Drizzle metadata and is ignored by Prettier.
@@ -53,6 +53,9 @@ Scope: this file applies to the whole repository.
   as source-of-truth unless the task explicitly targets them.
 - In development, `npm run dev` starts Express on `PORT` (default `5000`) and mounts
   Vite in middleware mode; there is no separate client dev script.
+- For public-page/frontend-only smoke checks when API env is unavailable, run
+  `npx --no-install vite --host 127.0.0.1 --port 5173`. This does not validate
+  authenticated SaaS workflows.
 - For cookie/session-based state-changing API requests, fetch `/api/csrf-token` and send
   the returned value as `X-CSRF-Token`; Bearer-auth requests are CSRF-exempt.
 - The Docker/Railway runtime expects a Node 20 production build. `/health/live` is the cheap
@@ -62,10 +65,8 @@ Scope: this file applies to the whole repository.
 - For authenticated endpoint smoke testing, run `bash tests/test-firm-endpoints.sh` with
   `TEST_BASE`, `TEST_EMAIL`, and `TEST_PASS` set explicitly. The script deliberately has no
   production URL or password defaults.
-- For read-only production smoke testing, run
-  `SMOKE_READ_ONLY=true SMOKE_EXPECTED_COMMIT=<short-sha> npm run smoke:prod -- <url>`.
-- `npm run e2e` requires a running app plus `BASE_URL` and `DATABASE_URL`; it registers a
-  fresh user, promotes it through Postgres, crawls workspace routes, and posts a balanced journal.
+- TODO: `smoke:prod` and `e2e` are not defined in `package.json` in this checkout. Do not rely
+  on those command names until scripts are restored.
 - Use `npx vitest run tests/unit/whatsapp-boundary.test.ts` after WhatsApp-related changes to
   verify the feature remains confined to the NR firm-management area.
 - Document chasing is also an NR firm-management-only feature. Keep its UI under

@@ -93,7 +93,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { SiGooglesheets } from "react-icons/si";
-import type { Invoice, CustomerContact, InvoicePayment } from "@shared/schema";
+import type { Invoice, InvoicePayment } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { downloadInvoicePDF } from "@/lib/pdf-invoice";
 
@@ -178,12 +178,6 @@ export default function Invoices() {
 
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
-    enabled: !!selectedCompanyId,
-  });
-
-  const { data: customers = [] } = useQuery<CustomerContact[]>({
-    queryKey: ["/api/companies", selectedCompanyId, "customer-contacts"],
-    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/customer-contacts`),
     enabled: !!selectedCompanyId,
   });
 
@@ -538,7 +532,7 @@ export default function Invoices() {
 
       // Proceed with save directly - similar check removed for better UX
       await performInvoiceSave(invoiceData, editingInvoice);
-    } catch (error) {
+    } catch {
       // Error is handled by mutation callbacks
     }
   };
@@ -1130,7 +1124,7 @@ export default function Invoices() {
                     : undefined
                 }
               >
-                <Table>
+                <Table className="min-w-[780px]">
                   <TableHeader className="sticky top-0 z-10 bg-card">
                     <TableRow>
                       <TableHead className="font-semibold">{t.invoiceNumber}</TableHead>
@@ -2072,34 +2066,36 @@ export default function Invoices() {
               <p className="text-center text-muted-foreground py-6">No payments recorded yet.</p>
             ) : (
               <>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {invoicePayments.map((p: InvoicePayment) => (
-                      <TableRow key={p.id}>
-                        <TableCell>{formatDate(p.date, locale)}</TableCell>
-                        <TableCell className="capitalize">{p.method}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {p.reference || "—"}
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
-                          {formatCurrency(
-                            p.amount,
-                            invoiceForPaymentDetail?.currency || "AED",
-                            locale
-                          )}
-                        </TableCell>
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[560px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {invoicePayments.map((p: InvoicePayment) => (
+                        <TableRow key={p.id}>
+                          <TableCell>{formatDate(p.date, locale)}</TableCell>
+                          <TableCell className="capitalize">{p.method}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {p.reference || "—"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            {formatCurrency(
+                              p.amount,
+                              invoiceForPaymentDetail?.currency || "AED",
+                              locale
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
                 <div className="flex justify-between pt-2 border-t font-semibold">
                   <span>Total Paid</span>
                   <span className="font-mono">

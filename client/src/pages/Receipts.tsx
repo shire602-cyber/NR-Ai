@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -52,7 +51,6 @@ import {
   XCircle,
   Loader2,
   Camera,
-  Image as ImageIcon,
   X,
   Trash2,
   Edit,
@@ -223,9 +221,9 @@ function isInternalClassifierMethod(value: unknown): value is InternalClassifier
 }
 
 export default function Receipts() {
-  const { t, locale } = useTranslation();
+  const { locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId } = useDefaultCompany();
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -283,13 +281,6 @@ export default function Receipts() {
       vatAmount: null,
       category: "",
       currency: "AED",
-    },
-  });
-
-  // Save single receipt mutation
-  const saveReceiptMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return apiRequest("POST", `/api/companies/${companyId}/receipts`, data);
     },
   });
 
@@ -415,11 +406,6 @@ export default function Receipts() {
         description: error?.message || "Please try again.",
       });
     },
-  });
-
-  const checkSimilarMutation = useMutation({
-    mutationFn: (data: any) =>
-      apiRequest("POST", `/api/companies/${companyId}/receipts/check-similar`, data),
   });
 
   const deleteMutation = useMutation({
@@ -1340,11 +1326,11 @@ export default function Receipts() {
 
           {/* Action Buttons */}
           {processedReceipts.length > 0 && (
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row">
               <Button
                 onClick={processAllReceipts}
                 disabled={isProcessingBulk || pendingCount === 0}
-                className="flex-1"
+                className="w-full sm:flex-1"
                 size="lg"
                 data-testid="button-process-all"
               >
@@ -1364,7 +1350,7 @@ export default function Receipts() {
               <Button
                 onClick={saveAllReceipts}
                 disabled={completedCount === 0 || isSavingAll || isProcessingBulk}
-                className="flex-1"
+                className="w-full sm:flex-1"
                 size="lg"
                 data-testid="button-save-all"
               >
@@ -1385,6 +1371,7 @@ export default function Receipts() {
                 variant="outline"
                 onClick={handleDownloadOcrExcel}
                 disabled={completedCount === 0 || isOcrExporting || isProcessingBulk}
+                className="w-full sm:w-auto"
                 size="lg"
                 data-testid="button-download-ocr-excel"
               >
@@ -1405,6 +1392,7 @@ export default function Receipts() {
                 variant="outline"
                 onClick={resetForm}
                 disabled={isProcessingBulk}
+                className="w-full sm:w-auto"
                 data-testid="button-reset"
               >
                 <Trash2 className="w-4 h-4" />
@@ -1436,9 +1424,9 @@ export default function Receipts() {
           {processedReceipts.map((receipt, index) => (
             <Card key={index} data-testid={`receipt-card-${index}`}>
               <CardContent className="p-4">
-                <div className="flex gap-4">
+                <div className="flex flex-col gap-4 sm:flex-row">
                   {/* Thumbnail — click to view source image alongside extracted data */}
-                  <div className="relative">
+                  <div className="relative w-24 shrink-0">
                     <button
                       type="button"
                       onClick={() =>
