@@ -531,6 +531,61 @@ export function registerReportRoutes(app: Express) {
       }
 
       agingData.push(...Object.values(customerTotals));
+      const billsResult = await pool.query(
+        `SELECT
+          id,
+          vendor_name,
+          due_date,
+          total_amount,
+          amount_paid
+         FROM vendor_bills
+         WHERE company_id = $1
+           AND status NOT IN ('paid', 'cancelled')
+           AND GREATEST(total_amount - amount_paid, 0) > 0`,
+        [companyId]
+      );
+      const vendorTotals: Record<string, any> = {};
+
+      for (const bill of billsResult.rows) {
+        const vendorName = bill.vendor_name || "Unknown Vendor";
+        const due = bill.due_date ? new Date(bill.due_date) : now;
+        const daysPastDue = Math.floor((now.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+        const openAmount = Math.max(
+          0,
+          Number(bill.total_amount || 0) - Number(bill.amount_paid || 0)
+        );
+
+        if (!vendorTotals[vendorName]) {
+          vendorTotals[vendorName] = {
+            id: bill.id,
+            name: vendorName,
+            type: "payable",
+            current: 0,
+            days30: 0,
+            days60: 0,
+            days90: 0,
+            over90: 0,
+            total: 0,
+          };
+        }
+
+        const vendor = vendorTotals[vendorName];
+        vendor.total += openAmount;
+
+        if (daysPastDue <= 0) {
+          vendor.current += openAmount;
+        } else if (daysPastDue <= 30) {
+          vendor.days30 += openAmount;
+        } else if (daysPastDue <= 60) {
+          vendor.days60 += openAmount;
+        } else if (daysPastDue <= 90) {
+          vendor.days90 += openAmount;
+        } else {
+          vendor.over90 += openAmount;
+        }
+      }
+
+      agingData.push(...Object.values(vendorTotals));
       res.json(agingData);
     })
   );
