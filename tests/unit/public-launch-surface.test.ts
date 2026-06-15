@@ -134,6 +134,35 @@ describe("Public SaaS launch surface", () => {
     expect(reportRoutesSource).toContain("/api/companies/:id/reports/inventory-movement");
   });
 
+  it("keeps expense-claim and WPS readiness reports live and exportable", () => {
+    const reportsSource = readRepoFile("client/src/pages/Reports.tsx");
+    const reportRoutesSource = readRepoFile("server/routes/reports.routes.ts");
+    const reportPacksSource = readRepoFile("server/services/report-pack-schedules.service.ts");
+    const payrollSource = readRepoFile("server/routes/payroll.routes.ts");
+
+    for (const expected of [
+      'name: "Expense Claims"',
+      'tab: "expenseClaims"',
+      '<TabsTrigger value="expenseClaims"',
+      '<TabsContent value="expenseClaims"',
+      "prepareExpenseClaimsForExport",
+      'name: "WPS / SIF Summary"',
+      'tab: "wpsSif"',
+      '<TabsTrigger value="wpsSif"',
+      '<TabsContent value="wpsSif"',
+      "prepareWpsSifSummaryForExport",
+    ]) {
+      expect(reportsSource).toContain(expected);
+    }
+
+    expect(reportRoutesSource).toContain("/api/companies/:id/reports/expense-claims");
+    expect(reportRoutesSource).toContain("/api/companies/:id/reports/wps-sif-summary");
+    expect(reportPacksSource).toContain("Expense Claims");
+    expect(reportPacksSource).toContain("WPS / SIF Summary");
+    expect(payrollSource).toContain("company.mohre_establishment_id");
+    expect(payrollSource).toContain("company.wps_employer_iban");
+  });
+
   it("keeps WhatsApp and internal document chasing out of the public launch pages", () => {
     for (const file of publicLaunchFiles) {
       const source = readRepoFile(file);

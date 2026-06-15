@@ -1101,10 +1101,10 @@ export function registerPayrollRoutes(app: Express) {
     const sifContent = generateSIFFile(
       {
         name: company.name,
-        registrationNumber: company.registration_number,
-        bankName: null,
-        bankAccountNumber: null,
-        routingCode: null,
+        registrationNumber: company.mohre_establishment_id || company.registration_number,
+        bankName: company.wps_employer_bank_name,
+        bankAccountNumber: company.wps_employer_iban,
+        routingCode: company.wps_employer_routing_code,
       },
       {
         id: run.id,

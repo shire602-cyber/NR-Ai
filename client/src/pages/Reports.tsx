@@ -289,6 +289,27 @@ interface GeneralLedgerReport {
   };
 }
 
+interface AccountTransactionReportRow {
+  lineId: string;
+  entryId: string;
+  entryNumber: string;
+  date: string;
+  accountId: string;
+  accountCode: string | null;
+  accountName: string;
+  accountType: string;
+  source: string;
+  sourceId: string | null;
+  memo: string | null;
+  description: string | null;
+  debit: number;
+  credit: number;
+  balance: number;
+  foreignCurrency: string | null;
+  reviewSuggested: boolean;
+  reviewReason: string;
+}
+
 interface BalanceSummaryRow {
   customerName?: string;
   vendorName?: string;
@@ -432,6 +453,67 @@ interface ExpenseAnalysisReport {
   };
 }
 
+interface ExpenseClaimReportRow {
+  claimId: string;
+  claimNumber: string | null;
+  title: string;
+  description: string | null;
+  submittedBy: string;
+  status: string;
+  currency: string;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  paidAt: string | null;
+  paymentReference: string | null;
+  createdAt: string;
+  firstExpenseDate: string | null;
+  lastExpenseDate: string | null;
+  activityDate: string;
+  itemCount: number;
+  categories: string;
+  merchants: string;
+  totalAmount: number;
+  expenseAmount: number;
+  vatAmount: number;
+  receiptCount: number;
+  missingReceiptCount: number;
+  approvalSuggested: boolean;
+  paymentSuggested: boolean;
+  receiptSuggested: boolean;
+  automationSuggested: boolean;
+  nextAction: string;
+}
+
+interface ExpenseClaimsReport {
+  reportCurrency: string;
+  period: { from: string | null; to: string | null; asOf: string };
+  rows: ExpenseClaimReportRow[];
+  totals: {
+    claimCount: number;
+    itemCount: number;
+    totalAmount: number;
+    previousTotalAmount: number;
+    amountChange: number;
+    amountChangePercent: number;
+    expenseAmount: number;
+    vatAmount: number;
+    draftCount: number;
+    submittedCount: number;
+    approvedCount: number;
+    rejectedCount: number;
+    paidCount: number;
+    submittedAmount: number;
+    approvedAmount: number;
+    paidAmount: number;
+    reimbursementExposure: number;
+    missingReceiptCount: number;
+    approvalQueue: number;
+    paymentQueue: number;
+    receiptQueue: number;
+    automationCount: number;
+  };
+}
+
 interface InvoiceStatusRow {
   status: string;
   invoiceCount: number;
@@ -561,6 +643,63 @@ interface PayrollSummaryReport {
     previousTotalNet: number;
     netChange: number;
     netChangePercent: number;
+  };
+}
+
+interface WpsSifSummaryRow {
+  runId: string;
+  periodMonth: number;
+  periodYear: number;
+  periodLabel: string;
+  runDate: string | null;
+  status: string;
+  employeeCount: number;
+  itemCount: number;
+  totalNet: number;
+  sifNetTotal: number;
+  sifGenerated: boolean;
+  wpsReady: boolean;
+  missingLaborCardCount: number;
+  missingIbanCount: number;
+  missingRoutingCodeCount: number;
+  zeroNetPayCount: number;
+  validationIssueCount: number;
+  setupSuggested: boolean;
+  sifSuggested: boolean;
+  calculationSuggested: boolean;
+  automationSuggested: boolean;
+  recommendedAction: string;
+}
+
+interface WpsSifSummaryReport {
+  reportCurrency: string;
+  period: { from: string; to: string | null; asOf: string };
+  employer: {
+    companyName: string;
+    setupComplete: boolean;
+    missingFields: string[];
+    mohreEstablishmentIdPresent: boolean;
+    employerIbanPresent: boolean;
+    employerRoutingCodePresent: boolean;
+    employerBankNamePresent: boolean;
+  };
+  rows: WpsSifSummaryRow[];
+  totals: {
+    runCount: number;
+    activeEmployeeCount: number;
+    activeWpsReadyCount: number;
+    activeEmployeeSetupIssueCount: number;
+    employeeCount: number;
+    totalNet: number;
+    sifNetTotal: number;
+    wpsReadyCount: number;
+    sifGeneratedCount: number;
+    sifPendingCount: number;
+    validationIssueCount: number;
+    calculationQueue: number;
+    setupQueue: number;
+    automationCount: number;
+    employerMissingFieldCount: number;
   };
 }
 
@@ -733,6 +872,7 @@ type ReportTab =
   | "vat"
   | "trial"
   | "ledger"
+  | "accountTransactions"
   | "vatReturn"
   | "aging"
   | "customers"
@@ -741,9 +881,11 @@ type ReportTab =
   | "salesServices"
   | "expenseVendors"
   | "expenseCategories"
+  | "expenseClaims"
   | "invoiceStatus"
   | "budgetActual"
   | "payrollSummary"
+  | "wpsSif"
   | "corpTax"
   | "fixedAssets"
   | "depreciation"
@@ -998,12 +1140,12 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "Account Transactions",
     category: "Financial Statements",
-    status: "workspace",
+    status: "live",
     personas: ["accountant"],
     comparison: "Account history",
     automation: "Source drill-down",
     icon: BookOpen,
-    href: "/accounts",
+    tab: "accountTransactions",
   },
   {
     name: "VAT Summary",
@@ -1218,22 +1360,22 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "WPS / SIF Summary",
     category: "Payroll",
-    status: "workspace",
+    status: "live",
     personas: ["owner", "accountant"],
     comparison: "Pay run",
     automation: "WPS readiness",
     icon: ShieldCheck,
-    href: "/payroll",
+    tab: "wpsSif",
   },
   {
     name: "Expense Claims",
     category: "Purchases",
-    status: "workspace",
+    status: "live",
     personas: ["owner", "accountant"],
     comparison: "Claim status",
     automation: "Approval routing",
     icon: ReceiptText,
-    href: "/expense-claims",
+    tab: "expenseClaims",
   },
   {
     name: "Month-End Close Status",
@@ -1282,11 +1424,13 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "A/R Aging",
       "A/P Aging",
       "Expenses by Category",
+      "Expense Claims",
       "VAT Summary",
       "Corporate Tax Estimate",
       "Period Comparison",
       "Budget vs Actual",
       "Payroll Summary",
+      "WPS / SIF Summary",
       "Inventory Valuation",
       "Inventory Movement",
       "Cash Flow Forecast",
@@ -1331,6 +1475,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
     reportNames: [
       "Trial Balance",
       "General Ledger",
+      "Account Transactions",
       "Profit & Loss",
       "Balance Sheet",
       "VAT Return",
@@ -1338,8 +1483,10 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Customer Balance Summary",
       "Vendor Balance Summary",
       "A/P Aging",
+      "Expense Claims",
       "Budget vs Actual",
       "Payroll Summary",
+      "WPS / SIF Summary",
       "Inventory Valuation",
       "Inventory Movement",
       "Fixed Asset Register",
@@ -1787,6 +1934,45 @@ function prepareGeneralLedgerForExport(report: GeneralLedgerReport): ExportData 
   };
 }
 
+function prepareAccountTransactionsForExport(
+  rows: AccountTransactionReportRow[],
+  reportCurrency: string
+): ExportData {
+  return {
+    sheetName: "Account Transactions",
+    columns: [
+      { header: "Date", key: "date", width: 16 },
+      { header: "Entry #", key: "entryNumber", width: 16 },
+      { header: "Account Code", key: "accountCode", width: 14 },
+      { header: "Account", key: "account", width: 32 },
+      { header: "Type", key: "type", width: 14 },
+      { header: "Source", key: "source", width: 16 },
+      { header: "Memo", key: "memo", width: 32 },
+      { header: "Description", key: "description", width: 34 },
+      { header: `Debit (${reportCurrency})`, key: "debit", width: 16 },
+      { header: `Credit (${reportCurrency})`, key: "credit", width: 16 },
+      { header: `Balance (${reportCurrency})`, key: "balance", width: 16 },
+      { header: "FX", key: "fx", width: 10 },
+      { header: "Review", key: "review", width: 24 },
+    ],
+    rows: rows.map((row) => ({
+      date: formatDateForExport(row.date),
+      entryNumber: row.entryNumber,
+      accountCode: row.accountCode || "",
+      account: row.accountName,
+      type: row.accountType,
+      source: row.source,
+      memo: row.memo || "",
+      description: row.description || "",
+      debit: amountForExport(row.debit),
+      credit: amountForExport(row.credit),
+      balance: amountForExport(row.balance),
+      fx: row.foreignCurrency || "",
+      review: row.reviewSuggested ? row.reviewReason : "",
+    })),
+  };
+}
+
 function prepareCustomerBalancesForExport(report: CustomerBalanceReport): ExportData {
   return {
     sheetName: "Customer Balances",
@@ -1949,6 +2135,42 @@ function prepareExpenseAnalysisForExport(
   };
 }
 
+function prepareExpenseClaimsForExport(report: ExpenseClaimsReport): ExportData {
+  return {
+    sheetName: "Expense Claims",
+    columns: [
+      { header: "Claim #", key: "claimNumber", width: 16 },
+      { header: "Title", key: "title", width: 32 },
+      { header: "Status", key: "status", width: 14 },
+      { header: "Activity Date", key: "activityDate", width: 16 },
+      { header: "Items", key: "items", width: 10 },
+      { header: "Categories", key: "categories", width: 30 },
+      { header: "Merchants", key: "merchants", width: 30 },
+      { header: "Expense", key: "expense", width: 16 },
+      { header: "VAT", key: "vat", width: 16 },
+      { header: "Total", key: "total", width: 16 },
+      { header: "Receipts", key: "receipts", width: 10 },
+      { header: "Missing Receipts", key: "missingReceipts", width: 18 },
+      { header: "Next Action", key: "nextAction", width: 24 },
+    ],
+    rows: report.rows.map((row) => ({
+      claimNumber: row.claimNumber || "",
+      title: row.title,
+      status: row.status,
+      activityDate: formatDateForExport(row.activityDate),
+      items: row.itemCount,
+      categories: row.categories,
+      merchants: row.merchants,
+      expense: amountForExport(row.expenseAmount),
+      vat: amountForExport(row.vatAmount),
+      total: amountForExport(row.totalAmount),
+      receipts: row.receiptCount,
+      missingReceipts: row.missingReceiptCount,
+      nextAction: row.nextAction,
+    })),
+  };
+}
+
 function prepareInvoiceStatusForExport(report: InvoiceStatusReport): ExportData {
   return {
     sheetName: "Invoice Status",
@@ -2049,6 +2271,42 @@ function preparePayrollSummaryForExport(report: PayrollSummaryReport): ExportDat
       ]
         .filter(Boolean)
         .join(", "),
+    })),
+  };
+}
+
+function prepareWpsSifSummaryForExport(report: WpsSifSummaryReport): ExportData {
+  return {
+    sheetName: "WPS SIF Summary",
+    columns: [
+      { header: "Period", key: "period", width: 12 },
+      { header: "Status", key: "status", width: 14 },
+      { header: "Employees", key: "employees", width: 12 },
+      { header: "Net Pay", key: "netPay", width: 16 },
+      { header: "SIF Total", key: "sifTotal", width: 16 },
+      { header: "SIF Generated", key: "sifGenerated", width: 14 },
+      { header: "WPS Ready", key: "wpsReady", width: 12 },
+      { header: "Missing Labor Cards", key: "missingLaborCards", width: 18 },
+      { header: "Missing IBANs", key: "missingIbans", width: 16 },
+      { header: "Missing Routing Codes", key: "missingRoutingCodes", width: 22 },
+      { header: "Zero Net Pay", key: "zeroNetPay", width: 14 },
+      { header: "Validation Issues", key: "validationIssues", width: 18 },
+      { header: "Next Action", key: "nextAction", width: 28 },
+    ],
+    rows: report.rows.map((row) => ({
+      period: row.periodLabel,
+      status: row.status,
+      employees: row.employeeCount,
+      netPay: amountForExport(row.totalNet),
+      sifTotal: amountForExport(row.sifNetTotal),
+      sifGenerated: row.sifGenerated ? "Yes" : "No",
+      wpsReady: row.wpsReady ? "Yes" : "No",
+      missingLaborCards: row.missingLaborCardCount,
+      missingIbans: row.missingIbanCount,
+      missingRoutingCodes: row.missingRoutingCodeCount,
+      zeroNetPay: row.zeroNetPayCount,
+      validationIssues: row.validationIssueCount,
+      nextAction: row.recommendedAction,
     })),
   };
 }
@@ -2650,6 +2908,16 @@ export default function Reports() {
       enabled: !!selectedCompanyId,
     });
 
+  const { data: expenseClaims, isLoading: expenseClaimsLoading } = useQuery<ExpenseClaimsReport>({
+    queryKey: ["/api/companies", selectedCompanyId, "reports", "expense-claims", fromToDateParams],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/reports/expense-claims${fromToDateParams}`
+      ),
+    enabled: !!selectedCompanyId,
+  });
+
   const { data: invoiceStatus, isLoading: invoiceStatusLoading } = useQuery<InvoiceStatusReport>({
     queryKey: ["/api/companies", selectedCompanyId, "reports", "invoice-status", fromToDateParams],
     queryFn: () =>
@@ -2695,6 +2963,16 @@ export default function Reports() {
       enabled: !!selectedCompanyId,
     }
   );
+
+  const { data: wpsSifSummary, isLoading: wpsSifLoading } = useQuery<WpsSifSummaryReport>({
+    queryKey: ["/api/companies", selectedCompanyId, "reports", "wps-sif-summary", fromToDateParams],
+    queryFn: () =>
+      apiRequest(
+        "GET",
+        `/api/companies/${selectedCompanyId}/reports/wps-sif-summary${fromToDateParams}`
+      ),
+    enabled: !!selectedCompanyId,
+  });
 
   const { data: corporateTaxEstimate, isLoading: corporateTaxLoading } =
     useQuery<CorporateTaxEstimateReport>({
@@ -2996,6 +3274,48 @@ export default function Reports() {
       )
       .slice(0, 50);
   }, [generalLedger]);
+  const accountTransactionRows = useMemo<AccountTransactionReportRow[]>(() => {
+    return (generalLedger?.accounts ?? [])
+      .flatMap((account) =>
+        account.transactions.map((transaction) => {
+          const missingDetail = !transaction.memo && !transaction.description;
+          const missingSource = !transaction.sourceId;
+          const negativeOperatingBalance =
+            ["asset", "expense"].includes(account.accountType) && transaction.balance < -0.005;
+          const reviewReasons = [
+            missingSource ? "Missing source link" : "",
+            missingDetail ? "Missing memo/description" : "",
+            negativeOperatingBalance ? "Negative running balance" : "",
+          ].filter(Boolean);
+
+          return {
+            lineId: transaction.lineId,
+            entryId: transaction.entryId,
+            entryNumber: transaction.entryNumber,
+            date: transaction.date,
+            accountId: account.accountId,
+            accountCode: account.accountCode,
+            accountName: account.accountName,
+            accountType: account.accountType,
+            source: transaction.source,
+            sourceId: transaction.sourceId,
+            memo: transaction.memo,
+            description: transaction.description,
+            debit: transaction.debit,
+            credit: transaction.credit,
+            balance: transaction.balance,
+            foreignCurrency: transaction.foreignCurrency,
+            reviewSuggested: reviewReasons.length > 0,
+            reviewReason: reviewReasons.join(", "),
+          };
+        })
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.date).getTime() - new Date(a.date).getTime() ||
+          b.entryNumber.localeCompare(a.entryNumber)
+      );
+  }, [generalLedger]);
   const customerAutomationCount =
     customerBalances?.rows.filter((row) => row.chaseSuggested).length ?? 0;
   const vendorAutomationCount =
@@ -3008,6 +3328,10 @@ export default function Reports() {
     expensesByVendor?.rows.filter((row) => row.spendReviewSuggested).length ?? 0;
   const categoryBudgetReviewCount =
     expensesByCategory?.rows.filter((row) => row.budgetReviewSuggested).length ?? 0;
+  const expenseClaimAutomationQueue = expenseClaims?.totals.automationCount ?? 0;
+  const accountTransactionReviewQueue = accountTransactionRows.filter(
+    (row) => row.reviewSuggested
+  ).length;
   const invoiceReminderQueue = invoiceStatus?.totals.reminderQueue ?? 0;
   const apAgingOverdue = agingSummary.payables.overdue;
   const budgetVarianceQueue = budgetVsActual?.totals.automationCount ?? 0;
@@ -3022,6 +3346,7 @@ export default function Reports() {
     (payrollSummary?.totals.pendingApprovalCount ?? 0) +
     (payrollSummary?.totals.sifPendingCount ?? 0) +
     (payrollSummary?.totals.journalMissingCount ?? 0);
+  const wpsSifReadinessQueue = wpsSifSummary?.totals.automationCount ?? 0;
   const fixedAssetCapitalizationQueue = fixedAssetRegister?.totals.capitalizationQueue ?? 0;
   const depreciationPostingQueue = depreciationSchedule?.totals.postingQueue ?? 0;
   const inventoryReorderQueue = inventoryValuation?.totals.reorderSuggestions ?? 0;
@@ -3169,6 +3494,19 @@ export default function Reports() {
         actionLabel: "Ask AI CFO",
       },
       {
+        id: "account-transaction-review",
+        title: "Review account transaction lines",
+        description: "Posted account lines are missing source links, descriptions, or balance review.",
+        source: "Account Transactions",
+        personas: ["accountant"],
+        priority: accountTransactionReviewQueue > 0 ? "medium" : "low",
+        count: accountTransactionReviewQueue,
+        impact: Math.max(generalLedger?.totals.totalDebits ?? 0, generalLedger?.totals.totalCredits ?? 0),
+        tab: "accountTransactions",
+        href: "/accounts",
+        actionLabel: "Open accounts",
+      },
+      {
         id: "revenue-concentration",
         title: "Review customer concentration",
         description: "Revenue is concentrated enough to warrant client-risk review.",
@@ -3208,6 +3546,19 @@ export default function Reports() {
         actionLabel: "Review budgets",
       },
       {
+        id: "expense-claim-routing",
+        title: "Route expense reimbursements",
+        description: "Expense claims need approval, reimbursement, or missing receipt follow-up.",
+        source: "Expense Claims",
+        personas: ["owner", "accountant"],
+        priority: expenseClaimAutomationQueue > 0 ? "medium" : "low",
+        count: expenseClaimAutomationQueue,
+        impact: expenseClaims?.totals.reimbursementExposure ?? 0,
+        tab: "expenseClaims",
+        href: "/expense-claims",
+        actionLabel: "Open claims",
+      },
+      {
         id: "budget-variance",
         title: "Review budget variances",
         description: "Budget lines have unfavorable variance flags against posted actuals.",
@@ -3231,6 +3582,19 @@ export default function Reports() {
         count: payrollAutomationQueue,
         impact: payrollSummary?.totals.totalEmployerCost ?? 0,
         tab: "payrollSummary",
+        href: "/payroll",
+        actionLabel: "Open payroll",
+      },
+      {
+        id: "wps-sif-readiness",
+        title: "Prepare WPS SIF handoff",
+        description: "WPS setup gaps or pay runs need SIF generation before salary submission.",
+        source: "WPS / SIF Summary",
+        personas: ["owner", "accountant"],
+        priority: wpsSifReadinessQueue > 0 ? "high" : "low",
+        count: wpsSifReadinessQueue,
+        impact: wpsSifSummary?.totals.totalNet ?? 0,
+        tab: "wpsSif",
         href: "/payroll",
         actionLabel: "Open payroll",
       },
@@ -3327,6 +3691,7 @@ export default function Reports() {
           b.count - a.count
       );
   }, [
+    accountTransactionReviewQueue,
     apAgingOverdue,
     auditTrailRiskQueue,
     budgetVarianceQueue,
@@ -3341,10 +3706,13 @@ export default function Reports() {
     customerBalances,
     depreciationPostingQueue,
     depreciationSchedule,
+    expenseClaimAutomationQueue,
+    expenseClaims,
     expensesByCategory,
     expensesByVendor,
     fixedAssetCapitalizationQueue,
     fixedAssetRegister,
+    generalLedger,
     inventoryNegativeStockQueue,
     inventoryMovement,
     inventoryMovementReviewQueue,
@@ -3364,6 +3732,8 @@ export default function Reports() {
     vendorAutomationCount,
     vendorBalances,
     vendorSpendReviewCount,
+    wpsSifReadinessQueue,
+    wpsSifSummary,
   ]);
   const visibleAutomationQueueItems = automationQueueItems.slice(0, 8);
   const automationQueueTotals = automationQueueItems.reduce(
@@ -3522,6 +3892,11 @@ export default function Reports() {
     if (tab === "vat" && vatSummary) return prepareVATSummaryForExport(vatSummary);
     if (tab === "trial" && trialBalance) return prepareTrialBalanceForExport(trialBalance);
     if (tab === "ledger" && generalLedger) return prepareGeneralLedgerForExport(generalLedger);
+    if (tab === "accountTransactions" && generalLedger)
+      return prepareAccountTransactionsForExport(
+        accountTransactionRows,
+        generalLedger.reportCurrency
+      );
     if (tab === "cashFlow" && cashFlowData) return prepareCashFlowForExport(cashFlowData);
     if (tab === "cashFlowForecast" && cashFlowForecast)
       return prepareCashFlowForecastForExport(cashFlowForecast);
@@ -3540,12 +3915,15 @@ export default function Reports() {
       return prepareExpensesByVendorForExport(expensesByVendor);
     if (tab === "expenseCategories" && expensesByCategory)
       return prepareExpensesByCategoryForExport(expensesByCategory);
+    if (tab === "expenseClaims" && expenseClaims)
+      return prepareExpenseClaimsForExport(expenseClaims);
     if (tab === "invoiceStatus" && invoiceStatus)
       return prepareInvoiceStatusForExport(invoiceStatus);
     if (tab === "budgetActual" && budgetVsActual)
       return prepareBudgetVsActualForExport(budgetVsActual);
     if (tab === "payrollSummary" && payrollSummary)
       return preparePayrollSummaryForExport(payrollSummary);
+    if (tab === "wpsSif" && wpsSifSummary) return prepareWpsSifSummaryForExport(wpsSifSummary);
     if (tab === "corpTax" && corporateTaxEstimate)
       return prepareCorporateTaxEstimateForExport(corporateTaxEstimate);
     if (tab === "fixedAssets" && fixedAssetRegister)
@@ -3634,6 +4012,20 @@ export default function Reports() {
           `general_ledger${dateRangeStr}`
         );
         toast({ title: "Export successful", description: "General Ledger exported to Excel" });
+      } else if (activeTab === "accountTransactions" && generalLedger) {
+        await exportToExcel(
+          [
+            prepareAccountTransactionsForExport(
+              accountTransactionRows,
+              generalLedger.reportCurrency
+            ),
+          ],
+          `account_transactions${dateRangeStr}`
+        );
+        toast({
+          title: "Export successful",
+          description: "Account Transactions exported to Excel",
+        });
       } else if (activeTab === "cashFlow" && cashFlowData) {
         await exportToExcel([prepareCashFlowForExport(cashFlowData)], `cash_flow_${reportPeriod}`);
         toast({ title: "Export successful", description: "Cash Flow exported to Excel" });
@@ -3716,6 +4108,12 @@ export default function Reports() {
           title: "Export successful",
           description: "Expenses by Category exported to Excel",
         });
+      } else if (activeTab === "expenseClaims" && expenseClaims) {
+        await exportToExcel(
+          [prepareExpenseClaimsForExport(expenseClaims)],
+          `expense_claims${dateRangeStr}`
+        );
+        toast({ title: "Export successful", description: "Expense Claims exported to Excel" });
       } else if (activeTab === "invoiceStatus" && invoiceStatus) {
         await exportToExcel(
           [prepareInvoiceStatusForExport(invoiceStatus)],
@@ -3734,6 +4132,12 @@ export default function Reports() {
           `payroll_summary${dateRangeStr}`
         );
         toast({ title: "Export successful", description: "Payroll Summary exported to Excel" });
+      } else if (activeTab === "wpsSif" && wpsSifSummary) {
+        await exportToExcel(
+          [prepareWpsSifSummaryForExport(wpsSifSummary)],
+          `wps_sif_summary${dateRangeStr}`
+        );
+        toast({ title: "Export successful", description: "WPS / SIF Summary exported to Excel" });
       } else if (activeTab === "corpTax" && corporateTaxEstimate) {
         await exportToExcel(
           [prepareCorporateTaxEstimateForExport(corporateTaxEstimate)],
@@ -3852,6 +4256,17 @@ export default function Reports() {
         `General Ledger${dateRangeStr}`,
         selectedCompanyId
       );
+    } else if (activeTab === "accountTransactions" && generalLedger) {
+      result = await exportToGoogleSheets(
+        [
+          prepareAccountTransactionsForExport(
+            accountTransactionRows,
+            generalLedger.reportCurrency
+          ),
+        ],
+        `Account Transactions${dateRangeStr}`,
+        selectedCompanyId
+      );
     } else if (activeTab === "cashFlow" && cashFlowData) {
       result = await exportToGoogleSheets(
         [prepareCashFlowForExport(cashFlowData)],
@@ -3929,6 +4344,12 @@ export default function Reports() {
         `Expenses by Category${dateRangeStr}`,
         selectedCompanyId
       );
+    } else if (activeTab === "expenseClaims" && expenseClaims) {
+      result = await exportToGoogleSheets(
+        [prepareExpenseClaimsForExport(expenseClaims)],
+        `Expense Claims${dateRangeStr}`,
+        selectedCompanyId
+      );
     } else if (activeTab === "invoiceStatus" && invoiceStatus) {
       result = await exportToGoogleSheets(
         [prepareInvoiceStatusForExport(invoiceStatus)],
@@ -3945,6 +4366,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         [preparePayrollSummaryForExport(payrollSummary)],
         `Payroll Summary${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "wpsSif" && wpsSifSummary) {
+      result = await exportToGoogleSheets(
+        [prepareWpsSifSummaryForExport(wpsSifSummary)],
+        `WPS SIF Summary${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "corpTax" && corporateTaxEstimate) {
@@ -4908,6 +5335,9 @@ export default function Reports() {
           <TabsTrigger value="ledger" data-testid="tab-general-ledger">
             Ledger
           </TabsTrigger>
+          <TabsTrigger value="accountTransactions" data-testid="tab-account-transactions">
+            Txns
+          </TabsTrigger>
           <TabsTrigger value="vatReturn" data-testid="tab-vat-return">
             VAT Return
           </TabsTrigger>
@@ -4932,6 +5362,9 @@ export default function Reports() {
           <TabsTrigger value="expenseCategories" data-testid="tab-expenses-by-category">
             Categories
           </TabsTrigger>
+          <TabsTrigger value="expenseClaims" data-testid="tab-expense-claims">
+            Claims
+          </TabsTrigger>
           <TabsTrigger value="invoiceStatus" data-testid="tab-invoice-status">
             Invoices
           </TabsTrigger>
@@ -4940,6 +5373,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="payrollSummary" data-testid="tab-payroll-summary">
             Payroll
+          </TabsTrigger>
+          <TabsTrigger value="wpsSif" data-testid="tab-wps-sif-summary">
+            WPS
           </TabsTrigger>
           <TabsTrigger value="corpTax" data-testid="tab-corporate-tax-estimate">
             Corp Tax
@@ -7277,6 +7713,213 @@ export default function Reports() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="expenseClaims" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Reimbursement Exposure
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {expenseClaimsLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatCurrency(
+                      expenseClaims?.totals.reimbursementExposure ?? 0,
+                      expenseClaims?.reportCurrency ?? "AED",
+                      locale
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Claim Total Change
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {expenseClaimsLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <>
+                    <div
+                      className={`text-2xl font-semibold font-mono ${(expenseClaims?.totals.amountChange ?? 0) <= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                    >
+                      {formatCurrency(
+                        expenseClaims?.totals.amountChange ?? 0,
+                        expenseClaims?.reportCurrency ?? "AED",
+                        locale
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {(expenseClaims?.totals.amountChangePercent ?? 0).toFixed(1)}% vs prior
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Submitted / Approved
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {expenseClaimsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(
+                        (expenseClaims?.totals.submittedCount ?? 0) +
+                          (expenseClaims?.totals.approvedCount ?? 0),
+                        locale
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatNumber(expenseClaims?.totals.claimCount ?? 0, locale)} total claims
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Claim Actions
+                </CardTitle>
+                <Badge variant={expenseClaimAutomationQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {expenseClaimsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(expenseClaimAutomationQueue, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatNumber(expenseClaims?.totals.missingReceiptCount ?? 0, locale)} missing
+                      receipts
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Expense Claims</CardTitle>
+              <CardDescription>
+                Reimbursement claims by status, receipt evidence, and approval/payment action.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {expenseClaimsLoading ? (
+                <Skeleton className="h-96" />
+              ) : expenseClaims?.rows?.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1120px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Claim</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Activity</TableHead>
+                        <TableHead className="text-right">Items</TableHead>
+                        <TableHead>Categories</TableHead>
+                        <TableHead className="text-right">Expense</TableHead>
+                        <TableHead className="text-right">VAT</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-right">Receipts</TableHead>
+                        <TableHead className="text-right">Missing</TableHead>
+                        <TableHead>Automation</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {expenseClaims.rows.map((row) => (
+                        <TableRow key={row.claimId}>
+                          <TableCell>
+                            <div className="font-medium">{row.claimNumber || row.title}</div>
+                            <div className="text-xs text-muted-foreground">{row.title}</div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                row.status === "paid"
+                                  ? "success"
+                                  : row.status === "submitted" || row.status === "approved"
+                                    ? "warning"
+                                    : row.status === "rejected"
+                                      ? "danger"
+                                      : "outline"
+                              }
+                              className="capitalize"
+                            >
+                              {row.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {formatDateForExport(row.activityDate) || "-"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.itemCount, locale)}
+                          </TableCell>
+                          <TableCell className="max-w-[240px] truncate">{row.categories}</TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(
+                              row.expenseAmount,
+                              expenseClaims.reportCurrency,
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.vatAmount, expenseClaims.reportCurrency, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            {formatCurrency(row.totalAmount, expenseClaims.reportCurrency, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.receiptCount, locale)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono ${row.missingReceiptCount > 0 ? "text-amber-600 dark:text-amber-400" : ""}`}
+                          >
+                            {formatNumber(row.missingReceiptCount, locale)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                row.automationSuggested
+                                  ? row.paymentSuggested
+                                    ? "warning"
+                                    : "outline"
+                                  : "success"
+                              }
+                            >
+                              {row.nextAction}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No expense claims found for this period.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="invoiceStatus" className="space-y-6">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <Card>
@@ -7773,6 +8416,247 @@ export default function Reports() {
                                 <Badge variant="outline">Clear</Badge>
                               )}
                             </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No payroll runs found for this period.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="wpsSif" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  WPS Ready Runs
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {wpsSifLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(wpsSifSummary?.totals.wpsReadyCount ?? 0, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      of {formatNumber(wpsSifSummary?.totals.runCount ?? 0, locale)} pay runs
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  SIF Pending
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {wpsSifLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div
+                      className={`text-2xl font-semibold font-mono ${(wpsSifSummary?.totals.sifPendingCount ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`}
+                    >
+                      {formatNumber(wpsSifSummary?.totals.sifPendingCount ?? 0, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatNumber(wpsSifSummary?.totals.sifGeneratedCount ?? 0, locale)} generated
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Employees Ready
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {wpsSifLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(wpsSifSummary?.totals.activeWpsReadyCount ?? 0, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      of {formatNumber(wpsSifSummary?.totals.activeEmployeeCount ?? 0, locale)}{" "}
+                      active
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  WPS Actions
+                </CardTitle>
+                <Badge variant={wpsSifReadinessQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {wpsSifLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(wpsSifReadinessQueue, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatNumber(wpsSifSummary?.totals.validationIssueCount ?? 0, locale)}{" "}
+                      validation issues
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-4">
+              <div>
+                <CardTitle>Employer WPS Setup</CardTitle>
+                <CardDescription>
+                  Company-level setup required for the SIF salary control record.
+                </CardDescription>
+              </div>
+              <Badge variant={wpsSifSummary?.employer.setupComplete ? "success" : "warning"} dot>
+                {wpsSifSummary?.employer.setupComplete ? "Ready" : "Setup needed"}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              {wpsSifLoading ? (
+                <Skeleton className="h-20" />
+              ) : (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+                  {[
+                    {
+                      label: "MOHRE ID",
+                      ready: wpsSifSummary?.employer.mohreEstablishmentIdPresent,
+                    },
+                    { label: "Employer IBAN", ready: wpsSifSummary?.employer.employerIbanPresent },
+                    {
+                      label: "Routing Code",
+                      ready: wpsSifSummary?.employer.employerRoutingCodePresent,
+                    },
+                    {
+                      label: "Bank Name",
+                      ready: wpsSifSummary?.employer.employerBankNamePresent,
+                    },
+                  ].map((item) => (
+                    <div
+                      key={item.label}
+                      className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
+                    >
+                      <span>{item.label}</span>
+                      <Badge variant={item.ready ? "success" : "warning"}>
+                        {item.ready ? "Ready" : "Missing"}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>WPS / SIF Summary</CardTitle>
+              <CardDescription>
+                Payroll run readiness for UAE WPS SIF generation and salary handoff.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {wpsSifLoading ? (
+                <Skeleton className="h-96" />
+              ) : wpsSifSummary?.rows?.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1120px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Period</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Employees</TableHead>
+                        <TableHead className="text-right">Net Pay</TableHead>
+                        <TableHead className="text-right">SIF Total</TableHead>
+                        <TableHead className="text-right">Generated</TableHead>
+                        <TableHead className="text-right">Missing Labor</TableHead>
+                        <TableHead className="text-right">Missing IBAN</TableHead>
+                        <TableHead className="text-right">Missing Routing</TableHead>
+                        <TableHead className="text-right">Zero Net</TableHead>
+                        <TableHead>Next Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {wpsSifSummary.rows.map((row) => (
+                        <TableRow key={row.runId}>
+                          <TableCell className="font-mono">{row.periodLabel}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                row.status === "approved" || row.status === "paid"
+                                  ? "success"
+                                  : row.status === "calculated"
+                                    ? "warning"
+                                    : "outline"
+                              }
+                              className="capitalize"
+                            >
+                              {row.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.employeeCount, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.totalNet, wpsSifSummary.reportCurrency, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.sifNetTotal, wpsSifSummary.reportCurrency, locale)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant={row.sifGenerated ? "success" : "outline"}>
+                              {row.sifGenerated ? "Yes" : "No"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.missingLaborCardCount, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.missingIbanCount, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.missingRoutingCodeCount, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.zeroNetPayCount, locale)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                row.wpsReady && !row.sifSuggested
+                                  ? "success"
+                                  : row.automationSuggested
+                                    ? "warning"
+                                    : "outline"
+                              }
+                            >
+                              {row.recommendedAction}
+                            </Badge>
                           </TableCell>
                         </TableRow>
                       ))}

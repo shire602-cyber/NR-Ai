@@ -95,6 +95,10 @@ function percentChange(current: number, previous: number): number {
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
+function hasText(value: unknown): boolean {
+  return typeof value === "string" ? value.trim().length > 0 : Boolean(value);
+}
+
 /**
  * Register advanced report routes (cash flow, aging, period comparison).
  */
@@ -1583,6 +1587,204 @@ export function registerReportRoutes(app: Express) {
     })
   );
 
+  // Expense Claims — reimbursement workflow by claim status with approval/payment queues.
+  app.get(
+    "/api/companies/:id/reports/expense-claims",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const companyId = req.params.id;
+      const { from, to } = req.query as { from?: string; to?: string };
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const window = reportWindow(from, to);
+      type ExpenseClaimsReportRow = {
+        claimId: string;
+        claimNumber: string;
+        title: string;
+        description: string | null;
+        submittedBy: string | null;
+        status: string;
+        currency: string;
+        submittedAt: Date | string | null;
+        reviewedAt: Date | string | null;
+        paidAt: Date | string | null;
+        paymentReference: string | null;
+        createdAt: Date | string;
+        firstExpenseDate: Date | string | null;
+        lastExpenseDate: Date | string | null;
+        activityDate: Date | string;
+        itemCount: number;
+        categories: string;
+        merchants: string;
+        totalAmount: number;
+        expenseAmount: number;
+        vatAmount: number;
+        receiptCount: number;
+        missingReceiptCount: number;
+        approvalSuggested: boolean;
+        paymentSuggested: boolean;
+        receiptSuggested: boolean;
+        automationSuggested: boolean;
+        nextAction: string;
+      };
+
+      const loadRows = async (
+        fromDate: Date | undefined,
+        toDate: Date
+      ): Promise<ExpenseClaimsReportRow[]> => {
+        const result = await pool.query(
+          `WITH item_summary AS (
+             SELECT
+               claim_id,
+               COUNT(*)::int AS item_count,
+               COALESCE(SUM(amount), 0)::numeric AS expense_amount,
+               COALESCE(SUM(vat_amount), 0)::numeric AS vat_amount,
+               COUNT(*) FILTER (WHERE COALESCE(BTRIM(receipt_url), '') <> '')::int
+                 AS receipt_count,
+               COUNT(*) FILTER (WHERE COALESCE(BTRIM(receipt_url), '') = '')::int
+                 AS missing_receipt_count,
+               MIN(expense_date) AS first_expense_date,
+               MAX(expense_date) AS last_expense_date,
+               STRING_AGG(DISTINCT category, ', ' ORDER BY category) AS categories,
+               STRING_AGG(DISTINCT merchant_name, ', ' ORDER BY merchant_name)
+                 FILTER (WHERE COALESCE(BTRIM(merchant_name), '') <> '') AS merchants
+             FROM expense_claim_items
+             GROUP BY claim_id
+           )
+           SELECT
+             ec.id,
+             ec.claim_number,
+             ec.title,
+             ec.description,
+             ec.submitted_by,
+             ec.total_amount,
+             ec.currency,
+             ec.status,
+             ec.submitted_at,
+             ec.reviewed_at,
+             ec.paid_at,
+             ec.payment_reference,
+             ec.created_at,
+             COALESCE(item_summary.item_count, 0)::int AS item_count,
+             COALESCE(item_summary.expense_amount, 0)::numeric AS expense_amount,
+             COALESCE(item_summary.vat_amount, 0)::numeric AS vat_amount,
+             COALESCE(item_summary.receipt_count, 0)::int AS receipt_count,
+             COALESCE(item_summary.missing_receipt_count, 0)::int AS missing_receipt_count,
+             item_summary.first_expense_date,
+             item_summary.last_expense_date,
+             item_summary.categories,
+             item_summary.merchants,
+             COALESCE(item_summary.last_expense_date, ec.created_at) AS activity_date
+           FROM expense_claims ec
+           LEFT JOIN item_summary ON item_summary.claim_id = ec.id
+           WHERE ec.company_id = $1
+             AND ($2::timestamp IS NULL OR COALESCE(item_summary.last_expense_date, ec.created_at) >= $2::timestamp)
+             AND COALESCE(item_summary.last_expense_date, ec.created_at) <= $3::timestamp
+           ORDER BY COALESCE(item_summary.last_expense_date, ec.created_at) DESC, ec.created_at DESC`,
+          [companyId, fromDate ? fromDate.toISOString() : null, toDate.toISOString()]
+        );
+
+        return result.rows.map((row: any) => {
+          const status = String(row.status || "draft");
+          const totalAmount = roundMoney(Number(row.total_amount) || 0);
+          const expenseAmount = roundMoney(Number(row.expense_amount) || 0);
+          const vatAmount = roundMoney(Number(row.vat_amount) || 0);
+          const missingReceiptCount = Number(row.missing_receipt_count) || 0;
+          const approvalSuggested = status === "submitted";
+          const paymentSuggested = status === "approved";
+          const receiptSuggested =
+            missingReceiptCount > 0 && status !== "paid" && status !== "rejected";
+
+          return {
+            claimId: row.id,
+            claimNumber: row.claim_number,
+            title: row.title,
+            description: row.description,
+            submittedBy: row.submitted_by,
+            status,
+            currency: row.currency || "AED",
+            submittedAt: row.submitted_at,
+            reviewedAt: row.reviewed_at,
+            paidAt: row.paid_at,
+            paymentReference: row.payment_reference,
+            createdAt: row.created_at,
+            firstExpenseDate: row.first_expense_date,
+            lastExpenseDate: row.last_expense_date,
+            activityDate: row.activity_date,
+            itemCount: Number(row.item_count) || 0,
+            categories: row.categories || "Uncategorized",
+            merchants: row.merchants || "",
+            totalAmount,
+            expenseAmount,
+            vatAmount,
+            receiptCount: Number(row.receipt_count) || 0,
+            missingReceiptCount,
+            approvalSuggested,
+            paymentSuggested,
+            receiptSuggested,
+            automationSuggested: approvalSuggested || paymentSuggested || receiptSuggested,
+            nextAction: approvalSuggested
+              ? "Approve or reject"
+              : paymentSuggested
+                ? "Record reimbursement"
+                : receiptSuggested
+                  ? "Request receipts"
+                  : "Clear",
+          };
+        });
+      };
+
+      const [rows, previousRows] = await Promise.all([
+        loadRows(window.fromDate, window.toDate),
+        window.previousFromDate && window.previousToDate
+          ? loadRows(window.previousFromDate, window.previousToDate)
+          : Promise.resolve([]),
+      ]);
+
+      const sum = (items: Array<{ totalAmount: number }>) =>
+        roundMoney(items.reduce((total, row) => total + row.totalAmount, 0));
+      const totalAmount = sum(rows);
+      const previousTotalAmount = sum(previousRows);
+      const byStatus = (status: string) => rows.filter((row) => row.status === status);
+      const amountByStatus = (status: string) => sum(byStatus(status));
+
+      res.json({
+        reportCurrency: "AED",
+        period: { from: from ?? null, to: to ?? null, asOf: window.toDate.toISOString() },
+        rows,
+        totals: {
+          claimCount: rows.length,
+          itemCount: rows.reduce((total, row) => total + row.itemCount, 0),
+          totalAmount,
+          previousTotalAmount,
+          amountChange: roundMoney(totalAmount - previousTotalAmount),
+          amountChangePercent: percentChange(totalAmount, previousTotalAmount),
+          expenseAmount: roundMoney(rows.reduce((total, row) => total + row.expenseAmount, 0)),
+          vatAmount: roundMoney(rows.reduce((total, row) => total + row.vatAmount, 0)),
+          draftCount: byStatus("draft").length,
+          submittedCount: byStatus("submitted").length,
+          approvedCount: byStatus("approved").length,
+          rejectedCount: byStatus("rejected").length,
+          paidCount: byStatus("paid").length,
+          submittedAmount: amountByStatus("submitted"),
+          approvedAmount: amountByStatus("approved"),
+          paidAmount: amountByStatus("paid"),
+          reimbursementExposure: roundMoney(
+            amountByStatus("submitted") + amountByStatus("approved")
+          ),
+          missingReceiptCount: rows.reduce((total, row) => total + row.missingReceiptCount, 0),
+          approvalQueue: rows.filter((row) => row.approvalSuggested).length,
+          paymentQueue: rows.filter((row) => row.paymentSuggested).length,
+          receiptQueue: rows.filter((row) => row.receiptSuggested).length,
+          automationCount: rows.filter((row) => row.automationSuggested).length,
+        },
+      });
+    })
+  );
+
   // Invoice Status — issued invoice mix, open balances, and reminder queue.
   app.get(
     "/api/companies/:id/reports/invoice-status",
@@ -2085,6 +2287,221 @@ export function registerReportRoutes(app: Express) {
           previousTotalNet,
           netChange: roundMoney(totalNet - previousTotalNet),
           netChangePercent: percentChange(totalNet, previousTotalNet),
+        },
+      });
+    })
+  );
+
+  // WPS / SIF Summary - UAE payroll file readiness, setup gaps, and generation queue.
+  app.get(
+    "/api/companies/:id/reports/wps-sif-summary",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const companyId = req.params.id;
+      const { from, to } = req.query as { from?: string; to?: string };
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const asOf = to ? uaeDayEnd(to) : new Date();
+      const periodStart = from
+        ? uaeDayStart(from)
+        : new Date(Date.UTC(asOf.getUTCFullYear(), 0, 1));
+
+      const [companyResult, activeEmployeeResult, runResult] = await Promise.all([
+        pool.query(
+          `SELECT
+             name,
+             mohre_establishment_id,
+             wps_employer_bank_name,
+             wps_employer_iban,
+             wps_employer_routing_code
+           FROM companies
+           WHERE id = $1`,
+          [companyId]
+        ),
+        pool.query(
+          `SELECT
+             COUNT(*)::int AS active_employee_count,
+             COUNT(*) FILTER (
+               WHERE COALESCE(BTRIM(labor_card_number), '') <> ''
+                 AND COALESCE(BTRIM(iban), '') <> ''
+                 AND COALESCE(BTRIM(routing_code), '') <> ''
+             )::int AS active_wps_ready_count,
+             COUNT(*) FILTER (WHERE COALESCE(BTRIM(labor_card_number), '') = '')::int
+               AS missing_labor_card_count,
+             COUNT(*) FILTER (WHERE COALESCE(BTRIM(iban), '') = '')::int AS missing_iban_count,
+             COUNT(*) FILTER (WHERE COALESCE(BTRIM(routing_code), '') = '')::int
+               AS missing_routing_code_count
+           FROM employees
+           WHERE company_id = $1
+             AND status = 'active'`,
+          [companyId]
+        ),
+        pool.query(
+          `SELECT
+             pr.id,
+             pr.period_month,
+             pr.period_year,
+             pr.run_date,
+             pr.employee_count,
+             pr.total_net,
+             pr.status,
+             pr.sif_file_content,
+             COUNT(pi.id)::int AS item_count,
+             COALESCE(SUM(pi.net_salary), 0)::numeric AS sif_net_total,
+             COUNT(pi.id) FILTER (
+               WHERE pi.id IS NOT NULL AND COALESCE(BTRIM(e.labor_card_number), '') = ''
+             )::int AS missing_labor_card_count,
+             COUNT(pi.id) FILTER (
+               WHERE pi.id IS NOT NULL AND COALESCE(BTRIM(e.iban), '') = ''
+             )::int AS missing_iban_count,
+             COUNT(pi.id) FILTER (
+               WHERE pi.id IS NOT NULL AND COALESCE(BTRIM(e.routing_code), '') = ''
+             )::int AS missing_routing_code_count,
+             COUNT(pi.id) FILTER (
+               WHERE pi.id IS NOT NULL AND COALESCE(pi.net_salary, 0) <= 0
+             )::int AS zero_net_pay_count
+           FROM payroll_runs pr
+           LEFT JOIN payroll_items pi ON pi.payroll_run_id = pr.id
+           LEFT JOIN employees e ON e.id = pi.employee_id
+           WHERE pr.company_id = $1
+             AND make_date(pr.period_year, pr.period_month, 1) >= date_trunc('month', $2::date)
+             AND make_date(pr.period_year, pr.period_month, 1) <= date_trunc('month', $3::date)
+           GROUP BY pr.id
+           ORDER BY pr.period_year DESC, pr.period_month DESC`,
+          [companyId, periodStart.toISOString(), asOf.toISOString()]
+        ),
+      ]);
+
+      const company = companyResult.rows[0];
+      if (!company) return res.status(404).json({ message: "Company not found" });
+
+      const employerMissingFields = [
+        !hasText(company.mohre_establishment_id) ? "MOHRE establishment ID" : "",
+        !hasText(company.wps_employer_iban) ? "Employer IBAN" : "",
+        !hasText(company.wps_employer_routing_code) ? "Employer routing code" : "",
+      ].filter(Boolean);
+      const employerSetupComplete = employerMissingFields.length === 0;
+      const activeEmployee = activeEmployeeResult.rows[0] ?? {};
+      const activeEmployeeCount = Number(activeEmployee.active_employee_count) || 0;
+      const activeWpsReadyCount = Number(activeEmployee.active_wps_ready_count) || 0;
+      const activeEmployeeSetupIssueCount =
+        (Number(activeEmployee.missing_labor_card_count) || 0) +
+        (Number(activeEmployee.missing_iban_count) || 0) +
+        (Number(activeEmployee.missing_routing_code_count) || 0);
+
+      type WpsSifSummaryRow = {
+        runId: string;
+        periodMonth: number;
+        periodYear: number;
+        periodLabel: string;
+        runDate: string | Date | null;
+        status: string;
+        employeeCount: number;
+        itemCount: number;
+        totalNet: number;
+        sifNetTotal: number;
+        sifGenerated: boolean;
+        wpsReady: boolean;
+        missingLaborCardCount: number;
+        missingIbanCount: number;
+        missingRoutingCodeCount: number;
+        zeroNetPayCount: number;
+        validationIssueCount: number;
+        setupSuggested: boolean;
+        sifSuggested: boolean;
+        calculationSuggested: boolean;
+        automationSuggested: boolean;
+        recommendedAction: string;
+      };
+
+      const rows: WpsSifSummaryRow[] = runResult.rows.map((row: any) => {
+        const status = String(row.status || "draft");
+        const itemCount = Number(row.item_count) || 0;
+        const totalNet = roundMoney(Number(row.total_net) || 0);
+        const missingLaborCardCount = Number(row.missing_labor_card_count) || 0;
+        const missingIbanCount = Number(row.missing_iban_count) || 0;
+        const missingRoutingCodeCount = Number(row.missing_routing_code_count) || 0;
+        const zeroNetPayCount = Number(row.zero_net_pay_count) || 0;
+        const employeeIssueCount =
+          missingLaborCardCount + missingIbanCount + missingRoutingCodeCount + zeroNetPayCount;
+        const validationIssueCount = employerMissingFields.length + employeeIssueCount;
+        const calculationSuggested = itemCount === 0 || status === "draft";
+        const sifGenerated = hasText(row.sif_file_content);
+        const wpsReady =
+          employerSetupComplete &&
+          !calculationSuggested &&
+          validationIssueCount === 0 &&
+          totalNet > 0 &&
+          ["calculated", "approved", "paid"].includes(status);
+        const setupSuggested = employerMissingFields.length > 0 || employeeIssueCount > 0;
+        const sifSuggested = wpsReady && !sifGenerated;
+
+        return {
+          runId: row.id,
+          periodMonth: Number(row.period_month),
+          periodYear: Number(row.period_year),
+          periodLabel: `${String(row.period_month).padStart(2, "0")}/${row.period_year}`,
+          runDate: row.run_date,
+          status,
+          employeeCount: Number(row.employee_count) || itemCount,
+          itemCount,
+          totalNet,
+          sifNetTotal: roundMoney(Number(row.sif_net_total) || 0),
+          sifGenerated,
+          wpsReady,
+          missingLaborCardCount,
+          missingIbanCount,
+          missingRoutingCodeCount,
+          zeroNetPayCount,
+          validationIssueCount,
+          setupSuggested,
+          sifSuggested,
+          calculationSuggested,
+          automationSuggested: calculationSuggested || setupSuggested || sifSuggested,
+          recommendedAction: calculationSuggested
+            ? "Calculate payroll"
+            : employerMissingFields.length > 0
+              ? "Complete employer WPS setup"
+              : employeeIssueCount > 0
+                ? "Fix employee WPS details"
+                : sifSuggested
+                  ? "Generate SIF"
+                  : "Ready",
+        };
+      });
+
+      res.json({
+        reportCurrency: "AED",
+        period: { from: periodStart.toISOString(), to: to ?? null, asOf: asOf.toISOString() },
+        employer: {
+          companyName: company.name,
+          setupComplete: employerSetupComplete,
+          missingFields: employerMissingFields,
+          mohreEstablishmentIdPresent: hasText(company.mohre_establishment_id),
+          employerIbanPresent: hasText(company.wps_employer_iban),
+          employerRoutingCodePresent: hasText(company.wps_employer_routing_code),
+          employerBankNamePresent: hasText(company.wps_employer_bank_name),
+        },
+        rows,
+        totals: {
+          runCount: rows.length,
+          activeEmployeeCount,
+          activeWpsReadyCount,
+          activeEmployeeSetupIssueCount,
+          employeeCount: rows.reduce((sum, row) => sum + row.employeeCount, 0),
+          totalNet: roundMoney(rows.reduce((sum, row) => sum + row.totalNet, 0)),
+          sifNetTotal: roundMoney(rows.reduce((sum, row) => sum + row.sifNetTotal, 0)),
+          wpsReadyCount: rows.filter((row) => row.wpsReady).length,
+          sifGeneratedCount: rows.filter((row) => row.sifGenerated).length,
+          sifPendingCount: rows.filter((row) => row.sifSuggested).length,
+          validationIssueCount: rows.reduce((sum, row) => sum + row.validationIssueCount, 0),
+          calculationQueue: rows.filter((row) => row.calculationSuggested).length,
+          setupQueue: rows.filter((row) => row.setupSuggested).length,
+          automationCount: rows.filter((row) => row.automationSuggested).length,
+          employerMissingFieldCount: employerMissingFields.length,
         },
       });
     })
