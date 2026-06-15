@@ -861,12 +861,80 @@ interface InventoryMovementReport {
   };
 }
 
+interface ConsolidatedCompanyRow {
+  companyId: string;
+  companyName: string;
+  revenue: number;
+  expenses: number;
+  netProfit: number;
+  previousRevenue: number;
+  previousExpenses: number;
+  previousNetProfit: number;
+  netProfitChange: number;
+  netProfitChangePercent: number;
+  assets: number;
+  liabilities: number;
+  equity: number;
+  currentPeriodNetIncome: number;
+  balanceDifference: number;
+  postedEntryCount: number;
+  journalLineCount: number;
+  automationSuggested: boolean;
+  recommendedAction: string;
+}
+
+interface ConsolidatedStatementsReport {
+  reportCurrency: string;
+  selectedCompanyId: string;
+  companyIds: string[];
+  period: {
+    from: string | null;
+    to: string | null;
+    asOf: string;
+    previousFrom: string | null;
+    previousTo: string | null;
+  };
+  companies: ConsolidatedCompanyRow[];
+  incomeStatement: {
+    revenue: number;
+    expenses: number;
+    netProfit: number;
+    previousRevenue: number;
+    previousExpenses: number;
+    previousNetProfit: number;
+    netProfitChange: number;
+    netProfitChangePercent: number;
+  };
+  balanceSheet: {
+    assets: number;
+    liabilities: number;
+    equity: number;
+    balanceDifference: number;
+  };
+  totals: {
+    companyCount: number;
+    revenue: number;
+    expenses: number;
+    netProfit: number;
+    assets: number;
+    liabilities: number;
+    equity: number;
+    balanceDifference: number;
+    previousNetProfit: number;
+    netProfitChange: number;
+    postedEntryCount: number;
+    journalLineCount: number;
+    automationCount: number;
+  };
+}
+
 type ReportPersona = "owner" | "freelancer" | "accountant";
 type PersonaFilter = "all" | ReportPersona;
 type ReportStatus = "live" | "workspace" | "api" | "planned";
 type ReportTab =
   | "pl"
   | "bs"
+  | "consolidated"
   | "cashFlow"
   | "cashFlowForecast"
   | "vat"
@@ -1398,11 +1466,12 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "Consolidated Statements",
     category: "Accountant Tools",
-    status: "planned",
+    status: "live",
     personas: ["accountant"],
     comparison: "Multi-company",
-    automation: "Report packs",
+    automation: "Balance checks",
     icon: Building2,
+    tab: "consolidated",
   },
 ];
 
@@ -1476,6 +1545,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Account Transactions",
       "Profit & Loss",
       "Balance Sheet",
+      "Consolidated Statements",
       "VAT Return",
       "Corporate Tax Estimate",
       "Customer Balance Summary",
@@ -2470,6 +2540,62 @@ function prepareInventoryMovementForExport(report: InventoryMovementReport): Exp
   };
 }
 
+function prepareConsolidatedStatementsForExport(report: ConsolidatedStatementsReport): ExportData {
+  return {
+    sheetName: "Consolidated Statements",
+    columns: [
+      { header: "Company", key: "company", width: 30 },
+      { header: "Revenue", key: "revenue", width: 16 },
+      { header: "Expenses", key: "expenses", width: 16 },
+      { header: "Net Profit", key: "netProfit", width: 16 },
+      { header: "Prior Net Profit", key: "previousNetProfit", width: 18 },
+      { header: "Profit Change", key: "netProfitChange", width: 16 },
+      { header: "Profit Change %", key: "netProfitChangePercent", width: 16 },
+      { header: "Assets", key: "assets", width: 16 },
+      { header: "Liabilities", key: "liabilities", width: 16 },
+      { header: "Equity", key: "equity", width: 16 },
+      { header: "Balance Difference", key: "balanceDifference", width: 18 },
+      { header: "Entries", key: "entries", width: 12 },
+      { header: "Automation", key: "automation", width: 30 },
+    ],
+    rows: [
+      ...report.companies.map((row) => ({
+        company: row.companyName,
+        revenue: amountForExport(row.revenue),
+        expenses: amountForExport(row.expenses),
+        netProfit: amountForExport(row.netProfit),
+        previousNetProfit: amountForExport(row.previousNetProfit),
+        netProfitChange: amountForExport(row.netProfitChange),
+        netProfitChangePercent: `${row.netProfitChangePercent.toFixed(1)}%`,
+        assets: amountForExport(row.assets),
+        liabilities: amountForExport(row.liabilities),
+        equity: amountForExport(row.equity),
+        balanceDifference: amountForExport(row.balanceDifference),
+        entries: row.postedEntryCount,
+        automation: row.automationSuggested ? row.recommendedAction : "",
+      })),
+      {
+        company: "TOTAL",
+        revenue: amountForExport(report.totals.revenue),
+        expenses: amountForExport(report.totals.expenses),
+        netProfit: amountForExport(report.totals.netProfit),
+        previousNetProfit: amountForExport(report.totals.previousNetProfit),
+        netProfitChange: amountForExport(report.totals.netProfitChange),
+        netProfitChangePercent: `${report.incomeStatement.netProfitChangePercent.toFixed(1)}%`,
+        assets: amountForExport(report.totals.assets),
+        liabilities: amountForExport(report.totals.liabilities),
+        equity: amountForExport(report.totals.equity),
+        balanceDifference: amountForExport(report.totals.balanceDifference),
+        entries: report.totals.postedEntryCount,
+        automation:
+          report.totals.automationCount > 0
+            ? `${report.totals.automationCount} consolidation review actions`
+            : "",
+      },
+    ],
+  };
+}
+
 function isCountMetric(metric: string): boolean {
   return metric.toLowerCase().includes("count");
 }
@@ -2811,6 +2937,23 @@ export default function Reports() {
       ),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: consolidatedStatements, isLoading: consolidatedStatementsLoading } =
+    useQuery<ConsolidatedStatementsReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "consolidated-statements",
+        fromToDateParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/consolidated-statements${fromToDateParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
 
   const { data: customerBalances, isLoading: customerBalancesLoading } =
     useQuery<CustomerBalanceReport>({
@@ -3356,6 +3499,13 @@ export default function Reports() {
     ? 0
     : monthEndCloseSummary.incompleteCount;
   const auditTrailRiskQueue = auditTrailSummary.sensitiveCount;
+  const consolidatedStatementQueue = consolidatedStatements?.totals.automationCount ?? 0;
+  const consolidatedStatementExposure = Math.max(
+    consolidatedStatements?.totals.balanceDifference ?? 0,
+    (consolidatedStatements?.totals.netProfit ?? 0) < 0
+      ? Math.abs(consolidatedStatements?.totals.netProfit ?? 0)
+      : 0
+  );
   const automationQueueItems = useMemo<AutomationQueueItem[]>(() => {
     const vatExposure = Math.abs(vatSummary?.netVATPayable ?? 0);
     const taxPayable = corporateTaxEstimate?.totals.taxPayable ?? 0;
@@ -3509,6 +3659,20 @@ export default function Reports() {
         tab: "accountTransactions",
         href: "/accounts",
         actionLabel: "Open accounts",
+      },
+      {
+        id: "consolidated-statement-review",
+        title: "Review consolidated statements",
+        description: "Multi-company statements have balance, loss, or no-activity flags.",
+        source: "Consolidated Statements",
+        personas: ["accountant"],
+        priority:
+          (consolidatedStatements?.totals.balanceDifference ?? 0) > 0.01 ? "high" : "medium",
+        count: consolidatedStatementQueue,
+        impact: consolidatedStatementExposure,
+        tab: "consolidated",
+        href: "/reports",
+        actionLabel: "Open consolidation",
       },
       {
         id: "revenue-concentration",
@@ -3705,6 +3869,9 @@ export default function Reports() {
     cashFlowForecastRiskQueue,
     cashFlowForecastSummary,
     categoryBudgetReviewCount,
+    consolidatedStatementExposure,
+    consolidatedStatementQueue,
+    consolidatedStatements,
     corporateTaxEstimate,
     customerAutomationCount,
     customerBalances,
@@ -3888,6 +4055,8 @@ export default function Reports() {
   const getReportExportData = (tab: ReportTab): ExportData | null => {
     if (tab === "pl" && profitLoss) return prepareProfitLossForExport(profitLoss);
     if (tab === "bs" && balanceSheet) return prepareBalanceSheetForExport(balanceSheet);
+    if (tab === "consolidated" && consolidatedStatements)
+      return prepareConsolidatedStatementsForExport(consolidatedStatements);
     if (tab === "vat" && vatSummary) return prepareVATSummaryForExport(vatSummary);
     if (tab === "trial" && trialBalance) return prepareTrialBalanceForExport(trialBalance);
     if (tab === "ledger" && generalLedger) return prepareGeneralLedgerForExport(generalLedger);
@@ -3996,6 +4165,15 @@ export default function Reports() {
           `balance_sheet${dateRangeStr}`
         );
         toast({ title: "Export successful", description: "Balance Sheet exported to Excel" });
+      } else if (activeTab === "consolidated" && consolidatedStatements) {
+        await exportToExcel(
+          [prepareConsolidatedStatementsForExport(consolidatedStatements)],
+          `consolidated_statements${dateRangeStr}`
+        );
+        toast({
+          title: "Export successful",
+          description: "Consolidated Statements exported to Excel",
+        });
       } else if (activeTab === "vat" && vatSummary) {
         await exportToExcel([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
         toast({ title: "Export successful", description: "VAT Summary exported to Excel" });
@@ -4235,6 +4413,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         [prepareBalanceSheetForExport(balanceSheet)],
         `Balance Sheet${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "consolidated" && consolidatedStatements) {
+      result = await exportToGoogleSheets(
+        [prepareConsolidatedStatementsForExport(consolidatedStatements)],
+        `Consolidated Statements${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "vat" && vatSummary) {
@@ -5314,6 +5498,9 @@ export default function Reports() {
           <TabsTrigger value="bs" data-testid="tab-balance-sheet">
             {t.balanceSheet}
           </TabsTrigger>
+          <TabsTrigger value="consolidated" data-testid="tab-consolidated-statements">
+            Consol.
+          </TabsTrigger>
           <TabsTrigger value="cashFlow" data-testid="tab-cash-flow">
             Cash Flow
           </TabsTrigger>
@@ -5642,6 +5829,244 @@ export default function Reports() {
                       </TableBody>
                     </Table>
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="consolidated" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Companies
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {consolidatedStatementsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(consolidatedStatements?.totals.companyCount ?? 0, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatNumber(consolidatedStatements?.totals.postedEntryCount ?? 0, locale)}{" "}
+                      posted entries
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Revenue</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {consolidatedStatementsLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatCurrency(consolidatedStatements?.totals.revenue ?? 0, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Net Profit
+                </CardTitle>
+                <Badge
+                  variant={
+                    (consolidatedStatements?.totals.netProfitChange ?? 0) >= 0
+                      ? "success"
+                      : "danger"
+                  }
+                  dot
+                >
+                  {(consolidatedStatements?.incomeStatement.netProfitChangePercent ?? 0) >= 0
+                    ? "+"
+                    : ""}
+                  {(consolidatedStatements?.incomeStatement.netProfitChangePercent ?? 0).toFixed(1)}
+                  %
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {consolidatedStatementsLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div
+                    className={`text-2xl font-semibold font-mono ${
+                      (consolidatedStatements?.totals.netProfit ?? 0) >= 0
+                        ? "text-green-600 dark:text-green-400"
+                        : "text-red-600 dark:text-red-400"
+                    }`}
+                  >
+                    {formatCurrency(consolidatedStatements?.totals.netProfit ?? 0, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Consolidation Actions
+                </CardTitle>
+                <Badge variant={consolidatedStatementQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {consolidatedStatementsLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(consolidatedStatementQueue, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Difference{" "}
+                      {formatCurrency(
+                        consolidatedStatements?.totals.balanceDifference ?? 0,
+                        "AED",
+                        locale
+                      )}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Consolidated Statements</CardTitle>
+              <CardDescription>
+                Multi-company financial statements across accessible companies for the selected
+                reporting period.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {consolidatedStatementsLoading ? (
+                <Skeleton className="h-96" />
+              ) : consolidatedStatements?.companies.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1080px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Company</TableHead>
+                        <TableHead className="text-right">Revenue</TableHead>
+                        <TableHead className="text-right">Expenses</TableHead>
+                        <TableHead className="text-right">Net Profit</TableHead>
+                        <TableHead className="text-right">Prior Profit</TableHead>
+                        <TableHead className="text-right">Assets</TableHead>
+                        <TableHead className="text-right">Liabilities</TableHead>
+                        <TableHead className="text-right">Equity</TableHead>
+                        <TableHead className="text-right">Difference</TableHead>
+                        <TableHead className="text-right">Action</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {consolidatedStatements.companies.map((row) => (
+                        <TableRow key={row.companyId}>
+                          <TableCell>
+                            <div className="font-medium">{row.companyName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {formatNumber(row.postedEntryCount, locale)} entries /{" "}
+                              {formatNumber(row.journalLineCount, locale)} lines
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.revenue, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.expenses, "AED", locale)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono font-medium ${
+                              row.netProfit >= 0
+                                ? "text-green-600 dark:text-green-400"
+                                : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {formatCurrency(row.netProfit, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">
+                            {formatCurrency(row.previousNetProfit, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.assets, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.liabilities, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.equity, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.balanceDifference, "AED", locale)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant={row.automationSuggested ? "warning" : "success"}>
+                              {row.recommendedAction}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="border-t-2">
+                        <TableCell className="font-semibold">Consolidated Total</TableCell>
+                        <TableCell className="text-right font-mono font-semibold">
+                          {formatCurrency(consolidatedStatements.totals.revenue, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-semibold">
+                          {formatCurrency(consolidatedStatements.totals.expenses, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-semibold">
+                          {formatCurrency(consolidatedStatements.totals.netProfit, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-semibold">
+                          {formatCurrency(
+                            consolidatedStatements.totals.previousNetProfit,
+                            "AED",
+                            locale
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-semibold">
+                          {formatCurrency(consolidatedStatements.totals.assets, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-semibold">
+                          {formatCurrency(consolidatedStatements.totals.liabilities, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-semibold">
+                          {formatCurrency(consolidatedStatements.totals.equity, "AED", locale)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-semibold">
+                          {formatCurrency(
+                            consolidatedStatements.totals.balanceDifference,
+                            "AED",
+                            locale
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge
+                            variant={
+                              consolidatedStatements.totals.automationCount > 0
+                                ? "warning"
+                                : "success"
+                            }
+                          >
+                            {consolidatedStatements.totals.automationCount > 0 ? "Review" : "Ready"}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No accessible companies found for consolidation.
                 </div>
               )}
             </CardContent>

@@ -15,6 +15,7 @@ import {
 } from "../../shared/schema";
 import type {
   Account,
+  Company,
   JournalEntry,
   JournalLine,
   Invoice,
@@ -916,6 +917,259 @@ export function registerReportRoutes(app: Express) {
           ),
           accountCount: accountRows.length,
           transactionCount: accountRows.reduce((sum: number, row) => sum + row.transactionCount, 0),
+        },
+      });
+    })
+  );
+
+  // Consolidated Statements — multi-company P&L and balance-sheet rollup.
+  app.get(
+    "/api/companies/:id/reports/consolidated-statements",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const firmRole = (req as any).user?.firmRole ?? null;
+      const companyId = req.params.id;
+      const { from, to, companyIds } = req.query as {
+        from?: string;
+        to?: string;
+        companyIds?: string;
+      };
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId, firmRole);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const accessibleCompanies = await storage.getAccessibleCompanies(userId, firmRole);
+      const accessibleById = new Map(accessibleCompanies.map((company) => [company.id, company]));
+      const requestedCompanyIds = Array.from(
+        new Set(
+          typeof companyIds === "string"
+            ? companyIds
+                .split(",")
+                .map((id) => id.trim())
+                .filter(Boolean)
+            : []
+        )
+      );
+
+      const missingCompanyIds = requestedCompanyIds.filter((id) => !accessibleById.has(id));
+      if (missingCompanyIds.length > 0) {
+        return res.status(403).json({
+          message: "Access denied for one or more consolidated companies",
+          companyIds: missingCompanyIds,
+        });
+      }
+
+      let selectedCompanies: Company[] = requestedCompanyIds.length
+        ? requestedCompanyIds
+            .map((id) => accessibleById.get(id))
+            .filter((company): company is Company => Boolean(company))
+        : accessibleCompanies;
+
+      if (!selectedCompanies.some((company) => company.id === companyId)) {
+        const selectedCompany =
+          accessibleById.get(companyId) ?? (await storage.getCompany(companyId));
+        if (selectedCompany) selectedCompanies = [selectedCompany, ...selectedCompanies];
+      }
+
+      const { fromDate, toDate, previousFromDate, previousToDate } = reportWindow(from, to);
+
+      type ConsolidatedCompanyRow = {
+        companyId: string;
+        companyName: string;
+        revenue: number;
+        expenses: number;
+        netProfit: number;
+        previousRevenue: number;
+        previousExpenses: number;
+        previousNetProfit: number;
+        netProfitChange: number;
+        netProfitChangePercent: number;
+        assets: number;
+        liabilities: number;
+        equity: number;
+        currentPeriodNetIncome: number;
+        balanceDifference: number;
+        postedEntryCount: number;
+        journalLineCount: number;
+        automationSuggested: boolean;
+        recommendedAction: string;
+      };
+
+      const loadCompanyStatement = async (company: Company): Promise<ConsolidatedCompanyRow> => {
+        const [companyAccounts, entriesRaw, allLines]: [Account[], JournalEntry[], JournalLine[]] =
+          await Promise.all([
+            storage.getAccountsByCompanyId(company.id),
+            storage.getJournalEntriesByCompanyId(company.id),
+            storage.getJournalLinesByCompanyId(company.id),
+          ]);
+        const postedEntries = entriesRaw.filter((entry) => {
+          const entryDate = new Date(entry.date);
+          return entry.status === "posted" && entryDate <= toDate;
+        });
+        const balanceSheetEntryIds = new Set(postedEntries.map((entry) => entry.id));
+        const periodEntryIds = new Set(
+          postedEntries
+            .filter((entry) => inWindow(new Date(entry.date), fromDate, toDate))
+            .map((entry) => entry.id)
+        );
+        const previousEntryIds = new Set(
+          previousFromDate && previousToDate
+            ? entriesRaw
+                .filter((entry) => {
+                  const entryDate = new Date(entry.date);
+                  return (
+                    entry.status === "posted" &&
+                    entryDate >= previousFromDate &&
+                    entryDate <= previousToDate
+                  );
+                })
+                .map((entry) => entry.id)
+            : []
+        );
+        const accountById = new Map(companyAccounts.map((account) => [account.id, account]));
+
+        let revenue = 0;
+        let expenses = 0;
+        let previousRevenue = 0;
+        let previousExpenses = 0;
+        let assets = 0;
+        let liabilities = 0;
+        let equity = 0;
+        let journalLineCount = 0;
+
+        for (const line of allLines) {
+          const account = accountById.get(line.accountId);
+          if (!account) continue;
+
+          const debit = line.debit ?? 0;
+          const credit = line.credit ?? 0;
+
+          if (balanceSheetEntryIds.has(line.entryId)) {
+            journalLineCount += 1;
+            if (account.type === "asset")
+              assets += signedAccountMovement(account.type, debit, credit);
+            if (account.type === "liability") {
+              liabilities += signedAccountMovement(account.type, debit, credit);
+            }
+            if (account.type === "equity")
+              equity += signedAccountMovement(account.type, debit, credit);
+          }
+
+          if (periodEntryIds.has(line.entryId)) {
+            if (account.type === "income") revenue += credit - debit;
+            if (account.type === "expense") expenses += debit - credit;
+          }
+
+          if (previousEntryIds.has(line.entryId)) {
+            if (account.type === "income") previousRevenue += credit - debit;
+            if (account.type === "expense") previousExpenses += debit - credit;
+          }
+        }
+
+        const netProfit = roundMoney(revenue - expenses);
+        const previousNetProfit = roundMoney(previousRevenue - previousExpenses);
+        const currentPeriodNetIncome = netProfit;
+        const totalEquity = roundMoney(equity + currentPeriodNetIncome);
+        const balanceDifference = roundMoney(Math.abs(assets - (liabilities + totalEquity)));
+        const automationSuggested =
+          balanceDifference > 0.01 || netProfit < 0 || postedEntries.length === 0;
+
+        return {
+          companyId: company.id,
+          companyName: company.name,
+          revenue: roundMoney(revenue),
+          expenses: roundMoney(expenses),
+          netProfit,
+          previousRevenue: roundMoney(previousRevenue),
+          previousExpenses: roundMoney(previousExpenses),
+          previousNetProfit,
+          netProfitChange: roundMoney(netProfit - previousNetProfit),
+          netProfitChangePercent: previousFromDate
+            ? roundMoney(percentChange(netProfit, previousNetProfit))
+            : 0,
+          assets: roundMoney(assets),
+          liabilities: roundMoney(liabilities),
+          equity: totalEquity,
+          currentPeriodNetIncome,
+          balanceDifference,
+          postedEntryCount: postedEntries.length,
+          journalLineCount,
+          automationSuggested,
+          recommendedAction:
+            balanceDifference > 0.01
+              ? "Investigate balance difference"
+              : netProfit < 0
+                ? "Review loss drivers"
+                : postedEntries.length === 0
+                  ? "Post activity before consolidation"
+                  : "Ready",
+        };
+      };
+
+      const companies = (await Promise.all(selectedCompanies.map(loadCompanyStatement))).sort(
+        (a, b) => a.companyName.localeCompare(b.companyName)
+      );
+      const total = (key: keyof ConsolidatedCompanyRow) =>
+        roundMoney(companies.reduce((sum, row) => sum + Number(row[key] ?? 0), 0));
+
+      const revenue = total("revenue");
+      const expenses = total("expenses");
+      const netProfit = roundMoney(revenue - expenses);
+      const previousRevenue = total("previousRevenue");
+      const previousExpenses = total("previousExpenses");
+      const previousNetProfit = roundMoney(previousRevenue - previousExpenses);
+      const assets = total("assets");
+      const liabilities = total("liabilities");
+      const equity = total("equity");
+      const balanceDifference = roundMoney(Math.abs(assets - (liabilities + equity)));
+
+      res.json({
+        reportCurrency: "AED",
+        selectedCompanyId: companyId,
+        companyIds: companies.map((company) => company.companyId),
+        period: {
+          from: from ?? null,
+          to: to ?? null,
+          asOf: toDate.toISOString(),
+          previousFrom: previousFromDate?.toISOString() ?? null,
+          previousTo: previousToDate?.toISOString() ?? null,
+        },
+        companies,
+        incomeStatement: {
+          revenue,
+          expenses,
+          netProfit,
+          previousRevenue,
+          previousExpenses,
+          previousNetProfit,
+          netProfitChange: roundMoney(netProfit - previousNetProfit),
+          netProfitChangePercent: previousFromDate
+            ? roundMoney(percentChange(netProfit, previousNetProfit))
+            : 0,
+        },
+        balanceSheet: {
+          assets,
+          liabilities,
+          equity,
+          balanceDifference,
+        },
+        totals: {
+          companyCount: companies.length,
+          revenue,
+          expenses,
+          netProfit,
+          assets,
+          liabilities,
+          equity,
+          balanceDifference,
+          previousNetProfit,
+          netProfitChange: roundMoney(netProfit - previousNetProfit),
+          postedEntryCount: total("postedEntryCount"),
+          journalLineCount: total("journalLineCount"),
+          automationCount:
+            companies.filter((company) => company.automationSuggested).length +
+            (balanceDifference > 0.01 ? 1 : 0),
         },
       });
     })

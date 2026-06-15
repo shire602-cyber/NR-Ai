@@ -581,7 +581,7 @@ function CustomerDashboard() {
       <section>
         <SectionHeader eyebrow="Shortcuts" title="Quick actions" />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <QuickAction icon={Plus}      title="Create Invoice"  description="Generate UAE-compliant tax invoices in seconds"   href="/invoices" delay={0.05} />
+          <QuickAction icon={Plus}      title="Create Invoice"  description="Create VAT-ready tax invoices in seconds"        href="/invoices" delay={0.05} />
           <QuickAction icon={Receipt}   title="Scan Receipt"    description="OCR receipts straight into your books"            href="/receipts" delay={0.10} />
           <QuickAction icon={BookOpen}  title="Journal Entry"   description="Record manual double-entry transactions"          href="/journal"  delay={0.15} />
           <QuickAction icon={BarChart3} title="View Reports"    description="P&L, balance sheet, cash flow — exportable"      href="/reports"  delay={0.20} />

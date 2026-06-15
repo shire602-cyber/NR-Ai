@@ -12,6 +12,7 @@ const publicLaunchFiles = [
   "client/index.html",
   "client/src/pages/LandingPage.tsx",
   "client/src/pages/Landing.tsx",
+  "client/src/pages/Services.tsx",
   "client/src/pages/Pricing.tsx",
   "client/src/pages/PrivacyPolicy.tsx",
   "client/src/pages/TrustSecurity.tsx",
@@ -21,6 +22,9 @@ const publicLaunchFiles = [
 
 const bannedLaunchClaims = [
   /FTA-compliant/i,
+  /FTA Compliant/i,
+  /FTA Registered/i,
+  /UAE-compliant/i,
   /bank-grade/i,
   /bank-level/i,
   /full compliance/i,
@@ -69,6 +73,21 @@ describe("Public SaaS launch surface", () => {
   it("does not reintroduce unsupported public compliance or security claims", () => {
     for (const file of publicLaunchFiles) {
       const source = readRepoFile(file);
+      for (const bannedClaim of bannedLaunchClaims) {
+        expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
+      }
+    }
+  });
+
+  it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
+    const appSource = readRepoFile("client/src/App.tsx");
+    const dashboardSource = readRepoFile("client/src/pages/Dashboard.tsx");
+
+    expect(appSource).toContain("UAE Tax Ready");
+    for (const [file, source] of [
+      ["client/src/App.tsx", appSource],
+      ["client/src/pages/Dashboard.tsx", dashboardSource],
+    ] as const) {
       for (const bannedClaim of bannedLaunchClaims) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
@@ -144,6 +163,20 @@ describe("Public SaaS launch surface", () => {
     expect(reportsSource).toContain('<TabsContent value="accountTransactions"');
     expect(reportsSource).toContain("prepareAccountTransactionsForExport");
     expect(reportPacksSource).toContain("Account Transactions");
+  });
+
+  it("keeps consolidated statement reporting live and exportable", () => {
+    const reportsSource = readRepoFile("client/src/pages/Reports.tsx");
+    const reportRoutesSource = readRepoFile("server/routes/reports.routes.ts");
+    const reportPacksSource = readRepoFile("server/services/report-pack-schedules.service.ts");
+
+    expect(reportsSource).toContain('name: "Consolidated Statements"');
+    expect(reportsSource).toContain('tab: "consolidated"');
+    expect(reportsSource).toContain('<TabsTrigger value="consolidated"');
+    expect(reportsSource).toContain('<TabsContent value="consolidated"');
+    expect(reportsSource).toContain("prepareConsolidatedStatementsForExport");
+    expect(reportRoutesSource).toContain("/api/companies/:id/reports/consolidated-statements");
+    expect(reportPacksSource).toContain("Consolidated Statements");
   });
 
   it("keeps expense-claim and WPS readiness reports live and exportable", () => {

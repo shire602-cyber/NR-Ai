@@ -246,11 +246,11 @@ export default function Services() {
     },
     {
       icon: Shield,
-      title: locale === "en" ? "FTA Compliant" : "متوافق مع الهيئة الاتحادية للضرائب",
+      title: locale === "en" ? "UAE Tax Workflow Support" : "دعم مسارات الضرائب الإماراتية",
       description:
         locale === "en"
-          ? "All services aligned with UAE Federal Tax Authority requirements."
-          : "جميع الخدمات متوافقة مع متطلبات الهيئة الاتحادية للضرائب.",
+          ? "Services are structured around UAE tax requirements and reviewed by accounting staff."
+          : "الخدمات منظمة حول متطلبات الضرائب الإماراتية وتتم مراجعتها من قبل فريق المحاسبة.",
     },
     {
       icon: Languages,
@@ -549,8 +549,8 @@ export default function Services() {
                         <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
                         <span className="text-foreground/80">
                           {locale === "en"
-                            ? "FTA Registered & Compliant"
-                            : "مسجل ومتوافق مع الهيئة الاتحادية للضرائب"}
+                            ? "UAE tax workflow support"
+                            : "دعم مسارات الضرائب الإماراتية"}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-sm" data-testid="hero-trust-2">

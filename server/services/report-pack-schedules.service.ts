@@ -193,6 +193,7 @@ export const reportPackManifests: Record<ReportPackId, ReportPackManifest> = {
       "Account Transactions",
       "Profit & Loss",
       "Balance Sheet",
+      "Consolidated Statements",
       "VAT Return",
       "Corporate Tax Estimate",
       "Customer Balance Summary",
