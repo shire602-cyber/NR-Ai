@@ -1,18 +1,18 @@
-import type { Request, Response } from 'express';
-import { Router } from 'express';
-import type { Express } from 'express';
-import { z } from 'zod';
-import * as XLSX from 'xlsx';
+import type { Request, Response } from "express";
+import { Router } from "express";
+import type { Express } from "express";
+import { z } from "zod";
 
-import { storage } from '../storage';
-import { authMiddleware } from '../middleware/auth';
-import { requireFirmRole, getAccessibleCompanyIds } from '../middleware/rbac';
-import { asyncHandler } from '../middleware/errorHandler';
-import { createLogger } from '../config/logger';
-import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
-import { mapImportRow, validateImportedClient } from '../services/firm-clients.service';
-import { db } from '../db';
-import { eq, and, count, sum, max, or, desc, inArray, sql, lt, gte, ne, lte } from 'drizzle-orm';
+import { storage } from "../storage";
+import { authMiddleware } from "../middleware/auth";
+import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
+import { asyncHandler } from "../middleware/errorHandler";
+import { createLogger } from "../config/logger";
+import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { mapImportRow, validateImportedClient } from "../services/firm-clients.service";
+import { parseSpreadsheetBuffer } from "../services/spreadsheet.service";
+import { db } from "../db";
+import { eq, and, count, sum, max, or, desc, inArray, sql, lt, gte, ne, lte } from "drizzle-orm";
 import {
   companies,
   companyUsers,
@@ -21,9 +21,9 @@ import {
   receipts,
   vatReturns,
   bankTransactions,
-} from '../../shared/schema';
+} from "../../shared/schema";
 
-const logger = createLogger('firm-routes');
+const logger = createLogger("firm-routes");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,72 +35,66 @@ async function seedChartOfAccounts(companyId: string): Promise<void> {
 }
 
 async function getClientStats(companyId: string) {
-  const [
-    invoiceStats,
-    arStats,
-    lastReceipt,
-    lastBankTx,
-    latestVatReturn,
-    staffRows,
-  ] = await Promise.all([
-    // Total invoices: count + sum
-    db
-      .select({ cnt: count(), total: sum(invoices.total) })
-      .from(invoices)
-      .where(eq(invoices.companyId, companyId))
-      .then((r: { cnt: number; total: string | null }[]) => r[0]),
+  const [invoiceStats, arStats, lastReceipt, lastBankTx, latestVatReturn, staffRows] =
+    await Promise.all([
+      // Total invoices: count + sum
+      db
+        .select({ cnt: count(), total: sum(invoices.total) })
+        .from(invoices)
+        .where(eq(invoices.companyId, companyId))
+        .then((r: { cnt: number; total: string | null }[]) => r[0]),
 
-    // Outstanding AR: sum of totals for sent/partial invoices
-    db
-      .select({ ar: sum(invoices.total) })
-      .from(invoices)
-      .where(
-        and(
-          eq(invoices.companyId, companyId),
-          or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial'))
+      // Outstanding AR: sum of totals for sent/partial invoices
+      db
+        .select({ ar: sum(invoices.total) })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.companyId, companyId),
+            or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
+          )
         )
-      )
-      .then((r: { ar: string | null }[]) => r[0]),
+        .then((r: { ar: string | null }[]) => r[0]),
 
-    // Last receipt uploaded
-    db
-      .select({ lastDate: max(receipts.createdAt) })
-      .from(receipts)
-      .where(eq(receipts.companyId, companyId))
-      .then((r: { lastDate: Date | null }[]) => r[0]),
+      // Last receipt uploaded
+      db
+        .select({ lastDate: max(receipts.createdAt) })
+        .from(receipts)
+        .where(eq(receipts.companyId, companyId))
+        .then((r: { lastDate: Date | null }[]) => r[0]),
 
-    // Last bank transaction (proxy for last reconciliation activity)
-    db
-      .select({ lastDate: max(bankTransactions.transactionDate) })
-      .from(bankTransactions)
-      .where(eq(bankTransactions.companyId, companyId))
-      .then((r: { lastDate: Date | null }[]) => r[0]),
+      // Last bank transaction (proxy for last reconciliation activity)
+      db
+        .select({ lastDate: max(bankTransactions.transactionDate) })
+        .from(bankTransactions)
+        .where(eq(bankTransactions.companyId, companyId))
+        .then((r: { lastDate: Date | null }[]) => r[0]),
 
-    // Latest VAT return
-    db
-      .select({
-        status: vatReturns.status,
-        dueDate: vatReturns.dueDate,
-        periodEnd: vatReturns.periodEnd,
-      })
-      .from(vatReturns)
-      .where(eq(vatReturns.companyId, companyId))
-      .orderBy(desc(vatReturns.periodEnd))
-      .limit(1)
-      .then((r: { status: string; dueDate: Date; periodEnd: Date }[]) => r[0] || null),
+      // Latest VAT return
+      db
+        .select({
+          status: vatReturns.status,
+          dueDate: vatReturns.dueDate,
+          periodEnd: vatReturns.periodEnd,
+        })
+        .from(vatReturns)
+        .where(eq(vatReturns.companyId, companyId))
+        .orderBy(desc(vatReturns.periodEnd))
+        .limit(1)
+        .then((r: { status: string; dueDate: Date; periodEnd: Date }[]) => r[0] || null),
 
-    // Assigned staff: users linked to this company who are admins
-    db
-      .select({
-        id: users.id,
-        name: users.name,
-        email: users.email,
-        role: companyUsers.role,
-      })
-      .from(companyUsers)
-      .innerJoin(users, eq(users.id, companyUsers.userId))
-      .where(and(eq(companyUsers.companyId, companyId), eq(users.isAdmin, true))),
-  ]);
+      // Assigned staff: users linked to this company who are admins
+      db
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: companyUsers.role,
+        })
+        .from(companyUsers)
+        .innerJoin(users, eq(users.id, companyUsers.userId))
+        .where(and(eq(companyUsers.companyId, companyId), eq(users.isAdmin, true))),
+    ]);
 
   return {
     invoiceCount: Number(invoiceStats?.cnt ?? 0),
@@ -129,7 +123,7 @@ const createClientSchema = z.object({
   registrationNumber: z.string().optional(),
   businessAddress: z.string().optional(),
   contactPhone: z.string().optional(),
-  contactEmail: z.string().email().optional().or(z.literal('')),
+  contactEmail: z.string().email().optional().or(z.literal("")),
   websiteUrl: z.string().optional(),
   emirate: z.string().optional(),
   vatFilingFrequency: z.string().optional(),
@@ -141,14 +135,14 @@ const updateClientSchema = createClientSchema.partial();
 
 const assignStaffSchema = z.object({
   staffUserId: z.string().uuid(),
-  action: z.enum(['assign', 'unassign']),
+  action: z.enum(["assign", "unassign"]),
   // companyUsers.role accepts 'owner | accountant | cfo | employee' but
   // 'owner' grants full per-company control and is reserved for the
   // customer themselves. Firm staff assignments are intentionally limited
   // to non-owner roles so a firm_owner can't laterally escalate by
   // assigning themselves (or another staff member) as the owner of any
   // client company. (z.string().default() previously accepted any value.)
-  role: z.enum(['accountant', 'cfo', 'employee']).default('accountant'),
+  role: z.enum(["accountant", "cfo", "employee"]).default("accountant"),
 });
 
 const importPayloadSchema = z.object({
@@ -159,15 +153,15 @@ export function registerFirmRoutes(app: Express): void {
   const router = Router();
 
   // Scope to /firm prefix so unrelated /api/* paths don't get 403
-  router.use('/firm', authMiddleware as any);
-  router.use('/firm', requireFirmRole());
+  router.use("/firm", authMiddleware as any);
+  router.use("/firm", requireFirmRole());
 
   // ─── GET /api/firm/clients ─────────────────────────────────────────────────
   router.get(
-    '/firm/clients',
+    "/firm/clients",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
 
       let clientCompanies: Awaited<ReturnType<typeof storage.getClientCompanies>>;
       if (accessibleIds === null) {
@@ -178,11 +172,11 @@ export function registerFirmRoutes(app: Express): void {
         clientCompanies = await db
           .select()
           .from(companies)
-          .where(and(eq(companies.companyType, 'client'), inArray(companies.id, accessibleIds)));
+          .where(and(eq(companies.companyType, "client"), inArray(companies.id, accessibleIds)));
       }
 
       const clientsWithStats = await Promise.all(
-        clientCompanies.map(async company => {
+        clientCompanies.map(async (company) => {
           const stats = await getClientStats(company.id);
           return { ...company, ...stats };
         })
@@ -194,23 +188,23 @@ export function registerFirmRoutes(app: Express): void {
 
   // ─── GET /api/firm/clients/:companyId/summary ──────────────────────────────
   router.get(
-    '/firm/clients/:companyId/summary',
+    "/firm/clients/:companyId/summary",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-        return res.status(403).json({ message: 'Access denied to this client' });
+        return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const company = await storage.getCompany(companyId);
 
       if (!company) {
-        return res.status(404).json({ message: 'Client not found' });
+        return res.status(404).json({ message: "Client not found" });
       }
-      if (company.companyType !== 'client') {
-        return res.status(400).json({ message: 'Company is not an NRA client' });
+      if (company.companyType !== "client") {
+        return res.status(400).json({ message: "Company is not an NRA client" });
       }
 
       const [stats, companyUserList, recentInvoices, recentReceipts] = await Promise.all([
@@ -242,21 +236,21 @@ export function registerFirmRoutes(app: Express): void {
 
   // ─── POST /api/firm/clients ────────────────────────────────────────────────
   router.post(
-    '/firm/clients',
+    "/firm/clients",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
       const validated = createClientSchema.parse(req.body);
 
       const existing = await storage.getCompanyByName(validated.name);
       if (existing) {
-        return res.status(400).json({ message: 'Company name already exists' });
+        return res.status(400).json({ message: "Company name already exists" });
       }
 
       const company = await storage.createCompany({
         name: validated.name,
-        baseCurrency: 'AED',
-        locale: 'en',
-        companyType: 'client',
+        baseCurrency: "AED",
+        locale: "en",
+        companyType: "client",
         trnVatNumber: validated.trnVatNumber,
         legalStructure: validated.legalStructure,
         industry: validated.industry,
@@ -265,8 +259,8 @@ export function registerFirmRoutes(app: Express): void {
         contactPhone: validated.contactPhone,
         contactEmail: validated.contactEmail || undefined,
         websiteUrl: validated.websiteUrl,
-        emirate: validated.emirate || 'dubai',
-        vatFilingFrequency: validated.vatFilingFrequency || 'quarterly',
+        emirate: validated.emirate || "dubai",
+        vatFilingFrequency: validated.vatFilingFrequency || "quarterly",
         taxRegistrationType: validated.taxRegistrationType,
         corporateTaxId: validated.corporateTaxId,
       });
@@ -275,18 +269,18 @@ export function registerFirmRoutes(app: Express): void {
 
       // Auto-assign firm_admin who created the client so they retain access.
       // firm_owner already has implicit access to all client companies via firmRole.
-      if (firmRole === 'firm_admin') {
+      if (firmRole === "firm_admin") {
         await db
           .insert(companyUsers)
-          .values({ companyId: company.id, userId, role: 'accountant' })
+          .values({ companyId: company.id, userId, role: "accountant" })
           .onConflictDoNothing();
       }
 
       await storage.createActivityLog({
         userId,
         companyId: company.id,
-        action: 'create',
-        entityType: 'company',
+        action: "create",
+        entityType: "company",
         entityId: company.id,
         description: `NRA firm created client: ${company.name}`,
       });
@@ -297,20 +291,20 @@ export function registerFirmRoutes(app: Express): void {
 
   // ─── PUT /api/firm/clients/:companyId ──────────────────────────────────────
   router.put(
-    '/firm/clients/:companyId',
+    "/firm/clients/:companyId",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
       const validated = updateClientSchema.parse(req.body);
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-        return res.status(403).json({ message: 'Access denied to this client' });
+        return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const company = await storage.getCompany(companyId);
       if (!company) {
-        return res.status(404).json({ message: 'Client not found' });
+        return res.status(404).json({ message: "Client not found" });
       }
 
       const updated = await storage.updateCompany(companyId, validated as any);
@@ -318,8 +312,8 @@ export function registerFirmRoutes(app: Express): void {
       await storage.createActivityLog({
         userId,
         companyId,
-        action: 'update',
-        entityType: 'company',
+        action: "update",
+        entityType: "company",
         entityId: companyId,
         description: `NRA firm updated client: ${updated.name}`,
       });
@@ -335,35 +329,35 @@ export function registerFirmRoutes(app: Express): void {
   // unrelated client (or even a customer-type self-signup company), gaining
   // full read/write access via the company_users → hasCompanyAccess path.
   router.post(
-    '/firm/clients/:companyId/assign-staff',
+    "/firm/clients/:companyId/assign-staff",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const requestingUserId = (req as any).user.id;
       const requestingFirmRole = (req as any).user.firmRole as string | null;
 
-      if (requestingFirmRole !== 'firm_owner') {
-        return res.status(403).json({ message: 'Only firm owners may assign staff' });
+      if (requestingFirmRole !== "firm_owner") {
+        return res.status(403).json({ message: "Only firm owners may assign staff" });
       }
 
       const { staffUserId, action, role } = assignStaffSchema.parse(req.body);
 
       const company = await storage.getCompany(companyId);
       if (!company) {
-        return res.status(404).json({ message: 'Client not found' });
+        return res.status(404).json({ message: "Client not found" });
       }
-      if (company.companyType !== 'client' || company.deletedAt) {
-        return res.status(400).json({ message: 'Company is not an active NRA client' });
+      if (company.companyType !== "client" || company.deletedAt) {
+        return res.status(400).json({ message: "Company is not an active NRA client" });
       }
 
       const staffUser = await storage.getUser(staffUserId);
       if (!staffUser) {
-        return res.status(404).json({ message: 'Staff user not found' });
+        return res.status(404).json({ message: "Staff user not found" });
       }
       if (!staffUser.isAdmin) {
-        return res.status(400).json({ message: 'User is not a firm staff member' });
+        return res.status(400).json({ message: "User is not a firm staff member" });
       }
 
-      if (action === 'assign') {
+      if (action === "assign") {
         const existing = await storage.getUserRole(companyId, staffUserId);
         if (!existing) {
           await storage.createCompanyUser({
@@ -375,8 +369,8 @@ export function registerFirmRoutes(app: Express): void {
         await storage.createActivityLog({
           userId: requestingUserId,
           companyId,
-          action: 'create',
-          entityType: 'company_user',
+          action: "create",
+          entityType: "company_user",
           entityId: staffUserId,
           description: `Assigned ${staffUser.name} to ${company.name}`,
         });
@@ -384,17 +378,12 @@ export function registerFirmRoutes(app: Express): void {
         // Unassign: remove from companyUsers
         await db
           .delete(companyUsers)
-          .where(
-            and(
-              eq(companyUsers.companyId, companyId),
-              eq(companyUsers.userId, staffUserId)
-            )
-          );
+          .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, staffUserId)));
         await storage.createActivityLog({
           userId: requestingUserId,
           companyId,
-          action: 'delete',
-          entityType: 'company_user',
+          action: "delete",
+          entityType: "company_user",
           entityId: staffUserId,
           description: `Unassigned ${staffUser.name} from ${company.name}`,
         });
@@ -406,13 +395,13 @@ export function registerFirmRoutes(app: Express): void {
 
   // ─── GET /api/firm/staff ───────────────────────────────────────────────────
   router.get(
-    '/firm/staff',
+    "/firm/staff",
     asyncHandler(async (_req: Request, res: Response) => {
       const allUsers = await storage.getAllUsers();
-      const firmStaff = allUsers.filter(u => u.isAdmin);
+      const firmStaff = allUsers.filter((u) => u.isAdmin);
 
       const staffWithAssignments = await Promise.all(
-        firmStaff.map(async staff => {
+        firmStaff.map(async (staff) => {
           const assignments = await db
             .select({
               companyId: companyUsers.companyId,
@@ -422,12 +411,7 @@ export function registerFirmRoutes(app: Express): void {
             })
             .from(companyUsers)
             .innerJoin(companies, eq(companies.id, companyUsers.companyId))
-            .where(
-              and(
-                eq(companyUsers.userId, staff.id),
-                eq(companies.companyType, 'client')
-              )
-            );
+            .where(and(eq(companyUsers.userId, staff.id), eq(companies.companyType, "client")));
 
           const { passwordHash: _ph, ...safeStaff } = staff;
           return {
@@ -444,24 +428,24 @@ export function registerFirmRoutes(app: Express): void {
 
   // ─── GET /api/firm/health ─────────────────────────────────────────────────
   router.get(
-    '/firm/health',
+    "/firm/health",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
 
       let clientList: { id: string; name: string }[];
       if (accessibleIds === null) {
         clientList = await db
           .select({ id: companies.id, name: companies.name })
           .from(companies)
-          .where(eq(companies.companyType, 'client'));
+          .where(eq(companies.companyType, "client"));
       } else if (accessibleIds.length === 0) {
         return res.json([]);
       } else {
         clientList = await db
           .select({ id: companies.id, name: companies.name })
           .from(companies)
-          .where(and(eq(companies.companyType, 'client'), inArray(companies.id, accessibleIds)));
+          .where(and(eq(companies.companyType, "client"), inArray(companies.id, accessibleIds)));
       }
 
       const clientIds = clientList.map((c: { id: string }) => c.id);
@@ -475,12 +459,12 @@ export function registerFirmRoutes(app: Express): void {
       const latestVatSub = db
         .select({
           companyId: vatReturns.companyId,
-          maxPeriodEnd: max(vatReturns.periodEnd).as('max_period_end'),
+          maxPeriodEnd: max(vatReturns.periodEnd).as("max_period_end"),
         })
         .from(vatReturns)
         .where(inArray(vatReturns.companyId, clientIds))
         .groupBy(vatReturns.companyId)
-        .as('latest_vat');
+        .as("latest_vat");
 
       const vatRows = await db
         .select({
@@ -499,8 +483,13 @@ export function registerFirmRoutes(app: Express): void {
         );
 
       // AR aging buckets per company (overdue invoices only)
-      type ArBucketRow = { companyId: string; days0_30: string | null; days31_60: string | null; days61plus: string | null };
-      const arRows: ArBucketRow[] = await db
+      type ArBucketRow = {
+        companyId: string;
+        days0_30: string | null;
+        days31_60: string | null;
+        days61plus: string | null;
+      };
+      const arRows: ArBucketRow[] = (await db
         .select({
           companyId: invoices.companyId,
           days0_30: sql<string>`sum(case when ${invoices.dueDate} >= ${thirtyDaysAgo} then ${invoices.total} else 0 end)`,
@@ -511,15 +500,15 @@ export function registerFirmRoutes(app: Express): void {
         .where(
           and(
             inArray(invoices.companyId, clientIds),
-            or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial')),
+            or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
             lt(invoices.dueDate, now)
           )
         )
-        .groupBy(invoices.companyId) as ArBucketRow[];
+        .groupBy(invoices.companyId)) as ArBucketRow[];
 
       // Bank reconciliation % per company
       type BankRow = { companyId: string; total: number; reconciled: string | null };
-      const bankRows: BankRow[] = await db
+      const bankRows: BankRow[] = (await db
         .select({
           companyId: bankTransactions.companyId,
           total: count(),
@@ -527,7 +516,7 @@ export function registerFirmRoutes(app: Express): void {
         })
         .from(bankTransactions)
         .where(inArray(bankTransactions.companyId, clientIds))
-        .groupBy(bankTransactions.companyId) as BankRow[];
+        .groupBy(bankTransactions.companyId)) as BankRow[];
 
       // Build lookup maps
       type VatRow = { companyId: string; status: string; dueDate: Date; periodEnd: Date };
@@ -552,8 +541,8 @@ export function registerFirmRoutes(app: Express): void {
                 dueDate: vat.dueDate,
                 periodEnd: vat.periodEnd,
                 isOverdue:
-                  vat.status !== 'filed' &&
-                  vat.status !== 'submitted' &&
+                  vat.status !== "filed" &&
+                  vat.status !== "submitted" &&
                   new Date(vat.dueDate) < now,
               }
             : null,
@@ -562,13 +551,11 @@ export function registerFirmRoutes(app: Express): void {
             days31_60: Number(ar?.days31_60 ?? 0),
             days61plus: Number(ar?.days61plus ?? 0),
             totalOverdue:
-              Number(ar?.days0_30 ?? 0) +
-              Number(ar?.days31_60 ?? 0) +
-              Number(ar?.days61plus ?? 0),
+              Number(ar?.days0_30 ?? 0) + Number(ar?.days31_60 ?? 0) + Number(ar?.days61plus ?? 0),
           },
           bankReconciliationPct:
             totalBank > 0 ? Math.round((reconciledBank / totalBank) * 100) : null,
-          trialBalanceStatus: 'unknown',
+          trialBalanceStatus: "unknown",
         };
       });
 
@@ -578,10 +565,10 @@ export function registerFirmRoutes(app: Express): void {
 
   // ─── GET /api/firm/health/deadlines ──────────────────────────────────────
   router.get(
-    '/firm/health/deadlines',
+    "/firm/health/deadlines",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
 
       if (accessibleIds !== null && accessibleIds.length === 0) {
         return res.json([]);
@@ -591,8 +578,8 @@ export function registerFirmRoutes(app: Express): void {
       const ninetyDaysOut = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
 
       const whereClause = and(
-        ne(vatReturns.status, 'filed'),
-        ne(vatReturns.status, 'submitted'),
+        ne(vatReturns.status, "filed"),
+        ne(vatReturns.status, "submitted"),
         lte(vatReturns.dueDate, ninetyDaysOut),
         ...(accessibleIds !== null ? [inArray(vatReturns.companyId, accessibleIds)] : [])
       );
@@ -648,29 +635,29 @@ export function registerFirmRoutes(app: Express): void {
   // The frontend persists the selection client-side; this endpoint validates
   // access and returns the company so the UI can update immediately.
   router.post(
-    '/firm/clients/:companyId/switch',
+    "/firm/clients/:companyId/switch",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
 
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-        return res.status(403).json({ message: 'Access denied to this client' });
+        return res.status(403).json({ message: "Access denied to this client" });
       }
 
       const company = await storage.getCompany(companyId);
       if (!company) {
-        return res.status(404).json({ message: 'Client not found' });
+        return res.status(404).json({ message: "Client not found" });
       }
-      if (company.companyType !== 'client') {
-        return res.status(400).json({ message: 'Company is not an NRA client' });
+      if (company.companyType !== "client") {
+        return res.status(400).json({ message: "Company is not an NRA client" });
       }
 
       await storage.createActivityLog({
         userId,
         companyId,
-        action: 'view',
-        entityType: 'company',
+        action: "view",
+        entityType: "company",
         entityId: companyId,
         description: `NRA staff switched into ${company.name}`,
       });
@@ -683,22 +670,22 @@ export function registerFirmRoutes(app: Express): void {
   // Soft-delete a client (FTA 5-year retention rules require we never hard-
   // delete). The company is hidden from listings via deletedAt.
   router.delete(
-    '/firm/clients/:companyId',
+    "/firm/clients/:companyId",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const { id: userId, firmRole } = (req as any).user;
 
       // Only firm_owner may archive a client.
-      if (firmRole !== 'firm_owner') {
-        return res.status(403).json({ message: 'Only firm owners may archive clients' });
+      if (firmRole !== "firm_owner") {
+        return res.status(403).json({ message: "Only firm owners may archive clients" });
       }
 
       const company = await storage.getCompany(companyId);
       if (!company) {
-        return res.status(404).json({ message: 'Client not found' });
+        return res.status(404).json({ message: "Client not found" });
       }
-      if (company.companyType !== 'client') {
-        return res.status(400).json({ message: 'Company is not an NRA client' });
+      if (company.companyType !== "client") {
+        return res.status(400).json({ message: "Company is not an NRA client" });
       }
 
       await db
@@ -709,8 +696,8 @@ export function registerFirmRoutes(app: Express): void {
       await storage.createActivityLog({
         userId,
         companyId,
-        action: 'delete',
-        entityType: 'company',
+        action: "delete",
+        entityType: "company",
         entityId: companyId,
         description: `NRA firm archived client: ${company.name}`,
       });
@@ -725,42 +712,41 @@ export function registerFirmRoutes(app: Express): void {
   // with missing names or duplicate company names are returned as errors so
   // the user can correct and resubmit. Supports two input forms:
   //   - { rows: [{...}, {...}] }      already-parsed JSON rows
-  //   - { fileData: <base64 CSV/XLSX> } raw file (server-parsed)
+  //   - { fileData: <base64 CSV/XLSX>, fileName?: string } raw file (server-parsed)
   router.post(
-    '/firm/clients/import',
+    "/firm/clients/import",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
 
       // firm_admin is allowed to import (their imports are auto-assigned to them);
       // firm_owner can import freely.
-      if (firmRole !== 'firm_owner' && firmRole !== 'firm_admin') {
-        return res.status(403).json({ message: 'Firm role required' });
+      if (firmRole !== "firm_owner" && firmRole !== "firm_admin") {
+        return res.status(403).json({ message: "Firm role required" });
       }
 
       // Accept either pre-parsed rows or a base64-encoded file.
       let rows: Record<string, any>[];
       if (req.body?.fileData) {
         try {
-          const buffer = Buffer.from(req.body.fileData, 'base64');
-          const workbook = XLSX.read(buffer, { type: 'buffer' });
-          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-          rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' }) as Record<string, any>[];
+          const buffer = Buffer.from(req.body.fileData, "base64");
+          const parsed = await parseSpreadsheetBuffer(buffer, { fileName: req.body.fileName });
+          rows = parsed.rows;
         } catch (err: any) {
           return res.status(400).json({ message: `Could not parse file: ${err.message}` });
         }
       } else {
         const parsed = importPayloadSchema.safeParse(req.body);
         if (!parsed.success) {
-          return res.status(400).json({ message: 'Invalid payload', errors: parsed.error.errors });
+          return res.status(400).json({ message: "Invalid payload", errors: parsed.error.errors });
         }
         rows = parsed.data.rows;
       }
 
       if (!rows || rows.length === 0) {
-        return res.status(400).json({ message: 'No rows to import' });
+        return res.status(400).json({ message: "No rows to import" });
       }
       if (rows.length > 500) {
-        return res.status(400).json({ message: 'Imports limited to 500 rows per call' });
+        return res.status(400).json({ message: "Imports limited to 500 rows per call" });
       }
 
       const results = {
@@ -771,8 +757,8 @@ export function registerFirmRoutes(app: Express): void {
       for (let i = 0; i < rows.length; i++) {
         const raw = rows[i];
         const mapped = mapImportRow(raw);
-        if ('error' in mapped) {
-          results.errors.push({ row: i + 1, name: '', error: mapped.error });
+        if ("error" in mapped) {
+          results.errors.push({ row: i + 1, name: "", error: mapped.error });
           continue;
         }
 
@@ -792,24 +778,24 @@ export function registerFirmRoutes(app: Express): void {
             results.errors.push({
               row: i + 1,
               name: validated.value.name,
-              error: 'A company with this name already exists',
+              error: "A company with this name already exists",
             });
             continue;
           }
 
           const company = await storage.createCompany({
             name: validated.value.name,
-            baseCurrency: 'AED',
-            locale: 'en',
-            companyType: 'client',
+            baseCurrency: "AED",
+            locale: "en",
+            companyType: "client",
             trnVatNumber: validated.value.trnVatNumber || undefined,
             industry: validated.value.industry || undefined,
             legalStructure: validated.value.legalStructure || undefined,
             contactEmail: validated.value.contactEmail || undefined,
             contactPhone: validated.value.contactPhone || undefined,
             businessAddress: validated.value.businessAddress || undefined,
-            emirate: validated.value.emirate || 'dubai',
-            vatFilingFrequency: validated.value.vatFilingFrequency || 'quarterly',
+            emirate: validated.value.emirate || "dubai",
+            vatFilingFrequency: validated.value.vatFilingFrequency || "quarterly",
             registrationNumber: validated.value.registrationNumber || undefined,
             websiteUrl: validated.value.websiteUrl || undefined,
           });
@@ -818,18 +804,18 @@ export function registerFirmRoutes(app: Express): void {
 
           // firm_admin who runs the import becomes auto-assigned so they can
           // continue to manage what they imported.
-          if (firmRole === 'firm_admin') {
+          if (firmRole === "firm_admin") {
             await db
               .insert(companyUsers)
-              .values({ companyId: company.id, userId, role: 'accountant' })
+              .values({ companyId: company.id, userId, role: "accountant" })
               .onConflictDoNothing();
           }
 
           await storage.createActivityLog({
             userId,
             companyId: company.id,
-            action: 'create',
-            entityType: 'company',
+            action: "create",
+            entityType: "company",
             entityId: company.id,
             description: `Bulk-imported NRA client: ${company.name}`,
           });
@@ -839,7 +825,7 @@ export function registerFirmRoutes(app: Express): void {
           results.errors.push({
             row: i + 1,
             name: validated.value.name,
-            error: err.message ?? 'Unknown error',
+            error: err.message ?? "Unknown error",
           });
         }
       }
@@ -855,17 +841,17 @@ export function registerFirmRoutes(app: Express): void {
   // Top-level summary cards for the firm dashboard: total clients, VAT
   // returns due in next 30 days, total overdue receivables, attention count.
   router.get(
-    '/firm/overview',
+    "/firm/overview",
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = (req as any).user;
-      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? '');
+      const accessibleIds = await getAccessibleCompanyIds(userId, firmRole ?? "");
 
       let clientIds: string[];
       if (accessibleIds === null) {
         const all = await db
           .select({ id: companies.id })
           .from(companies)
-          .where(and(eq(companies.companyType, 'client'), sql`${companies.deletedAt} IS NULL`));
+          .where(and(eq(companies.companyType, "client"), sql`${companies.deletedAt} IS NULL`));
         clientIds = all.map((c: { id: string }) => c.id);
       } else {
         clientIds = accessibleIds;
@@ -891,10 +877,10 @@ export function registerFirmRoutes(app: Express): void {
           .where(
             and(
               inArray(vatReturns.companyId, clientIds),
-              ne(vatReturns.status, 'filed'),
-              ne(vatReturns.status, 'submitted'),
-              lte(vatReturns.dueDate, monthAhead),
-            ),
+              ne(vatReturns.status, "filed"),
+              ne(vatReturns.status, "submitted"),
+              lte(vatReturns.dueDate, monthAhead)
+            )
           )
           .then((r: { cnt: number }[]) => r[0]),
         db
@@ -903,9 +889,9 @@ export function registerFirmRoutes(app: Express): void {
           .where(
             and(
               inArray(invoices.companyId, clientIds),
-              or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial')),
-              lt(invoices.dueDate, now),
-            ),
+              or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
+              lt(invoices.dueDate, now)
+            )
           )
           .then((r: { total: string | null }[]) => r[0]),
         // Clients without ANY invoices yet — proxy for "missing docs"
@@ -914,11 +900,11 @@ export function registerFirmRoutes(app: Express): void {
           .from(invoices)
           .where(inArray(invoices.companyId, clientIds))
           .groupBy(invoices.companyId)
-          .then((rows: { companyId: string }[]) => rows.map(r => r.companyId)),
+          .then((rows: { companyId: string }[]) => rows.map((r) => r.companyId)),
       ]);
 
       const clientsWithInvoices = new Set(missingDocsRow as string[]);
-      const missingDocuments = clientIds.filter(id => !clientsWithInvoices.has(id)).length;
+      const missingDocuments = clientIds.filter((id) => !clientsWithInvoices.has(id)).length;
 
       const overdueAr = Number(arRow?.total ?? 0);
       const vatDueThisMonth = Number(vatDueRow?.cnt ?? 0);
@@ -930,9 +916,9 @@ export function registerFirmRoutes(app: Express): void {
         .where(
           and(
             inArray(invoices.companyId, clientIds),
-            or(eq(invoices.status, 'sent'), eq(invoices.status, 'partial')),
-            lt(invoices.dueDate, now),
-          ),
+            or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
+            lt(invoices.dueDate, now)
+          )
         )
         .groupBy(invoices.companyId);
 
@@ -942,10 +928,10 @@ export function registerFirmRoutes(app: Express): void {
         .where(
           and(
             inArray(vatReturns.companyId, clientIds),
-            ne(vatReturns.status, 'filed'),
-            ne(vatReturns.status, 'submitted'),
-            lt(vatReturns.dueDate, now),
-          ),
+            ne(vatReturns.status, "filed"),
+            ne(vatReturns.status, "submitted"),
+            lt(vatReturns.dueDate, now)
+          )
         )
         .groupBy(vatReturns.companyId);
 
@@ -963,6 +949,6 @@ export function registerFirmRoutes(app: Express): void {
     })
   );
 
-  app.use('/api', router);
-  logger.info('Firm routes registered at /api/firm/*');
+  app.use("/api", router);
+  logger.info("Firm routes registered at /api/firm/*");
 }

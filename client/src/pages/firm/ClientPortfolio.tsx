@@ -1,24 +1,54 @@
-import { useMemo, useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { useLocation } from 'wouter';
+import { useMemo, useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
-  Building2, Plus, Search, LayoutGrid, List,
-  ChevronRight, Users, Calendar,
-  BookOpen, Upload, AlertTriangle, Receipt, FolderOpen,
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
-import { format } from 'date-fns';
-import type { Company } from '@shared/schema';
-import { useActiveCompany } from '@/components/ActiveCompanyProvider';
+  Building2,
+  Plus,
+  Search,
+  LayoutGrid,
+  List,
+  ChevronRight,
+  Users,
+  Calendar,
+  BookOpen,
+  Upload,
+  AlertTriangle,
+  Receipt,
+  FolderOpen,
+} from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { format } from "date-fns";
+import type { Company } from "@shared/schema";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 interface ClientStats {
   invoiceCount: number;
@@ -51,36 +81,42 @@ interface ImportResult {
 }
 
 function formatAed(amount: number) {
-  return new Intl.NumberFormat('en-AE', {
-    style: 'currency',
-    currency: 'AED',
+  return new Intl.NumberFormat("en-AE", {
+    style: "currency",
+    currency: "AED",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
 }
 
-function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats['vatStatus'] }) {
+function VatStatusBadge({ vatStatus }: { vatStatus: ClientWithStats["vatStatus"] }) {
   if (!vatStatus) return <Badge variant="outline">No VAT</Badge>;
   const due = new Date(vatStatus.dueDate);
   const now = new Date();
   const daysUntilDue = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (vatStatus.status === 'filed' || vatStatus.status === 'submitted') {
+  if (vatStatus.status === "filed" || vatStatus.status === "submitted") {
     return <Badge className="bg-green-100 text-green-800 border-green-200">Filed</Badge>;
   }
   if (daysUntilDue < 0) {
     return <Badge variant="destructive">Overdue</Badge>;
   }
   if (daysUntilDue <= 14) {
-    return <Badge className="bg-amber-100 text-amber-800 border-amber-200">Due {format(due, 'MMM d')}</Badge>;
+    return (
+      <Badge className="bg-amber-100 text-amber-800 border-amber-200">
+        Due {format(due, "MMM d")}
+      </Badge>
+    );
   }
-  return <Badge variant="outline">Due {format(due, 'MMM d')}</Badge>;
+  return <Badge variant="outline">Due {format(due, "MMM d")}</Badge>;
 }
 
 function StatusBadge({ active }: { active: boolean }) {
-  return active
-    ? <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>
-    : <Badge variant="secondary">Inactive</Badge>;
+  return active ? (
+    <Badge className="bg-green-100 text-green-800 border-green-200">Active</Badge>
+  ) : (
+    <Badge variant="secondary">Inactive</Badge>
+  );
 }
 
 function clientNeedsAttention(c: ClientWithStats): boolean {
@@ -89,7 +125,7 @@ function clientNeedsAttention(c: ClientWithStats): boolean {
   // The list endpoint doesn't expose per-invoice due dates, so outstandingAr>0
   // is used as the AR proxy (slightly broader than server's overdue-only count).
   if (c.outstandingAr > 0) return true;
-  if (c.vatStatus && c.vatStatus.status !== 'filed' && c.vatStatus.status !== 'submitted') {
+  if (c.vatStatus && c.vatStatus.status !== "filed" && c.vatStatus.status !== "submitted") {
     const due = new Date(c.vatStatus.dueDate);
     if (due < new Date()) return true;
   }
@@ -98,7 +134,7 @@ function clientNeedsAttention(c: ClientWithStats): boolean {
 
 function vatDueSoon(c: ClientWithStats): boolean {
   if (!c.vatStatus) return false;
-  if (c.vatStatus.status === 'filed' || c.vatStatus.status === 'submitted') return false;
+  if (c.vatStatus.status === "filed" || c.vatStatus.status === "submitted") return false;
   const due = new Date(c.vatStatus.dueDate);
   const now = new Date();
   const days = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
@@ -118,26 +154,26 @@ interface AddClientFormData {
 }
 
 const emptyForm: AddClientFormData = {
-  name: '',
-  trnVatNumber: '',
-  industry: '',
-  legalStructure: '',
-  contactEmail: '',
-  contactPhone: '',
-  businessAddress: '',
-  emirate: 'dubai',
-  vatFilingFrequency: 'quarterly',
+  name: "",
+  trnVatNumber: "",
+  industry: "",
+  legalStructure: "",
+  contactEmail: "",
+  contactPhone: "",
+  businessAddress: "",
+  emirate: "dubai",
+  vatFilingFrequency: "quarterly",
 };
 
-type QuickFilter = 'all' | 'attention' | 'vat-due' | 'no-docs';
+type QuickFilter = "all" | "attention" | "vat-due" | "no-docs";
 
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { setActiveClientCompany } = useActiveCompany();
-  const [view, setView] = useState<'card' | 'table'>('card');
-  const [search, setSearch] = useState('');
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all');
+  const [view, setView] = useState<"card" | "table">("card");
+  const [search, setSearch] = useState("");
+  const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -145,38 +181,42 @@ export default function ClientPortfolio() {
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
-    queryKey: ['/api/firm/clients'],
+    queryKey: ["/api/firm/clients"],
   });
 
   const { data: overview } = useQuery<FirmOverview>({
-    queryKey: ['/api/firm/overview'],
+    queryKey: ["/api/firm/overview"],
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: AddClientFormData) => apiRequest('POST', '/api/firm/clients', data),
+    mutationFn: (data: AddClientFormData) => apiRequest("POST", "/api/firm/clients", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
-      toast({ title: 'Client created successfully' });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      toast({ title: "Client created successfully" });
       setAddOpen(false);
       setForm(emptyForm);
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Failed to create client', description: e?.message });
+      toast({ variant: "destructive", title: "Failed to create client", description: e?.message });
     },
   });
 
   const switchMutation = useMutation({
-    mutationFn: (companyId: string) => apiRequest('POST', `/api/firm/clients/${companyId}/switch`),
+    mutationFn: (companyId: string) => apiRequest("POST", `/api/firm/clients/${companyId}/switch`),
     onSuccess: (_, companyId) => {
       setActiveClientCompany(companyId);
       // Force a refetch of /api/companies so the active company is in cache.
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
-      navigate('/dashboard');
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      navigate("/dashboard");
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Could not open client books', description: e?.message });
+      toast({
+        variant: "destructive",
+        title: "Could not open client books",
+        description: e?.message,
+      });
     },
   });
 
@@ -185,45 +225,49 @@ export default function ClientPortfolio() {
       const buffer = await file.arrayBuffer();
       const bytes = new Uint8Array(buffer);
       // Build base64 in chunks to avoid call-stack overflow on bigger files.
-      let binary = '';
+      let binary = "";
       const chunk = 0x8000;
       for (let i = 0; i < bytes.length; i += chunk) {
         binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)) as any);
       }
       const fileData = btoa(binary);
-      return apiRequest('POST', '/api/firm/clients/import', { fileData }) as Promise<ImportResult>;
+      return apiRequest("POST", "/api/firm/clients/import", {
+        fileData,
+        fileName: file.name,
+      }) as Promise<ImportResult>;
     },
-    onSuccess: result => {
+    onSuccess: (result) => {
       setImportResult(result);
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/clients'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/firm/overview'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/companies'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/firm/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
         title: `Imported ${result.created.length} clients`,
-        description: result.errors.length > 0 ? `${result.errors.length} errors — see details.` : undefined,
+        description:
+          result.errors.length > 0 ? `${result.errors.length} errors — see details.` : undefined,
       });
     },
     onError: (e: any) => {
-      toast({ variant: 'destructive', title: 'Import failed', description: e?.message });
+      toast({ variant: "destructive", title: "Import failed", description: e?.message });
     },
   });
 
   const filtered = useMemo(() => {
-    return clients.filter(c => {
+    return clients.filter((c) => {
       const matchesSearch =
         !search ||
         c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.trnVatNumber || '').toLowerCase().includes(search.toLowerCase());
+        (c.trnVatNumber || "").toLowerCase().includes(search.toLowerCase());
       if (!matchesSearch) return false;
 
       switch (quickFilter) {
-        case 'attention':
+        case "attention":
           return clientNeedsAttention(c);
-        case 'vat-due':
+        case "vat-due":
           return vatDueSoon(c);
-        case 'no-docs':
+        case "no-docs":
           return c.invoiceCount === 0 && !c.lastReceiptDate;
-        case 'all':
+        case "all":
         default:
           return true;
       }
@@ -253,11 +297,18 @@ export default function ClientPortfolio() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Client Portfolio</h1>
           <p className="text-muted-foreground mt-1">
-            {clients.length} client{clients.length !== 1 ? 's' : ''} managed by NRA
+            {clients.length} client{clients.length !== 1 ? "s" : ""} managed by NRA
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => { setImportResult(null); setImportFile(null); setImportOpen(true); }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setImportResult(null);
+              setImportFile(null);
+              setImportOpen(true);
+            }}
+          >
             <Upload className="w-4 h-4 mr-2" />
             Import Clients
           </Button>
@@ -300,7 +351,9 @@ export default function ClientPortfolio() {
         <Card data-testid="card-attention">
           <CardContent className="pt-4 pb-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Needs Attention</p>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                Needs Attention
+              </p>
               <AlertTriangle className="w-4 h-4 text-orange-600" />
             </div>
             <p className="text-2xl font-bold mt-1">{overview?.needsAttention ?? 0}</p>
@@ -312,15 +365,15 @@ export default function ClientPortfolio() {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          variant={quickFilter === 'all' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('all')}
+          variant={quickFilter === "all" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("all")}
         >
           All ({clients.length})
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'attention' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('attention')}
+          variant={quickFilter === "attention" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("attention")}
           data-testid="filter-attention"
         >
           <AlertTriangle className="w-3.5 h-3.5 mr-1.5" />
@@ -328,8 +381,8 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'vat-due' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('vat-due')}
+          variant={quickFilter === "vat-due" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("vat-due")}
           data-testid="filter-vat-due"
         >
           <Calendar className="w-3.5 h-3.5 mr-1.5" />
@@ -337,8 +390,8 @@ export default function ClientPortfolio() {
         </Button>
         <Button
           size="sm"
-          variant={quickFilter === 'no-docs' ? 'secondary' : 'outline'}
-          onClick={() => setQuickFilter('no-docs')}
+          variant={quickFilter === "no-docs" ? "secondary" : "outline"}
+          onClick={() => setQuickFilter("no-docs")}
           data-testid="filter-no-docs"
         >
           <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
@@ -353,25 +406,25 @@ export default function ClientPortfolio() {
           <Input
             placeholder="Search by name or TRN..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
             data-testid="input-client-search"
           />
         </div>
         <div className="flex border rounded-md ml-auto">
           <Button
-            variant={view === 'card' ? 'secondary' : 'ghost'}
+            variant={view === "card" ? "secondary" : "ghost"}
             size="sm"
             className="rounded-r-none"
-            onClick={() => setView('card')}
+            onClick={() => setView("card")}
           >
             <LayoutGrid className="w-4 h-4" />
           </Button>
           <Button
-            variant={view === 'table' ? 'secondary' : 'ghost'}
+            variant={view === "table" ? "secondary" : "ghost"}
             size="sm"
             className="rounded-l-none"
-            onClick={() => setView('table')}
+            onClick={() => setView("table")}
           >
             <List className="w-4 h-4" />
           </Button>
@@ -383,12 +436,12 @@ export default function ClientPortfolio() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
           <h3 className="font-semibold text-lg">
-            {clients.length === 0 ? 'No clients yet' : 'No clients match your filters'}
+            {clients.length === 0 ? "No clients yet" : "No clients match your filters"}
           </h3>
           <p className="text-muted-foreground mt-1 mb-4">
             {clients.length === 0
-              ? 'Add your first client company to get started.'
-              : 'Try adjusting your search or quick filter.'}
+              ? "Add your first client company to get started."
+              : "Try adjusting your search or quick filter."}
           </p>
           {clients.length === 0 && (
             <Button onClick={() => setAddOpen(true)}>
@@ -400,16 +453,20 @@ export default function ClientPortfolio() {
       )}
 
       {/* Card view */}
-      {view === 'card' && filtered.length > 0 && (
+      {view === "card" && filtered.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(client => (
-            <Card key={client.id} className="hover:shadow-md transition-shadow" data-testid={`client-card-${client.id}`}>
+          {filtered.map((client) => (
+            <Card
+              key={client.id}
+              className="hover:shadow-md transition-shadow"
+              data-testid={`client-card-${client.id}`}
+            >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
                     <CardTitle className="text-base truncate">{client.name}</CardTitle>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : 'No TRN registered'}
+                      {client.trnVatNumber ? `TRN: ${client.trnVatNumber}` : "No TRN registered"}
                     </p>
                   </div>
                   <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />
@@ -420,7 +477,9 @@ export default function ClientPortfolio() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-muted/40 rounded-md p-2">
                     <p className="text-xs text-muted-foreground">Outstanding AR</p>
-                    <p className="font-semibold text-sm mt-0.5">{formatAed(client.outstandingAr)}</p>
+                    <p className="font-semibold text-sm mt-0.5">
+                      {formatAed(client.outstandingAr)}
+                    </p>
                   </div>
                   <div className="bg-muted/40 rounded-md p-2">
                     <p className="text-xs text-muted-foreground">Invoices</p>
@@ -442,8 +501,8 @@ export default function ClientPortfolio() {
                   <span>Last receipt</span>
                   <span>
                     {client.lastReceiptDate
-                      ? format(new Date(client.lastReceiptDate), 'MMM d, yyyy')
-                      : 'Never'}
+                      ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
+                      : "Never"}
                   </span>
                 </div>
 
@@ -451,7 +510,7 @@ export default function ClientPortfolio() {
                 {client.assignedStaff.length > 0 && (
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Users className="w-3.5 h-3.5" />
-                    {client.assignedStaff.map(s => s.name).join(', ')}
+                    {client.assignedStaff.map((s) => s.name).join(", ")}
                   </div>
                 )}
 
@@ -467,11 +526,7 @@ export default function ClientPortfolio() {
                     <BookOpen className="w-3.5 h-3.5 mr-1.5" />
                     Open Books
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleViewProfile(client.id)}
-                  >
+                  <Button size="sm" variant="outline" onClick={() => handleViewProfile(client.id)}>
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
@@ -482,7 +537,7 @@ export default function ClientPortfolio() {
       )}
 
       {/* Table view */}
-      {view === 'table' && filtered.length > 0 && (
+      {view === "table" && filtered.length > 0 && (
         <div className="border rounded-lg overflow-hidden overflow-x-auto">
           <Table>
             <TableHeader>
@@ -498,7 +553,7 @@ export default function ClientPortfolio() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map(client => (
+              {filtered.map((client) => (
                 <TableRow key={client.id} className="hover:bg-muted/50">
                   <TableCell>
                     <div>
@@ -509,7 +564,7 @@ export default function ClientPortfolio() {
                     </div>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {client.trnVatNumber || '—'}
+                    {client.trnVatNumber || "—"}
                   </TableCell>
                   <TableCell className="font-medium">{formatAed(client.outstandingAr)}</TableCell>
                   <TableCell>{client.invoiceCount}</TableCell>
@@ -518,8 +573,8 @@ export default function ClientPortfolio() {
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {client.lastReceiptDate
-                      ? format(new Date(client.lastReceiptDate), 'MMM d, yyyy')
-                      : '—'}
+                      ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
+                      : "—"}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
@@ -537,7 +592,11 @@ export default function ClientPortfolio() {
                         <BookOpen className="w-3.5 h-3.5 mr-1" />
                         Open
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => handleViewProfile(client.id)}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewProfile(client.id)}
+                      >
                         <ChevronRight className="w-4 h-4" />
                       </Button>
                     </div>
@@ -564,7 +623,7 @@ export default function ClientPortfolio() {
               <Input
                 id="name"
                 value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="Al Majid Trading LLC"
               />
             </div>
@@ -574,13 +633,16 @@ export default function ClientPortfolio() {
                 <Input
                   id="trn"
                   value={form.trnVatNumber}
-                  onChange={e => setForm(f => ({ ...f, trnVatNumber: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, trnVatNumber: e.target.value }))}
                   placeholder="100234567890003"
                 />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="emirate">Emirate</Label>
-                <Select value={form.emirate} onValueChange={v => setForm(f => ({ ...f, emirate: v }))}>
+                <Select
+                  value={form.emirate}
+                  onValueChange={(v) => setForm((f) => ({ ...f, emirate: v }))}
+                >
                   <SelectTrigger id="emirate">
                     <SelectValue />
                   </SelectTrigger>
@@ -601,7 +663,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="legalStructure">Legal Structure</Label>
                 <Select
                   value={form.legalStructure}
-                  onValueChange={v => setForm(f => ({ ...f, legalStructure: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, legalStructure: v }))}
                 >
                   <SelectTrigger id="legalStructure">
                     <SelectValue placeholder="Select..." />
@@ -619,7 +681,7 @@ export default function ClientPortfolio() {
                 <Label htmlFor="vatFrequency">VAT Filing</Label>
                 <Select
                   value={form.vatFilingFrequency}
-                  onValueChange={v => setForm(f => ({ ...f, vatFilingFrequency: v }))}
+                  onValueChange={(v) => setForm((f) => ({ ...f, vatFilingFrequency: v }))}
                 >
                   <SelectTrigger id="vatFrequency">
                     <SelectValue />
@@ -636,7 +698,7 @@ export default function ClientPortfolio() {
               <Input
                 id="industry"
                 value={form.industry}
-                onChange={e => setForm(f => ({ ...f, industry: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, industry: e.target.value }))}
                 placeholder="Trading, Construction, Retail..."
               />
             </div>
@@ -647,7 +709,7 @@ export default function ClientPortfolio() {
                   id="contactEmail"
                   type="email"
                   value={form.contactEmail}
-                  onChange={e => setForm(f => ({ ...f, contactEmail: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, contactEmail: e.target.value }))}
                   placeholder="info@company.ae"
                 />
               </div>
@@ -656,7 +718,7 @@ export default function ClientPortfolio() {
                 <Input
                   id="contactPhone"
                   value={form.contactPhone}
-                  onChange={e => setForm(f => ({ ...f, contactPhone: e.target.value }))}
+                  onChange={(e) => setForm((f) => ({ ...f, contactPhone: e.target.value }))}
                   placeholder="+971 4 123 4567"
                 />
               </div>
@@ -666,7 +728,7 @@ export default function ClientPortfolio() {
               <Input
                 id="businessAddress"
                 value={form.businessAddress}
-                onChange={e => setForm(f => ({ ...f, businessAddress: e.target.value }))}
+                onChange={(e) => setForm((f) => ({ ...f, businessAddress: e.target.value }))}
                 placeholder="Office 301, Business Bay, Dubai"
               />
             </div>
@@ -680,7 +742,7 @@ export default function ClientPortfolio() {
               disabled={!form.name.trim() || createMutation.isPending}
               data-testid="button-create-client"
             >
-              {createMutation.isPending ? 'Creating...' : 'Create Client'}
+              {createMutation.isPending ? "Creating..." : "Create Client"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -693,8 +755,8 @@ export default function ClientPortfolio() {
             <DialogTitle>Import Clients</DialogTitle>
             <DialogDescription>
               Upload a CSV or Excel file. Each row becomes a new client company with a UAE chart of
-              accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate,
-              VAT filing.
+              accounts. Recognised columns: name, TRN, email, phone, industry, address, emirate, VAT
+              filing.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -703,8 +765,8 @@ export default function ClientPortfolio() {
               <Input
                 id="import-file"
                 type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={e => {
+                accept=".csv,.xlsx"
+                onChange={(e) => {
                   setImportFile(e.target.files?.[0] ?? null);
                   setImportResult(null);
                 }}
@@ -719,7 +781,7 @@ export default function ClientPortfolio() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="font-medium">Errors</span>
-                  <span className={importResult.errors.length > 0 ? 'text-red-700' : ''}>
+                  <span className={importResult.errors.length > 0 ? "text-red-700" : ""}>
                     {importResult.errors.length}
                   </span>
                 </div>
@@ -727,7 +789,8 @@ export default function ClientPortfolio() {
                   <div className="max-h-40 overflow-auto text-xs text-muted-foreground space-y-1">
                     {importResult.errors.slice(0, 20).map((e, i) => (
                       <div key={i}>
-                        Row {e.row}{e.name ? ` (${e.name})` : ''}: {e.error}
+                        Row {e.row}
+                        {e.name ? ` (${e.name})` : ""}: {e.error}
                       </div>
                     ))}
                   </div>
@@ -745,7 +808,7 @@ export default function ClientPortfolio() {
               data-testid="button-import-clients"
             >
               <Upload className="w-4 h-4 mr-2" />
-              {importMutation.isPending ? 'Importing...' : 'Import'}
+              {importMutation.isPending ? "Importing..." : "Import"}
             </Button>
           </DialogFooter>
         </DialogContent>

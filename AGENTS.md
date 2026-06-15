@@ -30,6 +30,9 @@ Scope: this file applies to the whole repository.
 - Lint with `npm run lint`; use `npm run lint:fix` only when you intend to modify files.
 - Check formatting with `npm run format:check`; use `npm run format` only when you intend to
   modify files. `migrations/meta/` is generated Drizzle metadata and is ignored by Prettier.
+- The full-tree Prettier baseline is not clean yet; for launch-hardening changes, prefer
+  `npx prettier --check <changed-files>` plus `npx prettier --write <changed-files>` over
+  repo-wide formatting unless a format-only cleanup is intentional.
 
 ## Database And Migrations
 
@@ -65,5 +68,8 @@ Scope: this file applies to the whole repository.
   fresh user, promotes it through Postgres, crawls workspace routes, and posts a balanced journal.
 - Use `npx vitest run tests/unit/whatsapp-boundary.test.ts` after WhatsApp-related changes to
   verify the feature remains confined to the NR firm-management area.
+- Document chasing is also an NR firm-management-only feature. Keep its UI under
+  `/firm/document-chasing` and do not expose document-chasing navigation or routes in customer SaaS
+  areas.
 - `npm run test:coverage` is a baseline ratchet, not proof of broad route coverage; raise the
   thresholds as integration and route-level tests land.

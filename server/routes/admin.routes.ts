@@ -1,21 +1,21 @@
-import type { Request, Response } from 'express';
-import { Router } from 'express';
-import type { Express } from 'express';
-import bcrypt from 'bcryptjs';
-import { z } from 'zod';
-import * as XLSX from 'xlsx';
-import crypto from 'crypto';
+import type { Request, Response } from "express";
+import { Router } from "express";
+import type { Express } from "express";
+import bcrypt from "bcryptjs";
+import { z } from "zod";
+import crypto from "crypto";
 
-import { storage } from '../storage';
-import { authMiddleware, adminMiddleware } from '../middleware/auth';
-import { asyncHandler } from '../middleware/errorHandler';
-import { createLogger } from '../config/logger';
-import { createDefaultAccountsForCompany } from '../defaultChartOfAccounts';
-import { db } from '../db';
-import { eq, and, desc, gte, lte, like } from 'drizzle-orm';
-import { activityLogs } from '../../shared/schema';
+import { storage } from "../storage";
+import { authMiddleware, adminMiddleware } from "../middleware/auth";
+import { asyncHandler } from "../middleware/errorHandler";
+import { createLogger } from "../config/logger";
+import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { buildSpreadsheetBuffer, parseSpreadsheetBuffer } from "../services/spreadsheet.service";
+import { db } from "../db";
+import { eq, and, desc, gte, lte, like } from "drizzle-orm";
+import { activityLogs } from "../../shared/schema";
 
-const logger = createLogger('admin-routes');
+const logger = createLogger("admin-routes");
 
 // =============================================
 // Helpers (migrated from monolith routes.ts)
@@ -29,7 +29,7 @@ async function seedChartOfAccounts(
 ): Promise<{ created: number; alreadyExisted: boolean }> {
   const hasAccounts = await storage.companyHasAccounts(companyId);
   if (hasAccounts) {
-    logger.info({ companyId }, 'Company already has accounts, skipping seed');
+    logger.info({ companyId }, "Company already has accounts, skipping seed");
     return { created: 0, alreadyExisted: true };
   }
 
@@ -37,13 +37,13 @@ async function seedChartOfAccounts(
 
   try {
     const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
-    logger.info({ companyId, count: createdAccounts.length }, 'Created chart of accounts');
+    logger.info({ companyId, count: createdAccounts.length }, "Created chart of accounts");
     return { created: createdAccounts.length, alreadyExisted: false };
   } catch (error: any) {
-    if (error.message?.includes('PARTIAL_INSERT')) {
-      logger.error({ companyId, err: error.message }, 'Partial insert detected during COA seed');
+    if (error.message?.includes("PARTIAL_INSERT")) {
+      logger.error({ companyId, err: error.message }, "Partial insert detected during COA seed");
       throw new Error(
-        'PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support.'
+        "PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support."
       );
     }
     throw error;
@@ -58,8 +58,8 @@ export function registerAdminRoutes(app: Express): void {
   const router = Router();
 
   // Apply auth + admin middleware only to /admin/* paths (not all /api/*)
-  router.use('/admin', authMiddleware as any);
-  router.use('/admin', adminMiddleware as any);
+  router.use("/admin", authMiddleware as any);
+  router.use("/admin", adminMiddleware as any);
 
   // =====================================
   // ADMIN SETTINGS
@@ -67,7 +67,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get admin settings
   router.get(
-    '/admin/settings',
+    "/admin/settings",
     asyncHandler(async (req: Request, res: Response) => {
       const settings = await storage.getAdminSettings();
       res.json(settings);
@@ -76,11 +76,11 @@ export function registerAdminRoutes(app: Express): void {
 
   // Update admin setting
   router.put(
-    '/admin/settings',
+    "/admin/settings",
     asyncHandler(async (req: Request, res: Response) => {
       const { key, value } = req.body;
       if (!key || value === undefined) {
-        return res.status(400).json({ message: 'Key and value required' });
+        return res.status(400).json({ message: "Key and value required" });
       }
 
       const existing = await storage.getAdminSettingByKey(key);
@@ -91,7 +91,7 @@ export function registerAdminRoutes(app: Express): void {
         const setting = await storage.createAdminSetting({
           key,
           value,
-          category: 'system',
+          category: "system",
         });
         res.json(setting);
       }
@@ -104,7 +104,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get subscription plans
   router.get(
-    '/admin/plans',
+    "/admin/plans",
     asyncHandler(async (req: Request, res: Response) => {
       const plans = await storage.getSubscriptionPlans();
       res.json(plans);
@@ -113,7 +113,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Create subscription plan
   router.post(
-    '/admin/plans',
+    "/admin/plans",
     asyncHandler(async (req: Request, res: Response) => {
       const plan = await storage.createSubscriptionPlan(req.body);
       res.status(201).json(plan);
@@ -122,7 +122,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Update subscription plan
   router.put(
-    '/admin/plans/:id',
+    "/admin/plans/:id",
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       const plan = await storage.updateSubscriptionPlan(id, req.body);
@@ -132,7 +132,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Delete subscription plan
   router.delete(
-    '/admin/plans/:id',
+    "/admin/plans/:id",
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
       await storage.deleteSubscriptionPlan(id);
@@ -146,7 +146,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get all companies (admin)
   router.get(
-    '/admin/companies',
+    "/admin/companies",
     asyncHandler(async (req: Request, res: Response) => {
       const companies = await storage.getAllCompanies();
       res.json(companies);
@@ -155,14 +155,14 @@ export function registerAdminRoutes(app: Express): void {
 
   // Update company (admin)
   router.patch(
-    '/admin/companies/:companyId',
+    "/admin/companies/:companyId",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       const updates = req.body;
 
       const company = await storage.getCompany(companyId);
       if (!company) {
-        return res.status(404).json({ message: 'Company not found' });
+        return res.status(404).json({ message: "Company not found" });
       }
 
       const updatedCompany = await storage.updateCompany(companyId, updates);
@@ -176,7 +176,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get audit logs
   router.get(
-    '/admin/audit-logs',
+    "/admin/audit-logs",
     asyncHandler(async (req: Request, res: Response) => {
       const limit = parseInt(req.query.limit as string) || 100;
       const logs = await storage.getAuditLogs(limit);
@@ -190,17 +190,17 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get admin dashboard stats (later/more complete version)
   router.get(
-    '/admin/stats',
+    "/admin/stats",
     asyncHandler(async (req: Request, res: Response) => {
       const users = await storage.getAllUsers();
       const companies = await storage.getAllCompanies();
       const invitations = await storage.getInvitations();
       const activityLogs = await storage.getActivityLogs(10);
 
-      const pendingInvitations = invitations.filter(i => i.status === 'pending').length;
+      const pendingInvitations = invitations.filter((i) => i.status === "pending").length;
       const activeClients = companies.length;
       const totalUsers = users.length;
-      const adminUsers = users.filter(u => u.isAdmin).length;
+      const adminUsers = users.filter((u) => u.isAdmin).length;
 
       res.json({
         totalClients: activeClients,
@@ -220,14 +220,14 @@ export function registerAdminRoutes(app: Express): void {
   // Get all clients (companies) - Admin only
   // Get all companies with stats (supports filtering by companyType)
   router.get(
-    '/admin/clients',
+    "/admin/clients",
     asyncHandler(async (req: Request, res: Response) => {
       const { type } = req.query; // 'client' | 'customer' | undefined (all)
 
       let companies;
-      if (type === 'client') {
+      if (type === "client") {
         companies = await storage.getClientCompanies();
-      } else if (type === 'customer') {
+      } else if (type === "customer") {
         companies = await storage.getCustomerCompanies();
       } else {
         companies = await storage.getAllCompanies();
@@ -258,7 +258,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get specific client details with all related data - Admin only
   router.get(
-    '/admin/clients/:clientId',
+    "/admin/clients/:clientId",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const company = await storage.getCompany(clientId);
@@ -267,7 +267,16 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(404).json({ message: "Client not found" });
       }
 
-      const [companyUsers, documents, invoices, receipts, journalEntries, complianceTasks, clientNotes, activityLogs] = await Promise.all([
+      const [
+        companyUsers,
+        documents,
+        invoices,
+        receipts,
+        journalEntries,
+        complianceTasks,
+        clientNotes,
+        activityLogs,
+      ] = await Promise.all([
         storage.getCompanyUserWithUser(clientId),
         storage.getDocuments(clientId),
         storage.getInvoicesByCompanyId(clientId),
@@ -294,7 +303,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Create new client (company) - Admin only
   router.post(
-    '/admin/clients',
+    "/admin/clients",
     asyncHandler(async (req: Request, res: Response) => {
       const userId = (req as any).user.id;
 
@@ -324,8 +333,8 @@ export function registerAdminRoutes(app: Express): void {
       await storage.createActivityLog({
         userId,
         companyId: company.id,
-        action: 'create',
-        entityType: 'company',
+        action: "create",
+        entityType: "company",
         entityId: company.id,
         description: `Created new client: ${company.name}`,
       });
@@ -336,7 +345,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Update client (company) - Admin only
   router.patch(
-    '/admin/clients/:clientId',
+    "/admin/clients/:clientId",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const userId = (req as any).user.id;
@@ -347,8 +356,8 @@ export function registerAdminRoutes(app: Express): void {
       await storage.createActivityLog({
         userId,
         companyId: clientId,
-        action: 'update',
-        entityType: 'company',
+        action: "update",
+        entityType: "company",
         entityId: clientId,
         description: `Updated client: ${company.name}`,
       });
@@ -359,7 +368,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Delete client (company) - Admin only
   router.delete(
-    '/admin/clients/:clientId',
+    "/admin/clients/:clientId",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const userId = (req as any).user.id;
@@ -374,8 +383,8 @@ export function registerAdminRoutes(app: Express): void {
       // Log activity
       await storage.createActivityLog({
         userId,
-        action: 'delete',
-        entityType: 'company',
+        action: "delete",
+        entityType: "company",
         entityId: clientId,
         description: `Deleted client: ${company.name}`,
       });
@@ -390,7 +399,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get all users - Admin only (later/more complete version)
   router.get(
-    '/admin/users',
+    "/admin/users",
     asyncHandler(async (req: Request, res: Response) => {
       const users = await storage.getAllUsers();
 
@@ -410,20 +419,20 @@ export function registerAdminRoutes(app: Express): void {
   // 400 to make the contract explicit (silently dropping would mask
   // bugs in callers that thought they were granting/revoking admin).
   router.patch(
-    '/admin/users/:userId',
+    "/admin/users/:userId",
     asyncHandler(async (req: Request, res: Response) => {
       const { userId: targetUserId } = req.params;
       const adminUserId = (req as any).user.id;
 
-      if ('isAdmin' in req.body) {
+      if ("isAdmin" in req.body) {
         logger.warn(
           { adminUserId, targetUserId, attempted: req.body.isAdmin },
-          'Rejected admin user-update that tried to set isAdmin via API',
+          "Rejected admin user-update that tried to set isAdmin via API"
         );
         return res.status(400).json({
           message:
-            'isAdmin cannot be changed via this endpoint. Admin promotion/demotion is out-of-band only.',
-          code: 'ADMIN_PROMOTION_VIA_API_FORBIDDEN',
+            "isAdmin cannot be changed via this endpoint. Admin promotion/demotion is out-of-band only.",
+          code: "ADMIN_PROMOTION_VIA_API_FORBIDDEN",
         });
       }
 
@@ -436,8 +445,8 @@ export function registerAdminRoutes(app: Express): void {
       // Log activity
       await storage.createActivityLog({
         userId: adminUserId,
-        action: 'update',
-        entityType: 'user',
+        action: "update",
+        entityType: "user",
         entityId: targetUserId,
         description: `Updated user: ${user.email}`,
         metadata: JSON.stringify({ changes: Object.keys(updates) }),
@@ -450,7 +459,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Delete user - Admin only
   router.delete(
-    '/admin/users/:userId',
+    "/admin/users/:userId",
     asyncHandler(async (req: Request, res: Response) => {
       const { userId: targetUserId } = req.params;
       const adminUserId = (req as any).user.id;
@@ -470,8 +479,8 @@ export function registerAdminRoutes(app: Express): void {
       // Log activity
       await storage.createActivityLog({
         userId: adminUserId,
-        action: 'delete',
-        entityType: 'user',
+        action: "delete",
+        entityType: "user",
         entityId: targetUserId,
         description: `Deleted user: ${user.email}`,
       });
@@ -486,7 +495,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get all invitations - Admin only
   router.get(
-    '/admin/invitations',
+    "/admin/invitations",
     asyncHandler(async (req: Request, res: Response) => {
       const invitations = await storage.getInvitations();
       res.json(invitations);
@@ -495,7 +504,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Create invitation - Admin only
   router.post(
-    '/admin/invitations',
+    "/admin/invitations",
     asyncHandler(async (req: Request, res: Response) => {
       const adminUserId = (req as any).user.id;
 
@@ -505,30 +514,32 @@ export function registerAdminRoutes(app: Express): void {
       // compromised admin account silently create unlimited new admins
       // (lateral privilege escalation). Admin promotion is now out-of-band
       // — direct DB operation or a future 2-admin-approval flow.
-      const requestedRole: string = (req.body.role || 'client').toString().toLowerCase();
-      const requestedUserType: string = (req.body.userType || 'client').toString().toLowerCase();
-      const allowedRoles = new Set(['client', 'customer', 'member', 'owner']);
-      const allowedUserTypes = new Set(['client', 'customer', 'client_portal']);
+      const requestedRole: string = (req.body.role || "client").toString().toLowerCase();
+      const requestedUserType: string = (req.body.userType || "client").toString().toLowerCase();
+      const allowedRoles = new Set(["client", "customer", "member", "owner"]);
+      const allowedUserTypes = new Set(["client", "customer", "client_portal"]);
       if (!allowedRoles.has(requestedRole) || !allowedUserTypes.has(requestedUserType)) {
         logger.warn(
           { adminUserId, requestedRole, requestedUserType, email: req.body.email },
-          'Rejected invitation that would have granted admin/staff privileges',
+          "Rejected invitation that would have granted admin/staff privileges"
         );
         return res.status(400).json({
           message:
-            'Invitations cannot grant admin or staff roles. Allowed userType: client, customer, client_portal. Allowed role: client, customer, member, owner. Promote users to admin out-of-band.',
-          code: 'INVITATION_ROLE_FORBIDDEN',
+            "Invitations cannot grant admin or staff roles. Allowed userType: client, customer, client_portal. Allowed role: client, customer, member, owner. Promote users to admin out-of-band.",
+          code: "INVITATION_ROLE_FORBIDDEN",
         });
       }
 
       // Check if email already has pending invitation
       const existing = await storage.getInvitationByEmail(req.body.email);
-      if (existing && existing.status === 'pending') {
-        return res.status(400).json({ message: "Pending invitation already exists for this email" });
+      if (existing && existing.status === "pending") {
+        return res
+          .status(400)
+          .json({ message: "Pending invitation already exists for this email" });
       }
 
       // Generate secure token
-      const token = crypto.randomBytes(32).toString('hex');
+      const token = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
@@ -539,7 +550,7 @@ export function registerAdminRoutes(app: Express): void {
         userType: requestedUserType,
         token,
         invitedBy: adminUserId,
-        status: 'pending',
+        status: "pending",
         expiresAt,
       });
 
@@ -547,8 +558,8 @@ export function registerAdminRoutes(app: Express): void {
       await storage.createActivityLog({
         userId: adminUserId,
         companyId: req.body.companyId || null,
-        action: 'invite',
-        entityType: 'invitation',
+        action: "invite",
+        entityType: "invitation",
         entityId: invitation.id,
         description: `Sent invitation to ${req.body.email}`,
       });
@@ -559,18 +570,18 @@ export function registerAdminRoutes(app: Express): void {
 
   // Revoke invitation - Admin only
   router.patch(
-    '/admin/invitations/:invitationId/revoke',
+    "/admin/invitations/:invitationId/revoke",
     asyncHandler(async (req: Request, res: Response) => {
       const { invitationId } = req.params;
       const adminUserId = (req as any).user.id;
 
-      const invitation = await storage.updateInvitation(invitationId, { status: 'revoked' });
+      const invitation = await storage.updateInvitation(invitationId, { status: "revoked" });
 
       // Log activity
       await storage.createActivityLog({
         userId: adminUserId,
-        action: 'update',
-        entityType: 'invitation',
+        action: "update",
+        entityType: "invitation",
         entityId: invitationId,
         description: `Revoked invitation for ${invitation.email}`,
       });
@@ -581,27 +592,27 @@ export function registerAdminRoutes(app: Express): void {
 
   // Resend invitation - Admin only
   router.post(
-    '/admin/invitations/:invitationId/resend',
+    "/admin/invitations/:invitationId/resend",
     asyncHandler(async (req: Request, res: Response) => {
       const { invitationId } = req.params;
       const adminUserId = (req as any).user.id;
 
       // Generate new token and extend expiry
-      const token = crypto.randomBytes(32).toString('hex');
+      const token = crypto.randomBytes(32).toString("hex");
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 7);
 
       const invitation = await storage.updateInvitation(invitationId, {
         token,
         expiresAt,
-        status: 'pending',
+        status: "pending",
       });
 
       // Log activity
       await storage.createActivityLog({
         userId: adminUserId,
-        action: 'update',
-        entityType: 'invitation',
+        action: "update",
+        entityType: "invitation",
         entityId: invitationId,
         description: `Resent invitation to ${invitation.email}`,
       });
@@ -612,7 +623,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Delete invitation - Admin only
   router.delete(
-    '/admin/invitations/:invitationId',
+    "/admin/invitations/:invitationId",
     asyncHandler(async (req: Request, res: Response) => {
       const { invitationId } = req.params;
       await storage.deleteInvitation(invitationId);
@@ -626,7 +637,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get all activity logs - Admin only
   router.get(
-    '/admin/activity-logs',
+    "/admin/activity-logs",
     asyncHandler(async (req: Request, res: Response) => {
       const limit = parseInt(req.query.limit as string) || 100;
       const logs = await storage.getActivityLogs(limit);
@@ -636,7 +647,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get activity logs for specific company - Admin only
   router.get(
-    '/admin/clients/:clientId/activity-logs',
+    "/admin/clients/:clientId/activity-logs",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const limit = parseInt(req.query.limit as string) || 100;
@@ -651,7 +662,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Get notes for a client - Admin only
   router.get(
-    '/admin/clients/:clientId/notes',
+    "/admin/clients/:clientId/notes",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const notes = await storage.getClientNotes(clientId);
@@ -661,7 +672,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Create note for a client - Admin only
   router.post(
-    '/admin/clients/:clientId/notes',
+    "/admin/clients/:clientId/notes",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const authorId = (req as any).user.id;
@@ -679,12 +690,12 @@ export function registerAdminRoutes(app: Express): void {
 
   // Update note - Admin only
   router.patch(
-    '/admin/notes/:noteId',
+    "/admin/notes/:noteId",
     asyncHandler(async (req: Request, res: Response) => {
       const { noteId } = req.params;
       const existing = await storage.getClientNoteById(noteId);
       if (!existing) {
-        return res.status(404).json({ message: 'Note not found' });
+        return res.status(404).json({ message: "Note not found" });
       }
       // Strip companyId/id so the client can't reassign tenancy via body.
       const { companyId: _ignoredCompanyId, id: _ignoredId, ...updateData } = req.body ?? {};
@@ -695,12 +706,12 @@ export function registerAdminRoutes(app: Express): void {
 
   // Delete note - Admin only
   router.delete(
-    '/admin/notes/:noteId',
+    "/admin/notes/:noteId",
     asyncHandler(async (req: Request, res: Response) => {
       const { noteId } = req.params;
       const existing = await storage.getClientNoteById(noteId);
       if (!existing) {
-        return res.status(404).json({ message: 'Note not found' });
+        return res.status(404).json({ message: "Note not found" });
       }
       await storage.deleteClientNote(noteId, existing.companyId);
       res.json({ success: true });
@@ -713,12 +724,14 @@ export function registerAdminRoutes(app: Express): void {
 
   // Import clients from Excel - Admin only
   router.post(
-    '/admin/import/clients',
+    "/admin/import/clients",
     asyncHandler(async (req: Request, res: Response) => {
       const { data, createInvitations, sendEmails } = req.body;
 
       if (!data || !Array.isArray(data)) {
-        return res.status(400).json({ message: "Invalid data format. Expected array of client records." });
+        return res
+          .status(400)
+          .json({ message: "Invalid data format. Expected array of client records." });
       }
 
       const userId = (req as any).user.id;
@@ -731,7 +744,7 @@ export function registerAdminRoutes(app: Express): void {
       for (const row of data) {
         try {
           // Validate required fields
-          if (!row.name || row.name.trim() === '') {
+          if (!row.name || row.name.trim() === "") {
             results.errors.push({ row, error: "Company name is required" });
             continue;
           }
@@ -769,8 +782,8 @@ export function registerAdminRoutes(app: Express): void {
           await storage.createActivityLog({
             userId,
             companyId: company.id,
-            action: 'create',
-            entityType: 'company',
+            action: "create",
+            entityType: "company",
             entityId: company.id,
             description: `Imported client company: ${company.name}`,
           });
@@ -778,19 +791,19 @@ export function registerAdminRoutes(app: Express): void {
           // Create invitation if email is provided and createInvitations is true
           if (createInvitations && row.email) {
             try {
-              const token = crypto.randomBytes(32).toString('hex');
+              const token = crypto.randomBytes(32).toString("hex");
               const expiresAt = new Date();
               expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
 
               const invitation = await storage.createInvitation({
                 email: row.email.trim(),
                 companyId: company.id,
-                role: 'client',
-                userType: 'client',
+                role: "client",
+                userType: "client",
                 token,
                 expiresAt,
                 invitedBy: userId,
-                status: 'pending',
+                status: "pending",
               });
 
               results.invitations.push({
@@ -800,10 +813,12 @@ export function registerAdminRoutes(app: Express): void {
               });
             } catch (invErr: any) {
               // Don't fail the whole import if invitation fails
-              logger.error({ email: row.email, err: invErr.message }, 'Failed to create invitation');
+              logger.error(
+                { email: row.email, err: invErr.message },
+                "Failed to create invitation"
+              );
             }
           }
-
         } catch (rowError: any) {
           results.errors.push({ row, error: rowError.message });
         }
@@ -818,7 +833,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Parse Excel file and return preview - Admin only
   router.post(
-    '/admin/import/preview',
+    "/admin/import/preview",
     asyncHandler(async (req: Request, res: Response) => {
       const { fileData, fileName } = req.body;
 
@@ -826,25 +841,10 @@ export function registerAdminRoutes(app: Express): void {
         return res.status(400).json({ message: "No file data provided" });
       }
 
-      // Convert base64 to buffer
-      const buffer = Buffer.from(fileData, 'base64');
-
-      // Parse Excel file
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-
-      // Convert to JSON with headers
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-
-      // Get column headers
-      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-      const headers: string[] = [];
-      for (let col = range.s.c; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: col });
-        const cell = worksheet[cellAddress];
-        headers.push(cell ? String(cell.v) : `Column ${col + 1}`);
-      }
+      const buffer = Buffer.from(fileData, "base64");
+      const parsed = await parseSpreadsheetBuffer(buffer, { fileName });
+      const jsonData = parsed.rows;
+      const headers = parsed.headers;
 
       // Map data to expected format based on column headers
       const mappedData = jsonData.map((row: any) => {
@@ -852,42 +852,75 @@ export function registerAdminRoutes(app: Express): void {
         const mapped: any = {};
 
         // Name mapping (look for various name columns)
-        mapped.name = row['Company Name'] || row['Name'] || row['Client Name'] ||
-                      row['company_name'] || row['name'] || row['client'] ||
-                      row['Company'] || row['Business Name'] || '';
+        mapped.name =
+          row["Company Name"] ||
+          row["Name"] ||
+          row["Client Name"] ||
+          row["company_name"] ||
+          row["name"] ||
+          row["client"] ||
+          row["Company"] ||
+          row["Business Name"] ||
+          "";
 
         // Email mapping
-        mapped.email = row['Email'] || row['email'] || row['Contact Email'] ||
-                       row['contact_email'] || row['E-mail'] || '';
+        mapped.email =
+          row["Email"] ||
+          row["email"] ||
+          row["Contact Email"] ||
+          row["contact_email"] ||
+          row["E-mail"] ||
+          "";
 
         // Phone mapping
-        mapped.phone = row['Phone'] || row['phone'] || row['Contact Phone'] ||
-                       row['contact_phone'] || row['Tel'] || row['Telephone'] || '';
+        mapped.phone =
+          row["Phone"] ||
+          row["phone"] ||
+          row["Contact Phone"] ||
+          row["contact_phone"] ||
+          row["Tel"] ||
+          row["Telephone"] ||
+          "";
 
         // TRN/Registration mapping
-        mapped.trn = row['TRN'] || row['trn'] || row['Tax Registration Number'] ||
-                     row['VAT Number'] || row['Registration Number'] || row['registration_number'] || '';
+        mapped.trn =
+          row["TRN"] ||
+          row["trn"] ||
+          row["Tax Registration Number"] ||
+          row["VAT Number"] ||
+          row["Registration Number"] ||
+          row["registration_number"] ||
+          "";
 
         // Address mapping
-        mapped.address = row['Address'] || row['address'] || row['Business Address'] ||
-                         row['business_address'] || row['Location'] || '';
+        mapped.address =
+          row["Address"] ||
+          row["address"] ||
+          row["Business Address"] ||
+          row["business_address"] ||
+          row["Location"] ||
+          "";
 
         // Industry mapping
-        mapped.industry = row['Industry'] || row['industry'] || row['Sector'] ||
-                          row['Business Type'] || '';
+        mapped.industry =
+          row["Industry"] || row["industry"] || row["Sector"] || row["Business Type"] || "";
 
         // Website mapping
-        mapped.website = row['Website'] || row['website'] || row['URL'] || row['Web'] || '';
+        mapped.website = row["Website"] || row["website"] || row["URL"] || row["Web"] || "";
 
         // Legal structure mapping
-        mapped.legalStructure = row['Legal Structure'] || row['legal_structure'] ||
-                                row['Business Structure'] || row['Type'] || '';
+        mapped.legalStructure =
+          row["Legal Structure"] ||
+          row["legal_structure"] ||
+          row["Business Structure"] ||
+          row["Type"] ||
+          "";
 
         // Currency (default to AED)
-        mapped.currency = row['Currency'] || row['currency'] || 'AED';
+        mapped.currency = row["Currency"] || row["currency"] || "AED";
 
         // Locale (default to en)
-        mapped.locale = row['Locale'] || row['locale'] || row['Language'] || 'en';
+        mapped.locale = row["Locale"] || row["locale"] || row["Language"] || "en";
 
         // Keep original row for reference
         mapped._original = row;
@@ -897,7 +930,7 @@ export function registerAdminRoutes(app: Express): void {
 
       res.json({
         fileName,
-        sheetName: firstSheetName,
+        sheetName: parsed.sheetName,
         headers,
         totalRows: jsonData.length,
         preview: mappedData.slice(0, 10), // First 10 rows for preview
@@ -908,55 +941,43 @@ export function registerAdminRoutes(app: Express): void {
 
   // Download sample import template - Admin only
   router.get(
-    '/admin/import/template',
+    "/admin/import/template",
     asyncHandler(async (req: Request, res: Response) => {
       // Create sample data
       const sampleData = [
         {
-          'Company Name': 'Example Company LLC',
-          'Email': 'contact@example.com',
-          'Phone': '+971 50 123 4567',
-          'TRN': '100000000000003',
-          'Address': 'Dubai, UAE',
-          'Industry': 'Technology',
-          'Website': 'www.example.com',
-          'Legal Structure': 'LLC',
+          "Company Name": "Example Company LLC",
+          Email: "contact@example.com",
+          Phone: "+971 50 123 4567",
+          TRN: "100000000000003",
+          Address: "Dubai, UAE",
+          Industry: "Technology",
+          Website: "www.example.com",
+          "Legal Structure": "LLC",
         },
         {
-          'Company Name': 'Sample Trading Est.',
-          'Email': 'info@sample.ae',
-          'Phone': '+971 4 123 4567',
-          'TRN': '100000000000004',
-          'Address': 'Abu Dhabi, UAE',
-          'Industry': 'Trading',
-          'Website': '',
-          'Legal Structure': 'Sole Proprietorship',
+          "Company Name": "Sample Trading Est.",
+          Email: "info@sample.ae",
+          Phone: "+971 4 123 4567",
+          TRN: "100000000000004",
+          Address: "Abu Dhabi, UAE",
+          Industry: "Trading",
+          Website: "",
+          "Legal Structure": "Sole Proprietorship",
         },
       ];
 
-      // Create workbook
-      const workbook = XLSX.utils.book_new();
-      const worksheet = XLSX.utils.json_to_sheet(sampleData);
+      const buffer = await buildSpreadsheetBuffer(
+        "Clients",
+        sampleData,
+        [25, 25, 18, 18, 30, 15, 20, 18]
+      );
 
-      // Set column widths
-      worksheet['!cols'] = [
-        { wch: 25 }, // Company Name
-        { wch: 25 }, // Email
-        { wch: 18 }, // Phone
-        { wch: 18 }, // TRN
-        { wch: 30 }, // Address
-        { wch: 15 }, // Industry
-        { wch: 20 }, // Website
-        { wch: 18 }, // Legal Structure
-      ];
-
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
-
-      // Generate buffer
-      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', 'attachment; filename=client_import_template.xlsx');
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", "attachment; filename=client_import_template.xlsx");
       res.send(buffer);
     })
   );
@@ -967,7 +988,7 @@ export function registerAdminRoutes(app: Express): void {
 
   // Admin upload document for client
   router.post(
-    '/admin/clients/:clientId/documents',
+    "/admin/clients/:clientId/documents",
     asyncHandler(async (req: Request, res: Response) => {
       const { clientId } = req.params;
       const userId = (req as any).user.id;
@@ -978,10 +999,10 @@ export function registerAdminRoutes(app: Express): void {
         nameAr: req.body.nameAr || null,
         category: req.body.category,
         description: req.body.description || null,
-        fileUrl: req.body.fileUrl || '/uploads/placeholder.pdf',
-        fileName: req.body.fileName || 'document.pdf',
+        fileUrl: req.body.fileUrl || "/uploads/placeholder.pdf",
+        fileName: req.body.fileName || "document.pdf",
         fileSize: req.body.fileSize || null,
-        mimeType: req.body.mimeType || 'application/pdf',
+        mimeType: req.body.mimeType || "application/pdf",
         expiryDate: req.body.expiryDate ? new Date(req.body.expiryDate) : null,
         reminderDays: req.body.reminderDays || 30,
         reminderSent: false,
@@ -996,8 +1017,8 @@ export function registerAdminRoutes(app: Express): void {
       await storage.createActivityLog({
         userId,
         companyId: clientId,
-        action: 'create',
-        entityType: 'document',
+        action: "create",
+        entityType: "document",
         entityId: document.id,
         description: `Admin uploaded document: ${document.name}`,
       });
@@ -1011,7 +1032,7 @@ export function registerAdminRoutes(app: Express): void {
   // =====================================
 
   router.get(
-    '/admin/audit-log',
+    "/admin/audit-log",
     asyncHandler(async (req: Request, res: Response) => {
       const {
         userId: filterUserId,
@@ -1023,8 +1044,8 @@ export function registerAdminRoutes(app: Express): void {
         limit: limitParam,
       } = req.query as Record<string, string | undefined>;
 
-      const limit = Math.min(parseInt(limitParam ?? '50', 10), 500);
-      const offset = (Math.max(parseInt(page ?? '1', 10), 1) - 1) * limit;
+      const limit = Math.min(parseInt(limitParam ?? "50", 10), 500);
+      const offset = (Math.max(parseInt(page ?? "1", 10), 1) - 1) * limit;
 
       const conditions: any[] = [];
       if (filterUserId) conditions.push(eq(activityLogs.userId, filterUserId));
@@ -1040,14 +1061,12 @@ export function registerAdminRoutes(app: Express): void {
         .limit(limit)
         .offset(offset);
 
-      const logs = conditions.length > 0
-        ? await query.where(and(...conditions))
-        : await query;
+      const logs = conditions.length > 0 ? await query.where(and(...conditions)) : await query;
 
-      res.json({ logs, page: parseInt(page ?? '1', 10), limit });
+      res.json({ logs, page: parseInt(page ?? "1", 10), limit });
     })
   );
 
   // Mount all admin routes under /api
-  app.use('/api', router);
+  app.use("/api", router);
 }

@@ -1,8 +1,12 @@
 node_modules
 dist
 build
+coverage
+uploads
+migrations/meta
+.claude
+.claire
 *.min.js
 *.min.css
 package-lock.json
 .env*
-

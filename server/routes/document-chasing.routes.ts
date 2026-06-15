@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
+import { requireFirmRole } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import {
   CHASE_LEVELS,
@@ -57,7 +58,10 @@ const complianceEventTypeSchema = z.enum(COMPLIANCE_EVENT_TYPES);
 const createRequirementSchema = z.object({
   documentType: documentTypeSchema,
   description: z.string().max(500).optional().nullable(),
-  dueDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
+  dueDate: z
+    .string()
+    .datetime()
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
   isRecurring: z.boolean().optional().default(false),
   recurringIntervalDays: z.number().int().positive().max(3650).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
@@ -66,7 +70,11 @@ const createRequirementSchema = z.object({
 const updateRequirementSchema = z.object({
   documentType: documentTypeSchema.optional(),
   description: z.string().max(500).nullable().optional(),
-  dueDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
+  dueDate: z
+    .string()
+    .datetime()
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}/))
+    .optional(),
   isRecurring: z.boolean().optional(),
   recurringIntervalDays: z.number().int().positive().max(3650).nullable().optional(),
   status: requirementStatusSchema.optional(),
@@ -84,7 +92,10 @@ const sendChaseSchema = z.object({
 const createComplianceEventSchema = z.object({
   eventType: complianceEventTypeSchema,
   description: z.string().min(1).max(500),
-  eventDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
+  eventDate: z
+    .string()
+    .datetime()
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)),
   reminderDays: z.array(z.number().int().min(0).max(365)).optional(),
   linkedRequirementId: z.string().uuid().nullable().optional(),
 });
@@ -106,8 +117,16 @@ const companyIdAndRequirementIdParams = z.object({
 // isn't a full ISO datetime or YYYY-MM-DD date instead of silently coercing
 // "abc" to Invalid Date and dropping the filter.
 const calendarRangeQuerySchema = z.object({
-  from: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
-  to: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}/)).optional(),
+  from: z
+    .string()
+    .datetime()
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}/))
+    .optional(),
+  to: z
+    .string()
+    .datetime()
+    .or(z.string().regex(/^\d{4}-\d{2}-\d{2}/))
+    .optional(),
 });
 
 // Parse path params via the given Zod schema; on failure write a 400 and
@@ -115,7 +134,7 @@ const calendarRangeQuerySchema = z.object({
 function parsePathParams<S extends z.ZodTypeAny>(
   schema: S,
   params: unknown,
-  res: Response,
+  res: Response
 ): z.infer<S> | null {
   const result = schema.safeParse(params);
   if (!result.success) {
@@ -130,6 +149,7 @@ export function registerDocumentChasingRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/document-requirements",
     authMiddleware,
+    requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
       const params = parsePathParams(companyIdParams, req.params, res);
       if (!params) return;
@@ -138,12 +158,13 @@ export function registerDocumentChasingRoutes(app: Express) {
       if (!company) return;
       const rows = await listRequirements(companyId);
       res.json(rows);
-    }),
+    })
   );
 
   app.post(
     "/api/companies/:companyId/document-requirements",
     authMiddleware,
+    requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
       const params = parsePathParams(companyIdParams, req.params, res);
       if (!params) return;
@@ -161,12 +182,13 @@ export function registerDocumentChasingRoutes(app: Express) {
         notes: validated.notes ?? null,
       });
       res.status(201).json(row);
-    }),
+    })
   );
 
   app.patch(
     "/api/companies/:companyId/document-requirements/:id",
     authMiddleware,
+    requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
       const params = parsePathParams(companyIdAndIdParams, req.params, res);
       if (!params) return;
@@ -188,31 +210,32 @@ export function registerDocumentChasingRoutes(app: Express) {
       }
       const row = await updateRequirement(companyId, id, patch);
       res.json(row);
-    }),
+    })
   );
 
   // ─── Chase Queue ──────────────────────────────────────────────────
   app.get(
     "/api/companies/:companyId/document-chases/queue",
     authMiddleware,
+    requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
       const params = parsePathParams(companyIdParams, req.params, res);
       if (!params) return;
       const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
-      const queue = await buildChaseQueue(
-        companyId,
-        company.name,
-        { phone: company.contactPhone ?? null, email: company.contactEmail ?? null },
-      );
+      const queue = await buildChaseQueue(companyId, company.name, {
+        phone: company.contactPhone ?? null,
+        email: company.contactEmail ?? null,
+      });
       res.json(queue.map(({ whatsappLink: _ignoredLink, ...item }) => item));
-    }),
+    })
   );
 
   app.get(
     "/api/companies/:companyId/document-chases/history/:requirementId",
     authMiddleware,
+    requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
       const params = parsePathParams(companyIdAndRequirementIdParams, req.params, res);
       if (!params) return;
@@ -221,12 +244,13 @@ export function registerDocumentChasingRoutes(app: Express) {
       if (!company) return;
       const rows = await listChasesForRequirement(companyId, requirementId);
       res.json(rows);
-    }),
+    })
   );
 
   app.post(
     "/api/companies/:companyId/document-chases/send/:requirementId",
     authMiddleware,
+    requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
       const params = parsePathParams(companyIdAndRequirementIdParams, req.params, res);
       if (!params) return;
@@ -248,7 +272,13 @@ export function registerDocumentChasingRoutes(app: Express) {
       const level = validated.overrideLevel ?? computedLevel;
       const message =
         validated.overrideMessage ??
-        renderChaseMessage(level, requirement.documentType, requirement.dueDate, company.name, overdue);
+        renderChaseMessage(
+          level,
+          requirement.documentType,
+          requirement.dueDate,
+          company.name,
+          overdue
+        );
       const chase = await recordChaseSend({
         companyId,
         requirementId,
@@ -259,23 +289,23 @@ export function registerDocumentChasingRoutes(app: Express) {
         recipientEmail: email,
       });
       res.status(201).json({ chase });
-    }),
+    })
   );
 
   app.post(
     "/api/companies/:companyId/document-chases/bulk-send",
     authMiddleware,
+    requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
       const params = parsePathParams(companyIdParams, req.params, res);
       if (!params) return;
       const { companyId } = params;
       const company = await requireCompanyAccess(req, res, companyId);
       if (!company) return;
-      const queue = await buildChaseQueue(
-        companyId,
-        company.name,
-        { phone: company.contactPhone ?? null, email: company.contactEmail ?? null },
-      );
+      const queue = await buildChaseQueue(companyId, company.name, {
+        phone: company.contactPhone ?? null,
+        email: company.contactEmail ?? null,
+      });
       const sent = [] as Array<{ requirementId: string; chaseLevel: string }>;
       for (const item of queue) {
         await recordChaseSend({
@@ -293,12 +323,13 @@ export function registerDocumentChasingRoutes(app: Express) {
         });
       }
       res.json({ sentCount: sent.length, sent });
-    }),
+    })
   );
 
   app.get(
     "/api/companies/:companyId/document-chases/effectiveness",
     authMiddleware,
+    requireFirmRole(),
     asyncHandler(async (req: Request, res: Response) => {
       const params = parsePathParams(companyIdParams, req.params, res);
       if (!params) return;
@@ -307,7 +338,7 @@ export function registerDocumentChasingRoutes(app: Express) {
       if (!company) return;
       const report = await effectivenessReport(companyId);
       res.json(report);
-    }),
+    })
   );
 
   // ─── Compliance Calendar ──────────────────────────────────────────
@@ -325,7 +356,7 @@ export function registerDocumentChasingRoutes(app: Express) {
       const toQ = range.to ? new Date(range.to) : undefined;
       const events = await listComplianceEvents(companyId, { from: fromQ, to: toQ });
       res.json(events);
-    }),
+    })
   );
 
   app.post(
@@ -344,9 +375,7 @@ export function registerDocumentChasingRoutes(app: Express) {
       if (validated.linkedRequirementId) {
         const linked = await getRequirement(companyId, validated.linkedRequirementId);
         if (!linked) {
-          res
-            .status(400)
-            .json({ message: "linkedRequirementId does not belong to this company" });
+          res.status(400).json({ message: "linkedRequirementId does not belong to this company" });
           return;
         }
       }
@@ -359,6 +388,6 @@ export function registerDocumentChasingRoutes(app: Express) {
         linkedRequirementId: validated.linkedRequirementId ?? null,
       });
       res.status(201).json(row);
-    }),
+    })
   );
 }
