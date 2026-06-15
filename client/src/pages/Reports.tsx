@@ -3496,12 +3496,16 @@ export default function Reports() {
       {
         id: "account-transaction-review",
         title: "Review account transaction lines",
-        description: "Posted account lines are missing source links, descriptions, or balance review.",
+        description:
+          "Posted account lines are missing source links, descriptions, or balance review.",
         source: "Account Transactions",
         personas: ["accountant"],
         priority: accountTransactionReviewQueue > 0 ? "medium" : "low",
         count: accountTransactionReviewQueue,
-        impact: Math.max(generalLedger?.totals.totalDebits ?? 0, generalLedger?.totals.totalCredits ?? 0),
+        impact: Math.max(
+          generalLedger?.totals.totalDebits ?? 0,
+          generalLedger?.totals.totalCredits ?? 0
+        ),
         tab: "accountTransactions",
         href: "/accounts",
         actionLabel: "Open accounts",
@@ -4258,12 +4262,7 @@ export default function Reports() {
       );
     } else if (activeTab === "accountTransactions" && generalLedger) {
       result = await exportToGoogleSheets(
-        [
-          prepareAccountTransactionsForExport(
-            accountTransactionRows,
-            generalLedger.reportCurrency
-          ),
-        ],
+        [prepareAccountTransactionsForExport(accountTransactionRows, generalLedger.reportCurrency)],
         `Account Transactions${dateRangeStr}`,
         selectedCompanyId
       );
@@ -6457,6 +6456,193 @@ export default function Reports() {
               ) : (
                 <div className="py-12 text-center text-sm text-muted-foreground">
                   No recent ledger lines found.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="accountTransactions" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Transaction Lines
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {ledgerLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatNumber(accountTransactionRows.length, locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Debit Activity
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {ledgerLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatCurrency(
+                      generalLedger?.totals.totalDebits ?? 0,
+                      generalLedger?.reportCurrency ?? "AED",
+                      locale
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Credit Activity
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {ledgerLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatCurrency(
+                      generalLedger?.totals.totalCredits ?? 0,
+                      generalLedger?.reportCurrency ?? "AED",
+                      locale
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Line Reviews
+                </CardTitle>
+                <Badge variant={accountTransactionReviewQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {ledgerLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatNumber(accountTransactionReviewQueue, locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Account Transactions</CardTitle>
+              <CardDescription>
+                Posted journal lines across accounts with source links, descriptions, and running
+                balances.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {ledgerLoading ? (
+                <Skeleton className="h-96" />
+              ) : accountTransactionRows.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1180px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Entry</TableHead>
+                        <TableHead>Account</TableHead>
+                        <TableHead>Source</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-right">Debit</TableHead>
+                        <TableHead className="text-right">Credit</TableHead>
+                        <TableHead className="text-right">Balance</TableHead>
+                        <TableHead>FX</TableHead>
+                        <TableHead>Review</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {accountTransactionRows.slice(0, 250).map((row) => (
+                        <TableRow key={row.lineId}>
+                          <TableCell className="whitespace-nowrap">
+                            {format(new Date(row.date), "MMM dd, yyyy")}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">{row.entryNumber}</TableCell>
+                          <TableCell>
+                            <div className="font-medium">{row.accountName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {row.accountCode || "-"} - {row.accountType}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={row.sourceId ? "outline" : "warning"}
+                              className="capitalize"
+                            >
+                              {row.source || "manual"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="max-w-sm truncate">
+                            {row.description || row.memo || "-"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(
+                              row.debit,
+                              generalLedger?.reportCurrency ?? "AED",
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(
+                              row.credit,
+                              generalLedger?.reportCurrency ?? "AED",
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono font-medium ${row.balance < 0 ? "text-red-600 dark:text-red-400" : ""}`}
+                          >
+                            {formatCurrency(
+                              row.balance,
+                              generalLedger?.reportCurrency ?? "AED",
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {row.foreignCurrency ? (
+                              <Badge variant="info">{row.foreignCurrency}</Badge>
+                            ) : (
+                              "-"
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {row.reviewSuggested ? (
+                              <Badge
+                                variant="warning"
+                                className="max-w-[220px] whitespace-normal text-left"
+                              >
+                                {row.reviewReason}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">Clear</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No account transaction lines found for this period.
                 </div>
               )}
             </CardContent>

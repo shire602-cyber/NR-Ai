@@ -190,6 +190,7 @@ export const reportPackManifests: Record<ReportPackId, ReportPackManifest> = {
     reportNames: [
       "Trial Balance",
       "General Ledger",
+      "Account Transactions",
       "Profit & Loss",
       "Balance Sheet",
       "VAT Return",

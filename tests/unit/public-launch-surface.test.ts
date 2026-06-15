@@ -134,6 +134,18 @@ describe("Public SaaS launch surface", () => {
     expect(reportRoutesSource).toContain("/api/companies/:id/reports/inventory-movement");
   });
 
+  it("keeps account transaction drill-down reporting live and packaged", () => {
+    const reportsSource = readRepoFile("client/src/pages/Reports.tsx");
+    const reportPacksSource = readRepoFile("server/services/report-pack-schedules.service.ts");
+
+    expect(reportsSource).toContain('name: "Account Transactions"');
+    expect(reportsSource).toContain('tab: "accountTransactions"');
+    expect(reportsSource).toContain('<TabsTrigger value="accountTransactions"');
+    expect(reportsSource).toContain('<TabsContent value="accountTransactions"');
+    expect(reportsSource).toContain("prepareAccountTransactionsForExport");
+    expect(reportPacksSource).toContain("Account Transactions");
+  });
+
   it("keeps expense-claim and WPS readiness reports live and exportable", () => {
     const reportsSource = readRepoFile("client/src/pages/Reports.tsx");
     const reportRoutesSource = readRepoFile("server/routes/reports.routes.ts");
