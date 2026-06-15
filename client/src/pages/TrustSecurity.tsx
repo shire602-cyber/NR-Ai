@@ -141,7 +141,7 @@ export default function TrustSecurity() {
               <h2 className="text-2xl font-semibold">Support commitments during launch</h2>
               <p className="mt-3 text-muted-foreground">
                 Paid launch customers get guided onboarding, implementation checklists, and support
-                through the onboarding team. Formal SLA-backed enterprise commitments are confirmed
+                through the onboarding team. Formal enterprise support commitments are confirmed
                 during setup based on the active hosting and support configuration.
               </p>
             </div>

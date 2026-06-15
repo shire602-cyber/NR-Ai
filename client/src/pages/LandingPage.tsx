@@ -52,9 +52,9 @@ const features = [
   },
   {
     icon: FileCheck,
-    title: "FTA-Compliant VAT",
+    title: "UAE VAT Workflows",
     description:
-      "VAT 201 returns, e-invoicing, and audit-ready ledgers. Stay compliant with UAE Federal Tax Authority rules.",
+      "Prepare VAT 201 working papers, e-invoicing records, and audit-ready ledgers for review.",
     color: "text-blue-500",
     bg: "bg-blue-500/10",
   },
@@ -62,7 +62,7 @@ const features = [
     icon: RefreshCw,
     title: "Bank Reconciliation",
     description:
-      "Smart transaction matching across UAE major banks. Reconcile months of statements in minutes.",
+      "Import UAE bank statements, review suggested matches, and create entries for exceptions.",
     color: "text-emerald-500",
     bg: "bg-emerald-500/10",
   },
@@ -70,23 +70,22 @@ const features = [
     icon: Globe,
     title: "Multi-Currency",
     description:
-      "AED as home currency with real-time FX rates for USD, EUR, GBP, and 150+ more. Gain/loss auto-posted.",
+      "Use AED as home currency, record foreign-currency activity, and review FX gain/loss entries.",
     color: "text-orange-500",
     bg: "bg-orange-500/10",
   },
   {
     icon: Languages,
     title: "Arabic + English",
-    description:
-      "Full bilingual interface and documents. Switch between Arabic and English with one click.",
+    description: "Use Arabic and English screens and documents for teams serving UAE customers.",
     color: "text-rose-500",
     bg: "bg-rose-500/10",
   },
   {
     icon: LayoutDashboard,
-    title: "Real-Time Dashboard",
+    title: "Finance Dashboard",
     description:
-      "Cash flow, P&L, VAT liability, and KPIs updated live. Spot issues before month-end.",
+      "Review cash flow, P&L, VAT liability, and KPIs from posted activity before month-end.",
     color: "text-indigo-500",
     bg: "bg-indigo-500/10",
   },
@@ -101,7 +100,7 @@ const features = [
     icon: Users,
     title: "Payroll (WPS SIF)",
     description:
-      "Generate WPS-compliant SIF files, calculate end-of-service gratuity, and manage leave accruals.",
+      "Prepare WPS SIF files, calculate end-of-service gratuity, and manage leave accruals.",
     color: "text-fuchsia-500",
     bg: "bg-fuchsia-500/10",
   },
@@ -112,7 +111,7 @@ const steps = [
     number: "01",
     title: "Sign Up",
     description:
-      "Create your account in under 2 minutes. No credit card required for the free tier.",
+      "Create your account and use guided setup. No credit card required for the free tier.",
     icon: CheckCircle2,
   },
   {
@@ -163,10 +162,10 @@ const plans = [
       "Unlimited Receipt OCR",
       "VAT 201 workflow",
       "Bank reconciliation",
-      "Multi-currency (AED + 150+)",
+      "Multi-currency workflows",
       "Arabic + English UI",
       "WPS Payroll (SIF)",
-      "Real-time dashboard",
+      "Finance dashboard",
       "Automated notifications",
       "Priority support",
     ],
@@ -184,9 +183,9 @@ const plans = [
       "Multi-entity / group companies",
       "Dedicated account manager",
       "Custom integrations",
-      "SLA-backed uptime",
+      "Enterprise SLA terms during setup",
       "On-site training",
-      "FTA audit representation",
+      "Accountant-assisted audit support",
     ],
   },
 ];
@@ -395,7 +394,7 @@ export default function LandingPage() {
       </header>
 
       {/* ── Hero ── */}
-      <section className="relative pt-28 pb-20 lg:pt-36 lg:pb-28 overflow-hidden">
+      <section role="main" className="relative pt-28 pb-20 lg:pt-36 lg:pb-28 overflow-hidden">
         {/* Background gradient blobs */}
         <div className="absolute inset-0 -z-10">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-primary/5 rounded-full blur-3xl" />
@@ -683,13 +682,14 @@ export default function LandingPage() {
                 <p className="text-muted-foreground leading-relaxed max-w-2xl">
                   Muhasib.ai is the official digital platform of{" "}
                   <strong>Najma Al Raeda (NRA) Accounting</strong> — a UAE-registered accounting
-                  firm with over a decade of experience serving Emirati businesses. NRA is an
-                  FTA-registered Tax Agent, ensuring your filings meet every regulatory requirement.
+                  firm with practical experience serving UAE businesses. Launch customers can use
+                  guided onboarding and accountant review for setup, VAT workflows, and month-end
+                  routines.
                 </p>
 
                 <div className="mt-6 flex flex-wrap gap-4 justify-center lg:justify-start">
                   {[
-                    { icon: Shield, text: "FTA-Registered Tax Agent" },
+                    { icon: Shield, text: "Accountant review available" },
                     { icon: Award, text: "UAE Registered Firm" },
                     { icon: CheckCircle2, text: "Serving UAE since 2017" },
                   ].map((item) => {
@@ -807,7 +807,6 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
       {/* ── Footer ── */}
       <footer className="border-t bg-muted/20 py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

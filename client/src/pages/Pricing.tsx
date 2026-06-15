@@ -41,7 +41,7 @@ import {
   Calculator,
   TrendingUp,
 } from "lucide-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import { motion, AnimatePresence } from "framer-motion";
 import { ScrollReveal, StaggerContainer, StaggerItem, hoverLift } from "@/lib/animations";
@@ -672,7 +672,7 @@ export default function Pricing() {
       </nav>
 
       {/* ── Header Section ───────────────────────────────────────────── */}
-      <section className="py-16 md:py-24 px-4">
+      <section role="main" className="py-16 md:py-24 px-4">
         <div className="container mx-auto text-center max-w-3xl">
           <ScrollReveal>
             <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm">
@@ -913,9 +913,9 @@ export default function Pricing() {
                   </TableHeader>
                   <TableBody>
                     {featureMatrix.map((category) => (
-                      <>
+                      <Fragment key={category.categoryKey}>
                         {/* Category header row */}
-                        <TableRow key={category.categoryKey} className="bg-muted/20">
+                        <TableRow className="bg-muted/20">
                           <TableCell
                             colSpan={5}
                             className="font-semibold text-sm text-foreground py-3"
@@ -939,7 +939,7 @@ export default function Pricing() {
                             <TableCell>{renderCheckOrDash(feature.enterprise)}</TableCell>
                           </TableRow>
                         ))}
-                      </>
+                      </Fragment>
                     ))}
                   </TableBody>
                 </Table>
@@ -1104,7 +1104,6 @@ export default function Pricing() {
           </ScrollReveal>
         </div>
       </section>
-
       {/* ── Footer ───────────────────────────────────────────────────── */}
       <footer className="border-t py-8 px-4">
         <div className="container mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
@@ -1116,7 +1115,7 @@ export default function Pricing() {
           </div>
           <div className="flex items-center gap-4">
             <Lock className="h-3.5 w-3.5" />
-            <span>{locale === "en" ? "Bank-level encryption" : "تشفير بمستوى البنوك"}</span>
+            <span>{locale === "en" ? "Secure access controls" : "ضوابط وصول آمنة"}</span>
             <span className="text-muted-foreground/40">|</span>
             <span>{locale === "en" ? "UAE-hosted" : "مستضاف في الإمارات"}</span>
           </div>

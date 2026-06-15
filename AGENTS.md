@@ -69,6 +69,9 @@ Scope: this file applies to the whole repository.
   on those command names until scripts are restored.
 - Use `npx vitest run tests/unit/whatsapp-boundary.test.ts` after WhatsApp-related changes to
   verify the feature remains confined to the NR firm-management area.
+- Use `npx vitest run tests/unit/public-launch-surface.test.ts` after public marketing, SEO, trust,
+  help, migration-guide, or public-route changes to keep SaaS-facing pages free of overclaims and
+  internal-only NR features.
 - Document chasing is also an NR firm-management-only feature. Keep its UI under
   `/firm/document-chasing` and do not expose document-chasing navigation or routes in customer SaaS
   areas.

@@ -1922,6 +1922,174 @@ export function registerReportRoutes(app: Express) {
     })
   );
 
+  // Payroll Summary - payroll run totals, prior-period comparison, and WPS/posting flags.
+  app.get(
+    "/api/companies/:id/reports/payroll-summary",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const companyId = req.params.id;
+      const { from, to } = req.query as { from?: string; to?: string };
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const asOf = to ? uaeDayEnd(to) : new Date();
+      const periodStart = from
+        ? uaeDayStart(from)
+        : new Date(Date.UTC(asOf.getUTCFullYear(), 0, 1));
+      const periodDurationMs = Math.max(1, asOf.getTime() - periodStart.getTime());
+      const previousEnd = new Date(periodStart.getTime() - 1);
+      const previousStart = new Date(previousEnd.getTime() - periodDurationMs);
+
+      type PayrollSummaryRow = {
+        runId: string;
+        periodMonth: number;
+        periodYear: number;
+        periodLabel: string;
+        runDate: string | Date | null;
+        employeeCount: number;
+        totalBasic: number;
+        totalAllowances: number;
+        totalDeductions: number;
+        totalNet: number;
+        totalPensionEmployee: number;
+        totalPensionEmployer: number;
+        totalGratuityAccrual: number;
+        totalEmployerCost: number;
+        status: string;
+        sifGenerated: boolean;
+        wpsReady: boolean;
+        journalEntryId: string | null;
+        approvedAt: string | Date | null;
+        needsApproval: boolean;
+        sifSuggested: boolean;
+        postingSuggested: boolean;
+      };
+
+      type PayrollSummaryNumericKey =
+        | "employeeCount"
+        | "totalBasic"
+        | "totalAllowances"
+        | "totalDeductions"
+        | "totalNet"
+        | "totalPensionEmployee"
+        | "totalPensionEmployer"
+        | "totalGratuityAccrual"
+        | "totalEmployerCost";
+
+      const loadRows = async (startDate: Date, endDate: Date): Promise<PayrollSummaryRow[]> => {
+        const result = await pool.query(
+          `SELECT
+            id,
+            period_month,
+            period_year,
+            run_date,
+            total_basic,
+            total_allowances,
+            total_deductions,
+            total_net,
+            total_pension_employee,
+            total_pension_employer,
+            total_gratuity_accrual,
+            employee_count,
+            status,
+            sif_file_content,
+            journal_entry_id,
+            approved_at,
+            created_at
+           FROM payroll_runs
+           WHERE company_id = $1
+             AND make_date(period_year, period_month, 1) >= date_trunc('month', $2::date)
+             AND make_date(period_year, period_month, 1) <= date_trunc('month', $3::date)
+           ORDER BY period_year DESC, period_month DESC`,
+          [companyId, startDate.toISOString(), endDate.toISOString()]
+        );
+
+        return result.rows.map((row: any): PayrollSummaryRow => {
+          const totalBasic = Number(row.total_basic) || 0;
+          const totalAllowances = Number(row.total_allowances) || 0;
+          const totalDeductions = Number(row.total_deductions) || 0;
+          const totalNet = Number(row.total_net) || 0;
+          const totalPensionEmployee = Number(row.total_pension_employee) || 0;
+          const totalPensionEmployer = Number(row.total_pension_employer) || 0;
+          const totalGratuityAccrual = Number(row.total_gratuity_accrual) || 0;
+          const status = String(row.status || "draft");
+          const sifGenerated = Boolean(row.sif_file_content);
+          const wpsReady = ["calculated", "approved", "paid"].includes(status) && totalNet > 0;
+
+          return {
+            runId: row.id,
+            periodMonth: Number(row.period_month),
+            periodYear: Number(row.period_year),
+            periodLabel: `${String(row.period_month).padStart(2, "0")}/${row.period_year}`,
+            runDate: row.run_date,
+            employeeCount: Number(row.employee_count) || 0,
+            totalBasic: roundMoney(totalBasic),
+            totalAllowances: roundMoney(totalAllowances),
+            totalDeductions: roundMoney(totalDeductions),
+            totalNet: roundMoney(totalNet),
+            totalPensionEmployee: roundMoney(totalPensionEmployee),
+            totalPensionEmployer: roundMoney(totalPensionEmployer),
+            totalGratuityAccrual: roundMoney(totalGratuityAccrual),
+            totalEmployerCost: roundMoney(totalNet + totalPensionEmployer + totalGratuityAccrual),
+            status,
+            sifGenerated,
+            wpsReady,
+            journalEntryId: row.journal_entry_id,
+            approvedAt: row.approved_at,
+            needsApproval: status === "draft" || status === "calculated",
+            sifSuggested: wpsReady && !sifGenerated,
+            postingSuggested: status === "approved" && !row.journal_entry_id,
+          };
+        });
+      };
+
+      const [rows, previousRows] = await Promise.all([
+        loadRows(periodStart, asOf),
+        loadRows(previousStart, previousEnd),
+      ]);
+
+      const totalFor = (items: PayrollSummaryRow[], key: PayrollSummaryNumericKey) =>
+        roundMoney(items.reduce((sum, row) => sum + Number(row[key] ?? 0), 0));
+      const totalNet = totalFor(rows, "totalNet");
+      const previousTotalNet = totalFor(previousRows, "totalNet");
+
+      res.json({
+        reportCurrency: "AED",
+        period: {
+          from: periodStart.toISOString(),
+          to: to ?? null,
+          asOf: asOf.toISOString(),
+          previousFrom: previousStart.toISOString(),
+          previousTo: previousEnd.toISOString(),
+        },
+        rows,
+        totals: {
+          runCount: rows.length,
+          employeeCount: rows.reduce((sum, row) => sum + row.employeeCount, 0),
+          totalBasic: totalFor(rows, "totalBasic"),
+          totalAllowances: totalFor(rows, "totalAllowances"),
+          totalDeductions: totalFor(rows, "totalDeductions"),
+          totalNet,
+          totalPensionEmployee: totalFor(rows, "totalPensionEmployee"),
+          totalPensionEmployer: totalFor(rows, "totalPensionEmployer"),
+          totalGratuityAccrual: totalFor(rows, "totalGratuityAccrual"),
+          totalEmployerCost: totalFor(rows, "totalEmployerCost"),
+          approvedRunCount: rows.filter((row) => row.status === "approved" || row.status === "paid")
+            .length,
+          pendingApprovalCount: rows.filter((row) => row.needsApproval).length,
+          sifGeneratedCount: rows.filter((row) => row.sifGenerated).length,
+          sifPendingCount: rows.filter((row) => row.sifSuggested).length,
+          journalMissingCount: rows.filter((row) => row.postingSuggested).length,
+          previousTotalNet,
+          netChange: roundMoney(totalNet - previousTotalNet),
+          netChangePercent: percentChange(totalNet, previousTotalNet),
+        },
+      });
+    })
+  );
+
   // Corporate Tax Estimate — UAE 9% estimate from posted income/expense activity.
   app.get(
     "/api/companies/:id/reports/corporate-tax-estimate",

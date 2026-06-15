@@ -170,6 +170,21 @@ interface CashFlowData {
   endingBalance: number;
 }
 
+interface CashFlowForecastProjection {
+  week: number;
+  weekStart: string;
+  weekEnd: string;
+  expectedInflows: number;
+  expectedOutflows: number;
+  projectedBalance: number;
+}
+
+interface CashFlowForecastReport {
+  currentBalance: number;
+  projections: CashFlowForecastProjection[];
+  insights: string[];
+}
+
 interface AgingItem {
   id: string;
   name: string;
@@ -451,6 +466,63 @@ interface BudgetVsActualReport {
   };
 }
 
+interface PayrollSummaryRow {
+  runId: string;
+  periodMonth: number;
+  periodYear: number;
+  periodLabel: string;
+  runDate: string | null;
+  employeeCount: number;
+  totalBasic: number;
+  totalAllowances: number;
+  totalDeductions: number;
+  totalNet: number;
+  totalPensionEmployee: number;
+  totalPensionEmployer: number;
+  totalGratuityAccrual: number;
+  totalEmployerCost: number;
+  status: string;
+  sifGenerated: boolean;
+  wpsReady: boolean;
+  journalEntryId: string | null;
+  approvedAt: string | null;
+  needsApproval: boolean;
+  sifSuggested: boolean;
+  postingSuggested: boolean;
+}
+
+interface PayrollSummaryReport {
+  reportCurrency: string;
+  period: {
+    from: string;
+    to: string | null;
+    asOf: string;
+    previousFrom: string;
+    previousTo: string;
+  };
+  rows: PayrollSummaryRow[];
+  totals: {
+    runCount: number;
+    employeeCount: number;
+    totalBasic: number;
+    totalAllowances: number;
+    totalDeductions: number;
+    totalNet: number;
+    totalPensionEmployee: number;
+    totalPensionEmployer: number;
+    totalGratuityAccrual: number;
+    totalEmployerCost: number;
+    approvedRunCount: number;
+    pendingApprovalCount: number;
+    sifGeneratedCount: number;
+    sifPendingCount: number;
+    journalMissingCount: number;
+    previousTotalNet: number;
+    netChange: number;
+    netChangePercent: number;
+  };
+}
+
 interface CorporateTaxEstimateReport {
   reportCurrency: string;
   period: { from: string; to: string | null; asOf: string };
@@ -571,6 +643,7 @@ type ReportTab =
   | "pl"
   | "bs"
   | "cashFlow"
+  | "cashFlowForecast"
   | "vat"
   | "trial"
   | "ledger"
@@ -584,6 +657,7 @@ type ReportTab =
   | "expenseCategories"
   | "invoiceStatus"
   | "budgetActual"
+  | "payrollSummary"
   | "corpTax"
   | "fixedAssets"
   | "depreciation"
@@ -945,12 +1019,12 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "Cash Flow Forecast",
     category: "Management",
-    status: "workspace",
+    status: "live",
     personas: ["owner", "freelancer", "accountant"],
     comparison: "Forecast",
     automation: "Cash warnings",
     icon: Sparkles,
-    href: "/cashflow-forecast",
+    tab: "cashFlowForecast",
   },
   {
     name: "Revenue by Customer",
@@ -1045,12 +1119,12 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "Payroll Summary",
     category: "Payroll",
-    status: "workspace",
+    status: "live",
     personas: ["owner", "accountant"],
     comparison: "Pay period",
     automation: "Variance checks",
     icon: Users,
-    href: "/payroll",
+    tab: "payrollSummary",
   },
   {
     name: "WPS / SIF Summary",
@@ -1123,6 +1197,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Corporate Tax Estimate",
       "Period Comparison",
       "Budget vs Actual",
+      "Payroll Summary",
       "Inventory Valuation",
       "Cash Flow Forecast",
     ],
@@ -1148,6 +1223,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Expenses by Category",
       "VAT Summary",
       "Period Comparison",
+      "Cash Flow Forecast",
     ],
     actions: [
       { label: "Send reminders", href: "/payment-chasing" },
@@ -1173,6 +1249,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Vendor Balance Summary",
       "A/P Aging",
       "Budget vs Actual",
+      "Payroll Summary",
       "Inventory Valuation",
       "Fixed Asset Register",
       "Depreciation Schedule",
@@ -1372,6 +1449,61 @@ function prepareCashFlowForExport(data: CashFlowData[]): ExportData {
       netCashFlow: amountForExport(row.netCashFlow),
       endingBalance: amountForExport(row.endingBalance),
     })),
+  };
+}
+
+function prepareCashFlowForecastForExport(report: CashFlowForecastReport): ExportData {
+  return {
+    sheetName: "Cash Flow Forecast",
+    columns: [
+      { header: "Week", key: "week", width: 12 },
+      { header: "Start", key: "start", width: 14 },
+      { header: "End", key: "end", width: 14 },
+      { header: "Expected Inflows", key: "expectedInflows", width: 18 },
+      { header: "Expected Outflows", key: "expectedOutflows", width: 18 },
+      { header: "Net Movement", key: "netMovement", width: 16 },
+      { header: "Projected Balance", key: "projectedBalance", width: 18 },
+      { header: "Risk", key: "risk", width: 14 },
+      { header: "Insight", key: "insight", width: 64 },
+    ],
+    rows: [
+      {
+        week: "Current",
+        start: "",
+        end: "",
+        expectedInflows: "",
+        expectedOutflows: "",
+        netMovement: "",
+        projectedBalance: amountForExport(report.currentBalance),
+        risk: report.currentBalance < 0 ? "Negative" : report.currentBalance < 10000 ? "Low" : "",
+        insight: "",
+      },
+      ...report.projections.map((row) => {
+        const netMovement = row.expectedInflows - row.expectedOutflows;
+        return {
+          week: row.week,
+          start: formatDateForExport(row.weekStart),
+          end: formatDateForExport(row.weekEnd),
+          expectedInflows: amountForExport(row.expectedInflows),
+          expectedOutflows: amountForExport(row.expectedOutflows),
+          netMovement: amountForExport(netMovement),
+          projectedBalance: amountForExport(row.projectedBalance),
+          risk: row.projectedBalance < 0 ? "Negative" : row.projectedBalance < 10000 ? "Low" : "",
+          insight: "",
+        };
+      }),
+      ...report.insights.map((insight, index) => ({
+        week: `Insight ${index + 1}`,
+        start: "",
+        end: "",
+        expectedInflows: "",
+        expectedOutflows: "",
+        netMovement: "",
+        projectedBalance: "",
+        risk: insight.toLowerCase().includes("warning") ? "Risk" : "Info",
+        insight,
+      })),
+    ],
   };
 }
 
@@ -1693,6 +1825,48 @@ function prepareBudgetVsActualForExport(report: BudgetVsActualReport): ExportDat
       variancePercent: `${row.variancePercent.toFixed(1)}%`,
       tone: row.varianceTone,
       automation: row.automationSuggested ? "Variance review" : "",
+    })),
+  };
+}
+
+function preparePayrollSummaryForExport(report: PayrollSummaryReport): ExportData {
+  return {
+    sheetName: "Payroll Summary",
+    columns: [
+      { header: "Period", key: "period", width: 12 },
+      { header: "Status", key: "status", width: 14 },
+      { header: "Employees", key: "employees", width: 12 },
+      { header: "Basic", key: "basic", width: 16 },
+      { header: "Allowances", key: "allowances", width: 16 },
+      { header: "Deductions", key: "deductions", width: 16 },
+      { header: "Net Pay", key: "netPay", width: 16 },
+      { header: "Employer Pension", key: "employerPension", width: 18 },
+      { header: "Gratuity Accrual", key: "gratuity", width: 18 },
+      { header: "Employer Cost", key: "employerCost", width: 18 },
+      { header: "SIF Generated", key: "sif", width: 14 },
+      { header: "Journal Posted", key: "journal", width: 14 },
+      { header: "Automation", key: "automation", width: 24 },
+    ],
+    rows: report.rows.map((row) => ({
+      period: row.periodLabel,
+      status: row.status,
+      employees: row.employeeCount,
+      basic: amountForExport(row.totalBasic),
+      allowances: amountForExport(row.totalAllowances),
+      deductions: amountForExport(row.totalDeductions),
+      netPay: amountForExport(row.totalNet),
+      employerPension: amountForExport(row.totalPensionEmployer),
+      gratuity: amountForExport(row.totalGratuityAccrual),
+      employerCost: amountForExport(row.totalEmployerCost),
+      sif: row.sifGenerated ? "Yes" : "No",
+      journal: row.journalEntryId ? "Yes" : "No",
+      automation: [
+        row.needsApproval ? "Approval review" : "",
+        row.sifSuggested ? "Generate SIF" : "",
+        row.postingSuggested ? "Posting review" : "",
+      ]
+        .filter(Boolean)
+        .join(", "),
     })),
   };
 }
@@ -2073,6 +2247,14 @@ export default function Reports() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: cashFlowForecast, isLoading: cashFlowForecastLoading } =
+    useQuery<CashFlowForecastReport>({
+      queryKey: ["/api/companies", selectedCompanyId, "cashflow", "forecast", 90],
+      queryFn: () =>
+        apiRequest("GET", `/api/companies/${selectedCompanyId}/cashflow/forecast?days=90`),
+      enabled: !!selectedCompanyId,
+    });
+
   const { data: agingData, isLoading: agingLoading } = useQuery<AgingItem[]>({
     queryKey: ["/api/reports", selectedCompanyId, "aging"],
     queryFn: () => apiRequest("GET", `/api/reports/${selectedCompanyId}/aging`),
@@ -2220,6 +2402,24 @@ export default function Reports() {
     }
   );
 
+  const { data: payrollSummary, isLoading: payrollSummaryLoading } = useQuery<PayrollSummaryReport>(
+    {
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "payroll-summary",
+        fromToDateParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/payroll-summary${fromToDateParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    }
+  );
+
   const { data: corporateTaxEstimate, isLoading: corporateTaxLoading } =
     useQuery<CorporateTaxEstimateReport>({
       queryKey: [
@@ -2344,6 +2544,31 @@ export default function Reports() {
     );
   }, [cashFlowData]);
 
+  const cashFlowForecastSummary = useMemo(() => {
+    const rows = cashFlowForecast?.projections ?? [];
+    const currentBalance = cashFlowForecast?.currentBalance ?? 0;
+    const finalBalance = rows[rows.length - 1]?.projectedBalance ?? currentBalance;
+    const minBalance = rows.reduce(
+      (lowest, row) => Math.min(lowest, row.projectedBalance),
+      currentBalance
+    );
+    const totalInflows = rows.reduce((sum, row) => sum + row.expectedInflows, 0);
+    const totalOutflows = rows.reduce((sum, row) => sum + row.expectedOutflows, 0);
+    const lowBalanceWeeks = rows.filter((row) => row.projectedBalance < 10000).length;
+    const negativeBalanceWeeks = rows.filter((row) => row.projectedBalance < 0).length;
+
+    return {
+      currentBalance,
+      finalBalance,
+      minBalance,
+      totalInflows,
+      totalOutflows,
+      netMovement: finalBalance - currentBalance,
+      lowBalanceWeeks,
+      negativeBalanceWeeks,
+    };
+  }, [cashFlowForecast]);
+
   const agingSummary = useMemo(() => {
     const empty = { current: 0, overdue: 0, total: 0 };
     const totals = {
@@ -2435,6 +2660,17 @@ export default function Reports() {
   const invoiceReminderQueue = invoiceStatus?.totals.reminderQueue ?? 0;
   const apAgingOverdue = agingSummary.payables.overdue;
   const budgetVarianceQueue = budgetVsActual?.totals.automationCount ?? 0;
+  const cashFlowForecastRiskQueue = cashFlowForecastSummary.lowBalanceWeeks;
+  const cashFlowForecastExposure =
+    cashFlowForecastSummary.minBalance < 0
+      ? Math.abs(cashFlowForecastSummary.minBalance)
+      : cashFlowForecastSummary.minBalance < 10000
+        ? 10000 - cashFlowForecastSummary.minBalance
+        : 0;
+  const payrollAutomationQueue =
+    (payrollSummary?.totals.pendingApprovalCount ?? 0) +
+    (payrollSummary?.totals.sifPendingCount ?? 0) +
+    (payrollSummary?.totals.journalMissingCount ?? 0);
   const fixedAssetCapitalizationQueue = fixedAssetRegister?.totals.capitalizationQueue ?? 0;
   const depreciationPostingQueue = depreciationSchedule?.totals.postingQueue ?? 0;
   const inventoryReorderQueue = inventoryValuation?.totals.reorderSuggestions ?? 0;
@@ -2546,6 +2782,24 @@ export default function Reports() {
         actionLabel: "Forecast cash",
       },
       {
+        id: "cash-flow-forecast-risk",
+        title: "Review forecasted cash risk",
+        description: "Projected balances fall below the working cash threshold in the forecast.",
+        source: "Cash Flow Forecast",
+        personas: ["owner", "freelancer", "accountant"],
+        priority:
+          cashFlowForecastSummary.negativeBalanceWeeks > 0
+            ? "high"
+            : cashFlowForecastRiskQueue > 0
+              ? "medium"
+              : "low",
+        count: cashFlowForecastRiskQueue,
+        impact: cashFlowForecastExposure,
+        tab: "cashFlowForecast",
+        href: "/cashflow-forecast",
+        actionLabel: "Open forecast",
+      },
+      {
         id: "profit-review",
         title: "Investigate net loss",
         description: "Profit and loss is negative for the loaded reporting period.",
@@ -2612,6 +2866,19 @@ export default function Reports() {
         actionLabel: "Open budgets",
       },
       {
+        id: "payroll-readiness",
+        title: "Review payroll readiness",
+        description: "Payroll runs need approval, WPS SIF generation, or posting review.",
+        source: "Payroll Summary",
+        personas: ["owner", "accountant"],
+        priority: payrollAutomationQueue > 0 ? "medium" : "low",
+        count: payrollAutomationQueue,
+        impact: payrollSummary?.totals.totalEmployerCost ?? 0,
+        tab: "payrollSummary",
+        href: "/payroll",
+        actionLabel: "Open payroll",
+      },
+      {
         id: "asset-capitalization",
         title: "Post asset capitalization entries",
         description: "Fixed assets are waiting for capitalization journal-entry review.",
@@ -2669,6 +2936,9 @@ export default function Reports() {
     budgetVarianceQueue,
     budgetVsActual,
     cashFlowSummary,
+    cashFlowForecastExposure,
+    cashFlowForecastRiskQueue,
+    cashFlowForecastSummary,
     categoryBudgetReviewCount,
     corporateTaxEstimate,
     customerAutomationCount,
@@ -2684,6 +2954,8 @@ export default function Reports() {
     inventoryValuation,
     invoiceReminderQueue,
     invoiceStatus,
+    payrollAutomationQueue,
+    payrollSummary,
     profitLoss,
     revenueByCustomer,
     revenueConcentrationCount,
@@ -2852,6 +3124,8 @@ export default function Reports() {
     if (tab === "trial" && trialBalance) return prepareTrialBalanceForExport(trialBalance);
     if (tab === "ledger" && generalLedger) return prepareGeneralLedgerForExport(generalLedger);
     if (tab === "cashFlow" && cashFlowData) return prepareCashFlowForExport(cashFlowData);
+    if (tab === "cashFlowForecast" && cashFlowForecast)
+      return prepareCashFlowForecastForExport(cashFlowForecast);
     if (tab === "vatReturn" && hasDateRange && vatReturn)
       return prepareVATReturnForExport(vatReturn);
     if (tab === "fx" && fxGainsLosses) return prepareFxGainsLossesForExport(fxGainsLosses);
@@ -2871,6 +3145,8 @@ export default function Reports() {
       return prepareInvoiceStatusForExport(invoiceStatus);
     if (tab === "budgetActual" && budgetVsActual)
       return prepareBudgetVsActualForExport(budgetVsActual);
+    if (tab === "payrollSummary" && payrollSummary)
+      return preparePayrollSummaryForExport(payrollSummary);
     if (tab === "corpTax" && corporateTaxEstimate)
       return prepareCorporateTaxEstimateForExport(corporateTaxEstimate);
     if (tab === "fixedAssets" && fixedAssetRegister)
@@ -2956,6 +3232,15 @@ export default function Reports() {
       } else if (activeTab === "cashFlow" && cashFlowData) {
         await exportToExcel([prepareCashFlowForExport(cashFlowData)], `cash_flow_${reportPeriod}`);
         toast({ title: "Export successful", description: "Cash Flow exported to Excel" });
+      } else if (activeTab === "cashFlowForecast" && cashFlowForecast) {
+        await exportToExcel(
+          [prepareCashFlowForecastForExport(cashFlowForecast)],
+          "cash_flow_forecast_90_days"
+        );
+        toast({
+          title: "Export successful",
+          description: "Cash Flow Forecast exported to Excel",
+        });
       } else if (activeTab === "vatReturn") {
         if (!hasDateRange) {
           toast({
@@ -3038,6 +3323,12 @@ export default function Reports() {
           `budget_vs_actual${dateRangeStr}`
         );
         toast({ title: "Export successful", description: "Budget vs Actual exported to Excel" });
+      } else if (activeTab === "payrollSummary" && payrollSummary) {
+        await exportToExcel(
+          [preparePayrollSummaryForExport(payrollSummary)],
+          `payroll_summary${dateRangeStr}`
+        );
+        toast({ title: "Export successful", description: "Payroll Summary exported to Excel" });
       } else if (activeTab === "corpTax" && corporateTaxEstimate) {
         await exportToExcel(
           [prepareCorporateTaxEstimateForExport(corporateTaxEstimate)],
@@ -3138,6 +3429,12 @@ export default function Reports() {
         `Cash Flow ${periodLabel}`,
         selectedCompanyId
       );
+    } else if (activeTab === "cashFlowForecast" && cashFlowForecast) {
+      result = await exportToGoogleSheets(
+        [prepareCashFlowForecastForExport(cashFlowForecast)],
+        "Cash Flow Forecast 90 Days",
+        selectedCompanyId
+      );
     } else if (activeTab === "vatReturn") {
       if (!hasDateRange) {
         setIsExporting(false);
@@ -3213,6 +3510,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         [prepareBudgetVsActualForExport(budgetVsActual)],
         `Budget vs Actual${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "payrollSummary" && payrollSummary) {
+      result = await exportToGoogleSheets(
+        [preparePayrollSummaryForExport(payrollSummary)],
+        `Payroll Summary${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "corpTax" && corporateTaxEstimate) {
@@ -4146,6 +4449,9 @@ export default function Reports() {
           <TabsTrigger value="cashFlow" data-testid="tab-cash-flow">
             Cash Flow
           </TabsTrigger>
+          <TabsTrigger value="cashFlowForecast" data-testid="tab-cash-flow-forecast">
+            Forecast
+          </TabsTrigger>
           <TabsTrigger value="vat" data-testid="tab-vat-summary">
             {t.vatSummary}
           </TabsTrigger>
@@ -4184,6 +4490,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="budgetActual" data-testid="tab-budget-vs-actual">
             Budget
+          </TabsTrigger>
+          <TabsTrigger value="payrollSummary" data-testid="tab-payroll-summary">
+            Payroll
           </TabsTrigger>
           <TabsTrigger value="corpTax" data-testid="tab-corporate-tax-estimate">
             Corp Tax
@@ -4594,6 +4903,213 @@ export default function Reports() {
               ) : (
                 <div className="py-12 text-center text-sm text-muted-foreground">
                   No cash flow activity found for this cadence.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="cashFlowForecast" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Current Balance
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {cashFlowForecastLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div
+                    className={`text-2xl font-semibold font-mono ${cashFlowForecastSummary.currentBalance >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                  >
+                    {formatCurrency(cashFlowForecastSummary.currentBalance, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  90-Day Net Movement
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {cashFlowForecastLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div
+                    className={`text-2xl font-semibold font-mono ${cashFlowForecastSummary.netMovement >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                  >
+                    {formatCurrency(cashFlowForecastSummary.netMovement, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Projected Balance
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {cashFlowForecastLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div
+                    className={`text-2xl font-semibold font-mono ${cashFlowForecastSummary.finalBalance >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                  >
+                    {formatCurrency(cashFlowForecastSummary.finalBalance, "AED", locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Forecast Actions
+                </CardTitle>
+                <Badge variant={cashFlowForecastRiskQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {cashFlowForecastLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold font-mono">
+                      {formatNumber(cashFlowForecastRiskQueue, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {cashFlowForecastSummary.negativeBalanceWeeks > 0
+                        ? `${formatNumber(cashFlowForecastSummary.negativeBalanceWeeks, locale)} negative weeks`
+                        : "Low-balance weeks"}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {cashFlowForecast?.insights?.length ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Forecast Insights</CardTitle>
+                <CardDescription>
+                  Cash risk and collection signals from the 90-day forecast.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {cashFlowForecast.insights.map((insight, index) => {
+                    const lower = insight.toLowerCase();
+                    const variant =
+                      lower.includes("warning") ||
+                      lower.includes("negative") ||
+                      lower.includes("drop below")
+                        ? "danger"
+                        : lower.includes("positive") || lower.includes("improve")
+                          ? "success"
+                          : "info";
+
+                    return (
+                      <div
+                        key={`${index}-${insight}`}
+                        className="flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-start sm:justify-between"
+                      >
+                        <p className="text-sm">{insight}</p>
+                        <Badge variant={variant} className="self-start">
+                          {variant === "danger"
+                            ? "Risk"
+                            : variant === "success"
+                              ? "Positive"
+                              : "Info"}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Cash Flow Forecast</CardTitle>
+              <CardDescription>
+                Weekly projected inflows, outflows, and ending cash balance for the next 90 days.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {cashFlowForecastLoading ? (
+                <Skeleton className="h-96" />
+              ) : cashFlowForecast?.projections?.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[920px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Week</TableHead>
+                        <TableHead>Period</TableHead>
+                        <TableHead className="text-right">Expected Inflows</TableHead>
+                        <TableHead className="text-right">Expected Outflows</TableHead>
+                        <TableHead className="text-right">Net Movement</TableHead>
+                        <TableHead className="text-right">Projected Balance</TableHead>
+                        <TableHead className="text-right">Risk</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {cashFlowForecast.projections.map((row) => {
+                        const netMovement = row.expectedInflows - row.expectedOutflows;
+                        const riskVariant =
+                          row.projectedBalance < 0
+                            ? "danger"
+                            : row.projectedBalance < 10000
+                              ? "warning"
+                              : "success";
+
+                        return (
+                          <TableRow key={row.week}>
+                            <TableCell className="font-mono">{row.week}</TableCell>
+                            <TableCell>
+                              {formatDateForExport(row.weekStart)} -{" "}
+                              {formatDateForExport(row.weekEnd)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.expectedInflows, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {formatCurrency(row.expectedOutflows, "AED", locale)}
+                            </TableCell>
+                            <TableCell
+                              className={`text-right font-mono ${netMovement >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                            >
+                              {formatCurrency(netMovement, "AED", locale)}
+                            </TableCell>
+                            <TableCell
+                              className={`text-right font-mono font-medium ${row.projectedBalance >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                            >
+                              {formatCurrency(row.projectedBalance, "AED", locale)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Badge variant={riskVariant}>
+                                {riskVariant === "danger"
+                                  ? "Negative"
+                                  : riskVariant === "warning"
+                                    ? "Low"
+                                    : "Clear"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No cash flow forecast is available yet.
                 </div>
               )}
             </CardContent>
@@ -6623,6 +7139,193 @@ export default function Reports() {
               ) : (
                 <div className="py-12 text-center text-sm text-muted-foreground">
                   No budget variance lines found for this period.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="payrollSummary" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Net Pay</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {payrollSummaryLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatCurrency(
+                      payrollSummary?.totals.totalNet ?? 0,
+                      payrollSummary?.reportCurrency ?? "AED",
+                      locale
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Employer Cost
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {payrollSummaryLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatCurrency(
+                      payrollSummary?.totals.totalEmployerCost ?? 0,
+                      payrollSummary?.reportCurrency ?? "AED",
+                      locale
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Net Pay Change
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {payrollSummaryLoading ? (
+                  <Skeleton className="h-8 w-32" />
+                ) : (
+                  <>
+                    <div
+                      className={`text-2xl font-semibold font-mono ${(payrollSummary?.totals.netChange ?? 0) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                    >
+                      {formatCurrency(
+                        payrollSummary?.totals.netChange ?? 0,
+                        payrollSummary?.reportCurrency ?? "AED",
+                        locale
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {(payrollSummary?.totals.netChangePercent ?? 0).toFixed(1)}% vs prior period
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Payroll Actions
+                </CardTitle>
+                <Badge variant={payrollAutomationQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {payrollSummaryLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatNumber(payrollAutomationQueue, locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Payroll Summary</CardTitle>
+              <CardDescription>
+                Payroll runs, WPS readiness, employer cost, and posting status for the selected
+                period.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {payrollSummaryLoading ? (
+                <Skeleton className="h-96" />
+              ) : payrollSummary?.rows?.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1040px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Period</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Employees</TableHead>
+                        <TableHead className="text-right">Basic</TableHead>
+                        <TableHead className="text-right">Allowances</TableHead>
+                        <TableHead className="text-right">Deductions</TableHead>
+                        <TableHead className="text-right">Net Pay</TableHead>
+                        <TableHead className="text-right">Employer Cost</TableHead>
+                        <TableHead className="text-right">Automation</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {payrollSummary.rows.map((row) => (
+                        <TableRow key={row.runId}>
+                          <TableCell className="font-mono">{row.periodLabel}</TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                row.status === "approved" || row.status === "paid"
+                                  ? "success"
+                                  : row.status === "calculated"
+                                    ? "warning"
+                                    : "outline"
+                              }
+                              className="capitalize"
+                            >
+                              {row.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.employeeCount, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(row.totalBasic, payrollSummary.reportCurrency, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(
+                              row.totalAllowances,
+                              payrollSummary.reportCurrency,
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(
+                              row.totalDeductions,
+                              payrollSummary.reportCurrency,
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            {formatCurrency(row.totalNet, payrollSummary.reportCurrency, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(
+                              row.totalEmployerCost,
+                              payrollSummary.reportCurrency,
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex flex-wrap justify-end gap-1">
+                              {row.needsApproval && <Badge variant="warning">Approve</Badge>}
+                              {row.sifSuggested && <Badge variant="warning">SIF</Badge>}
+                              {row.postingSuggested && <Badge variant="warning">Post</Badge>}
+                              {!row.needsApproval && !row.sifSuggested && !row.postingSuggested && (
+                                <Badge variant="outline">Clear</Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No payroll runs found for this period.
                 </div>
               )}
             </CardContent>
