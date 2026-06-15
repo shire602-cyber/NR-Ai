@@ -60,7 +60,6 @@ import {
   Ban,
   AlertCircle,
 } from "lucide-react";
-import { SiWhatsapp } from "react-icons/si";
 
 // Threshold above which "Chase all" requires explicit confirmation. Picked to
 // match a conservative "is this batch big enough to be embarrassing if wrong"
@@ -182,7 +181,6 @@ interface BulkSendResult {
   invoiceId: string;
   level: number;
   status: "sent" | "failed" | "skipped_max_level" | "skipped_no_template" | string;
-  waLink?: string | null;
   error?: string;
 }
 
@@ -238,7 +236,6 @@ export default function PaymentChasing() {
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewBody, setPreviewBody] = useState("");
-  const [previewWaLink, setPreviewWaLink] = useState<string | null>(null);
   const [previewLanguage, setPreviewLanguage] = useState<"en" | "ar">("en");
   const [historyInvoiceId, setHistoryInvoiceId] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
@@ -286,16 +283,15 @@ export default function PaymentChasing() {
   const sendOne = useMutation({
     mutationFn: (invoiceId: string) =>
       apiRequest("POST", `/api/chasing/send/${invoiceId}`, {
-        method: "whatsapp",
+        method: "email",
         language: locale,
       }),
     onSuccess: (data: any) => {
       toast({
         title: "Reminder ready",
-        description: "Review the message, then open WhatsApp to send.",
+        description: "Review the message, then send it by email or copy it into your workflow.",
       });
       setPreviewBody(data.message);
-      setPreviewWaLink(data.waLink);
       // Use the language we requested — server may fall back to default but the
       // text we just got back is rendered in the requested locale's template.
       setPreviewLanguage(locale === "ar" ? "ar" : "en");
@@ -315,7 +311,7 @@ export default function PaymentChasing() {
   const bulkSend = useMutation<BulkSendResponse, Error, void>({
     mutationFn: () =>
       apiRequest("POST", `/api/chasing/bulk-send/${companyId}`, {
-        method: "whatsapp",
+        method: "email",
         language: locale,
       }),
     onSuccess: (data) => {
@@ -614,7 +610,6 @@ export default function PaymentChasing() {
                             disabled={row.invoice.doNotChase || sendOne.isPending}
                             data-testid={`button-send-${row.invoice.number}`}
                           >
-                            <SiWhatsapp className="mr-1 h-4 w-4" />
                             Send
                           </Button>
                         </TableCell>
@@ -1065,7 +1060,9 @@ export default function PaymentChasing() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Reminder ready</DialogTitle>
-            <DialogDescription>Review the message, then open WhatsApp to send.</DialogDescription>
+            <DialogDescription>
+              Review the message, then send it by email or copy it into your workflow.
+            </DialogDescription>
           </DialogHeader>
           <Textarea
             value={previewBody}
@@ -1074,15 +1071,13 @@ export default function PaymentChasing() {
             className="min-h-[260px] font-mono text-sm"
             data-testid="textarea-preview"
           />
-          {!previewWaLink && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="text-xs">
-                No WhatsApp link generated — the contact has no phone number on file. Copy the
-                message and send it manually.
-              </AlertDescription>
-            </Alert>
-          )}
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-xs">
+              Delivery is not automatic from this screen. Copy the message or send it through your
+              configured email process.
+            </AlertDescription>
+          </Alert>
           <DialogFooter>
             <Button
               variant="outline"
@@ -1106,13 +1101,6 @@ export default function PaymentChasing() {
             >
               Copy
             </Button>
-            {previewWaLink && (
-              <Button asChild>
-                <a href={previewWaLink} target="_blank" rel="noreferrer">
-                  <SiWhatsapp className="mr-2 h-4 w-4" /> Open WhatsApp
-                </a>
-              </Button>
-            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1250,8 +1238,7 @@ export default function PaymentChasing() {
           <AlertDialogHeader>
             <AlertDialogTitle>Send {queue.length} chase reminders?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will record a chase against each invoice and bump its escalation level. For
-              WhatsApp you will still need to open each generated link to actually send the message.
+              This will record a chase against each invoice and bump its escalation level.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1333,15 +1320,6 @@ export default function PaymentChasing() {
                         <TableCell className="text-xs">
                           {r.error ? (
                             <span className="text-destructive">{r.error}</span>
-                          ) : r.waLink ? (
-                            <a
-                              href={r.waLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary underline-offset-2 hover:underline inline-flex items-center"
-                            >
-                              <SiWhatsapp className="mr-1 h-3 w-3" /> Open
-                            </a>
                           ) : (
                             <span className="text-muted-foreground">—</span>
                           )}

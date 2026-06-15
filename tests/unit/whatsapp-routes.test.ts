@@ -1,9 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
+
+const authState = vi.hoisted(() => ({
+  user: {
+    id: "user-1",
+    email: "user@example.com",
+    isAdmin: false,
+    firmRole: "firm_owner",
+    userType: "customer",
+  },
+}));
 
 vi.mock("../../server/middleware/auth", () => ({
   authMiddleware: (req: any, _res: any, next: any) => {
-    req.user = { id: "user-1", email: "user@example.com", isAdmin: false, userType: "customer" };
+    req.user = authState.user;
     next();
   },
 }));
@@ -44,7 +54,17 @@ async function get(app: express.Express, path: string): Promise<{ status: number
 }
 
 describe("WhatsApp status routes", () => {
-  it("keeps the legacy status URL aligned with the canonical integration URL", async () => {
+  beforeEach(() => {
+    authState.user = {
+      id: "user-1",
+      email: "user@example.com",
+      isAdmin: false,
+      firmRole: "firm_owner",
+      userType: "customer",
+    };
+  });
+
+  it("keeps the legacy status URL aligned with the canonical integration URL for NR firm staff", async () => {
     const app = appWithRoutes();
 
     const canonical = await get(app, "/api/integrations/whatsapp/status");
@@ -54,5 +74,24 @@ describe("WhatsApp status routes", () => {
     expect(legacy.status).toBe(200);
     expect(legacy.body).toEqual(canonical.body);
     expect(legacy.body.deliveryStatus).toBe("logged_only");
+  });
+
+  it("rejects regular SaaS customers from WhatsApp status routes", async () => {
+    authState.user = {
+      id: "user-2",
+      email: "customer@example.com",
+      isAdmin: false,
+      firmRole: null as any,
+      userType: "customer",
+    };
+    const app = appWithRoutes();
+
+    const canonical = await get(app, "/api/integrations/whatsapp/status");
+    const legacy = await get(app, "/api/whatsapp/status");
+
+    expect(canonical.status).toBe(403);
+    expect(legacy.status).toBe(403);
+    expect(canonical.body.message).toBe("NRA firm staff access required");
+    expect(legacy.body.message).toBe("NRA firm staff access required");
   });
 });

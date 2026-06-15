@@ -1,6 +1,5 @@
-import { Router, type Express, type Request, type Response } from "express";
+import { type Express, type Request, type Response } from "express";
 import { storage } from "../storage";
-import { z } from "zod";
 import * as googleSheets from "../integrations/googleSheets";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -61,12 +60,6 @@ export function registerIntegrationRoutes(app: Express) {
           connected: false,
           name: "QuickBooks Online",
           description: "Sync with QuickBooks",
-          comingSoon: true,
-        },
-        whatsapp: {
-          connected: false,
-          name: "WhatsApp",
-          description: "Extract receipts from chats",
           comingSoon: true,
         },
       });
@@ -343,7 +336,7 @@ export function registerIntegrationRoutes(app: Express) {
       let createdCount = 0;
       for (const invoiceData of invoices) {
         try {
-          const invoice = await storage.createInvoice({
+          await storage.createInvoice({
             companyId,
             number: invoiceData.invoiceNumber,
             customerName: invoiceData.customerName,
@@ -412,7 +405,7 @@ export function registerIntegrationRoutes(app: Express) {
       let createdCount = 0;
       for (const expenseData of expenses) {
         try {
-          const receipt = await storage.createReceipt({
+          await storage.createReceipt({
             companyId,
             date: expenseData.date,
             merchant: expenseData.merchant,

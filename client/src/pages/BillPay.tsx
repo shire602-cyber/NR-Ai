@@ -241,12 +241,20 @@ function getStatusBadge(status: string) {
 // Main Component
 // ===========================
 
+const billPayTabs = ["bills", "payments", "summary"] as const;
+type BillPayTab = (typeof billPayTabs)[number];
+
+function initialBillPayTab(): BillPayTab {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return billPayTabs.includes(tab as BillPayTab) ? (tab as BillPayTab) : "bills";
+}
+
 export default function BillPay() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId } = useDefaultCompany();
 
-  const [activeTab, setActiveTab] = useState("bills");
+  const [activeTab, setActiveTab] = useState<BillPayTab>(initialBillPayTab);
   const [billDialogOpen, setBillDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [editingBill, setEditingBill] = useState<BillDetail | null>(null);
@@ -629,7 +637,11 @@ export default function BillPay() {
         description="Manage vendor bills, approvals, and payments"
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as BillPayTab)}
+        className="space-y-6"
+      >
         <TabsList>
           <TabsTrigger value="bills">
             <FileText className="w-4 h-4 mr-2" />

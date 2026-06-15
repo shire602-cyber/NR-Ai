@@ -5,6 +5,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { db } from "../db";
 import { authMiddleware } from "../middleware/auth";
+import { requireFirmRole } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { whatsappBridgeJobs, whatsappBridgeSessions, whatsappMessages } from "../../shared/schema";
@@ -64,6 +65,9 @@ function personalWhatsAppStatusPayload() {
  * confirm delivery unless a real WhatsApp provider is connected.
  */
 export function registerWhatsAppRoutes(app: Express) {
+  app.use("/api/integrations/whatsapp", authMiddleware, requireFirmRole());
+  app.use("/api/whatsapp", authMiddleware, requireFirmRole());
+
   // Log a prepared personal WhatsApp deep-link message.
   app.post(
     "/api/integrations/whatsapp/log-message",

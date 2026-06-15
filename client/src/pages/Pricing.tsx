@@ -239,13 +239,6 @@ const featureMatrix: FeatureCategory[] = [
   {
     categoryKey: "communication",
     features: [
-      {
-        key: "whatsappTemplates",
-        free: false,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
       { key: "clientPortal", free: false, starter: false, professional: true, enterprise: true },
     ],
   },
@@ -304,7 +297,6 @@ const competitorData: CompetitorRow[] = [
   { featureKey: "corporateTaxComp", muhasib: true, digits: false, wafeq: false, zoho: false },
   { featureKey: "aiCategorization", muhasib: true, digits: true, wafeq: false, zoho: false },
   { featureKey: "aiCFOComp", muhasib: true, digits: false, wafeq: false, zoho: false },
-  { featureKey: "whatsappInteg", muhasib: true, digits: false, wafeq: false, zoho: false },
   { featureKey: "eInvoicingComp", muhasib: true, digits: false, wafeq: true, zoho: false },
   { featureKey: "wpsPayroll", muhasib: true, digits: false, wafeq: false, zoho: false },
   { featureKey: "freeTier", muhasib: true, digits: false, wafeq: false, zoho: true },
@@ -406,7 +398,6 @@ export default function Pricing() {
                 "Recurring invoices",
                 "Bill pay",
                 "Inventory management",
-                "WhatsApp templates",
               ]
             : [
                 "شركة واحدة، 3 مستخدمين",
@@ -417,7 +408,6 @@ export default function Pricing() {
                 "فواتير متكررة",
                 "دفع الفواتير",
                 "إدارة المخزون",
-                "قوالب واتساب",
               ],
       },
       professional: {
@@ -474,7 +464,7 @@ export default function Pricing() {
                 "Priority AI processing",
                 "Dedicated account manager",
                 "Custom integrations",
-                "SLA guarantee",
+                "Enterprise support terms",
                 "Advanced analytics",
                 "Multi-branch support",
                 "API access",
@@ -484,7 +474,7 @@ export default function Pricing() {
                 "أولوية معالجة الذكاء الاصطناعي",
                 "مدير حساب مخصص",
                 "تكاملات مخصصة",
-                "ضمان مستوى الخدمة",
+                "شروط دعم المؤسسات",
                 "تحليلات متقدمة",
                 "دعم متعدد الفروع",
                 "وصول API",
@@ -527,12 +517,11 @@ export default function Pricing() {
       vatFilingCompliance: locale === "en" ? "VAT Filing (5%)" : "ضريبة القيمة المضافة (5%)",
       corporateTax: locale === "en" ? "Corporate Tax (9%)" : "ضريبة الشركات (9%)",
       eInvoicing: locale === "en" ? "E-Invoicing (PINT AE)" : "الفوترة الإلكترونية (PINT AE)",
-      whatsappTemplates: locale === "en" ? "WhatsApp Templates" : "قوالب واتساب",
       clientPortal: locale === "en" ? "Client Portal" : "بوابة العميل",
       multiCompany: locale === "en" ? "Multi-Company" : "شركات متعددة",
       dedicatedManager: locale === "en" ? "Dedicated Account Manager" : "مدير حساب مخصص",
       customIntegrations: locale === "en" ? "Custom Integrations" : "تكاملات مخصصة",
-      slaGuarantee: locale === "en" ? "SLA Guarantee" : "ضمان مستوى الخدمة",
+      slaGuarantee: locale === "en" ? "Enterprise Support Terms" : "شروط دعم المؤسسات",
       advancedAnalytics: locale === "en" ? "Advanced Analytics" : "تحليلات متقدمة",
       multiBranch: locale === "en" ? "Multi-Branch Support" : "دعم متعدد الفروع",
       apiAccess: locale === "en" ? "API Access" : "وصول API",
@@ -556,7 +545,6 @@ export default function Pricing() {
       corporateTaxComp: locale === "en" ? "Corporate Tax (9%)" : "ضريبة الشركات (9%)",
       aiCategorization: locale === "en" ? "AI Categorization" : "تصنيف ذكي",
       aiCFOComp: locale === "en" ? "AI CFO Advisor" : "مستشار مالي ذكي",
-      whatsappInteg: locale === "en" ? "WhatsApp Integration" : "تكامل واتساب",
       eInvoicingComp: locale === "en" ? "E-Invoicing (FTA)" : "الفوترة الإلكترونية (الهيئة)",
       wpsPayroll: locale === "en" ? "WPS Payroll" : "رواتب حماية الأجور",
       freeTier: locale === "en" ? "Free Tier Available" : "خطة مجانية متاحة",
@@ -600,8 +588,8 @@ export default function Pricing() {
           q: locale === "en" ? "Is my data secure?" : "هل بياناتي آمنة؟",
           a:
             locale === "en"
-              ? "Yes. We use bank-level AES-256 encryption for all data at rest and TLS 1.3 for data in transit. Our servers are hosted in the UAE on AWS Middle East (Bahrain) region, ensuring compliance with UAE data residency requirements."
-              : "نعم. نستخدم تشفير AES-256 بمستوى البنوك لجميع البيانات المخزنة و TLS 1.3 للبيانات المنقولة. خوادمنا مستضافة في الإمارات على منطقة AWS الشرق الأوسط (البحرين)، مما يضمن الامتثال لمتطلبات إقامة البيانات الإماراتية.",
+              ? "We use TLS for data in transit, role-based access, audit logs, encrypted connected-service secrets, and managed infrastructure controls. SOC 2 and ISO 27001 are roadmap items, not current certifications."
+              : "نستخدم TLS للبيانات أثناء النقل، وصلاحيات قائمة على الأدوار، وسجلات تدقيق، وتشفير أسرار الخدمات المتصلة، وضوابط بنية تحتية مدارة. شهادتا SOC 2 و ISO 27001 ضمن خارطة الطريق وليستا شهادات حالية.",
         },
       ],
     },
@@ -1105,11 +1093,7 @@ export default function Pricing() {
                       <ArrowRight className="h-4 w-4 ms-2" />
                     </Button>
                   </Link>
-                  <a
-                    href="https://wa.me/971552564788?text=I'd%20like%20a%20demo%20of%20Muhasib.ai"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
+                  <a href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20demo%20request">
                     <Button
                       size="lg"
                       variant="outline"
@@ -1141,7 +1125,7 @@ export default function Pricing() {
           </div>
           <div className="flex items-center gap-4">
             <Lock className="h-3.5 w-3.5" />
-            <span>{locale === "en" ? "Bank-level encryption" : "تشفير بمستوى البنوك"}</span>
+            <span>{locale === "en" ? "TLS-secured access" : "وصول مؤمن عبر TLS"}</span>
             <span className="text-muted-foreground/40">|</span>
             <span>{locale === "en" ? "UAE-hosted" : "مستضاف في الإمارات"}</span>
           </div>

@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
+import { requireFirmRole } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import {
   CHASE_CHANNELS,
@@ -33,11 +34,12 @@ import {
 // after writing the appropriate error response, so callers can early-return.
 async function requireCompanyAccess(req: Request, res: Response, companyId: string) {
   const userId = (req as any).user?.id;
+  const firmRole = ((req as any).user?.firmRole ?? null) as string | null;
   if (!userId) {
     res.status(401).json({ message: "Authentication required" });
     return null;
   }
-  const ok = await storage.hasCompanyAccess(userId, companyId);
+  const ok = await storage.hasCompanyAccess(userId, companyId, firmRole);
   if (!ok) {
     res.status(403).json({ message: "Access denied" });
     return null;
@@ -146,6 +148,9 @@ function parsePathParams<S extends z.ZodTypeAny>(
 }
 
 export function registerDocumentChasingRoutes(app: Express) {
+  app.use("/api/companies/:companyId/document-requirements", authMiddleware, requireFirmRole());
+  app.use("/api/companies/:companyId/document-chases", authMiddleware, requireFirmRole());
+
   // ─── Document Requirements ────────────────────────────────────────
   app.get(
     "/api/companies/:companyId/document-requirements",

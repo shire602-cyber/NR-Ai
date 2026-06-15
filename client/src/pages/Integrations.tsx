@@ -31,7 +31,7 @@ import {
   Settings,
   Power,
 } from "lucide-react";
-import { SiGoogle, SiWhatsapp, SiQuickbooks } from "react-icons/si";
+import { SiGoogle, SiQuickbooks } from "react-icons/si";
 import {
   Dialog,
   DialogContent,
@@ -61,7 +61,6 @@ interface IntegrationsStatusResponse {
   googleSheets: IntegrationStatus;
   xero: IntegrationStatus;
   quickbooks: IntegrationStatus;
-  whatsapp: IntegrationStatus;
 }
 
 export default function Integrations() {
@@ -124,10 +123,6 @@ export default function Integrations() {
       locale === "en"
         ? "Sync transactions, invoices, and accounts with QuickBooks Online"
         : "مزامنة المعاملات والفواتير والحسابات مع QuickBooks Online",
-    whatsappDesc:
-      locale === "en"
-        ? "Prepare messages, invoices, and reminders for WhatsApp Desktop/Web"
-        : "جهّز الرسائل والفواتير والتذكيرات لواتساب",
   };
 
   const { data: integrationStatus, isLoading: statusLoading } =
@@ -434,47 +429,6 @@ export default function Integrations() {
                     : "لم يتم تكوين تصدير Google Sheets في هذه البيئة. أضف بيانات اعتماد المزود قبل تفعيل التصدير أو الاستيراد."}
                 </p>
               )}
-            </CardContent>
-          </Card>
-
-          {/* WhatsApp Integration */}
-          <Card className="relative overflow-hidden" data-testid="integration-whatsapp">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-green-500/10 to-green-600/5 rounded-bl-full" />
-            <CardHeader className="flex flex-row items-start gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center shadow-lg">
-                <SiWhatsapp className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-lg">WhatsApp</CardTitle>
-                  <Badge variant="default" className="bg-green-500" data-testid="whatsapp-status">
-                    <Check className="w-3 h-3 mr-1" /> {locale === "en" ? "Ready" : "جاهز"}
-                  </Badge>
-                </div>
-                <CardDescription className="mt-1">
-                  {locale === "en"
-                    ? "Prepare messages, invoices, and reminders for WhatsApp Desktop/Web"
-                    : "جهّز الرسائل والفواتير والتذكيرات لواتساب"}
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  {locale === "en"
-                    ? "Messages are prepared and recorded in the system. Provider delivery must be configured before treating them as sent."
-                    : "يتم تجهيز الرسائل وتسجيلها في النظام. يجب تكوين مزود الإرسال قبل اعتبارها مرسلة."}
-                </p>
-                <Button
-                  variant="default"
-                  className="gap-2 w-full bg-green-600 hover:bg-green-700"
-                  onClick={() => (window.location.href = "/whatsapp")}
-                  data-testid="button-go-whatsapp"
-                >
-                  <SiWhatsapp className="w-4 h-4" />
-                  {locale === "en" ? "Go to WhatsApp" : "الذهاب إلى واتساب"}
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </div>

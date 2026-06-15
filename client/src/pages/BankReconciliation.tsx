@@ -168,6 +168,12 @@ const matchTypeConfig = {
   },
 };
 
+const SAMPLE_BANK_CSV = `Date,Description,Debit,Credit,Balance,Reference
+2026-06-13,ADCB BANK CHARGE,42.00,0,58218.00,FEE-0613
+2026-06-14,ETISALAT UAE,1260.00,0,56958.00,TEL-0614
+2026-06-15,AL NOOR RETAIL FZCO,0,19425.00,76383.00,INV-1042
+`;
+
 function confidenceLabel(score: number): { label: string; color: string; bg: string } {
   if (score >= 80)
     return {
@@ -190,6 +196,18 @@ function formatDate(dateStr: string) {
   } catch {
     return dateStr;
   }
+}
+
+function downloadSampleBankCsv() {
+  const blob = new Blob([SAMPLE_BANK_CSV], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "muhasib-sample-bank-statement.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ─── Main Component ─────────────────────────────────────────────────────────
@@ -295,7 +313,10 @@ export default function BankReconciliation() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       toast({
         title: "Import Successful",
-        description: `Imported ${data.imported ?? 0} transactions`,
+        description:
+          data.skippedDuplicates > 0
+            ? `Imported ${data.imported ?? 0} new transaction(s); skipped ${data.skippedDuplicates} duplicate(s).`
+            : `Imported ${data.imported ?? 0} transaction(s). Matching suggestions are being prepared.`,
       });
       setImportDialogOpen(false);
       setImportFile(null);
@@ -712,60 +733,48 @@ export default function BankReconciliation() {
               testId="empty-state-bank-transactions"
             />
           ) : (
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-28">Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-28">Reference</TableHead>
-                    <TableHead className="text-right w-32">Amount</TableHead>
-                    <TableHead className="w-40">Status</TableHead>
-                    <TableHead className="text-right w-36">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTransactions.map((tx) => {
-                    const conf =
-                      tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
-                    const confMeta = conf != null ? confidenceLabel(conf) : null;
-                    return (
-                      <TableRow
-                        key={tx.id}
-                        data-testid={`row-transaction-${tx.id}`}
-                        className={
-                          tx.matchStatus === "suggested" ? "bg-[hsl(var(--chart-4)/0.06)]" : ""
-                        }
-                      >
-                        <TableCell className="font-mono text-sm">
-                          {formatDate(tx.transactionDate)}
-                        </TableCell>
-                        <TableCell className="max-w-xs">
-                          <div className="truncate font-medium">{tx.description}</div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-sm">
-                          {tx.reference || "—"}
-                        </TableCell>
-                        <TableCell
-                          className={`text-right font-mono font-medium ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
-                        >
-                          {formatCurrency(tx.amount)}
-                        </TableCell>
-                        <TableCell>
+            <>
+              <div className="grid gap-3 md:hidden" data-testid="mobile-bank-transaction-list">
+                {filteredTransactions.map((tx) => {
+                  const conf =
+                    tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
+                  const confMeta = conf != null ? confidenceLabel(conf) : null;
+                  return (
+                    <Card
+                      key={tx.id}
+                      className={
+                        tx.matchStatus === "suggested" ? "border-[hsl(var(--chart-4)/0.35)]" : ""
+                      }
+                    >
+                      <CardContent className="p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground">
+                              {formatDate(tx.transactionDate)}
+                            </p>
+                            <p className="font-medium truncate">{tx.description}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {tx.reference || "No reference"}
+                            </p>
+                          </div>
+                          <p
+                            className={`font-mono text-sm font-semibold shrink-0 ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
+                          >
+                            {formatCurrency(tx.amount)}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
                           <div className="flex flex-col gap-1">
                             {tx.isReconciled ? (
                               <StatusBadge tone="success" className="w-fit">
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
                                 Reconciled
                               </StatusBadge>
                             ) : tx.matchStatus === "suggested" ? (
                               <StatusBadge tone="warning" className="w-fit">
-                                <Sparkles className="w-3 h-3 mr-1" />
                                 Suggested
                               </StatusBadge>
                             ) : (
                               <StatusBadge tone="neutral" className="w-fit">
-                                <XCircle className="w-3 h-3 mr-1" />
                                 Unmatched
                               </StatusBadge>
                             )}
@@ -775,62 +784,171 @@ export default function BankReconciliation() {
                               </span>
                             )}
                           </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            {tx.isReconciled ? (
+                          {tx.isReconciled ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => unmatchMutation.mutate(tx.id)}
+                              disabled={unmatchMutation.isPending}
+                            >
+                              <Unlink className="w-3.5 h-3.5 mr-1" />
+                              Unmatch
+                            </Button>
+                          ) : tx.matchStatus === "suggested" ? (
+                            <div className="flex gap-2">
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                className="text-muted-foreground h-7 px-2"
-                                onClick={() => unmatchMutation.mutate(tx.id)}
-                                disabled={unmatchMutation.isPending}
-                                title="Unmatch"
+                                onClick={() => handleAcceptSuggestion(tx)}
+                                disabled={matchMutation.isPending}
                               >
-                                <Unlink className="w-3.5 h-3.5" />
+                                <Check className="w-3.5 h-3.5 mr-1" />
+                                Accept
                               </Button>
-                            ) : tx.matchStatus === "suggested" ? (
-                              <>
-                                <Button
-                                  size="sm"
-                                  className="h-7 px-2 bg-[hsl(var(--chart-5))] hover:bg-[hsl(var(--chart-5)/0.85)] text-primary-foreground"
-                                  onClick={() => handleAcceptSuggestion(tx)}
-                                  disabled={matchMutation.isPending}
-                                  title="Accept suggested match"
-                                >
-                                  <Check className="w-3.5 h-3.5 mr-1" />
-                                  Accept
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-7 px-2"
-                                  onClick={() => handleOpenMatch(tx)}
-                                  title="Review or change match"
-                                >
-                                  <ChevronRight className="w-3.5 h-3.5" />
-                                </Button>
-                              </>
-                            ) : (
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="h-7"
                                 onClick={() => handleOpenMatch(tx)}
-                                data-testid={`button-match-${tx.id}`}
                               >
-                                <Link2 className="w-3.5 h-3.5 mr-1" />
-                                Match
+                                Review
                               </Button>
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                            </div>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleOpenMatch(tx)}
+                              data-testid={`mobile-button-match-${tx.id}`}
+                            >
+                              <Link2 className="w-3.5 h-3.5 mr-1" />
+                              Match
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+              <div className="hidden rounded-md border overflow-x-auto md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-28">Date</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-28">Reference</TableHead>
+                      <TableHead className="text-right w-32">Amount</TableHead>
+                      <TableHead className="w-40">Status</TableHead>
+                      <TableHead className="text-right w-36">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTransactions.map((tx) => {
+                      const conf =
+                        tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
+                      const confMeta = conf != null ? confidenceLabel(conf) : null;
+                      return (
+                        <TableRow
+                          key={tx.id}
+                          data-testid={`row-transaction-${tx.id}`}
+                          className={
+                            tx.matchStatus === "suggested" ? "bg-[hsl(var(--chart-4)/0.06)]" : ""
+                          }
+                        >
+                          <TableCell className="font-mono text-sm">
+                            {formatDate(tx.transactionDate)}
+                          </TableCell>
+                          <TableCell className="max-w-xs">
+                            <div className="truncate font-medium">{tx.description}</div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground text-sm">
+                            {tx.reference || "—"}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono font-medium ${tx.amount >= 0 ? "text-[hsl(var(--chart-5))]" : "text-destructive"}`}
+                          >
+                            {formatCurrency(tx.amount)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-col gap-1">
+                              {tx.isReconciled ? (
+                                <StatusBadge tone="success" className="w-fit">
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  Reconciled
+                                </StatusBadge>
+                              ) : tx.matchStatus === "suggested" ? (
+                                <StatusBadge tone="warning" className="w-fit">
+                                  <Sparkles className="w-3 h-3 mr-1" />
+                                  Suggested
+                                </StatusBadge>
+                              ) : (
+                                <StatusBadge tone="neutral" className="w-fit">
+                                  <XCircle className="w-3 h-3 mr-1" />
+                                  Unmatched
+                                </StatusBadge>
+                              )}
+                              {confMeta && !tx.isReconciled && (
+                                <span className={`text-xs font-medium ${confMeta.color}`}>
+                                  {conf}% {confMeta.label}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {tx.isReconciled ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground h-7 px-2"
+                                  onClick={() => unmatchMutation.mutate(tx.id)}
+                                  disabled={unmatchMutation.isPending}
+                                  title="Unmatch"
+                                >
+                                  <Unlink className="w-3.5 h-3.5" />
+                                </Button>
+                              ) : tx.matchStatus === "suggested" ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    className="h-7 px-2 bg-[hsl(var(--chart-5))] hover:bg-[hsl(var(--chart-5)/0.85)] text-primary-foreground"
+                                    onClick={() => handleAcceptSuggestion(tx)}
+                                    disabled={matchMutation.isPending}
+                                    title="Accept suggested match"
+                                  >
+                                    <Check className="w-3.5 h-3.5 mr-1" />
+                                    Accept
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2"
+                                    onClick={() => handleOpenMatch(tx)}
+                                    title="Review or change match"
+                                  >
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7"
+                                  onClick={() => handleOpenMatch(tx)}
+                                  data-testid={`button-match-${tx.id}`}
+                                >
+                                  <Link2 className="w-3.5 h-3.5 mr-1" />
+                                  Match
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -1047,14 +1165,32 @@ export default function BankReconciliation() {
               )}
             </div>
             <div className="bg-muted/50 p-3 rounded-md text-sm space-y-1.5">
-              <p className="font-medium text-xs uppercase tracking-wide">Supported formats</p>
-              <div className="flex items-center gap-2 text-xs">
-                <FileSpreadsheet className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
-                <span>CSV — Emirates NBD, ADCB, FAB, Mashreq, generic</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <FileText className="w-3.5 h-3.5 text-destructive" />
-                <span>PDF — text extraction with OCR fallback</span>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1.5">
+                  <p className="font-medium text-xs uppercase tracking-wide">Supported formats</p>
+                  <div className="flex items-center gap-2 text-xs">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-[hsl(var(--chart-5))]" />
+                    <span>CSV — Emirates NBD, ADCB, FAB, Mashreq, generic</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <FileText className="w-3.5 h-3.5 text-destructive" />
+                    <span>PDF — text extraction with OCR fallback</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Live bank feeds are not required. Upload a statement, review suggestions, then
+                    post matches.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={downloadSampleBankCsv}
+                  data-testid="button-download-sample-bank-csv"
+                >
+                  Sample CSV
+                </Button>
               </div>
             </div>
           </div>

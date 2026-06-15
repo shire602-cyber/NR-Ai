@@ -30,6 +30,9 @@ Scope: this file applies to the whole repository.
 - Lint with `npm run lint`; use `npm run lint:fix` only when you intend to modify files.
 - Check formatting with `npm run format:check`; use `npm run format` only when you intend to
   modify files. `migrations/meta/` is generated Drizzle metadata and is ignored by Prettier.
+- The full-tree Prettier baseline is not clean yet; for launch-hardening changes, prefer
+  `npx prettier --check <changed-files>` plus `npx prettier --write <changed-files>` over
+  repo-wide formatting unless a format-only cleanup is intentional.
 
 ## Database And Migrations
 
@@ -47,7 +50,7 @@ Scope: this file applies to the whole repository.
 
 - Vitest uses `tests/setup.ts`, which sets `NODE_ENV=test`, `PORT=5001`, and a test
   `DATABASE_URL`.
-- Vitest and ESLint intentionally exclude `.claude/` worktrees. Do not use those as
+- Vitest and ESLint intentionally exclude `.claude/` and `.claire/` worktrees. Do not use those as
   source-of-truth unless the task explicitly targets them.
 - In development, `npm run dev` starts Express on `PORT` (default `5000`) and mounts
   Vite in middleware mode; there is no separate client dev script.
@@ -72,5 +75,20 @@ Scope: this file applies to the whole repository.
   after an SSH key is registered.
 - `npm run e2e` requires a running app plus `BASE_URL` and `DATABASE_URL`; it registers a
   fresh user, promotes it through Postgres, crawls workspace routes, and posts a balanced journal.
+- Use `npx vitest run tests/unit/public-launch-surface.test.ts` after public marketing, SEO,
+  trust, help, migration, or public-route changes to catch unsupported compliance/security claims.
+- Keep the public sample-data demo workspace routed at `/demo`; after demo, onboarding, or
+  claim-copy changes, include `tests/unit/public-launch-surface.test.ts` in the focused run.
+- Use `npx vitest run tests/unit/vat201-export.test.ts` after VAT 201 export mapping or workbook
+  copy changes.
+- Use `npx vitest run tests/unit/bank-import-ux.test.ts` after bank statement import or
+  reconciliation UX changes, especially sample CSV and duplicate-import messaging.
+- Use `npx vitest run tests/unit/mobile-launch-ux.test.ts` after mobile layout changes on invoices,
+  receipts, banking, VAT, or other launch-critical SaaS screens.
+- Use `npx vitest run tests/unit/whatsapp-boundary.test.ts` after WhatsApp-related changes. The
+  WhatsApp surface is NR firm-management-only and must not appear in public or customer SaaS UI.
+- Document chasing is also an NR firm-management-only feature. Keep its UI under
+  `/firm/document-chasing` and verify with
+  `npx vitest run tests/unit/document-chasing-boundary.test.ts` after related route/nav/API changes.
 - `npm run test:coverage` is a baseline ratchet, not proof of broad route coverage; raise the
   thresholds as integration and route-level tests land.

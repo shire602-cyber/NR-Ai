@@ -246,11 +246,11 @@ export default function Services() {
     },
     {
       icon: Shield,
-      title: locale === "en" ? "FTA Compliant" : "متوافق مع الهيئة الاتحادية للضرائب",
+      title: locale === "en" ? "UAE Tax Workflow Support" : "دعم سير العمل الضريبي الإماراتي",
       description:
         locale === "en"
-          ? "All services aligned with UAE Federal Tax Authority requirements."
-          : "جميع الخدمات متوافقة مع متطلبات الهيئة الاتحادية للضرائب.",
+          ? "Services structured around UAE tax recordkeeping, review, and submission support."
+          : "خدمات منظمة حول حفظ السجلات الضريبية الإماراتية والمراجعة ودعم التقديم.",
     },
     {
       icon: Languages,
@@ -360,8 +360,8 @@ export default function Services() {
       title: locale === "en" ? "Smart Tax Optimization" : "تحسين الضرائب الذكي",
       description:
         locale === "en"
-          ? "AI recommendations to minimize tax liability while maintaining full FTA compliance."
-          : "توصيات ذكية لتقليل الالتزام الضريبي مع الحفاظ على الامتثال الكامل للهيئة الاتحادية للضرائب.",
+          ? "AI-assisted tax review prompts that help accountants spot planning and documentation gaps."
+          : "تنبيهات مراجعة ضريبية مدعومة بالذكاء الاصطناعي تساعد المحاسبين على اكتشاف فجوات التخطيط والتوثيق.",
       bgColor: "bg-emerald-500/10",
       iconColor: "text-emerald-500",
     },
@@ -549,8 +549,8 @@ export default function Services() {
                         <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
                         <span className="text-foreground/80">
                           {locale === "en"
-                            ? "FTA Registered & Compliant"
-                            : "مسجل ومتوافق مع الهيئة الاتحادية للضرائب"}
+                            ? "UAE Tax Workflow Support"
+                            : "دعم سير عمل الضرائب في الإمارات"}
                         </span>
                       </div>
                       <div className="flex items-center gap-3 text-sm" data-testid="hero-trust-2">

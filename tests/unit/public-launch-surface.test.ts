@@ -1,0 +1,143 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const repoRoot = process.cwd();
+
+function readRepoFile(path: string): string {
+  return readFileSync(join(repoRoot, path), "utf8");
+}
+
+const publicLaunchFiles = [
+  "client/index.html",
+  "client/src/pages/MuhasibLanding.tsx",
+  "client/src/components/auth/AuthLayout.tsx",
+  "client/src/pages/LandingPage.tsx",
+  "client/src/pages/Landing.tsx",
+  "client/src/pages/Register.tsx",
+  "client/src/pages/Services.tsx",
+  "client/src/pages/Pricing.tsx",
+  "client/src/pages/Subscription.tsx",
+  "client/src/pages/VATFiling.tsx",
+  "client/src/pages/PrivacyPolicy.tsx",
+  "client/src/pages/TrustSecurity.tsx",
+  "client/src/pages/HelpCenter.tsx",
+  "client/src/pages/MigrationGuides.tsx",
+  "client/src/pages/DemoWorkspace.tsx",
+];
+
+const bannedLaunchClaims = [
+  /FTA-compliant/i,
+  /FTA Compliant/i,
+  /FTA Registered/i,
+  /UAE-compliant/i,
+  /bank-grade/i,
+  /bank-level/i,
+  /SLA guarantee/i,
+  /SLA-backed/i,
+  /24\/7 support/i,
+  /direct EmaraTax/i,
+  /FTA filing/i,
+  /FTA Accredited/i,
+  /Generate and submit/i,
+  /compliant with FTA/i,
+];
+
+describe("Public SaaS launch surface", () => {
+  it("keeps the core trust/help/migration pages publicly routable", () => {
+    const appSource = readRepoFile("client/src/App.tsx");
+
+    for (const path of ["/trust", "/help", "/migration-guides", "/demo"]) {
+      expect(appSource, `${path} should be included in the public-route gate`).toContain(
+        `pathname === "${path}"`
+      );
+      expect(appSource, `${path} should have a public route`).toContain(
+        `<Route path="${path}" component=`
+      );
+    }
+  });
+
+  it("keeps launch SEO metadata claim-safe and buyer-oriented", () => {
+    const indexSource = readRepoFile("client/index.html");
+
+    expect(indexSource).toContain("AI-Assisted Accounting Software for UAE SMEs");
+    expect(indexSource).toContain("VAT workflows");
+    expect(indexSource).toContain("guided onboarding for launch customers");
+
+    for (const bannedClaim of bannedLaunchClaims) {
+      expect(indexSource).not.toMatch(bannedClaim);
+    }
+  });
+
+  it("does not reintroduce unsupported public compliance or security claims", () => {
+    for (const file of publicLaunchFiles) {
+      const source = readRepoFile(file);
+      for (const bannedClaim of bannedLaunchClaims) {
+        expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
+      }
+    }
+  });
+
+  it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
+    const appSource = readRepoFile("client/src/App.tsx");
+    const dashboardSource = readRepoFile("client/src/pages/Dashboard.tsx");
+
+    expect(appSource).toContain("UAE Tax Ready");
+    for (const [file, source] of [
+      ["client/src/App.tsx", appSource],
+      ["client/src/pages/Dashboard.tsx", dashboardSource],
+    ] as const) {
+      for (const bannedClaim of bannedLaunchClaims) {
+        expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
+      }
+    }
+  });
+
+  it("keeps certification and SLA language explicitly truthful", () => {
+    const trustSource = readRepoFile("client/src/pages/TrustSecurity.tsx");
+    const helpSource = readRepoFile("client/src/pages/HelpCenter.tsx");
+    const pricingSource = readRepoFile("client/src/pages/Pricing.tsx");
+
+    expect(trustSource).toMatch(
+      /We do not\s+claim SOC 2, ISO 27001, or FTA accreditation until those reviews are complete\./
+    );
+    expect(trustSource).toContain("External certifications are roadmap items, not current claims.");
+    expect(helpSource).toContain("Support and SLA posture");
+    expect(pricingSource).toContain("Enterprise support terms");
+  });
+
+  it("exposes customer-facing help and migration coverage for launch buyers", () => {
+    const helpSource = readRepoFile("client/src/pages/HelpCenter.tsx");
+    const migrationSource = readRepoFile("client/src/pages/MigrationGuides.tsx");
+
+    for (const expectedHelpTopic of [
+      "Set up your company",
+      "Create VAT-ready invoices",
+      "Import receipts and contacts",
+      "Reconcile bank statements",
+    ]) {
+      expect(helpSource).toContain(expectedHelpTopic);
+    }
+
+    for (const expectedMigrationTopic of [
+      "Move from Wafeq",
+      "Move from Zoho Books",
+      "Move from Excel",
+    ]) {
+      expect(migrationSource).toContain(expectedMigrationTopic);
+    }
+  });
+
+  it("keeps a public sample-data demo path for launch buyers", () => {
+    const demoSource = readRepoFile("client/src/pages/DemoWorkspace.tsx");
+
+    for (const expectedDemoSignal of [
+      "Sample company workspace",
+      "Pearl Trading LLC",
+      "CSV statement import, no live feed needed",
+      "Export VAT 201 workbook",
+    ]) {
+      expect(demoSource).toContain(expectedDemoSignal);
+    }
+  });
+});

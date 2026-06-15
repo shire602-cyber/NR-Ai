@@ -35,6 +35,10 @@ const CustomerPortal = lazy(() => import("@/pages/CustomerPortal"));
 const PrivacyPolicy = lazy(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("@/pages/TermsOfService"));
 const CookiePolicy = lazy(() => import("@/pages/CookiePolicy"));
+const TrustSecurity = lazy(() => import("@/pages/TrustSecurity"));
+const HelpCenter = lazy(() => import("@/pages/HelpCenter"));
+const MigrationGuides = lazy(() => import("@/pages/MigrationGuides"));
+const DemoWorkspace = lazy(() => import("@/pages/DemoWorkspace"));
 
 // Client Portal — lazy loaded
 const PortalDashboard = lazy(() => import("@/pages/portal/PortalDashboard"));
@@ -115,7 +119,6 @@ const SmartAssistant = lazy(() => import("@/pages/SmartAssistant"));
 const CustomerContacts = lazy(() => import("@/pages/CustomerContacts"));
 const Integrations = lazy(() => import("@/pages/Integrations"));
 const IntegrationsHub = lazy(() => import("@/pages/IntegrationsHub"));
-const WhatsAppDashboard = lazy(() => import("@/pages/WhatsAppDashboard"));
 const Notifications = lazy(() => import("@/pages/Notifications"));
 const Reminders = lazy(() => import("@/pages/Reminders"));
 const DocumentChasing = lazy(() => import("@/pages/DocumentChasing"));
@@ -292,7 +295,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
               <div className="hidden md:flex items-center gap-2 ps-2 text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-success-subtle text-success-subtle-foreground text-[10px] font-semibold tracking-wide uppercase">
                   <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse-dot" />
-                  FTA Compliant
+                  UAE Tax Ready
                 </span>
                 <span className="text-border">·</span>
                 <span className="font-mono text-[11px] tracking-tight">UAE · AED</span>
@@ -533,6 +536,10 @@ function Router() {
     pathname === "/reset-password" ||
     pathname === "/services" ||
     pathname === "/pricing" ||
+    pathname === "/trust" ||
+    pathname === "/help" ||
+    pathname === "/migration-guides" ||
+    pathname === "/demo" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     pathname === "/cookies" ||
@@ -559,6 +566,10 @@ function Router() {
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
               <Route path="/portal/:token" component={CustomerPortal} />
               <Route path="/pricing" component={Pricing} />
+              <Route path="/trust" component={TrustSecurity} />
+              <Route path="/help" component={HelpCenter} />
+              <Route path="/migration-guides" component={MigrationGuides} />
+              <Route path="/demo" component={DemoWorkspace} />
               <Route path="/privacy" component={PrivacyPolicy} />
               <Route path="/terms" component={TermsOfService} />
               <Route path="/cookies" component={CookiePolicy} />
@@ -620,10 +631,8 @@ function Router() {
             <Route path="/advanced-analytics" component={AdvancedAnalytics} />
             <Route path="/integrations" component={Integrations} />
             <Route path="/integrations-hub" component={IntegrationsHub} />
-            <Route path="/whatsapp" component={WhatsAppDashboard} />
             <Route path="/notifications" component={Notifications} />
             <Route path="/reminders" component={Reminders} />
-            <Route path="/document-chasing" component={DocumentChasing} />
             <Route path="/referrals" component={Referrals} />
             <Route path="/feedback" component={Feedback} />
             <Route path="/analytics" component={Analytics} />
@@ -694,6 +703,11 @@ function Router() {
             <Route path="/firm/comms">
               <FirmRoute>
                 <FirmComms />
+              </FirmRoute>
+            </Route>
+            <Route path="/firm/document-chasing">
+              <FirmRoute>
+                <DocumentChasing />
               </FirmRoute>
             </Route>
             <Route path="/firm/analytics">

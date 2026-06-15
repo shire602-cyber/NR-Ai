@@ -65,8 +65,6 @@ const ROUTES = [
   "/inventory",
   "/integrations",
   "/integrations-hub",
-  "/whatsapp",
-  "/document-chasing",
   "/notifications",
   "/reminders",
   "/company-profile",
@@ -104,6 +102,7 @@ const ROUTES = [
   "/firm/analytics",
   "/firm/bulk",
   "/firm/comms",
+  "/firm/document-chasing",
   "/firm/pipeline",
   "/firm/value-ops",
 ];

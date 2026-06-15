@@ -37,7 +37,7 @@ export default function Register() {
           .
         </>
       }
-      subline="Snap a receipt, forward an invoice, or sync a bank line — Muhasib books it, files it, and keeps you FTA-compliant from day one."
+      subline="Snap a receipt, forward an invoice, or import a bank line; Muhasib turns daily accounting into VAT-ready records from day one."
     >
       <RegisterForm onSuccess={handleSuccess} />
     </AuthLayout>

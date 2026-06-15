@@ -954,7 +954,7 @@ function CustomerDashboard() {
           <QuickAction
             icon={Plus}
             title="Create Invoice"
-            description="Generate UAE-compliant tax invoices in seconds"
+            description="Create VAT-ready tax invoices in seconds"
             href="/invoices"
             delay={0.05}
           />

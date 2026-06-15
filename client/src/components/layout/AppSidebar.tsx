@@ -145,7 +145,6 @@ const CUSTOMER_GROUPS: NavGroup[] = [
     titleKey: "compliance",
     icon: ClipboardList,
     items: [
-      { titleKey: "documentChasing", url: "/document-chasing" },
       { titleKey: "complianceCalendar", url: "/compliance-calendar" },
       { titleKey: "documentVersions", url: "/document-versions" },
     ],
@@ -162,7 +161,6 @@ const CUSTOMER_GROUPS: NavGroup[] = [
       { titleKey: "developerSettings", url: "/developer-settings" },
       { titleKey: "notificationPreferences", url: "/notification-preferences" },
       { titleKey: "subscription", url: "/subscription" },
-      { titleKey: "whatsappInbox", url: "/whatsapp" },
       { titleKey: "backupRestore", url: "/backup-restore" },
       { titleKey: "history", url: "/history" },
     ],
@@ -180,6 +178,7 @@ const NRA_GROUP: NavGroup = {
     { titleKey: "staffManagement", url: "/firm/staff" },
     { titleKey: "healthDashboard", url: "/firm/health" },
     { titleKey: "communications", url: "/firm/comms" },
+    { titleKey: "documentChasing", url: "/firm/document-chasing" },
   ],
 };
 

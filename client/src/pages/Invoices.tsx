@@ -94,10 +94,8 @@ import {
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
-import { SiGooglesheets, SiWhatsapp } from "react-icons/si";
-import type { Invoice, Company, CustomerContact, InvoicePayment } from "@shared/schema";
-import { MESSAGE_TEMPLATES, fillTemplate, pickWhatsAppNumber } from "@/lib/whatsapp-templates";
-import { WhatsAppComposer } from "@/components/WhatsAppComposer";
+import { SiGooglesheets } from "react-icons/si";
+import type { Invoice, Company, InvoicePayment } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { downloadInvoicePDF } from "@/lib/pdf-invoice";
 
@@ -175,17 +173,6 @@ export default function Invoices() {
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState("");
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
 
-  // WhatsApp composer state. We open this with a pre-filled message rather
-  // than redirecting to wa.me directly, so the user can review/edit before
-  // sending — important when share links are baked into the body.
-  const [composerOpen, setComposerOpen] = useState(false);
-  const [composerRecipient, setComposerRecipient] = useState<{
-    name?: string | null;
-    phone?: string | null;
-    whatsappNumber?: string | null;
-  } | null>(null);
-  const [composerMessage, setComposerMessage] = useState("");
-
   const { data: invoices, isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "invoices"],
     enabled: !!selectedCompanyId,
@@ -193,12 +180,6 @@ export default function Invoices() {
 
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
-    enabled: !!selectedCompanyId,
-  });
-
-  const { data: customers = [] } = useQuery<CustomerContact[]>({
-    queryKey: ["/api/companies", selectedCompanyId, "customer-contacts"],
-    queryFn: () => apiRequest("GET", `/api/companies/${selectedCompanyId}/customer-contacts`),
     enabled: !!selectedCompanyId,
   });
 
@@ -1128,463 +1109,431 @@ export default function Invoices() {
           {isLoading ? (
             <TableSkeleton rows={8} columns={6} />
           ) : (
-            <Card>
-              <div
-                ref={tableScrollRef}
-                className={cn(
-                  "overflow-auto",
-                  filteredInvoices && filteredInvoices.length > 100 && "max-h-[720px]"
-                )}
-                style={
-                  filteredInvoices && filteredInvoices.length > 100
-                    ? { contain: "strict" }
-                    : undefined
-                }
-              >
-                <Table>
-                  <TableHeader className="sticky top-0 z-10 bg-card">
-                    <TableRow>
-                      <TableHead className="font-semibold">{t.invoiceNumber}</TableHead>
-                      <TableHead className="font-semibold">{t.customerName}</TableHead>
-                      <TableHead className="font-semibold">{t.date}</TableHead>
-                      <TableHead className="font-semibold text-right">{t.total}</TableHead>
-                      <TableHead className="font-semibold text-center">{t.status}</TableHead>
-                      <TableHead className="font-semibold text-center">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <VirtualizedInvoiceRows
-                    invoices={filteredInvoices || []}
-                    scrollRef={tableScrollRef}
-                    renderRow={(invoice) => (
-                      <TableRow key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
-                        <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
-                        <TableCell>{invoice.customerName}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDate(invoice.date, locale)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-medium">
+            <>
+              <div className="grid gap-3 md:hidden" data-testid="mobile-invoice-list">
+                {(filteredInvoices || []).map((invoice) => (
+                  <Card key={invoice.id}>
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-mono text-sm font-semibold truncate">
+                            {invoice.number}
+                          </p>
+                          <p className="text-sm font-medium truncate">{invoice.customerName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDate(invoice.date, locale)}
+                          </p>
+                        </div>
+                        <p className="font-mono text-sm font-semibold shrink-0">
                           {formatCurrency(invoice.total, invoice.currency, locale)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Select
-                            value={invoice.status}
-                            onValueChange={(newStatus) => handleStatusChange(invoice, newStatus)}
-                            disabled={updateStatusMutation.isPending}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
+                        <Select
+                          value={invoice.status}
+                          onValueChange={(newStatus) => handleStatusChange(invoice, newStatus)}
+                          disabled={updateStatusMutation.isPending}
+                        >
+                          <SelectTrigger
+                            className={cn("h-9 border-0", getStatusBadgeColor(invoice.status))}
+                            data-testid={`mobile-select-status-${invoice.id}`}
                           >
-                            <SelectTrigger
-                              className={cn("w-32 border-0", getStatusBadgeColor(invoice.status))}
-                              data-testid={`select-status-${invoice.id}`}
+                            <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="draft">{t.draft}</SelectItem>
+                            <SelectItem value="sent">{t.sent}</SelectItem>
+                            <SelectItem value="paid">{t.paid}</SelectItem>
+                            <SelectItem value="partial">Partial</SelectItem>
+                            <SelectItem value="void">{t.void}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditInvoice(invoice)}
+                          data-testid={`mobile-button-edit-invoice-${invoice.id}`}
+                        >
+                          <Edit className="w-4 h-4 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <Card className="hidden md:block">
+                <div
+                  ref={tableScrollRef}
+                  className={cn(
+                    "overflow-auto",
+                    filteredInvoices && filteredInvoices.length > 100 && "max-h-[720px]"
+                  )}
+                  style={
+                    filteredInvoices && filteredInvoices.length > 100
+                      ? { contain: "strict" }
+                      : undefined
+                  }
+                >
+                  <Table>
+                    <TableHeader className="sticky top-0 z-10 bg-card">
+                      <TableRow>
+                        <TableHead className="font-semibold">{t.invoiceNumber}</TableHead>
+                        <TableHead className="font-semibold">{t.customerName}</TableHead>
+                        <TableHead className="font-semibold">{t.date}</TableHead>
+                        <TableHead className="font-semibold text-right">{t.total}</TableHead>
+                        <TableHead className="font-semibold text-center">{t.status}</TableHead>
+                        <TableHead className="font-semibold text-center">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <VirtualizedInvoiceRows
+                      invoices={filteredInvoices || []}
+                      scrollRef={tableScrollRef}
+                      renderRow={(invoice) => (
+                        <TableRow key={invoice.id} data-testid={`invoice-row-${invoice.id}`}>
+                          <TableCell className="font-mono font-medium">{invoice.number}</TableCell>
+                          <TableCell>{invoice.customerName}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatDate(invoice.date, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium">
+                            {formatCurrency(invoice.total, invoice.currency, locale)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Select
+                              value={invoice.status}
+                              onValueChange={(newStatus) => handleStatusChange(invoice, newStatus)}
+                              disabled={updateStatusMutation.isPending}
                             >
-                              <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem
-                                value="draft"
-                                data-testid={`status-option-draft-${invoice.id}`}
+                              <SelectTrigger
+                                className={cn("w-32 border-0", getStatusBadgeColor(invoice.status))}
+                                data-testid={`select-status-${invoice.id}`}
                               >
-                                {t.draft}
-                              </SelectItem>
-                              <SelectItem
-                                value="sent"
-                                data-testid={`status-option-sent-${invoice.id}`}
+                                <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem
+                                  value="draft"
+                                  data-testid={`status-option-draft-${invoice.id}`}
+                                >
+                                  {t.draft}
+                                </SelectItem>
+                                <SelectItem
+                                  value="sent"
+                                  data-testid={`status-option-sent-${invoice.id}`}
+                                >
+                                  {t.sent}
+                                </SelectItem>
+                                <SelectItem
+                                  value="paid"
+                                  data-testid={`status-option-paid-${invoice.id}`}
+                                >
+                                  {t.paid}
+                                </SelectItem>
+                                <SelectItem
+                                  value="partial"
+                                  data-testid={`status-option-partial-${invoice.id}`}
+                                >
+                                  Partial
+                                </SelectItem>
+                                <SelectItem
+                                  value="void"
+                                  data-testid={`status-option-void-${invoice.id}`}
+                                >
+                                  {t.void}
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {(invoice as any).einvoiceStatus && (
+                              <Badge
+                                variant="outline"
+                                className="ml-1 text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200"
                               >
-                                {t.sent}
-                              </SelectItem>
-                              <SelectItem
-                                value="paid"
-                                data-testid={`status-option-paid-${invoice.id}`}
-                              >
-                                {t.paid}
-                              </SelectItem>
-                              <SelectItem
-                                value="partial"
-                                data-testid={`status-option-partial-${invoice.id}`}
-                              >
-                                Partial
-                              </SelectItem>
-                              <SelectItem
-                                value="void"
-                                data-testid={`status-option-void-${invoice.id}`}
-                              >
-                                {t.void}
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {(invoice as any).einvoiceStatus && (
-                            <Badge
-                              variant="outline"
-                              className="ml-1 text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200"
-                            >
-                              E
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEditInvoice(invoice)}
-                              data-testid={`button-edit-invoice-${invoice.id}`}
-                            >
-                              <Edit className="w-4 h-4 mr-2" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={async () => {
-                                try {
-                                  // Fetch full invoice details with lines using apiRequest
-                                  const invoiceDetails = await apiRequest(
-                                    "GET",
-                                    `/api/invoices/${invoice.id}`
-                                  );
-
-                                  // Check if company is VAT registered
-                                  const isVATRegistered = !!(
-                                    company?.trnVatNumber && company.trnVatNumber.length > 0
-                                  );
-
-                                  await downloadInvoicePDF({
-                                    invoiceNumber: invoiceDetails.number,
-                                    date: invoiceDetails.date.toString(),
-                                    customerName: invoiceDetails.customerName,
-                                    customerTRN: invoiceDetails.customerTrn || undefined,
-                                    companyName: company?.name || "Your Company",
-                                    companyTRN: company?.trnVatNumber || undefined,
-                                    companyAddress: company?.businessAddress || undefined,
-                                    companyPhone: company?.contactPhone || undefined,
-                                    companyEmail: company?.contactEmail || undefined,
-                                    companyWebsite: company?.websiteUrl || undefined,
-                                    companyLogo: company?.logoUrl || undefined,
-                                    lines: invoiceDetails.lines || [],
-                                    subtotal: invoiceDetails.subtotal,
-                                    vatAmount: invoiceDetails.vatAmount,
-                                    total: invoiceDetails.total,
-                                    currency: invoiceDetails.currency,
-                                    locale,
-                                    // Invoice customization settings
-                                    showLogo:
-                                      company?.invoiceShowLogo !== undefined
-                                        ? company.invoiceShowLogo
-                                        : true,
-                                    showAddress:
-                                      company?.invoiceShowAddress !== undefined
-                                        ? company.invoiceShowAddress
-                                        : true,
-                                    showPhone:
-                                      company?.invoiceShowPhone !== undefined
-                                        ? company.invoiceShowPhone
-                                        : true,
-                                    showEmail:
-                                      company?.invoiceShowEmail !== undefined
-                                        ? company.invoiceShowEmail
-                                        : true,
-                                    showWebsite:
-                                      company?.invoiceShowWebsite === true ? true : undefined,
-                                    customTitle: company?.invoiceCustomTitle || undefined,
-                                    footerNote: company?.invoiceFooterNote || undefined,
-                                    isVATRegistered,
-                                  });
-
-                                  toast({
-                                    title: "PDF Downloaded",
-                                    description: "Invoice PDF has been downloaded successfully",
-                                  });
-                                } catch (error: any) {
-                                  toast({
-                                    title: "Error",
-                                    description: error?.message || "Failed to generate PDF",
-                                    variant: "destructive",
-                                  });
-                                }
-                              }}
-                              data-testid={`button-download-pdf-${invoice.id}`}
-                            >
-                              <Download className="w-4 h-4 mr-2" />
-                              PDF
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-green-600 hover:text-green-700"
-                              title="Send via WhatsApp"
-                              onClick={async () => {
-                                try {
-                                  const customer = customers.find(
-                                    (c) => c.name === invoice.customerName
-                                  );
-                                  const recipientNumber = customer
-                                    ? pickWhatsAppNumber(customer)
-                                    : null;
-                                  if (!customer || !recipientNumber) {
-                                    toast({
-                                      title: "No WhatsApp number",
-                                      description: `No phone or WhatsApp number found for ${invoice.customerName}. Add one in Customer Contacts.`,
-                                      variant: "destructive",
-                                    });
-                                    return;
-                                  }
-
-                                  const shareResult = await apiRequest(
-                                    "POST",
-                                    `/api/invoices/${invoice.id}/share`
-                                  );
-                                  const shareUrl = `${window.location.origin}${shareResult.shareUrl}`;
-
-                                  const invoiceDate = new Date(invoice.date);
-                                  const paymentTerms = customer.paymentTerms || 30;
-                                  const dueDate = new Date(invoiceDate);
-                                  dueDate.setDate(dueDate.getDate() + paymentTerms);
-
-                                  const tpl = MESSAGE_TEMPLATES.find(
-                                    (t) => t.id === "invoice_with_link"
-                                  );
-                                  const templateStr =
-                                    locale === "en" ? tpl?.template || "" : tpl?.templateAr || "";
-                                  const message = fillTemplate(templateStr, {
-                                    customer_name: invoice.customerName,
-                                    invoice_number: invoice.number,
-                                    amount: `${invoice.currency} ${invoice.total.toFixed(2)}`,
-                                    due_date: dueDate.toLocaleDateString(
-                                      locale === "en" ? "en-AE" : "ar-AE"
-                                    ),
-                                    link: shareUrl,
-                                    company_name: company?.name || "",
-                                  });
-
-                                  setComposerRecipient({
-                                    name: customer.name,
-                                    phone: customer.phone,
-                                    whatsappNumber: customer.whatsappNumber,
-                                  });
-                                  setComposerMessage(message);
-                                  setComposerOpen(true);
-
-                                  // Mark drafts as sent — opening composer is intent enough.
-                                  if (invoice.status === "draft") {
-                                    apiRequest("PATCH", `/api/invoices/${invoice.id}/status`, {
-                                      status: "sent",
-                                    })
-                                      .then(() =>
-                                        queryClient.invalidateQueries({
-                                          queryKey: [
-                                            "/api/companies",
-                                            selectedCompanyId,
-                                            "invoices",
-                                          ],
-                                        })
-                                      )
-                                      .catch(() => {});
-                                  }
-                                } catch (error: any) {
-                                  toast({
-                                    title: "Error",
-                                    description:
-                                      error?.message || "Failed to prepare WhatsApp message",
-                                    variant: "destructive",
-                                  });
-                                }
-                              }}
-                              data-testid={`button-whatsapp-invoice-${invoice.id}`}
-                            >
-                              <SiWhatsapp className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={async () => {
-                                try {
-                                  const result = await apiRequest(
-                                    "POST",
-                                    `/api/invoices/${invoice.id}/generate-einvoice`
-                                  );
-                                  toast({
-                                    title: "E-Invoice generated",
-                                    description: `UUID: ${result.uuid}`,
-                                  });
-                                  queryClient.invalidateQueries({
-                                    queryKey: ["/api/companies", selectedCompanyId, "invoices"],
-                                  });
-                                } catch (error: any) {
-                                  toast({
-                                    title: "Error",
-                                    description: error?.message,
-                                    variant: "destructive",
-                                  });
-                                }
-                              }}
-                              title="Generate E-Invoice"
-                              data-testid={`button-einvoice-${invoice.id}`}
-                            >
-                              <FileCode className="w-4 h-4 text-blue-500" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Add Payment"
-                              onClick={() => {
-                                setInvoiceForPaymentDetail(invoice);
-                                setPaymentAmount("");
-                                setPaymentAccountForAdd("");
-                                setPaymentMethod("bank");
-                                setPaymentReference("");
-                                setPaymentNotes("");
-                                setAddPaymentDialogOpen(true);
-                              }}
-                              data-testid={`button-add-payment-${invoice.id}`}
-                            >
-                              <DollarSign className="w-4 h-4 text-green-600" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="View Payments"
-                              onClick={async () => {
-                                setInvoiceForPaymentDetail(invoice);
-                                try {
-                                  const payments = await apiRequest(
-                                    "GET",
-                                    `/api/companies/${selectedCompanyId}/invoices/${invoice.id}/payments`
-                                  );
-                                  setInvoicePayments(payments);
-                                  setViewPaymentsDialogOpen(true);
-                                } catch (e: any) {
-                                  toast({
-                                    variant: "destructive",
-                                    title: "Error",
-                                    description: e?.message,
-                                  });
-                                }
-                              }}
-                              data-testid={`button-view-payments-${invoice.id}`}
-                            >
-                              <FileText className="w-4 h-4 text-blue-500" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              title="Set Recurring"
-                              onClick={() => {
-                                setInvoiceForRecurring(invoice);
-                                setRecurringEnabled((invoice as any).isRecurring || false);
-                                setRecurringInterval(
-                                  (invoice as any).recurringInterval || "monthly"
-                                );
-                                const next = (invoice as any).nextRecurringDate;
-                                setRecurringNextDate(next ? new Date(next) : undefined);
-                                const end = (invoice as any).recurringEndDate;
-                                setRecurringEndDate(end ? new Date(end) : undefined);
-                                setRecurringDialogOpen(true);
-                              }}
-                              data-testid={`button-set-recurring-${invoice.id}`}
-                            >
-                              <RefreshCw
-                                className={`w-4 h-4 ${(invoice as any).isRecurring ? "text-purple-500" : "text-muted-foreground"}`}
-                              />
-                            </Button>
-                            {(invoice as any).invoiceType !== "credit_note" && (
+                                E
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <div className="flex items-center justify-center gap-2">
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                title="Create Credit Note"
-                                onClick={() => {
-                                  if (
-                                    window.confirm(
-                                      `Create a credit note for Invoice ${invoice.number}? This will reverse the journal entry.`
-                                    )
-                                  ) {
-                                    createCreditNoteMutation.mutate(invoice.id);
+                                onClick={() => handleEditInvoice(invoice)}
+                                data-testid={`button-edit-invoice-${invoice.id}`}
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    // Fetch full invoice details with lines using apiRequest
+                                    const invoiceDetails = await apiRequest(
+                                      "GET",
+                                      `/api/invoices/${invoice.id}`
+                                    );
+
+                                    // Check if company is VAT registered
+                                    const isVATRegistered = !!(
+                                      company?.trnVatNumber && company.trnVatNumber.length > 0
+                                    );
+
+                                    await downloadInvoicePDF({
+                                      invoiceNumber: invoiceDetails.number,
+                                      date: invoiceDetails.date.toString(),
+                                      customerName: invoiceDetails.customerName,
+                                      customerTRN: invoiceDetails.customerTrn || undefined,
+                                      companyName: company?.name || "Your Company",
+                                      companyTRN: company?.trnVatNumber || undefined,
+                                      companyAddress: company?.businessAddress || undefined,
+                                      companyPhone: company?.contactPhone || undefined,
+                                      companyEmail: company?.contactEmail || undefined,
+                                      companyWebsite: company?.websiteUrl || undefined,
+                                      companyLogo: company?.logoUrl || undefined,
+                                      lines: invoiceDetails.lines || [],
+                                      subtotal: invoiceDetails.subtotal,
+                                      vatAmount: invoiceDetails.vatAmount,
+                                      total: invoiceDetails.total,
+                                      currency: invoiceDetails.currency,
+                                      locale,
+                                      // Invoice customization settings
+                                      showLogo:
+                                        company?.invoiceShowLogo !== undefined
+                                          ? company.invoiceShowLogo
+                                          : true,
+                                      showAddress:
+                                        company?.invoiceShowAddress !== undefined
+                                          ? company.invoiceShowAddress
+                                          : true,
+                                      showPhone:
+                                        company?.invoiceShowPhone !== undefined
+                                          ? company.invoiceShowPhone
+                                          : true,
+                                      showEmail:
+                                        company?.invoiceShowEmail !== undefined
+                                          ? company.invoiceShowEmail
+                                          : true,
+                                      showWebsite:
+                                        company?.invoiceShowWebsite === true ? true : undefined,
+                                      customTitle: company?.invoiceCustomTitle || undefined,
+                                      footerNote: company?.invoiceFooterNote || undefined,
+                                      isVATRegistered,
+                                    });
+
+                                    toast({
+                                      title: "PDF Downloaded",
+                                      description: "Invoice PDF has been downloaded successfully",
+                                    });
+                                  } catch (error: any) {
+                                    toast({
+                                      title: "Error",
+                                      description: error?.message || "Failed to generate PDF",
+                                      variant: "destructive",
+                                    });
                                   }
                                 }}
-                                disabled={createCreditNoteMutation.isPending}
-                                data-testid={`button-credit-note-${invoice.id}`}
+                                data-testid={`button-download-pdf-${invoice.id}`}
                               >
-                                <RotateCcw className="w-4 h-4 text-orange-500" />
+                                <Download className="w-4 h-4 mr-2" />
+                                PDF
                               </Button>
-                            )}
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    const result = await apiRequest(
+                                      "POST",
+                                      `/api/invoices/${invoice.id}/generate-einvoice`
+                                    );
+                                    toast({
+                                      title: "E-Invoice generated",
+                                      description: `UUID: ${result.uuid}`,
+                                    });
+                                    queryClient.invalidateQueries({
+                                      queryKey: ["/api/companies", selectedCompanyId, "invoices"],
+                                    });
+                                  } catch (error: any) {
+                                    toast({
+                                      title: "Error",
+                                      description: error?.message,
+                                      variant: "destructive",
+                                    });
+                                  }
+                                }}
+                                title="Generate E-Invoice"
+                                data-testid={`button-einvoice-${invoice.id}`}
+                              >
+                                <FileCode className="w-4 h-4 text-blue-500" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Add Payment"
+                                onClick={() => {
+                                  setInvoiceForPaymentDetail(invoice);
+                                  setPaymentAmount("");
+                                  setPaymentAccountForAdd("");
+                                  setPaymentMethod("bank");
+                                  setPaymentReference("");
+                                  setPaymentNotes("");
+                                  setAddPaymentDialogOpen(true);
+                                }}
+                                data-testid={`button-add-payment-${invoice.id}`}
+                              >
+                                <DollarSign className="w-4 h-4 text-green-600" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="View Payments"
+                                onClick={async () => {
+                                  setInvoiceForPaymentDetail(invoice);
+                                  try {
+                                    const payments = await apiRequest(
+                                      "GET",
+                                      `/api/companies/${selectedCompanyId}/invoices/${invoice.id}/payments`
+                                    );
+                                    setInvoicePayments(payments);
+                                    setViewPaymentsDialogOpen(true);
+                                  } catch (e: any) {
+                                    toast({
+                                      variant: "destructive",
+                                      title: "Error",
+                                      description: e?.message,
+                                    });
+                                  }
+                                }}
+                                data-testid={`button-view-payments-${invoice.id}`}
+                              >
+                                <FileText className="w-4 h-4 text-blue-500" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title="Set Recurring"
+                                onClick={() => {
+                                  setInvoiceForRecurring(invoice);
+                                  setRecurringEnabled((invoice as any).isRecurring || false);
+                                  setRecurringInterval(
+                                    (invoice as any).recurringInterval || "monthly"
+                                  );
+                                  const next = (invoice as any).nextRecurringDate;
+                                  setRecurringNextDate(next ? new Date(next) : undefined);
+                                  const end = (invoice as any).recurringEndDate;
+                                  setRecurringEndDate(end ? new Date(end) : undefined);
+                                  setRecurringDialogOpen(true);
+                                }}
+                                data-testid={`button-set-recurring-${invoice.id}`}
+                              >
+                                <RefreshCw
+                                  className={`w-4 h-4 ${(invoice as any).isRecurring ? "text-purple-500" : "text-muted-foreground"}`}
+                                />
+                              </Button>
+                              {(invoice as any).invoiceType !== "credit_note" && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  disabled={deleteMutation.isPending}
-                                  data-testid={`button-delete-invoice-${invoice.id}`}
+                                  title="Create Credit Note"
+                                  onClick={() => {
+                                    if (
+                                      window.confirm(
+                                        `Create a credit note for Invoice ${invoice.number}? This will reverse the journal entry.`
+                                      )
+                                    ) {
+                                      createCreditNoteMutation.mutate(invoice.id);
+                                    }
+                                  }}
+                                  disabled={createCreditNoteMutation.isPending}
+                                  data-testid={`button-credit-note-${invoice.id}`}
                                 >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                  <RotateCcw className="w-4 h-4 text-orange-500" />
                                 </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>
-                                    Delete Invoice {invoice.number}?
-                                  </AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    This will permanently delete this invoice. This action cannot be
-                                    undone.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => deleteMutation.mutate(invoice.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              )}
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={deleteMutation.isPending}
+                                    data-testid={`button-delete-invoice-${invoice.id}`}
                                   >
-                                    Delete
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    emptyState={
-                      <TableBody>
-                        <TableRow>
-                          <TableCell colSpan={6} className="p-0">
-                            <EmptyState
-                              icon={FileText}
-                              title={
-                                dateRange.from || dateRange.to
-                                  ? "No invoices in this date range"
-                                  : "No invoices yet"
-                              }
-                              description={
-                                dateRange.from || dateRange.to
-                                  ? "Try widening the date filter or clearing it to see all invoices."
-                                  : "Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically."
-                              }
-                              action={
-                                !dateRange.from && !dateRange.to
-                                  ? {
-                                      label: "New invoice",
-                                      icon: Plus,
-                                      onClick: () => setDialogOpen(true),
-                                      testId: "button-create-first-invoice",
-                                    }
-                                  : undefined
-                              }
-                              secondaryAction={
-                                dateRange.from || dateRange.to
-                                  ? {
-                                      label: "Clear filter",
-                                      onClick: () =>
-                                        setDateRange({ from: undefined, to: undefined }),
-                                    }
-                                  : undefined
-                              }
-                              testId="empty-state-invoices"
-                            />
+                                    <Trash2 className="w-4 h-4 text-destructive" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                      Delete Invoice {invoice.number}?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently delete this invoice. This action cannot
+                                      be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() => deleteMutation.mutate(invoice.id)}
+                                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
                           </TableCell>
                         </TableRow>
-                      </TableBody>
-                    }
-                  />
-                </Table>
-              </div>
-            </Card>
+                      )}
+                      emptyState={
+                        <TableBody>
+                          <TableRow>
+                            <TableCell colSpan={6} className="p-0">
+                              <EmptyState
+                                icon={FileText}
+                                title={
+                                  dateRange.from || dateRange.to
+                                    ? "No invoices in this date range"
+                                    : "No invoices yet"
+                                }
+                                description={
+                                  dateRange.from || dateRange.to
+                                    ? "Try widening the date filter or clearing it to see all invoices."
+                                    : "Create your first invoice — VAT, sequential numbering, and PDFs are handled automatically."
+                                }
+                                action={
+                                  !dateRange.from && !dateRange.to
+                                    ? {
+                                        label: "New invoice",
+                                        icon: Plus,
+                                        onClick: () => setDialogOpen(true),
+                                        testId: "button-create-first-invoice",
+                                      }
+                                    : undefined
+                                }
+                                secondaryAction={
+                                  dateRange.from || dateRange.to
+                                    ? {
+                                        label: "Clear filter",
+                                        onClick: () =>
+                                          setDateRange({ from: undefined, to: undefined }),
+                                      }
+                                    : undefined
+                                }
+                                testId="empty-state-invoices"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        </TableBody>
+                      }
+                    />
+                  </Table>
+                </div>
+              </Card>
+            </>
           )}
         </TabsContent>
 
@@ -2307,20 +2256,6 @@ export default function Invoices() {
           </div>
         </DialogContent>
       </Dialog>
-
-      <WhatsAppComposer
-        open={composerOpen}
-        onOpenChange={(open) => {
-          setComposerOpen(open);
-          if (!open) {
-            setComposerMessage("");
-            setComposerRecipient(null);
-          }
-        }}
-        recipient={composerRecipient}
-        defaultMessage={composerMessage}
-        allowedCategories={["invoice", "payment", "alert"]}
-      />
     </div>
   );
 }

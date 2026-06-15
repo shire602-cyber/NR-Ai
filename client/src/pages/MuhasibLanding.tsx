@@ -365,7 +365,7 @@ function HeroProductMock() {
             className="text-[10px] font-semibold uppercase tracking-wider"
             style={{ color: C.ink }}
           >
-            FTA · VAT 201 · ready to file
+            VAT 201 · review-ready export
           </span>
         </div>
       </Reveal>
@@ -407,15 +407,15 @@ function KpiTile({
   );
 }
 
-// ── 5. Live FTA regulatory updates ticker (the differentiator) ───────────────
+// ── 5. UAE tax workflow ticker ───────────────────────────────────────────────
 function FtaTicker() {
   const updates = [
-    ["FTA Decision 5/2025", "Real-estate VAT clarification published — effective 1 Sep"],
-    ["Cabinet Decision 100/2024", "Corporate Tax small-business relief threshold confirmed"],
-    ["e-Invoicing Phase 2", "PINT AE format mandatory for B2B from July 2026"],
-    ["EmaraTax", "New API endpoint for bulk VAT 201 submission (v2.4)"],
-    ["Public Clarification", "Treatment of director services for VAT — VATP040"],
-    ["FTA Decision 8/2025", "E-commerce supplies — emirate-level reporting refinement"],
+    ["VAT 201", "Output tax, input tax, and net payable review queue"],
+    ["Corporate Tax", "Annual workpaper schedule with revenue and expense totals"],
+    ["e-Invoicing", "PINT AE XML generation and validation workflow"],
+    ["EmaraTax handoff", "Export figures for official-channel filing"],
+    ["Evidence", "Receipts, invoices, and bank lines tied to workpapers"],
+    ["Month-end", "Close checklist before VAT and CT review"],
   ];
   // Duplicate for seamless loop.
   const stream = [...updates, ...updates];
@@ -579,9 +579,7 @@ function CapabilityBento() {
       {/* Bilingual invoice — narrow */}
       <BentoCard className="md:col-span-2">
         <BentoHeader icon={Languages} eyebrow="Bilingual" title="One invoice. Two scripts." />
-        <BentoBody>
-          FTA-compliant tax invoices with Arabic and English on the same document.
-        </BentoBody>
+        <BentoBody>VAT-ready tax invoices with Arabic and English on the same document.</BentoBody>
         <div
           className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border text-[8px]"
           style={{ borderColor: C.hairline, background: C.hairline }}
@@ -621,10 +619,14 @@ function CapabilityBento() {
 
       {/* Reconciliation */}
       <BentoCard className="md:col-span-2">
-        <BentoHeader icon={RefreshCw} eyebrow="Bank feeds" title="Reconciled while you sleep." />
+        <BentoHeader
+          icon={RefreshCw}
+          eyebrow="Bank imports"
+          title="Reconciled without live feeds."
+        />
         <BentoBody>
-          Live feeds from Emirates NBD, ADCB, FAB, Mashreq, RAKBANK, ENBD Islamic. Matched, posted,
-          cleared.
+          Import CSV or PDF statements from UAE banks, review suggested matches, then post with a
+          human approval step.
         </BentoBody>
         <div
           className="mt-5 space-y-1.5 overflow-hidden rounded-xl border bg-white p-3"
@@ -881,8 +883,8 @@ function Workflow() {
     },
     {
       n: "04",
-      t: "File",
-      d: "VAT 201 drafted, signed, submitted to EmaraTax.",
+      t: "Export",
+      d: "VAT 201 figures exported for official-channel filing.",
       op: s4Op,
       border: s4Border,
     },
@@ -898,7 +900,7 @@ function Workflow() {
     { label: "Receipt captured", body: "Carrefour · AED 453.71", op: p1Op, tick: t1, bg: b1 },
     { label: "Categorised", body: "Office supplies · VAT 5%", op: p2Op, tick: t2, bg: b2 },
     { label: "Reconciled", body: "Matched ADCB · 0119", op: p3Op, tick: t3, bg: b3 },
-    { label: "VAT 201 queued", body: "Q3 2026 · ready to file", op: p4Op, tick: t4, bg: b4 },
+    { label: "VAT 201 queued", body: "Q3 2026 · review-ready", op: p4Op, tick: t4, bg: b4 },
   ];
 
   return (
@@ -1042,6 +1044,7 @@ export default function MuhasibLanding() {
               ["Product", "#capabilities"],
               ["Compliance", "#compliance"],
               ["Compare", "#compare"],
+              ["Demo", "/demo"],
               ["Pricing", "/pricing"],
             ].map(([l, h]) => (
               <a
@@ -1089,10 +1092,16 @@ export default function MuhasibLanding() {
             style={{ borderColor: C.hairline }}
           >
             <div className="flex flex-col gap-1 p-4">
-              {["Product", "Compliance", "Compare", "Pricing"].map((l) => (
+              {[
+                ["Product", "#capabilities"],
+                ["Compliance", "#compliance"],
+                ["Compare", "#compare"],
+                ["Demo", "/demo"],
+                ["Pricing", "/pricing"],
+              ].map(([l, h]) => (
                 <a
                   key={l}
-                  href="#"
+                  href={h}
                   className="rounded-md px-3 py-3 text-sm font-medium"
                   style={{ color: C.ink }}
                 >
@@ -1154,8 +1163,8 @@ export default function MuhasibLanding() {
                   style={{ color: C.muted }}
                 >
                   AI-native accounting for UAE businesses. Receipts captured, VAT calculated, banks
-                  reconciled, and FTA returns filed — continuously, by an agent that never sleeps
-                  and never miscategorises.
+                  reconciled, and tax workpapers prepared continuously, with review steps where
+                  judgment matters.
                 </p>
               </Reveal>
 
@@ -1167,18 +1176,18 @@ export default function MuhasibLanding() {
                       className="group flex items-center gap-2 rounded-full px-6 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
                       style={{ background: C.emerald }}
                     >
-                      Start 30-day trial
+                      Start 14-day trial
                       <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                     </button>
                   </Link>
-                  <a
-                    href="#capabilities"
+                  <Link
+                    href="/demo"
                     className="flex items-center gap-2 rounded-full border px-6 py-3.5 text-sm font-semibold"
                     style={{ borderColor: C.hairlineStrong, color: C.ink }}
                   >
-                    See the product
+                    Explore demo data
                     <ChevronRight className="h-4 w-4" />
-                  </a>
+                  </Link>
                 </div>
               </Reveal>
 
@@ -1195,7 +1204,7 @@ export default function MuhasibLanding() {
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
                     <Shield className="h-3.5 w-3.5" style={{ color: C.emerald }} />
-                    EmaraTax integrated
+                    EmaraTax handoff
                   </div>
                   <span style={{ color: C.hairlineStrong }}>·</span>
                   <div className="flex items-center gap-1.5">
@@ -1462,7 +1471,7 @@ export default function MuhasibLanding() {
                 style={{ color: C.emerald }}
               >
                 <span className="h-px w-8" style={{ background: C.emerald }} />
-                30-day trial · no card
+                14-day trial · no card
               </div>
               <h2
                 className="mx-auto max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight md:text-6xl"
@@ -1478,8 +1487,8 @@ export default function MuhasibLanding() {
                 className="mx-auto mt-7 max-w-xl text-base leading-relaxed"
                 style={{ color: C.muted }}
               >
-                Migrate from your old tool in minutes. We import your COA, opening balances,
-                contacts, and last twelve months.
+                Use guided migration templates for your chart of accounts, opening balances,
+                contacts, and historical activity.
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                 <Link href="/register">
@@ -1487,17 +1496,17 @@ export default function MuhasibLanding() {
                     className="group flex items-center gap-2 rounded-full px-7 py-3.5 text-sm font-semibold text-white transition-transform hover:scale-[1.02]"
                     style={{ background: C.emerald }}
                   >
-                    Start 30-day trial
+                    Start 14-day trial
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
                 </Link>
-                <a
-                  href="mailto:hello@muhasib.ai"
+                <Link
+                  href="/demo"
                   className="rounded-full border px-7 py-3.5 text-sm font-semibold"
                   style={{ borderColor: C.hairlineStrong, color: C.ink }}
                 >
-                  Talk to founders
-                </a>
+                  Explore demo
+                </Link>
               </div>
             </div>
           </div>
@@ -1538,7 +1547,8 @@ export default function MuhasibLanding() {
               links={[
                 ["Receipts", "#"],
                 ["VAT 201", "#"],
-                ["Bank feeds", "#"],
+                ["Bank imports", "#"],
+                ["Demo workspace", "/demo"],
                 ["Bilingual invoices", "#"],
                 ["Pricing", "/pricing"],
               ]}

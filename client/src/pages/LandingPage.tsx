@@ -52,9 +52,9 @@ const features = [
   },
   {
     icon: FileCheck,
-    title: "FTA-Compliant VAT",
+    title: "VAT Workflows",
     description:
-      "VAT 201 returns, e-invoicing, and audit-ready ledgers. Stay compliant with UAE Federal Tax Authority rules.",
+      "VAT 201 workpapers, e-invoicing support, and audit-ready ledgers for UAE tax review.",
     color: "text-blue-500",
     bg: "bg-blue-500/10",
   },
@@ -94,7 +94,7 @@ const features = [
     icon: FileText,
     title: "Invoice Management",
     description:
-      "Create FTA-compliant tax invoices, send via email or WhatsApp, and track payment status automatically.",
+      "Create VAT-ready tax invoices, send by email, and track payment status automatically.",
     color: "text-cyan-500",
     bg: "bg-cyan-500/10",
   },
@@ -154,7 +154,7 @@ const plans = [
     name: "Professional",
     price: "99",
     period: "/month",
-    description: "Everything a growing UAE SME needs — fully automated.",
+    description: "Everything a growing UAE SME needs — guided and automated where supported.",
     cta: "Start Free Trial",
     href: "/register",
     popular: true,
@@ -168,7 +168,7 @@ const plans = [
       "Arabic + English UI",
       "WPS Payroll (SIF)",
       "Real-time dashboard",
-      "WhatsApp notifications",
+      "Email notifications",
       "Priority support",
     ],
   },
@@ -185,9 +185,9 @@ const plans = [
       "Multi-entity / group companies",
       "Dedicated account manager",
       "Custom integrations",
-      "SLA-backed uptime",
+      "Enterprise support terms",
       "On-site training",
-      "FTA audit representation",
+      "Tax audit preparation support",
     ],
   },
 ];
@@ -397,8 +397,8 @@ export default function LandingPage() {
 
           <ScrollReveal delay={0.2}>
             <p className="text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
-              FTA-compliant VAT automation, AI receipt scanning, and full Arabic support —
-              everything an Emirati business needs, in one platform.
+              VAT workflow support, AI receipt scanning, and full Arabic support for UAE SMEs in one
+              platform.
             </p>
           </ScrollReveal>
 
@@ -425,7 +425,7 @@ export default function LandingPage() {
               </a>
             </div>
             <p className="text-xs text-muted-foreground mt-4">
-              No credit card required · Cancel anytime · FTA-compliant from day one
+              No credit card required · Cancel anytime · Guided launch onboarding
             </p>
           </ScrollReveal>
 
@@ -457,8 +457,7 @@ export default function LandingPage() {
               Everything You Need to Run Your Finances
             </h2>
             <p className="text-muted-foreground text-lg max-w-xl mx-auto">
-              Built from the ground up for UAE businesses — FTA-compliant, bilingual, and
-              AI-powered.
+              Built from the ground up for UAE businesses — VAT-ready, bilingual, and AI-assisted.
             </p>
           </ScrollReveal>
 
@@ -796,7 +795,7 @@ export default function LandingPage() {
                 <span className="font-bold text-base">Muhasib.ai</span>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                AI-powered accounting for UAE businesses. FTA-compliant, bilingual, automated.
+                AI-assisted accounting for UAE businesses. VAT-ready, bilingual, and guided.
               </p>
             </div>
 

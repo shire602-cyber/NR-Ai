@@ -212,7 +212,7 @@ export function formatCurrencyForExport(
   return `${currency} ${amount.toFixed(2)}`;
 }
 
-export function prepareInvoicesForExport(invoices: any[], locale: string = "en"): ExportData {
+export function prepareInvoicesForExport(invoices: any[], _locale: string = "en"): ExportData {
   return {
     sheetName: "Invoices",
     columns: [
@@ -238,7 +238,7 @@ export function prepareInvoicesForExport(invoices: any[], locale: string = "en")
   };
 }
 
-export function prepareReceiptsForExport(receipts: any[], locale: string = "en"): ExportData {
+export function prepareReceiptsForExport(receipts: any[], _locale: string = "en"): ExportData {
   return {
     sheetName: "Expenses",
     columns: [
@@ -392,4 +392,446 @@ export function prepareVATSummaryForExport(vatSummary: any): ExportData {
       { description: "Net VAT Payable", amount: vatSummary?.netVATPayable?.toFixed(2) || "0.00" },
     ],
   };
+}
+
+export function prepareTrialBalanceForExport(trialBalance: any): ExportData {
+  const rows =
+    trialBalance?.rows?.map((row: any) => ({
+      code: row.accountCode || "",
+      account: row.accountName || "",
+      type: row.accountType || "",
+      debit: row.totalDebit?.toFixed(2) || "0.00",
+      credit: row.totalCredit?.toFixed(2) || "0.00",
+      balance: row.balance?.toFixed(2) || "0.00",
+      foreignCurrency: row.hasForeignLines ? "Yes" : "No",
+    })) ?? [];
+
+  rows.push({
+    code: "",
+    account: "TOTAL",
+    type: "",
+    debit: trialBalance?.totals?.sumDebits?.toFixed(2) || "0.00",
+    credit: trialBalance?.totals?.sumCredits?.toFixed(2) || "0.00",
+    balance: trialBalance?.totals?.difference?.toFixed(2) || "0.00",
+    foreignCurrency: "",
+  });
+
+  return {
+    sheetName: "Trial Balance",
+    columns: [
+      { header: "Code", key: "code", width: 12 },
+      { header: "Account", key: "account", width: 30 },
+      { header: "Type", key: "type", width: 14 },
+      { header: "Debit (AED)", key: "debit", width: 15 },
+      { header: "Credit (AED)", key: "credit", width: 15 },
+      { header: "Balance (AED)", key: "balance", width: 15 },
+      { header: "Foreign Currency Lines", key: "foreignCurrency", width: 22 },
+    ],
+    rows,
+  };
+}
+
+function formatExportAmount(value: unknown): string {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+
+function formatExportPercent(value: unknown): string {
+  const percent = Number(value ?? 0);
+  return Number.isFinite(percent) ? `${percent.toFixed(2)}%` : "0.00%";
+}
+
+export function prepareInvoiceStatusForExport(report: any): ExportData[] {
+  return [
+    {
+      sheetName: "Invoice Status",
+      columns: [
+        { header: "Status", key: "status", width: 16 },
+        { header: "Invoices", key: "count", width: 12 },
+        { header: "Value (AED)", key: "amountAed", width: 18 },
+      ],
+      rows:
+        report?.statusSummary?.map((row: any) => ({
+          status: row.status,
+          count: row.count,
+          amountAed: formatExportAmount(row.amountAed),
+        })) ?? [],
+    },
+    {
+      sheetName: "Revenue by Customer",
+      columns: [
+        { header: "Customer", key: "customerName", width: 30 },
+        { header: "Invoices", key: "invoiceCount", width: 12 },
+        { header: "Value (AED)", key: "amountAed", width: 18 },
+      ],
+      rows:
+        report?.customerRevenue?.map((row: any) => ({
+          customerName: row.customerName,
+          invoiceCount: row.invoiceCount,
+          amountAed: formatExportAmount(row.amountAed),
+        })) ?? [],
+    },
+    {
+      sheetName: "Reminder Routing",
+      columns: [
+        { header: "Customer", key: "customerName", width: 30 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Invoices", key: "invoiceCount", width: 12 },
+        { header: "Outstanding", key: "outstanding", width: 18 },
+        { header: "Oldest Days Overdue", key: "maxDaysOverdue", width: 20 },
+        { header: "Recommended Level", key: "recommendedLevel", width: 18 },
+      ],
+      rows:
+        report?.overdueCustomerRows?.map((row: any) => ({
+          customerName: row.customerName,
+          currency: row.currency,
+          invoiceCount: row.invoiceCount,
+          outstanding: formatExportAmount(row.outstanding),
+          maxDaysOverdue: row.maxDaysOverdue,
+          recommendedLevel: row.recommendedLevel,
+        })) ?? [],
+    },
+    {
+      sheetName: "Invoice Detail",
+      columns: [
+        { header: "Invoice", key: "number", width: 18 },
+        { header: "Customer", key: "customerName", width: 30 },
+        { header: "Issue Date", key: "date", width: 14 },
+        { header: "Due Date", key: "dueDate", width: 14 },
+        { header: "Status", key: "status", width: 14 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Amount", key: "total", width: 16 },
+        { header: "AED Value", key: "amountAed", width: 16 },
+      ],
+      rows:
+        report?.invoices?.map((invoice: any) => ({
+          number: invoice.number,
+          customerName: invoice.customerName,
+          date: formatDateForExport(invoice.date),
+          dueDate: formatDateForExport(invoice.dueDate),
+          status: invoice.status,
+          currency: invoice.currency || "AED",
+          total: formatExportAmount(invoice.total),
+          amountAed: formatExportAmount(invoice.baseCurrencyAmount ?? invoice.total),
+        })) ?? [],
+    },
+  ];
+}
+
+function receiptExportRate(receipt: any): number {
+  const rate = Number(receipt?.exchangeRate ?? 1);
+  return Number.isFinite(rate) && rate > 0 ? rate : 1;
+}
+
+function receiptSubtotalExportAed(receipt: any): number {
+  const base = Number(receipt?.baseCurrencyAmount ?? 0);
+  if (Number.isFinite(base) && Math.abs(base) > 0.005) return base;
+  return (Number(receipt?.amount) || 0) * receiptExportRate(receipt);
+}
+
+function receiptVatExportAed(receipt: any): number {
+  return (Number(receipt?.vatAmount) || 0) * receiptExportRate(receipt);
+}
+
+function expenseSummaryRows(rows: any[] = []) {
+  return rows.map((row: any) => ({
+    label: row.label,
+    receiptCount: row.receiptCount,
+    subtotalAed: formatExportAmount(row.subtotalAed),
+    vatAed: formatExportAmount(row.vatAed),
+    totalAed: formatExportAmount(row.totalAed),
+    unpostedCount: row.unpostedCount,
+    autoPostedCount: row.autoPostedCount,
+  }));
+}
+
+export function prepareExpenseReportsForExport(report: any): ExportData[] {
+  return [
+    {
+      sheetName: "Expenses by Vendor",
+      columns: [
+        { header: "Vendor", key: "label", width: 30 },
+        { header: "Receipts", key: "receiptCount", width: 12 },
+        { header: "Subtotal (AED)", key: "subtotalAed", width: 18 },
+        { header: "VAT (AED)", key: "vatAed", width: 16 },
+        { header: "Total (AED)", key: "totalAed", width: 18 },
+        { header: "Unposted", key: "unpostedCount", width: 12 },
+        { header: "Auto-posted", key: "autoPostedCount", width: 14 },
+      ],
+      rows: expenseSummaryRows(report?.byVendor),
+    },
+    {
+      sheetName: "Expenses by Category",
+      columns: [
+        { header: "Category", key: "label", width: 28 },
+        { header: "Receipts", key: "receiptCount", width: 12 },
+        { header: "Subtotal (AED)", key: "subtotalAed", width: 18 },
+        { header: "VAT (AED)", key: "vatAed", width: 16 },
+        { header: "Total (AED)", key: "totalAed", width: 18 },
+        { header: "Unposted", key: "unpostedCount", width: 12 },
+        { header: "Auto-posted", key: "autoPostedCount", width: 14 },
+      ],
+      rows: expenseSummaryRows(report?.byCategory),
+    },
+    {
+      sheetName: "Posting Automation",
+      columns: [
+        { header: "Metric", key: "metric", width: 28 },
+        { header: "Value", key: "value", width: 18 },
+      ],
+      rows: [
+        { metric: "Captured receipts", value: report?.receiptCount ?? 0 },
+        { metric: "Auto-posted receipts", value: report?.autoPostedReceipts ?? 0 },
+        { metric: "Needs posting", value: report?.unpostedReceipts ?? 0 },
+        { metric: "Subtotal (AED)", value: formatExportAmount(report?.subtotalAed) },
+        { metric: "VAT (AED)", value: formatExportAmount(report?.vatAed) },
+        { metric: "Total spend (AED)", value: formatExportAmount(report?.totalAed) },
+      ],
+    },
+    {
+      sheetName: "Expense Detail",
+      columns: [
+        { header: "Vendor", key: "merchant", width: 30 },
+        { header: "Date", key: "date", width: 14 },
+        { header: "Category", key: "category", width: 22 },
+        { header: "Status", key: "status", width: 16 },
+        { header: "Currency", key: "currency", width: 10 },
+        { header: "Subtotal (AED)", key: "subtotalAed", width: 18 },
+        { header: "VAT (AED)", key: "vatAed", width: 16 },
+        { header: "Total (AED)", key: "totalAed", width: 18 },
+      ],
+      rows:
+        report?.receipts?.map((receipt: any) => {
+          const subtotalAed = receiptSubtotalExportAed(receipt);
+          const vatAed = receiptVatExportAed(receipt);
+          return {
+            merchant: receipt.merchant || "Unknown Merchant",
+            date: formatDateForExport(receipt.date),
+            category: receipt.category || "Uncategorized",
+            status: receipt.autoPosted
+              ? "Auto-posted"
+              : receipt.posted
+                ? "Posted"
+                : "Needs posting",
+            currency: receipt.currency || "AED",
+            subtotalAed: formatExportAmount(subtotalAed),
+            vatAed: formatExportAmount(vatAed),
+            totalAed: formatExportAmount(subtotalAed + vatAed),
+          };
+        }) ?? [],
+    },
+  ];
+}
+
+export function prepareLedgerReportsForExport(report: any): ExportData[] {
+  const totalDebit = Number(report?.totalDebit ?? 0);
+  const totalCredit = Number(report?.totalCredit ?? 0);
+  const difference = Math.abs(Number(report?.difference ?? totalDebit - totalCredit));
+
+  return [
+    {
+      sheetName: "Ledger Summary",
+      columns: [
+        { header: "Metric", key: "metric", width: 28 },
+        { header: "Value", key: "value", width: 18 },
+      ],
+      rows: [
+        { metric: "Posted entries", value: report?.entryCount ?? 0 },
+        { metric: "Ledger lines", value: report?.lineCount ?? 0 },
+        { metric: "Active accounts", value: report?.accountCount ?? 0 },
+        { metric: "Total debit (AED)", value: formatExportAmount(totalDebit) },
+        { metric: "Total credit (AED)", value: formatExportAmount(totalCredit) },
+        { metric: "Difference (AED)", value: formatExportAmount(difference) },
+        { metric: "Balance status", value: difference < 0.005 ? "Balanced" : "Review required" },
+        { metric: "Manual/no-source entries", value: report?.reviewEntries ?? 0 },
+        { metric: "Foreign currency lines", value: report?.foreignCurrencyLines ?? 0 },
+      ],
+    },
+    {
+      sheetName: "Account Activity",
+      columns: [
+        { header: "Account Code", key: "accountCode", width: 16 },
+        { header: "Account", key: "accountName", width: 30 },
+        { header: "Type", key: "accountType", width: 16 },
+        { header: "Lines", key: "lineCount", width: 10 },
+        { header: "Debit (AED)", key: "debit", width: 16 },
+        { header: "Credit (AED)", key: "credit", width: 16 },
+        { header: "Net Activity (AED)", key: "netActivity", width: 18 },
+        { header: "Last Activity", key: "lastActivity", width: 14 },
+      ],
+      rows:
+        report?.accountActivity?.map((row: any) => ({
+          accountCode: row.accountCode || "",
+          accountName: row.accountName || "",
+          accountType: row.accountType || "",
+          lineCount: row.lineCount ?? 0,
+          debit: formatExportAmount(row.debit),
+          credit: formatExportAmount(row.credit),
+          netActivity: formatExportAmount(row.netActivity),
+          lastActivity: formatDateForExport(row.lastActivity),
+        })) ?? [],
+    },
+    {
+      sheetName: "Source Review",
+      columns: [
+        { header: "Source", key: "source", width: 24 },
+        { header: "Entries", key: "entryCount", width: 12 },
+        { header: "Lines", key: "lineCount", width: 10 },
+        { header: "Amount (AED)", key: "amountAed", width: 16 },
+        { header: "Needs Review", key: "needsReview", width: 14 },
+      ],
+      rows:
+        report?.sourceRows?.map((row: any) => ({
+          source: row.source || "Unknown",
+          entryCount: row.entryCount ?? 0,
+          lineCount: row.lineCount ?? 0,
+          amountAed: formatExportAmount(row.amountAed),
+          needsReview: row.needsReview ? "Yes" : "No",
+        })) ?? [],
+    },
+    {
+      sheetName: "Ledger Detail",
+      columns: [
+        { header: "Date", key: "date", width: 14 },
+        { header: "Entry", key: "entryNumber", width: 18 },
+        { header: "Account Code", key: "accountCode", width: 16 },
+        { header: "Account", key: "accountName", width: 30 },
+        { header: "Type", key: "accountType", width: 16 },
+        { header: "Memo", key: "memo", width: 32 },
+        { header: "Source", key: "source", width: 22 },
+        { header: "Debit (AED)", key: "debit", width: 16 },
+        { header: "Credit (AED)", key: "credit", width: 16 },
+        { header: "Foreign Currency", key: "foreignCurrency", width: 18 },
+      ],
+      rows:
+        report?.lines?.map((line: any) => ({
+          date: formatDateForExport(line.date),
+          entryNumber: line.entryNumber || "",
+          accountCode: line.accountCode || "",
+          accountName: line.accountName || "",
+          accountType: line.accountType || "",
+          memo: line.memo || "",
+          source: line.source || "Unknown",
+          debit: formatExportAmount(line.debit),
+          credit: formatExportAmount(line.credit),
+          foreignCurrency: line.hasForeignCurrency ? "Yes" : "No",
+        })) ?? [],
+    },
+  ];
+}
+
+export function preparePlanningReportsForExport(report: any): ExportData[] {
+  const budget = report?.budget;
+  const lowestProjection = report?.lowestProjection;
+
+  return [
+    {
+      sheetName: "Planning Summary",
+      columns: [
+        { header: "Metric", key: "metric", width: 30 },
+        { header: "Value", key: "value", width: 22 },
+      ],
+      rows: [
+        { metric: "Active budget", value: budget?.name || "No approved budget selected" },
+        { metric: "Budget total (AED)", value: formatExportAmount(report?.budgetTotal) },
+        { metric: "Actual total (AED)", value: formatExportAmount(report?.actualTotal) },
+        { metric: "Variance (AED)", value: formatExportAmount(report?.variance) },
+        { metric: "Variance %", value: formatExportPercent(report?.variancePercent) },
+        { metric: "Over-budget lines", value: report?.overBudgetLines ?? 0 },
+        { metric: "Current balance (AED)", value: formatExportAmount(report?.currentBalance) },
+        {
+          metric: "Projected inflows (AED)",
+          value: formatExportAmount(report?.projectedInflows),
+        },
+        {
+          metric: "Projected outflows (AED)",
+          value: formatExportAmount(report?.projectedOutflows),
+        },
+        {
+          metric: "Projected ending balance (AED)",
+          value: formatExportAmount(report?.projectedEndingBalance),
+        },
+        { metric: "Cash movement (AED)", value: formatExportAmount(report?.cashMovement) },
+        { metric: "Cash warning", value: report?.cashWarning || "On track" },
+        {
+          metric: "Lowest projected balance (AED)",
+          value: lowestProjection ? formatExportAmount(lowestProjection.projectedBalance) : "",
+        },
+      ],
+    },
+    {
+      sheetName: "Budget Plans",
+      columns: [
+        { header: "Budget", key: "name", width: 30 },
+        { header: "Fiscal Year", key: "fiscalYear", width: 12 },
+        { header: "Start Date", key: "startDate", width: 14 },
+        { header: "End Date", key: "endDate", width: 14 },
+        { header: "Status", key: "status", width: 14 },
+        { header: "Total Budget (AED)", key: "totalBudget", width: 18 },
+      ],
+      rows:
+        report?.budgetPlans?.map((plan: any) => ({
+          name: plan.name || "",
+          fiscalYear: plan.fiscal_year ?? plan.fiscalYear ?? "",
+          startDate: formatDateForExport(plan.start_date ?? plan.startDate),
+          endDate: formatDateForExport(plan.end_date ?? plan.endDate),
+          status: plan.status || "",
+          totalBudget: formatExportAmount(plan.total_budget ?? plan.totalBudget),
+        })) ?? [],
+    },
+    {
+      sheetName: "Budget Variance",
+      columns: [
+        { header: "Category", key: "category", width: 24 },
+        { header: "Description", key: "description", width: 32 },
+        { header: "Budget (AED)", key: "budget", width: 16 },
+        { header: "Actual (AED)", key: "actual", width: 16 },
+        { header: "Variance (AED)", key: "variance", width: 16 },
+        { header: "Variance %", key: "variancePercent", width: 14 },
+        { header: "Status", key: "status", width: 16 },
+      ],
+      rows:
+        report?.varianceLines?.map((line: any) => ({
+          category: line.category || "",
+          description: line.description || "",
+          budget: formatExportAmount(line.totals?.budget),
+          actual: formatExportAmount(line.totals?.actual),
+          variance: formatExportAmount(line.totals?.variance),
+          variancePercent: formatExportPercent(line.totals?.variancePercent),
+          status: Number(line.totals?.variance ?? 0) < 0 ? "Over budget" : "Within budget",
+        })) ?? [],
+    },
+    {
+      sheetName: "Cash Projections",
+      columns: [
+        { header: "Week", key: "week", width: 10 },
+        { header: "Week Start", key: "weekStart", width: 14 },
+        { header: "Week End", key: "weekEnd", width: 14 },
+        { header: "Expected Inflows (AED)", key: "expectedInflows", width: 22 },
+        { header: "Expected Outflows (AED)", key: "expectedOutflows", width: 22 },
+        { header: "Projected Balance (AED)", key: "projectedBalance", width: 22 },
+      ],
+      rows:
+        report?.projections?.map((projection: any) => ({
+          week: projection.week,
+          weekStart: formatDateForExport(projection.weekStart),
+          weekEnd: formatDateForExport(projection.weekEnd),
+          expectedInflows: formatExportAmount(projection.expectedInflows),
+          expectedOutflows: formatExportAmount(projection.expectedOutflows),
+          projectedBalance: formatExportAmount(projection.projectedBalance),
+        })) ?? [],
+    },
+    {
+      sheetName: "Planning Insights",
+      columns: [
+        { header: "No.", key: "number", width: 8 },
+        { header: "Insight", key: "insight", width: 80 },
+      ],
+      rows:
+        report?.insights?.map((insight: string, index: number) => ({
+          number: index + 1,
+          insight,
+        })) ?? [],
+    },
+  ];
 }

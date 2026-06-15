@@ -11,13 +11,13 @@ const GOLD = "#C19E50";
 const TRUST_POINTS = [
   {
     icon: Landmark,
-    title: "FTA-native VAT 201",
-    body: "Returns pre-filled from your ledger, EmaraTax-ready.",
+    title: "VAT 201 workflow",
+    body: "Review VAT boxes from your ledger and export support workbooks.",
   },
   {
     icon: ShieldCheck,
-    title: "Bank-grade security",
-    body: "Encrypted at rest and in transit, UAE data residency.",
+    title: "Practical security controls",
+    body: "Role-based access with encryption in transit and audit-friendly records.",
   },
   {
     icon: Languages,
@@ -139,7 +139,7 @@ export function AuthLayout({ children, headline, subline }: AuthLayoutProps) {
         </div>
 
         <footer className="relative px-6 pb-6 text-center text-[11px] text-muted-foreground/70">
-          Protected by bank-grade encryption · FTA compliant
+          Encrypted in transit · Built for UAE VAT workflows
         </footer>
       </main>
     </div>

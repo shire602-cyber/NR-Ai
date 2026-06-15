@@ -91,21 +91,21 @@ export default function Landing() {
           : "نخدم الشركات الإماراتية منذ 2017 • شركة محاسبة مسجلة",
       headline:
         locale === "en"
-          ? "Fully Automatic VAT/CIT Filings"
-          : "تقديم ضريبة القيمة المضافة/الشركات تلقائياً",
+          ? "AI-Assisted UAE Tax Workflows"
+          : "سير عمل ضريبي إماراتي بمساعدة الذكاء الاصطناعي",
       headlineAccent:
         locale === "en"
-          ? "99% Accuracy. AI-Driven. UAE Compliant."
-          : "99% دقة. مدعوم بالذكاء الاصطناعي. متوافق مع الإمارات.",
+          ? "Fast Review. AI-Driven. UAE Tax Ready."
+          : "مراجعة أسرع. مدعوم بالذكاء الاصطناعي. جاهز للضرائب الإماراتية.",
       subheadline:
         locale === "en"
-          ? "Never miss a filing deadline. AI-driven categorization with 99% accuracy and local tax compliance built-in. Save 20+ hours monthly with automated bookkeeping from NR Accounting Services."
-          : "لا تفوت موعد التقديم أبداً. تصنيف مدعوم بالذكاء الاصطناعي بدقة 99% وامتثال ضريبي محلي مدمج. وفّر 20+ ساعة شهرياً مع المحاسبة الآلية من NR Accounting Services.",
+          ? "Track tax deadlines, review AI-assisted categorization, and save time with guided bookkeeping workflows from NR Accounting Services."
+          : "تابع مواعيد الضرائب، وراجع التصنيف بمساعدة الذكاء الاصطناعي، ووفّر الوقت مع سير عمل محاسبي موجه من NR Accounting Services.",
       ctaPrimary: locale === "en" ? "Start Now for AED 99/month" : "ابدأ الآن بـ 99 درهم/شهر",
       ctaSecondary: locale === "en" ? "Book a Demo" : "احجز عرض توضيحي",
       noCreditCard: locale === "en" ? "Talk to an Expert" : "تحدث مع خبير",
       cancelAnytime:
-        locale === "en" ? "Full FTA Compliance" : "امتثال كامل للهيئة الاتحادية للضرائب",
+        locale === "en" ? "UAE tax workflow support" : "دعم سير عمل الضرائب الإماراتية",
     },
     stats: {
       invoices: locale === "en" ? "Invoices Generated" : "فواتير أُنشئت",
@@ -171,8 +171,8 @@ export default function Landing() {
       title: locale === "en" ? "Smart Invoicing" : "فوترة ذكية",
       description:
         locale === "en"
-          ? "Create FTA-compliant invoices in seconds with auto VAT calculation and PDF export."
-          : "أنشئ فواتير متوافقة مع الهيئة الاتحادية للضرائب في ثوانٍ مع حساب ضريبة تلقائي.",
+          ? "Create VAT-ready invoices in seconds with auto VAT calculation and PDF export."
+          : "أنشئ فواتير جاهزة لضريبة القيمة المضافة في ثوانٍ مع حساب ضريبة تلقائي.",
       color: "from-blue-500 to-cyan-600",
       bgColor: "bg-blue-500/10",
     },
@@ -191,8 +191,8 @@ export default function Landing() {
       title: locale === "en" ? "Real-Time Reports" : "تقارير فورية",
       description:
         locale === "en"
-          ? "Access P&L, balance sheets, and VAT summaries instantly. Export for FTA filing."
-          : "احصل على الأرباح والخسائر والميزانية وملخصات الضريبة فوراً. صدّر للتقديم للهيئة.",
+          ? "Access P&L, balance sheets, and VAT summaries instantly. Export workpapers for review."
+          : "احصل على الأرباح والخسائر والميزانية وملخصات الضريبة فوراً. صدّر أوراق العمل للمراجعة.",
       color: "from-orange-500 to-amber-600",
       bgColor: "bg-orange-500/10",
     },
@@ -208,11 +208,11 @@ export default function Landing() {
     },
     {
       icon: Shield,
-      title: locale === "en" ? "Bank-Grade Security" : "أمان مصرفي",
+      title: locale === "en" ? "Security Controls" : "ضوابط الأمان",
       description:
         locale === "en"
-          ? "Enterprise encryption, automated backups, and full compliance. Your data is always safe."
-          : "تشفير على مستوى المؤسسات، نسخ احتياطي تلقائي، وامتثال كامل. بياناتك آمنة دائماً.",
+          ? "Role-based access, audit logs, managed infrastructure controls, and secure transport."
+          : "صلاحيات قائمة على الأدوار، وسجلات تدقيق، وضوابط بنية تحتية مدارة، ونقل آمن.",
       color: "from-slate-500 to-gray-600",
       bgColor: "bg-slate-500/10",
     },
@@ -251,8 +251,8 @@ export default function Landing() {
         "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face",
       quote:
         locale === "en"
-          ? "As a freelancer, I needed something simple but professional. The OCR receipt scanner is magic - I just snap photos and AI does the rest. FTA compliance is automatic. Worth every dirham."
-          : "كمستقل، كنت بحاجة إلى شيء بسيط لكن احترافي. ماسح الإيصالات سحري - ألتقط صوراً والذكاء الاصطناعي يقوم بالباقي. الامتثال للهيئة تلقائي. يستحق كل درهم.",
+          ? "As a freelancer, I needed something simple but professional. The OCR receipt scanner is fast, and the VAT-ready workflow keeps my records organized. Worth every dirham."
+          : "كمستقل، كنت بحاجة إلى شيء بسيط لكن احترافي. ماسح الإيصالات سريع، وسير العمل الجاهز لضريبة القيمة المضافة يحافظ على تنظيم سجلاتي. يستحق كل درهم.",
       rating: 5,
       industry: locale === "en" ? "Consulting" : "الاستشارات",
     },
@@ -271,7 +271,7 @@ export default function Landing() {
         locale === "en" ? "Up to 100 invoices/month" : "حتى 100 فاتورة/شهر",
         locale === "en" ? "AI expense categorization" : "تصنيف مصروفات بالذكاء الاصطناعي",
         locale === "en" ? "Unlimited receipt OCR scans" : "مسح إيصالات OCR غير محدود",
-        locale === "en" ? "VAT/CIT filing reports" : "تقارير تقديم ضريبة القيمة المضافة/الشركات",
+        locale === "en" ? "VAT/CT workpaper reports" : "تقارير أوراق عمل الضريبة",
         locale === "en" ? "Email & chat support" : "دعم البريد والدردشة",
       ],
       cta: locale === "en" ? "Start Now" : "ابدأ الآن",
@@ -289,7 +289,7 @@ export default function Landing() {
       features: [
         locale === "en" ? "Unlimited invoices & transactions" : "فواتير ومعاملات غير محدودة",
         locale === "en" ? "AI CFO financial advisor" : "مستشار مالي ذكي",
-        locale === "en" ? "Automated VAT/CIT filing" : "تقديم ضريبة القيمة المضافة/الشركات آلي",
+        locale === "en" ? "VAT/CT review workflows" : "سير عمل مراجعة الضريبة",
         locale === "en" ? "Multi-currency support" : "دعم متعدد العملات",
         locale === "en" ? "Bank reconciliation" : "مطابقة بنكية",
         locale === "en" ? "Priority phone support" : "دعم هاتفي أولوية",
@@ -313,7 +313,7 @@ export default function Landing() {
         locale === "en" ? "Dedicated accountant" : "محاسب مخصص",
         locale === "en" ? "API access & integrations" : "وصول API وتكاملات",
         locale === "en" ? "White-label options" : "خيارات العلامة البيضاء",
-        locale === "en" ? "SLA & 24/7 support" : "اتفاقية مستوى خدمة ودعم 24/7",
+        locale === "en" ? "Enterprise support terms" : "شروط دعم المؤسسات",
       ],
       cta: locale === "en" ? "Talk to an Expert" : "تحدث مع خبير",
       popular: false,
@@ -1247,21 +1247,21 @@ export default function Landing() {
               </div>
               <p className="text-muted-foreground max-w-sm mb-6">
                 {locale === "en"
-                  ? "Registered accounting firm serving UAE businesses since 2017. AI-powered bookkeeping with 99% accuracy and full FTA compliance."
-                  : "شركة محاسبة مسجلة تخدم الشركات الإماراتية منذ 2017. محاسبة مدعومة بالذكاء الاصطناعي بدقة 99% وامتثال كامل للهيئة الاتحادية للضرائب."}
+                  ? "Registered accounting firm serving UAE businesses since 2017. AI-assisted bookkeeping with VAT-ready workflows."
+                  : "شركة محاسبة مسجلة تخدم الشركات الإماراتية منذ 2017. محاسبة بمساعدة الذكاء الاصطناعي وسير عمل جاهز لضريبة القيمة المضافة."}
               </p>
               <div className="flex items-center gap-4">
                 <Badge variant="outline" className="gap-1.5">
                   <Shield className="w-3 h-3" />
-                  SOC 2
+                  SOC/ISO Roadmap
                 </Badge>
                 <Badge variant="outline" className="gap-1.5">
                   <Lock className="w-3 h-3" />
-                  Encrypted
+                  Secure Transport
                 </Badge>
                 <Badge variant="outline" className="gap-1.5">
                   <Award className="w-3 h-3" />
-                  FTA Ready
+                  VAT Ready
                 </Badge>
               </div>
             </div>

@@ -22,7 +22,6 @@ export const customerOnlyRoutes = [
   "/auto-reconcile",
   "/ai-inbox",
   "/month-end",
-  "/whatsapp",
   "/integrations",
   "/integrations-hub",
   "/team",
@@ -61,9 +60,19 @@ export const adminOnlyRoutes = [
   "/admin/import",
   "/admin/users",
   "/admin/activity-logs",
+];
+
+export const firmOnlyRoutes = [
   "/firm",
+  "/firm/command-center",
+  "/firm/value-ops",
   "/firm/clients",
   "/firm/staff",
+  "/firm/health",
+  "/firm/comms",
+  "/firm/document-chasing",
+  "/firm/analytics",
+  "/firm/pipeline",
 ];
 
 // Helper to check if a path requires customer type
@@ -73,4 +82,8 @@ export function isCustomerOnlyRoute(path: string): boolean {
 
 export function isAdminOnlyRoute(path: string): boolean {
   return adminOnlyRoutes.some((r) => path === r || path.startsWith(r + "/"));
+}
+
+export function isFirmOnlyRoute(path: string): boolean {
+  return firmOnlyRoutes.some((r) => path === r || path.startsWith(r + "/"));
 }

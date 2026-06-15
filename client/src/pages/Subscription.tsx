@@ -65,8 +65,8 @@ const PLANS = [
       "100 receipts/month",
       "50 AI credits/month",
       "OCR receipt scanning",
-      "Bank feeds & reconciliation",
-      "E-invoicing (FTA compliant)",
+      "Bank imports & reconciliation",
+      "E-invoicing XML workflow",
       "Quotes & estimates",
       "Credit notes",
       "Recurring invoices",
@@ -127,7 +127,7 @@ const PLANS = [
       "White-label options",
       "Dedicated accountant",
       "Custom integrations",
-      "SLA & 24/7 support",
+      "Enterprise support terms",
       "Multi-company support",
     ],
     limits: {
@@ -499,7 +499,7 @@ export default function Subscription() {
                   { label: "API access", values: [false, false, false, true] },
                   { label: "White-label", values: [false, false, false, true] },
                   { label: "Dedicated accountant", values: [false, false, false, true] },
-                  { label: "SLA & 24/7 support", values: [false, false, false, true] },
+                  { label: "Enterprise support terms", values: [false, false, false, true] },
                 ].map((row) => (
                   <tr key={row.label} className="border-b last:border-0">
                     <td className="py-3 pr-4 text-muted-foreground">{row.label}</td>

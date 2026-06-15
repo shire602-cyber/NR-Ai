@@ -42,9 +42,7 @@ export default function PrivacyPolicy() {
       <p>We use your data to:</p>
       <ul>
         <li>Provide, operate, and maintain the Service.</li>
-        <li>
-          Generate FTA-compliant tax filings, e-invoices, and financial reports on your behalf.
-        </li>
+        <li>Generate VAT-ready tax workpapers, e-invoices, and financial reports.</li>
         <li>Send service-related notifications (e.g. invoice reminders, filing deadlines).</li>
         <li>Improve features through aggregated, anonymised analytics.</li>
         <li>Comply with our legal obligations under UAE law.</li>

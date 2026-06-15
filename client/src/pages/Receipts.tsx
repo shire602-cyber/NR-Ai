@@ -1509,7 +1509,7 @@ export default function Receipts() {
           {processedReceipts.map((receipt, index) => (
             <Card key={index} data-testid={`receipt-card-${index}`}>
               <CardContent className="p-4">
-                <div className="flex gap-4">
+                <div className="flex flex-col gap-4 sm:flex-row">
                   {/* Thumbnail — click to view source image alongside extracted data */}
                   <div className="relative">
                     <button
@@ -1586,7 +1586,7 @@ export default function Receipts() {
                     )}
 
                     {receipt.status === "completed" && receipt.data && (
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1">
                           <Label className="text-xs">Merchant / Supplier</Label>
                           <Input
@@ -1791,7 +1791,7 @@ export default function Receipts() {
               renderItem={(receipt: any) => (
                 <div
                   key={receipt.id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover-elevate mb-2"
+                  className="flex flex-col gap-3 p-4 border rounded-lg hover-elevate mb-2 sm:flex-row sm:items-center sm:justify-between"
                   data-testid={`receipt-${receipt.id}`}
                 >
                   <div className="flex items-center gap-4">
@@ -1805,12 +1805,12 @@ export default function Receipts() {
                       <p className="text-sm text-muted-foreground">{receipt.date}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                    <div className="text-left sm:text-right">
                       <p className="font-mono font-semibold">
                         {formatCurrency(receipt.amount || 0, "AED", locale)}
                       </p>
-                      <div className="flex gap-2 mt-1 flex-wrap justify-end">
+                      <div className="flex gap-2 mt-1 flex-wrap sm:justify-end">
                         <Badge variant="outline">{receipt.category || "Uncategorized"}</Badge>
                         {isInternalClassifierMethod(receipt.classifierMethod) && (
                           <Badge
@@ -1850,11 +1850,12 @@ export default function Receipts() {
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
                       {!receipt.posted && (
                         <Button
                           variant="default"
                           size="sm"
+                          className="flex-1 sm:flex-none"
                           onClick={() => handlePostExpense(receipt)}
                           data-testid={`button-post-receipt-${receipt.id}`}
                         >
@@ -1865,6 +1866,7 @@ export default function Receipts() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="flex-1 sm:flex-none"
                         onClick={() => handleEditReceipt(receipt)}
                         data-testid={`button-edit-receipt-${receipt.id}`}
                       >
@@ -1874,6 +1876,7 @@ export default function Receipts() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="flex-1 sm:flex-none"
                         onClick={() => handleDeleteReceipt(receipt)}
                         disabled={deleteMutation.isPending}
                         data-testid={`button-delete-receipt-${receipt.id}`}

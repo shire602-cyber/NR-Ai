@@ -108,6 +108,15 @@ interface PeriodComparison {
 }
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884d8"];
+const advancedReportTabs = ["cashflow", "aging", "comparison"] as const;
+type AdvancedReportTab = (typeof advancedReportTabs)[number];
+
+function initialAdvancedReportTab(): AdvancedReportTab {
+  const tab = new URLSearchParams(window.location.search).get("tab");
+  return advancedReportTabs.includes(tab as AdvancedReportTab)
+    ? (tab as AdvancedReportTab)
+    : "cashflow";
+}
 
 export default function AdvancedReports() {
   const { t, locale } = useTranslation();
@@ -115,7 +124,7 @@ export default function AdvancedReports() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [selectedPeriod, setSelectedPeriod] = useState("quarter");
   const [comparisonPeriod, setComparisonPeriod] = useState("previous");
-  const [activeTab, setActiveTab] = useState("cashflow");
+  const [activeTab, setActiveTab] = useState<AdvancedReportTab>(initialAdvancedReportTab);
 
   const periodDates = useMemo(() => {
     const now = new Date();
@@ -300,7 +309,7 @@ export default function AdvancedReports() {
         }
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as AdvancedReportTab)}>
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="cashflow" data-testid="tab-cashflow">
             <ArrowRightLeft className="w-4 h-4 mr-2" />

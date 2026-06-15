@@ -21,7 +21,6 @@ import {
   Download,
   BarChart3,
   TrendingUp,
-  AlertTriangle,
   CheckCircle,
   XCircle,
   Clock,
@@ -93,7 +92,6 @@ export default function Admin() {
     trialPeriod: "14",
     aiCategorization: true,
     ocrScanning: true,
-    whatsappIntegration: false,
     smartAssistant: true,
     referralProgram: true,
     supportEmail: "",
@@ -131,10 +129,6 @@ export default function Admin() {
         "feature.ocrScanning" in settingsMap
           ? settingsMap["feature.ocrScanning"] === "true"
           : prev.ocrScanning,
-      whatsappIntegration:
-        "feature.whatsappIntegration" in settingsMap
-          ? settingsMap["feature.whatsappIntegration"] === "true"
-          : prev.whatsappIntegration,
       smartAssistant:
         "feature.smartAssistant" in settingsMap
           ? settingsMap["feature.smartAssistant"] === "true"
@@ -209,10 +203,6 @@ export default function Admin() {
         { key: "system.trialPeriod", value: settingsToSave.trialPeriod },
         { key: "feature.aiCategorization", value: settingsToSave.aiCategorization.toString() },
         { key: "feature.ocrScanning", value: settingsToSave.ocrScanning.toString() },
-        {
-          key: "feature.whatsappIntegration",
-          value: settingsToSave.whatsappIntegration.toString(),
-        },
         { key: "feature.smartAssistant", value: settingsToSave.smartAssistant.toString() },
         { key: "feature.referralProgram", value: settingsToSave.referralProgram.toString() },
         { key: "notification.supportEmail", value: settingsToSave.supportEmail },
@@ -478,15 +468,6 @@ export default function Admin() {
                     Connected
                   </Badge>
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600" />
-                    <span>WhatsApp Integration</span>
-                  </div>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                    Needs Config
-                  </Badge>
-                </div>
               </CardContent>
             </Card>
 
@@ -696,10 +677,6 @@ export default function Admin() {
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">AI Credits/Month</span>
                         <span>{plan.aiCreditsPerMonth}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">WhatsApp Integration</span>
-                        <span>{plan.hasWhatsappIntegration ? "Yes" : "No"}</span>
                       </div>
                     </div>
                   </CardContent>
@@ -1066,22 +1043,6 @@ export default function Admin() {
                   <Separator />
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">WhatsApp Integration</p>
-                      <p className="text-sm text-muted-foreground">
-                        Allow WhatsApp receipt ingestion
-                      </p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.whatsappIntegration}
-                      onCheckedChange={(checked) =>
-                        setSystemSettings((prev) => ({ ...prev, whatsappIntegration: checked }))
-                      }
-                      data-testid="switch-whatsapp-integration"
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div>
                       <p className="font-medium">Smart Assistant</p>
                       <p className="text-sm text-muted-foreground">
                         Natural language financial queries
@@ -1316,38 +1277,6 @@ export default function Admin() {
                 <Button className="w-full" data-testid="button-save-stripe">
                   <Save className="w-4 h-4 mr-2" />
                   Save Configuration
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <div className="w-8 h-8 bg-[#25D366] rounded flex items-center justify-center">
-                    <Bell className="w-4 h-4 text-white" />
-                  </div>
-                  WhatsApp
-                </CardTitle>
-                <CardDescription>Prepare messages for WhatsApp Desktop/Web</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Status</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700">
-                    Prepared links
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  WhatsApp messages are prepared as links and opened in WhatsApp for final sending.
-                  Provider delivery is not verified unless a WhatsApp Business API provider is
-                  configured.
-                </p>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => (window.location.href = "/whatsapp")}
-                >
-                  Go to WhatsApp
                 </Button>
               </CardContent>
             </Card>
@@ -1650,16 +1579,6 @@ function PlanForm({
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label>WhatsApp Integration</Label>
-          <Switch
-            checked={formData.hasWhatsappIntegration || false}
-            onCheckedChange={(checked) =>
-              setFormData({ ...formData, hasWhatsappIntegration: checked })
-            }
-            data-testid="switch-plan-whatsapp"
-          />
-        </div>
         <div className="flex items-center justify-between">
           <Label>Advanced Reports</Label>
           <Switch

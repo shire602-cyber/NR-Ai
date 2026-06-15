@@ -19,7 +19,6 @@ import {
   Link2,
   Copy,
   ExternalLink,
-  MessageCircle,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -63,9 +62,6 @@ import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
-import { SiWhatsapp } from "react-icons/si";
-import { WhatsAppComposer } from "@/components/WhatsAppComposer";
-import { pickWhatsAppNumber } from "@/lib/whatsapp-templates";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 
@@ -135,7 +131,6 @@ function ContactForm({
     name: contact?.name || "",
     email: contact?.email || "",
     phone: contact?.phone || "",
-    whatsappNumber: contact?.whatsappNumber || "",
     trnNumber: contact?.trnNumber || "",
     address: contact?.address || "",
     city: contact?.city || "",
@@ -173,18 +168,6 @@ function ContactForm({
             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
             placeholder="+971-50-XXX-XXXX"
             data-testid="input-contact-phone"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label className="flex items-center gap-1.5">
-            <MessageCircle className="w-3.5 h-3.5 text-green-600" />
-            WhatsApp Number
-          </Label>
-          <Input
-            value={formData.whatsappNumber}
-            onChange={(e) => setFormData({ ...formData, whatsappNumber: e.target.value })}
-            placeholder="971501234567 (defaults to phone)"
-            data-testid="input-contact-whatsapp"
           />
         </div>
       </div>
@@ -263,7 +246,6 @@ export default function CustomerContacts() {
     contactName: string;
   }>({ open: false, url: "", contactName: "" });
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
-  const [composerContact, setComposerContact] = useState<CustomerContact | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
 
@@ -677,18 +659,6 @@ export default function CustomerContacts() {
                       width: "170px",
                       cell: (contact) => (
                         <div className="flex items-center gap-1">
-                          {pickWhatsAppNumber(contact) && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              title="Send via WhatsApp"
-                              className="text-green-600 hover:text-green-700"
-                              onClick={() => setComposerContact(contact)}
-                              data-testid={`button-whatsapp-contact-${contact.id}`}
-                            >
-                              <SiWhatsapp className="w-4 h-4" />
-                            </Button>
-                          )}
                           <Button
                             size="icon"
                             variant="ghost"
@@ -987,20 +957,6 @@ export default function CustomerContacts() {
                 <ExternalLink className="w-4 h-4 mr-2" />
                 Open Portal
               </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => {
-                  const message = encodeURIComponent(
-                    `Here is your client portal link to view invoices and statements:\n${portalLinkDialog.url}`
-                  );
-                  window.open(`https://wa.me/?text=${message}`, "_blank");
-                }}
-                data-testid="button-send-whatsapp"
-              >
-                <MessageCircle className="w-4 h-4 mr-2" />
-                Send via WhatsApp
-              </Button>
             </div>
             <p className="text-xs text-muted-foreground">
               This link is valid for 1 year. The client can view invoices and download PDFs without
@@ -1009,23 +965,6 @@ export default function CustomerContacts() {
           </div>
         </DialogContent>
       </Dialog>
-
-      <WhatsAppComposer
-        open={!!composerContact}
-        onOpenChange={(open) => {
-          if (!open) setComposerContact(null);
-        }}
-        recipient={
-          composerContact
-            ? {
-                name: composerContact.name,
-                phone: composerContact.phone,
-                whatsappNumber: composerContact.whatsappNumber,
-              }
-            : null
-        }
-        defaultTemplateId="general_reminder"
-      />
 
       <AlertDialog
         open={showClearAllDialog}
