@@ -885,12 +885,12 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "A/P Aging",
     category: "Purchases",
-    status: "workspace",
+    status: "live",
     personas: ["owner", "accountant"],
     comparison: "Aging buckets",
     automation: "Payment scheduling",
     icon: ReceiptText,
-    href: "/bill-pay",
+    tab: "aging",
   },
   {
     name: "Customer Balance Summary",
@@ -1117,6 +1117,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Cash Flow Statement",
       "Invoice Status",
       "A/R Aging",
+      "A/P Aging",
       "Expenses by Category",
       "VAT Summary",
       "Corporate Tax Estimate",
@@ -1170,6 +1171,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Corporate Tax Estimate",
       "Customer Balance Summary",
       "Vendor Balance Summary",
+      "A/P Aging",
       "Budget vs Actual",
       "Inventory Valuation",
       "Fixed Asset Register",
@@ -1375,7 +1377,7 @@ function prepareCashFlowForExport(data: CashFlowData[]): ExportData {
 
 function prepareAgingForExport(data: AgingItem[]): ExportData {
   return {
-    sheetName: "AR Aging",
+    sheetName: "A/R and A/P Aging",
     columns: [
       { header: "Name", key: "name", width: 30 },
       { header: "Type", key: "type", width: 14 },
@@ -2431,6 +2433,7 @@ export default function Reports() {
   const categoryBudgetReviewCount =
     expensesByCategory?.rows.filter((row) => row.budgetReviewSuggested).length ?? 0;
   const invoiceReminderQueue = invoiceStatus?.totals.reminderQueue ?? 0;
+  const apAgingOverdue = agingSummary.payables.overdue;
   const budgetVarianceQueue = budgetVsActual?.totals.automationCount ?? 0;
   const fixedAssetCapitalizationQueue = fixedAssetRegister?.totals.capitalizationQueue ?? 0;
   const depreciationPostingQueue = depreciationSchedule?.totals.postingQueue ?? 0;
@@ -2489,6 +2492,19 @@ export default function Reports() {
         tab: "vendors",
         href: "/bill-pay",
         actionLabel: "Schedule payables",
+      },
+      {
+        id: "ap-aging-payment-plan",
+        title: "Plan overdue payables",
+        description: "A/P aging has overdue vendor balances that need payment timing review.",
+        source: "A/P Aging",
+        personas: ["owner", "accountant"],
+        priority: apAgingOverdue > 0 ? "medium" : "low",
+        count: apAgingOverdue > 0 ? 1 : 0,
+        impact: apAgingOverdue,
+        tab: "aging",
+        href: "/bill-pay",
+        actionLabel: "Open bill pay",
       },
       {
         id: "vat-readiness",
@@ -2649,6 +2665,7 @@ export default function Reports() {
           b.count - a.count
       );
   }, [
+    apAgingOverdue,
     budgetVarianceQueue,
     budgetVsActual,
     cashFlowSummary,
@@ -2959,8 +2976,8 @@ export default function Reports() {
         );
         toast({ title: "Export successful", description: "FX Gains/Losses exported to Excel" });
       } else if (activeTab === "aging" && agingData) {
-        await exportToExcel([prepareAgingForExport(agingData)], "ar_aging");
-        toast({ title: "Export successful", description: "A/R Aging exported to Excel" });
+        await exportToExcel([prepareAgingForExport(agingData)], "ar_ap_aging");
+        toast({ title: "Export successful", description: "A/R and A/P Aging exported to Excel" });
       } else if (activeTab === "customers" && customerBalances) {
         await exportToExcel(
           [prepareCustomerBalancesForExport(customerBalances)],
@@ -3147,7 +3164,7 @@ export default function Reports() {
     } else if (activeTab === "aging" && agingData) {
       result = await exportToGoogleSheets(
         [prepareAgingForExport(agingData)],
-        "A/R Aging",
+        "A/R and A/P Aging",
         selectedCompanyId
       );
     } else if (activeTab === "customers" && customerBalances) {
@@ -4142,7 +4159,7 @@ export default function Reports() {
             VAT Return
           </TabsTrigger>
           <TabsTrigger value="aging" data-testid="tab-aging">
-            A/R Aging
+            Aging
           </TabsTrigger>
           <TabsTrigger value="customers" data-testid="tab-customer-balances">
             Customers
@@ -5217,9 +5234,10 @@ export default function Reports() {
 
           <Card>
             <CardHeader>
-              <CardTitle>A/R Aging</CardTitle>
+              <CardTitle>A/R and A/P Aging</CardTitle>
               <CardDescription>
-                Open customer balances by due-date bucket, ready for payment-chasing automation.
+                Open customer and vendor balances by due-date bucket, ready for payment and
+                collection automation.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -5252,7 +5270,7 @@ export default function Reports() {
                 </div>
               ) : (
                 <div className="py-12 text-center text-sm text-muted-foreground">
-                  No open receivable balances found.
+                  No open receivable or payable balances found.
                 </div>
               )}
             </CardContent>
@@ -5262,7 +5280,7 @@ export default function Reports() {
             <CardHeader>
               <CardTitle>Aging Details</CardTitle>
               <CardDescription>
-                Customer-level balances that can feed reminders, collections, and close review.
+                Customer and vendor balances that can feed reminders, payments, and close review.
               </CardDescription>
             </CardHeader>
             <CardContent>
