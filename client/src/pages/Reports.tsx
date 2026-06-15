@@ -677,6 +677,51 @@ interface InventoryValuationReport {
   };
 }
 
+interface InventoryMovementRow {
+  productId: string;
+  productName: string;
+  sku: string | null;
+  unit: string;
+  movementCount: number;
+  purchaseQuantity: number;
+  saleQuantity: number;
+  returnQuantity: number;
+  adjustmentQuantity: number;
+  netQuantity: number;
+  movementValue: number;
+  previousNetQuantity: number;
+  netQuantityChange: number;
+  negativeAdjustmentCount: number;
+  lastMovementAt: string | null;
+  automationSuggested: boolean;
+}
+
+interface InventoryMovementReport {
+  reportCurrency: string;
+  period: {
+    from: string | null;
+    to: string | null;
+    asOf: string;
+    previousFrom: string | null;
+    previousTo: string | null;
+  };
+  rows: InventoryMovementRow[];
+  totals: {
+    productCount: number;
+    movementCount: number;
+    purchaseQuantity: number;
+    saleQuantity: number;
+    returnQuantity: number;
+    adjustmentQuantity: number;
+    netQuantity: number;
+    movementValue: number;
+    previousNetQuantity: number;
+    netQuantityChange: number;
+    negativeAdjustmentCount: number;
+    automationCount: number;
+  };
+}
+
 type ReportPersona = "owner" | "freelancer" | "accountant";
 type PersonaFilter = "all" | ReportPersona;
 type ReportStatus = "live" | "workspace" | "api" | "planned";
@@ -703,6 +748,7 @@ type ReportTab =
   | "fixedAssets"
   | "depreciation"
   | "inventoryValuation"
+  | "inventoryMovement"
   | "monthEndClose"
   | "auditTrail"
   | "comparison"
@@ -1132,12 +1178,12 @@ const reportCatalog: ReportCatalogItem[] = [
   {
     name: "Inventory Movement",
     category: "Inventory",
-    status: "workspace",
+    status: "live",
     personas: ["owner", "accountant"],
     comparison: "Period movement",
     automation: "Reorder alerts",
     icon: Package,
-    href: "/inventory",
+    tab: "inventoryMovement",
   },
   {
     name: "Fixed Asset Register",
@@ -1242,6 +1288,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Budget vs Actual",
       "Payroll Summary",
       "Inventory Valuation",
+      "Inventory Movement",
       "Cash Flow Forecast",
     ],
     actions: [
@@ -1294,6 +1341,7 @@ const reportPackDefinitions: ReportPackDefinition[] = [
       "Budget vs Actual",
       "Payroll Summary",
       "Inventory Valuation",
+      "Inventory Movement",
       "Fixed Asset Register",
       "Depreciation Schedule",
       "FX Gains and Losses",
@@ -2126,6 +2174,46 @@ function prepareInventoryValuationForExport(report: InventoryValuationReport): E
   };
 }
 
+function prepareInventoryMovementForExport(report: InventoryMovementReport): ExportData {
+  return {
+    sheetName: "Inventory Movement",
+    columns: [
+      { header: "Product", key: "product", width: 30 },
+      { header: "SKU", key: "sku", width: 18 },
+      { header: "Unit", key: "unit", width: 10 },
+      { header: "Movements", key: "movementCount", width: 12 },
+      { header: "Purchases", key: "purchases", width: 14 },
+      { header: "Sales", key: "sales", width: 14 },
+      { header: "Returns", key: "returns", width: 14 },
+      { header: "Adjustments", key: "adjustments", width: 14 },
+      { header: "Net Quantity", key: "netQuantity", width: 16 },
+      { header: "Previous Net", key: "previousNet", width: 16 },
+      { header: "Net Change", key: "netChange", width: 16 },
+      { header: "Movement Value", key: "movementValue", width: 18 },
+      { header: "Negative Adjustments", key: "negativeAdjustments", width: 20 },
+      { header: "Last Movement", key: "lastMovement", width: 16 },
+      { header: "Automation", key: "automation", width: 24 },
+    ],
+    rows: report.rows.map((row) => ({
+      product: row.productName,
+      sku: row.sku || "",
+      unit: row.unit,
+      movementCount: row.movementCount,
+      purchases: amountForExport(row.purchaseQuantity),
+      sales: amountForExport(row.saleQuantity),
+      returns: amountForExport(row.returnQuantity),
+      adjustments: amountForExport(row.adjustmentQuantity),
+      netQuantity: amountForExport(row.netQuantity),
+      previousNet: amountForExport(row.previousNetQuantity),
+      netChange: amountForExport(row.netQuantityChange),
+      movementValue: amountForExport(row.movementValue),
+      negativeAdjustments: row.negativeAdjustmentCount,
+      lastMovement: formatDateForExport(row.lastMovementAt),
+      automation: row.automationSuggested ? "Adjustment review" : "",
+    })),
+  };
+}
+
 function isCountMetric(metric: string): boolean {
   return metric.toLowerCase().includes("count");
 }
@@ -2676,6 +2764,23 @@ export default function Reports() {
       enabled: !!selectedCompanyId,
     });
 
+  const { data: inventoryMovement, isLoading: inventoryMovementLoading } =
+    useQuery<InventoryMovementReport>({
+      queryKey: [
+        "/api/companies",
+        selectedCompanyId,
+        "reports",
+        "inventory-movement",
+        fromToDateParams,
+      ],
+      queryFn: () =>
+        apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/reports/inventory-movement${fromToDateParams}`
+        ),
+      enabled: !!selectedCompanyId,
+    });
+
   const vatReturnRows = useMemo(() => {
     if (!vatReturn) return [];
     return [
@@ -2921,6 +3026,7 @@ export default function Reports() {
   const depreciationPostingQueue = depreciationSchedule?.totals.postingQueue ?? 0;
   const inventoryReorderQueue = inventoryValuation?.totals.reorderSuggestions ?? 0;
   const inventoryNegativeStockQueue = inventoryValuation?.totals.negativeStockCount ?? 0;
+  const inventoryMovementReviewQueue = inventoryMovement?.totals.automationCount ?? 0;
   const monthEndCloseQueue = monthEndCloseSummary.isLocked
     ? 0
     : monthEndCloseSummary.incompleteCount;
@@ -3172,6 +3278,19 @@ export default function Reports() {
         actionLabel: "Open inventory",
       },
       {
+        id: "inventory-movement-review",
+        title: "Review inventory adjustments",
+        description: "Inventory movement has negative or net-negative adjustment flags.",
+        source: "Inventory Movement",
+        personas: ["owner", "accountant"],
+        priority: inventoryMovementReviewQueue > 0 ? "medium" : "low",
+        count: inventoryMovementReviewQueue,
+        impact: inventoryMovement?.totals.movementValue ?? 0,
+        tab: "inventoryMovement",
+        href: "/inventory",
+        actionLabel: "Open inventory",
+      },
+      {
         id: "month-end-close",
         title: "Complete month-end close",
         description: "The selected close period has unresolved checklist items before lock.",
@@ -3227,6 +3346,8 @@ export default function Reports() {
     fixedAssetCapitalizationQueue,
     fixedAssetRegister,
     inventoryNegativeStockQueue,
+    inventoryMovement,
+    inventoryMovementReviewQueue,
     inventoryReorderQueue,
     inventoryValuation,
     invoiceReminderQueue,
@@ -3433,6 +3554,8 @@ export default function Reports() {
       return prepareDepreciationScheduleForExport(depreciationSchedule);
     if (tab === "inventoryValuation" && inventoryValuation)
       return prepareInventoryValuationForExport(inventoryValuation);
+    if (tab === "inventoryMovement" && inventoryMovement)
+      return prepareInventoryMovementForExport(inventoryMovement);
     if (tab === "monthEndClose" && monthEndClose)
       return prepareMonthEndCloseForExport(monthEndClose, monthEndCloseHistory ?? []);
     if (tab === "auditTrail" && auditTrailLogs)
@@ -3647,6 +3770,15 @@ export default function Reports() {
           title: "Export successful",
           description: "Inventory Valuation exported to Excel",
         });
+      } else if (activeTab === "inventoryMovement" && inventoryMovement) {
+        await exportToExcel(
+          [prepareInventoryMovementForExport(inventoryMovement)],
+          `inventory_movement${dateRangeStr}`
+        );
+        toast({
+          title: "Export successful",
+          description: "Inventory Movement exported to Excel",
+        });
       } else if (activeTab === "monthEndClose" && monthEndClose) {
         await exportToExcel(
           [prepareMonthEndCloseForExport(monthEndClose, monthEndCloseHistory ?? [])],
@@ -3837,6 +3969,12 @@ export default function Reports() {
       result = await exportToGoogleSheets(
         [prepareInventoryValuationForExport(inventoryValuation)],
         `Inventory Valuation${dateRangeStr}`,
+        selectedCompanyId
+      );
+    } else if (activeTab === "inventoryMovement" && inventoryMovement) {
+      result = await exportToGoogleSheets(
+        [prepareInventoryMovementForExport(inventoryMovement)],
+        `Inventory Movement${dateRangeStr}`,
         selectedCompanyId
       );
     } else if (activeTab === "monthEndClose" && monthEndClose) {
@@ -4814,6 +4952,9 @@ export default function Reports() {
           </TabsTrigger>
           <TabsTrigger value="inventoryValuation" data-testid="tab-inventory-valuation">
             Inventory
+          </TabsTrigger>
+          <TabsTrigger value="inventoryMovement" data-testid="tab-inventory-movement">
+            Movement
           </TabsTrigger>
           <TabsTrigger value="monthEndClose" data-testid="tab-month-end-close">
             Close
@@ -8270,6 +8411,188 @@ export default function Reports() {
               ) : (
                 <div className="py-12 text-center text-sm text-muted-foreground">
                   No inventory products found.
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="inventoryMovement" className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Products Moved
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {inventoryMovementLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatNumber(inventoryMovement?.totals.productCount ?? 0, locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Movement Value
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {inventoryMovementLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatCurrency(
+                      inventoryMovement?.totals.movementValue ?? 0,
+                      inventoryMovement?.reportCurrency ?? "AED",
+                      locale
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Net Quantity
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {inventoryMovementLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <div className="text-2xl font-semibold font-mono">
+                    {formatNumber(inventoryMovement?.totals.netQuantity ?? 0, locale)}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  Adjustment Reviews
+                </CardTitle>
+                <Badge variant={inventoryMovementReviewQueue > 0 ? "warning" : "success"} dot>
+                  Automation
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {inventoryMovementLoading ? (
+                  <Skeleton className="h-8 w-24" />
+                ) : (
+                  <>
+                    <div
+                      className={`text-2xl font-semibold font-mono ${inventoryMovementReviewQueue > 0 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`}
+                    >
+                      {formatNumber(inventoryMovementReviewQueue, locale)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {formatNumber(inventoryMovement?.totals.negativeAdjustmentCount ?? 0, locale)}{" "}
+                      negative adjustments
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Inventory Movement</CardTitle>
+              <CardDescription>
+                Product movement by purchase, sale, return, and adjustment for the selected
+                reporting period.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {inventoryMovementLoading ? (
+                <Skeleton className="h-96" />
+              ) : inventoryMovement?.rows?.length ? (
+                <div className="overflow-x-auto">
+                  <Table className="min-w-[1160px]">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Product</TableHead>
+                        <TableHead className="text-right">Movements</TableHead>
+                        <TableHead className="text-right">Purchases</TableHead>
+                        <TableHead className="text-right">Sales</TableHead>
+                        <TableHead className="text-right">Returns</TableHead>
+                        <TableHead className="text-right">Adjustments</TableHead>
+                        <TableHead className="text-right">Net Qty</TableHead>
+                        <TableHead className="text-right">Prev Net</TableHead>
+                        <TableHead className="text-right">Change</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead>Last Movement</TableHead>
+                        <TableHead className="text-right">Automation</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {inventoryMovement.rows.map((row) => (
+                        <TableRow key={row.productId}>
+                          <TableCell>
+                            <div className="font-medium">{row.productName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {row.sku || "-"} · {row.unit}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.movementCount, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.purchaseQuantity, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.saleQuantity, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.returnQuantity, locale)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono ${row.adjustmentQuantity < 0 ? "text-amber-600 dark:text-amber-400" : ""}`}
+                          >
+                            {formatNumber(row.adjustmentQuantity, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatNumber(row.netQuantity, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono text-muted-foreground">
+                            {formatNumber(row.previousNetQuantity, locale)}
+                          </TableCell>
+                          <TableCell
+                            className={`text-right font-mono ${row.netQuantityChange >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
+                          >
+                            {row.netQuantityChange >= 0 ? "+" : ""}
+                            {formatNumber(row.netQuantityChange, locale)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {formatCurrency(
+                              row.movementValue,
+                              inventoryMovement.reportCurrency,
+                              locale
+                            )}
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            {formatDateForExport(row.lastMovementAt) || "-"}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.automationSuggested ? (
+                              <Badge variant="warning">Review adjustment</Badge>
+                            ) : (
+                              <Badge variant="outline">Clear</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-muted-foreground">
+                  No inventory movements found for the selected period.
                 </div>
               )}
             </CardContent>

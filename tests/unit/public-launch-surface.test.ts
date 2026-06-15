@@ -122,6 +122,18 @@ describe("Public SaaS launch surface", () => {
     expect(reportsSource).toContain("/activity-logs?limit=200");
   });
 
+  it("keeps buyer-readiness inventory movement reporting live and exportable", () => {
+    const reportsSource = readRepoFile("client/src/pages/Reports.tsx");
+    const reportRoutesSource = readRepoFile("server/routes/reports.routes.ts");
+
+    expect(reportsSource).toContain('name: "Inventory Movement"');
+    expect(reportsSource).toContain('tab: "inventoryMovement"');
+    expect(reportsSource).toContain('<TabsTrigger value="inventoryMovement"');
+    expect(reportsSource).toContain('<TabsContent value="inventoryMovement"');
+    expect(reportsSource).toContain("prepareInventoryMovementForExport");
+    expect(reportRoutesSource).toContain("/api/companies/:id/reports/inventory-movement");
+  });
+
   it("keeps WhatsApp and internal document chasing out of the public launch pages", () => {
     for (const file of publicLaunchFiles) {
       const source = readRepoFile(file);

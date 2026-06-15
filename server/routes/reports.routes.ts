@@ -2507,6 +2507,177 @@ export function registerReportRoutes(app: Express) {
     })
   );
 
+  // Inventory Movement - product movement by type with period comparison and adjustment flags.
+  app.get(
+    "/api/companies/:id/reports/inventory-movement",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = (req as any).user?.id;
+      const companyId = req.params.id;
+      const { from, to } = req.query as { from?: string; to?: string };
+
+      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
+      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+
+      const { fromDate, toDate, previousFromDate, previousToDate } = reportWindow(from, to);
+      const [productsList, movements] = await Promise.all([
+        storage.getProductsByCompanyId(companyId),
+        storage.getInventoryMovementsByCompanyId(companyId),
+      ]);
+      const productById = new Map(productsList.map((product) => [product.id, product]));
+
+      const movementDelta = (movement: { type: string; quantity: number }): number => {
+        const quantity = Number(movement.quantity) || 0;
+        if (movement.type === "purchase" || movement.type === "return") return Math.abs(quantity);
+        if (movement.type === "sale") return -Math.abs(quantity);
+        return quantity;
+      };
+
+      const movementValue = (movement: {
+        productId: string;
+        quantity: number;
+        unitCost: number | null;
+      }) => {
+        const product = productById.get(movement.productId);
+        const unitCost =
+          Number(movement.unitCost) > 0
+            ? Number(movement.unitCost)
+            : Number(product?.costPrice ?? 0);
+        return Math.abs(Number(movement.quantity) || 0) * unitCost;
+      };
+
+      const currentMovements = movements.filter((movement) =>
+        inWindow(new Date(movement.createdAt), fromDate, toDate)
+      );
+      const previousMovements =
+        previousFromDate && previousToDate
+          ? movements.filter((movement) =>
+              inWindow(new Date(movement.createdAt), previousFromDate, previousToDate)
+            )
+          : [];
+
+      type ProductMovementAccumulator = {
+        productId: string;
+        productName: string;
+        sku: string | null;
+        unit: string;
+        movementCount: number;
+        purchaseQuantity: number;
+        saleQuantity: number;
+        returnQuantity: number;
+        adjustmentQuantity: number;
+        netQuantity: number;
+        movementValue: number;
+        previousNetQuantity: number;
+        negativeAdjustmentCount: number;
+        lastMovementAt: Date | string | null;
+      };
+
+      const rowsByProduct = new Map<string, ProductMovementAccumulator>();
+      const ensureRow = (productId: string): ProductMovementAccumulator => {
+        const existing = rowsByProduct.get(productId);
+        if (existing) return existing;
+
+        const product = productById.get(productId);
+        const row: ProductMovementAccumulator = {
+          productId,
+          productName: product?.name ?? "Unknown product",
+          sku: product?.sku ?? null,
+          unit: product?.unit ?? "unit",
+          movementCount: 0,
+          purchaseQuantity: 0,
+          saleQuantity: 0,
+          returnQuantity: 0,
+          adjustmentQuantity: 0,
+          netQuantity: 0,
+          movementValue: 0,
+          previousNetQuantity: 0,
+          negativeAdjustmentCount: 0,
+          lastMovementAt: null,
+        };
+        rowsByProduct.set(productId, row);
+        return row;
+      };
+
+      for (const movement of currentMovements) {
+        const row = ensureRow(movement.productId);
+        const quantity = Math.abs(Number(movement.quantity) || 0);
+        const delta = movementDelta(movement);
+        row.movementCount += 1;
+        row.netQuantity += delta;
+        row.movementValue += movementValue(movement);
+        row.lastMovementAt =
+          !row.lastMovementAt || new Date(movement.createdAt) > new Date(row.lastMovementAt)
+            ? movement.createdAt
+            : row.lastMovementAt;
+
+        if (movement.type === "purchase") row.purchaseQuantity += quantity;
+        if (movement.type === "sale") row.saleQuantity += quantity;
+        if (movement.type === "return") row.returnQuantity += quantity;
+        if (movement.type === "adjustment") {
+          row.adjustmentQuantity += Number(movement.quantity) || 0;
+          if ((Number(movement.quantity) || 0) < 0) row.negativeAdjustmentCount += 1;
+        }
+      }
+
+      for (const movement of previousMovements) {
+        const row = ensureRow(movement.productId);
+        row.previousNetQuantity += movementDelta(movement);
+      }
+
+      const rows = Array.from(rowsByProduct.values())
+        .map((row) => {
+          const netQuantityChange = row.netQuantity - row.previousNetQuantity;
+          return {
+            ...row,
+            purchaseQuantity: roundMoney(row.purchaseQuantity),
+            saleQuantity: roundMoney(row.saleQuantity),
+            returnQuantity: roundMoney(row.returnQuantity),
+            adjustmentQuantity: roundMoney(row.adjustmentQuantity),
+            netQuantity: roundMoney(row.netQuantity),
+            movementValue: roundMoney(row.movementValue),
+            previousNetQuantity: roundMoney(row.previousNetQuantity),
+            netQuantityChange: roundMoney(netQuantityChange),
+            automationSuggested: row.negativeAdjustmentCount > 0 || row.adjustmentQuantity < 0,
+          };
+        })
+        .filter((row) => row.movementCount > 0 || row.previousNetQuantity !== 0)
+        .sort(
+          (a, b) => b.movementCount - a.movementCount || a.productName.localeCompare(b.productName)
+        );
+
+      res.json({
+        reportCurrency: "AED",
+        period: {
+          from: fromDate?.toISOString() ?? null,
+          to: toDate.toISOString(),
+          asOf: toDate.toISOString(),
+          previousFrom: previousFromDate?.toISOString() ?? null,
+          previousTo: previousToDate?.toISOString() ?? null,
+        },
+        rows,
+        totals: {
+          productCount: rows.length,
+          movementCount: rows.reduce((sum, row) => sum + row.movementCount, 0),
+          purchaseQuantity: roundMoney(rows.reduce((sum, row) => sum + row.purchaseQuantity, 0)),
+          saleQuantity: roundMoney(rows.reduce((sum, row) => sum + row.saleQuantity, 0)),
+          returnQuantity: roundMoney(rows.reduce((sum, row) => sum + row.returnQuantity, 0)),
+          adjustmentQuantity: roundMoney(
+            rows.reduce((sum, row) => sum + row.adjustmentQuantity, 0)
+          ),
+          netQuantity: roundMoney(rows.reduce((sum, row) => sum + row.netQuantity, 0)),
+          movementValue: roundMoney(rows.reduce((sum, row) => sum + row.movementValue, 0)),
+          previousNetQuantity: roundMoney(
+            rows.reduce((sum, row) => sum + row.previousNetQuantity, 0)
+          ),
+          netQuantityChange: roundMoney(rows.reduce((sum, row) => sum + row.netQuantityChange, 0)),
+          negativeAdjustmentCount: rows.reduce((sum, row) => sum + row.negativeAdjustmentCount, 0),
+          automationCount: rows.filter((row) => row.automationSuggested).length,
+        },
+      });
+    })
+  );
+
   // VAT Return report (UAE)
   app.get(
     "/api/companies/:id/reports/vat-return",
